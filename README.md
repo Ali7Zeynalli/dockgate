@@ -56,40 +56,40 @@ Open **http://localhost:7077** — that's it.
 
 ## Screenshots
 
-### Dashboard
+**Dashboard** — Real-time overview: container counts, disk usage, system info, smart insights
 <img src="screenshots/1.jpeg" width="100%" alt="Dashboard">
 
-### Containers
+**Containers** — List all containers with status filters, bulk actions, search, group by compose
 <img src="screenshots/2.jpeg" width="100%" alt="Containers">
 
-### Container Detail
+**Container Detail** — 10-tab deep inspect: overview, logs, terminal, stats, environment, ports, volumes, network, inspect, history
 <img src="screenshots/4.jpeg" width="100%" alt="Container Detail">
 
-### Images
+**Images** — Pull, remove, tag images. Filter by in-use, unused, or dangling
 <img src="screenshots/3.jpeg" width="100%" alt="Images">
 
-### Volumes
+**Volumes** — Track volume usage, see attached containers, prune unused
 <img src="screenshots/5.jpeg" width="100%" alt="Volumes">
 
-### Networks
+**Networks** — View all Docker networks with driver, subnet, gateway, container counts
 <img src="screenshots/6.jpeg" width="100%" alt="Networks">
 
-### Builds & Cache
+**Builds & Cache** — Monitor build cache entries, clear history to reclaim disk space
 <img src="screenshots/7.jpeg" width="100%" alt="Builds">
 
-### Compose Projects
+**Compose Projects** — Auto-discover stacks, run up/down/restart/pull actions
 <img src="screenshots/8.jpeg" width="100%" alt="Compose">
 
-### Logs
+**Logs** — Real-time log streaming with search, timestamps, auto-scroll, word-wrap
 <img src="screenshots/9.jpeg" width="100%" alt="Logs">
 
-### Terminal
+**Terminal** — Interactive shell (bash/sh/zsh) inside any running container via xterm.js
 <img src="screenshots/10.jpeg" width="100%" alt="Terminal">
 
-### Cleanup
+**Cleanup** — Preview what gets deleted before pruning. Reclaim disk space safely
 <img src="screenshots/11.jpeg" width="100%" alt="Cleanup">
 
-### Settings
+**Settings** — Theme, default shell, log timestamps, default view, auto-start toggle
 <img src="screenshots/12.jpeg" width="100%" alt="Settings">
 
 ---
