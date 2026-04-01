@@ -16,6 +16,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &middot;
+  <a href="#screenshots">Screenshots</a> &middot;
   <a href="#features">Features</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
   <a href="#api-reference">API Reference</a> &middot;
@@ -50,6 +51,46 @@ docker compose up -d --build
 ```
 
 Open **http://localhost:7077** — that's it.
+
+---
+
+## Screenshots
+
+### Dashboard
+<img src="screenshots/1.jpeg" width="100%" alt="Dashboard">
+
+### Containers
+<img src="screenshots/2.jpeg" width="100%" alt="Containers">
+
+### Container Detail
+<img src="screenshots/4.jpeg" width="100%" alt="Container Detail">
+
+### Images
+<img src="screenshots/3.jpeg" width="100%" alt="Images">
+
+### Volumes
+<img src="screenshots/5.jpeg" width="100%" alt="Volumes">
+
+### Networks
+<img src="screenshots/6.jpeg" width="100%" alt="Networks">
+
+### Builds & Cache
+<img src="screenshots/7.jpeg" width="100%" alt="Builds">
+
+### Compose Projects
+<img src="screenshots/8.jpeg" width="100%" alt="Compose">
+
+### Logs
+<img src="screenshots/9.jpeg" width="100%" alt="Logs">
+
+### Terminal
+<img src="screenshots/10.jpeg" width="100%" alt="Terminal">
+
+### Cleanup
+<img src="screenshots/11.jpeg" width="100%" alt="Cleanup">
+
+### Settings
+<img src="screenshots/12.jpeg" width="100%" alt="Settings">
 
 ---
 
