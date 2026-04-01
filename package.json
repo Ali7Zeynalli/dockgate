@@ -1,0 +1,42 @@
+{
+  "name": "dockgate",
+  "version": "1.0.0",
+  "description": "DockGate — A lightweight, browser-based Docker control panel",
+  "main": "server/index.js",
+  "author": "Ali Zeynalli",
+  "license": "MIT",
+  "homepage": "https://github.com/Ali7Zeynalli/dockgate",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ali7Zeynalli/dockgate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ali7Zeynalli/dockgate/issues"
+  },
+  "keywords": [
+    "docker",
+    "docker-management",
+    "docker-ui",
+    "container",
+    "devops",
+    "self-hosted",
+    "control-panel",
+    "docker-compose"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "node server/index.js",
+    "start": "NODE_ENV=production node server/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "dockerode": "^4.0.4",
+    "express": "^4.21.0",
+    "socket.io": "^4.8.0"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.0.0"
+  }
+}

@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  dockgate:
+    build: .
+    container_name: dockgate-control-panel
+    restart: always
+    ports:
+      - "7077:7077"
+    environment:
+      - PORT=7077
+      - NODE_ENV=production
+    volumes:
+      # Required for managing host Docker daemon
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Required for persistent data (settings, tags, history)
+      - ./data:/app/data
+      # (Optional) Required if you want to manage Compose files located on the host
+      # - /:/host:ro # Mount host file system if you need to access host compose directories
+    
+    # -------------------------------------
+    # SYSTEM LIMITS (MİNİMUM TƏLƏBLƏR)
+    # -------------------------------------
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'        # Maksimum 50% CPU (1/2 core)
+          memory: 256M        # Maksimum 256MB RAM
+        reservations:
+          cpus: '0.05'        # Gözlənilən minimum 5% CPU
+          memory: 64M         # Gözlənilən minimum 64MB RAM
