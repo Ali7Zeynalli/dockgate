@@ -103,7 +103,7 @@ Router.register('settings', async (content) => {
               <span>A new version is available: v${escapeHtml(updateInfo.remoteVersion)}. Update is optional.</span>
             </div>
             <div style="margin-bottom:12px;">
-              <div class="text-sm text-muted" style="margin-bottom:4px;">Current: v${updateInfo.currentVersion}${updateInfo.currentCommit && updateInfo.currentCommit !== 'unknown' ? ' (' + updateInfo.currentCommit + ')' : ''} → Latest: v${updateInfo.remoteVersion}${updateInfo.remoteCommit && updateInfo.remoteCommit !== 'unknown' ? ' (' + updateInfo.remoteCommit + ')' : ''}</div>
+              <div class="text-sm text-muted" style="margin-bottom:4px;">Current: v${updateInfo.currentVersion} → Latest: v${updateInfo.remoteVersion}</div>
             </div>
             ${updateInfo.changes && updateInfo.changes.length > 0 ? `
             <div style="margin-bottom:12px;">
@@ -142,7 +142,7 @@ Router.register('settings', async (content) => {
               <span style="color:var(--success);">✓</span>
               <div>
                 <div class="text-sm">DockGate is up to date</div>
-                <div class="text-xs text-muted">v${updateInfo.currentVersion}${updateInfo.currentCommit && updateInfo.currentCommit !== 'unknown' ? ' (' + updateInfo.currentCommit + ')' : ''}</div>
+                <div class="text-xs text-muted">v${updateInfo.currentVersion}</div>
               </div>
               <button class="btn btn-xs btn-secondary" id="check-update-btn">${Icons.refresh} Check</button>
               <a href="${updateInfo.repoUrl || 'https://github.com/Ali7Zeynalli/dockgate'}" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} GitHub</a>
