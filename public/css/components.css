@@ -745,6 +745,7 @@ tbody td {
 .disk-bar-fill.blue { background: linear-gradient(90deg, #3b82f6, #2563eb); }
 .disk-bar-fill.purple { background: linear-gradient(90deg, #8b5cf6, #7c3aed); }
 .disk-bar-fill.yellow { background: linear-gradient(90deg, #ffa502, #e69500); }
+.disk-bar-fill.red { background: linear-gradient(90deg, #ff4d6a, #e63956); }
 
 /* Cleanup preview cards */
 .cleanup-section {

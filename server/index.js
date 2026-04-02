@@ -26,7 +26,7 @@ app.use('/api/system', require('./routes/system'));
 app.use('/api/cleanup', require('./routes/cleanup'));
 app.use('/api/meta', require('./routes/settings'));
 
-// Dashboard summary endpoint
+// Dashboard summary endpoint / Dashboard məlumat endpoint-i
 app.get('/api/dashboard', async (req, res) => {
   try {
     const [containers, images, volumes, networks, systemInfo, diskUsage] = await Promise.all([
@@ -43,11 +43,11 @@ app.get('/api/dashboard', async (req, res) => {
     const restarting = containers.filter(c => c.state === 'restarting');
     const paused = containers.filter(c => c.state === 'paused');
 
-    // Get favorites
+    // Get favorites / Favoritləri al
     const favorites = stmts.getFavorites.all();
     const recentActivity = stmts.getActivity.all(10);
 
-    // Smart insights
+    // Smart insights / Ağıllı təhlillər
     const insights = [];
     const oldStopped = stopped.filter(c => {
       const created = new Date(c.created * 1000);
@@ -76,6 +76,74 @@ app.get('/api/dashboard', async (req, res) => {
 
     const composeProjects = await dockerService.listComposeProjects();
 
+    // Container resource stats (CPU/RAM) for running containers / İşləyən konteynerlərin CPU/RAM statistikası
+    let containerStats = [];
+    try {
+      const statsPromises = running.slice(0, 10).map(async (c) => {
+        try {
+          const stats = await dockerService.getContainerStats(c.id);
+          return { name: c.name, id: c.shortId, ...stats };
+        } catch(e) { return null; }
+      });
+      containerStats = (await Promise.all(statsPromises)).filter(Boolean);
+      containerStats.sort((a, b) => b.cpuPercent - a.cpuPercent);
+    } catch(e) {}
+
+    // Container health status / Konteyner sağlamlıq statusu
+    let healthStats = { healthy: 0, unhealthy: 0, noHealthcheck: 0, starting: 0 };
+    try {
+      const inspectPromises = running.slice(0, 20).map(async (c) => {
+        try {
+          const info = await dockerService.inspectContainer(c.id);
+          const health = info.State?.Health?.Status;
+          if (health === 'healthy') healthStats.healthy++;
+          else if (health === 'unhealthy') healthStats.unhealthy++;
+          else if (health === 'starting') healthStats.starting++;
+          else healthStats.noHealthcheck++;
+          return {
+            name: c.name,
+            id: c.shortId,
+            health: health || 'none',
+            startedAt: info.State?.StartedAt,
+            restartCount: info.RestartCount || 0,
+            status: c.status,
+          };
+        } catch(e) { return null; }
+      });
+      var containerDetails = (await Promise.all(inspectPromises)).filter(Boolean);
+    } catch(e) { var containerDetails = []; }
+
+    // Port map — all exposed ports / Port xəritəsi — bütün açıq portlar
+    const portMap = [];
+    for (const c of containers) {
+      for (const p of (c.ports || [])) {
+        if (p.PublicPort) {
+          portMap.push({
+            container: c.name,
+            containerId: c.shortId,
+            state: c.state,
+            hostPort: p.PublicPort,
+            containerPort: p.PrivatePort,
+            protocol: p.Type || 'tcp',
+            hostIp: p.IP || '0.0.0.0',
+          });
+        }
+      }
+    }
+    portMap.sort((a, b) => a.hostPort - b.hostPort);
+
+    // Top images by size / Ən böyük image-lər
+    const topImages = [...images]
+      .sort((a, b) => b.size - a.size)
+      .slice(0, 8)
+      .map(i => ({
+        id: i.shortId,
+        tag: (i.repoTags && i.repoTags[0] !== '<none>:<none>') ? i.repoTags[0] : i.shortId,
+        size: i.size,
+        inUse: i.inUse,
+        created: i.created,
+      }));
+
     res.json({
       summary: {
         totalContainers: containers.length,
@@ -103,6 +171,11 @@ app.get('/api/dashboard', async (req, res) => {
         volumes: diskUsage.Volumes?.reduce((a, v) => a + (v.UsageData?.Size || 0), 0) || 0,
         buildCache: diskUsage.BuildCache?.reduce((a, b) => a + (b.Size || 0), 0) || 0,
       },
+      containerStats,
+      healthStats,
+      containerDetails,
+      portMap,
+      topImages,
       insights,
       favorites,
       recentActivity,
