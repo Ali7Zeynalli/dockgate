@@ -25,7 +25,6 @@
   <a href="#contributing">Contributing</a>
   <br>
   <a href="CHANGELOG.md">📋 Changelog (EN)</a> &middot;
-  <a href="CHANGELOG.az.md">📋 Dəyişikliklər (AZ)</a> &middot;
   <a href="#az">Azərbaycanca</a>
 </p>
 
