@@ -142,7 +142,7 @@ Router.register('containers', async (content) => {
         <td><span class="td-mono">${escapeHtml(c.image)}</span></td>
         <td><span class="badge badge-${c.state}"><span class="badge-dot"></span> ${c.state}</span></td>
         <td class="text-sm">
-          ${c.ports.filter(p => p.PublicPort).map(p =>
+          ${[...new Map(c.ports.filter(p => p.PublicPort).map(p => [`${p.PublicPort}:${p.PrivatePort}`, p])).values()].map(p =>
             `<a href="http://localhost:${p.PublicPort}" target="_blank" style="margin-right:6px">${p.PublicPort}→${p.PrivatePort}</a>`
           ).join('') || '<span class="text-muted">—</span>'}
         </td>
@@ -222,7 +222,7 @@ Router.register('containers', async (content) => {
         <div class="container-card-meta">
           <span class="td-mono">${c.shortId}</span>
           <span>${timeAgo(c.created)}</span>
-          ${c.ports.filter(p => p.PublicPort).map(p => `<a href="http://localhost:${p.PublicPort}" target="_blank" onclick="event.stopPropagation()">:${p.PublicPort}</a>`).join('')}
+          ${[...new Map(c.ports.filter(p => p.PublicPort).map(p => [`${p.PublicPort}:${p.PrivatePort}`, p])).values()].map(p => `<a href="http://localhost:${p.PublicPort}" target="_blank" onclick="event.stopPropagation()">:${p.PublicPort}</a>`).join('')}
         </div>
         <div class="container-card-actions" onclick="event.stopPropagation()">
           ${c.state === 'running' ? `

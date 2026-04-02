@@ -124,6 +124,99 @@ app.get('*', (req, res) => {
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
+  // ---- Docker Image Build streaming ----
+  let buildStream = null;
+  socket.on('build:start', async ({ buildId, contextType, contextValue, tag, dockerfile, nocache, pull, buildargs }) => {
+    try {
+      const crypto = require('crypto');
+      const id = buildId || crypto.randomUUID();
+      const startTime = Date.now();
+
+      // DB-yə build qeydini əlavə et
+      stmts.insertBuild.run(id, tag || 'untagged', dockerfile || 'Dockerfile', 'building');
+      socket.emit('build:started', { buildId: id });
+
+      let context;
+      if (contextType === 'url') {
+        // URL-dən build (git repo və ya tarball)
+        context = contextValue;
+      } else {
+        // Mövcud image-dən və ya remote context
+        context = contextValue;
+      }
+
+      const stream = await dockerService.buildImage(context, {
+        tag, dockerfile, nocache, pull, buildargs
+      });
+      buildStream = stream;
+
+      let fullLog = '';
+      let imageId = null;
+
+      stream.on('data', (chunk) => {
+        try {
+          const lines = chunk.toString().split('\n').filter(l => l.trim());
+          for (const line of lines) {
+            const json = JSON.parse(line);
+            let logLine = '';
+
+            if (json.stream) {
+              logLine = json.stream;
+            } else if (json.status) {
+              logLine = json.status + (json.progress ? ' ' + json.progress : '') + '\n';
+            } else if (json.error) {
+              logLine = 'ERROR: ' + json.error + '\n';
+            } else if (json.aux && json.aux.ID) {
+              imageId = json.aux.ID;
+              logLine = 'Built image: ' + json.aux.ID + '\n';
+            }
+
+            if (logLine) {
+              fullLog += logLine;
+              socket.emit('build:log', { buildId: id, data: logLine, json });
+            }
+          }
+        } catch (e) {
+          const text = chunk.toString();
+          fullLog += text;
+          socket.emit('build:log', { buildId: id, data: text });
+        }
+      });
+
+      stream.on('end', () => {
+        const duration = Date.now() - startTime;
+        const hasError = fullLog.includes('ERROR:');
+        const status = hasError ? 'failed' : 'success';
+
+        stmts.updateBuildStatus.run(status, duration, imageId, hasError ? 'Build xətası baş verdi' : null, id);
+        stmts.appendBuildLog.run(fullLog, id);
+
+        socket.emit('build:complete', { buildId: id, status, duration, imageId });
+        buildStream = null;
+      });
+
+      stream.on('error', (err) => {
+        const duration = Date.now() - startTime;
+        stmts.updateBuildStatus.run('failed', duration, null, err.message, id);
+        stmts.appendBuildLog.run(fullLog + '\nERROR: ' + err.message, id);
+
+        socket.emit('build:error', { buildId: id, error: err.message });
+        buildStream = null;
+      });
+
+    } catch (err) {
+      socket.emit('build:error', { buildId: buildId || 'unknown', error: err.message });
+    }
+  });
+
+  socket.on('build:cancel', () => {
+    if (buildStream) {
+      try { buildStream.destroy(); } catch(e) {}
+      buildStream = null;
+      socket.emit('build:cancelled');
+    }
+  });
+
   // Container log streaming
   let logStream = null;
   socket.on('logs:subscribe', async ({ containerId, tail = 100, timestamps = false }) => {
@@ -231,6 +324,7 @@ io.on('connection', (socket) => {
 
   // Cleanup on disconnect
   socket.on('disconnect', () => {
+    if (buildStream) try { buildStream.destroy(); } catch(e){}
     if (logStream) try { logStream.destroy(); } catch(e){}
     if (statsStream) try { statsStream.destroy(); } catch(e){}
     if (eventStream) try { eventStream.destroy(); } catch(e){}

@@ -36,6 +36,7 @@ const Router = {
       events: 'Events',
       system: 'System',
       cleanup: 'Cleanup',
+      builds: 'Builds',
       settings: 'Settings',
     };
 

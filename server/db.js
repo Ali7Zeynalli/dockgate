@@ -51,6 +51,19 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS build_history (
+    id TEXT PRIMARY KEY,
+    image_tag TEXT,
+    dockerfile TEXT DEFAULT 'Dockerfile',
+    status TEXT NOT NULL DEFAULT 'building',
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    finished_at DATETIME,
+    duration_ms INTEGER,
+    image_id TEXT,
+    error TEXT,
+    log TEXT DEFAULT ''
+  );
 `);
 
 // Default settings
@@ -103,6 +116,15 @@ const stmts = {
   getSettings: db.prepare('SELECT * FROM settings'),
   getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
   setSetting: db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'),
+
+  // Build History — build tarixçəsini saxlamaq üçün
+  getBuilds: db.prepare('SELECT * FROM build_history ORDER BY started_at DESC LIMIT ?'),
+  getBuild: db.prepare('SELECT * FROM build_history WHERE id = ?'),
+  insertBuild: db.prepare('INSERT INTO build_history (id, image_tag, dockerfile, status) VALUES (?, ?, ?, ?)'),
+  updateBuildStatus: db.prepare('UPDATE build_history SET status = ?, finished_at = CURRENT_TIMESTAMP, duration_ms = ?, image_id = ?, error = ? WHERE id = ?'),
+  appendBuildLog: db.prepare('UPDATE build_history SET log = log || ? WHERE id = ?'),
+  deleteBuild: db.prepare('DELETE FROM build_history WHERE id = ?'),
+  clearBuilds: db.prepare('DELETE FROM build_history'),
 };
 
 module.exports = { db, stmts };

@@ -399,11 +399,19 @@ Router.register('container-detail', async (content, params) => {
           <tbody>
             ${portList.map(([port, bindings]) => {
               const [containerPort, protocol] = port.split('/');
-              return (bindings || [{ HostIp: '', HostPort: '' }]).map(b => `
+              // Eyni HostPort üçün yalnız bir binding göstər (IPv4/IPv6 deduplicate)
+              const seen = new Set();
+              const uniqueBindings = (bindings || [{ HostIp: '', HostPort: '' }]).filter(b => {
+                const key = b.HostPort || '';
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              });
+              return uniqueBindings.map(b => `
                 <tr>
                   <td class="td-mono">${containerPort}</td>
                   <td><span class="badge badge-created">${protocol}</span></td>
-                  <td class="td-mono">${b.HostIp || '0.0.0.0'}:${b.HostPort || '—'}</td>
+                  <td class="td-mono">${b.HostIp === '::' ? '0.0.0.0' : (b.HostIp || '0.0.0.0')}:${b.HostPort || '—'}</td>
                   <td>${b.HostPort ? `<a href="http://localhost:${b.HostPort}" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} Open</a>` : ''}</td>
                 </tr>
               `).join('');

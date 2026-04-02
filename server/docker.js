@@ -169,6 +169,30 @@ async function removeImage(id, force = false) {
   return { success: true };
 }
 
+/**
+ * Docker image build edir və stream qaytarır
+ * Niyə: Real-time build loqlarını WebSocket vasitəsilə göndərmək üçün
+ * Modul: Docker service
+ * İstifadə: routes/builds.js, server/index.js (WebSocket)
+ */
+async function buildImage(context, options = {}) {
+  const buildOpts = {
+    t: options.tag || undefined,
+    dockerfile: options.dockerfile || 'Dockerfile',
+    nocache: options.nocache || false,
+    pull: options.pull || false,
+    buildargs: options.buildargs || {},
+    rm: true,
+  };
+
+  return new Promise((resolve, reject) => {
+    docker.buildImage(context, buildOpts, (err, stream) => {
+      if (err) return reject(err);
+      resolve(stream);
+    });
+  });
+}
+
 async function tagImage(id, repo, tag) {
   const image = docker.getImage(id);
   await image.tag({ repo, tag });
@@ -505,7 +529,7 @@ module.exports = {
   docker,
   listContainers, inspectContainer, getContainerStats, containerAction,
   getContainerLogs, createContainer, parseStats, demuxLogs,
-  listImages, inspectImage, pullImage, removeImage, tagImage,
+  listImages, inspectImage, pullImage, removeImage, tagImage, buildImage,
   listVolumes, inspectVolume, removeVolume, createVolume,
   listNetworks, inspectNetwork, removeNetwork, createNetwork,
   getSystemInfo, getDockerVersion, getDiskUsage,
