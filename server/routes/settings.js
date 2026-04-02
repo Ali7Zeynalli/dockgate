@@ -171,6 +171,17 @@ function fetchRecentChanges() {
   }
 }
 
+// Compare semver: returns true if remote > current / Semver müqayisə: remote > current olarsa true qaytarır
+function isNewerVersion(current, remote) {
+  const c = current.split('.').map(Number);
+  const r = remote.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((r[i] || 0) > (c[i] || 0)) return true;
+    if ((r[i] || 0) < (c[i] || 0)) return false;
+  }
+  return false;
+}
+
 // Check for updates — version comparison only / Yenilik yoxla — yalnız versiya müqayisəsi
 router.get('/update/check', async (req, res) => {
   try {
@@ -181,7 +192,8 @@ router.get('/update/check', async (req, res) => {
     const remoteContent = githubRawFetch('package.json');
     const remoteVersion = JSON.parse(remoteContent).version;
 
-    const hasUpdate = currentVersion !== remoteVersion;
+    // Semver compare — update only if remote is newer / Yalnız remote daha yenidirsə update göstər
+    const hasUpdate = isNewerVersion(currentVersion, remoteVersion);
     console.log(`[Update] v${currentVersion} → v${remoteVersion} (update: ${hasUpdate})`);
 
     const changes = hasUpdate ? fetchRecentChanges() : [];
