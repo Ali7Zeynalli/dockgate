@@ -157,6 +157,27 @@
 
 ---
 
+## [1.7.0] - 2026-04-02
+
+### Yeni Xüsusiyyətlər
+- **Təkmilləşdirilmiş Dashboard** — 7 yeni bölmə ilə tamamilə yenidən dizayn edildi
+- **Konteyner Resurs Monitoru** — işləyən konteynerlər üçün real-time CPU və RAM istifadə çubuqları
+- **Şəbəkə I/O** — hər konteyner üçün yükləmə/göndərmə trafik icmalı
+- **Sağlamlıq Statusu** — healthy/unhealthy/no-healthcheck sayları doughnut chart ilə
+- **İşləmə Müddəti & Yenidən Başlamalar** — konteyner uptime müddəti və restart sayı izləmə
+- **Port Xəritəsi** — konteynerlərə bağlı bütün açıq portlar cədvəl şəklində
+- **Ən Böyük Image-lər** — ən böyük Docker image-lərin vizual çubuq diaqramı
+- **Sürətli Əməliyyatlar** — Hamısını Başlat / Hamısını Dayandır / Hamısını Yenidən Başlat düymələri
+- **Commit əsaslı yeniləmə aşkarlaması** — yalnız versiya deyil, hər push yeniləmə bildirişi tetikləyir
+
+### Texniki Dəyişikliklər
+- `server/index.js` — dashboard API indi containerStats, healthStats, containerDetails, portMap, topImages qaytarır
+- `public/js/pages/dashboard.js` — yeni bölmələr və Chart.js doughnut ilə tam yenidən yazıldı
+- `Dockerfile` — yeniləmə aşkarlaması üçün COMMIT_SHA build arg
+- `.github/workflows/docker-publish.yml` — Docker build-ə commit SHA ötürülür, lowercase image adı düzəlişi
+
+---
+
 ## [1.6.0] - 2026-04-02
 
 ### Yeni Xüsusiyyətlər
