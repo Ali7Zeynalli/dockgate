@@ -2,6 +2,27 @@
 
 ---
 
+## [1.7.0] - 2026-04-02
+
+### New Features
+- **Enhanced Dashboard** — completely redesigned with 7 new sections
+- **Container Resource Monitor** — real-time CPU and RAM usage bars for running containers
+- **Network I/O** — per-container download/upload traffic overview
+- **Health Status** — healthy/unhealthy/no-healthcheck counts with doughnut chart
+- **Uptime & Restarts** — container uptime duration and restart count tracking
+- **Port Map** — table of all exposed ports mapped to containers
+- **Top Images by Size** — visual bar chart of largest Docker images
+- **Quick Actions** — Start All / Stop All / Restart All buttons
+- **Commit-based update detection** — every push triggers update notification, not just version changes
+
+### Technical Changes
+- `server/index.js` — dashboard API now returns containerStats, healthStats, containerDetails, portMap, topImages
+- `public/js/pages/dashboard.js` — full rewrite with new sections and Chart.js doughnut
+- `Dockerfile` — COMMIT_SHA build arg for update detection
+- `.github/workflows/docker-publish.yml` — passes commit SHA to Docker build, lowercase image name fix
+
+---
+
 ## [1.6.0] - 2026-04-02
 
 ### New Features
