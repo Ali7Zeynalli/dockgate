@@ -50,8 +50,6 @@ jobs:
         with:
           context: .
           push: true
-          build-args: |
-            COMMIT_SHA=${{ github.sha }}
           tags: |
             ghcr.io/${{ steps.img.outputs.name }}:latest
             ${{ steps.version.outputs.changed == 'true' && format('ghcr.io/{0}:{1}', steps.img.outputs.name, steps.version.outputs.current) || '' }}
