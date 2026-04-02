@@ -1,0 +1,66 @@
+name: Build & Publish Docker Image
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check version change
+        id: version
+        run: |
+          CURRENT=$(jq -r .version package.json)
+          PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null | jq -r .version 2>/dev/null || echo "0.0.0")
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+          echo "Version: $PREVIOUS → $CURRENT (changed: $CURRENT != $PREVIOUS)"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ${{ steps.version.outputs.changed == 'true' && format('ghcr.io/{0}:{1}', github.repository, steps.version.outputs.current) || '' }}
+
+  cleanup:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Delete old untagged images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: dockgate
+          package-type: container
+          min-versions-to-keep: 3
+          delete-only-untagged-versions: true

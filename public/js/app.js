@@ -99,6 +99,16 @@ async function boot() {
     let lastParams = {};
     try { lastParams = JSON.parse(localStorage.getItem('dcc_last_params')) || {}; } catch(e){}
     await Router.navigate(lastPage, lastParams);
+
+    // Show version from package.json in sidebar / Sidebar-da versiyanı package.json-dan göstər
+    API.get('/meta/version').then(v => {
+      const el = document.getElementById('app-version');
+      if (el && v.version) el.textContent = 'v' + v.version;
+    }).catch(() => {});
+
+    // Auto update check — on boot and every 24h / Avtomatik update yoxlama — başlanğıcda və hər 24 saatda bir
+    checkForUpdates();
+    setInterval(checkForUpdates, 24 * 60 * 60 * 1000);
     
   } catch (err) {
     document.getElementById('content').innerHTML = `
@@ -108,6 +118,48 @@ async function boot() {
       </div>
     `;
   }
+}
+
+// Check for updates and show badge in sidebar / Update yoxla və sidebar-da badge göstər
+async function checkForUpdates() {
+  try {
+    // Has 24h passed since last check? / Son yoxlamadan 24 saat keçibmi?
+    const lastCheck = localStorage.getItem('dcc_update_last_check');
+    const now = Date.now();
+    if (lastCheck && (now - parseInt(lastCheck)) < 24 * 60 * 60 * 1000) {
+      // Read from cache / Cache-dən oxu
+      const cached = localStorage.getItem('dcc_update_available');
+      if (cached === 'true') showUpdateBadge();
+      return;
+    }
+
+    const info = await API.get('/meta/update/check');
+    localStorage.setItem('dcc_update_last_check', String(now));
+    localStorage.setItem('dcc_update_available', String(info.updateAvailable));
+
+    if (info.updateAvailable) {
+      showUpdateBadge();
+    } else {
+      hideUpdateBadge();
+    }
+  } catch(e) {
+    // Network error — don't show badge, fail silently / Şəbəkə xətası — badge göstərmə, sessiz keç
+    console.log('Update check failed:', e.message);
+  }
+}
+
+function showUpdateBadge() {
+  const badge = document.getElementById('badge-settings');
+  if (badge) {
+    badge.textContent = 'UPDATE';
+    badge.style.display = 'inline-flex';
+  }
+}
+
+function hideUpdateBadge() {
+  const badge = document.getElementById('badge-settings');
+  if (badge) badge.style.display = 'none';
+  localStorage.setItem('dcc_update_available', 'false');
 }
 
 // Start

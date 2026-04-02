@@ -1,8 +1,7 @@
-version: '3.8'
-
 services:
   dockgate:
-    build: .
+    image: ghcr.io/ali7zeynalli/dockgate:latest
+    # build: .  # Uncomment to build from source instead of using pre-built image
     container_name: dockgate-control-panel
     restart: always
     ports:

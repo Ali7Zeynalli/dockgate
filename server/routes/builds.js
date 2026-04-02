@@ -1,8 +1,7 @@
 /**
- * Build tarixçəsi, cache və builder API route-ları
- * Niyə: Docker Desktop stilində tam build idarəetmə sistemi
- * Modul: Builds route
- * İstifadə: server/index.js
+ * Build history, cache and builder API routes / Build tarixçəsi, cache və builder API route-ları
+ * Docker Desktop style build management system / Docker Desktop stilində tam build idarəetmə sistemi
+ * Module: Builds route | Used by: server/index.js
  */
 const express = require('express');
 const router = express.Router();
@@ -12,7 +11,7 @@ const { stmts } = require('../db');
 
 // ============ BUILD HISTORY ============
 
-// Panel-dən başladılan build tarixçəsi
+// Build history triggered from panel / Panel-dən başladılan build tarixçəsi
 router.get('/', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
@@ -23,20 +22,20 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Docker-in öz build tarixçəsi — image-lərin history-si
+// Docker's own build history — image layer history / Docker-in öz build tarixçəsi — image-lərin history-si
 router.get('/docker-history', async (req, res) => {
   try {
     const images = await dockerService.listImages();
     const historyList = [];
 
-    // Gizlədilmiş image-ləri al
+    // Get hidden images / Gizlədilmiş image-ləri al
     const hiddenRows = stmts.getHiddenBuilds.all();
     const hiddenSet = new Set(hiddenRows.map(r => r.image_id));
 
-    // Hər image üçün history al
+    // Get history for each image / Hər image üçün history al
     for (const img of images.slice(0, 30)) {
       try {
-        // Gizlədilmiş image-ləri keç
+        // Skip hidden images / Gizlədilmiş image-ləri keç
         if (hiddenSet.has(img.id)) continue;
 
         const image = dockerService.docker.getImage(img.id);
@@ -68,7 +67,7 @@ router.get('/docker-history', async (req, res) => {
   }
 });
 
-// Docker build history-dən image gizlət
+// Hide image from Docker build history / Docker build history-dən image gizlət
 router.post('/docker-history/hide', async (req, res) => {
   try {
     const { imageId } = req.body;
@@ -80,7 +79,7 @@ router.post('/docker-history/hide', async (req, res) => {
   }
 });
 
-// Bütün gizlədilmiş build-ləri sıfırla
+// Reset all hidden builds / Bütün gizlədilmiş build-ləri sıfırla
 router.delete('/docker-history/hidden', async (req, res) => {
   try {
     stmts.clearHiddenBuilds.run();
@@ -90,11 +89,11 @@ router.delete('/docker-history/hidden', async (req, res) => {
   }
 });
 
-// Tək build detalı (panel builds)
+// Single build detail (panel builds) / Tək build detalı
 router.get('/detail/:id', async (req, res) => {
   try {
     const build = stmts.getBuild.get(req.params.id);
-    if (!build) return res.status(404).json({ error: 'Build tapılmadı' });
+    if (!build) return res.status(404).json({ error: 'Build not found' });
     res.json(build);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -119,27 +118,26 @@ router.delete('/', async (req, res) => {
   }
 });
 
-// ============ BUILD CACHE — image-ə görə qruplaşdırılmış ============
+// ============ BUILD CACHE — grouped by image / image-ə görə qruplaşdırılmış ============
 
 router.get('/cache', async (req, res) => {
   try {
     const df = await dockerService.getDiskUsage();
     const cacheItems = df.BuildCache || [];
 
-    // Image-ləri al — cache-i image-lərə bağlamaq üçün
+    // Get images — to link cache items to images / Image-ləri al — cache-i image-lərə bağlamaq üçün
     const images = await dockerService.listImages();
 
-    // Cache-i image-lərə görə qruplaşdır
-    // Docker BuildCache-də hər item-in Description-ında image/layer məlumatı var
-    // Həmçinin UsageCount və LastUsedAt var
+    // Group cache by image — each BuildCache item has image/layer info in Description
+    // Group cache by image / Cache-i image-lərə görə qruplaşdır
     const groups = {};
 
     for (const item of cacheItems) {
-      // Qrup adını təyin et
+      // Determine group name / Qrup adını təyin et
       let groupKey = 'other';
       const desc = item.Description || '';
 
-      // Description-dan image adını çıxar
+      // Extract image name from Description / Description-dan image adını çıxar
       const pullMatch = desc.match(/pulled from (.+)/i);
       const fromMatch = desc.match(/^(FROM|mount)\s+.*?\/([^\/\s:]+)/i);
       const localMatch = desc.match(/local source for (.+)/i);
@@ -153,8 +151,8 @@ router.get('/cache', async (req, res) => {
       } else if (localMatch) {
         groupKey = localMatch[1] || 'local context';
       } else if (desc.includes('WORKDIR') || desc.includes('COPY') || desc.includes('RUN') || desc.includes('ADD')) {
-        // Dockerfile əmrləri — ən yaxın image-ə aid et
-        // Parent chain-dən image tap
+        // Dockerfile commands — assign to nearest image
+        // Dockerfile commands — assign to nearest image
         groupKey = 'dockerfile-commands';
       } else if (item.Type === 'source.local') {
         groupKey = 'local context';
@@ -175,9 +173,9 @@ router.get('/cache', async (req, res) => {
       if (item.Shared) groups[groupKey].shared = true;
     }
 
-    // Image adlarını daha oxunaqlı et
+    // Make image names more readable / Image adlarını daha oxunaqlı et
     const result = Object.values(groups).map(g => {
-      // Image-lərdən uyğun olanı tap
+      // Find matching image / Image-lərdən uyğun olanı tap
       let matchedImage = null;
       for (const img of images) {
         const tags = img.repoTags || [];
@@ -200,7 +198,7 @@ router.get('/cache', async (req, res) => {
       };
     });
 
-    // Ölçüyə görə sırala
+    // Sort by size / Ölçüyə görə sırala
     result.sort((a, b) => b.totalSize - a.totalSize);
 
     res.json({

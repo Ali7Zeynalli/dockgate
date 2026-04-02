@@ -399,7 +399,7 @@ Router.register('container-detail', async (content, params) => {
           <tbody>
             ${portList.map(([port, bindings]) => {
               const [containerPort, protocol] = port.split('/');
-              // Eyni HostPort üçün yalnız bir binding göstər (IPv4/IPv6 deduplicate)
+              // Show only one binding per HostPort (IPv4/IPv6 deduplicate) / Eyni HostPort üçün yalnız bir binding göstər
               const seen = new Set();
               const uniqueBindings = (bindings || [{ HostIp: '', HostPort: '' }]).filter(b => {
                 const key = b.HostPort || '';

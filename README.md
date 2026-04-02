@@ -1,7 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v1.4.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v1.6.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v1.6.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~5.3k-informational?style=for-the-badge" alt="Lines of Code">
@@ -22,7 +23,9 @@
   <a href="#api-reference">API Reference</a> &middot;
   <a href="#websocket-events">WebSocket</a> &middot;
   <a href="#contributing">Contributing</a>
-  <br><br>
+  <br>
+  <a href="CHANGELOG.md">📋 Changelog (EN)</a> &middot;
+  <a href="CHANGELOG.az.md">📋 Dəyişikliklər (AZ)</a> &middot;
   <a href="#az">Azərbaycanca</a>
 </p>
 
@@ -44,6 +47,16 @@ DockGate is a browser-based Docker control panel that runs as a single container
 
 **Prerequisites:** Docker Engine + Docker Compose plugin
 
+### Option 1: Pre-built Image (Recommended)
+
+```bash
+mkdir dockgate && cd dockgate
+curl -O https://raw.githubusercontent.com/Ali7Zeynalli/dockgate/main/docker-compose.yml
+docker compose up -d
+```
+
+### Option 2: Build from Source
+
 ```bash
 git clone https://github.com/Ali7Zeynalli/dockgate.git
 cd dockgate
@@ -51,6 +64,15 @@ docker compose up -d --build
 ```
 
 Open **http://localhost:7077** — that's it.
+
+### Update
+
+DockGate has built-in auto-update: **Settings → Software Update → Update Now**
+
+Or manually:
+```bash
+docker compose pull && docker compose up -d
+```
 
 ---
 
@@ -584,6 +606,16 @@ DockGate brauzerdə işləyən Docker idarəetmə panelidir. Tək bir konteyner 
 
 **Tələblər:** Docker Engine + Docker Compose plugin
 
+### Seçim 1: Hazır Image (Tövsiyə olunur)
+
+```bash
+mkdir dockgate && cd dockgate
+curl -O https://raw.githubusercontent.com/Ali7Zeynalli/dockgate/main/docker-compose.yml
+docker compose up -d
+```
+
+### Seçim 2: Mənbədən Build
+
 ```bash
 git clone https://github.com/Ali7Zeynalli/dockgate.git
 cd dockgate
@@ -591,6 +623,15 @@ docker compose up -d --build
 ```
 
 **http://localhost:7077** açın — vəssalam.
+
+### Yeniləmə
+
+DockGate-in daxili auto-update sistemi var: **Settings → Software Update → Update Now**
+
+Və ya əl ilə:
+```bash
+docker compose pull && docker compose up -d
+```
 
 ---
 

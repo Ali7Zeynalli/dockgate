@@ -92,7 +92,7 @@ Router.register('settings', async (content) => {
         this.classList.toggle('active');
       });
 
-      // Auto-update yoxla
+      // Check for auto-update / Auto-update yoxla
       try {
         const updateInfo = await API.get('/meta/update/check');
         const updateEl = document.getElementById('update-section');
@@ -100,28 +100,41 @@ Router.register('settings', async (content) => {
           updateEl.innerHTML = `
             <div class="insight-card info" style="margin-bottom:12px;">
               <span>${Icons.info}</span>
-              <span>A new version is available. ${updateInfo.pendingCommits} new commit(s) found. Update is optional.</span>
+              <span>A new version is available: v${escapeHtml(updateInfo.remoteVersion)}. Update is optional.</span>
             </div>
             <div style="margin-bottom:12px;">
-              <div class="text-sm text-muted" style="margin-bottom:8px;">Current version: v${updateInfo.currentVersion}</div>
-              <div style="max-height:150px;overflow-y:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:8px 12px;font-family:var(--font-mono);font-size:11px;">
-                ${updateInfo.commits.map(c => `<div style="padding:2px 0;">${escapeHtml(c)}</div>`).join('')}
-              </div>
+              <div class="text-sm text-muted" style="margin-bottom:4px;">Current: v${updateInfo.currentVersion} → Latest: v${updateInfo.remoteVersion}</div>
             </div>
-            <button class="btn btn-primary" id="apply-update">${Icons.download} Update Now</button>
-            <button class="btn btn-secondary" id="skip-update" style="margin-left:8px;">Skip</button>
-            <a href="${updateInfo.repoUrl}" target="_blank" class="btn btn-secondary" style="margin-left:8px;">${Icons.externalLink} GitHub</a>
+            ${updateInfo.changes && updateInfo.changes.length > 0 ? `
+            <div style="margin-bottom:12px;">
+              <div class="text-xs text-muted" style="margin-bottom:6px;">What's new:</div>
+              <div style="max-height:120px;overflow-y:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:8px 12px;font-size:12px;">
+                ${updateInfo.changes.map(c => `<div style="padding:2px 0;">• ${escapeHtml(c)}</div>`).join('')}
+              </div>
+            </div>` : ''}
+            <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:12px;font-family:var(--font-mono);font-size:12px;line-height:1.8;">
+              <div class="text-xs text-muted" style="margin-bottom:6px;font-family:var(--font-sans);">To update manually, run on your host:</div>
+              <div>docker compose pull</div>
+              <div>docker compose up -d</div>
+            </div>
+            <button class="btn btn-primary btn-sm" id="auto-update-btn">${Icons.download} Update Now</button>
+            <button class="btn btn-secondary btn-sm" id="copy-update-cmd" style="margin-left:8px;">${Icons.copy} Copy Commands</button>
+            <a href="${updateInfo.repoUrl}" target="_blank" class="btn btn-secondary btn-sm" style="margin-left:8px;">${Icons.externalLink} GitHub</a>
           `;
-          document.getElementById('apply-update')?.addEventListener('click', async () => {
-            showConfirm('Update DockGate', 'This will pull latest changes from GitHub and restart the server. Your data will not be affected. Continue?', async () => {
+          document.getElementById('auto-update-btn')?.addEventListener('click', () => {
+            showConfirm('Update DockGate', 'This will pull the latest Docker image and restart the container. Your data will be preserved. The panel will restart automatically.', async () => {
               try {
-                showToast('Updating... Server will restart shortly.', 'info', 10000);
+                showToast('Updating... Panel will restart in a moment.', 'info', 15000);
                 await API.post('/meta/update/apply');
-              } catch(e) { /* server restarting */ }
+                // Hide badge / Badge-i gizlət
+                localStorage.setItem('dcc_update_available', 'false');
+                const badge = document.getElementById('badge-settings');
+                if (badge) badge.style.display = 'none';
+              } catch(e) { showToast('Update started, panel will restart...', 'info', 10000); }
             });
           });
-          document.getElementById('skip-update')?.addEventListener('click', () => {
-            updateEl.innerHTML = `<div class="text-sm text-muted">Update skipped. You can check again anytime.</div>`;
+          document.getElementById('copy-update-cmd')?.addEventListener('click', () => {
+            navigator.clipboard.writeText('docker compose pull && docker compose up -d').then(() => showToast('Commands copied', 'success'));
           });
         } else {
           updateEl.innerHTML = `
@@ -138,7 +151,18 @@ Router.register('settings', async (content) => {
           document.getElementById('check-update-btn')?.addEventListener('click', () => render());
         }
       } catch(e) {
-        document.getElementById('update-section').innerHTML = `<div class="text-sm text-muted">Could not check for updates</div>`;
+        document.getElementById('update-section').innerHTML = `
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span class="text-muted">⚠</span>
+            <div>
+              <div class="text-sm">Could not check for updates</div>
+              <div class="text-xs text-muted">Check your internet connection or try again later</div>
+            </div>
+            <button class="btn btn-xs btn-secondary" id="retry-update-btn">${Icons.refresh} Retry</button>
+            <a href="https://github.com/Ali7Zeynalli/dockgate" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} GitHub</a>
+          </div>
+        `;
+        document.getElementById('retry-update-btn')?.addEventListener('click', () => render());
       }
 
       // Save

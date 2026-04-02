@@ -132,16 +132,16 @@ io.on('connection', (socket) => {
       const id = buildId || crypto.randomUUID();
       const startTime = Date.now();
 
-      // DB-yə build qeydini əlavə et
+      // Insert build record into DB / DB-yə build qeydini əlavə et
       stmts.insertBuild.run(id, tag || 'untagged', dockerfile || 'Dockerfile', contextValue || '', JSON.stringify(buildargs || {}), nocache ? 1 : 0, pull ? 1 : 0, 'building');
       socket.emit('build:started', { buildId: id });
 
       let context;
       if (contextType === 'url') {
-        // URL-dən build (git repo və ya tarball)
+        // Build from URL (git repo or tarball) / URL-dən build (git repo və ya tarball)
         context = contextValue;
       } else {
-        // Mövcud image-dən və ya remote context
+        // From existing image or remote context / Mövcud image-dən və ya remote context
         context = contextValue;
       }
 

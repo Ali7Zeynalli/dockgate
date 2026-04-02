@@ -83,8 +83,8 @@
 /* Summary Cards */
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
   margin-bottom: 24px;
 }
 
@@ -92,10 +92,10 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 18px 20px;
+  padding: 14px 16px;
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  gap: 12px;
   transition: all var(--transition-fast);
   cursor: default;
 }
@@ -128,9 +128,9 @@
 .summary-card-content { flex: 1; min-width: 0; }
 
 .summary-card-value {
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 800;
-  letter-spacing: -1px;
+  letter-spacing: -0.5px;
   line-height: 1.1;
 }
 
@@ -963,4 +963,17 @@ tbody td {
   white-space: pre-wrap;
   word-break: break-all;
   color: #b4bcd0;
+}
+
+/* ============ NAV BADGE ============ */
+.nav-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--text-inverse);
+  margin-left: auto;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }

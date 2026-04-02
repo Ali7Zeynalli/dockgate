@@ -75,7 +75,7 @@ db.exec(`
   );
 `);
 
-// Migration — mövcud build_history cədvəlinə yeni sütunlar əlavə et
+// Migration — add new columns to existing build_history table / Mövcud build_history cədvəlinə yeni sütunlar əlavə et
 try { db.exec('ALTER TABLE build_history ADD COLUMN context_url TEXT DEFAULT ""'); } catch(e) {}
 try { db.exec('ALTER TABLE build_history ADD COLUMN build_args TEXT DEFAULT "{}"'); } catch(e) {}
 try { db.exec('ALTER TABLE build_history ADD COLUMN nocache INTEGER DEFAULT 0'); } catch(e) {}
@@ -132,7 +132,7 @@ const stmts = {
   getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
   setSetting: db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'),
 
-  // Build History — build tarixçəsini saxlamaq üçün
+  // Build History — store build records / Build tarixçəsini saxlamaq üçün
   getBuilds: db.prepare('SELECT * FROM build_history ORDER BY started_at DESC LIMIT ?'),
   getBuild: db.prepare('SELECT * FROM build_history WHERE id = ?'),
   insertBuild: db.prepare('INSERT INTO build_history (id, image_tag, dockerfile, context_url, build_args, nocache, pull, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
@@ -141,7 +141,7 @@ const stmts = {
   deleteBuild: db.prepare('DELETE FROM build_history WHERE id = ?'),
   clearBuilds: db.prepare('DELETE FROM build_history'),
 
-  // Hidden Docker Builds — build history-dən gizlədilmiş image-lər
+  // Hidden Docker Builds — images hidden from build history / Build history-dən gizlədilmiş image-lər
   getHiddenBuilds: db.prepare('SELECT image_id FROM hidden_docker_builds'),
   hideBuild: db.prepare('INSERT OR IGNORE INTO hidden_docker_builds (image_id) VALUES (?)'),
   unhideBuild: db.prepare('DELETE FROM hidden_docker_builds WHERE image_id = ?'),

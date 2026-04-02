@@ -1,8 +1,7 @@
 /**
- * Builds səhifəsi — Docker Desktop stilində tam build idarəetmə
- * Niyə: Build tarixçəsi, real-time izləmə, cache, builders
- * Modul: Frontend builds page
- * İstifadə: Router naviqasiyası ilə
+ * Builds page — Docker Desktop style build management
+ * Build history, real-time monitoring, cache, builders
+ * Module: Frontend builds page | Used via Router navigation
  */
 Router.register('builds', async (content) => {
   let activeBuild = null;
@@ -43,11 +42,11 @@ Router.register('builds', async (content) => {
     else if (activeTab === 'live') renderLiveBuild();
   }
 
-  // ============ BUILD HISTORY — Docker image build tarixçəsi ============
+  // ============ BUILD HISTORY — Docker image build history ============
   async function renderHistory() {
     const tabContent = document.getElementById('tab-content');
     try {
-      // Həm panel buildləri, həm Docker image history-ni al
+      // Fetch both panel builds and Docker image history
       const [panelBuilds, dockerHistory] = await Promise.all([
         API.get('/builds'),
         API.get('/builds/docker-history').catch(() => []),
@@ -63,13 +62,13 @@ Router.register('builds', async (content) => {
         return;
       }
 
-      // Panel build seçilibsə detail göstər
+      // Show detail if a panel build is selected
       if (selectedBuildId) {
         await renderBuildDetail(tabContent, panelBuilds);
         return;
       }
 
-      // Docker image history — hər image bir kart, içinə daxil olub layer-ləri görmək olur
+      // Docker image history — each image as a card, expandable to see layers
       let historyHtml = '';
       if (dockerHistory.length > 0) {
         historyHtml = `
@@ -94,7 +93,7 @@ Router.register('builds', async (content) => {
 
       tabContent.innerHTML = historyHtml + panelHtml;
 
-      // Docker image history kartları
+      // Docker image history cards
       if (dockerHistory.length > 0) {
         const histList = document.getElementById('docker-history-list');
         dockerHistory.forEach((img, idx) => {
@@ -142,7 +141,7 @@ Router.register('builds', async (content) => {
             hdr.style.borderRadius = open ? '' : 'var(--radius-lg) var(--radius-lg) 0 0';
           });
 
-          // Silmə düyməsi
+          // Delete button
           el.querySelector('.hide-docker-build')?.addEventListener('click', (e) => {
             e.stopPropagation();
             showConfirm('Remove from History', `Remove "${img.tag}" from build history? (Image will not be deleted)`, async () => {
@@ -156,7 +155,7 @@ Router.register('builds', async (content) => {
         });
       }
 
-      // Panel build kartları
+      // Panel build cards
       if (panelBuilds.length > 0) {
         const listEl = document.getElementById('panel-build-list');
         panelBuilds.forEach(b => {
@@ -212,7 +211,7 @@ Router.register('builds', async (content) => {
     }
   }
 
-  // ============ BUILD DETAIL — Docker Desktop stili ============
+  // ============ BUILD DETAIL — Docker Desktop style ============
   async function renderBuildDetail(tabContent, builds) {
     let build;
     try {
@@ -290,7 +289,7 @@ Router.register('builds', async (content) => {
     const totalSteps = steps || 1;
     const cachePercent = steps > 0 ? Math.round((cacheHits / totalSteps) * 100) : 0;
 
-    // Dependencies — loqlardan pull olunan image-ləri çıxar
+    // Dependencies — extract pulled images from logs
     const pullMatches = logText.match(/(?:FROM|Pulling from)\s+([^\s\n]+)/gi) || [];
     const deps = [...new Set(pullMatches.map(m => m.replace(/^(FROM|Pulling from)\s+/i, '').trim()))];
 
@@ -424,7 +423,7 @@ Router.register('builds', async (content) => {
         </div>
       `;
     } else {
-      // Loqlardan Dockerfile step-lərini çıxar
+      // Extract Dockerfile steps from logs
       const logText = build.log || '';
       const stepLines = logText.split('\n').filter(l => l.match(/^Step \d+/i));
       el.innerHTML = `
@@ -500,7 +499,7 @@ Router.register('builds', async (content) => {
           html += '</div>';
           logContent.innerHTML = html;
 
-          // Step açılıb-bağlanma
+          // Step toggle expand/collapse
           logContent.querySelectorAll('.build-step-header').forEach(hdr => {
             const idx = hdr.dataset.step;
             const body = logContent.querySelector(`[data-step-body="${idx}"]`);
@@ -524,9 +523,9 @@ Router.register('builds', async (content) => {
     renderLogView();
   }
 
-  // ---- HISTORY TAB — keçmiş buildlərin müqayisəsi ----
+  // ---- HISTORY TAB — compare past builds ----
   function renderHistoryTab(el, build, builds) {
-    // Eyni image_tag ilə olan buildləri tap
+    // Find builds with same image_tag
     const related = builds.filter(b => b.image_tag === build.image_tag);
 
     el.innerHTML = `
@@ -554,7 +553,7 @@ Router.register('builds', async (content) => {
       </div>
     `;
 
-    // Başqa build-ə keçid
+    // Navigate to another build
     el.querySelectorAll('[data-history-id]').forEach(card => {
       card.addEventListener('click', () => {
         selectedBuildId = card.dataset.historyId;
@@ -563,7 +562,7 @@ Router.register('builds', async (content) => {
     });
   }
 
-  // ============ BUILD CACHE — image-ə görə qruplaşdırılmış ============
+  // ============ BUILD CACHE — grouped by image ============
   async function renderCache() {
     const tabContent = document.getElementById('tab-content');
     try {
@@ -755,7 +754,7 @@ Router.register('builds', async (content) => {
     render();
   }
 
-  // ============ WEBSOCKET HADİSƏLƏRİ ============
+  // ============ WEBSOCKET EVENTS ============
   function onBuildLog({ buildId, data }) {
     if (!activeBuild) return;
     activeBuild.logs += data;
@@ -784,7 +783,7 @@ Router.register('builds', async (content) => {
   socket.on('build:error', onBuildError);
   socket.on('build:cancelled', onBuildCancelled);
 
-  // ============ YARDIMÇI FUNKSİYALAR ============
+  // ============ HELPER FUNCTIONS ============
   function buildStatusBadge(status) {
     const map = {
       'success': '<span class="badge badge-running">Success</span>',
@@ -808,7 +807,7 @@ Router.register('builds', async (content) => {
     return matches ? matches.length : 0;
   }
 
-  // Loqları step-lərə ayır (collapsible list view üçün)
+  // Split logs into steps (for collapsible list view)
   function parseSteps(log) {
     if (!log) return [];
     const lines = log.split('\n');
@@ -827,7 +826,7 @@ Router.register('builds', async (content) => {
     return steps;
   }
 
-  // Build loqlarını rəngləndirmə — Docker Desktop stili
+  // Colorize build logs — Docker Desktop style
   function colorizeBuildLog(text) {
     if (!text) return '<span class="text-muted">No logs available</span>';
     return escapeHtml(text).split('\n').map(line => {
@@ -840,7 +839,7 @@ Router.register('builds', async (content) => {
     }).join('\n');
   }
 
-  // ============ BAŞLAT ============
+  // ============ INIT ============
   await render();
 
   return () => {

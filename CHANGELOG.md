@@ -2,17 +2,41 @@
 
 ---
 
+## [1.6.0] - 2026-04-02
+
+### New Features
+- Version is now read from `package.json` everywhere — single source of truth
+- Sidebar version display loads dynamically from `/api/meta/version` endpoint
+- No more hardcoded version strings in HTML
+
+### Technical Changes
+- `server/routes/settings.js` — added `GET /meta/version` endpoint
+- `public/js/app.js` — fetches version from API on boot, updates sidebar
+- `public/index.html` — version placeholder replaced with dynamic loading
+
+---
+
 ## [1.5.0] - 2026-04-02
 
 ### New Features
-- Auto-update system — checks GitHub for new commits, one-click update with git pull + npm install + server restart
-- Settings page now has "Software Update" section showing current version, pending commits, and update button
-- README fully updated with all new features, API endpoints, WebSocket events
+- Auto-update system with pre-built Docker image from GHCR (GitHub Container Registry)
+- One-click update: pulls new image and restarts container automatically via helper container
+- Settings page "Software Update" section: version comparison, changelog, update button
+- Sidebar "UPDATE" badge when new version is available
+- GitHub Actions CI/CD: auto-builds and pushes Docker image on every version tag, cleans up old untagged images
+
+### How Auto-Update Works
+- **Check**: Compares local version with GitHub `package.json` via `raw.githubusercontent.com` (no rate limits)
+- **Apply**: Pulls `ghcr.io/ali7zeynalli/dockgate:latest` → inspects own container config → spawns `docker:cli` helper container → helper stops old container and starts new one with same config
+- **Manual**: `docker compose pull && docker compose up -d`
 
 ### Technical Changes
-- `server/routes/settings.js` — added `/meta/update/check` and `/meta/update/apply` endpoints
-- `public/js/pages/settings.js` — added Software Update section with check/apply UI
-- `README.md` — updated version badge, Builds/Settings descriptions, API reference, WebSocket docs
+- `server/routes/settings.js` — complete rewrite: dockerode-based image pull + helper container restart (replaces broken git-based approach)
+- `docker-compose.yml` — uses pre-built GHCR image instead of local build
+- `.github/workflows/docker-publish.yml` — CI/CD pipeline: build, push to GHCR, cleanup old images
+- `public/js/pages/settings.js` — update UI shows changelog instead of commits
+- `public/js/app.js` — `checkForUpdates()` on boot + 24h interval with localStorage cache
+- `README.md` — updated installation and update instructions (EN + AZ)
 
 ---
 
@@ -104,3 +128,135 @@
 - System info and disk usage
 - Cleanup tools
 - Settings, Favorites, Notes, Tags, Activity log
+
+---
+---
+
+# Dəyişikliklər
+
+---
+
+## [1.6.0] - 2026-04-02
+
+### Yeni Xüsusiyyətlər
+- Versiya artıq hər yerdə `package.json`-dan oxunur — tək mənbə
+- Sidebar-dakı versiya göstəricisi `/api/meta/version` endpoint-indən dinamik yüklənir
+- HTML-də hardcoded versiya yoxdur
+
+### Texniki Dəyişikliklər
+- `server/routes/settings.js` — `GET /meta/version` endpoint əlavə edildi
+- `public/js/app.js` — başlanğıcda API-dən versiya çəkir, sidebar-ı yeniləyir
+- `public/index.html` — versiya placeholder dinamik yükləmə ilə əvəz edildi
+
+---
+
+## [1.5.0] - 2026-04-02
+
+### Yeni Xüsusiyyətlər
+- GHCR-dan (GitHub Container Registry) hazır Docker image ilə avto-yeniləmə sistemi
+- Bir kliklik yeniləmə: yeni image çəkir və helper konteyner vasitəsilə avtomatik yenidən başladır
+- Settings səhifəsində "Software Update" bölməsi: versiya müqayisəsi, dəyişikliklər siyahısı, yeniləmə düyməsi
+- Yeni versiya mövcud olduqda sidebar-da "UPDATE" badge-i
+- GitHub Actions CI/CD: hər versiya tag-ında Docker image build + push, köhnə untagged image-ləri təmizləyir
+
+### Avto-Yeniləmə Necə İşləyir
+- **Yoxlama**: `raw.githubusercontent.com` vasitəsilə yerli versiyanı GitHub `package.json` ilə müqayisə edir (rate limit yoxdur)
+- **Tətbiq**: `ghcr.io/ali7zeynalli/dockgate:latest` pull edir → öz konteyner konfiqurasiyasını inspect edir → `docker:cli` helper konteyner yaradır → helper köhnə konteyneri dayandırıb yenisini eyni konfiqurasiya ilə işə salır
+- **Əl ilə**: `docker compose pull && docker compose up -d`
+
+### Texniki Dəyişikliklər
+- `server/routes/settings.js` — tam yenidən yazıldı: dockerode ilə image pull + helper konteyner restart (köhnə git-based yanaşma əvəz edildi)
+- `docker-compose.yml` — yerli build əvəzinə hazır GHCR image istifadə edir
+- `.github/workflows/docker-publish.yml` — CI/CD: build, GHCR-a push, köhnə image-ləri təmizlə
+- `public/js/pages/settings.js` — yeniləmə UI commit-lər əvəzinə changelog göstərir
+- `public/js/app.js` — başlanğıcda + hər 24 saatda `checkForUpdates()`, localStorage cache
+- `README.md` — quraşdırma və yeniləmə təlimatları yeniləndi (EN + AZ)
+
+---
+
+## [1.4.0] - 2026-04-02
+
+### Yeni Xüsusiyyətlər
+- Docker Image Build Tarixçəsindəki elementlər artıq tək-tək silinə bilər — əsl image-i silmədən siyahıdan gizlədir
+- Hər tarixçə kartında təsdiq dialoqu ilə silmə düyməsi
+
+### Texniki Dəyişikliklər
+- `server/db.js` — `hidden_docker_builds` cədvəli və əlaqəli prepared statement-lər əlavə edildi
+- `server/routes/builds.js` — `/builds/docker-history/hide` POST və `/builds/docker-history/hidden` DELETE endpoint-ləri
+- `public/js/pages/builds.js` — hər Docker tarixçə kartına silmə düyməsi əlavə edildi
+
+---
+
+## [1.3.0] - 2026-04-02
+
+### Yeni Xüsusiyyətlər
+- Build Tarixçəsi artıq Docker-in öz image build tarixçəsini göstərir — hər image bütün layer-ləri ilə, genişləndirilə bilən Dockerfile addımları
+- Build Cache elementləri düz siyahı əvəzinə image adına görə qruplaşdırılır
+- Backend `/builds/docker-history` endpoint — Docker API vasitəsilə hər image üçün əsl layer tarixçəsi
+- Backend `/builds/cache` qruplaşdırılmış cache datası ilə uyğun image məlumatı qaytarır
+
+### Texniki Dəyişikliklər
+- `server/routes/builds.js` — `/builds/docker-history` endpoint əlavə edildi, `/builds/cache` qruplaşdırma ilə yenidən yazıldı
+- `public/js/pages/builds.js` — genişləndirilə bilən layer-lərlə Docker image tarixçə kartları
+
+---
+
+## [1.2.0] - 2026-04-02
+
+### Yeni Xüsusiyyətlər
+- Builds səhifəsi Docker Desktop stilində yenidən dizayn edildi
+- Build Detalı 4 tab ilə: Məlumat, Mənbə/Xəta, Loglar, Tarixçə
+- Məlumat tabı — build vaxt statistikası, cache istifadə çubuğu, asılılıqlar, tam konfiqurasiya, zaman xətti
+- Mənbə tabı — loglardan Dockerfile addımları; build uğursuz olduqda Xəta tabı
+- Loglar tabı — yığıla bilən addımlarla siyahı görünüşü + düz mətn görünüşü, kopyalama düyməsi
+- Tarixçə tabı — eyni image tag üçün əvvəlki build-lər
+- Builders tabı — aktiv buildx builder nümunələri
+- Rəngləşdirilmiş build logları
+- Build konfiqurasiyası verilənlər bazasında saxlanılır
+
+### Texniki Dəyişikliklər
+- `public/js/pages/builds.js` — Docker Desktop stilində tab-larla tamamilə yenidən yazıldı
+- `server/routes/builds.js` — builders, disk-usage, detail route-ları əlavə edildi
+- `server/db.js` — context_url, build_args, nocache, pull sütunları əlavə edildi
+
+---
+
+## [1.1.0] - 2026-04-02
+
+### Yeni Xüsusiyyətlər
+- WebSocket vasitəsilə real-time log axını ilə Docker Image Build sistemi
+- Build tarixçəsi verilənlər bazasında saxlanılır
+- Genişləndirilə bilən paketlərlə qruplaşdırılmış build cache görünüşü
+- Git repo URL, Dockerfile yolu, nocache və pull seçimləri ilə yeni build modalı
+- Build ləğv dəstəyi
+- Build Cache API ayrıca endpoint-lərə ayrıldı
+
+### Xəta Düzəlişləri
+- Təkrarlanan port göstəricisi düzəldildi — Docker API eyni portu IPv4 və IPv6 üçün qaytarır, artıq deduplikasiya edilir
+
+### Texniki Dəyişikliklər
+- `server/docker.js` — stream əsaslı `buildImage()` funksiyası əlavə edildi
+- `server/db.js` — `build_history` cədvəli və prepared statement-lər əlavə edildi
+- `server/routes/builds.js` — tarixçə və cache endpoint-ləri ilə yenidən yazıldı
+- `server/index.js` — build streaming WebSocket hadisələri əlavə edildi
+- `public/js/pages/builds.js` — 3 tab ilə yenidən yazıldı: Tarixçə, Cache, Canlı Build
+- `public/js/pages/containers.js` — cədvəl və kart görünüşündə port deduplikasiyası
+- `public/js/pages/container-detail.js` — Portlar tabında deduplikasiya
+- `public/js/router.js` — builds səhifə başlığı əlavə edildi
+- `public/css/components.css` — tab-bar, nəbz animasiyası, input stilləri əlavə edildi
+
+---
+
+## [1.0.0] - İlk Buraxılış
+
+### Xüsusiyyətlər
+- Dashboard: sistem icmalı, ağıllı təhlillər və favoritlər
+- Konteyner idarəetməsi: compose üzrə qruplaşdırma
+- Konteyner detalı: loglar, terminal, statistika, portlar, volumlar, şəbəkə, inspect
+- Image, Volume, Şəbəkə idarəetməsi
+- Compose Layihələr
+- WebSocket vasitəsilə real-time log axını və terminal
+- Docker hadisə monitorinqi
+- Sistem məlumatı və disk istifadəsi
+- Təmizləmə alətləri
+- Parametrlər, Favoritlər, Qeydlər, Etiketlər, Fəaliyyət jurnalı
