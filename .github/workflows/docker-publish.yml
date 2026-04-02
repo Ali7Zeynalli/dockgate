@@ -41,14 +41,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set image name lowercase
+        id: img
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ${{ steps.version.outputs.changed == 'true' && format('ghcr.io/{0}:{1}', github.repository, steps.version.outputs.current) || '' }}
+            ghcr.io/${{ steps.img.outputs.name }}:latest
+            ${{ steps.version.outputs.changed == 'true' && format('ghcr.io/{0}:{1}', steps.img.outputs.name, steps.version.outputs.current) || '' }}
 
   cleanup:
     needs: build-and-push
