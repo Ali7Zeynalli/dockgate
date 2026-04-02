@@ -22,6 +22,10 @@ RUN mkdir -p /app/data
 # Expose port
 EXPOSE 7077
 
+# Commit SHA injected at build time / Build zamanı commit SHA yazılır
+ARG COMMIT_SHA=unknown
+ENV COMMIT_SHA=${COMMIT_SHA}
+
 # Set production env
 ENV NODE_ENV=production
 ENV PORT=7077

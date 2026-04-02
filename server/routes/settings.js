@@ -171,23 +171,40 @@ function fetchRecentChanges() {
   }
 }
 
-// Check for updates — version comparison (raw.githubusercontent, no rate limits) / Yenilik yoxla
+// Check for updates — compare version + commit hash / Yenilik yoxla — versiya + commit hash müqayisəsi
 router.get('/update/check', async (req, res) => {
   try {
     const pkgPath = require('path').join(__dirname, '..', '..', 'package.json');
     delete require.cache[require.resolve(pkgPath)];
     const currentVersion = require(pkgPath).version;
+    const currentCommit = (process.env.COMMIT_SHA || 'unknown').substring(0, 7);
 
     const remoteContent = githubRawFetch('package.json');
     const remoteVersion = JSON.parse(remoteContent).version;
-    console.log(`[Update] ${currentVersion} → ${remoteVersion} (update: ${remoteVersion !== currentVersion})`);
+
+    // Get latest commit SHA from GitHub API / GitHub-dan son commit SHA-nı al
+    let remoteCommit = 'unknown';
+    try {
+      const { execSync } = require('child_process');
+      const commitData = execSync(
+        `wget -qO- --timeout=5 "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/main"`,
+        { timeout: 8000, encoding: 'utf8' }
+      );
+      remoteCommit = JSON.parse(commitData).sha.substring(0, 7);
+    } catch(e) { /* API limit — fallback to version only / API limit — yalnız versiya müqayisəsi */ }
+
+    // Update available if version differs OR commit differs / Versiya və ya commit fərqlidirsə update var
+    const hasUpdate = currentVersion !== remoteVersion || (currentCommit !== 'unknown' && remoteCommit !== 'unknown' && currentCommit !== remoteCommit);
+    console.log(`[Update] v${currentVersion}@${currentCommit} → v${remoteVersion}@${remoteCommit} (update: ${hasUpdate})`);
 
     const changes = fetchRecentChanges();
 
     res.json({
-      updateAvailable: remoteVersion !== currentVersion,
+      updateAvailable: hasUpdate,
       currentVersion,
       remoteVersion,
+      currentCommit,
+      remoteCommit,
       changes,
       repoUrl: REPO_URL,
     });
