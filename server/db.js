@@ -56,6 +56,10 @@ db.exec(`
     id TEXT PRIMARY KEY,
     image_tag TEXT,
     dockerfile TEXT DEFAULT 'Dockerfile',
+    context_url TEXT DEFAULT '',
+    build_args TEXT DEFAULT '{}',
+    nocache INTEGER DEFAULT 0,
+    pull INTEGER DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'building',
     started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     finished_at DATETIME,
@@ -64,7 +68,18 @@ db.exec(`
     error TEXT,
     log TEXT DEFAULT ''
   );
+
+  CREATE TABLE IF NOT EXISTS hidden_docker_builds (
+    image_id TEXT PRIMARY KEY,
+    hidden_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
+
+// Migration — mövcud build_history cədvəlinə yeni sütunlar əlavə et
+try { db.exec('ALTER TABLE build_history ADD COLUMN context_url TEXT DEFAULT ""'); } catch(e) {}
+try { db.exec('ALTER TABLE build_history ADD COLUMN build_args TEXT DEFAULT "{}"'); } catch(e) {}
+try { db.exec('ALTER TABLE build_history ADD COLUMN nocache INTEGER DEFAULT 0'); } catch(e) {}
+try { db.exec('ALTER TABLE build_history ADD COLUMN pull INTEGER DEFAULT 0'); } catch(e) {}
 
 // Default settings
 const defaultSettings = {
@@ -120,11 +135,17 @@ const stmts = {
   // Build History — build tarixçəsini saxlamaq üçün
   getBuilds: db.prepare('SELECT * FROM build_history ORDER BY started_at DESC LIMIT ?'),
   getBuild: db.prepare('SELECT * FROM build_history WHERE id = ?'),
-  insertBuild: db.prepare('INSERT INTO build_history (id, image_tag, dockerfile, status) VALUES (?, ?, ?, ?)'),
+  insertBuild: db.prepare('INSERT INTO build_history (id, image_tag, dockerfile, context_url, build_args, nocache, pull, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
   updateBuildStatus: db.prepare('UPDATE build_history SET status = ?, finished_at = CURRENT_TIMESTAMP, duration_ms = ?, image_id = ?, error = ? WHERE id = ?'),
   appendBuildLog: db.prepare('UPDATE build_history SET log = log || ? WHERE id = ?'),
   deleteBuild: db.prepare('DELETE FROM build_history WHERE id = ?'),
   clearBuilds: db.prepare('DELETE FROM build_history'),
+
+  // Hidden Docker Builds — build history-dən gizlədilmiş image-lər
+  getHiddenBuilds: db.prepare('SELECT image_id FROM hidden_docker_builds'),
+  hideBuild: db.prepare('INSERT OR IGNORE INTO hidden_docker_builds (image_id) VALUES (?)'),
+  unhideBuild: db.prepare('DELETE FROM hidden_docker_builds WHERE image_id = ?'),
+  clearHiddenBuilds: db.prepare('DELETE FROM hidden_docker_builds'),
 };
 
 module.exports = { db, stmts };

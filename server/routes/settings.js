@@ -136,4 +136,50 @@ router.post('/autostart', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ============ AUTO-UPDATE ============
+const { exec } = require('child_process');
+const REPO_URL = 'https://github.com/Ali7Zeynalli/dockgate';
+
+// Yenilik yoxla — GitHub-dan son versiya ilə müqayisə
+router.get('/update/check', (req, res) => {
+  const pkgPath = require('path').join(__dirname, '..', '..', 'package.json');
+  const currentVersion = require(pkgPath).version;
+
+  // Remote-dan son commit/tag yoxla
+  exec('git fetch origin main 2>&1 && git log HEAD..origin/main --oneline', { cwd: require('path').join(__dirname, '..', '..') }, (err, stdout) => {
+    if (err) return res.json({ updateAvailable: false, currentVersion, error: err.message });
+
+    const commits = stdout.trim().split('\n').filter(l => l.trim());
+    res.json({
+      updateAvailable: commits.length > 0,
+      currentVersion,
+      pendingCommits: commits.length,
+      commits: commits.slice(0, 10),
+      repoUrl: REPO_URL,
+    });
+  });
+});
+
+// Yeniləməni tətbiq et — git pull + npm install + restart
+router.post('/update/apply', (req, res) => {
+  const projectRoot = require('path').join(__dirname, '..', '..');
+
+  res.json({ success: true, message: 'Update started, server will restart...' });
+
+  // Async olaraq yenilə
+  exec('git pull origin main 2>&1', { cwd: projectRoot }, (err, stdout) => {
+    if (err) return console.error('Update git pull failed:', err.message);
+    console.log('Git pull:', stdout);
+
+    exec('npm install --production 2>&1', { cwd: projectRoot }, (err2, stdout2) => {
+      if (err2) console.error('npm install failed:', err2.message);
+      else console.log('npm install:', stdout2);
+
+      // Serveri restart et
+      console.log('Restarting server...');
+      process.exit(0); // Docker restart policy ilə avtomatik qalxacaq
+    });
+  });
+});
+
 module.exports = router;

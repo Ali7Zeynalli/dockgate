@@ -900,3 +900,67 @@ tbody td {
   box-shadow: 0 0 0 3px var(--accent-dim);
   outline: none;
 }
+
+/* ============ BUILD CARDS ============ */
+.build-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 150ms ease;
+  margin-bottom: 6px;
+}
+
+.build-card:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+}
+
+.build-status-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.build-status-success { background: var(--success-bg); color: var(--success); }
+.build-status-failed { background: var(--danger-bg); color: var(--danger); }
+.build-status-building { background: var(--info-bg); color: var(--info); }
+
+/* ============ BUILD LOG VIEWER ============ */
+.build-log-container {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.build-log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid var(--border);
+}
+
+.build-log-viewer {
+  background: #0a0d14;
+  padding: 16px;
+  height: 500px;
+  overflow-y: auto;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #b4bcd0;
+}

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v1.0.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v1.4.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
@@ -113,7 +113,7 @@ DockGate has **14 modules** organized in 4 groups:
 
 | Module | Description |
 |--------|-------------|
-| **Builds** | Monitor build cache entries — see size, type, in-use status, shared status. Clear cache to reclaim disk space |
+| **Builds** | Docker Desktop-style build management — Build History (Docker image layer history with expandable steps), Build Cache (grouped by image name), Builders (buildx instances), real-time build streaming, build detail with Info/Source/Logs/History tabs |
 | **Compose** | Auto-discover projects via `com.docker.compose.project` labels. Stack actions: up, down, restart, pull |
 
 ### Monitor
@@ -130,7 +130,7 @@ DockGate has **14 modules** organized in 4 groups:
 | Module | Description |
 |--------|-------------|
 | **Cleanup** | Preview-before-prune for: stopped containers, unused/dangling images, unused volumes, unused networks, build cache, or full system prune |
-| **Settings** | Theme (dark), refresh interval, default view (table/card), log/terminal defaults, date format, destructive action confirmations, auto-start toggle |
+| **Settings** | Theme (dark), refresh interval, default view (table/card), log/terminal defaults, date format, destructive action confirmations, auto-start toggle, **auto-update from GitHub** |
 
 ### Container Actions
 
@@ -268,8 +268,16 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/builds` | List build cache entries (from Docker disk usage) |
-| POST | `/api/builds/prune` | Clear all build cache (`docker builder prune -a -f`) |
+| GET | `/api/builds` | List panel build history |
+| GET | `/api/builds/docker-history` | Docker image layer history for all images |
+| POST | `/api/builds/docker-history/hide` | Hide image from build history — body: `{ "imageId": "sha256:..." }` |
+| DELETE | `/api/builds/docker-history/hidden` | Unhide all hidden images |
+| GET | `/api/builds/detail/:id` | Get panel build detail with logs |
+| DELETE | `/api/builds/detail/:id` | Delete panel build record |
+| DELETE | `/api/builds` | Clear all panel build history |
+| GET | `/api/builds/cache` | Build cache grouped by image name |
+| POST | `/api/builds/cache/prune` | Clear all build cache |
+| GET | `/api/builds/builders` | List buildx builder instances |
 
 ### Volumes
 
@@ -343,6 +351,8 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | POST | `/api/meta/settings` | Update settings — body: `{ "key": "value" }` |
 | GET | `/api/meta/autostart` | Get auto-start status |
 | POST | `/api/meta/autostart` | Set auto-start — body: `{ "enabled": true }` |
+| GET | `/api/meta/update/check` | Check for updates from GitHub |
+| POST | `/api/meta/update/apply` | Pull latest changes and restart server |
 
 ---
 
@@ -416,6 +426,30 @@ socket.on('terminal:error', ({ containerId, error }) => {});
 
 // Stop session
 socket.emit('terminal:stop');
+```
+
+### Build Streaming
+
+```javascript
+// Start build
+socket.emit('build:start', {
+  contextType: 'url',
+  contextValue: 'https://github.com/user/repo.git',
+  tag: 'myapp:latest',
+  dockerfile: 'Dockerfile',
+  nocache: false,
+  pull: false,
+});
+
+// Receive real-time logs
+socket.on('build:started', ({ buildId }) => {});
+socket.on('build:log', ({ buildId, data }) => {});
+socket.on('build:complete', ({ buildId, status, duration, imageId }) => {});
+socket.on('build:error', ({ buildId, error }) => {});
+
+// Cancel build
+socket.emit('build:cancel');
+socket.on('build:cancelled', () => {});
 ```
 
 ---
@@ -579,7 +613,7 @@ DockGate 4 qrupda **14 modula** malikdir:
 
 | Modul | Təsvir |
 |-------|--------|
-| **Buildlər** | Build keş elementlərini izləmə — olcu, nov, istifadə statusu, paylaşma statusu. Disk yerini geri qazanmaq ucun keşi təmizləmə |
+| **Buildlər** | Docker Desktop stilində build idarəetmə — Build Tarixçəsi (Docker image layer tarixçəsi açılan step-lərlə), Build Cache (image adına görə qruplaşdırılmış), Builders (buildx instance-lar), real-time build streaming, Info/Source/Logs/History tab-ları ilə build detalı |
 | **Compose** | `com.docker.compose.project` etiketləri vasitəsilə layihələri avto-kəşf. Stek əməliyyatları: up, down, restart, pull |
 
 ### Monitor
@@ -596,7 +630,7 @@ DockGate 4 qrupda **14 modula** malikdir:
 | Modul | Təsvir |
 |-------|--------|
 | **Təmizlik** | Onizləmə-sonra-təmizləmə: dayandırılmış konteynerlər, istifadəsiz/asılı imiclər, istifadəsiz volumlar, istifadəsiz şəbəkələr, build keşi, və ya tam sistem təmizliyi |
-| **Parametrlər** | Tema (dark), yeniləmə intervalı, defolt goruntu (cədvəl/kart), log/terminal defoltları, tarix formatı, təhlukəli əməliyyat təsdiqləri, avto-başlatma |
+| **Parametrlər** | Tema (dark), yeniləmə intervalı, defolt goruntu (cədvəl/kart), log/terminal defoltları, tarix formatı, təhlukəli əməliyyat təsdiqləri, avto-başlatma, **GitHub-dan avto-yeniləmə** |
 
 ### Konteyner Əməliyyatları
 

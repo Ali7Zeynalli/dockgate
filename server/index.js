@@ -133,7 +133,7 @@ io.on('connection', (socket) => {
       const startTime = Date.now();
 
       // DB-yə build qeydini əlavə et
-      stmts.insertBuild.run(id, tag || 'untagged', dockerfile || 'Dockerfile', 'building');
+      stmts.insertBuild.run(id, tag || 'untagged', dockerfile || 'Dockerfile', contextValue || '', JSON.stringify(buildargs || {}), nocache ? 1 : 0, pull ? 1 : 0, 'building');
       socket.emit('build:started', { buildId: id });
 
       let context;
