@@ -177,7 +177,16 @@ router.get('/update/check', async (req, res) => {
     const pkgPath = require('path').join(__dirname, '..', '..', 'package.json');
     delete require.cache[require.resolve(pkgPath)];
     const currentVersion = require(pkgPath).version;
-    const currentCommit = (process.env.COMMIT_SHA || 'unknown').substring(0, 7);
+    // Get current commit — from env (Docker) or git (local) / Cari commit — env-dən (Docker) və ya git-dən (lokal)
+    let currentCommit = 'unknown';
+    if (process.env.COMMIT_SHA && process.env.COMMIT_SHA !== 'unknown') {
+      currentCommit = process.env.COMMIT_SHA.substring(0, 7);
+    } else {
+      try {
+        const { execSync } = require('child_process');
+        currentCommit = execSync('git rev-parse --short HEAD 2>/dev/null', { encoding: 'utf8' }).trim();
+      } catch(e) {}
+    }
 
     const remoteContent = githubRawFetch('package.json');
     const remoteVersion = JSON.parse(remoteContent).version;
