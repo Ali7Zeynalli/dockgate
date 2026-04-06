@@ -4,6 +4,7 @@ npm-debug.log*
 
 # Persistent data (SQLite DB — auto-created at runtime)
 data/
+docs/
 
 # OS
 .DS_Store
