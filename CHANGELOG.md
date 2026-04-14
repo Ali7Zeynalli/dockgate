@@ -2,6 +2,23 @@
 
 ---
 
+## [1.7.3] - 2026-04-14
+
+### Performance
+- **Dashboard loads 3-5x faster** — removed `size:true` from `listContainers` (was forcing Docker to calculate disk usage per container)
+- **Cache layer** — `getSystemInfo` (60s TTL) and `getDiskUsage` (30s TTL) results are now cached
+- **Parallel stats + health** — container stats (CPU/RAM) and health inspect calls now run concurrently
+- **Parallel compose projects** — `listComposeProjects` moved into Phase 1 parallel batch
+- **Auto-refresh 15s → 30s** — halved Docker daemon load
+- **Cache invalidation** — cache is automatically cleared after container actions
+
+### Technical Changes
+- `server/docker.js` — added `cached()` function and `invalidateCache()` utility
+- `server/index.js` — dashboard endpoint restructured into 2-phase parallel architecture
+- `public/js/pages/dashboard.js` — refresh interval 15000 → 30000ms
+
+---
+
 ## [1.7.0] - 2026-04-02
 
 ### New Features
