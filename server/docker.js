@@ -1,9 +1,32 @@
 const Docker = require('dockerode');
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
+// ============ CACHE LAYER ============
+// Ağır Docker API çağırışlarını müvəqqəti saxlayır / Caches expensive Docker API calls
+const cache = new Map();
+
+/**
+ * Cache-dən oxuyur və ya funksiyanı icra edib nəticəni saxlayır
+ * Reads from cache or executes function and stores result
+ */
+async function cached(key, fn, ttlMs = 10000) {
+  const entry = cache.get(key);
+  if (entry && Date.now() - entry.time < ttlMs) return entry.data;
+  const data = await fn();
+  cache.set(key, { data, time: Date.now() });
+  return data;
+}
+
+/** Cache-i təmizləyir / Invalidates cache entries matching prefix */
+function invalidateCache(prefix) {
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) cache.delete(key);
+  }
+}
+
 // ============ CONTAINERS ============
-async function listContainers(all = true) {
-  const containers = await docker.listContainers({ all, size: true });
+async function listContainers(all = true, { size = false } = {}) {
+  const containers = await docker.listContainers({ all, size });
   return containers.map(c => ({
     id: c.Id,
     shortId: c.Id.substring(0, 12),
@@ -84,6 +107,7 @@ async function containerAction(id, action, options = {}) {
     case 'rename': await container.rename({ name: options.name }); break;
     default: throw new Error(`Unknown action: ${action}`);
   }
+  invalidateCache(''); // Əməliyyatdan sonra bütün cache-i təmizlə / Clear all cache after action
   return { success: true, action, id };
 }
 
@@ -275,7 +299,7 @@ async function createNetwork(config) {
 
 // ============ SYSTEM ============
 async function getSystemInfo() {
-  return await docker.info();
+  return cached('systemInfo', () => docker.info(), 60000); // 60s cache
 }
 
 async function getDockerVersion() {
@@ -283,7 +307,7 @@ async function getDockerVersion() {
 }
 
 async function getDiskUsage() {
-  return await docker.df();
+  return cached('diskUsage', () => docker.df(), 30000); // 30s cache
 }
 
 // ============ COMPOSE ============
@@ -526,7 +550,7 @@ async function setAutoStart(enabled) {
 }
 
 module.exports = {
-  docker,
+  docker, invalidateCache,
   listContainers, inspectContainer, getContainerStats, containerAction,
   getContainerLogs, createContainer, parseStats, demuxLogs,
   listImages, inspectImage, pullImage, removeImage, tagImage, buildImage,

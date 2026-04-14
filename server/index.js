@@ -29,13 +29,15 @@ app.use('/api/meta', require('./routes/settings'));
 // Dashboard summary endpoint / Dashboard məlumat endpoint-i
 app.get('/api/dashboard', async (req, res) => {
   try {
-    const [containers, images, volumes, networks, systemInfo, diskUsage] = await Promise.all([
+    // Faza 1: Əsas məlumatlar paralel (size:false — sürətli) / Phase 1: Core data in parallel (no size — fast)
+    const [containers, images, volumes, networks, systemInfo, diskUsage, composeProjects] = await Promise.all([
       dockerService.listContainers(true),
       dockerService.listImages(),
       dockerService.listVolumes(),
       dockerService.listNetworks(),
       dockerService.getSystemInfo(),
       dockerService.getDiskUsage(),
+      dockerService.listComposeProjects(),
     ]);
 
     const running = containers.filter(c => c.state === 'running');
@@ -74,44 +76,46 @@ app.get('/api/dashboard', async (req, res) => {
       insights.push({ type: 'info', message: `${unusedVolumes.length} volume(s) not attached to any container`, action: 'cleanup' });
     }
 
-    const composeProjects = await dockerService.listComposeProjects();
-
-    // Container resource stats (CPU/RAM) for running containers / İşləyən konteynerlərin CPU/RAM statistikası
+    // Faza 2: Stats + health paralel (yalnız running üçün) / Phase 2: Stats + health in parallel (running only)
     let containerStats = [];
-    try {
-      const statsPromises = running.slice(0, 10).map(async (c) => {
-        try {
-          const stats = await dockerService.getContainerStats(c.id);
-          return { name: c.name, id: c.shortId, ...stats };
-        } catch(e) { return null; }
-      });
-      containerStats = (await Promise.all(statsPromises)).filter(Boolean);
-      containerStats.sort((a, b) => b.cpuPercent - a.cpuPercent);
-    } catch(e) {}
-
-    // Container health status / Konteyner sağlamlıq statusu
     let healthStats = { healthy: 0, unhealthy: 0, noHealthcheck: 0, starting: 0 };
-    try {
-      const inspectPromises = running.slice(0, 20).map(async (c) => {
-        try {
-          const info = await dockerService.inspectContainer(c.id);
-          const health = info.State?.Health?.Status;
-          if (health === 'healthy') healthStats.healthy++;
-          else if (health === 'unhealthy') healthStats.unhealthy++;
-          else if (health === 'starting') healthStats.starting++;
-          else healthStats.noHealthcheck++;
-          return {
-            name: c.name,
-            id: c.shortId,
-            health: health || 'none',
-            startedAt: info.State?.StartedAt,
-            restartCount: info.RestartCount || 0,
-            status: c.status,
-          };
-        } catch(e) { return null; }
-      });
-      var containerDetails = (await Promise.all(inspectPromises)).filter(Boolean);
-    } catch(e) { var containerDetails = []; }
+    var containerDetails = [];
+
+    if (running.length > 0) {
+      const [statsResults, inspectResults] = await Promise.all([
+        // CPU/RAM stats — top 10 / CPU/RAM statistikası — ilk 10
+        Promise.all(running.slice(0, 10).map(async (c) => {
+          try {
+            const stats = await dockerService.getContainerStats(c.id);
+            return { name: c.name, id: c.shortId, ...stats };
+          } catch(e) { return null; }
+        })),
+        // Health inspect — top 20 / Sağlamlıq yoxlaması — ilk 20
+        Promise.all(running.slice(0, 20).map(async (c) => {
+          try {
+            const info = await dockerService.inspectContainer(c.id);
+            const health = info.State?.Health?.Status;
+            return {
+              name: c.name,
+              id: c.shortId,
+              health: health || 'none',
+              startedAt: info.State?.StartedAt,
+              restartCount: info.RestartCount || 0,
+              status: c.status,
+            };
+          } catch(e) { return null; }
+        })),
+      ]);
+
+      containerStats = statsResults.filter(Boolean).sort((a, b) => b.cpuPercent - a.cpuPercent);
+      containerDetails = inspectResults.filter(Boolean);
+      for (const cd of containerDetails) {
+        if (cd.health === 'healthy') healthStats.healthy++;
+        else if (cd.health === 'unhealthy') healthStats.unhealthy++;
+        else if (cd.health === 'starting') healthStats.starting++;
+        else healthStats.noHealthcheck++;
+      }
+    }
 
     // Port map — all exposed ports / Port xəritəsi — bütün açıq portlar
     const portMap = [];
