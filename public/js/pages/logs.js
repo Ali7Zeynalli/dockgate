@@ -2,9 +2,16 @@
 Router.register('logs', async (content) => {
   let cleanupFns = [];
   
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+  
   async function render() {
     try {
       const containers = await API.get('/containers');
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
+
       const running = containers.filter(c => c.state === 'running');
       
       content.innerHTML = `

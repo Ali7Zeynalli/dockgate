@@ -3,9 +3,15 @@ Router.register('images', async (content) => {
   let currentFilter = 'all';
   let refreshTimer = null;
 
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   async function render() {
     try {
       let images = await API.get('/images');
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
       if (currentFilter === 'inuse') images = images.filter(i => i.inUse);
       else if (currentFilter === 'unused') images = images.filter(i => !i.inUse);
       else if (currentFilter === 'dangling') images = images.filter(i => i.isDangling);

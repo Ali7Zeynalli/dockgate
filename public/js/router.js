@@ -1,15 +1,27 @@
 // Client-side SPA Router
+// Navigation race condition protection via navId
+// Naviqasiya race condition qoruması navId vasitəsilə
 const Router = {
   routes: {},
   currentPage: null,
   currentCleanup: null,
+  _navId: 0, // Unique navigation counter to prevent stale renders / Köhnə renderlərin qarşısını almaq üçün unikal naviqasiya sayğacı
 
   register(path, handler) {
     this.routes[path] = handler;
   },
 
+  // Check if a navigation is still the active one / Naviqasiyanın hələ aktiv olub-olmadığını yoxla
+  isActiveNav(navId) {
+    return this._navId === navId;
+  },
+
   async navigate(path, params = {}) {
-    // Cleanup previous page
+    // Increment navigation ID — invalidates any in-flight async from previous page
+    // Naviqasiya ID-ni artır — əvvəlki səhifənin davam edən async əməliyyatlarını ləğv edir
+    const navId = ++this._navId;
+
+    // Cleanup previous page / Əvvəlki səhifəni təmizlə
     if (this.currentCleanup) {
       try { this.currentCleanup(); } catch(e) {}
       this.currentCleanup = null;
@@ -60,11 +72,24 @@ const Router = {
 
     try {
       const cleanup = await handler(content, params);
+
+      // If another navigation happened while handler was running, discard this result
+      // Handler işləyərkən başqa naviqasiya baş verdisə, bu nəticəni at
+      if (!this.isActiveNav(navId)) {
+        if (typeof cleanup === 'function') {
+          try { cleanup(); } catch(e) {}
+        }
+        return;
+      }
+
       if (typeof cleanup === 'function') {
         this.currentCleanup = cleanup;
       }
     } catch (err) {
-      content.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg><h3>Error loading page</h3><p>${escapeHtml(err.message)}</p></div>`;
+      // Only show error if this navigation is still active / Yalnız bu naviqasiya hələ aktivdirsə xətanı göstər
+      if (this.isActiveNav(navId)) {
+        content.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg><h3>Error loading page</h3><p>${escapeHtml(err.message)}</p></div>`;
+      }
     }
   }
 };

@@ -1,9 +1,19 @@
 // System Info Page
 Router.register('system', async (content) => {
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   async function render() {
     try {
       const info = await API.get('/system/info');
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
+
       const df = await API.get('/system/df');
+
+      // Check again after second API call / İkinci API çağırışından sonra yenidən yoxla
+      if (!Router.isActiveNav(pageNavId)) return;
       
       content.innerHTML = `
         <div class="page-header">

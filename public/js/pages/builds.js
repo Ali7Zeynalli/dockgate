@@ -9,6 +9,9 @@ Router.register('builds', async (content) => {
   let activeTab = 'history';
   let selectedBuildId = null;
 
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   // ============ ANA RENDER ============
   async function render() {
     content.innerHTML = `
@@ -51,6 +54,9 @@ Router.register('builds', async (content) => {
         API.get('/builds'),
         API.get('/builds/docker-history').catch(() => []),
       ]);
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
 
       if (panelBuilds.length === 0 && dockerHistory.length === 0) {
         tabContent.innerHTML = `

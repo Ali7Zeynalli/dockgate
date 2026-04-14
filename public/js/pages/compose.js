@@ -1,8 +1,14 @@
 // Compose Page
 Router.register('compose', async (content) => {
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   async function render() {
     try {
       const projects = await API.get('/compose');
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
       content.innerHTML = `
         <div class="page-header">
           <div><div class="page-title">Compose Projects</div><div class="page-subtitle">${projects.length} project(s)</div></div>

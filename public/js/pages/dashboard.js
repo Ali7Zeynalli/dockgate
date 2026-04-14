@@ -3,9 +3,16 @@ Router.register('dashboard', async (content) => {
   let refreshTimer = null;
   let healthChart = null;
 
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   async function render() {
     try {
       const data = await API.get('/dashboard');
+
+      // Abort if user navigated away during API call / API çağırışı zamanı istifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
+
       const s = data.summary;
       const disk = data.diskUsage;
       const totalDisk = disk.images + disk.containers + disk.volumes + disk.buildCache;

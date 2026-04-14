@@ -1,11 +1,17 @@
 // Settings Page
 Router.register('settings', async (content) => {
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   async function render() {
     try {
       const [settings, autostartRes] = await Promise.all([
         Store.get('settings') ? Promise.resolve(Store.get('settings')) : API.get('/meta/settings'),
         API.get('/meta/autostart').catch(() => ({ enabled: true }))
       ]);
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
       
       Store.set('settings', settings);
       let isAutoStart = autostartRes.enabled;

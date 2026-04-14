@@ -8,9 +8,16 @@ Router.register('containers', async (content) => {
   let refreshTimer = null;
   let groupByProject = Store.get('groupByProject') ?? true; // Default to grouping
 
+  // Capture navId at registration time to detect stale renders
+  // Qeydiyyat zamanı navId-ni saxla ki, köhnə renderləri aşkar edək
+  const pageNavId = Router._navId;
+
   async function render() {
     try {
       let containers = await API.get('/containers');
+
+      // Abort if user navigated away during API call / API çağırışı zamanı istifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
 
       // Filter
       if (currentFilter !== 'all') {

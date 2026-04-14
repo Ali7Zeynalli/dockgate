@@ -1,8 +1,14 @@
 // Networks Page
 Router.register('networks', async (content) => {
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   async function render() {
     try {
       const networks = await API.get('/networks');
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
       content.innerHTML = `
         <div class="page-header">
           <div><div class="page-title">Networks</div><div class="page-subtitle">${networks.length} network(s)</div></div>

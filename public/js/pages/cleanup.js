@@ -1,8 +1,14 @@
 // System Cleanup Page
 Router.register('cleanup', async (content) => {
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   async function render() {
     try {
       const preview = await API.get('/cleanup/preview');
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
       
       const pruneOptions = [
         {

@@ -1,8 +1,14 @@
 // Volumes Page
 Router.register('volumes', async (content) => {
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   async function render() {
     try {
       const volumes = await API.get('/volumes');
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
       content.innerHTML = `
         <div class="page-header">
           <div><div class="page-title">Volumes</div><div class="page-subtitle">${volumes.length} volume(s)</div></div>

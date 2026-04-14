@@ -5,6 +5,9 @@ Router.register('terminal', async (content, params) => {
   let term = null;
   let fitAddon = null;
 
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   async function fetchContainers() {
     const list = await API.get('/containers');
     containers = list.filter(c => c.state === 'running');
@@ -13,6 +16,9 @@ Router.register('terminal', async (content, params) => {
   async function render() {
     try {
       if (containers.length === 0) await fetchContainers();
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
 
       content.innerHTML = `
         <div class="page-header mb-3">

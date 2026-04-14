@@ -2,6 +2,19 @@
 
 ---
 
+## [1.7.4] - 2026-04-15
+
+### Bug Fixes
+- **Navigation race condition fixed** — resolved issue where switching between pages (e.g., Images → Logs) could result in blank content or stale page rendering
+- **Router navId guard** — added unique navigation ID counter to prevent in-flight async operations from overwriting the active page's content
+- **All pages protected** — every page handler now checks `Router.isActiveNav()` after API calls to abort stale renders
+
+### Technical Changes
+- `public/js/router.js` — added `_navId` counter, `isActiveNav()` method, and post-handler staleness check
+- All page handlers (`dashboard`, `containers`, `images`, `logs`, `terminal`, `volumes`, `networks`, `compose`, `builds`, `system`, `cleanup`, `settings`, `container-detail`) — added `pageNavId` capture and guard after async API calls
+
+---
+
 ## [1.7.3] - 2026-04-14
 
 ### Performance

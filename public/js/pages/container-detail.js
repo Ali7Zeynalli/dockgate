@@ -4,9 +4,16 @@ Router.register('container-detail', async (content, params) => {
   let currentTab = initialTab;
   let cleanup = [];
 
+  // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
+  const pageNavId = Router._navId;
+
   async function render() {
     try {
       const info = await API.get(`/containers/${id}`);
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
+
       const name = info.Name?.replace(/^\//, '') || id.substring(0, 12);
       const state = info.State?.Status || 'unknown';
 
