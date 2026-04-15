@@ -325,7 +325,9 @@ Router.register('container-detail', async (content, params) => {
 
     // Chart.js doesn't support CSS variables — read computed value
     // Chart.js CSS dəyişənlərini dəstəkləmir — hesablanmış dəyəri oxu
-    const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || 'rgba(255,255,255,0.04)';
+    const cs = getComputedStyle(document.documentElement);
+    const gridColor = cs.getPropertyValue('--border').trim() || 'rgba(255,255,255,0.04)';
+    const tickColor = cs.getPropertyValue('--text-muted').trim() || '#5a6478';
 
     const chartOpts = {
       responsive: true,
@@ -333,7 +335,7 @@ Router.register('container-detail', async (content, params) => {
       animation: { duration: 0 },
       scales: {
         x: { display: false },
-        y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: '#5a6478', font: { size: 10 } } }
+        y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 10 } } }
       },
       plugins: { legend: { display: false } },
       elements: { point: { radius: 0 }, line: { tension: 0.3, borderWidth: 2 } }
