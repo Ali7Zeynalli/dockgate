@@ -306,15 +306,47 @@ Router.register('container-detail', async (content, params) => {
     }
 
     el.innerHTML = `
-      <div class="summary-grid" style="margin-bottom:20px">
-        <div class="summary-card"><div class="summary-card-icon green"><span class="nav-item-icon">${Icons.restart}</span></div><div class="summary-card-content"><div class="summary-card-value" id="stat-cpu">0%</div><div class="summary-card-label">CPU Usage</div></div></div>
-        <div class="summary-card"><div class="summary-card-icon blue"><span class="nav-item-icon">${Icons.layers}</span></div><div class="summary-card-content"><div class="summary-card-value" id="stat-mem">0 B</div><div class="summary-card-label">Memory Usage</div></div></div>
-        <div class="summary-card"><div class="summary-card-icon purple"><span class="nav-item-icon">${Icons.network}</span></div><div class="summary-card-content"><div class="summary-card-value" id="stat-net">↓ 0 B / ↑ 0 B</div><div class="summary-card-label">Network I/O</div></div></div>
-        <div class="summary-card"><div class="summary-card-icon yellow"><span class="nav-item-icon">${Icons.volume}</span></div><div class="summary-card-content"><div class="summary-card-value" id="stat-block">R: 0 B / W: 0 B</div><div class="summary-card-label">Block I/O</div></div></div>
+      <div class="summary-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
+        <div class="card" style="padding:16px;display:flex;align-items:center;gap:12px">
+          <div class="summary-card-icon green"><span class="nav-item-icon">${Icons.restart}</span></div>
+          <div><div style="font-size:20px;font-weight:800;letter-spacing:-0.5px" id="stat-cpu">0%</div><div class="text-xs text-muted" style="margin-top:2px">CPU</div></div>
+        </div>
+        <div class="card" style="padding:16px;display:flex;align-items:center;gap:12px">
+          <div class="summary-card-icon blue"><span class="nav-item-icon">${Icons.layers}</span></div>
+          <div><div style="font-size:20px;font-weight:800;letter-spacing:-0.5px" id="stat-mem">0 B</div><div class="text-xs text-muted" style="margin-top:2px">Memory</div></div>
+        </div>
+        <div class="card" style="padding:16px;display:flex;align-items:center;gap:12px">
+          <div class="summary-card-icon purple"><span class="nav-item-icon">${Icons.network}</span></div>
+          <div>
+            <div style="font-size:13px;font-weight:700" id="stat-net-rx">↓ 0 B</div>
+            <div style="font-size:13px;font-weight:700;margin-top:2px" id="stat-net-tx">↑ 0 B</div>
+            <div class="text-xs text-muted" style="margin-top:2px">Network I/O</div>
+          </div>
+        </div>
+        <div class="card" style="padding:16px;display:flex;align-items:center;gap:12px">
+          <div class="summary-card-icon yellow"><span class="nav-item-icon">${Icons.volume}</span></div>
+          <div>
+            <div style="font-size:13px;font-weight:700" id="stat-block-r">R: 0 B</div>
+            <div style="font-size:13px;font-weight:700;margin-top:2px" id="stat-block-w">W: 0 B</div>
+            <div class="text-xs text-muted" style="margin-top:2px">Block I/O</div>
+          </div>
+        </div>
       </div>
-      <div class="grid-2">
-        <div class="card"><div style="font-weight:600;margin-bottom:8px">CPU %</div><div class="chart-container"><canvas id="cpu-chart"></canvas></div></div>
-        <div class="card"><div style="font-weight:600;margin-bottom:8px">Memory</div><div class="chart-container"><canvas id="mem-chart"></canvas></div></div>
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="card" style="padding:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <span style="font-weight:600;font-size:13px">CPU Usage</span>
+            <span class="text-xs text-muted" id="cpu-chart-label">0%</span>
+          </div>
+          <div style="position:relative;height:220px"><canvas id="cpu-chart"></canvas></div>
+        </div>
+        <div class="card" style="padding:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <span style="font-weight:600;font-size:13px">Memory Usage</span>
+            <span class="text-xs text-muted" id="mem-chart-label">0 B</span>
+          </div>
+          <div style="position:relative;height:220px"><canvas id="mem-chart"></canvas></div>
+        </div>
       </div>
     `;
 
@@ -350,7 +382,7 @@ Router.register('container-detail', async (content, params) => {
     const memChart = new Chart(document.getElementById('mem-chart'), {
       type: 'line',
       data: { labels, datasets: [{ data: memData, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true }] },
-      options: chartOpts
+      options: { ...chartOpts, scales: { ...chartOpts.scales, y: { ...chartOpts.scales.y, ticks: { ...chartOpts.scales.y.ticks, callback: v => formatBytes(v) } } } }
     });
 
     socket.emit('stats:subscribe', { containerId: id });
@@ -358,8 +390,14 @@ Router.register('container-detail', async (content, params) => {
     const onStatsData = (data) => {
       document.getElementById('stat-cpu').textContent = data.cpuPercent + '%';
       document.getElementById('stat-mem').textContent = formatBytes(data.memoryUsage) + ' / ' + formatBytes(data.memoryLimit);
-      document.getElementById('stat-net').textContent = '↓ ' + formatBytes(data.networkRx) + ' / ↑ ' + formatBytes(data.networkTx);
-      document.getElementById('stat-block').textContent = 'R: ' + formatBytes(data.blockRead) + ' / W: ' + formatBytes(data.blockWrite);
+      document.getElementById('stat-net-rx').textContent = '↓ ' + formatBytes(data.networkRx);
+      document.getElementById('stat-net-tx').textContent = '↑ ' + formatBytes(data.networkTx);
+      document.getElementById('stat-block-r').textContent = 'R: ' + formatBytes(data.blockRead);
+      document.getElementById('stat-block-w').textContent = 'W: ' + formatBytes(data.blockWrite);
+
+      // Update chart header labels
+      document.getElementById('cpu-chart-label').textContent = data.cpuPercent + '%';
+      document.getElementById('mem-chart-label').textContent = formatBytes(data.memoryUsage) + ' / ' + formatBytes(data.memoryLimit);
 
       const now = new Date().toLocaleTimeString();
       labels.push(now);
