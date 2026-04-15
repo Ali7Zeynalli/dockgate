@@ -2,6 +2,19 @@
 
 ---
 
+## [1.7.8] - 2026-04-15
+
+### Bug Fixes
+- **Docker Events stream fixed** — events page was always showing "Waiting for events..." because empty `filters: {}` was passed to Docker API, blocking the stream on some Docker versions
+- **Event stream cleanup** — previous event stream is now destroyed before creating a new one on re-subscribe
+- **Event error handling** — added `events:error` listener on frontend to show connection errors instead of silent failure
+
+### Technical Changes
+- `server/index.js` — `events:subscribe` handler no longer passes empty filters object, destroys previous stream on re-subscribe, emits errors on stream failure
+- `public/js/pages/events.js` — added `events:error` socket listener with error display in empty state
+
+---
+
 ## [1.7.7] - 2026-04-15
 
 ### Features

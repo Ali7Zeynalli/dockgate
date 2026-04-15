@@ -78,8 +78,19 @@ Router.register('events', async (content) => {
     };
 
     socket.on('events:data', onEventData);
+
+    // Handle connection errors / Bağlantı xətalarını idarə et
+    const onEventError = ({ error }) => {
+      if (empty) {
+        empty.textContent = `Error: ${error}`;
+        empty.style.display = 'block';
+      }
+    };
+    socket.on('events:error', onEventError);
+
     cleanupFns.push(() => {
       socket.off('events:data', onEventData);
+      socket.off('events:error', onEventError);
       socket.emit('events:unsubscribe');
     });
 

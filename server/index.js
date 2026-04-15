@@ -344,10 +344,16 @@ io.on('connection', (socket) => {
 
   // Docker events streaming
   let eventStream = null;
-  socket.on('events:subscribe', async (filters = {}) => {
+  socket.on('events:subscribe', async (filters) => {
     try {
+      // Destroy previous stream if exists / Əvvəlki stream varsa sil
+      if (eventStream) { try { eventStream.destroy(); } catch(e){} eventStream = null; }
+
+      // Docker getEvents — don't pass empty filters object, use undefined instead
+      // Boş filters object göndərmə, undefined istifadə et
+      const opts = (filters && Object.keys(filters).length > 0) ? { filters } : {};
       eventStream = await new Promise((resolve, reject) => {
-        dockerService.docker.getEvents({ filters }, (err, stream) => {
+        dockerService.docker.getEvents(opts, (err, stream) => {
           if (err) reject(err);
           else resolve(stream);
         });
@@ -356,7 +362,10 @@ io.on('connection', (socket) => {
         try {
           const event = JSON.parse(chunk.toString());
           socket.emit('events:data', event);
-        } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore parse errors */ }
+      });
+      eventStream.on('error', (err) => {
+        socket.emit('events:error', { error: err.message });
       });
     } catch (err) {
       socket.emit('events:error', { error: err.message });
