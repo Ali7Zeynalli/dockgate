@@ -71,7 +71,8 @@ Router.register('logs', async (content) => {
         logContent.innerHTML = `<span style="color:var(--accent)">Connecting to ${name}...</span>\n`;
         pauseBtn.disabled = false;
         
-        socket.emit('logs:subscribe', { containerId: id, tail: 200 });
+        const logSettings = Store.get('settings') || {};
+        socket.emit('logs:subscribe', { containerId: id, tail: 200, timestamps: logSettings.logTimestamps === 'true' });
       });
 
       const onLogData = ({ data }) => {

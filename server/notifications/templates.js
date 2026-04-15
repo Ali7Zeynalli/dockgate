@@ -41,6 +41,44 @@ function containerDieTemplate({ containerName, containerId, image, time, exitCod
     ${footer()}`;
 }
 
+function containerRestartTemplate({ containerName, containerId, image, time, restartCount }) {
+  return `${header('Container Restarted')}
+      <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
+        <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">
+          Container <strong>${containerName}</strong> has restarted.${restartCount > 3 ? ' Frequent restarts detected — investigate the cause.' : ''}
+        </div>
+        <table style="width:100%;border-collapse:collapse;">
+          ${row('Container', containerName)}
+          ${row('ID', containerId)}
+          ${row('Image', image || '—')}
+          ${row('Restart Count', restartCount ?? '—')}
+          ${row('Time', time)}
+        </table>
+      </div>
+    ${footer()}`;
+}
+
+function containerUnhealthyTemplate({ containerName, containerId, image, time, failingStreak, lastOutput }) {
+  return `${header('Container Unhealthy')}
+      <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
+        <div style="background:#fff3f3;border:1px solid #fecaca;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#b91c1c;">
+          Container <strong>${containerName}</strong> is reporting unhealthy. It may be frozen or unresponsive.
+        </div>
+        <table style="width:100%;border-collapse:collapse;">
+          ${row('Container', containerName)}
+          ${row('ID', containerId)}
+          ${row('Image', image || '—')}
+          ${row('Failing Streak', failingStreak ?? '—')}
+          ${row('Time', time)}
+        </table>
+        ${lastOutput ? `<div style="margin-top:16px;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;font-size:12px;color:#991b1b;font-family:monospace;white-space:pre-wrap;word-break:break-all;">${lastOutput}</div>` : ''}
+        <div style="margin-top:12px;padding:10px 14px;background:#f9fafb;border-radius:4px;font-size:12px;color:#666;">
+          The container is running but its health check is failing. Check application logs for details.
+        </div>
+      </div>
+    ${footer()}`;
+}
+
 function containerOomTemplate({ containerName, containerId, image, time }) {
   return `${header('OOM Kill Detected')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
@@ -119,7 +157,9 @@ function testEmailTemplate() {
 
 module.exports = {
   containerDieTemplate,
+  containerRestartTemplate,
   containerOomTemplate,
+  containerUnhealthyTemplate,
   diskAlertTemplate,
   buildFailTemplate,
   testEmailTemplate,

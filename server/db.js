@@ -105,11 +105,14 @@ try { db.exec('ALTER TABLE build_history ADD COLUMN context_url TEXT DEFAULT ""'
 try { db.exec('ALTER TABLE build_history ADD COLUMN build_args TEXT DEFAULT "{}"'); } catch(e) {}
 try { db.exec('ALTER TABLE build_history ADD COLUMN nocache INTEGER DEFAULT 0'); } catch(e) {}
 try { db.exec('ALTER TABLE build_history ADD COLUMN pull INTEGER DEFAULT 0'); } catch(e) {}
+try { db.exec('ALTER TABLE notification_log ADD COLUMN channel TEXT DEFAULT "email"'); } catch(e) {}
 
 // Default notification rules / Defolt bildiriş qaydaları
 const defaultRules = [
   ['container_die', 'Container stopped or died', 5],
+  ['container_restart', 'Container restarted', 5],
   ['container_oom', 'Container killed by OOM (out of memory)', 5],
+  ['container_unhealthy', 'Container health check failing', 10],
   ['disk_threshold', 'Disk usage exceeds threshold', 30],
   ['build_failed', 'Image build failed', 5],
 ];
@@ -208,7 +211,7 @@ const stmts = {
   setRuleCooldown: db.prepare('UPDATE notification_rules SET cooldown_minutes = ? WHERE event_type = ?'),
 
   // Notification Log
-  insertNotificationLog: db.prepare('INSERT INTO notification_log (event_type, subject, recipient, status, error, details) VALUES (?, ?, ?, ?, ?, ?)'),
+  insertNotificationLog: db.prepare('INSERT INTO notification_log (event_type, subject, recipient, status, error, channel) VALUES (?, ?, ?, ?, ?, ?)'),
   getNotificationLogs: db.prepare('SELECT * FROM notification_log ORDER BY created_at DESC LIMIT ?'),
   getLastNotification: db.prepare('SELECT * FROM notification_log WHERE event_type = ? AND status = ? ORDER BY created_at DESC LIMIT 1'),
   clearNotificationLogs: db.prepare('DELETE FROM notification_log'),

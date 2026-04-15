@@ -49,14 +49,14 @@ async function sendEmail({ to, subject, html, eventType }) {
 
     // Log successful send
     if (eventType) {
-      stmts.insertNotificationLog.run(eventType, subject, recipient, 'sent', null, null);
+      stmts.insertNotificationLog.run(eventType, subject, recipient, 'sent', null, 'email');
     }
 
     return { success: true };
   } catch (err) {
     // Log failed send
     if (eventType) {
-      stmts.insertNotificationLog.run(eventType, subject, recipient, 'failed', err.message, null);
+      stmts.insertNotificationLog.run(eventType, subject, recipient, 'failed', err.message, 'email');
     }
     return { success: false, error: err.message };
   }

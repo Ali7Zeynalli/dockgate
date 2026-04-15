@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v1.8.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v1.8.1-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v1.8.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v1.8.1-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~5.3k-informational?style=for-the-badge" alt="Lines of Code">
@@ -109,7 +109,7 @@ docker compose pull && docker compose up -d
 **Cleanup** — Preview what gets deleted before pruning. Reclaim disk space safely
 <img src="screenshots/11.jpeg" width="100%" alt="Cleanup">
 
-**Settings** — Theme, default shell, log timestamps, default view, auto-start toggle
+**Settings** — Tabbed layout: General, Notifications (Email + Telegram), Notification Log, Software Update
 <img src="screenshots/12.jpeg" width="100%" alt="Settings">
 
 ---
@@ -150,7 +150,7 @@ DockGate has **14 modules** organized in 4 groups:
 | Module | Description |
 |--------|-------------|
 | **Cleanup** | Preview-before-prune for: stopped containers, unused/dangling images, unused volumes, unused networks, build cache, or full system prune |
-| **Settings** | Theme (dark/light), refresh interval, default view (table/card), log/terminal defaults, date format, destructive action confirmations, auto-start toggle, **SMTP email notifications**, **auto-update from GitHub** |
+| **Settings** | Tabbed UI: General (theme, default view, shell, log timestamps, auto-start), Notifications (**Email SMTP** + **Telegram Bot**, 6 alert rules with cooldown), Notification Log, Software Update |
 
 ### Container Actions
 
@@ -195,7 +195,12 @@ dockgate/
 ├── server/
 │   ├── index.js                  # Express + Socket.IO server (257 lines)
 │   ├── docker.js                 # Docker API wrapper via dockerode (516 lines)
-│   ├── db.js                     # SQLite schema & 22 prepared statements (108 lines)
+│   ├── db.js                     # SQLite schema & prepared statements
+│   ├── notifications/
+│   │   ├── mailer.js             # SMTP email sender via nodemailer
+│   │   ├── telegram.js           # Telegram Bot API sender (no deps)
+│   │   ├── templates.js          # HTML email templates
+│   │   └── event-monitor.js      # Docker event watcher + alerting
 │   └── routes/
 │       ├── containers.js         # Container CRUD & actions
 │       ├── images.js             # Image pull/remove/tag
@@ -205,7 +210,7 @@ dockgate/
 │       ├── builds.js             # Build cache list & prune
 │       ├── cleanup.js            # Prune operations
 │       ├── system.js             # System info/version/df
-│       └── settings.js           # Favorites, notes, tags, activity, settings, autostart
+│       └── settings.js           # Favorites, notes, tags, activity, settings, autostart, SMTP, Telegram, notifications
 ├── public/
 │   ├── index.html                # SPA shell
 │   ├── css/
@@ -375,9 +380,13 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | POST | `/api/meta/smtp` | Save SMTP configuration — body: `{ "smtp_host", "smtp_port", "smtp_user", "smtp_pass", "smtp_from", "smtp_to" }` |
 | DELETE | `/api/meta/smtp` | Clear SMTP configuration |
 | POST | `/api/meta/smtp/test` | Send test email |
-| GET | `/api/meta/notifications/rules` | Get notification rules |
+| GET | `/api/meta/telegram` | Get Telegram bot config (token masked) |
+| POST | `/api/meta/telegram` | Save Telegram config — body: `{ "tg_token", "tg_chat_id" }` |
+| DELETE | `/api/meta/telegram` | Clear Telegram configuration |
+| POST | `/api/meta/telegram/test` | Send test Telegram message |
+| GET | `/api/meta/notifications/rules` | Get notification rules (6 types) |
 | PUT | `/api/meta/notifications/rules/:type` | Update rule — body: `{ "enabled": true, "cooldown_minutes": 5 }` |
-| GET | `/api/meta/notifications/log` | Notification log (`?limit=50`) |
+| GET | `/api/meta/notifications/log` | Notification log with channel (`?limit=50`) |
 | DELETE | `/api/meta/notifications/log` | Clear notification log |
 | GET | `/api/meta/update/check` | Check for updates from GitHub |
 | POST | `/api/meta/update/apply` | Pull latest changes and restart server |
@@ -537,6 +546,10 @@ SQLite (WAL mode) at `data/docker-panel.db` — auto-created, persisted via volu
 | `tags` | Color-coded labels | `id`, `type`, `tag`, `color` |
 | `activity` | Action audit log | `resource_id`, `resource_type`, `action`, `details` |
 | `settings` | Panel preferences | `key`, `value` |
+| `smtp_config` | SMTP + Telegram config (key-value) | `key`, `value` |
+| `notification_rules` | Alert rules (6 event types) | `event_type`, `enabled`, `cooldown_minutes` |
+| `notification_log` | Sent/failed notification history | `event_type`, `subject`, `status`, `channel` |
+| `build_history` | Panel build records | `image_tag`, `status`, `started_at` |
 
 All Docker state is read live from the engine — nothing is cached in the database.
 

@@ -166,7 +166,8 @@ Router.register('container-detail', async (content, params) => {
     const logEl = document.getElementById('log-content');
 
     // Subscribe to log stream
-    socket.emit('logs:subscribe', { containerId: id, tail: 200 });
+    const logSettings = Store.get('settings') || {};
+    socket.emit('logs:subscribe', { containerId: id, tail: 200, timestamps: logSettings.logTimestamps === 'true' });
     logEl.textContent = '';
 
     const onLogData = ({ data }) => {

@@ -2,6 +2,29 @@
 
 ---
 
+## [1.8.1] - 2026-04-16
+
+### Features
+- **Telegram Bot Notifications** — receive Docker alerts via Telegram alongside or instead of email, zero dependencies (native HTTPS)
+- **Container Restart Notification** — alerts when a container restarts, shows restart count to detect restart loops
+- **Container Unhealthy Notification** — alerts when a container's health check starts failing, with failing streak count and last health check output; detected both via Docker events and periodic 60s polling
+- **Settings Tabbed Layout** — Settings page reorganized into 4 tabs: General, Notifications, Notification Log, Software Update
+
+### Bug Fixes
+- **Log Timestamps setting now works** — the toggle was saved but never passed to Docker; now `logs:subscribe` sends `timestamps: true` when enabled in settings
+
+### Technical Changes
+- `server/notifications/telegram.js` — new Telegram Bot API module using native `https`, `formatAlert()` for structured messages
+- `server/notifications/event-monitor.js` — sends to both email and Telegram, 2 new event handlers (restart, unhealthy), periodic `_checkUnhealthy()` every 60s
+- `server/notifications/templates.js` — 2 new HTML templates: `containerRestartTemplate`, `containerUnhealthyTemplate`
+- `server/routes/settings.js` — 4 new Telegram endpoints: GET/POST/DELETE `/telegram`, POST `/telegram/test`
+- `server/db.js` — 2 new default rules (`container_restart`, `container_unhealthy`), `channel` column on `notification_log`
+- `public/js/pages/settings.js` — full rewrite with tab-bar (General, Notifications, Notification Log, Software Update), accordion channels
+- `public/js/pages/container-detail.js` — passes `timestamps` setting to `logs:subscribe`
+- `public/js/pages/logs.js` — passes `timestamps` setting to `logs:subscribe`
+
+---
+
 ## [1.8.0] - 2026-04-16
 
 ### Features

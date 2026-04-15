@@ -165,6 +165,51 @@ router.post('/smtp/test', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ============ TELEGRAM ============
+router.get('/telegram', (req, res) => {
+  try {
+    const tg = require('../notifications/telegram');
+    const settings = tg.getTelegramSettings();
+    res.json({
+      tg_token: settings.token ? '••••••••' + settings.token.slice(-4) : '',
+      tg_chat_id: settings.chatId || '',
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/telegram', (req, res) => {
+  try {
+    const { tg_token, tg_chat_id } = req.body;
+    if (tg_token && !tg_token.startsWith('••••')) {
+      stmts.setSmtpConfig.run('tg_token', String(tg_token));
+    }
+    if (tg_chat_id !== undefined) {
+      stmts.setSmtpConfig.run('tg_chat_id', String(tg_chat_id));
+    }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/telegram', (req, res) => {
+  try {
+    const db = require('../db').db;
+    db.prepare("DELETE FROM smtp_config WHERE key IN ('tg_token', 'tg_chat_id')").run();
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/telegram/test', async (req, res) => {
+  try {
+    const tg = require('../notifications/telegram');
+    const result = await tg.sendTestMessage();
+    if (result.success) {
+      res.json({ success: true });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ============ NOTIFICATION RULES ============
 router.get('/notifications/rules', (req, res) => {
   try { res.json(stmts.getNotificationRules.all()); }
