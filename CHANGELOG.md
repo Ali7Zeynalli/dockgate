@@ -2,7 +2,7 @@
 
 ---
 
-## [1.7.4] - 2026-04-15
+## [1.7.5] - 2026-04-15
 
 ### Features
 - **Bulk selection & deletion — Images** — checkbox column, select-all, search, bulk remove, bulk force remove

@@ -222,6 +222,8 @@ Router.register('builds', async (content) => {
     let build;
     try {
       build = await API.get(`/builds/detail/${selectedBuildId}`);
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
     } catch(e) {
       selectedBuildId = null;
       await renderHistory();
@@ -573,6 +575,10 @@ Router.register('builds', async (content) => {
     const tabContent = document.getElementById('tab-content');
     try {
       const data = await API.get('/builds/cache');
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
+
       const { groups, totalItems, totalSize } = data;
 
       if (!groups || groups.length === 0) {
@@ -654,6 +660,9 @@ Router.register('builds', async (content) => {
     const tabContent = document.getElementById('tab-content');
     try {
       const builders = await API.get('/builds/builders');
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
 
       tabContent.innerHTML = `
         <div style="margin-bottom:12px;">
