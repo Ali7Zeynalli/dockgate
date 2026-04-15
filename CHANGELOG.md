@@ -2,6 +2,29 @@
 
 ---
 
+## [1.7.9] - 2026-04-16
+
+### Features
+- **Light Theme** — full light mode support with CSS custom properties, instant theme switching via `applyTheme()`, localStorage persistence for flash-free page load + server settings sync
+- **Build History bulk selection & deletion** — checkbox column for both Docker Image History and Panel Builds, select-all toggle, bulk hide/delete/clear actions with confirmation dialogs
+- **Container Stats UI redesign** — cleaner summary cards with separate lines for Network I/O (↓/↑) and Block I/O (R:/W:), `formatBytes()` on memory chart Y-axis, increased chart height
+
+### Improvements
+- **Chart CSS variable colors** — chart grid lines and tick labels now read from `--border` and `--text-muted` CSS variables via `getComputedStyle()`, ensuring proper rendering in both dark and light themes
+- **Builds page stale render guards** — added `Router.isActiveNav()` checks after async API calls in `renderCache()`, `renderBuilders()`, and `renderBuildDetail()` to prevent stale page rendering
+- **CSS hardcoded colors replaced** — all `rgba(255,255,255,...)` values across components, layout, and design-system replaced with CSS custom property references for full theme compatibility
+
+### Technical Changes
+- `public/css/design-system.css` — full `[data-theme="light"]` block with all color overrides, `--hover-bg` variable family (6 levels)
+- `public/css/components.css` — buttons, tables, filters, toolbars, toggles now use CSS variables; light theme overrides for toasts, log-viewer, json-viewer, build-log-viewer, terminal-container
+- `public/css/layout.css` — sidebar scrollbar, nav hover, header search, brand gradient use CSS variables
+- `public/js/app.js` — `applyTheme()` function sets `data-theme` on `<html>`, boot-time theme load from localStorage
+- `public/js/pages/settings.js` — theme dropdown "Light (Soon)" → "Light", calls `applyTheme()` on save
+- `public/js/pages/container-detail.js` — stats summary grid layout, `formatBytes()` chart Y-axis callback, `getComputedStyle()` for chart colors
+- `public/js/pages/builds.js` — `selectedPanelIds`/`selectedDockerIds` Sets, bulk action bars, navId guards on 3 async functions
+
+---
+
 ## [1.7.8] - 2026-04-15
 
 ### Bug Fixes
@@ -220,6 +243,66 @@
 ---
 
 # Dəyişikliklər
+
+---
+
+## [1.7.9] - 2026-04-16
+
+### Xüsusiyyətlər
+- **İşıq Teması (Light Theme)** — CSS custom property-ləri ilə tam işıq rejimi dəstəyi, `applyTheme()` ilə ani tema dəyişmə, localStorage ilə yanıb-sönməsiz yükləmə + server sinxronizasiya
+- **Build Tarixçəsi toplu seçim və silmə** — Docker Image Tarixçəsi və Panel Build-lər üçün checkbox sütunu, hamısını seçmə, toplu gizlətmə/silmə/təmizləmə
+- **Konteyner Statistika UI yenidən dizayn** — Şəbəkə I/O (↓/↑) və Blok I/O (R:/W:) ayrı sətirlərdə, yaddaş qrafiki Y oxunda `formatBytes()`, artırılmış qrafik hündürlüyü
+
+### Təkmilləşdirmələr
+- **Qrafik CSS dəyişən rəngləri** — qrafik grid xətləri və tick etiketləri `getComputedStyle()` ilə CSS dəyişənlərindən oxunur, hər iki temada düzgün göstərilir
+- **Builds səhifəsi köhnə render qoruyucuları** — `renderCache()`, `renderBuilders()`, `renderBuildDetail()` funksiyalarında asinxron API çağırışlarından sonra `Router.isActiveNav()` yoxlaması
+- **CSS hardcoded rənglər əvəz edildi** — bütün `rgba(255,255,255,...)` dəyərləri CSS custom property referansları ilə əvəz olundu
+
+### Texniki Dəyişikliklər
+- `public/css/design-system.css` — tam `[data-theme="light"]` bloku, `--hover-bg` dəyişən ailəsi (6 səviyyə)
+- `public/css/components.css` — düymələr, cədvəllər, filtrlər, toolbarlar CSS dəyişənləri istifadə edir; toast, log-viewer, json-viewer üçün işıq tema override-ları
+- `public/css/layout.css` — sidebar, nav, header CSS dəyişənləri istifadə edir
+- `public/js/app.js` — `applyTheme()` funksiyası, başlanğıcda localStorage-dən tema yükləmə
+- `public/js/pages/settings.js` — "Light (Soon)" → "Light", saxladıqda `applyTheme()` çağırılır
+- `public/js/pages/container-detail.js` — stats summary grid, `formatBytes()` qrafik oxu, `getComputedStyle()` rənglər üçün
+- `public/js/pages/builds.js` — toplu seçim Set-ləri, action barlar, navId qoruyucuları
+
+---
+
+## [1.7.8] - 2026-04-15
+
+### Xəta Düzəlişləri
+- **Docker Events axını düzəldildi** — events səhifəsi həmişə "Waiting for events..." göstərirdi, çünki boş `filters: {}` Docker API-yə ötürülürdü
+- **Event axını təmizləmə** — yenidən subscribe olduqda əvvəlki axın məhv edilir
+- **Event xəta idarəetməsi** — frontend-də `events:error` dinləyicisi əlavə edildi
+
+---
+
+## [1.7.7] - 2026-04-15
+
+### Xüsusiyyətlər
+- **Toplu seçim və silmə — İmiclər** — checkbox sütunu, hamısını seç, axtarış, toplu silmə, toplu force silmə
+- **Toplu seçim və silmə — Volumlar** — checkbox sütunu (yalnız istifadəsiz), hamısını seç, data itkisi xəbərdarlığı ilə toplu silmə
+- **Toplu seçim və silmə — Şəbəkələr** — checkbox sütunu (yalnız silinə bilən), hamısını seç, toplu silmə
+
+### Xəta Düzəlişləri
+- **Naviqasiya race condition düzəldildi** — səhifələr arası keçiddə boş məzmun problemi həll edildi
+- **Router navId qoruyucusu** — unikal naviqasiya ID sayğacı
+- **Command injection düzəlişi** — compose route-ları `execFile` istifadə edir
+- **WebSocket listener leak düzəlişi** — terminal listener-ları təmizlənir
+- **Modal naviqasiyada bağlanır** — açıq modallar səhifə dəyişdirəndə bağlanır
+- **Toast bildiriş limiti** — eyni anda maksimum 5 toast
+- **DB aktivlik loqu retensiyası** — aktivlik 1000, build tarixçəsi 100 qeydlə məhdudlaşdırıldı
+
+---
+
+## [1.7.3] - 2026-04-14
+
+### Performans
+- **Dashboard 3-5x sürətli yüklənir** — `listContainers`-dən `size:true` silindi
+- **Cache qatı** — `getSystemInfo` (60s) və `getDiskUsage` (30s) keşlənir
+- **Paralel stats + health** — konteyner statistika və health sorğuları paralel işləyir
+- **Avto-yeniləmə 15s → 30s** — Docker daemon yükü yarıya endirildi
 
 ---
 

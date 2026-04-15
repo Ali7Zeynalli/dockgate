@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v1.7.2-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v1.7.9-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v1.7.2-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v1.7.9-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~5.3k-informational?style=for-the-badge" alt="Lines of Code">
@@ -134,7 +134,7 @@ DockGate has **14 modules** organized in 4 groups:
 
 | Module | Description |
 |--------|-------------|
-| **Builds** | Docker Desktop-style build management — Build History (Docker image layer history with expandable steps), Build Cache (grouped by image name), Builders (buildx instances), real-time build streaming, build detail with Info/Source/Logs/History tabs |
+| **Builds** | Docker Desktop-style build management — Build History (Docker image layer history with expandable steps, bulk selection & deletion), Build Cache (grouped by image name), Builders (buildx instances), real-time build streaming, build detail with Info/Source/Logs/History tabs |
 | **Compose** | Auto-discover projects via `com.docker.compose.project` labels. Stack actions: up, down, restart, pull |
 
 ### Monitor
@@ -151,7 +151,7 @@ DockGate has **14 modules** organized in 4 groups:
 | Module | Description |
 |--------|-------------|
 | **Cleanup** | Preview-before-prune for: stopped containers, unused/dangling images, unused volumes, unused networks, build cache, or full system prune |
-| **Settings** | Theme (dark), refresh interval, default view (table/card), log/terminal defaults, date format, destructive action confirmations, auto-start toggle, **auto-update from GitHub** |
+| **Settings** | Theme (dark/light), refresh interval, default view (table/card), log/terminal defaults, date format, destructive action confirmations, auto-start toggle, **auto-update from GitHub** |
 
 ### Container Actions
 
@@ -506,7 +506,7 @@ Typical usage: ~30-80 MB RAM, <5% CPU at idle.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `theme` | `dark` | UI theme |
+| `theme` | `dark` | UI theme (dark/light) |
 | `refreshInterval` | `5000` | Auto-refresh interval (ms) |
 | `defaultView` | `table` | Container list view (table/card) |
 | `sidebarCollapsed` | `false` | Sidebar state |
@@ -653,7 +653,7 @@ DockGate 4 qrupda **14 modula** malikdir:
 
 | Modul | Təsvir |
 |-------|--------|
-| **Buildlər** | Docker Desktop stilində build idarəetmə — Build Tarixçəsi (Docker image layer tarixçəsi açılan step-lərlə), Build Cache (image adına görə qruplaşdırılmış), Builders (buildx instance-lar), real-time build streaming, Info/Source/Logs/History tab-ları ilə build detalı |
+| **Buildlər** | Docker Desktop stilində build idarəetmə — Build Tarixçəsi (Docker image layer tarixçəsi açılan step-lərlə, toplu seçim və silmə), Build Cache (image adına görə qruplaşdırılmış), Builders (buildx instance-lar), real-time build streaming, Info/Source/Logs/History tab-ları ilə build detalı |
 | **Compose** | `com.docker.compose.project` etiketləri vasitəsilə layihələri avto-kəşf. Stek əməliyyatları: up, down, restart, pull |
 
 ### Monitor
@@ -670,7 +670,7 @@ DockGate 4 qrupda **14 modula** malikdir:
 | Modul | Təsvir |
 |-------|--------|
 | **Təmizlik** | Onizləmə-sonra-təmizləmə: dayandırılmış konteynerlər, istifadəsiz/asılı imiclər, istifadəsiz volumlar, istifadəsiz şəbəkələr, build keşi, və ya tam sistem təmizliyi |
-| **Parametrlər** | Tema (dark), yeniləmə intervalı, defolt goruntu (cədvəl/kart), log/terminal defoltları, tarix formatı, təhlukəli əməliyyat təsdiqləri, avto-başlatma, **GitHub-dan avto-yeniləmə** |
+| **Parametrlər** | Tema (dark/light), yeniləmə intervalı, defolt goruntu (cədvəl/kart), log/terminal defoltları, tarix formatı, təhlukəli əməliyyat təsdiqləri, avto-başlatma, **GitHub-dan avto-yeniləmə** |
 
 ### Konteyner Əməliyyatları
 
@@ -745,7 +745,7 @@ Tipik istifadə: ~30-80 MB RAM, boş vəziyyətdə <5% CPU.
 
 | Açar | Defolt | Təsvir |
 |------|--------|--------|
-| `theme` | `dark` | UI teması |
+| `theme` | `dark` | UI teması (dark/light) |
 | `refreshInterval` | `5000` | Avto-yeniləmə intervalı (ms) |
 | `defaultView` | `table` | Konteyner siyahısı goruntusu (cədvəl/kart) |
 | `logTailLines` | `200` | Defolt log tail |
