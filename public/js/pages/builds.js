@@ -423,7 +423,7 @@ Router.register('builds', async (content) => {
           <div style="font-weight:700;font-size:14px;margin-bottom:12px;">Dependencies</div>
           <div style="display:flex;flex-direction:column;gap:6px;">
             ${deps.map(d => `
-              <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:var(--radius-md);">
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--hover-bg-subtle);border-radius:var(--radius-md);">
                 <span style="color:var(--accent);">${Icons.image}</span>
                 <span class="td-mono">${escapeHtml(d)}</span>
               </div>
@@ -508,7 +508,7 @@ Router.register('builds', async (content) => {
           ${stepLines.length > 0 ? `
             <div style="font-family:var(--font-mono);font-size:12px;line-height:2;">
               ${stepLines.map((line, i) => `
-                <div style="padding:4px 8px;${i % 2 === 0 ? 'background:rgba(255,255,255,0.02);' : ''}border-radius:4px;">
+                <div style="padding:4px 8px;${i % 2 === 0 ? 'background:var(--hover-bg-faint);' : ''}border-radius:4px;">
                   <span style="color:var(--accent);font-weight:600;">${escapeHtml(line)}</span>
                 </div>
               `).join('')}

@@ -33,7 +33,7 @@ Router.register('settings', async (content) => {
               </div>
               <select class="select" id="set-theme">
                 <option value="dark" ${settings.theme === 'dark' ? 'selected' : ''}>Dark</option>
-                <option value="light" ${settings.theme === 'light' ? 'selected' : ''}>Light (Soon)</option>
+                <option value="light" ${settings.theme === 'light' ? 'selected' : ''}>Light</option>
               </select>
             </div>
             
@@ -191,6 +191,8 @@ Router.register('settings', async (content) => {
           }
           
           Store.set('settings', { ...settings, ...newSettings });
+          applyTheme(newSettings.theme);
+          localStorage.setItem('dcc_theme', newSettings.theme);
           showToast('Settings saved successfully');
         } catch (err) {
           showToast(err.message, 'error');

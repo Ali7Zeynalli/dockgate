@@ -63,7 +63,7 @@
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.3px;
-  background: linear-gradient(135deg, var(--text-primary), #a5b4fc);
+  background: linear-gradient(135deg, var(--text-primary), var(--accent));
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -85,8 +85,8 @@
 
 /* Custom Scrollbar */
 .mac-sidebar-nav::-webkit-scrollbar { width: 4px; }
-.mac-sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 2px; }
-.mac-sidebar-nav:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); }
+.mac-sidebar-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.mac-sidebar-nav:hover::-webkit-scrollbar-thumb { background: var(--border-hover); }
 
 /* Static Nav Groups */
 .nav-group {
@@ -124,7 +124,7 @@
 
 .nav-item:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--accent-dim);
 }
 
 .nav-item.active {
@@ -199,7 +199,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
   padding: 7px 14px;

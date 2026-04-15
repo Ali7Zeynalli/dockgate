@@ -323,13 +323,17 @@ Router.register('container-detail', async (content, params) => {
     const labels = [];
     const maxPoints = 60;
 
+    // Chart.js doesn't support CSS variables — read computed value
+    // Chart.js CSS dəyişənlərini dəstəkləmir — hesablanmış dəyəri oxu
+    const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || 'rgba(255,255,255,0.04)';
+
     const chartOpts = {
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 0 },
       scales: {
         x: { display: false },
-        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a6478', font: { size: 10 } } }
+        y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: '#5a6478', font: { size: 10 } } }
       },
       plugins: { legend: { display: false } },
       elements: { point: { radius: 0 }, line: { tension: 0.3, borderWidth: 2 } }

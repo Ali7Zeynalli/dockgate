@@ -88,17 +88,34 @@ function initGlobalSearch() {
   });
 }
 
+// Apply theme to document / Temanı sənədə tətbiq et
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme || 'dark');
+}
+
 // Boot application
 async function boot() {
   try {
+    // Apply saved theme immediately / Saxlanmış temanı dərhal tətbiq et
+    const savedTheme = localStorage.getItem('dcc_theme') || 'dark';
+    applyTheme(savedTheme);
+
     initMacSidebar();
     initGlobalSearch();
-    
+
     // Navigate to default or last visited page (using localStorage for hard refresh)
     const lastPage = localStorage.getItem('dcc_last_page') || 'dashboard';
     let lastParams = {};
     try { lastParams = JSON.parse(localStorage.getItem('dcc_last_params')) || {}; } catch(e){}
     await Router.navigate(lastPage, lastParams);
+
+    // Load theme from server settings / Server settings-dən temanı yüklə
+    API.get('/meta/settings').then(s => {
+      if (s && s.theme) {
+        applyTheme(s.theme);
+        localStorage.setItem('dcc_theme', s.theme);
+      }
+    }).catch(() => {});
 
     // Show version from package.json in sidebar / Sidebar-da versiyanı package.json-dan göstər
     API.get('/meta/version').then(v => {

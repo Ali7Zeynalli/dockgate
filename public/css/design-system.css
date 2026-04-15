@@ -71,6 +71,14 @@
   --glass-blur: blur(24px);
   --glass-border: rgba(255, 255, 255, 0.06);
 
+  /* Interactive surfaces */
+  --hover-bg: rgba(255, 255, 255, 0.06);
+  --hover-bg-strong: rgba(255, 255, 255, 0.1);
+  --hover-bg-subtle: rgba(255, 255, 255, 0.03);
+  --hover-bg-faint: rgba(255, 255, 255, 0.02);
+  --hover-bg-mid: rgba(255, 255, 255, 0.04);
+  --hover-bg-wash: rgba(255, 255, 255, 0.08);
+
   /* Radius */
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -92,6 +100,73 @@
   --transition-normal: 250ms ease;
   --transition-slow: 400ms ease;
 }
+
+/* ============ LIGHT THEME ============ */
+[data-theme="light"] {
+  /* Background Colors */
+  --bg-primary: #f5f5f7;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f0f2;
+  --bg-elevated: #ffffff;
+  --bg-modal: #ffffff;
+  --bg-input: #f5f5f7;
+  --bg-sidebar: #f5f5f7;
+  --bg-header: rgba(245, 245, 247, 0.75);
+
+  /* Text Colors */
+  --text-primary: #1a1a1a;
+  --text-secondary: #52525b;
+  --text-muted: #a1a1aa;
+  --text-inverse: #ffffff;
+
+  /* Accent */
+  --accent: #2563eb;
+  --accent-hover: #3b82f6;
+  --accent-dim: rgba(37, 99, 235, 0.1);
+  --accent-glow: rgba(37, 99, 235, 0.2);
+
+  /* Borders */
+  --border: rgba(0, 0, 0, 0.1);
+  --border-hover: rgba(0, 0, 0, 0.2);
+  --border-active: rgba(37, 99, 235, 0.4);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-glow: 0 0 24px rgba(37, 99, 235, 0.15);
+
+  /* Glass */
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-blur: blur(24px);
+  --glass-border: rgba(0, 0, 0, 0.06);
+
+  /* Interactive surfaces */
+  --hover-bg: rgba(0, 0, 0, 0.05);
+  --hover-bg-strong: rgba(0, 0, 0, 0.08);
+  --hover-bg-subtle: rgba(0, 0, 0, 0.03);
+  --hover-bg-faint: rgba(0, 0, 0, 0.02);
+  --hover-bg-mid: rgba(0, 0, 0, 0.04);
+  --hover-bg-wash: rgba(0, 0, 0, 0.06);
+
+  /* Status — keep same hues, slightly darker for readability */
+  --status-running-bg: rgba(16, 185, 129, 0.1);
+  --status-stopped-bg: rgba(239, 68, 68, 0.1);
+  --status-restarting-bg: rgba(245, 158, 11, 0.1);
+  --status-paused-bg: rgba(99, 102, 241, 0.1);
+  --status-created-bg: rgba(139, 92, 246, 0.1);
+  --status-dead-bg: rgba(113, 113, 122, 0.1);
+
+  /* Semantic */
+  --danger-bg: rgba(239, 68, 68, 0.1);
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  --info-bg: rgba(59, 130, 246, 0.1);
+  --success-bg: rgba(16, 185, 129, 0.1);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); }
 
 /* ============ RESET ============ */
 *, *::before, *::after {
@@ -129,5 +204,5 @@ input, select, textarea {
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
