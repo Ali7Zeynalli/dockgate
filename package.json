@@ -1,6 +1,6 @@
 {
   "name": "dockgate",
-  "version": "1.7.9",
+  "version": "1.8.0",
   "description": "DockGate — A lightweight, browser-based Docker control panel",
   "main": "server/index.js",
   "author": "Ali Zeynalli",
@@ -34,6 +34,7 @@
     "better-sqlite3": "^11.7.0",
     "dockerode": "^4.0.4",
     "express": "^4.21.0",
+    "nodemailer": "^8.0.5",
     "socket.io": "^4.8.0"
   },
   "optionalDependencies": {

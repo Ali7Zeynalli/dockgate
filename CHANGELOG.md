@@ -2,6 +2,29 @@
 
 ---
 
+## [1.8.0] - 2026-04-16
+
+### Features
+- **SMTP Email Notifications** — configure SMTP server from Settings, receive automatic email alerts when containers stop, OOM kill occurs, disk threshold exceeded, or builds fail
+- **EventMonitor Service** — persistent Docker events stream listener with auto-reconnect, runs independently of frontend connections
+- **Notification Rules** — per-event toggle (container_die, container_oom, disk_threshold, build_failed) with configurable cooldown (1-1440 minutes) to prevent email spam
+- **Notification Log** — history of sent/failed emails viewable in Settings, auto-trimmed to 500 records
+- **Test Email** — one-click SMTP test from Settings to verify configuration before relying on alerts
+- **Email Templates** — professional HTML email templates for each alert type with DockGate branding
+
+### Technical Changes
+- `server/db.js` — 3 new tables: `smtp_config`, `notification_rules`, `notification_log`; 13 new prepared statements; 4 default rules on startup
+- `server/notifications/mailer.js` — SMTP transport via nodemailer, sendEmail with logging, sendTestEmail
+- `server/notifications/templates.js` — 5 HTML email templates (containerDie, containerOom, diskAlert, buildFail, testEmail)
+- `server/notifications/event-monitor.js` — EventMonitor class: Docker events stream, throttling, disk threshold check (5min interval), auto-reconnect on stream failure
+- `server/routes/settings.js` — 7 new endpoints: SMTP CRUD, test email, notification rules CRUD, notification log
+- `server/index.js` — EventMonitor starts on boot, build fail triggers notification, periodic notification log trim
+- `public/js/pages/settings.js` — Notifications section: SMTP form, rule toggles with cooldown, recent notifications table
+- `public/js/api.js` — added `API.put()` and `API.delete()` methods
+- `package.json` — added `nodemailer ^8.0.5` dependency
+
+---
+
 ## [1.7.9] - 2026-04-16
 
 ### Features
@@ -243,6 +266,29 @@
 ---
 
 # Dəyişikliklər
+
+---
+
+## [1.8.0] - 2026-04-16
+
+### Xüsusiyyətlər
+- **SMTP Email Bildirişlər** — Settings-dən SMTP server konfiqurasiya et, container dayandıqda, OOM kill olduqda, disk threshold keçdikdə, build uğursuz olduqda avtomatik email al
+- **EventMonitor Servisi** — daimi Docker events stream dinləyicisi, auto-reconnect ilə, frontend-dən asılı olmadan işləyir
+- **Bildiriş Qaydaları** — hər event üçün toggle (container_die, container_oom, disk_threshold, build_failed), konfiqurasiya edilə bilən cooldown (1-1440 dəqiqə)
+- **Bildiriş Loqu** — göndərilmiş/uğursuz email-lərin tarixçəsi, Settings-dən baxıla bilər, avtomatik 500 qeydə qədər saxlanır
+- **Test Email** — SMTP konfiqurasiyasını yoxlamaq üçün bir kliklik test email
+- **Email Şablonları** — hər alert növü üçün professional HTML email şablonları
+
+### Texniki Dəyişikliklər
+- `server/db.js` — 3 yeni cədvəl: `smtp_config`, `notification_rules`, `notification_log`; 13 yeni prepared statement
+- `server/notifications/mailer.js` — nodemailer ilə SMTP transport, sendEmail, sendTestEmail
+- `server/notifications/templates.js` — 5 HTML email şablonu
+- `server/notifications/event-monitor.js` — EventMonitor class: Docker events, throttling, disk check, auto-reconnect
+- `server/routes/settings.js` — 7 yeni endpoint: SMTP CRUD, test email, notification rules, log
+- `server/index.js` — EventMonitor server başlayanda start olur, build fail trigger
+- `public/js/pages/settings.js` — Notifications bölməsi: SMTP formu, rule toggle-lar, notification log cədvəli
+- `public/js/api.js` — `API.put()` və `API.delete()` metodları əlavə edildi
+- `package.json` — `nodemailer ^8.0.5` dependency əlavə edildi
 
 ---
 

@@ -82,6 +82,13 @@ Router.register('settings', async (content) => {
         </div>
 
         <div class="settings-section" style="margin-top:24px;">
+          <div class="settings-section-title">Notifications</div>
+          <div id="notifications-section" style="padding:4px 0;">
+            <div class="text-muted text-sm">Loading notification settings...</div>
+          </div>
+        </div>
+
+        <div class="settings-section" style="margin-top:24px;">
           <div class="settings-section-title">Software Update</div>
           <div id="update-section" style="padding:4px 0;">
             <div class="text-muted text-sm">Checking for updates...</div>
@@ -97,6 +104,148 @@ Router.register('settings', async (content) => {
       document.getElementById('set-autostart')?.addEventListener('click', function() {
         this.classList.toggle('active');
       });
+
+      // Load Notifications section
+      try {
+        const [smtpConfig, rules, notifLogs] = await Promise.all([
+          API.get('/meta/smtp'),
+          API.get('/meta/notifications/rules'),
+          API.get('/meta/notifications/log?limit=20'),
+        ]);
+
+        const notifEl = document.getElementById('notifications-section');
+        if (notifEl) {
+          const ruleLabels = {
+            container_die: 'Container Stopped/Died',
+            container_oom: 'Container OOM Kill',
+            disk_threshold: 'Disk Usage Threshold',
+            build_failed: 'Build Failed',
+          };
+
+          notifEl.innerHTML = `
+            <div class="settings-row-label" style="margin-bottom:12px;font-size:13px;">SMTP Configuration</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+              <input class="input" id="smtp-host" placeholder="SMTP Host" value="${escapeHtml(smtpConfig.smtp_host || '')}" />
+              <input class="input" id="smtp-port" placeholder="Port (587)" value="${escapeHtml(smtpConfig.smtp_port || '')}" type="number" />
+              <input class="input" id="smtp-user" placeholder="Username" value="${escapeHtml(smtpConfig.smtp_user || '')}" />
+              <input class="input" id="smtp-pass" placeholder="Password" value="${escapeHtml(smtpConfig.smtp_pass || '')}" type="password" />
+              <input class="input" id="smtp-from" placeholder="From Email" value="${escapeHtml(smtpConfig.smtp_from || '')}" />
+              <input class="input" id="smtp-to" placeholder="To Email" value="${escapeHtml(smtpConfig.smtp_to || '')}" />
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:20px;">
+              <button class="btn btn-primary btn-sm" id="save-smtp">Save SMTP</button>
+              <button class="btn btn-secondary btn-sm" id="test-smtp">Test Email</button>
+              <button class="btn btn-ghost btn-sm" id="clear-smtp" style="margin-left:auto;">Clear</button>
+            </div>
+
+            <div class="settings-row-label" style="margin-bottom:12px;font-size:13px;">Notification Rules</div>
+            ${rules.map(r => `
+              <div class="settings-row" style="padding:8px 0;">
+                <div>
+                  <div class="settings-row-label">${ruleLabels[r.event_type] || r.event_type}</div>
+                  <div class="settings-row-desc">${escapeHtml(r.description || '')}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <span class="text-xs text-muted">Cooldown:</span>
+                  <input class="input" style="width:60px;padding:4px 6px;font-size:12px;" type="number" min="1" max="1440" value="${r.cooldown_minutes}" data-rule="${r.event_type}" data-field="cooldown" />
+                  <span class="text-xs text-muted">min</span>
+                  <div class="toggle ${r.enabled ? 'active' : ''}" data-rule="${r.event_type}" data-field="enabled"></div>
+                </div>
+              </div>
+            `).join('')}
+            <button class="btn btn-primary btn-sm" id="save-rules" style="margin-top:8px;">Save Rules</button>
+
+            ${notifLogs.length > 0 ? `
+              <div class="settings-row-label" style="margin:20px 0 12px;font-size:13px;">Recent Notifications</div>
+              <div class="table-wrapper" style="max-height:200px;overflow-y:auto;">
+                <table>
+                  <thead><tr><th>Time</th><th>Type</th><th>Subject</th><th>Status</th></tr></thead>
+                  <tbody>
+                    ${notifLogs.map(l => `
+                      <tr>
+                        <td class="text-xs text-muted">${new Date(l.created_at).toLocaleString()}</td>
+                        <td class="td-mono text-xs">${escapeHtml(l.event_type)}</td>
+                        <td class="text-sm">${escapeHtml(l.subject)}</td>
+                        <td><span class="badge ${l.status === 'sent' ? 'badge-running' : 'badge-stopped'}">${l.status}</span></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <button class="btn btn-ghost btn-sm" id="clear-notif-log" style="margin-top:8px;">Clear Log</button>
+            ` : '<div class="text-xs text-muted" style="margin-top:16px;">No notifications sent yet.</div>'}
+          `;
+
+          // Rule toggle interactions
+          notifEl.querySelectorAll('.toggle[data-rule]').forEach(toggle => {
+            toggle.addEventListener('click', function() { this.classList.toggle('active'); });
+          });
+
+          // Save SMTP
+          document.getElementById('save-smtp')?.addEventListener('click', async () => {
+            try {
+              await API.post('/meta/smtp', {
+                smtp_host: document.getElementById('smtp-host').value,
+                smtp_port: document.getElementById('smtp-port').value,
+                smtp_user: document.getElementById('smtp-user').value,
+                smtp_pass: document.getElementById('smtp-pass').value,
+                smtp_from: document.getElementById('smtp-from').value,
+                smtp_to: document.getElementById('smtp-to').value,
+              });
+              showToast('SMTP settings saved');
+            } catch(e) { showToast(e.message, 'error'); }
+          });
+
+          // Test email
+          document.getElementById('test-smtp')?.addEventListener('click', async () => {
+            try {
+              showToast('Sending test email...', 'info');
+              await API.post('/meta/smtp/test');
+              showToast('Test email sent successfully!');
+            } catch(e) { showToast('Test failed: ' + e.message, 'error'); }
+          });
+
+          // Clear SMTP
+          document.getElementById('clear-smtp')?.addEventListener('click', async () => {
+            try {
+              await API.delete('/meta/smtp');
+              showToast('SMTP configuration cleared');
+              render();
+            } catch(e) { showToast(e.message, 'error'); }
+          });
+
+          // Save rules
+          document.getElementById('save-rules')?.addEventListener('click', async () => {
+            try {
+              const ruleUpdates = [];
+              notifEl.querySelectorAll('.toggle[data-rule]').forEach(toggle => {
+                const type = toggle.dataset.rule;
+                const enabled = toggle.classList.contains('active');
+                ruleUpdates.push(API.put(`/meta/notifications/rules/${type}`, { enabled }));
+              });
+              notifEl.querySelectorAll('input[data-rule][data-field="cooldown"]').forEach(input => {
+                const type = input.dataset.rule;
+                const cooldown = parseInt(input.value) || 5;
+                ruleUpdates.push(API.put(`/meta/notifications/rules/${type}`, { cooldown_minutes: cooldown }));
+              });
+              await Promise.all(ruleUpdates);
+              showToast('Notification rules saved');
+            } catch(e) { showToast(e.message, 'error'); }
+          });
+
+          // Clear notification log
+          document.getElementById('clear-notif-log')?.addEventListener('click', async () => {
+            try {
+              await API.delete('/meta/notifications/log');
+              showToast('Notification log cleared');
+              render();
+            } catch(e) { showToast(e.message, 'error'); }
+          });
+        }
+      } catch(e) {
+        const notifEl = document.getElementById('notifications-section');
+        if (notifEl) notifEl.innerHTML = '<div class="text-xs text-muted">Could not load notification settings.</div>';
+      }
 
       // Check for auto-update / Auto-update yoxla
       try {

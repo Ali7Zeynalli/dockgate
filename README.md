@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v1.7.9-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v1.8.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v1.7.9-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v1.8.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~5.3k-informational?style=for-the-badge" alt="Lines of Code">
@@ -151,7 +151,7 @@ DockGate has **14 modules** organized in 4 groups:
 | Module | Description |
 |--------|-------------|
 | **Cleanup** | Preview-before-prune for: stopped containers, unused/dangling images, unused volumes, unused networks, build cache, or full system prune |
-| **Settings** | Theme (dark/light), refresh interval, default view (table/card), log/terminal defaults, date format, destructive action confirmations, auto-start toggle, **auto-update from GitHub** |
+| **Settings** | Theme (dark/light), refresh interval, default view (table/card), log/terminal defaults, date format, destructive action confirmations, auto-start toggle, **SMTP email notifications**, **auto-update from GitHub** |
 
 ### Container Actions
 
@@ -372,6 +372,14 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | POST | `/api/meta/settings` | Update settings — body: `{ "key": "value" }` |
 | GET | `/api/meta/autostart` | Get auto-start status |
 | POST | `/api/meta/autostart` | Set auto-start — body: `{ "enabled": true }` |
+| GET | `/api/meta/smtp` | Get SMTP configuration (password masked) |
+| POST | `/api/meta/smtp` | Save SMTP configuration — body: `{ "smtp_host", "smtp_port", "smtp_user", "smtp_pass", "smtp_from", "smtp_to" }` |
+| DELETE | `/api/meta/smtp` | Clear SMTP configuration |
+| POST | `/api/meta/smtp/test` | Send test email |
+| GET | `/api/meta/notifications/rules` | Get notification rules |
+| PUT | `/api/meta/notifications/rules/:type` | Update rule — body: `{ "enabled": true, "cooldown_minutes": 5 }` |
+| GET | `/api/meta/notifications/log` | Notification log (`?limit=50`) |
+| DELETE | `/api/meta/notifications/log` | Clear notification log |
 | GET | `/api/meta/update/check` | Check for updates from GitHub |
 | POST | `/api/meta/update/apply` | Pull latest changes and restart server |
 
@@ -670,7 +678,7 @@ DockGate 4 qrupda **14 modula** malikdir:
 | Modul | Təsvir |
 |-------|--------|
 | **Təmizlik** | Onizləmə-sonra-təmizləmə: dayandırılmış konteynerlər, istifadəsiz/asılı imiclər, istifadəsiz volumlar, istifadəsiz şəbəkələr, build keşi, və ya tam sistem təmizliyi |
-| **Parametrlər** | Tema (dark/light), yeniləmə intervalı, defolt goruntu (cədvəl/kart), log/terminal defoltları, tarix formatı, təhlukəli əməliyyat təsdiqləri, avto-başlatma, **GitHub-dan avto-yeniləmə** |
+| **Parametrlər** | Tema (dark/light), yeniləmə intervalı, SMTP email bildirişlər, defolt goruntu (cədvəl/kart), log/terminal defoltları, tarix formatı, təhlukəli əməliyyat təsdiqləri, avto-başlatma, **GitHub-dan avto-yeniləmə** |
 
 ### Konteyner Əməliyyatları
 

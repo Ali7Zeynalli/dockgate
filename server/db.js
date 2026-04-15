@@ -73,6 +73,31 @@ db.exec(`
     image_id TEXT PRIMARY KEY,
     hidden_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS smtp_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS notification_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL UNIQUE,
+    enabled INTEGER DEFAULT 1,
+    description TEXT,
+    cooldown_minutes INTEGER DEFAULT 5,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS notification_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'sent',
+    error TEXT,
+    details TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Migration — add new columns to existing build_history table / Mövcud build_history cədvəlinə yeni sütunlar əlavə et
@@ -81,10 +106,21 @@ try { db.exec('ALTER TABLE build_history ADD COLUMN build_args TEXT DEFAULT "{}"
 try { db.exec('ALTER TABLE build_history ADD COLUMN nocache INTEGER DEFAULT 0'); } catch(e) {}
 try { db.exec('ALTER TABLE build_history ADD COLUMN pull INTEGER DEFAULT 0'); } catch(e) {}
 
+// Default notification rules / Defolt bildiriş qaydaları
+const defaultRules = [
+  ['container_die', 'Container stopped or died', 5],
+  ['container_oom', 'Container killed by OOM (out of memory)', 5],
+  ['disk_threshold', 'Disk usage exceeds threshold', 30],
+  ['build_failed', 'Image build failed', 5],
+];
+const insertRule = db.prepare('INSERT OR IGNORE INTO notification_rules (event_type, description, cooldown_minutes) VALUES (?, ?, ?)');
+defaultRules.forEach(([type, desc, cd]) => insertRule.run(type, desc, cd));
+
 // Indexes for frequently queried columns / Tez-tez sorğulanan sütunlar üçün indekslər
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_activity_resource ON activity (resource_id, resource_type)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity (created_at)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_builds_started ON build_history (started_at)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_notif_log_created ON notification_log (created_at)'); } catch(e) {}
 
 // Retention — keep only last 1000 activity records and 100 builds
 // Saxlama — yalnız son 1000 fəaliyyət qeydi və 100 build saxla
@@ -159,6 +195,24 @@ const stmts = {
   hideBuild: db.prepare('INSERT OR IGNORE INTO hidden_docker_builds (image_id) VALUES (?)'),
   unhideBuild: db.prepare('DELETE FROM hidden_docker_builds WHERE image_id = ?'),
   clearHiddenBuilds: db.prepare('DELETE FROM hidden_docker_builds'),
+
+  // SMTP Config
+  getSmtpConfig: db.prepare('SELECT * FROM smtp_config'),
+  setSmtpConfig: db.prepare('INSERT OR REPLACE INTO smtp_config (key, value) VALUES (?, ?)'),
+  deleteSmtpConfig: db.prepare('DELETE FROM smtp_config'),
+
+  // Notification Rules
+  getNotificationRules: db.prepare('SELECT * FROM notification_rules ORDER BY id'),
+  getRule: db.prepare('SELECT * FROM notification_rules WHERE event_type = ?'),
+  setRuleEnabled: db.prepare('UPDATE notification_rules SET enabled = ? WHERE event_type = ?'),
+  setRuleCooldown: db.prepare('UPDATE notification_rules SET cooldown_minutes = ? WHERE event_type = ?'),
+
+  // Notification Log
+  insertNotificationLog: db.prepare('INSERT INTO notification_log (event_type, subject, recipient, status, error, details) VALUES (?, ?, ?, ?, ?, ?)'),
+  getNotificationLogs: db.prepare('SELECT * FROM notification_log ORDER BY created_at DESC LIMIT ?'),
+  getLastNotification: db.prepare('SELECT * FROM notification_log WHERE event_type = ? AND status = ? ORDER BY created_at DESC LIMIT 1'),
+  clearNotificationLogs: db.prepare('DELETE FROM notification_log'),
+  trimNotificationLogs: db.prepare('DELETE FROM notification_log WHERE id NOT IN (SELECT id FROM notification_log ORDER BY created_at DESC LIMIT 500)'),
 };
 
 module.exports = { db, stmts };

@@ -121,6 +121,86 @@ router.post('/settings', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ============ SMTP CONFIG ============
+router.get('/smtp', (req, res) => {
+  try {
+    const rows = stmts.getSmtpConfig.all();
+    const config = {};
+    rows.forEach(r => {
+      // Mask password
+      config[r.key] = r.key === 'smtp_pass' ? '••••••••' : r.value;
+    });
+    res.json(config);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/smtp', (req, res) => {
+  try {
+    const allowedKeys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_to'];
+    for (const [key, value] of Object.entries(req.body)) {
+      if (allowedKeys.includes(key) && value !== undefined) {
+        // Don't overwrite password with mask
+        if (key === 'smtp_pass' && value === '••••••••') continue;
+        stmts.setSmtpConfig.run(key, String(value));
+      }
+    }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/smtp', (req, res) => {
+  try { stmts.deleteSmtpConfig.run(); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/smtp/test', async (req, res) => {
+  try {
+    const mailer = require('../notifications/mailer');
+    const result = await mailer.sendTestEmail();
+    if (result.success) {
+      res.json({ success: true });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ============ NOTIFICATION RULES ============
+router.get('/notifications/rules', (req, res) => {
+  try { res.json(stmts.getNotificationRules.all()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/notifications/rules/:type', (req, res) => {
+  try {
+    const { type } = req.params;
+    const rule = stmts.getRule.get(type);
+    if (!rule) return res.status(404).json({ error: 'Rule not found' });
+
+    if (req.body.enabled !== undefined) {
+      stmts.setRuleEnabled.run(req.body.enabled ? 1 : 0, type);
+    }
+    if (req.body.cooldown_minutes !== undefined) {
+      const cd = Math.max(1, Math.min(1440, parseInt(req.body.cooldown_minutes) || 5));
+      stmts.setRuleCooldown.run(cd, type);
+    }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ============ NOTIFICATION LOG ============
+router.get('/notifications/log', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    res.json(stmts.getNotificationLogs.all(limit));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/notifications/log', (req, res) => {
+  try { stmts.clearNotificationLogs.run(); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ============ SYSTEM AUTO-START ============
 router.get('/autostart', async (req, res) => {
   try {

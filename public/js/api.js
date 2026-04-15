@@ -24,6 +24,19 @@ const API = {
     return res.json();
   },
 
+  async put(path, body = {}) {
+    const res = await fetch(this.base + path, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || res.statusText);
+    }
+    return res.json();
+  },
+
   async del(path) {
     const res = await fetch(this.base + path, { method: 'DELETE' });
     if (!res.ok) {
@@ -32,6 +45,8 @@ const API = {
     }
     return res.json();
   },
+
+  async delete(path) { return this.del(path); },
 };
 
 // Socket.IO connection

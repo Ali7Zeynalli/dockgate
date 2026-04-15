@@ -9,6 +9,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
+const EventMonitor = require('./notifications/event-monitor');
+const eventMonitor = new EventMonitor();
+
 const PORT = process.env.PORT || 7077;
 
 // Middleware
@@ -269,6 +272,9 @@ io.on('connection', (socket) => {
         stmts.appendBuildLog.run(fullLog, id);
 
         socket.emit('build:complete', { buildId: id, status, duration, imageId });
+        if (status === 'failed') {
+          eventMonitor.triggerBuildFailed({ imageTag: tag, buildId: id, error: 'Build failed', duration });
+        }
         buildStream = null;
       });
 
@@ -441,6 +447,9 @@ server.listen(PORT, () => {
   console.log(`  ────────────────────────`);
   console.log(`  → http://localhost:${PORT}`);
   console.log(`  → Listening on port ${PORT}\n`);
+
+  // Start event monitor for email notifications
+  eventMonitor.start();
 });
 
 // Periodic DB retention — trim old records every 6 hours
@@ -448,4 +457,5 @@ server.listen(PORT, () => {
 setInterval(() => {
   try { stmts.trimActivity.run(); } catch(e) {}
   try { stmts.trimBuilds.run(); } catch(e) {}
+  try { stmts.trimNotificationLogs.run(); } catch(e) {}
 }, 6 * 60 * 60 * 1000);
