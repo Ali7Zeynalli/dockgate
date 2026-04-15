@@ -8,6 +8,8 @@ Router.register('builds', async (content) => {
   let buildLogEl = null;
   let activeTab = 'history';
   let selectedBuildId = null;
+  let selectedPanelIds = new Set();
+  let selectedDockerIds = new Set();
 
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
@@ -34,7 +36,7 @@ Router.register('builds', async (content) => {
       <div id="tab-content"></div>
     `;
     content.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => { activeTab = btn.dataset.tab; selectedBuildId = null; render(); });
+      btn.addEventListener('click', () => { activeTab = btn.dataset.tab; selectedBuildId = null; selectedPanelIds.clear(); selectedDockerIds.clear(); render(); });
     });
     document.getElementById('new-build-btn')?.addEventListener('click', showNewBuildModal);
     document.getElementById('builds-refresh')?.addEventListener('click', render);
@@ -74,6 +76,12 @@ Router.register('builds', async (content) => {
         return;
       }
 
+      // Clean up selections that are no longer visible
+      const visiblePanelIds = new Set(panelBuilds.map(b => String(b.id)));
+      for (const id of selectedPanelIds) { if (!visiblePanelIds.has(id)) selectedPanelIds.delete(id); }
+      const visibleDockerIds = new Set(dockerHistory.map(d => d.imageId));
+      for (const id of selectedDockerIds) { if (!visibleDockerIds.has(id)) selectedDockerIds.delete(id); }
+
       // Docker image history — each image as a card, expandable to see layers
       let historyHtml = '';
       if (dockerHistory.length > 0) {
@@ -81,6 +89,13 @@ Router.register('builds', async (content) => {
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <span style="font-weight:700;font-size:14px;">Docker Image Build History</span>
           </div>
+          ${selectedDockerIds.size > 0 ? `
+          <div class="card mb-2" style="padding:12px 18px;display:flex;align-items:center;gap:12px;background:var(--accent-dim)">
+            <span class="text-sm font-bold">${selectedDockerIds.size} selected</span>
+            <button class="btn btn-sm btn-danger" id="bulk-hide-docker">${Icons.trash} Hide Selected</button>
+            <div style="flex:1"></div>
+            <button class="btn btn-sm btn-ghost" id="bulk-clear-docker">Clear</button>
+          </div>` : ''}
           <div id="docker-history-list" style="margin-bottom:24px;"></div>
         `;
       }
@@ -93,6 +108,13 @@ Router.register('builds', async (content) => {
             <span style="font-weight:700;font-size:14px;">Panel Builds</span>
             <button class="btn btn-danger btn-sm" id="clear-history">${Icons.trash} Clear All</button>
           </div>
+          ${selectedPanelIds.size > 0 ? `
+          <div class="card mb-2" style="padding:12px 18px;display:flex;align-items:center;gap:12px;background:var(--accent-dim)">
+            <span class="text-sm font-bold">${selectedPanelIds.size} selected</span>
+            <button class="btn btn-sm btn-danger" id="bulk-delete-panel">${Icons.trash} Delete Selected</button>
+            <div style="flex:1"></div>
+            <button class="btn btn-sm btn-ghost" id="bulk-clear-panel">Clear</button>
+          </div>` : ''}
           <div id="panel-build-list" style="margin-bottom:24px;"></div>
         `;
       }
@@ -106,8 +128,9 @@ Router.register('builds', async (content) => {
           const el = document.createElement('div');
           el.style.marginBottom = '6px';
           el.innerHTML = `
-            <div class="build-card" data-dhi="${idx}" style="cursor:pointer;">
+            <div class="build-card ${selectedDockerIds.has(img.imageId) ? 'selected' : ''}" data-dhi="${idx}" style="cursor:pointer;">
               <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;">
+                <div class="checkbox ${selectedDockerIds.has(img.imageId) ? 'checked' : ''}" data-select-docker="${img.imageId}" onclick="event.stopPropagation()"></div>
                 <span class="cache-chev" style="transition:transform 200ms;display:flex;">${Icons.chevronRight}</span>
                 <div class="build-status-icon build-status-success" style="width:28px;height:28px;font-size:12px;">✓</div>
                 <div style="flex:1;min-width:0;">
@@ -147,6 +170,14 @@ Router.register('builds', async (content) => {
             hdr.style.borderRadius = open ? '' : 'var(--radius-lg) var(--radius-lg) 0 0';
           });
 
+          // Checkbox selection
+          el.querySelector('[data-select-docker]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = img.imageId;
+            if (selectedDockerIds.has(id)) selectedDockerIds.delete(id); else selectedDockerIds.add(id);
+            render();
+          });
+
           // Delete button
           el.querySelector('.hide-docker-build')?.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -159,6 +190,20 @@ Router.register('builds', async (content) => {
             }, true);
           });
         });
+
+        // Bulk hide docker builds
+        document.getElementById('bulk-hide-docker')?.addEventListener('click', () => {
+          showConfirm('Hide Selected', `Hide ${selectedDockerIds.size} image(s) from build history? (Images will not be deleted)`, async () => {
+            let hidden = 0;
+            for (const id of selectedDockerIds) {
+              try { await API.post('/builds/docker-history/hide', { imageId: id }); hidden++; } catch(e) {}
+            }
+            showToast(`Hidden ${hidden}/${selectedDockerIds.size} from history`);
+            selectedDockerIds.clear();
+            render();
+          }, true);
+        });
+        document.getElementById('bulk-clear-docker')?.addEventListener('click', () => { selectedDockerIds.clear(); render(); });
       }
 
       // Panel build cards
@@ -166,9 +211,10 @@ Router.register('builds', async (content) => {
         const listEl = document.getElementById('panel-build-list');
         panelBuilds.forEach(b => {
           const card = document.createElement('div');
-          card.className = 'build-card';
+          card.className = `build-card ${selectedPanelIds.has(String(b.id)) ? 'selected' : ''}`;
           card.innerHTML = `
             <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;">
+              <div class="checkbox ${selectedPanelIds.has(String(b.id)) ? 'checked' : ''}" data-select-panel="${b.id}"></div>
               <div class="build-status-icon build-status-${b.status}">
                 ${b.status === 'success' ? '✓' : b.status === 'failed' ? '✗' : '●'}
               </div>
@@ -183,13 +229,35 @@ Router.register('builds', async (content) => {
               <button class="btn-icon delete-build" data-id="${b.id}" title="Delete">${Icons.trash}</button>
             </div>
           `;
+          // Checkbox selection
+          card.querySelector('[data-select-panel]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = String(b.id);
+            if (selectedPanelIds.has(id)) selectedPanelIds.delete(id); else selectedPanelIds.add(id);
+            render();
+          });
+
           card.addEventListener('click', (e) => {
-            if (e.target.closest('.delete-build')) return;
+            if (e.target.closest('.delete-build') || e.target.closest('[data-select-panel]')) return;
             selectedBuildId = b.id;
             render();
           });
           listEl.appendChild(card);
         });
+
+        // Bulk delete panel builds
+        document.getElementById('bulk-delete-panel')?.addEventListener('click', () => {
+          showConfirm('Delete Selected', `Delete ${selectedPanelIds.size} build record(s)?`, async () => {
+            let removed = 0;
+            for (const id of selectedPanelIds) {
+              try { await API.del(`/builds/detail/${id}`); removed++; } catch(e) {}
+            }
+            showToast(`Deleted ${removed}/${selectedPanelIds.size} builds`);
+            selectedPanelIds.clear();
+            render();
+          }, true);
+        });
+        document.getElementById('bulk-clear-panel')?.addEventListener('click', () => { selectedPanelIds.clear(); render(); });
 
         listEl.querySelectorAll('.delete-build').forEach(btn => {
           btn.addEventListener('click', (e) => {
