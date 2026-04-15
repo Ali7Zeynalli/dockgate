@@ -5,6 +5,14 @@ Router.register('terminal', async (content, params) => {
   let term = null;
   let fitAddon = null;
 
+  function onTermReady() {
+    let opt = document.getElementById('terminal-container')?.selectedOptions[0];
+    if (term) term.write(`\x1b[32mConnected to ${opt ? opt.text.trim() : 'container'}\x1b[0m\r\n`);
+  }
+  function onTermData({ data }) {
+    if (term) term.write(data);
+  }
+
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
 
@@ -129,14 +137,8 @@ Router.register('terminal', async (content, params) => {
       window.addEventListener('resize', handleResize);
     }
 
-    socket.off('terminal:ready').on('terminal:ready', () => {
-      let opt = document.getElementById('terminal-container').selectedOptions[0];
-      term.write(`\x1b[32mConnected to ${opt ? opt.text.trim() : 'container'}\x1b[0m\r\n`);
-    });
-
-    socket.off('terminal:data').on('terminal:data', ({ data }) => {
-      if (term) term.write(data);
-    });
+    socket.off('terminal:ready', onTermReady).on('terminal:ready', onTermReady);
+    socket.off('terminal:data', onTermData).on('terminal:data', onTermData);
 
     term.onData(data => {
       socket.emit('terminal:input', data);
@@ -163,8 +165,8 @@ Router.register('terminal', async (content, params) => {
 
   function destroy() {
     window.removeEventListener('resize', handleResize);
-    socket.off('terminal:ready');
-    socket.off('terminal:data');
+    socket.off('terminal:ready', onTermReady);
+    socket.off('terminal:data', onTermData);
     socket.emit('terminal:stop');
     if (term) term.dispose();
   }

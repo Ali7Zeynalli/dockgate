@@ -148,15 +148,20 @@ const REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
 
 // Fetch file from GitHub (wget — Node.js https hangs on Alpine) / GitHub-dan fayl al (wget ilə)
 function githubRawFetch(filePath) {
-  const { execSync } = require('child_process');
+  const { execFile } = require('child_process');
   const url = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${filePath}`;
-  return execSync(`wget -qO- --timeout=5 "${url}"`, { timeout: 8000, encoding: 'utf8' });
+  return new Promise((resolve, reject) => {
+    execFile('wget', ['-qO-', '--timeout=5', url], { timeout: 8000 }, (err, stdout) => {
+      if (err) return reject(err);
+      resolve(stdout);
+    });
+  });
 }
 
 // Fetch recent changes from CHANGELOG.md / CHANGELOG.md-dən son dəyişiklikləri al
-function fetchRecentChanges() {
+async function fetchRecentChanges() {
   try {
-    const content = githubRawFetch('CHANGELOG.md');
+    const content = await githubRawFetch('CHANGELOG.md');
     const lines = content.split('\n').slice(0, 30);
     const changes = [];
     for (const line of lines) {
@@ -189,14 +194,14 @@ router.get('/update/check', async (req, res) => {
     delete require.cache[require.resolve(pkgPath)];
     const currentVersion = require(pkgPath).version;
 
-    const remoteContent = githubRawFetch('package.json');
+    const remoteContent = await githubRawFetch('package.json');
     const remoteVersion = JSON.parse(remoteContent).version;
 
     // Semver compare — update only if remote is newer / Yalnız remote daha yenidirsə update göstər
     const hasUpdate = isNewerVersion(currentVersion, remoteVersion);
     console.log(`[Update] v${currentVersion} → v${remoteVersion} (update: ${hasUpdate})`);
 
-    const changes = hasUpdate ? fetchRecentChanges() : [];
+    const changes = hasUpdate ? await fetchRecentChanges() : [];
 
     res.json({
       updateAvailable: hasUpdate,
@@ -256,38 +261,44 @@ router.post('/update/apply', async (req, res) => {
     await pullImage(docker, `${DOCKER_IMAGE}:latest`);
     console.log('[Update] Image pulled successfully');
 
-    // Step 3: Build docker run command from container config / docker run əmrini konfiqurasiyadan yarat
-    let runCmd = `docker stop ${containerName} 2>/dev/null; docker rm ${containerName} 2>/dev/null; docker run -d --name ${containerName}`;
+    // Step 3: Build docker run args from container config / docker run arqumentlərini konfiqurasiyadan yarat
+    const runArgs = ['stop', containerName];
+    const rmArgs = ['rm', containerName];
+    const startArgs = ['run', '-d', '--name', containerName];
 
     // Restart policy
-    runCmd += ` --restart ${restartPolicy.Name || 'always'}`;
+    startArgs.push('--restart', restartPolicy.Name || 'always');
 
     // Port bindings
     for (const [containerPort, hostPorts] of Object.entries(portBindings)) {
       for (const hp of (hostPorts || [])) {
         const port = containerPort.split('/')[0];
-        runCmd += hp.HostIp ? ` -p ${hp.HostIp}:${hp.HostPort}:${port}` : ` -p ${hp.HostPort}:${port}`;
+        startArgs.push('-p', hp.HostIp ? `${hp.HostIp}:${hp.HostPort}:${port}` : `${hp.HostPort}:${port}`);
       }
     }
 
     // Volume binds
     for (const bind of binds) {
-      runCmd += ` -v '${bind}'`;
+      startArgs.push('-v', bind);
     }
 
     // Environment variables (only user-defined) / Yalnız istifadəçi tərəfindən təyin edilənlər
     const skipEnvPrefixes = ['PATH=', 'NODE_VERSION=', 'YARN_VERSION=', 'HOSTNAME='];
     for (const e of env) {
       if (!skipEnvPrefixes.some(prefix => e.startsWith(prefix))) {
-        runCmd += ` -e '${e}'`;
+        startArgs.push('-e', e);
       }
     }
 
     // Resource limits
-    if (nanoCpus > 0) runCmd += ` --cpus ${nanoCpus / 1e9}`;
-    if (memory > 0) runCmd += ` --memory ${memory}`;
+    if (nanoCpus > 0) startArgs.push('--cpus', String(nanoCpus / 1e9));
+    if (memory > 0) startArgs.push('--memory', String(memory));
 
-    runCmd += ` ${DOCKER_IMAGE}:latest`;
+    startArgs.push(`${DOCKER_IMAGE}:latest`);
+
+    // Shell-safe: hər arqumenti ayrıca quote et
+    const shellEscape = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
+    const runCmd = `docker ${runArgs.map(shellEscape).join(' ')} 2>/dev/null; docker ${rmArgs.map(shellEscape).join(' ')} 2>/dev/null; docker ${startArgs.map(shellEscape).join(' ')}`;
 
     console.log('[Update] Spawning helper container to restart...');
 

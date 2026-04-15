@@ -79,7 +79,7 @@ app.get('/api/dashboard', async (req, res) => {
     // Faza 2: Stats + health paralel (yalnız running üçün) / Phase 2: Stats + health in parallel (running only)
     let containerStats = [];
     let healthStats = { healthy: 0, unhealthy: 0, noHealthcheck: 0, starting: 0 };
-    var containerDetails = [];
+    let containerDetails = [];
 
     if (running.length > 0) {
       const [statsResults, inspectResults] = await Promise.all([
@@ -297,6 +297,7 @@ io.on('connection', (socket) => {
   // Container log streaming
   let logStream = null;
   socket.on('logs:subscribe', async ({ containerId, tail = 100, timestamps = false }) => {
+    if (logStream) { try { logStream.destroy(); } catch(e){} logStream = null; }
     try {
       const container = dockerService.docker.getContainer(containerId);
       logStream = await container.logs({
@@ -320,6 +321,7 @@ io.on('connection', (socket) => {
   // Container stats streaming
   let statsStream = null;
   socket.on('stats:subscribe', async ({ containerId }) => {
+    if (statsStream) { try { statsStream.destroy(); } catch(e){} statsStream = null; }
     try {
       const container = dockerService.docker.getContainer(containerId);
       statsStream = await container.stats({ stream: true });
@@ -368,6 +370,11 @@ io.on('connection', (socket) => {
   // Container terminal (exec)
   socket.on('terminal:start', async ({ containerId, shell = '/bin/sh' }) => {
     try {
+      // Clean up previous terminal listeners to prevent leaks
+      // Əvvəlki terminal listener-lərini təmizlə ki, leak olmasın
+      socket.removeAllListeners('terminal:input');
+      socket.removeAllListeners('terminal:resize');
+
       const container = dockerService.docker.getContainer(containerId);
       const exec = await container.exec({
         Cmd: [shell],
@@ -426,3 +433,10 @@ server.listen(PORT, () => {
   console.log(`  → http://localhost:${PORT}`);
   console.log(`  → Listening on port ${PORT}\n`);
 });
+
+// Periodic DB retention — trim old records every 6 hours
+// Dövri DB saxlama — hər 6 saatda köhnə qeydləri sil
+setInterval(() => {
+  try { stmts.trimActivity.run(); } catch(e) {}
+  try { stmts.trimBuilds.run(); } catch(e) {}
+}, 6 * 60 * 60 * 1000);

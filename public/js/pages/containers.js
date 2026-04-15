@@ -14,12 +14,13 @@ Router.register('containers', async (content) => {
 
   async function render() {
     try {
-      let containers = await API.get('/containers');
-
-      // Abort if user navigated away during API call / API çağırışı zamanı istifadəçi başqa səhifəyə keçibsə dayandır
+      // Use already fetched data for counts — avoid duplicate API call
+      // Artıq çəkilmiş datadan istifadə et — təkrar API çağırışından qaç
+      const allContainers = await API.get('/containers');
       if (!Router.isActiveNav(pageNavId)) return;
 
       // Filter
+      let containers = [...allContainers];
       if (currentFilter !== 'all') {
         containers = containers.filter(c => {
           if (currentFilter === 'running') return c.state === 'running';
@@ -51,9 +52,9 @@ Router.register('containers', async (content) => {
       });
 
       const counts = {
-        all: (await API.get('/containers')).length,
-        running: containers.filter(c => c.state === 'running').length,
-        stopped: containers.filter(c => c.state === 'exited').length,
+        all: allContainers.length,
+        running: allContainers.filter(c => c.state === 'running').length,
+        stopped: allContainers.filter(c => c.state === 'exited').length,
       };
 
       content.innerHTML = `

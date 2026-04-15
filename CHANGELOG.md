@@ -4,14 +4,37 @@
 
 ## [1.7.4] - 2026-04-15
 
+### Features
+- **Bulk selection & deletion — Images** — checkbox column, select-all, search, bulk remove, bulk force remove
+- **Bulk selection & deletion — Volumes** — checkbox column (unused only), select-all, bulk remove with data loss warning
+- **Bulk selection & deletion — Networks** — checkbox column (removable only, excludes bridge/host/none and in-use), select-all, bulk remove
+
 ### Bug Fixes
 - **Navigation race condition fixed** — resolved issue where switching between pages (e.g., Images → Logs) could result in blank content or stale page rendering
 - **Router navId guard** — added unique navigation ID counter to prevent in-flight async operations from overwriting the active page's content
 - **All pages protected** — every page handler now checks `Router.isActiveNav()` after API calls to abort stale renders
+- **Command injection fix** — compose routes now use `execFile` instead of `exec` with template literals, preventing shell injection via project names
+- **WebSocket listener leak fix** — terminal `input`/`resize` listeners now cleaned up before re-registration on server side
+- **Container Detail terminal resize leak** — `window.addEventListener('resize')` now properly removed in cleanup
+- **Container Detail socket listener leak** — `terminal:ready` listener now tracked and removed with handler reference
+- **Modal cleanup on navigation** — open modals are now closed when navigating between pages
+- **Duplicate API call removed** — Containers page no longer makes a second API call just for counts
+- **Toast notification limit** — max 5 toasts shown at once to prevent DOM bloat
+- **Build cache prune** — uses `execFile` instead of `exec` for safer command execution
+- **DB activity log retention** — activity limited to 1000 records, build history to 100, with periodic cleanup every 6h
+- **DB indexes added** — indexes on `activity(resource_id, resource_type)`, `activity(created_at)`, `build_history(started_at)`
+- **Compose project name validation** — only alphanumeric, dash, underscore allowed
 
 ### Technical Changes
-- `public/js/router.js` — added `_navId` counter, `isActiveNav()` method, and post-handler staleness check
-- All page handlers (`dashboard`, `containers`, `images`, `logs`, `terminal`, `volumes`, `networks`, `compose`, `builds`, `system`, `cleanup`, `settings`, `container-detail`) — added `pageNavId` capture and guard after async API calls
+- `public/js/router.js` — added `_navId` counter, `isActiveNav()` method, post-handler staleness check, modal cleanup on navigate
+- All page handlers — added `pageNavId` capture and guard after async API calls
+- `server/routes/compose.js` — replaced `exec` with `execFile`, added `validateProjectName()` and `runCompose()` helpers
+- `server/db.js` — added indexes, retention cleanup on startup, `trimActivity`/`trimBuilds` prepared statements
+- `server/index.js` — terminal listener cleanup before re-registration, periodic DB trim every 6h
+- `server/docker.js` — `pruneBuildCache()` uses `execFile`, removed unused `exec` import
+- `public/js/api.js` — toast container limited to 5 children
+- `public/js/pages/containers.js` — single API call for containers + counts
+- `public/js/pages/container-detail.js` — resize listener tracked in cleanup array, terminal:ready tracked with handler ref
 
 ---
 

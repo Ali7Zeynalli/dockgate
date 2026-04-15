@@ -68,7 +68,7 @@ Router.register('cleanup', async (content) => {
                     ${opt.title}
                     ${opt.count > 0 ? `<span class="cleanup-count">${opt.count}</span>` : ''}
                   </div>
-                  <button class="btn-sm ${opt.count > 0 ? 'btn-primary' : 'btn-secondary'}" 
+                  <button class="btn btn-sm ${opt.count > 0 ? 'btn-primary' : 'btn-secondary'}"
                           data-prune="${opt.id}" ${opt.count === 0 ? 'disabled' : ''}>
                     ${opt.id === 'build_cache' ? 'Clear Cache' : `Clean ${opt.count} Items`}
                   </button>

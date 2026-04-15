@@ -5,7 +5,7 @@
  */
 const express = require('express');
 const router = express.Router();
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const dockerService = require('../docker');
 const { stmts } = require('../db');
 
@@ -225,7 +225,7 @@ router.post('/cache/prune', async (req, res) => {
 
 router.get('/builders', async (req, res) => {
   try {
-    exec('docker buildx ls --format "{{json .}}"', (err, stdout) => {
+    execFile('docker', ['buildx', 'ls', '--format', '{{json .}}'], (err, stdout) => {
       if (err) {
         return res.json([{ name: 'default', driver: 'docker', status: 'running', isDefault: true }]);
       }

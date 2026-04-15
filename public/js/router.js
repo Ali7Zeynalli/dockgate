@@ -27,6 +27,10 @@ const Router = {
       this.currentCleanup = null;
     }
 
+    // Close any open modals on navigation / Naviqasiya zamanı açıq modalları bağla
+    const modalRoot = document.getElementById('modal-root');
+    if (modalRoot) modalRoot.innerHTML = '';
+
     const content = document.getElementById('content');
     const handler = this.routes[path];
 

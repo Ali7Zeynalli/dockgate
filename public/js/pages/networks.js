@@ -1,5 +1,7 @@
 // Networks Page
 Router.register('networks', async (content) => {
+  let selectedIds = new Set();
+
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
 
@@ -9,29 +11,54 @@ Router.register('networks', async (content) => {
 
       // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
       if (!Router.isActiveNav(pageNavId)) return;
+
+      // Clean up selectedIds that are no longer visible
+      const visibleIds = new Set(networks.map(n => n.id));
+      for (const id of selectedIds) {
+        if (!visibleIds.has(id)) selectedIds.delete(id);
+      }
+
+      // Only user-created, empty networks can be removed/selected
+      const removableNetworks = networks.filter(n => !['bridge', 'host', 'none'].includes(n.name) && n.containers === 0);
+
       content.innerHTML = `
         <div class="page-header">
           <div><div class="page-title">Networks</div><div class="page-subtitle">${networks.length} network(s)</div></div>
           <div class="page-actions"><button class="btn btn-secondary" id="net-refresh">${Icons.refresh}</button></div>
         </div>
+
+        ${selectedIds.size > 0 ? `
+        <div class="card mb-2" style="padding:12px 18px;display:flex;align-items:center;gap:12px;background:var(--accent-dim)">
+          <span class="text-sm font-bold">${selectedIds.size} selected</span>
+          <button class="btn btn-sm btn-danger" id="bulk-remove">${Icons.trash} Remove</button>
+          <div style="flex:1"></div>
+          <button class="btn btn-sm btn-ghost" id="bulk-clear">Clear</button>
+        </div>` : ''}
+
         <div class="table-wrapper">
           <table>
-            <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Subnet</th><th>Gateway</th><th>Containers</th><th>Internal</th><th style="text-align:right">Actions</th></tr></thead>
+            <thead><tr>
+              <th style="width:40px"><div class="checkbox ${removableNetworks.length > 0 && selectedIds.size === removableNetworks.length ? 'checked' : ''}" id="select-all"></div></th>
+              <th>Name</th><th>Driver</th><th>Scope</th><th>Subnet</th><th>Gateway</th><th>Containers</th><th>Internal</th><th style="text-align:right">Actions</th>
+            </tr></thead>
             <tbody>
-              ${networks.map(n => `<tr>
-                <td class="td-name">${escapeHtml(n.name)}</td>
-                <td><span class="badge badge-created">${n.driver}</span></td>
-                <td class="text-sm">${n.scope}</td>
-                <td class="td-mono">${n.subnet || '—'}</td>
-                <td class="td-mono">${n.gateway || '—'}</td>
-                <td><span class="badge ${n.containers > 0 ? 'badge-running' : 'badge-dead'}">${n.containers}</span></td>
-                <td>${n.internal ? '<span class="badge badge-paused">Yes</span>' : '<span class="badge badge-dead">No</span>'}</td>
-                <td><div class="td-actions">
-                  <button class="btn-icon" title="Inspect" data-inspect="${n.id}">${Icons.eye}</button>
-                  ${!['bridge', 'host', 'none'].includes(n.name) && n.containers === 0 ?
-                    `<button class="btn-icon" title="Remove" data-remove="${n.id}" data-name="${escapeHtml(n.name)}" style="color:var(--danger)">${Icons.trash}</button>` : ''}
-                </div></td>
-              </tr>`).join('')}
+              ${networks.map(n => {
+                const canRemove = !['bridge', 'host', 'none'].includes(n.name) && n.containers === 0;
+                return `<tr class="${selectedIds.has(n.id) ? 'selected' : ''}">
+                  <td>${canRemove ? `<div class="checkbox ${selectedIds.has(n.id) ? 'checked' : ''}" data-select="${n.id}"></div>` : ''}</td>
+                  <td class="td-name">${escapeHtml(n.name)}</td>
+                  <td><span class="badge badge-created">${n.driver}</span></td>
+                  <td class="text-sm">${n.scope}</td>
+                  <td class="td-mono">${n.subnet || '—'}</td>
+                  <td class="td-mono">${n.gateway || '—'}</td>
+                  <td><span class="badge ${n.containers > 0 ? 'badge-running' : 'badge-dead'}">${n.containers}</span></td>
+                  <td>${n.internal ? '<span class="badge badge-paused">Yes</span>' : '<span class="badge badge-dead">No</span>'}</td>
+                  <td><div class="td-actions">
+                    <button class="btn-icon" title="Inspect" data-inspect="${n.id}">${Icons.eye}</button>
+                    ${canRemove ? `<button class="btn-icon" title="Remove" data-remove="${n.id}" data-name="${escapeHtml(n.name)}" style="color:var(--danger)">${Icons.trash}</button>` : ''}
+                  </div></td>
+                </tr>`;
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -39,6 +66,7 @@ Router.register('networks', async (content) => {
 
       document.getElementById('net-refresh')?.addEventListener('click', render);
 
+      // Single remove
       content.querySelectorAll('[data-remove]').forEach(btn => {
         btn.addEventListener('click', () => {
           showConfirm('Remove Network', `Remove <strong>${btn.dataset.name}</strong>?`, async () => {
@@ -48,6 +76,7 @@ Router.register('networks', async (content) => {
         });
       });
 
+      // Inspect
       content.querySelectorAll('[data-inspect]').forEach(btn => {
         btn.addEventListener('click', async () => {
           try {
@@ -71,6 +100,38 @@ Router.register('networks', async (content) => {
           } catch (err) { showToast(err.message, 'error'); }
         });
       });
+
+      // Selection — only removable networks can be selected
+      content.querySelectorAll('[data-select]').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = el.dataset.select;
+          if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+          render();
+        });
+      });
+
+      document.getElementById('select-all')?.addEventListener('click', () => {
+        if (selectedIds.size === removableNetworks.length) selectedIds.clear();
+        else removableNetworks.forEach(n => selectedIds.add(n.id));
+        render();
+      });
+
+      // Bulk actions
+      document.getElementById('bulk-clear')?.addEventListener('click', () => { selectedIds.clear(); render(); });
+
+      document.getElementById('bulk-remove')?.addEventListener('click', () => {
+        showConfirm('Remove Selected Networks', `Remove ${selectedIds.size} network(s)?`, async () => {
+          let removed = 0;
+          for (const id of selectedIds) {
+            try { await API.del(`/networks/${id}`); removed++; } catch(e) {}
+          }
+          showToast(`Removed ${removed}/${selectedIds.size} networks`);
+          selectedIds.clear();
+          render();
+        }, true);
+      });
+
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
   }
   await render();

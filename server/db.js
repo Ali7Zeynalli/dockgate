@@ -81,6 +81,16 @@ try { db.exec('ALTER TABLE build_history ADD COLUMN build_args TEXT DEFAULT "{}"
 try { db.exec('ALTER TABLE build_history ADD COLUMN nocache INTEGER DEFAULT 0'); } catch(e) {}
 try { db.exec('ALTER TABLE build_history ADD COLUMN pull INTEGER DEFAULT 0'); } catch(e) {}
 
+// Indexes for frequently queried columns / Tez-tez sorğulanan sütunlar üçün indekslər
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_activity_resource ON activity (resource_id, resource_type)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity (created_at)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_builds_started ON build_history (started_at)'); } catch(e) {}
+
+// Retention — keep only last 1000 activity records and 100 builds
+// Saxlama — yalnız son 1000 fəaliyyət qeydi və 100 build saxla
+try { db.exec('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 1000)'); } catch(e) {}
+try { db.exec('DELETE FROM build_history WHERE id NOT IN (SELECT id FROM build_history ORDER BY started_at DESC LIMIT 100)'); } catch(e) {}
+
 // Default settings
 const defaultSettings = {
   theme: 'dark',
@@ -126,6 +136,9 @@ const stmts = {
   getActivity: db.prepare('SELECT * FROM activity ORDER BY created_at DESC LIMIT ?'),
   logActivity: db.prepare('INSERT INTO activity (resource_id, resource_type, resource_name, action, details) VALUES (?, ?, ?, ?, ?)'),
   clearActivity: db.prepare('DELETE FROM activity'),
+  // Retention — keep only last N records / Saxlama — yalnız son N qeydi saxla
+  trimActivity: db.prepare('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 1000)'),
+  trimBuilds: db.prepare('DELETE FROM build_history WHERE id NOT IN (SELECT id FROM build_history ORDER BY started_at DESC LIMIT 100)'),
 
   // Settings
   getSettings: db.prepare('SELECT * FROM settings'),

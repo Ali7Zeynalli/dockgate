@@ -1,5 +1,7 @@
 // Volumes Page
 Router.register('volumes', async (content) => {
+  let selectedNames = new Set();
+
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
 
@@ -9,16 +11,38 @@ Router.register('volumes', async (content) => {
 
       // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
       if (!Router.isActiveNav(pageNavId)) return;
+
+      // Clean up selectedNames that are no longer visible
+      const visibleNames = new Set(volumes.map(v => v.name));
+      for (const name of selectedNames) {
+        if (!visibleNames.has(name)) selectedNames.delete(name);
+      }
+
+      const removableVolumes = volumes.filter(v => !v.inUse);
+
       content.innerHTML = `
         <div class="page-header">
           <div><div class="page-title">Volumes</div><div class="page-subtitle">${volumes.length} volume(s)</div></div>
           <div class="page-actions"><button class="btn btn-secondary" id="vol-refresh">${Icons.refresh}</button></div>
         </div>
+
+        ${selectedNames.size > 0 ? `
+        <div class="card mb-2" style="padding:12px 18px;display:flex;align-items:center;gap:12px;background:var(--accent-dim)">
+          <span class="text-sm font-bold">${selectedNames.size} selected</span>
+          <button class="btn btn-sm btn-danger" id="bulk-remove">${Icons.trash} Remove</button>
+          <div style="flex:1"></div>
+          <button class="btn btn-sm btn-ghost" id="bulk-clear">Clear</button>
+        </div>` : ''}
+
         <div class="table-wrapper">
           <table>
-            <thead><tr><th>Name</th><th>Driver</th><th>Mountpoint</th><th>Created</th><th>Containers</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
+            <thead><tr>
+              <th style="width:40px"><div class="checkbox ${volumes.length > 0 && selectedNames.size === removableVolumes.length && removableVolumes.length > 0 ? 'checked' : ''}" id="select-all"></div></th>
+              <th>Name</th><th>Driver</th><th>Mountpoint</th><th>Created</th><th>Containers</th><th>Status</th><th style="text-align:right">Actions</th>
+            </tr></thead>
             <tbody>
-              ${volumes.map(v => `<tr>
+              ${volumes.map(v => `<tr class="${selectedNames.has(v.name) ? 'selected' : ''}">
+                <td>${!v.inUse ? `<div class="checkbox ${selectedNames.has(v.name) ? 'checked' : ''}" data-select="${escapeHtml(v.name)}"></div>` : ''}</td>
                 <td class="td-name td-mono" style="max-width:200px">${escapeHtml(v.name)}</td>
                 <td class="text-sm">${v.driver}</td>
                 <td class="td-mono text-xs" style="max-width:250px" title="${escapeHtml(v.mountpoint)}">${escapeHtml(v.mountpoint)}</td>
@@ -26,8 +50,8 @@ Router.register('volumes', async (content) => {
                 <td><span class="badge ${v.inUse ? 'badge-running' : 'badge-dead'}">${v.attachedContainers}</span></td>
                 <td><span class="badge ${v.inUse ? 'badge-running' : 'badge-stopped'}">${v.inUse ? 'In Use' : 'Unused'}</span></td>
                 <td><div class="td-actions">
-                  <button class="btn-icon" title="Inspect" data-inspect="${v.name}">${Icons.eye}</button>
-                  ${!v.inUse ? `<button class="btn-icon" title="Remove" data-remove="${v.name}" style="color:var(--danger)">${Icons.trash}</button>` : ''}
+                  <button class="btn-icon" title="Inspect" data-inspect="${escapeHtml(v.name)}">${Icons.eye}</button>
+                  ${!v.inUse ? `<button class="btn-icon" title="Remove" data-remove="${escapeHtml(v.name)}" style="color:var(--danger)">${Icons.trash}</button>` : ''}
                 </div></td>
               </tr>`).join('')}
             </tbody>
@@ -37,15 +61,17 @@ Router.register('volumes', async (content) => {
 
       document.getElementById('vol-refresh')?.addEventListener('click', render);
 
+      // Single remove
       content.querySelectorAll('[data-remove]').forEach(btn => {
         btn.addEventListener('click', () => {
-          showConfirm('Remove Volume', `Remove <strong>${btn.dataset.remove}</strong>? This will delete all data in this volume.`, async () => {
+          showConfirm('Remove Volume', `Remove <strong>${escapeHtml(btn.dataset.remove)}</strong>? This will delete all data in this volume.`, async () => {
             try { await API.del(`/volumes/${btn.dataset.remove}`); showToast('Volume removed'); render(); }
             catch (err) { showToast(err.message, 'error'); }
           }, true);
         });
       });
 
+      // Inspect
       content.querySelectorAll('[data-inspect]').forEach(btn => {
         btn.addEventListener('click', async () => {
           try {
@@ -63,6 +89,38 @@ Router.register('volumes', async (content) => {
           } catch (err) { showToast(err.message, 'error'); }
         });
       });
+
+      // Selection — only unused volumes can be selected
+      content.querySelectorAll('[data-select]').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const name = el.dataset.select;
+          if (selectedNames.has(name)) selectedNames.delete(name); else selectedNames.add(name);
+          render();
+        });
+      });
+
+      document.getElementById('select-all')?.addEventListener('click', () => {
+        if (selectedNames.size === removableVolumes.length) selectedNames.clear();
+        else removableVolumes.forEach(v => selectedNames.add(v.name));
+        render();
+      });
+
+      // Bulk actions
+      document.getElementById('bulk-clear')?.addEventListener('click', () => { selectedNames.clear(); render(); });
+
+      document.getElementById('bulk-remove')?.addEventListener('click', () => {
+        showConfirm('Remove Selected Volumes', `Remove ${selectedNames.size} volume(s)? This will delete all data in these volumes.`, async () => {
+          let removed = 0;
+          for (const name of selectedNames) {
+            try { await API.del(`/volumes/${name}`); removed++; } catch(e) {}
+          }
+          showToast(`Removed ${removed}/${selectedNames.size} volumes`);
+          selectedNames.clear();
+          render();
+        }, true);
+      });
+
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
   }
   await render();

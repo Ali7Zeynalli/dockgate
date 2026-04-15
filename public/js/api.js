@@ -54,6 +54,12 @@ socket.on('disconnect', () => {
 // Toast notifications
 function showToast(message, type = 'success', duration = 4000) {
   const container = document.getElementById('toast-container');
+
+  // Limit toast count to prevent DOM bloat / Toast sayını limitlə ki, DOM şişməsin
+  while (container.children.length >= 5) {
+    container.removeChild(container.firstChild);
+  }
+
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
 

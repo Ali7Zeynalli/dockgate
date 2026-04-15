@@ -251,7 +251,9 @@ Router.register('container-detail', async (content, params) => {
     
     if (fitAddon) {
       setTimeout(() => fitAddon.fit(), 50);
-      window.addEventListener('resize', () => fitAddon.fit());
+      const resizeHandler = () => { if (fitAddon) fitAddon.fit(); };
+      window.addEventListener('resize', resizeHandler);
+      cleanup.push(() => window.removeEventListener('resize', resizeHandler));
     }
 
     function connectTerminal(shell = '/bin/sh') {
@@ -260,9 +262,11 @@ Router.register('container-detail', async (content, params) => {
       socket.emit('terminal:start', { containerId: id, shell });
     }
 
-    socket.on('terminal:ready', () => {
+    const onTermReady = () => {
       term.write(`\x1b[32mConnected!\x1b[0m\r\n`);
-    });
+    };
+
+    socket.on('terminal:ready', onTermReady);
 
     const onTermData = ({ data }) => {
       term.write(data);
@@ -289,7 +293,7 @@ Router.register('container-detail', async (content, params) => {
 
     cleanup.push(() => { 
       socket.off('terminal:data', onTermData); 
-      socket.off('terminal:ready');
+      socket.off('terminal:ready', onTermReady);
       socket.emit('terminal:stop'); 
       if (term) term.dispose(); 
     });
@@ -380,7 +384,8 @@ Router.register('container-detail', async (content, params) => {
               const [key, ...rest] = e.split('=');
               const value = rest.join('=');
               const isSecret = /password|secret|key|token|api/i.test(key);
-              return `<tr data-env><td class="td-mono">${escapeHtml(key)}</td><td class="text-sm ${isSecret ? 'text-muted' : ''}">${isSecret ? '••••••••' : escapeHtml(value)}</td><td><button class="btn-icon" onclick="navigator.clipboard.writeText('${escapeHtml(value).replace(/'/g, "\\'")}');showToast('Copied!')" title="Copy">${Icons.copy}</button></td></tr>`;
+              const safeValue = value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+              return `<tr data-env><td class="td-mono">${escapeHtml(key)}</td><td class="text-sm ${isSecret ? 'text-muted' : ''}">${isSecret ? '••••••••' : escapeHtml(value)}</td><td><button class="btn-icon" onclick="navigator.clipboard.writeText('${safeValue}');showToast('Copied!')" title="Copy">${Icons.copy}</button></td></tr>`;
             }).join('')}
           </tbody>
         </table>
@@ -513,6 +518,8 @@ Router.register('container-detail', async (content, params) => {
           </table>
         </div>
       `;
+    }).catch(err => {
+      el.innerHTML = `<div class="empty-state"><h3>Failed to load history</h3><p>${escapeHtml(err.message)}</p></div>`;
     });
   }
 

@@ -371,8 +371,6 @@ async function getComposeProject(projectName) {
   };
 }
 
-const { exec } = require('child_process');
-
 // ============ CLEANUP ============
 async function getCleanupPreview() {
   const [containers, images, volumes, networks, dfData] = await Promise.all([
@@ -431,8 +429,9 @@ async function pruneNetworks() {
 }
 
 async function pruneBuildCache() {
+  const { execFile } = require('child_process');
   return new Promise((resolve, reject) => {
-    exec('docker builder prune -a -f', (err, stdout) => {
+    execFile('docker', ['builder', 'prune', '-a', '-f'], (err, stdout) => {
       if (err) return reject(err);
       
       let spaceStr = '';
@@ -538,7 +537,7 @@ async function getAutoStartStatus() {
     const info = await c.inspect();
     return info.HostConfig.RestartPolicy.Name !== 'no';
   } catch(err) {
-    return true; // Assume true if we fail to read
+    return false; // Container tapılmırsa auto-start aktiv deyil
   }
 }
 
