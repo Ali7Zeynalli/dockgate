@@ -484,20 +484,20 @@ Router.register('settings', async (content) => {
 
       // ==================== SAVE SETTINGS ====================
       document.getElementById('save-settings')?.addEventListener('click', async () => {
-        const setTheme = document.getElementById('set-theme');
-        const setView = document.getElementById('set-view');
-        const setShell = document.getElementById('set-shell');
-        const setLogTimes = document.getElementById('set-logtimes');
-        const setAutoStart = document.getElementById('set-autostart');
+        // If not on General tab, switch to it first so fields exist
+        if (activeTab !== 'general') {
+          document.querySelector('#settings-tabs .tab-btn[data-tab="general"]')?.click();
+          await new Promise(r => setTimeout(r, 50));
+        }
 
         const newSettings = {
-          theme: setTheme ? setTheme.value : settings.theme,
-          defaultView: setView ? setView.value : settings.defaultView,
-          terminalShell: setShell ? setShell.value : settings.terminalShell,
-          logTimestamps: setLogTimes ? (setLogTimes.classList.contains('active') ? 'true' : 'false') : settings.logTimestamps,
+          theme: document.getElementById('set-theme')?.value || settings.theme,
+          defaultView: document.getElementById('set-view')?.value || settings.defaultView,
+          terminalShell: document.getElementById('set-shell')?.value || settings.terminalShell,
+          logTimestamps: document.getElementById('set-logtimes')?.classList.contains('active') ? 'true' : 'false',
         };
 
-        const newAutoStart = setAutoStart ? setAutoStart.classList.contains('active') : isAutoStart;
+        const newAutoStart = document.getElementById('set-autostart')?.classList.contains('active') ?? isAutoStart;
 
         try {
           await API.post('/meta/settings', newSettings);
