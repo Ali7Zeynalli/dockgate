@@ -187,12 +187,37 @@ Router.register('settings', async (content) => {
                 <span class="text-xs text-muted" id="tg-chevron">${tgConfigured ? '▼' : '▶'}</span>
               </div>
               <div id="tg-channel-body" style="display:${tgConfigured ? 'block' : 'none'};padding:4px 0 16px 0;">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
-                  <input class="input" id="tg-token" placeholder="Bot Token (from @BotFather)" value="${escapeHtml(tgConfig.tg_token || '')}" type="password" />
-                  <input class="input" id="tg-chat-id" placeholder="Chat ID" value="${escapeHtml(tgConfig.tg_chat_id || '')}" />
+                ${!tgConfigured ? `
+                <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:12px;line-height:1.7;">
+                  <div style="font-size:13px;font-weight:600;margin-bottom:8px;">How to set up Telegram Bot</div>
+                  <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;">
+                    <span style="background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">1</span>
+                    <span>Open Telegram, search for <strong>@BotFather</strong> and send <code>/newbot</code></span>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;">
+                    <span style="background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">2</span>
+                    <span>Follow the prompts to name your bot. You will receive a <strong>Bot Token</strong> — paste it below</span>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;">
+                    <span style="background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">3</span>
+                    <span>Open your new bot in Telegram and send <code>/start</code></span>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;">
+                    <span style="background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">4</span>
+                    <span>Open this URL in browser to find your <strong>Chat ID</strong>:<br>
+                      <code style="font-size:11px;word-break:break-all;">https://api.telegram.org/bot&lt;YOUR_TOKEN&gt;/getUpdates</code><br>
+                      Look for <code>"chat":{"id": <strong>123456789</strong>}</code> — that number is your Chat ID
+                    </span>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:flex-start;">
+                    <span style="background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">5</span>
+                    <span>Paste both values below, click <strong>Save</strong>, then <strong>Test Message</strong></span>
+                  </div>
                 </div>
-                <div class="settings-row-desc" style="margin-bottom:10px;">
-                  1. @BotFather-dan bot yarat &rarr; token al &nbsp; 2. Bota /start yaz &nbsp; 3. Chat ID-ni daxil et
+                ` : ''}
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+                  <input class="input" id="tg-token" placeholder="Bot Token" value="${escapeHtml(tgConfig.tg_token || '')}" type="password" />
+                  <input class="input" id="tg-chat-id" placeholder="Chat ID" value="${escapeHtml(tgConfig.tg_chat_id || '')}" />
                 </div>
                 <div style="display:flex;gap:8px;">
                   <button class="btn btn-primary btn-sm" id="save-telegram">Save</button>
