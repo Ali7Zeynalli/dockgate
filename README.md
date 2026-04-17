@@ -590,6 +590,17 @@ npm run dev
 
 ---
 
+## 🌐 Remote Access Solution
+
+> **💡 Need to manage S-RCS from anywhere?**
+> 
+> Use **[NovusGate](https://github.com/Ali7Zeynalli/NovusGate)** — our self-hosted VPN solution built on WireGuard® to securely access S-RCS from home, travel, or remote offices **without static IP or port forwarding**.
+> 
+> 👉 **[View Remote Access Guide](REMOTE_ACCESS.md)**
+
+---
+
+
 ## License
 
 [MIT](LICENSE) — free to use, modify, and distribute with attribution.
