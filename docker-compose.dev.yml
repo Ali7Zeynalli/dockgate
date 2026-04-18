@@ -1,0 +1,20 @@
+# Development override — local build instead of pulling from GHCR
+#
+# İstifadə:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# Bu fayl docker-compose.yml üzərinə override edir:
+#   - image yerinə local build istifadə edir
+#   - source kodu mount edir (hot-reload üçün)
+
+services:
+  dockgate:
+    build: .
+    image: dockgate:local
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      - ./server:/app/server
+      - ./public:/app/public
+    ports:
+      - "7077:7077"

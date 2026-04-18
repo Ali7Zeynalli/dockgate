@@ -53,15 +53,19 @@ curl -O https://raw.githubusercontent.com/Ali7Zeynalli/dockgate/main/docker-comp
 docker compose up -d
 ```
 
-### Option 2: Build from Source
+### Option 2: Build from Source (Development)
 
 ```bash
 git clone https://github.com/Ali7Zeynalli/dockgate.git
 cd dockgate
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
+This uses `docker-compose.dev.yml` override which adds local build context and source mounts for live editing.
+
 Open **http://localhost:7077** — that's it.
+
+> **Note:** Local builds don't receive auto-updates via Settings. To update, `git pull` and rebuild.
 
 ### Update
 
@@ -574,7 +578,7 @@ Contributions are welcome! Here's how:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Make your changes
-4. Test locally with `docker compose up -d --build`
+4. Test locally with `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`
 5. Commit (`git commit -m 'Add my feature'`)
 6. Push (`git push origin feature/my-feature`)
 7. Open a Pull Request
