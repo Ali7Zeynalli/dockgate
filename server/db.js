@@ -144,6 +144,9 @@ const defaultSettings = {
   terminalFontSize: '14',
   dateFormat: 'relative',
   confirmDestructive: 'true',
+  k8s_enabled: 'false',
+  k8s_kubeconfig_path: '',
+  k8s_active_context: '',
 };
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

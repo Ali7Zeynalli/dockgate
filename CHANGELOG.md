@@ -2,6 +2,27 @@
 
 ---
 
+## [2.0.0-alpha.1] - 2026-04-19 (unreleased, `feature/k8s-v2` branch)
+
+### Features (in progress)
+- **Kubernetes mode (Week 1 of ~10)** — toggle Kubernetes support from Settings; reads kubeconfig from `$KUBECONFIG`, `~/.kube/config`, or a manual path set in the UI; "Test Connection" shows cluster version, node count, and namespace count
+- **Kubeconfig-backed authentication** — credentials stay in the kubeconfig file (not DB); only the path is persisted, so security posture matches `kubectl` itself
+- **Settings → Kubernetes tab** — mode toggle, kubeconfig path input, Test Connection button, and a hint for mounting `~/.kube` into the Docker container
+
+### Technical Changes
+- `server/k8s.js` — new Kubernetes client wrapper using `@kubernetes/client-node@0.22.x` (pinned to last CommonJS version; v1.x is ESM-only and would force the entire backend to ESM)
+- `server/routes/k8s/cluster.js` — cluster info, contexts, namespaces; mode-guard middleware blocks access when Kubernetes mode is disabled
+- `server/routes/k8s/setup.js` — kubeconfig-path, test, enable, disable; these endpoints work even when mode is off so the user can configure before enabling
+- `server/index.js` — new route mounts at `/api/k8s-setup` and `/api/k8s/cluster`
+- `server/db.js` — 3 new settings keys: `k8s_enabled`, `k8s_kubeconfig_path`, `k8s_active_context`
+- `public/js/pages/settings.js` — new "Kubernetes" tab with mode toggle, path editor, live test result
+- `package.json` — added `@kubernetes/client-node: ^0.22.3`
+
+### Plan
+Full 10-week roadmap: `docs/specs/k8s-v2-plan.md`. Week 2 ships Pods (list, inspect, delete, logs stream).
+
+---
+
 ## [1.8.2] - 2026-04-19
 
 ### Bug Fixes

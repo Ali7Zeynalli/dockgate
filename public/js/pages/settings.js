@@ -23,6 +23,7 @@ Router.register('settings', async (content) => {
           <button class="tab-btn active" data-tab="general">General</button>
           <button class="tab-btn" data-tab="notifications">Notifications</button>
           <button class="tab-btn" data-tab="log">Notification Log</button>
+          <button class="tab-btn" data-tab="kubernetes">Kubernetes</button>
           <button class="tab-btn" data-tab="update">Software Update</button>
         </div>
 
@@ -48,6 +49,7 @@ Router.register('settings', async (content) => {
         if (tab === 'general') renderGeneral();
         else if (tab === 'notifications') renderNotifications();
         else if (tab === 'log') renderLog();
+        else if (tab === 'kubernetes') renderKubernetes();
         else if (tab === 'update') renderUpdate();
       }
 
@@ -393,6 +395,141 @@ Router.register('settings', async (content) => {
           });
         } catch(e) {
           tabContent.innerHTML = '<div class="text-xs text-muted">Could not load notification log.</div>';
+        }
+      }
+
+      // ==================== KUBERNETES TAB ====================
+      async function renderKubernetes() {
+        tabContent.innerHTML = '<div class="text-muted text-sm">Loading Kubernetes settings...</div>';
+
+        try {
+          const status = await API.get('/k8s-setup/status');
+
+          const enabled = status.enabled;
+          const configured = status.configured;
+
+          tabContent.innerHTML = `
+            <div class="settings-section">
+              <div class="settings-section-title">Kubernetes Mode</div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-row-label">Enable Kubernetes</div>
+                  <div class="settings-row-desc">${enabled ? 'Active — Pods, Deployments, Services accessible in sidebar' : 'Inactive — only Docker features are available'}</div>
+                </div>
+                <div class="toggle ${enabled ? 'active' : ''}" id="k8s-mode-toggle"></div>
+              </div>
+            </div>
+
+            <div class="settings-section" style="margin-top:20px;">
+              <div class="settings-section-title">Kubeconfig</div>
+
+              ${configured ? `
+                <div class="settings-row">
+                  <div>
+                    <div class="settings-row-label">Path</div>
+                    <div class="settings-row-desc td-mono">${escapeHtml(status.path || '')}</div>
+                  </div>
+                  <span class="badge badge-running">loaded</span>
+                </div>
+                <div class="settings-row">
+                  <div>
+                    <div class="settings-row-label">Source</div>
+                    <div class="settings-row-desc">${status.source === 'settings' ? 'Manual path' : status.source === 'env' ? '$KUBECONFIG' : '~/.kube/config (default)'}</div>
+                  </div>
+                  <span class="text-xs text-muted">${status.contexts} context${status.contexts !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="settings-row">
+                  <div>
+                    <div class="settings-row-label">Current Context</div>
+                    <div class="settings-row-desc td-mono">${escapeHtml(status.currentContext || '—')}</div>
+                  </div>
+                </div>
+              ` : `
+                <div class="insight-card warning" style="margin-bottom:12px;">
+                  <span>${Icons.alert}</span>
+                  <span>No kubeconfig found. Mount <code>~/.kube</code> into the container or set a path below.</span>
+                </div>
+              `}
+
+              <div style="margin-top:12px;">
+                <div class="text-xs text-muted" style="margin-bottom:6px;">Custom kubeconfig path (leave empty for auto-discovery):</div>
+                <div style="display:flex;gap:8px;">
+                  <input class="input" id="k8s-path" placeholder="/root/.kube/config" value="${escapeHtml((status.source === 'settings' && status.path) || '')}" style="flex:1;" />
+                  <button class="btn btn-secondary btn-sm" id="k8s-save-path">Save</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-section" style="margin-top:20px;">
+              <div class="settings-section-title">Connection Test</div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-primary btn-sm" id="k8s-test-btn">${Icons.refresh} Test Connection</button>
+                <div id="k8s-test-result" style="align-self:center;"></div>
+              </div>
+            </div>
+
+            <div class="settings-section" style="margin-top:20px;">
+              <div class="settings-section-title">Docker Setup Hint</div>
+              <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;font-family:var(--font-mono);font-size:12px;line-height:1.8;">
+                <div class="text-xs text-muted" style="margin-bottom:6px;font-family:var(--font-sans);">Add this volume to docker-compose.yml:</div>
+                <div>- ~/.kube:/root/.kube:ro</div>
+              </div>
+            </div>
+          `;
+
+          // Mode toggle
+          document.getElementById('k8s-mode-toggle')?.addEventListener('click', async () => {
+            const toggle = document.getElementById('k8s-mode-toggle');
+            const isOn = toggle.classList.contains('active');
+
+            try {
+              if (isOn) {
+                await API.post('/k8s-setup/disable');
+                toggle.classList.remove('active');
+                showToast('Kubernetes mode disabled');
+              } else {
+                showToast('Testing connection...', 'info');
+                const res = await API.post('/k8s-setup/enable');
+                toggle.classList.add('active');
+                showToast(`Kubernetes mode enabled — ${res.nodeCount} nodes, ${res.namespaceCount} namespaces`);
+              }
+              // Re-render to reflect new state
+              renderKubernetes();
+            } catch (e) {
+              showToast(e.message, 'error');
+            }
+          });
+
+          // Save kubeconfig path
+          document.getElementById('k8s-save-path')?.addEventListener('click', async () => {
+            const path = document.getElementById('k8s-path').value.trim();
+            try {
+              await API.post('/k8s-setup/kubeconfig-path', { path });
+              showToast(path ? 'Kubeconfig path saved' : 'Auto-discovery enabled');
+              renderKubernetes();
+            } catch (e) {
+              showToast(e.message, 'error');
+            }
+          });
+
+          // Test connection
+          document.getElementById('k8s-test-btn')?.addEventListener('click', async () => {
+            const resultDiv = document.getElementById('k8s-test-result');
+            resultDiv.innerHTML = '<span class="text-xs text-muted">Testing...</span>';
+            try {
+              const res = await API.post('/k8s-setup/test');
+              if (res.success) {
+                resultDiv.innerHTML = `<span class="text-xs" style="color:var(--success);">✓ ${escapeHtml(res.context)} — ${escapeHtml(res.version)} (${res.nodeCount} nodes, ${res.namespaceCount} namespaces)</span>`;
+              } else {
+                resultDiv.innerHTML = `<span class="text-xs" style="color:var(--danger);">✗ ${escapeHtml(res.error || 'Unknown error')}</span>`;
+              }
+            } catch (e) {
+              resultDiv.innerHTML = `<span class="text-xs" style="color:var(--danger);">✗ ${escapeHtml(e.message)}</span>`;
+            }
+          });
+
+        } catch (e) {
+          tabContent.innerHTML = `<div class="text-xs text-muted">Could not load Kubernetes settings: ${escapeHtml(e.message)}</div>`;
         }
       }
 

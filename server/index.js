@@ -29,6 +29,12 @@ app.use('/api/system', require('./routes/system'));
 app.use('/api/cleanup', require('./routes/cleanup'));
 app.use('/api/meta', require('./routes/settings'));
 
+// ============ KUBERNETES (opsional, v2.0-dan) ============
+// Setup endpoint-ləri həmişə mövcuddur (mode aktiv olmadan da işləyir)
+app.use('/api/k8s-setup', require('./routes/k8s/setup'));
+// Cluster idarəetmə endpoint-ləri — içəridə mode check var
+app.use('/api/k8s/cluster', require('./routes/k8s/cluster'));
+
 // Dashboard summary endpoint / Dashboard məlumat endpoint-i
 app.get('/api/dashboard', async (req, res) => {
   try {

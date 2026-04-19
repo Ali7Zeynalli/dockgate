@@ -31,6 +31,7 @@
     "start": "NODE_ENV=production node server/index.js"
   },
   "dependencies": {
+    "@kubernetes/client-node": "^0.22.3",
     "better-sqlite3": "^11.7.0",
     "dockerode": "^4.0.4",
     "express": "^4.21.0",
