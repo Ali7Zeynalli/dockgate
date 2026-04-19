@@ -416,12 +416,15 @@ async function pruneContainers() {
   return await docker.pruneContainers();
 }
 
-async function pruneImages(dangling = true) {
+async function pruneImages(dangling = false) {
+  // dangling=false → bütün unused image-lər (tagged + dangling) silinir
+  // dangling=true  → yalnız dangling (untagged <none>) silinir
   return await docker.pruneImages({ filters: { dangling: [String(dangling)] } });
 }
 
 async function pruneVolumes() {
-  return await docker.pruneVolumes();
+  // Docker 23+ default yalnız anonim volume-ları silir; all=true → named unused də silinir
+  return await docker.pruneVolumes({ filters: { all: ['true'] } });
 }
 
 async function pruneNetworks() {
@@ -450,10 +453,12 @@ async function pruneBuildCache() {
 async function systemPrune(volumes = false) {
   const results = {};
   results.containers = await docker.pruneContainers();
-  results.images = await docker.pruneImages();
+  // Bütün unused image-ləri sil (tagged + dangling) — UI preview ilə uyğun
+  results.images = await docker.pruneImages({ filters: { dangling: ['false'] } });
   results.networks = await docker.pruneNetworks();
   if (volumes) {
-    results.volumes = await docker.pruneVolumes();
+    // Named + anonim unused volume-ları sil
+    results.volumes = await docker.pruneVolumes({ filters: { all: ['true'] } });
   }
   return results;
 }

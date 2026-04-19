@@ -2,6 +2,19 @@
 
 ---
 
+## [1.8.2] - 2026-04-19
+
+### Bug Fixes
+- **System Cleanup now matches UI counts** — clicking "Clean N Items" in the Cleanup page actually removes N items; previously only dangling (untagged) images were pruned while the UI counted all unused tagged images too, causing the cleanup action to appear to do nothing
+- **Unused named volumes are now pruned** — on Docker 23+ `docker volume prune` defaulted to anonymous volumes only; DockGate now passes `all=true` filter so all unused volumes (named + anonymous) are cleared, matching what the UI displays
+- **Full System Prune unified** — `systemPrune` uses the same filters so the Full Prune button's result matches the preview
+
+### Technical Changes
+- `server/docker.js` — `pruneImages` default `dangling=false` (all unused, not just dangling); `pruneVolumes` now passes `{ filters: { all: ['true'] } }`; `systemPrune` uses the same filters for both
+- `server/routes/cleanup.js` — `/cleanup/images` query parameter flipped: default is now "prune all unused", opt-in `?dangling=true` for dangling-only
+
+---
+
 ## [1.8.1] - 2026-04-16
 
 ### Features

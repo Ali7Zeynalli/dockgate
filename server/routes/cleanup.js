@@ -18,7 +18,9 @@ router.post('/containers', async (req, res) => {
 
 router.post('/images', async (req, res) => {
   try {
-    const dangling = req.query.dangling !== 'false';
+    // Default: bütün unused image-lər silinsin (UI-dəki count ilə uyğun olsun)
+    // ?dangling=true ötürülsə yalnız dangling silinir
+    const dangling = req.query.dangling === 'true';
     const result = await dockerService.pruneImages(dangling);
     stmts.logActivity.run('', 'system', 'cleanup', 'prune_images', JSON.stringify(result));
     res.json(result);
