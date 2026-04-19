@@ -3,6 +3,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const dockerService = require('./docker');
+const k8sService = require('./k8s');
+const k8s = require('@kubernetes/client-node');
 const { stmts } = require('./db');
 
 const app = express();
@@ -34,6 +36,12 @@ app.use('/api/meta', require('./routes/settings'));
 app.use('/api/k8s-setup', require('./routes/k8s/setup'));
 // Cluster idarəetmə endpoint-ləri — içəridə mode check var
 app.use('/api/k8s/cluster', require('./routes/k8s/cluster'));
+app.use('/api/k8s/pods', require('./routes/k8s/pods'));
+app.use('/api/k8s/deployments', require('./routes/k8s/deployments'));
+app.use('/api/k8s/services', require('./routes/k8s/services'));
+app.use('/api/k8s/configmaps', require('./routes/k8s/configmaps'));
+app.use('/api/k8s/secrets', require('./routes/k8s/secrets'));
+app.use('/api/k8s/nodes', require('./routes/k8s/nodes'));
 
 // Dashboard summary endpoint / Dashboard məlumat endpoint-i
 app.get('/api/dashboard', async (req, res) => {
@@ -427,6 +435,97 @@ io.on('connection', (socket) => {
     if (socket._termStream) { try { socket._termStream.end(); } catch(e){} socket._termStream = null; }
   });
 
+  // ============ KUBERNETES POD LOGS (WebSocket) ============
+  let k8sLogReq = null;
+  socket.on('k8s:logs:subscribe', async ({ namespace, podName, container, tail = 200, timestamps = false, follow = true }) => {
+    try {
+      if (!k8sService.isEnabled()) {
+        socket.emit('k8s:logs:error', { error: 'Kubernetes mode aktiv deyil' });
+        return;
+      }
+      // Dayandır əvvəlki axını
+      if (k8sLogReq) { try { k8sLogReq.abort(); } catch(e){} k8sLogReq = null; }
+
+      const kc = k8sService.getKubeConfig();
+      const log = new k8s.Log(kc);
+      const { PassThrough } = require('stream');
+      const stream = new PassThrough();
+
+      stream.on('data', (chunk) => {
+        socket.emit('k8s:logs:data', { podName, data: chunk.toString('utf8') });
+      });
+      stream.on('end', () => socket.emit('k8s:logs:end', { podName }));
+      stream.on('error', (err) => socket.emit('k8s:logs:error', { podName, error: err.message }));
+
+      k8sLogReq = await log.log(namespace, podName, container || '', stream, {
+        follow,
+        tailLines: tail,
+        timestamps,
+      });
+    } catch (err) {
+      socket.emit('k8s:logs:error', { error: err.message });
+    }
+  });
+
+  socket.on('k8s:logs:unsubscribe', () => {
+    if (k8sLogReq) { try { k8sLogReq.abort(); } catch(e){} k8sLogReq = null; }
+  });
+
+  // ============ KUBERNETES POD EXEC (WebSocket terminal) ============
+  let k8sExecWS = null;
+  socket.on('k8s:exec:start', async ({ namespace, podName, container, command = ['/bin/sh'] }) => {
+    try {
+      if (!k8sService.isEnabled()) {
+        socket.emit('k8s:exec:error', { error: 'Kubernetes mode aktiv deyil' });
+        return;
+      }
+      // Köhnə exec-i təmizlə
+      socket.removeAllListeners('k8s:exec:input');
+      socket.removeAllListeners('k8s:exec:resize');
+      if (k8sExecWS) { try { k8sExecWS.close(); } catch(e){} k8sExecWS = null; }
+
+      const kc = k8sService.getKubeConfig();
+      const exec = new k8s.Exec(kc);
+      const { PassThrough } = require('stream');
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const stdin = new PassThrough();
+
+      stdout.on('data', (chunk) => socket.emit('k8s:exec:data', { podName, data: chunk.toString('utf8') }));
+      stderr.on('data', (chunk) => socket.emit('k8s:exec:data', { podName, data: chunk.toString('utf8') }));
+
+      k8sExecWS = await exec.exec(
+        namespace, podName, container || '', command,
+        stdout, stderr, stdin, true,
+        (status) => {
+          socket.emit('k8s:exec:end', { podName, status });
+        }
+      );
+
+      socket.on('k8s:exec:input', (data) => {
+        try { stdin.write(data); } catch(e) {}
+      });
+      socket.on('k8s:exec:resize', ({ cols, rows }) => {
+        try {
+          if (k8sExecWS && k8sExecWS.send) {
+            // Terminal resize channel 4 in k8s exec protocol
+            const msg = JSON.stringify({ Width: cols, Height: rows });
+            k8sExecWS.send(Buffer.concat([Buffer.from([4]), Buffer.from(msg)]));
+          }
+        } catch(e) {}
+      });
+
+      socket._k8sStdin = stdin;
+      socket.emit('k8s:exec:ready', { podName });
+    } catch (err) {
+      socket.emit('k8s:exec:error', { error: err.message });
+    }
+  });
+
+  socket.on('k8s:exec:stop', () => {
+    if (k8sExecWS) { try { k8sExecWS.close(); } catch(e){} k8sExecWS = null; }
+  });
+
   // Cleanup on disconnect
   socket.on('disconnect', () => {
     if (buildStream) try { buildStream.destroy(); } catch(e){}
@@ -434,6 +533,8 @@ io.on('connection', (socket) => {
     if (statsStream) try { statsStream.destroy(); } catch(e){}
     if (eventStream) try { eventStream.destroy(); } catch(e){}
     if (socket._termStream) try { socket._termStream.end(); } catch(e){}
+    if (k8sLogReq) try { k8sLogReq.abort(); } catch(e){}
+    if (k8sExecWS) try { k8sExecWS.close(); } catch(e){}
     console.log('Client disconnected:', socket.id);
   });
 });

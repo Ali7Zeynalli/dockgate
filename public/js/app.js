@@ -1,5 +1,6 @@
 // Navigation setup
 const navItems = {
+  // Docker
   dashboard: { label: 'Dashboard', icon: Icons.dashboard },
   containers: { label: 'Containers', icon: Icons.container },
   images: { label: 'Images', icon: Icons.image },
@@ -12,29 +13,56 @@ const navItems = {
   events: { label: 'Events', icon: Icons.events },
   system: { label: 'System', icon: Icons.system },
   cleanup: { label: 'Cleanup', icon: Icons.cleanup },
-  settings: { label: 'Settings', icon: Icons.settings }
+  settings: { label: 'Settings', icon: Icons.settings },
+  // Kubernetes
+  'k8s-dashboard': { label: 'Overview', icon: Icons.dashboard },
+  'k8s-pods': { label: 'Pods', icon: Icons.container },
+  'k8s-deployments': { label: 'Deployments', icon: Icons.layers },
+  'k8s-services': { label: 'Services', icon: Icons.network },
+  'k8s-configmaps': { label: 'ConfigMaps', icon: Icons.logs },
+  'k8s-secrets': { label: 'Secrets', icon: Icons.tag },
+  'k8s-nodes': { label: 'Nodes', icon: Icons.system },
+  'k8s-pod-logs': { label: 'Pod Logs', icon: Icons.logs },
+  'k8s-pod-terminal': { label: 'Pod Terminal', icon: Icons.terminal },
 };
 
-const navGroups = [
-  { label: 'Core', items: ['dashboard', 'containers', 'images', 'volumes', 'networks'] },
-  { label: 'Build', items: ['builds', 'compose'] },
-  { label: 'Monitor', items: ['logs', 'terminal', 'events', 'system'] },
-  { label: 'Manage', items: ['cleanup', 'settings'] }
+const dockerNavGroups = [
+  { label: 'Docker — Core', items: ['dashboard', 'containers', 'images', 'volumes', 'networks'] },
+  { label: 'Docker — Build', items: ['builds', 'compose'] },
+  { label: 'Docker — Monitor', items: ['logs', 'terminal', 'events', 'system'] },
+  { label: 'Manage', items: ['cleanup', 'settings'] },
 ];
 
-function initMacSidebar() {
+const k8sNavGroups = [
+  { label: 'Kubernetes — Workloads', items: ['k8s-dashboard', 'k8s-pods', 'k8s-deployments'] },
+  { label: 'Kubernetes — Network & Config', items: ['k8s-services', 'k8s-configmaps', 'k8s-secrets'] },
+  { label: 'Kubernetes — Cluster', items: ['k8s-nodes', 'k8s-pod-logs', 'k8s-pod-terminal'] },
+];
+
+// Mode seçilməsi — Docker only, K8s only, və ya hər ikisi
+function getNavGroups(k8sEnabled) {
+  if (!k8sEnabled) return dockerNavGroups;
+  // K8s aktivdirsə hər iki qrupu göstər, amma Settings ən sona
+  const docker = dockerNavGroups.slice(0, -1); // cleanup/settings-siz
+  const manage = dockerNavGroups[dockerNavGroups.length - 1];
+  return [...docker, ...k8sNavGroups, manage];
+}
+
+function initMacSidebar(k8sEnabled = false) {
   const sidebarNav = document.getElementById('sidebar-nav');
   if (!sidebarNav) return;
-  
+
+  const groups = getNavGroups(k8sEnabled);
   let html = '';
-  
-  navGroups.forEach((group, index) => {
+
+  groups.forEach((group) => {
     let itemsHtml = '';
-    
+
     group.items.forEach(key => {
       const item = navItems[key];
+      if (!item) return;
       const active = (key === 'dashboard') ? 'active' : '';
-      
+
       itemsHtml += `
         <a class="nav-item ${active}" data-page="${key}">
           <span class="nav-item-icon">${item.icon}</span>
@@ -43,7 +71,7 @@ function initMacSidebar() {
         </a>
       `;
     });
-    
+
     html += `
       <div class="nav-group">
         <div class="nav-group-header">
@@ -55,16 +83,23 @@ function initMacSidebar() {
       </div>
     `;
   });
-  
+
   sidebarNav.innerHTML = html;
 
   sidebarNav.addEventListener('click', (e) => {
     const item = e.target.closest('.nav-item');
     if (!item) return;
-    
+
     const page = item.dataset.page;
     if (page) Router.navigate(page);
   });
+}
+
+// Re-render sidebar (mode dəyişəndə çağırılır)
+function refreshSidebar() {
+  API.get('/k8s-setup/status').then(s => {
+    initMacSidebar(!!s.enabled);
+  }).catch(() => initMacSidebar(false));
 }
 
 // Global Search
@@ -100,7 +135,14 @@ async function boot() {
     const savedTheme = localStorage.getItem('dcc_theme') || 'dark';
     applyTheme(savedTheme);
 
-    initMacSidebar();
+    // K8s mode yoxla və sidebar-a görə quraşdır
+    let k8sEnabled = false;
+    try {
+      const status = await API.get('/k8s-setup/status');
+      k8sEnabled = !!status.enabled;
+    } catch (e) { /* K8s endpoint yoxdursa, keç */ }
+
+    initMacSidebar(k8sEnabled);
     initGlobalSearch();
 
     // Navigate to default or last visited page (using localStorage for hard refresh)

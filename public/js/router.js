@@ -54,6 +54,15 @@ const Router = {
       cleanup: 'Cleanup',
       builds: 'Builds',
       settings: 'Settings',
+      'k8s-dashboard': 'Kubernetes Overview',
+      'k8s-pods': 'Pods',
+      'k8s-deployments': 'Deployments',
+      'k8s-services': 'Services',
+      'k8s-configmaps': 'ConfigMaps',
+      'k8s-secrets': 'Secrets',
+      'k8s-nodes': 'Nodes',
+      'k8s-pod-logs': 'Pod Logs',
+      'k8s-pod-terminal': 'Pod Terminal',
     };
 
     document.getElementById('header-title').textContent = titles[path] || path;

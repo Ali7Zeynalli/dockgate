@@ -2,24 +2,55 @@
 
 ---
 
-## [2.0.0-alpha.1] - 2026-04-19 (unreleased, `feature/k8s-v2` branch)
+## [2.0.0] - 2026-04-19
 
-### Features (in progress)
-- **Kubernetes mode (Week 1 of ~10)** — toggle Kubernetes support from Settings; reads kubeconfig from `$KUBECONFIG`, `~/.kube/config`, or a manual path set in the UI; "Test Connection" shows cluster version, node count, and namespace count
-- **Kubeconfig-backed authentication** — credentials stay in the kubeconfig file (not DB); only the path is persisted, so security posture matches `kubectl` itself
-- **Settings → Kubernetes tab** — mode toggle, kubeconfig path input, Test Connection button, and a hint for mounting `~/.kube` into the Docker container
+### Major — Kubernetes Support
+
+DockGate now manages Kubernetes clusters alongside Docker from the same browser UI. Enable Kubernetes mode in Settings → Kubernetes, point at a kubeconfig, and the sidebar grows a full set of Kubernetes pages.
+
+### Features
+- **Kubernetes mode toggle** — Settings → Kubernetes tab; Test Connection shows cluster version, node/namespace counts before enabling; kubeconfig resolution falls back through DB path → `$KUBECONFIG` → `~/.kube/config`
+- **Pods** — list across all namespaces or filter to one; inspect full pod YAML/JSON; delete with configurable grace period; jump to logs or exec from each row
+- **Deployments** — list with ready/available/updated replica counts; scale via dialog; rollout restart (patches `kubectl.kubernetes.io/restartedAt` annotation like `kubectl rollout restart`); delete
+- **Services** — list with type, cluster IP, external IP, ports; badge highlights LoadBalancer/NodePort services
+- **ConfigMaps** — list and view values (decoded)
+- **Secrets** — list and view values; values are masked by default with a "Reveal" toggle that decodes Base64 on demand
+- **Nodes** — list with ready status, role, Kubernetes version, OS, CPU/memory/pod capacity
+- **Pod logs (live stream)** — WebSocket-based log follow via `@kubernetes/client-node` `Log` class; pause, clear, pod selector; auto-scroll unless the user scrolls away
+- **Pod exec (terminal)** — WebSocket-based `kubectl exec` equivalent via the `Exec` class; xterm.js front-end; shell selector (`/bin/sh`, `/bin/bash`, `/bin/ash`); terminal resize forwarded to the server
+- **Kubernetes overview dashboard** — node health, pod counts (running/pending/failed), deployment counts, top pods by restart count, external services
+- **Mode-aware sidebar** — when Kubernetes mode is on, the sidebar shows both Docker and Kubernetes sections grouped separately; Settings page toggle refreshes the sidebar live
+- **Namespace selector per page** — each Kubernetes list page has a namespace dropdown; the choice is persisted in localStorage so it survives navigation
 
 ### Technical Changes
-- `server/k8s.js` — new Kubernetes client wrapper using `@kubernetes/client-node@0.22.x` (pinned to last CommonJS version; v1.x is ESM-only and would force the entire backend to ESM)
-- `server/routes/k8s/cluster.js` — cluster info, contexts, namespaces; mode-guard middleware blocks access when Kubernetes mode is disabled
-- `server/routes/k8s/setup.js` — kubeconfig-path, test, enable, disable; these endpoints work even when mode is off so the user can configure before enabling
-- `server/index.js` — new route mounts at `/api/k8s-setup` and `/api/k8s/cluster`
-- `server/db.js` — 3 new settings keys: `k8s_enabled`, `k8s_kubeconfig_path`, `k8s_active_context`
-- `public/js/pages/settings.js` — new "Kubernetes" tab with mode toggle, path editor, live test result
-- `package.json` — added `@kubernetes/client-node: ^0.22.3`
 
-### Plan
-Full 10-week roadmap: `docs/specs/k8s-v2-plan.md`. Week 2 ships Pods (list, inspect, delete, logs stream).
+Backend:
+- `server/k8s.js` — Kubernetes client wrapper built on `@kubernetes/client-node@0.22.x` (pinned to last CommonJS version; v1.x is ESM-only and the rest of the backend is CJS). Exports: kubeconfig resolution, API clients, cluster info, contexts, namespaces, pods (list/inspect/delete/logs), deployments (list/inspect/scale/restart/delete), services, configmaps, secrets (mask + reveal), nodes
+- `server/routes/k8s/setup.js` — `/status`, `/test`, `/enable`, `/disable`, `/kubeconfig-path`; intentionally not mode-guarded so the user can configure before enabling
+- `server/routes/k8s/cluster.js` — `/info`, `/contexts`, `/context`, `/namespaces`; mode-guarded middleware returns 400 when disabled
+- `server/routes/k8s/{pods,deployments,services,configmaps,secrets,nodes}.js` — CRUD-style endpoints, all mode-guarded
+- `server/index.js` — new route mounts; WebSocket handlers for `k8s:logs:subscribe`/`unsubscribe` (PassThrough stream piped to socket) and `k8s:exec:start`/`input`/`resize`/`stop` (full stdin/stdout/stderr + terminal resize message on protocol channel 4); cleanup on disconnect
+- `server/db.js` — 3 new settings keys: `k8s_enabled`, `k8s_kubeconfig_path`, `k8s_active_context`; all existing tables (favorites, notes, tags, activity) reused for Kubernetes resources
+
+Frontend:
+- `public/js/app.js` — dynamic sidebar that shows Docker-only groups by default, or Docker + Kubernetes groups side by side when Kubernetes mode is on; `refreshSidebar()` re-reads the mode state after toggling
+- `public/js/router.js` — added titles for all 9 new Kubernetes routes
+- `public/js/pages/k8s/{k8s-dashboard,pods,deployments,services,configmaps,secrets,nodes,pod-logs,pod-terminal}.js` — 9 new pages following the existing DockGate page pattern
+- `public/js/pages/settings.js` — Kubernetes tab already added in 2.0.0 foundation work; mode toggle now triggers `refreshSidebar()` so navigation updates live without a page reload
+- `public/index.html` — 9 new script tags for the Kubernetes pages
+
+Dependencies:
+- `@kubernetes/client-node: ^0.22.3` (new)
+
+### Security Notes
+- Kubeconfig **contents are never stored in the DB**, only the file path. The security posture matches `kubectl` — whoever can reach the DockGate UI has the same cluster permissions the kubeconfig grants
+- Secret values are masked by default; revealing requires a deliberate click per-secret
+- DockGate itself still has no auth — do not expose the panel to untrusted networks with Kubernetes mode enabled
+
+### Migration
+- v1.x users: Kubernetes mode is **off by default**; upgrading changes nothing until the toggle is flipped
+- Mount `~/.kube:/root/.kube:ro` in `docker-compose.yml` to give the container access to your kubeconfig
+- Full 10-week plan that guided this release: `docs/specs/k8s-v2-plan.md`
 
 ---
 

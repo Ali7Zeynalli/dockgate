@@ -493,6 +493,8 @@ Router.register('settings', async (content) => {
                 toggle.classList.add('active');
                 showToast(`Kubernetes mode enabled — ${res.nodeCount} nodes, ${res.namespaceCount} namespaces`);
               }
+              // Sidebar-ı yenilə ki, K8s navigation göstərilsin/gizlənsin
+              if (typeof refreshSidebar === 'function') refreshSidebar();
               // Re-render to reflect new state
               renderKubernetes();
             } catch (e) {
