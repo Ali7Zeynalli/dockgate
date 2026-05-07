@@ -2,7 +2,7 @@
 
 ---
 
-## [2.0.0] - 2026-05-07
+## [2.0.1] - 2026-05-07
 
 ### Major — Multi-host SSH Support
 DockGate bir-anda **birdən çox Docker daemon-u** idarə edir. Lokal socket + uzaq SSH server-lər. Header-dəki **SRV** dropdown ilə dəyişir, bütün səhifələr (Containers, Images, Volumes, Networks, Compose, Logs, Terminal) aktiv server-dən data göstərir.
