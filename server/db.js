@@ -98,6 +98,17 @@ db.exec(`
     details TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS servers (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL DEFAULT 'ssh',
+    host TEXT,
+    port INTEGER DEFAULT 22,
+    username TEXT,
+    key_path TEXT,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Migration — add new columns to existing build_history table / Mövcud build_history cədvəlinə yeni sütunlar əlavə et
@@ -106,6 +117,7 @@ try { db.exec('ALTER TABLE build_history ADD COLUMN build_args TEXT DEFAULT "{}"
 try { db.exec('ALTER TABLE build_history ADD COLUMN nocache INTEGER DEFAULT 0'); } catch(e) {}
 try { db.exec('ALTER TABLE build_history ADD COLUMN pull INTEGER DEFAULT 0'); } catch(e) {}
 try { db.exec('ALTER TABLE notification_log ADD COLUMN channel TEXT DEFAULT "email"'); } catch(e) {}
+try { db.exec('ALTER TABLE servers ADD COLUMN password TEXT'); } catch(e) {}
 
 // Default notification rules / Defolt bildiriş qaydaları
 const defaultRules = [
@@ -144,6 +156,7 @@ const defaultSettings = {
   terminalFontSize: '14',
   dateFormat: 'relative',
   confirmDestructive: 'true',
+  active_server: 'local',
 };
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
@@ -216,6 +229,13 @@ const stmts = {
   getLastNotification: db.prepare('SELECT * FROM notification_log WHERE event_type = ? AND status = ? ORDER BY created_at DESC LIMIT 1'),
   clearNotificationLogs: db.prepare('DELETE FROM notification_log'),
   trimNotificationLogs: db.prepare('DELETE FROM notification_log WHERE id NOT IN (SELECT id FROM notification_log ORDER BY created_at DESC LIMIT 500)'),
+
+  // Servers (SSH multi-host)
+  getServers: db.prepare('SELECT * FROM servers ORDER BY id'),
+  getServer: db.prepare('SELECT * FROM servers WHERE id = ?'),
+  insertServer: db.prepare('INSERT INTO servers (id, type, host, port, username, key_path, password, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+  updateServer: db.prepare('UPDATE servers SET host = ?, port = ?, username = ?, key_path = ?, password = ?, description = ? WHERE id = ?'),
+  deleteServer: db.prepare('DELETE FROM servers WHERE id = ?'),
 };
 
 module.exports = { db, stmts };

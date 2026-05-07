@@ -15,7 +15,7 @@ const eventMonitor = new EventMonitor();
 const PORT = process.env.PORT || 7077;
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '5mb' })); // 5mb — SSH private key upload üçün
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // REST Routes
@@ -27,7 +27,20 @@ app.use('/api/networks', require('./routes/networks'));
 app.use('/api/compose', require('./routes/compose'));
 app.use('/api/system', require('./routes/system'));
 app.use('/api/cleanup', require('./routes/cleanup'));
+app.use('/api/servers', require('./routes/servers'));
 app.use('/api/meta', require('./routes/settings'));
+
+// Startup-da saxlanmış aktiv server-i bərpa et (yalnız "local" olmadıqda)
+try {
+  const savedServerId = stmts.getSetting.get('active_server')?.value;
+  if (savedServerId && savedServerId !== 'local') {
+    dockerService.setActiveServer(savedServerId);
+    console.log(`[startup] Active server restored: ${savedServerId}`);
+  }
+} catch (err) {
+  console.error('[startup] Could not restore active server:', err.message);
+  console.error('[startup] Falling back to local Docker socket');
+}
 
 // Dashboard summary endpoint / Dashboard məlumat endpoint-i
 app.get('/api/dashboard', async (req, res) => {

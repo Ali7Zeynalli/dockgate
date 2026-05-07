@@ -126,7 +126,10 @@ async function boot() {
     // Auto update check — on boot and every 24h / Avtomatik update yoxlama — başlanğıcda və hər 24 saatda bir
     checkForUpdates();
     setInterval(checkForUpdates, 24 * 60 * 60 * 1000);
-    
+
+    // Server switcher (Local + SSH)
+    initServerSwitcher();
+
   } catch (err) {
     document.getElementById('content').innerHTML = `
       <div class="empty-state text-danger">
@@ -178,6 +181,49 @@ function hideUpdateBadge() {
   if (badge) badge.style.display = 'none';
   localStorage.setItem('dcc_update_available', 'false');
 }
+
+// ============ SERVER SWITCHER (Local + SSH) ============
+async function initServerSwitcher() {
+  try {
+    const data = await API.get('/servers');
+    const select = document.getElementById('server-select');
+    if (!select) return;
+
+    // DOM API ilə qur — XSS qoruması (host/id user input-dur)
+    select.replaceChildren();
+    for (const s of data.servers) {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      const label = s.id === 'local'
+        ? '🖥 Local'
+        : `🔐 ${s.id}${s.host ? ' (' + s.host + ')' : ''}`;
+      opt.textContent = label;
+      if (s.isActive) opt.selected = true;
+      select.appendChild(opt);
+    }
+
+    select.addEventListener('change', async (e) => {
+      const id = e.target.value;
+      try {
+        showToast(`Switching to ${id}...`, 'info');
+        await API.post('/servers/active', { id });
+        showToast(`Connected to ${id}`, 'success');
+        const currentPage = Store.get('currentPage') || 'dashboard';
+        const currentParams = Store.get('currentParams') || {};
+        setTimeout(() => Router.navigate(currentPage, currentParams), 300);
+      } catch (err) {
+        showToast(`Switch failed: ${err.message}`, 'error', 8000);
+        const active = data.servers.find(s => s.isActive);
+        if (active) select.value = active.id;
+      }
+    });
+  } catch (e) {
+    console.warn('Server switcher init failed:', e.message);
+  }
+}
+
+// Servers dəyişəndə switcher-i yenidən yüklə (Settings tab-dan add/delete sonra)
+window.refreshServerSwitcher = initServerSwitcher;
 
 // Start
 document.addEventListener('DOMContentLoaded', boot);

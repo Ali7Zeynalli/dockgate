@@ -2,6 +2,50 @@
 
 ---
 
+## [2.0.0] - 2026-05-07
+
+### Major — Multi-host SSH Support
+DockGate bir-anda **birdən çox Docker daemon-u** idarə edir. Lokal socket + uzaq SSH server-lər. Header-dəki **SRV** dropdown ilə dəyişir, bütün səhifələr (Containers, Images, Volumes, Networks, Compose, Logs, Terminal) aktiv server-dən data göstərir.
+
+### Features
+- **SSH server qeydiyyatı** — Settings → Servers tab-ında yeni server əlavə et: ID, host, port, username + üç auth mode arasında seçim
+- **3 SSH auth metodu:**
+  - 🔑 **Private Key** — paste OpenSSH format key, `data/ssh-keys/<id>.pem` faylında 0600 mode ilə saxlanılır
+  - 🔒 **Password** — DB-də plain-text saxlanılır (data volume host filesystem qoruması altında); UI-da password tipli input + "daha təhlükəsiz: Private Key" xəbərdarlığı
+  - 📡 **SSH Agent** — heç bir credential vermirsən, ssh2 SSH_AUTH_SOCK istifadə edir
+- **Test Connection düyməsi** — qeydiyyatdan əvvəl həm yeni server config, həm mövcud server üçün dockerode SSH qoşulması ilə yoxlama (Docker version + container/image sayı)
+- **Header SRV dropdown** — `🖥 Local` + `🔐 prod-1 (host)` kimi siyahı; dəyişəndə bütün açıq səhifələr re-render olur
+- **Aktiv server persistensiyası** — `active_server` setting DB-də saxlanılır, restart edəndə eyni server-ə bərpa olur
+- **Server cədvəlində auth mode badge** — hər sətirdə 🔑 key / 🔒 password / 📡 agent göstəricisi
+
+### Architecture — Dynamic Docker Client
+- `server/docker.js` — `_docker` runtime variable; `setActiveServer(id)` SSH config-dən yeni Docker client yaradır və hər səhifə yenidən render edəndə avtomatik yeni daemon-a danışır
+- Proxy obyekt — `module.exports.docker` getter ilə current `_docker`-ə proxylə yönləndirir, beləliklə bütün route-larda mövcud `dockerService.docker.X(...)` çağırışları dəyişdirilməyib
+- Dockerode `protocol: 'ssh'` mode istifadə edir — özü SSH tunnel qurur, ssh2 library üzərindən
+- Auth iyerarxiyası `createSshClient()`-də: privateKey > password > agent (ssh2 fallback)
+
+### Technical Changes
+- `server/db.js` — yeni `servers` cədvəli (id, type, host, port, username, key_path, password, description); 5 prepared statement; `active_server` default setting; `password` kolonu üçün migration ALTER TABLE
+- `server/docker.js` — `setActiveServer()`, `getActiveServerId()`, `testServerConnection()`; `createLocalClient()`, `createSshClient()` köməkçilər; cache hər switch-də təmizlənir
+- `server/routes/servers.js` — yeni route; GET/POST/DELETE servers, POST /test, POST /active
+- `server/index.js` — startup-da saxlanmış `active_server`-i bərpa edir; JSON limiti 5MB-a qaldırıldı (private key paste üçün)
+- `public/index.html` — header-də SRV switcher kompakt dropdown
+- `public/js/app.js` — `initServerSwitcher()`; server dəyişəndə cari səhifə re-navigate olur ki, yeni daemon-dan data göstərsin
+- `public/js/pages/settings.js` — yeni "Servers" tab; siyahı + Add/Test/Delete + uzaq server üçün setup hint
+
+### Migration
+- v1.x istifadəçilər üçün heç bir dəyişiklik tələb olunmur — `active_server` default `local`, mövcud davranış eynidir
+- Yeni feature istəsən: Settings → Servers → Add SSH Server
+
+### Security Notes
+- Private key fayllarında `0600` mode (yalnız sahib oxuya bilər)
+- Container içində `data/ssh-keys/` dir 0700 mode-da yaradılır
+- DockGate-in özündə auth yoxdur — UI-yə çatan istənilən şəxs SSH server-ləri əlavə/dəyişə bilər; **untrusted networks-də işlətmə**
+- SSH key-lərin sahibliyi DockGate process user-inindir (container-də node)
+- Test connection üçün müvəqqəti key faylları `_test_<timestamp>.pem` adlanır və test bitən kimi silinir
+
+---
+
 ## [1.8.2] - 2026-04-19
 
 ### Bug Fixes

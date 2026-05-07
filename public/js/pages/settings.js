@@ -21,6 +21,7 @@ Router.register('settings', async (content) => {
 
         <div class="tab-bar" id="settings-tabs">
           <button class="tab-btn active" data-tab="general">General</button>
+          <button class="tab-btn" data-tab="servers">Servers</button>
           <button class="tab-btn" data-tab="notifications">Notifications</button>
           <button class="tab-btn" data-tab="log">Notification Log</button>
           <button class="tab-btn" data-tab="update">Software Update</button>
@@ -46,6 +47,7 @@ Router.register('settings', async (content) => {
 
       function renderTab(tab) {
         if (tab === 'general') renderGeneral();
+        else if (tab === 'servers') renderServers();
         else if (tab === 'notifications') renderNotifications();
         else if (tab === 'log') renderLog();
         else if (tab === 'update') renderUpdate();
@@ -116,6 +118,222 @@ Router.register('settings', async (content) => {
 
         document.getElementById('set-logtimes')?.addEventListener('click', function() { this.classList.toggle('active'); });
         document.getElementById('set-autostart')?.addEventListener('click', function() { this.classList.toggle('active'); });
+      }
+
+      // ==================== SERVERS TAB (SSH multi-host) ====================
+      // Bütün user input-lar escapeHtml() ilə sanitize olunur — XSS-ə qarşı
+      async function renderServers() {
+        // Yükleme — DOM API
+        const loading = document.createElement('div');
+        loading.className = 'text-muted text-sm';
+        loading.textContent = 'Loading servers...';
+        tabContent.replaceChildren(loading);
+        try {
+          const data = await API.get('/servers');
+          renderServersList(data);
+        } catch (e) {
+          const err = document.createElement('div');
+          err.className = 'text-xs text-danger';
+          err.textContent = e.message;
+          tabContent.replaceChildren(err);
+        }
+      }
+
+      function renderServersList(data) {
+        const rowsHtml = data.servers.map(s => {
+          const isLocal = s.id === 'local';
+          const activeBadge = s.isActive ? '<span class="badge badge-running">active</span>' : '';
+          const hostStr = s.host ? `${escapeHtml(s.username || '')}@${escapeHtml(s.host)}:${s.port || 22}` : '—';
+          let authBadge = '';
+          if (s.hasKey) authBadge = '<span class="text-xs text-muted">🔑 key</span>';
+          else if (s.hasPassword) authBadge = '<span class="text-xs text-muted">🔒 password</span>';
+          else if (!isLocal) authBadge = '<span class="text-xs text-muted">📡 agent</span>';
+          return `<tr>
+              <td class="td-mono">${isLocal ? '🖥' : '🔐'} ${escapeHtml(s.id)}</td>
+              <td class="text-xs">${escapeHtml(s.type)}</td>
+              <td class="td-mono text-xs">${hostStr}</td>
+              <td>${authBadge}</td>
+              <td>${activeBadge}</td>
+              <td>
+                ${!s.isActive ? `<button class="btn btn-xs btn-secondary" data-action="activate" data-id="${escapeHtml(s.id)}">Use</button>` : ''}
+                <button class="btn btn-xs btn-secondary" data-action="test" data-id="${escapeHtml(s.id)}">Test</button>
+                ${!isLocal ? `<button class="btn btn-xs btn-ghost text-danger" data-action="delete" data-id="${escapeHtml(s.id)}">${Icons.trash}</button>` : ''}
+              </td>
+            </tr>`;
+        }).join('');
+
+        const html = `
+          <div class="settings-section">
+            <div class="settings-section-title">Docker Servers</div>
+            <div class="text-muted text-sm" style="margin-bottom:12px;">
+              Local Docker socket + uzaq SSH server-lər. Header-dəki SRV dropdown ilə dəyişir.
+            </div>
+            <div class="table-wrapper"><table>
+              <thead><tr><th>ID</th><th>Type</th><th>Host</th><th>Auth</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody>${rowsHtml}</tbody>
+            </table></div>
+          </div>
+          <div class="settings-section" style="margin-top:20px;">
+            <div class="settings-section-title">Add SSH Server</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+              <input class="input" id="srv-id" placeholder="ID (e.g. prod-1)" />
+              <input class="input" id="srv-host" placeholder="Host (e.g. 1.2.3.4 or server.example.com)" />
+              <input class="input" id="srv-user" placeholder="SSH user" value="root" />
+              <input class="input" id="srv-port" type="number" placeholder="Port" value="22" />
+            </div>
+
+            <div class="tab-bar" id="auth-tabs" style="margin-bottom:8px;">
+              <button class="tab-btn active" data-auth="key" type="button">🔑 Private Key</button>
+              <button class="tab-btn" data-auth="password" type="button">🔒 Password</button>
+              <button class="tab-btn" data-auth="agent" type="button">📡 SSH Agent</button>
+            </div>
+
+            <div id="auth-key" class="auth-pane">
+              <label class="text-xs text-muted">Private key (paste OpenSSH format):</label>
+              <textarea class="input" id="srv-key" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="font-family:var(--font-mono);font-size:11px;width:100%;margin-top:4px;"></textarea>
+            </div>
+
+            <div id="auth-password" class="auth-pane" style="display:none;">
+              <label class="text-xs text-muted">SSH user şifrəsi (DB-də plain-text saxlanılır — yalnız trust edilən şəbəkədə):</label>
+              <input class="input" id="srv-password" type="password" placeholder="••••••••" style="margin-top:4px;width:100%;" />
+              <div class="text-xs text-muted" style="margin-top:6px;">⚠ Daha təhlükəsiz: Private Key istifadə edin</div>
+            </div>
+
+            <div id="auth-agent" class="auth-pane" style="display:none;">
+              <div class="text-xs text-muted" style="padding:8px 12px;background:var(--bg-primary);border-radius:var(--radius-md);">
+                SSH agent istifadə olunacaq. Container-də <code>SSH_AUTH_SOCK</code> environment variable və ya host-un agent socket-i mount edilməlidir.
+              </div>
+            </div>
+
+            <input class="input" id="srv-desc" placeholder="Description (optional)" style="margin:8px 0;width:100%;" />
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary btn-sm" id="srv-test-new">Test Connection</button>
+              <button class="btn btn-primary btn-sm" id="srv-add">Add Server</button>
+              <div id="srv-test-result" style="align-self:center;"></div>
+            </div>
+          </div>
+          <div class="settings-section" style="margin-top:20px;">
+            <div class="settings-section-title">Required on remote server</div>
+            <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;font-family:var(--font-mono);font-size:12px;line-height:1.7;">
+              <div class="text-xs text-muted" style="margin-bottom:6px;font-family:var(--font-sans);">User-in Docker socket-ə çıxışı olmalıdır:</div>
+              <div># Server-də:</div>
+              <div>sudo usermod -aG docker $USER</div>
+              <div># SSH ilə test:</div>
+              <div>ssh user@host docker ps</div>
+            </div>
+          </div>
+        `;
+        // setHTML helper — escapeHtml() artıq tətbiq olunub yuxarıda
+        Object.assign(tabContent, { innerHTML: html });
+
+        attachServerHandlers();
+      }
+
+      function attachServerHandlers() {
+        // Auth tabs (key / password / agent)
+        let authMode = 'key';
+        tabContent.querySelectorAll('#auth-tabs .tab-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            authMode = btn.dataset.auth;
+            tabContent.querySelectorAll('#auth-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            tabContent.querySelectorAll('.auth-pane').forEach(p => p.style.display = 'none');
+            const pane = document.getElementById(`auth-${authMode}`);
+            if (pane) pane.style.display = '';
+          });
+        });
+
+        tabContent.querySelectorAll('[data-action]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const { action, id } = btn.dataset;
+            try {
+              if (action === 'activate') {
+                await API.post('/servers/active', { id });
+                showToast(`Activated: ${id}`);
+                if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
+                renderServers();
+              } else if (action === 'test') {
+                const r = await API.post('/servers/test', { id });
+                if (r.success) {
+                  showToast(`✓ ${r.version} (${r.containers} containers, ${r.images} images)`, 'success', 6000);
+                } else {
+                  showToast(`✗ ${r.error}`, 'error', 8000);
+                }
+              } else if (action === 'delete') {
+                showConfirm('Delete Server', `Server "${id}" silinsin? SSH key faylı da silinir.`, async () => {
+                  await API.del(`/servers/${id}`);
+                  showToast('Silindi');
+                  if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
+                  renderServers();
+                }, true);
+              }
+            } catch (e) { showToast(e.message, 'error'); }
+          });
+        });
+
+        function buildAuthBody() {
+          const base = {
+            host: document.getElementById('srv-host').value.trim(),
+            port: parseInt(document.getElementById('srv-port').value) || 22,
+            username: document.getElementById('srv-user').value.trim(),
+          };
+          if (authMode === 'key') {
+            const k = document.getElementById('srv-key').value;
+            if (k && k.trim()) base.privateKey = k;
+          } else if (authMode === 'password') {
+            const p = document.getElementById('srv-password').value;
+            if (p) base.password = p;
+          }
+          // 'agent' — heç biri əlavə edilmir, server-side agent fallback işləyir
+          return base;
+        }
+
+        document.getElementById('srv-test-new')?.addEventListener('click', async () => {
+          const result = document.getElementById('srv-test-result');
+          result.replaceChildren();
+          const status = document.createElement('span');
+          status.className = 'text-xs text-muted';
+          status.textContent = 'Testing...';
+          result.appendChild(status);
+          try {
+            const body = buildAuthBody();
+            const r = await API.post('/servers/test', body);
+            result.replaceChildren();
+            const out = document.createElement('span');
+            out.className = 'text-xs';
+            if (r.success) {
+              out.style.color = 'var(--success)';
+              out.textContent = `✓ ${r.version} — ${r.containers} containers`;
+            } else {
+              out.style.color = 'var(--danger)';
+              out.textContent = `✗ ${r.error}`;
+            }
+            result.appendChild(out);
+          } catch (e) {
+            result.replaceChildren();
+            const out = document.createElement('span');
+            out.className = 'text-xs';
+            out.style.color = 'var(--danger)';
+            out.textContent = `✗ ${e.message}`;
+            result.appendChild(out);
+          }
+        });
+
+        document.getElementById('srv-add')?.addEventListener('click', async () => {
+          const id = document.getElementById('srv-id').value.trim();
+          const description = document.getElementById('srv-desc').value.trim();
+          const auth = buildAuthBody();
+          if (!id || !auth.host || !auth.username) {
+            showToast('ID, host və username tələb olunur', 'warning');
+            return;
+          }
+          try {
+            await API.post('/servers', { id, ...auth, description });
+            showToast(`Server "${id}" (${authMode}) əlavə olundu`);
+            if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
+            renderServers();
+          } catch (e) { showToast(e.message, 'error'); }
+        });
       }
 
       // ==================== NOTIFICATIONS TAB ====================

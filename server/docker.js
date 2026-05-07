@@ -1,5 +1,71 @@
 const Docker = require('dockerode');
-const docker = new Docker({ socketPath: '/var/run/docker.sock' });
+const fs = require('fs');
+const path = require('path');
+
+// ============ DYNAMIC DOCKER CLIENT ============
+// Active Docker client — local socket default, SSH əlaqələrə switch oluna bilər
+// _docker dəyişəni runtime-da setActiveServer() ilə dəyişir
+let _docker = new Docker({ socketPath: '/var/run/docker.sock' });
+let _activeServerId = 'local';
+
+function createLocalClient() {
+  return new Docker({ socketPath: '/var/run/docker.sock' });
+}
+
+function createSshClient(server) {
+  const opts = {
+    protocol: 'ssh',
+    host: server.host,
+    port: server.port || 22,
+    username: server.username,
+  };
+  // Auth iyerarxiyası: key > password > SSH agent
+  if (server.key_path) {
+    const keyPath = path.isAbsolute(server.key_path)
+      ? server.key_path
+      : path.join(__dirname, '..', 'data', 'ssh-keys', server.key_path);
+    if (fs.existsSync(keyPath)) {
+      opts.privateKey = fs.readFileSync(keyPath);
+    } else {
+      throw new Error(`SSH key tapılmadı: ${keyPath}`);
+    }
+    if (server.passphrase) opts.passphrase = server.passphrase;
+  } else if (server.password) {
+    opts.password = server.password;
+  }
+  // Heç biri yoxdursa — ssh2 SSH agent istifadə edəcək
+  return new Docker(opts);
+}
+
+/**
+ * Aktiv Docker client-i dəyiş.
+ * @param {string} serverId — 'local' və ya servers cədvəlindəki id
+ */
+function setActiveServer(serverId) {
+  // Stmts-i late require et — circular dependency-dən qorunmaq üçün
+  const { stmts } = require('./db');
+  if (!serverId || serverId === 'local') {
+    _docker = createLocalClient();
+    _activeServerId = 'local';
+  } else {
+    const server = stmts.getServer.get(serverId);
+    if (!server) throw new Error(`Server tapılmadı: ${serverId}`);
+    _docker = createSshClient(server);
+    _activeServerId = serverId;
+  }
+  // Cache-i təmizlə — yeni server-in datasını gətirməliyik
+  cache.clear();
+  // DB-də saxla
+  stmts.setSetting.run('active_server', _activeServerId);
+  return _activeServerId;
+}
+
+function getActiveServerId() { return _activeServerId; }
+
+// docker dəyişəninə hər müraciətdə getter işləyir — dinamik client dönür
+const docker = new Proxy({}, {
+  get(_, prop) { return _docker[prop]; },
+});
 
 // ============ CACHE LAYER ============
 // Ağır Docker API çağırışlarını müvəqqəti saxlayır / Caches expensive Docker API calls
@@ -553,8 +619,33 @@ async function setAutoStart(enabled) {
   return policyName;
 }
 
+// Test connection — server config qəbul edir, dockerode ilə ping et
+async function testServerConnection(serverConfig) {
+  let client;
+  try {
+    if (!serverConfig || serverConfig.type === 'local') {
+      client = createLocalClient();
+    } else {
+      client = createSshClient(serverConfig);
+    }
+    const version = await client.version();
+    const info = await client.info();
+    return {
+      success: true,
+      version: version.Version,
+      apiVersion: version.ApiVersion,
+      os: info.OperatingSystem,
+      containers: info.Containers,
+      images: info.Images,
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   docker, invalidateCache,
+  setActiveServer, getActiveServerId, testServerConnection,
   listContainers, inspectContainer, getContainerStats, containerAction,
   getContainerLogs, createContainer, parseStats, demuxLogs,
   listImages, inspectImage, pullImage, removeImage, tagImage, buildImage,
