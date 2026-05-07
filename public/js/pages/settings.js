@@ -185,7 +185,7 @@ Router.register('settings', async (content) => {
             <div class="tab-bar" id="auth-tabs" style="margin-bottom:8px;">
               <button class="tab-btn active" data-auth="key" type="button">🔑 Private Key</button>
               <button class="tab-btn" data-auth="password" type="button">🔒 Password</button>
-              <button class="tab-btn" data-auth="agent" type="button">📡 SSH Agent</button>
+              <button class="tab-btn" data-auth="agent" type="button">📡 SSH Agent <span style="font-size:10px;opacity:0.7;">· Coming Soon</span></button>
             </div>
 
             <div id="auth-key" class="auth-pane">
@@ -200,8 +200,12 @@ Router.register('settings', async (content) => {
             </div>
 
             <div id="auth-agent" class="auth-pane" style="display:none;">
-              <div class="text-xs text-muted" style="padding:8px 12px;background:var(--bg-primary);border-radius:var(--radius-md);">
-                SSH agent istifadə olunacaq. Container-də <code>SSH_AUTH_SOCK</code> environment variable və ya host-un agent socket-i mount edilməlidir.
+              <div style="padding:12px 16px;background:var(--bg-primary);border:1px dashed var(--border);border-radius:var(--radius-md);">
+                <div style="font-weight:600;margin-bottom:6px;">⏳ Coming Soon</div>
+                <div class="text-xs text-muted" style="line-height:1.6;">
+                  SSH agent forwarding requires mounting <code>SSH_AUTH_SOCK</code> from the host into the DockGate container.
+                  Out-of-the-box this is not wired up yet — for now use <strong>Private Key</strong> or <strong>Password</strong>.
+                </div>
               </div>
             </div>
 

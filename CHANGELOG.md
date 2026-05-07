@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.2] - 2026-05-07
+
+### UX
+- **SSH Agent tab marked as "Coming Soon"** — the agent path works in code (ssh2 falls back to `SSH_AUTH_SOCK`), but the DockGate container doesn't mount the host's agent socket out-of-the-box, so the connection fails for most users. Until the docker-compose mount is wired up, the tab now shows a clear "Coming Soon" badge plus an inline note pointing users to Private Key or Password instead
+
+---
+
 ## [2.0.1] - 2026-05-07
 
 ### Major — Multi-host SSH Support
