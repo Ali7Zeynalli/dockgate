@@ -9,8 +9,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-const EventMonitor = require('./notifications/event-monitor');
-const eventMonitor = new EventMonitor();
+const monitorManager = require('./notifications/monitor-manager');
 
 const PORT = process.env.PORT || 7077;
 
@@ -286,7 +285,9 @@ io.on('connection', (socket) => {
 
         socket.emit('build:complete', { buildId: id, status, duration, imageId });
         if (status === 'failed') {
-          eventMonitor.triggerBuildFailed({ imageTag: tag, buildId: id, error: 'Build failed', duration });
+          // Builds run on local Docker — route the failure through the local monitor
+          const localMon = monitorManager.getLocal();
+          if (localMon) localMon.triggerBuildFailed({ imageTag: tag, buildId: id, error: 'Build failed', duration });
         }
         buildStream = null;
       });
@@ -461,8 +462,9 @@ server.listen(PORT, () => {
   console.log(`  → http://localhost:${PORT}`);
   console.log(`  → Listening on port ${PORT}\n`);
 
-  // Start event monitor for email notifications
-  eventMonitor.start();
+  // Start one event monitor per registered server (local + every SSH host).
+  // Notifications fire from any server regardless of which one is active in the UI.
+  monitorManager.startAll();
 });
 
 // Periodic DB retention — trim old records every 6 hours

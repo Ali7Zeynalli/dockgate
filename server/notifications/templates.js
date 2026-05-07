@@ -21,16 +21,23 @@ function footer() {
 }
 
 function row(label, value) {
-  return `<tr><td style="padding:6px 0;color:#666;font-size:13px;width:120px;">${label}</td><td style="padding:6px 0;font-size:13px;font-weight:500;">${value}</td></tr>`;
+  return `<tr><td style="padding:6px 0;color:#666;font-size:13px;width:140px;">${label}</td><td style="padding:6px 0;font-size:13px;font-weight:500;">${value}</td></tr>`;
 }
 
-function containerDieTemplate({ containerName, containerId, image, time, exitCode }) {
+// Renders a Server row only when a non-local server id is supplied.
+function serverRow(server) {
+  if (!server || server === 'local') return '';
+  return row('Server', `<code style="background:#eef2ff;padding:2px 6px;border-radius:3px;">${server}</code>`);
+}
+
+function containerDieTemplate({ containerName, containerId, image, time, exitCode, server }) {
   return `${header('Container Stopped')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
         <div style="background:#fff3f3;border:1px solid #fecaca;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#b91c1c;">
           Container <strong>${containerName}</strong> has stopped unexpectedly.
         </div>
         <table style="width:100%;border-collapse:collapse;">
+          ${serverRow(server)}
           ${row('Container', containerName)}
           ${row('ID', containerId)}
           ${row('Image', image || '—')}
@@ -41,13 +48,14 @@ function containerDieTemplate({ containerName, containerId, image, time, exitCod
     ${footer()}`;
 }
 
-function containerRestartTemplate({ containerName, containerId, image, time, restartCount }) {
+function containerRestartTemplate({ containerName, containerId, image, time, restartCount, server }) {
   return `${header('Container Restarted')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
         <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">
           Container <strong>${containerName}</strong> has restarted.${restartCount > 3 ? ' Frequent restarts detected — investigate the cause.' : ''}
         </div>
         <table style="width:100%;border-collapse:collapse;">
+          ${serverRow(server)}
           ${row('Container', containerName)}
           ${row('ID', containerId)}
           ${row('Image', image || '—')}
@@ -58,13 +66,14 @@ function containerRestartTemplate({ containerName, containerId, image, time, res
     ${footer()}`;
 }
 
-function containerUnhealthyTemplate({ containerName, containerId, image, time, failingStreak, lastOutput }) {
+function containerUnhealthyTemplate({ containerName, containerId, image, time, failingStreak, lastOutput, server }) {
   return `${header('Container Unhealthy')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
         <div style="background:#fff3f3;border:1px solid #fecaca;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#b91c1c;">
           Container <strong>${containerName}</strong> is reporting unhealthy. It may be frozen or unresponsive.
         </div>
         <table style="width:100%;border-collapse:collapse;">
+          ${serverRow(server)}
           ${row('Container', containerName)}
           ${row('ID', containerId)}
           ${row('Image', image || '—')}
@@ -79,13 +88,14 @@ function containerUnhealthyTemplate({ containerName, containerId, image, time, f
     ${footer()}`;
 }
 
-function containerOomTemplate({ containerName, containerId, image, time }) {
+function containerOomTemplate({ containerName, containerId, image, time, server }) {
   return `${header('OOM Kill Detected')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
         <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">
           Container <strong>${containerName}</strong> was killed due to out-of-memory.
         </div>
         <table style="width:100%;border-collapse:collapse;">
+          ${serverRow(server)}
           ${row('Container', containerName)}
           ${row('ID', containerId)}
           ${row('Image', image || '—')}
@@ -98,7 +108,7 @@ function containerOomTemplate({ containerName, containerId, image, time }) {
     ${footer()}`;
 }
 
-function diskAlertTemplate({ usagePercent, totalSpace, usedSpace, threshold }) {
+function diskAlertTemplate({ usagePercent, totalSpace, usedSpace, threshold, server }) {
   const barColor = usagePercent > 90 ? '#ef4444' : '#f59e0b';
   return `${header('Disk Usage Alert')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
@@ -114,6 +124,7 @@ function diskAlertTemplate({ usagePercent, totalSpace, usedSpace, threshold }) {
           </div>
         </div>
         <table style="width:100%;border-collapse:collapse;">
+          ${serverRow(server)}
           ${row('Used', usedSpace)}
           ${row('Total', totalSpace)}
           ${row('Threshold', threshold + '%')}

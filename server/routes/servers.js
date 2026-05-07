@@ -7,6 +7,7 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const dockerService = require('../docker');
+const monitorManager = require('../notifications/monitor-manager');
 const { stmts } = require('../db');
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
@@ -79,6 +80,9 @@ router.post('/', (req, res) => {
 
     stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, pwdToStore, description);
     stmts.logActivity.run(id, 'server', id, 'add', JSON.stringify({ host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent') }));
+
+    // Start dedicated monitor so notifications from this host start flowing immediately
+    monitorManager.startMonitor(id);
 
     res.json({
       success: true, id, host, port, username,
@@ -173,6 +177,10 @@ router.delete('/:id', (req, res) => {
 
     stmts.deleteServer.run(id);
     stmts.logActivity.run(id, 'server', id, 'delete', '');
+
+    // Stop the dedicated monitor for this server
+    monitorManager.stopMonitor(id);
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

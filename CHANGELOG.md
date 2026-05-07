@@ -2,6 +2,26 @@
 
 ---
 
+## [2.0.3] - 2026-05-07
+
+### Features — Multi-host Notifications
+Notifications now fire from **every registered server simultaneously**, not just the active one. If you flip the header dropdown to `prod-1` and a container dies on `local`, the alert still arrives.
+
+- **Per-server EventMonitor** — `EventMonitor` now takes a `(serverId, dockerClient)` pair; the docker client is dedicated (not the active-server proxy), so the stream stays bound to its own daemon
+- **MonitorManager** (`server/notifications/monitor-manager.js`) — owns one `EventMonitor` per registered server (local + every SSH host); auto-starts on boot, auto-spawns when a server is added via `POST /api/servers`, auto-stops when one is deleted
+- **Server-aware cooldown** — the throttle key now includes both server id and resource id (e.g. `prod-1:container_die:nginx`), so the same crash on different hosts each get an alert, and one host crashlooping doesn't suppress alerts from another
+- **Server prefix in subject + Telegram + email** — alerts from non-local hosts include `[prod-1]` in the subject line, a `Server` row in the email body, and a `Server` field in the Telegram message; local-server alerts stay clean (no prefix)
+- **Build-failed stays local** — image builds run against the host Docker, so the build-failure trigger is routed through the local monitor only
+
+### Technical Changes
+- `server/notifications/event-monitor.js` — class now constructor-injected with `serverId` and `docker`; reconnect logic respects `stopped` flag so a stop-followed-by-restart doesn't leak a pending reconnect; cooldown map keyed per `(serverId, eventType, resourceKey)`
+- `server/notifications/monitor-manager.js` (new) — `startMonitor(idOrConfig)`, `stopMonitor(id)`, `startAll()`, `stopAll()`, `getLocal()`, `listMonitors()`; reads SSH key files into memory when constructing the dedicated client
+- `server/notifications/templates.js` — every container/disk template now accepts an optional `server` field and emits a `Server` row when present (skipped for `local`)
+- `server/index.js` — startup now calls `monitorManager.startAll()` instead of a single `eventMonitor.start()`; build-failure callback uses `monitorManager.getLocal()` because builds are local-only
+- `server/routes/servers.js` — `POST /api/servers` calls `monitorManager.startMonitor(id)` after insert; `DELETE /api/servers/:id` calls `monitorManager.stopMonitor(id)` before responding
+
+---
+
 ## [2.0.2] - 2026-05-07
 
 ### UX
