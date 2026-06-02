@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.9] - 2026-06-02
+
+### Fixed
+- **Build Cache prune now works on remote SSH hosts** — "Clear Cache" (Builds page and System Cleanup) used the host `docker builder prune` CLI, so it only worked on the local daemon and failed on a remote host. It now uses the Docker Engine API (`pruneBuilder` → `POST /build/prune`) via dockerode, which tunnels over SSH. Verified against a real remote host holding 44.5 GB of build cache. The rest of the Builds / Cleanup data (build history, image-layer history, disk usage, container/image/volume/network prune) already used the Engine API and works on remote once the v2.0.8 SSH fix is deployed
+
+### Notes
+- **Builders list (buildx)** on a remote host shows only the default builder — `docker buildx ls` is a local CLI plugin with no Engine API equivalent, so a remote daemon's buildx builders cannot be enumerated (Docker limitation, not a DockGate bug)
+- **Compose up/down/restart/pull** remain local-only — they require the compose files on the host filesystem
+
+---
+
 ## [2.0.8] - 2026-06-02
 
 ### Fixed

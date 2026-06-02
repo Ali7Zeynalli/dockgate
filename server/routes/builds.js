@@ -215,9 +215,9 @@ router.get('/cache', async (req, res) => {
 
 router.post('/cache/prune', async (req, res) => {
   try {
-    // pruneBuildCache runs the host CLI → assertLocalActive throws 400 (if a remote host is active)
+    // pruneBuildCache uses the Docker Engine API (pruneBuilder) → works on the active host (local or remote SSH)
     const result = await dockerService.pruneBuildCache();
-    logAction({ req, server: 'local', resourceType: 'system', resourceName: 'build-cache', action: 'prune_build_cache', details: result });
+    logAction({ req, resourceType: 'system', resourceName: 'build-cache', action: 'prune_build_cache', details: result });
     res.json(result);
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });

@@ -532,25 +532,26 @@ async function pruneNetworks() {
 }
 
 async function pruneBuildCache() {
-  // Host CLI (`docker builder prune`) — only works on the local daemon, not a remote SSH host.
-  assertLocalActive('Build cache prune');
-  const { execFile } = require('child_process');
-  return new Promise((resolve, reject) => {
-    execFile('docker', ['builder', 'prune', '-a', '-f'], (err, stdout) => {
-      if (err) return reject(err);
-      
-      let spaceStr = '';
-      const match = stdout.match(/Total reclaimed space: (.+)/);
-      if (match) spaceStr = match[1];
-      
-      invalidateCache('');
-      resolve({
-        Message: "Build cache pruned",
-        SpaceReclaimedStr: spaceStr,
-        Output: stdout
-      });
-    });
-  });
+  // Use the Docker Engine API (POST /build/prune) via dockerode instead of the host
+  // `docker builder prune` CLI. The API tunnels over SSH, so this now works on remote
+  // hosts too (the CLI version only worked on the local daemon).
+  const r = await docker.pruneBuilder({ all: true });
+  invalidateCache('');
+  const reclaimed = r.SpaceReclaimed || 0;
+  return {
+    Message: 'Build cache pruned',
+    SpaceReclaimed: reclaimed,                 // bytes — read by cleanup page
+    SpaceReclaimedStr: formatBytes(reclaimed), // human string — read by builds page
+    CachesDeleted: r.CachesDeleted || [],
+  };
+}
+
+// Minimal byte formatter (kept local to docker.js — used by pruneBuildCache result)
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 async function systemPrune(volumes = false) {
