@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.12] - 2026-06-02
+
+### Added
+- **Run Container** — a guided form to launch a container from an image (Containers header "Run Container" button + a per-image "Run" action on the Images page): image with autocomplete + optional pull, name, repeatable port / volume / env rows, restart policy, network, command override, CPU / memory limits. `POST /api/containers/run` pulls-if-missing → creates → starts. Runs on the active host (local or remote SSH)
+- **Create & edit Compose projects in the UI** — Compose page "New Project" + per-project "Edit YAML": a raw `docker-compose.yml` editor plus a guided "Add service" builder (name / image / ports / volumes / env → generated YAML). `POST /api/compose/create`, `GET` / `PUT /api/compose/:project/file`; the file is written under `data/compose/<project>/`, validated with `docker compose config`, then brought up. Local host only
+
+### Fixed
+- A fully-down Compose project created by DockGate can now be brought back up — the up/down/restart/pull actions fall back to the managed `data/compose/<project>` directory when the working dir can no longer be read from container labels
+
+---
+
 ## [2.0.11] - 2026-06-02
 
 A front-end reliability & UX release driven by a per-page audit of refresh behaviour and buttons.

@@ -86,8 +86,9 @@ Router.register('images', async (content) => {
                   <td><span class="badge ${img.inUse ? 'badge-running' : 'badge-dead'}">${img.containers}</span></td>
                   <td>
                     <div class="td-actions">
+                      <button class="btn-icon" title="Run container" data-run="${escapeHtml(full)}">${Icons.play}</button>
                       <button class="btn-icon" title="Inspect" data-inspect="${img.id}">${Icons.eye}</button>
-                      <button class="btn-icon" title="Remove" data-remove="${img.id}" data-name="${escapeHtml(repo + ':' + tag)}" style="color:var(--danger)">${Icons.trash}</button>
+                      <button class="btn-icon" title="Remove" data-remove="${img.id}" data-name="${escapeHtml(full)}" style="color:var(--danger)">${Icons.trash}</button>
                     </div>
                   </td>
                 </tr>`;
@@ -123,6 +124,11 @@ Router.register('images', async (content) => {
             catch (err) { showToast(err.message, 'error'); }
           }},
         ]);
+      });
+
+      // Run a container from this image (opens the guided Run modal pre-filled)
+      content.querySelectorAll('[data-run]').forEach(btn => {
+        btn.addEventListener('click', () => openRunContainerModal(btn.dataset.run));
       });
 
       // Single remove

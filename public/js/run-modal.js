@@ -1,0 +1,124 @@
+// Shared "Run Container" guided form — used by the Images page (per-image) and the
+// Containers page (header button). Pulls (optionally) → creates → starts via POST /containers/run.
+async function openRunContainerModal(prefillImage = '') {
+  let images = [];
+  let networks = [];
+  try {
+    [images, networks] = await Promise.all([
+      API.get('/images').catch(() => []),
+      API.get('/networks').catch(() => []),
+    ]);
+  } catch (e) { /* dropdowns just fall back to free text / defaults */ }
+
+  const imageOpts = (images || [])
+    .map(i => (i.repoTags && i.repoTags[0] !== '<none>:<none>') ? i.repoTags[0] : null)
+    .filter(Boolean);
+  const netOpts = (networks || []).map(n => n.name);
+
+  const row = (cells) => `<div class="run-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center">${cells}<button type="button" class="btn-icon run-row-del" title="Remove" style="color:var(--danger)">${Icons.trash}</button></div>`;
+  const portRow = () => row(`<input class="input run-p-host" placeholder="host (e.g. 8080)" style="flex:1"><span>:</span><input class="input run-p-cont" placeholder="container (e.g. 80)" style="flex:1"><select class="select run-p-proto" style="width:80px"><option value="tcp">tcp</option><option value="udp">udp</option></select>`);
+  const volRow = () => row(`<input class="input run-v-host" placeholder="host path or volume name" style="flex:2"><span>:</span><input class="input run-v-cont" placeholder="container path" style="flex:2"><select class="select run-v-mode" style="width:80px"><option value="rw">rw</option><option value="ro">ro</option></select>`);
+  const envRow = () => row(`<input class="input run-e-key" placeholder="KEY" style="flex:1"><span>=</span><input class="input run-e-val" placeholder="value" style="flex:2">`);
+
+  const body = `
+    <div class="run-form" style="display:flex;flex-direction:column;gap:12px;max-height:65vh;overflow:auto;padding-right:4px">
+      <div class="input-group">
+        <label>Image *</label>
+        <input class="input" id="run-image" list="run-image-list" placeholder="e.g. nginx:alpine" value="${escapeHtml(prefillImage)}">
+        <datalist id="run-image-list">${imageOpts.map(o => `<option value="${escapeHtml(o)}">`).join('')}</datalist>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400"><input type="checkbox" id="run-pull"> Pull image before running</label>
+      </div>
+      <div class="input-group"><label>Container name (optional)</label><input class="input" id="run-name" placeholder="my-app"></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="input-group" style="flex:1;min-width:160px"><label>Restart policy</label>
+          <select class="select" id="run-restart">
+            <option value="no">no</option>
+            <option value="unless-stopped" selected>unless-stopped</option>
+            <option value="always">always</option>
+            <option value="on-failure">on-failure</option>
+          </select>
+        </div>
+        <div class="input-group" style="flex:1;min-width:160px"><label>Network</label>
+          <select class="select" id="run-network">
+            <option value="">default (bridge)</option>
+            ${netOpts.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="input-group" style="flex:1;min-width:120px"><label>CPUs (optional)</label><input class="input" id="run-cpus" placeholder="e.g. 0.5"></div>
+        <div class="input-group" style="flex:1;min-width:120px"><label>Memory (optional)</label><input class="input" id="run-memory" placeholder="e.g. 512m"></div>
+      </div>
+      <div class="input-group"><label>Command override (optional)</label><input class="input" id="run-cmd" placeholder="e.g. sleep 3600"></div>
+
+      <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><label style="font-weight:600">Ports</label><button type="button" class="btn btn-xs btn-secondary" id="run-add-port">+ Add port</button></div><div id="run-ports"></div></div>
+      <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><label style="font-weight:600">Volumes</label><button type="button" class="btn btn-xs btn-secondary" id="run-add-vol">+ Add volume</button></div><div id="run-vols"></div></div>
+      <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><label style="font-weight:600">Environment</label><button type="button" class="btn btn-xs btn-secondary" id="run-add-env">+ Add variable</button></div><div id="run-envs"></div></div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" id="run-submit">${Icons.play} Run Container</button>
+      </div>
+    </div>`;
+
+  const m = showModal('Run Container', body, []);
+  const root = m.overlay;
+
+  // Repeatable rows
+  const wire = (addBtnId, listId, builder) => {
+    const list = root.querySelector('#' + listId);
+    root.querySelector('#' + addBtnId)?.addEventListener('click', () => {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = builder();
+      const el = wrap.firstElementChild;
+      el.querySelector('.run-row-del')?.addEventListener('click', () => el.remove());
+      list.appendChild(el);
+    });
+  };
+  wire('run-add-port', 'run-ports', portRow);
+  wire('run-add-vol', 'run-vols', volRow);
+  wire('run-add-env', 'run-envs', envRow);
+
+  root.querySelector('#run-submit')?.addEventListener('click', async () => {
+    const image = root.querySelector('#run-image').value.trim();
+    if (!image) { showToast('Image is required', 'warning'); return; }
+    const ports = [...root.querySelectorAll('#run-ports .run-row')].map(r => ({
+      host: r.querySelector('.run-p-host').value.trim(),
+      container: r.querySelector('.run-p-cont').value.trim(),
+      proto: r.querySelector('.run-p-proto').value,
+    })).filter(p => p.container);
+    const volumes = [...root.querySelectorAll('#run-vols .run-row')].map(r => ({
+      host: r.querySelector('.run-v-host').value.trim(),
+      container: r.querySelector('.run-v-cont').value.trim(),
+      mode: r.querySelector('.run-v-mode').value,
+    })).filter(v => v.host && v.container);
+    const env = [...root.querySelectorAll('#run-envs .run-row')].map(r => {
+      const k = r.querySelector('.run-e-key').value.trim();
+      const v = r.querySelector('.run-e-val').value;
+      return k ? `${k}=${v}` : null;
+    }).filter(Boolean);
+
+    const payload = {
+      image,
+      name: root.querySelector('#run-name').value.trim(),
+      restart: root.querySelector('#run-restart').value,
+      network: root.querySelector('#run-network').value,
+      cmd: root.querySelector('#run-cmd').value,
+      cpus: root.querySelector('#run-cpus').value.trim(),
+      memory: root.querySelector('#run-memory').value.trim(),
+      pull: root.querySelector('#run-pull').checked,
+      ports, volumes, env,
+    };
+
+    const btn = root.querySelector('#run-submit');
+    btn.disabled = true; btn.textContent = 'Running...';
+    try {
+      await API.post('/containers/run', payload);
+      showToast('Container started');
+      m.close();
+      Router.navigate('containers');
+    } catch (err) {
+      showToast(err.message, 'error', 8000);
+      btn.disabled = false; btn.innerHTML = `${Icons.play} Run Container`;
+    }
+  });
+}

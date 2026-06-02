@@ -64,6 +64,7 @@ Router.register('containers', async (content) => {
             <div class="page-subtitle">${containers.length} container(s)</div>
           </div>
           <div class="page-actions">
+            <button class="btn btn-primary" id="run-container-btn">${Icons.play} Run Container</button>
             <button class="btn btn-ghost ${currentView === 'table' ? 'active' : ''}" id="view-table" title="Table View">${Icons.layers}</button>
             <button class="btn btn-ghost ${currentView === 'card' ? 'active' : ''}" id="view-card" title="Card View">${Icons.dashboard}</button>
             <button class="btn btn-secondary" id="containers-refresh">${Icons.refresh}</button>
@@ -302,6 +303,9 @@ Router.register('containers', async (content) => {
     // View toggle
     document.getElementById('view-table')?.addEventListener('click', () => { currentView = 'table'; render(); });
     document.getElementById('view-card')?.addEventListener('click', () => { currentView = 'card'; render(); });
+
+    // Run a new container (guided modal)
+    document.getElementById('run-container-btn')?.addEventListener('click', () => openRunContainerModal());
 
     // Refresh
     document.getElementById('containers-refresh')?.addEventListener('click', render);
