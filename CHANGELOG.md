@@ -14,6 +14,7 @@ A correctness-and-hardening release driven by a full-codebase audit. Fixes a cla
 - **Stale disk/usage after deletes** — `removeImage/removeVolume/removeNetwork`, all `prune*` calls and the create operations now invalidate the cache, so the dashboard's disk usage and counters refresh immediately (previously only container actions did)
 - **Front-end port links are host-aware** — published-port links now point at the active server's host (or the browser's host for local) instead of a hard-coded `localhost`, so they work when a remote SSH host is selected
 - **Toast messages are escaped** — backend error text containing `< > &` no longer breaks toast rendering (`textContent` instead of `innerHTML`)
+- **Settings no longer reset on hard refresh** — the Settings page short-circuited on the store's initial `{}` (which is truthy), so a full reload rendered every General-tab control (Log Timestamps, Default View, Default Shell) from empty state instead of fetching the saved values. It now fetches from the server when the store cache is empty
 
 ### Added
 - **Edit existing servers** — `PUT /api/servers/:id` updates host/port/username/key/password/passphrase/description (only the fields sent change); it refreshes the active client and restarts the host's monitor. Previously editing required delete-and-recreate
