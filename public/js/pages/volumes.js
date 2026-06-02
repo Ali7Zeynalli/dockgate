@@ -1,6 +1,7 @@
 // Volumes Page
 Router.register('volumes', async (content) => {
   let selectedNames = new Set();
+  let refreshTimer = null;
 
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
@@ -111,11 +112,7 @@ Router.register('volumes', async (content) => {
 
       document.getElementById('bulk-remove')?.addEventListener('click', () => {
         showConfirm('Remove Selected Volumes', `Remove ${selectedNames.size} volume(s)? This will delete all data in these volumes.`, async () => {
-          let removed = 0;
-          for (const name of selectedNames) {
-            try { await API.del(`/volumes/${name}`); removed++; } catch(e) {}
-          }
-          showToast(`Removed ${removed}/${selectedNames.size} volumes`);
+          await bulkRun([...selectedNames], (name) => API.del(`/volumes/${name}`), 'Removed');
           selectedNames.clear();
           render();
         }, true);
@@ -124,4 +121,7 @@ Router.register('volumes', async (content) => {
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
   }
   await render();
+  // Auto-refresh (status / attached-container counts go stale as containers change) + cleanup
+  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 15000);
+  return () => { if (refreshTimer) clearInterval(refreshTimer); };
 });

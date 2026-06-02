@@ -165,9 +165,13 @@ Router.register('container-detail', async (content, params) => {
 
     const logEl = document.getElementById('log-content');
 
-    // Subscribe to log stream
-    const logSettings = Store.get('settings') || {};
-    socket.emit('logs:subscribe', { containerId: id, tail: 200, timestamps: logSettings.logTimestamps === 'true' });
+    // Subscribe to log stream (and re-subscribe on socket reconnect so it doesn't freeze)
+    const subscribeLogs = () => {
+      const logSettings = Store.get('settings') || {};
+      socket.emit('logs:subscribe', { containerId: id, tail: 200, timestamps: logSettings.logTimestamps === 'true' });
+    };
+    subscribeLogs();
+    window._activeResub = subscribeLogs;
     logEl.textContent = '';
 
     const onLogData = ({ data }) => {
@@ -179,8 +183,23 @@ Router.register('container-detail', async (content, params) => {
       if (logEl.children.length > 5000) logEl.removeChild(logEl.firstChild);
       if (autoScroll) logEl.scrollTop = logEl.scrollHeight;
     };
+    const onLogNotice = (txt, color) => {
+      const line = document.createElement('div');
+      line.className = 'log-line'; line.style.color = color; line.textContent = txt;
+      logEl.appendChild(line); if (autoScroll) logEl.scrollTop = logEl.scrollHeight;
+    };
+    const onLogEnd = () => onLogNotice('— stream ended —', 'var(--warning)');
+    const onLogError = ({ error }) => onLogNotice(`— log error: ${error} —`, 'var(--danger)');
     socket.on('logs:data', onLogData);
-    cleanup.push(() => { socket.off('logs:data', onLogData); socket.emit('logs:unsubscribe'); });
+    socket.on('logs:end', onLogEnd);
+    socket.on('logs:error', onLogError);
+    cleanup.push(() => {
+      socket.off('logs:data', onLogData);
+      socket.off('logs:end', onLogEnd);
+      socket.off('logs:error', onLogError);
+      window._activeResub = null;
+      socket.emit('logs:unsubscribe');
+    });
 
     document.getElementById('log-pause')?.addEventListener('click', function() {
       isPaused = !isPaused;
@@ -250,17 +269,22 @@ Router.register('container-detail', async (content, params) => {
 
     term.open(area);
     
+    const syncSize = () => {
+      if (fitAddon) { try { fitAddon.fit(); } catch (e) {} }
+      socket.emit('terminal:resize', { cols: term.cols, rows: term.rows });
+    };
     if (fitAddon) {
-      setTimeout(() => fitAddon.fit(), 50);
-      const resizeHandler = () => { if (fitAddon) fitAddon.fit(); };
-      window.addEventListener('resize', resizeHandler);
-      cleanup.push(() => window.removeEventListener('resize', resizeHandler));
+      setTimeout(syncSize, 50);
+      window.addEventListener('resize', syncSize);
+      cleanup.push(() => window.removeEventListener('resize', syncSize));
     }
 
     function connectTerminal(shell = '/bin/sh') {
       term.reset();
       term.write(`\x1b[36mConnecting to ${shell}...\x1b[0m\r\n`);
       socket.emit('terminal:start', { containerId: id, shell });
+      setTimeout(syncSize, 100);
+      window._activeResub = () => connectTerminal(shell); // resume on reconnect
     }
 
     const onTermReady = () => {
@@ -274,6 +298,10 @@ Router.register('container-detail', async (content, params) => {
     };
     
     socket.on('terminal:data', onTermData);
+    const onTermEnd = () => term.write('\r\n\x1b[33m— session ended (Reconnect) —\x1b[0m\r\n');
+    const onTermError = ({ error }) => term.write(`\r\n\x1b[31m— terminal error: ${error || 'unknown'} —\x1b[0m\r\n`);
+    socket.on('terminal:end', onTermEnd);
+    socket.on('terminal:error', onTermError);
 
     term.onData(data => {
       socket.emit('terminal:input', data);
@@ -292,11 +320,14 @@ Router.register('container-detail', async (content, params) => {
       connectTerminal(e.target.value);
     });
 
-    cleanup.push(() => { 
-      socket.off('terminal:data', onTermData); 
+    cleanup.push(() => {
+      socket.off('terminal:data', onTermData);
       socket.off('terminal:ready', onTermReady);
-      socket.emit('terminal:stop'); 
-      if (term) term.dispose(); 
+      socket.off('terminal:end', onTermEnd);
+      socket.off('terminal:error', onTermError);
+      window._activeResub = null;
+      socket.emit('terminal:stop');
+      if (term) term.dispose();
     });
   }
 
@@ -386,7 +417,9 @@ Router.register('container-detail', async (content, params) => {
       options: { ...chartOpts, scales: { ...chartOpts.scales, y: { ...chartOpts.scales.y, ticks: { ...chartOpts.scales.y.ticks, callback: v => formatBytes(v) } } } }
     });
 
-    socket.emit('stats:subscribe', { containerId: id });
+    const subscribeStats = () => socket.emit('stats:subscribe', { containerId: id });
+    subscribeStats();
+    window._activeResub = subscribeStats; // resume the live chart after a socket reconnect
 
     const onStatsData = (data) => {
       document.getElementById('stat-cpu').textContent = data.cpuPercent + '%';
@@ -411,7 +444,7 @@ Router.register('container-detail', async (content, params) => {
     };
     socket.on('stats:data', onStatsData);
 
-    cleanup.push(() => { socket.off('stats:data', onStatsData); socket.emit('stats:unsubscribe'); cpuChart.destroy(); memChart.destroy(); });
+    cleanup.push(() => { socket.off('stats:data', onStatsData); window._activeResub = null; socket.emit('stats:unsubscribe'); cpuChart.destroy(); memChart.destroy(); });
   }
 
   function renderEnvironment(el, info) {
@@ -538,8 +571,18 @@ Router.register('container-detail', async (content, params) => {
       <div class="json-viewer" id="json-view">${syntaxHighlightJSON(json)}</div>
     `;
     document.getElementById('inspect-copy')?.addEventListener('click', () => {
-      navigator.clipboard.writeText(json);
-      showToast('JSON copied to clipboard');
+      navigator.clipboard?.writeText(json)
+        .then(() => showToast('JSON copied to clipboard'))
+        .catch(() => showToast('Copy failed (clipboard needs HTTPS or localhost)', 'warning'));
+    });
+    // Wire the search box (it was previously dead — no listener) to filter the JSON by line
+    const searchInput = document.getElementById('inspect-search');
+    const jsonView = document.getElementById('json-view');
+    searchInput?.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase();
+      if (!q) { jsonView.innerHTML = syntaxHighlightJSON(json); return; }
+      const matched = json.split('\n').filter(l => l.toLowerCase().includes(q)).join('\n');
+      jsonView.innerHTML = matched ? syntaxHighlightJSON(matched) : '<span class="text-muted">No matches</span>';
     });
   }
 

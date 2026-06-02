@@ -28,14 +28,17 @@ Router.register('events', async (content) => {
     let isPaused = false;
     let eventCount = 0;
 
-    socket.emit('events:subscribe');
+    // Subscribe now and re-subscribe on socket reconnect (server drops the stream on disconnect)
+    const subscribe = () => socket.emit('events:subscribe');
+    subscribe();
+    window._activeResub = subscribe;
 
     const onEventData = (event) => {
       if (isPaused) return;
       if (empty) empty.style.display = 'none';
-      
+
       const tr = document.createElement('tr');
-      const time = new Date(event.time * 1000).toLocaleTimeString();
+      const time = formatTime(event.time, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const type = event.Type || 'unknown';
       const action = event.Action || '';
       
@@ -61,8 +64,8 @@ Router.register('events', async (content) => {
 
       tr.innerHTML = `
         <td class="text-sm text-muted">${time}</td>
-        <td class="td-mono">${type}</td>
-        <td><span class="badge ${actionClass}">${action}</span></td>
+        <td class="td-mono">${escapeHtml(type)}</td>
+        <td><span class="badge ${actionClass}">${escapeHtml(action)}</span></td>
         <td class="td-name">${escapeHtml(nameStr)}</td>
         <td class="text-xs text-muted" style="max-width: 300px; white-space: normal;">${escapeHtml(details)}</td>
       `;
@@ -91,6 +94,7 @@ Router.register('events', async (content) => {
     cleanupFns.push(() => {
       socket.off('events:data', onEventData);
       socket.off('events:error', onEventError);
+      window._activeResub = null;
       socket.emit('events:unsubscribe');
     });
 

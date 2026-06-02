@@ -12,6 +12,12 @@ Router.register('terminal', async (content, params) => {
   function onTermData({ data }) {
     if (term) term.write(data);
   }
+  function onTermEnd() {
+    if (term) term.write('\r\n\x1b[33m— session ended (press Reconnect) —\x1b[0m\r\n');
+  }
+  function onTermError({ error }) {
+    if (term) term.write(`\r\n\x1b[31m— terminal error: ${error || 'unknown'} —\x1b[0m\r\n`);
+  }
 
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
@@ -133,12 +139,14 @@ Router.register('terminal', async (content, params) => {
     term.open(area);
     
     if (fitAddon) {
-      setTimeout(() => fitAddon.fit(), 50);
+      setTimeout(() => handleResize(), 50);
       window.addEventListener('resize', handleResize);
     }
 
     socket.off('terminal:ready', onTermReady).on('terminal:ready', onTermReady);
     socket.off('terminal:data', onTermData).on('terminal:data', onTermData);
+    socket.off('terminal:end', onTermEnd).on('terminal:end', onTermEnd);
+    socket.off('terminal:error', onTermError).on('terminal:error', onTermError);
 
     term.onData(data => {
       socket.emit('terminal:input', data);
@@ -149,24 +157,32 @@ Router.register('terminal', async (content, params) => {
   }
 
   function handleResize() {
-    if (fitAddon) fitAddon.fit();
+    if (fitAddon) { try { fitAddon.fit(); } catch (e) { /* not attached yet */ } }
+    // Tell the server the new pty size so the remote shell wraps correctly
+    if (term) socket.emit('terminal:resize', { cols: term.cols, rows: term.rows });
   }
 
   function startSession() {
     if (!selectedContainerId || !term) return;
     const shell = document.getElementById('terminal-shell')?.value || '/bin/sh';
-    
+
     term.reset();
     term.write(`\x1b[36mConnecting to ${shell}...\x1b[0m\r\n`);
-    
+
     socket.emit('terminal:stop');
     socket.emit('terminal:start', { containerId: selectedContainerId, shell });
+    setTimeout(handleResize, 100); // sync pty size after the exec stream is up
+    // Re-start the session on socket reconnect (the server drops the exec on disconnect)
+    window._activeResub = () => startSession();
   }
 
   function destroy() {
     window.removeEventListener('resize', handleResize);
     socket.off('terminal:ready', onTermReady);
     socket.off('terminal:data', onTermData);
+    socket.off('terminal:end', onTermEnd);
+    socket.off('terminal:error', onTermError);
+    window._activeResub = null;
     socket.emit('terminal:stop');
     if (term) term.dispose();
   }

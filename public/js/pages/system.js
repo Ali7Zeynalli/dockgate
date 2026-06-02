@@ -2,6 +2,7 @@
 Router.register('system', async (content) => {
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
+  let refreshTimer = null;
 
   async function render() {
     try {
@@ -10,11 +11,6 @@ Router.register('system', async (content) => {
       // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
       if (!Router.isActiveNav(pageNavId)) return;
 
-      const df = await API.get('/system/df');
-
-      // Check again after second API call / İkinci API çağırışından sonra yenidən yoxla
-      if (!Router.isActiveNav(pageNavId)) return;
-      
       content.innerHTML = `
         <div class="page-header">
           <div><div class="page-title">System Information</div><div class="page-subtitle">Docker Engine & Host OS details</div></div>
@@ -55,4 +51,7 @@ Router.register('system', async (content) => {
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
   }
   await render();
+  // System info changes rarely — refresh slowly, and skip while a modal/input is active
+  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 30000);
+  return () => { if (refreshTimer) clearInterval(refreshTimer); };
 });

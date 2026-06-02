@@ -49,6 +49,31 @@ const API = {
   async delete(path) { return this.del(path); },
 };
 
+// Runs an async fn over items WITHOUT swallowing per-item errors, then reports an accurate
+// result toast (e.g. "Removed 3 OK, 1 failed"). Replaces the old `for...catch(e){}` + always-success pattern.
+async function bulkRun(items, fn, noun = 'Done') {
+  let ok = 0;
+  const errors = [];
+  for (const item of items) {
+    try { await fn(item); ok++; }
+    catch (e) { errors.push(e && e.message ? e.message : String(e)); }
+  }
+  const total = items.length;
+  if (errors.length === 0) showToast(`${noun}: ${ok}/${total}`);
+  else if (ok === 0) showToast(`${noun} failed (${total}): ${errors[0]}`, 'error', 8000);
+  else showToast(`${noun}: ${ok} OK, ${errors.length} failed — ${errors[0]}`, 'warning', 8000);
+  return { ok, failed: errors.length, errors, total };
+}
+
+// True when the active Docker server is a remote SSH host. Host-CLI ops (compose up/down,
+// buildx, build cache prune, autostart, image build) only work on the local daemon, so the UI
+// uses this to gate/disable those actions instead of letting the user hit a 400.
+function isRemoteActive() {
+  const active = (typeof Store !== 'undefined') ? Store.get('activeServer') : null;
+  if (active) return !!(active.type && active.type !== 'local');
+  return (localStorage.getItem('dcc_active_type') || 'local') !== 'local';
+}
+
 // Socket.IO connection
 const socket = io({ transports: ['websocket', 'polling'] });
 
@@ -57,6 +82,12 @@ socket.on('connect', () => {
   const text = document.getElementById('connection-text');
   if (el) { el.classList.remove('disconnected'); }
   if (text) text.textContent = 'Connected';
+  // After a reconnect the server destroyed the old log/stats/event/terminal streams.
+  // The active streaming page registers a re-subscribe callback here so its stream resumes
+  // instead of silently freezing. (On the very first connect no page is mounted yet → no-op.)
+  if (typeof window._activeResub === 'function') {
+    try { window._activeResub(); } catch (e) { /* page may have navigated away */ }
+  }
 });
 
 socket.on('disconnect', () => {

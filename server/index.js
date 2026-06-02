@@ -227,6 +227,10 @@ io.on('connection', (socket) => {
       const crypto = require('crypto');
       const id = buildId || crypto.randomUUID();
       const startTime = Date.now();
+      // The build runs on the ACTIVE daemon (local or the selected remote SSH host) via the
+      // docker Proxy. Capture it so the audit entry and failure alert name the correct host
+      // instead of hardcoding 'local'.
+      const buildServer = dockerService.getActiveServerId();
 
       // Insert build record into DB / DB-yə build qeydini əlavə et
       stmts.insertBuild.run(id, tag || 'untagged', dockerfile || 'Dockerfile', contextValue || '', JSON.stringify(buildargs || {}), nocache ? 1 : 0, pull ? 1 : 0, 'building');
@@ -285,12 +289,12 @@ io.on('connection', (socket) => {
         stmts.appendBuildLog.run(fullLog, id);
 
         socket.emit('build:complete', { buildId: id, status, duration, imageId });
-        // Audit — builds run on local Docker
-        logAction({ socket, server: 'local', resourceType: 'build', resourceName: tag || 'untagged', action: status === 'failed' ? 'build_failed' : 'build_success', details: { buildId: id, duration } });
+        // Audit on the actual build host (active server)
+        logAction({ socket, server: buildServer, resourceType: 'build', resourceName: tag || 'untagged', action: status === 'failed' ? 'build_failed' : 'build_success', details: { buildId: id, duration } });
         if (status === 'failed') {
-          // Builds run on local Docker — route the failure through the local monitor
-          const localMon = monitorManager.getLocal();
-          if (localMon) localMon.triggerBuildFailed({ imageTag: tag, buildId: id, error: buildError, duration });
+          // Route the failure through the monitor of the host the build ran on
+          const mon = monitorManager.get(buildServer) || monitorManager.getLocal();
+          if (mon) mon.triggerBuildFailed({ imageTag: tag, buildId: id, error: buildError, duration });
         }
         buildStream = null;
       });

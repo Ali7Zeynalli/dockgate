@@ -2,6 +2,31 @@
 
 ---
 
+## [2.0.11] - 2026-06-02
+
+A front-end reliability & UX release driven by a per-page audit of refresh behaviour and buttons.
+
+### Fixed
+- **Bulk actions no longer hide failures** — Start/Stop/Restart/Remove (Containers, Dashboard quick actions, Images, Volumes, Networks, Builds) used to swallow every per-item error and always show "success". They now report an accurate result (e.g. "Removed: 3 OK, 1 failed — &lt;reason&gt;") via a shared `bulkRun` helper
+- **Real-time streams recover after a reconnect** — Logs, Stats, Events and Terminal silently froze when the socket reconnected (the server had dropped the stream). They now re-subscribe on reconnect and surface stream `error`/`end` notices instead of hanging
+- **Image build is attributed to the correct host** — a build run while a remote SSH host is active is now audited and its failure alert routed to that host (was hardcoded "local")
+- **Terminal reports its size to the server** — `terminal:resize` is now emitted so the remote shell wraps correctly (previously only the local xterm was resized)
+- **Inspect "Search JSON" works** — the container-detail Inspect search box had no handler (dead UI); it now filters the JSON
+- **Dashboard Smart Insights are clickable** — insight cards with a cleanup action now navigate to Cleanup
+- **System page** — removed a dead, unused `/system/df` fetch that also made the page fail if `df` errored
+- **Settings** — saving SMTP / Telegram now refreshes the view so the configured/masked state shows immediately
+- **Images** — registry tags with a port (e.g. `localhost:5000/app:1.0`) now parse correctly (split on the last colon)
+- **Clipboard copy** — Inspect JSON and build-log copy show a clear message instead of failing silently outside HTTPS/localhost
+
+### Added
+- **Consistent auto-refresh** — Volumes, Networks, System and Compose now auto-refresh (with the same modal/input-focus guard as Dashboard/Containers/Images); Networks also gained its missing cleanup-on-navigation
+
+### Changed
+- **Compose** — Down/Restart now ask for confirmation (destructive), and the actions are disabled with a notice when a remote SSH host is active (Compose is local-only)
+- Container events table now escapes the type/action fields
+
+---
+
 ## [2.0.10] - 2026-06-02
 
 ### Security

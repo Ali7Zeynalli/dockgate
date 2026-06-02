@@ -377,20 +377,16 @@ Router.register('containers', async (content) => {
     document.getElementById('bulk-clear')?.addEventListener('click', () => { selectedIds.clear(); render(); });
     ['start', 'stop', 'restart'].forEach(action => {
       document.getElementById(`bulk-${action}`)?.addEventListener('click', async () => {
-        for (const id of selectedIds) {
-          try { await API.post(`/containers/${id}/${action}`); } catch(e) {}
-        }
-        showToast(`${action} → ${selectedIds.size} containers`);
+        const ids = [...selectedIds];
+        await bulkRun(ids, (id) => API.post(`/containers/${id}/${action}`), action);
         selectedIds.clear();
         render();
       });
     });
     document.getElementById('bulk-remove')?.addEventListener('click', () => {
       showConfirm('Remove Selected', `Remove ${selectedIds.size} container(s)?`, async () => {
-        for (const id of selectedIds) {
-          try { await API.post(`/containers/${id}/remove`, { force: true }); } catch(e) {}
-        }
-        showToast(`Removed ${selectedIds.size} containers`);
+        const ids = [...selectedIds];
+        await bulkRun(ids, (id) => API.post(`/containers/${id}/remove`, { force: true }), 'Removed');
         selectedIds.clear();
         render();
       }, true);

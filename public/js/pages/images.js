@@ -71,7 +71,11 @@ Router.register('images', async (content) => {
             </tr></thead>
             <tbody>
               ${images.map(img => {
-                const [repo, tag] = (img.repoTags[0] || '<none>:<none>').split(':');
+                // Split on the LAST colon so registry ports survive (e.g. localhost:5000/app:1.0 → repo, tag=1.0)
+                const full = img.repoTags[0] || '<none>:<none>';
+                const ci = full.lastIndexOf(':');
+                const repo = ci > 0 ? full.slice(0, ci) : full;
+                const tag = ci > 0 ? full.slice(ci + 1) : '';
                 return `<tr class="${selectedIds.has(img.id) ? 'selected' : ''}">
                   <td><div class="checkbox ${selectedIds.has(img.id) ? 'checked' : ''}" data-select="${img.id}"></div></td>
                   <td class="td-name">${escapeHtml(repo)}</td>
@@ -166,11 +170,7 @@ Router.register('images', async (content) => {
 
       document.getElementById('bulk-remove')?.addEventListener('click', () => {
         showConfirm('Remove Selected', `Remove ${selectedIds.size} image(s)?`, async () => {
-          let removed = 0;
-          for (const id of selectedIds) {
-            try { await API.del(`/images/${encodeURIComponent(id)}`); removed++; } catch(e) {}
-          }
-          showToast(`Removed ${removed}/${selectedIds.size} images`);
+          await bulkRun([...selectedIds], (id) => API.del(`/images/${encodeURIComponent(id)}`), 'Removed');
           selectedIds.clear();
           render();
         }, true);
@@ -178,11 +178,7 @@ Router.register('images', async (content) => {
 
       document.getElementById('bulk-force-remove')?.addEventListener('click', () => {
         showConfirm('Force Remove Selected', `Force remove ${selectedIds.size} image(s)? This will also remove images currently in use.`, async () => {
-          let removed = 0;
-          for (const id of selectedIds) {
-            try { await API.del(`/images/${encodeURIComponent(id)}?force=true`); removed++; } catch(e) {}
-          }
-          showToast(`Force removed ${removed}/${selectedIds.size} images`);
+          await bulkRun([...selectedIds], (id) => API.del(`/images/${encodeURIComponent(id)}?force=true`), 'Force removed');
           selectedIds.clear();
           render();
         }, true);

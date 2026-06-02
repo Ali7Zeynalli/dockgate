@@ -530,6 +530,7 @@ Router.register('settings', async (content) => {
                 smtp_to: document.getElementById('smtp-to').value,
               });
               showToast('SMTP settings saved');
+              renderNotifications(); // refresh so masked values / configured-state show immediately
             } catch(e) { showToast(e.message, 'error'); }
           });
 
@@ -551,6 +552,7 @@ Router.register('settings', async (content) => {
                 tg_chat_id: document.getElementById('tg-chat-id').value,
               });
               showToast('Telegram settings saved');
+              renderNotifications(); // refresh so masked token / configured-state show immediately
             } catch(e) { showToast(e.message, 'error'); }
           });
 

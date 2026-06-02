@@ -60,20 +60,36 @@ Router.register('logs', async (content) => {
         }
       }
 
+      // Re-emit the current subscription — called on Connect and again on socket reconnect
+      // (the server drops the stream on disconnect, so without this the log would freeze silently).
+      function subscribe() {
+        if (!activeContainer) return;
+        const logSettings = Store.get('settings') || {};
+        socket.emit('logs:subscribe', { containerId: activeContainer, tail: 200, timestamps: logSettings.logTimestamps === 'true' });
+      }
+      window._activeResub = subscribe;
+
       connectBtn.addEventListener('click', () => {
         const id = targetSelect.value;
         const name = targetSelect.options[targetSelect.selectedIndex].text;
-        
+
         if (activeContainer === id) return;
-        
+
         disconnect();
         activeContainer = id;
         logContent.innerHTML = `<span style="color:var(--accent)">Connecting to ${name}...</span>\n`;
         pauseBtn.disabled = false;
-        
-        const logSettings = Store.get('settings') || {};
-        socket.emit('logs:subscribe', { containerId: id, tail: 200, timestamps: logSettings.logTimestamps === 'true' });
+        subscribe();
       });
+
+      function appendNotice(text, color) {
+        const line = document.createElement('div');
+        line.className = 'log-line';
+        line.style.color = color || 'var(--text-muted)';
+        line.textContent = text;
+        logContent.appendChild(line);
+        logContent.scrollTop = logContent.scrollHeight;
+      }
 
       const onLogData = ({ data }) => {
         if (isPaused) return;
@@ -84,10 +100,17 @@ Router.register('logs', async (content) => {
         if (logContent.children.length > 3000) logContent.removeChild(logContent.firstChild);
         logContent.scrollTop = logContent.scrollHeight;
       };
+      const onLogEnd = () => { if (activeContainer) appendNotice('— stream ended —', 'var(--warning)'); };
+      const onLogError = ({ error }) => { if (activeContainer) appendNotice(`— log error: ${error} —`, 'var(--danger)'); };
 
       socket.on('logs:data', onLogData);
+      socket.on('logs:end', onLogEnd);
+      socket.on('logs:error', onLogError);
       cleanupFns.push(() => {
         socket.off('logs:data', onLogData);
+        socket.off('logs:end', onLogEnd);
+        socket.off('logs:error', onLogError);
+        window._activeResub = null;
         disconnect();
       });
 

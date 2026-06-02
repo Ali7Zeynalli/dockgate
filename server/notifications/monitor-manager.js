@@ -99,8 +99,13 @@ function stopAll() {
   for (const id of [...monitors.keys()]) stopMonitor(id);
 }
 
-// Returns the local-server monitor — used by the build-failed trigger
-// (builds run against the host Docker only).
+// Returns the monitor for a specific server id (or undefined). Used to route a build
+// failure to the monitor of the host the build actually ran on.
+function get(serverId) {
+  return monitors.get(serverId);
+}
+
+// Returns the local-server monitor — fallback for the build-failed trigger.
 function getLocal() {
   return monitors.get('local');
 }
@@ -114,5 +119,5 @@ function listMonitors() {
 }
 
 module.exports = {
-  startMonitor, stopMonitor, startAll, stopAll, getLocal, listMonitors,
+  startMonitor, stopMonitor, startAll, stopAll, get, getLocal, listMonitors,
 };

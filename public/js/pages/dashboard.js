@@ -280,9 +280,9 @@ Router.register('dashboard', async (content) => {
             <div style="font-size:15px;font-weight:700;margin-bottom:12px">Smart Insights</div>
             ${data.insights.length === 0 ? '<div class="text-muted text-sm">No issues detected. Everything looks good! ✨</div>' :
               data.insights.map(i => `
-                <div class="insight-card ${i.type}">
+                <div class="insight-card ${i.type}"${i.action === 'cleanup' ? ` onclick="Router.navigate('cleanup')" style="cursor:pointer" title="Open Cleanup"` : ''}>
                   <span class="nav-item-icon">${i.type === 'warning' ? Icons.alert : Icons.info}</span>
-                  <span>${i.message}</span>
+                  <span>${escapeHtml(i.message)}</span>
                 </div>
               `).join('')}
           </div>
@@ -314,8 +314,7 @@ Router.register('dashboard', async (content) => {
           try {
             const containers = await API.get('/containers?all=true');
             const stopped = containers.filter(c => c.state === 'exited');
-            for (const c of stopped) { await API.post(`/containers/${c.id}/start`).catch(() => {}); }
-            showToast(`Started ${stopped.length} container(s)`, 'success');
+            await bulkRun(stopped, (c) => API.post(`/containers/${c.id}/start`), 'Started');
             render();
           } catch(e) { showToast(e.message, 'error'); }
         });
@@ -326,23 +325,21 @@ Router.register('dashboard', async (content) => {
           try {
             const containers = await API.get('/containers?all=true');
             const running = containers.filter(c => c.state === 'running');
-            for (const c of running) { await API.post(`/containers/${c.id}/stop`).catch(() => {}); }
-            showToast(`Stopped ${running.length} container(s)`, 'success');
+            await bulkRun(running, (c) => API.post(`/containers/${c.id}/stop`), 'Stopped');
             render();
           } catch(e) { showToast(e.message, 'error'); }
         }, true);
       });
 
       document.getElementById('qa-restart-all')?.addEventListener('click', () => {
-        showConfirm('Restart All Running', 'Restart all running containers?', async () => {
+        showConfirm('Restart All Running', 'Restart all running containers? This may briefly interrupt services.', async () => {
           try {
             const containers = await API.get('/containers?all=true');
             const running = containers.filter(c => c.state === 'running');
-            for (const c of running) { await API.post(`/containers/${c.id}/restart`).catch(() => {}); }
-            showToast(`Restarted ${running.length} container(s)`, 'success');
+            await bulkRun(running, (c) => API.post(`/containers/${c.id}/restart`), 'Restarted');
             render();
           } catch(e) { showToast(e.message, 'error'); }
-        });
+        }, true);
       });
 
       // Health doughnut chart / Sağlamlıq doughnut chart-ı

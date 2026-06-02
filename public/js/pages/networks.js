@@ -1,6 +1,7 @@
 // Networks Page
 Router.register('networks', async (content) => {
   let selectedIds = new Set();
+  let refreshTimer = null;
 
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
@@ -122,11 +123,7 @@ Router.register('networks', async (content) => {
 
       document.getElementById('bulk-remove')?.addEventListener('click', () => {
         showConfirm('Remove Selected Networks', `Remove ${selectedIds.size} network(s)?`, async () => {
-          let removed = 0;
-          for (const id of selectedIds) {
-            try { await API.del(`/networks/${id}`); removed++; } catch(e) {}
-          }
-          showToast(`Removed ${removed}/${selectedIds.size} networks`);
+          await bulkRun([...selectedIds], (id) => API.del(`/networks/${id}`), 'Removed');
           selectedIds.clear();
           render();
         }, true);
@@ -135,4 +132,7 @@ Router.register('networks', async (content) => {
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
   }
   await render();
+  // Auto-refresh (skips while a modal is open or an input is focused) + cleanup on navigation
+  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 15000);
+  return () => { if (refreshTimer) clearInterval(refreshTimer); };
 });

@@ -194,11 +194,7 @@ Router.register('builds', async (content) => {
         // Bulk hide docker builds
         document.getElementById('bulk-hide-docker')?.addEventListener('click', () => {
           showConfirm('Hide Selected', `Hide ${selectedDockerIds.size} image(s) from build history? (Images will not be deleted)`, async () => {
-            let hidden = 0;
-            for (const id of selectedDockerIds) {
-              try { await API.post('/builds/docker-history/hide', { imageId: id }); hidden++; } catch(e) {}
-            }
-            showToast(`Hidden ${hidden}/${selectedDockerIds.size} from history`);
+            await bulkRun([...selectedDockerIds], (id) => API.post('/builds/docker-history/hide', { imageId: id }), 'Hidden');
             selectedDockerIds.clear();
             render();
           }, true);
@@ -248,11 +244,7 @@ Router.register('builds', async (content) => {
         // Bulk delete panel builds
         document.getElementById('bulk-delete-panel')?.addEventListener('click', () => {
           showConfirm('Delete Selected', `Delete ${selectedPanelIds.size} build record(s)?`, async () => {
-            let removed = 0;
-            for (const id of selectedPanelIds) {
-              try { await API.del(`/builds/detail/${id}`); removed++; } catch(e) {}
-            }
-            showToast(`Deleted ${removed}/${selectedPanelIds.size} builds`);
+            await bulkRun([...selectedPanelIds], (id) => API.del(`/builds/detail/${id}`), 'Deleted');
             selectedPanelIds.clear();
             render();
           }, true);
@@ -592,7 +584,9 @@ Router.register('builds', async (content) => {
       document.getElementById('log-list-view')?.addEventListener('click', () => { viewMode = 'list'; renderLogView(); });
       document.getElementById('log-plain-view')?.addEventListener('click', () => { viewMode = 'plain'; renderLogView(); });
       document.getElementById('copy-log')?.addEventListener('click', () => {
-        navigator.clipboard.writeText(logText).then(() => showToast('Copied', 'success'));
+        navigator.clipboard?.writeText(logText)
+          .then(() => showToast('Copied', 'success'))
+          .catch(() => showToast('Copy failed (clipboard needs HTTPS or localhost)', 'warning'));
       });
     }
 
