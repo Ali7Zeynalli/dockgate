@@ -170,6 +170,7 @@ const defaultSettings = {
   terminalFontSize: '14',
   dateFormat: 'relative',
   confirmDestructive: 'true',
+  timezone: 'auto', // display timezone — 'auto' = browser/host; otherwise an IANA zone (e.g. Asia/Baku)
   active_server: 'local',
 };
 

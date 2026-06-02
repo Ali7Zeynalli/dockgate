@@ -60,6 +60,12 @@ Router.register('settings', async (content) => {
 
       // ==================== GENERAL TAB ====================
       function renderGeneral() {
+        // Full IANA zone list (modern engines) + "Auto" fallback
+        const zones = (typeof Intl.supportedValuesOf === 'function') ? Intl.supportedValuesOf('timeZone') : [];
+        const curTz = settings.timezone || 'auto';
+        const tzOptions = [`<option value="auto"${curTz === 'auto' ? ' selected' : ''}>Auto (browser)</option>`]
+          .concat(zones.map(z => `<option value="${z}"${z === curTz ? ' selected' : ''}>${z}</option>`))
+          .join('');
         tabContent.innerHTML = `
           <div class="grid-2">
             <div class="settings-section">
@@ -83,6 +89,13 @@ Router.register('settings', async (content) => {
                   <option value="table" ${settings.defaultView === 'table' ? 'selected' : ''}>Table</option>
                   <option value="card" ${settings.defaultView === 'card' ? 'selected' : ''}>Card</option>
                 </select>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-row-label">Timezone</div>
+                  <div class="settings-row-desc">Timezone for displayed dates &amp; notifications</div>
+                </div>
+                <select class="select" id="set-timezone">${tzOptions}</select>
               </div>
             </div>
 
@@ -721,6 +734,7 @@ Router.register('settings', async (content) => {
           theme: document.getElementById('set-theme')?.value || settings.theme,
           defaultView: document.getElementById('set-view')?.value || settings.defaultView,
           terminalShell: document.getElementById('set-shell')?.value || settings.terminalShell,
+          timezone: document.getElementById('set-timezone')?.value || settings.timezone || 'auto',
           logTimestamps: document.getElementById('set-logtimes')?.classList.contains('active') ? 'true' : 'false',
         };
 
@@ -737,6 +751,7 @@ Router.register('settings', async (content) => {
           Store.set('settings', { ...settings, ...newSettings });
           applyTheme(newSettings.theme);
           localStorage.setItem('dcc_theme', newSettings.theme);
+          localStorage.setItem('dcc_timezone', newSettings.timezone);
           showToast('Settings saved successfully');
         } catch (err) {
           showToast(err.message, 'error');

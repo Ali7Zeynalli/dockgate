@@ -120,7 +120,7 @@ class EventMonitor {
     const name = attrs.name || event.Actor?.ID?.substring(0, 12) || 'unknown';
     const id = event.Actor?.ID?.substring(0, 12) || '';
     const image = attrs.image || '';
-    const time = new Date(event.time * 1000).toLocaleString();
+    const time = fmtTime(event.time * 1000);
     const prefix = this._prefix();
     const serverDetail = this._serverDetail();
 
@@ -222,7 +222,7 @@ class EventMonitor {
             containerName: name,
             containerId: c.Id?.substring(0, 12) || '',
             image: c.Image || '',
-            time: new Date().toLocaleString(),
+            time: fmtTime(Date.now()),
             failingStreak,
             lastOutput,
             server: this.serverId,
@@ -322,6 +322,18 @@ function formatBytes(bytes) {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Format a time for notifications in the user-selected timezone (settings.timezone).
+// The container runs in UTC; Intl converts correctly regardless of the host TZ.
+// 'auto' (or unset) falls back to the container/process timezone.
+function fmtTime(date) {
+  try {
+    const tz = stmts.getSetting.get('timezone')?.value;
+    return new Date(date).toLocaleString('en-US', (tz && tz !== 'auto') ? { timeZone: tz } : {});
+  } catch (e) {
+    return new Date(date).toLocaleString('en-US');
+  }
 }
 
 module.exports = EventMonitor;

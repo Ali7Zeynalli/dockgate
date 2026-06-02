@@ -110,12 +110,14 @@ async function boot() {
     try { lastParams = JSON.parse(localStorage.getItem('dcc_last_params')) || {}; } catch(e){}
     await Router.navigate(lastPage, lastParams);
 
-    // Load theme from server settings / Server settings-dən temanı yüklə
+    // Load theme + display timezone from server settings / Server settings-dən tema və timezone yüklə
     API.get('/meta/settings').then(s => {
       if (s && s.theme) {
         applyTheme(s.theme);
         localStorage.setItem('dcc_theme', s.theme);
       }
+      // Cache timezone so formatTime() works immediately on hard refresh, before Store fills
+      if (s && s.timezone) localStorage.setItem('dcc_timezone', s.timezone);
     }).catch(() => {});
 
     // Show version from package.json in sidebar / Sidebar-da versiyanı package.json-dan göstər

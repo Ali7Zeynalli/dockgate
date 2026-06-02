@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.6] - 2026-06-02
+
+### Added
+- **Display timezone** — a new **Timezone** setting (Settings → General) lets you pick any IANA zone (or **Auto** = browser/host); all displayed dates and notification timestamps render in the chosen zone. Previously everything showed **UTC** because the container runs in UTC. Stored times stay UTC — only the display is converted
+
+### Changed
+- Centralized front-end time formatting in a `formatTime()` helper and made `timeAgo`'s absolute fallback timezone-aware; container / build event email & Telegram notifications now format their timestamps in the selected timezone
+
+---
+
 ## [2.0.5] - 2026-06-02
 
 Adds a full audit log so you can see what was done on DockGate, on which host, and from where. Also makes the in-app audit search cover every column and standardizes all in-code comments and UI strings to English.

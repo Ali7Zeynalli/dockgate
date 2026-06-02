@@ -145,6 +145,32 @@ function formatBytes(bytes, decimals = 1) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
 }
 
+// Selected display timezone. 'auto' (or unset) = browser/host default; otherwise an IANA zone.
+function getDisplayTimeZone() {
+  const tz = (typeof Store !== 'undefined' && Store.get('settings') && Store.get('settings').timezone)
+    || localStorage.getItem('dcc_timezone') || 'auto';
+  return tz;
+}
+
+// Parse a timestamp into a Date. Accepts: unix seconds (number), SQLite UTC string
+// ("YYYY-MM-DD HH:MM:SS"), or any ISO/Date-parsable string.
+function parseTs(ts) {
+  if (ts == null || ts === '') return null;
+  if (typeof ts === 'number') return new Date(ts * 1000);
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(ts))) return new Date(String(ts).replace(' ', 'T') + 'Z');
+  const d = new Date(ts);
+  return isNaN(d) ? null : d;
+}
+
+// Format an absolute date/time in the user's selected timezone.
+function formatTime(ts, opts = {}) {
+  const d = parseTs(ts);
+  if (!d) return '—';
+  const tz = getDisplayTimeZone();
+  const fmtOpts = (tz && tz !== 'auto') ? { ...opts, timeZone: tz } : opts;
+  return d.toLocaleString([], fmtOpts);
+}
+
 function timeAgo(timestamp) {
   const seconds = typeof timestamp === 'number'
     ? Math.floor(Date.now() / 1000 - timestamp)
@@ -153,7 +179,10 @@ function timeAgo(timestamp) {
   if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
   if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
   if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
-  return new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp).toLocaleDateString();
+  // Older than a week → absolute date in the selected timezone
+  const tz = getDisplayTimeZone();
+  const d = new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp);
+  return d.toLocaleDateString([], (tz && tz !== 'auto') ? { timeZone: tz } : {});
 }
 
 function escapeHtml(str) {

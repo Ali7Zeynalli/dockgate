@@ -4,12 +4,8 @@
 Router.register('audit', async (content) => {
   let currentRows = [];
 
-  // SQLite UTC datetime ("YYYY-MM-DD HH:MM:SS") → local readable
-  function fmtTime(s) {
-    if (!s) return '—';
-    const d = new Date(String(s).replace(' ', 'T') + 'Z');
-    return isNaN(d) ? s : d.toLocaleString();
-  }
+  // SQLite UTC datetime → readable in the user's selected timezone (global formatTime helper)
+  const fmtTime = (s) => formatTime(s);
 
   function actionClass(action = '') {
     const a = action.toLowerCase();
