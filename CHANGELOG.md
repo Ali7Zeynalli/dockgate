@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.10] - 2026-06-02
+
+### Security
+- **Resolved the transitive `uuid` advisory (GHSA-w5hq-g745-h8pq)** — `npm audit` is now clean (0 vulnerabilities). `dockerode` was upgraded to 5.x, which drops the vulnerable `uuid` dependency (it uses `crypto.randomUUID`). The upgrade was verified non-breaking for DockGate: it still uses `docker-modem` 5.0.7, so SSH multi-host (key auth), build-cache prune and all container/image/volume/network operations work against a real remote host, and the full test suite passes. (The advisory was not exploitable here regardless — dockerode only called `uuid.v4()` with no buffer, and DockGate itself uses `crypto.randomUUID`.)
+
+### Changed
+- Dependency ranges in `package.json` now match the installed versions: `better-sqlite3` ^11.10.0, `dockerode` ^5.0.0, `express` ^4.22.2, `socket.io` ^4.8.3, `node-pty` ^1.1.0
+
+---
+
 ## [2.0.9] - 2026-06-02
 
 ### Fixed
