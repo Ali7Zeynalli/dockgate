@@ -228,14 +228,9 @@ io.on('connection', (socket) => {
       stmts.insertBuild.run(id, tag || 'untagged', dockerfile || 'Dockerfile', contextValue || '', JSON.stringify(buildargs || {}), nocache ? 1 : 0, pull ? 1 : 0, 'building');
       socket.emit('build:started', { buildId: id });
 
-      let context;
-      if (contextType === 'url') {
-        // Build from URL (git repo or tarball) / URL-dən build (git repo və ya tarball)
-        context = contextValue;
-      } else {
-        // From existing image or remote context / Mövcud image-dən və ya remote context
-        context = contextValue;
-      }
+      // contextType branch-ları eyni nəticə verirdi (hər ikisi contextValue) — sadələşdirildi.
+      // dockerode həm URL (git/tarball), həm də digər context dəyərlərini buildImage daxilində emal edir.
+      const context = contextValue;
 
       const stream = await dockerService.buildImage(context, {
         tag, dockerfile, nocache, pull, buildargs
@@ -244,6 +239,7 @@ io.on('connection', (socket) => {
 
       let fullLog = '';
       let imageId = null;
+      let buildError = null; // strukturlaşmış error — log mətnindəki 'ERROR:' axtarışı kövrək idi
 
       stream.on('data', (chunk) => {
         try {
@@ -256,8 +252,10 @@ io.on('connection', (socket) => {
               logLine = json.stream;
             } else if (json.status) {
               logLine = json.status + (json.progress ? ' ' + json.progress : '') + '\n';
-            } else if (json.error) {
-              logLine = 'ERROR: ' + json.error + '\n';
+            } else if (json.error || json.errorDetail) {
+              // Docker build error sahəsi — statusu bundan təyin edirik (log mətnindən yox)
+              buildError = json.error || json.errorDetail?.message || 'Build failed';
+              logLine = 'ERROR: ' + buildError + '\n';
             } else if (json.aux && json.aux.ID) {
               imageId = json.aux.ID;
               logLine = 'Built image: ' + json.aux.ID + '\n';
@@ -277,17 +275,16 @@ io.on('connection', (socket) => {
 
       stream.on('end', () => {
         const duration = Date.now() - startTime;
-        const hasError = fullLog.includes('ERROR:');
-        const status = hasError ? 'failed' : 'success';
+        const status = buildError ? 'failed' : 'success';
 
-        stmts.updateBuildStatus.run(status, duration, imageId, hasError ? 'Build xətası baş verdi' : null, id);
+        stmts.updateBuildStatus.run(status, duration, imageId, buildError, id);
         stmts.appendBuildLog.run(fullLog, id);
 
         socket.emit('build:complete', { buildId: id, status, duration, imageId });
         if (status === 'failed') {
           // Builds run on local Docker — route the failure through the local monitor
           const localMon = monitorManager.getLocal();
-          if (localMon) localMon.triggerBuildFailed({ imageTag: tag, buildId: id, error: 'Build failed', duration });
+          if (localMon) localMon.triggerBuildFailed({ imageTag: tag, buildId: id, error: buildError, duration });
         }
         buildStream = null;
       });

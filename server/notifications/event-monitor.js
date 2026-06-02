@@ -124,24 +124,30 @@ class EventMonitor {
     const prefix = this._prefix();
     const serverDetail = this._serverDetail();
 
-    // Container die/stop events
-    if (event.Type === 'container' && (event.Action === 'die' || event.Action === 'stop')) {
+    // Container die — Docker hər çıxışda 'die' event-i atır (crash, manual stop, OOM).
+    // 'stop' action-ı ayrıca dinləmirik: o, 'die'-dan əvvəl gəlir və eyni hadisəni ikiqatlayırdı.
+    if (event.Type === 'container' && event.Action === 'die') {
       const exitCode = attrs.exitCode;
 
-      // OOM kill — exitCode 137
+      // OOM kill — exitCode 137. Yalnız OOM bildirişi göndər, sonra çıx —
+      // əks halda eyni hadisə üçün həm OOM, həm "Container Stopped" gedirdi (ikiqat).
       if (exitCode === '137') {
         await this._sendNotification('container_oom', name, {
           subject: `${prefix}OOM Kill: ${name}`,
           html: templates.containerOomTemplate({ containerName: name, containerId: id, image, time, server: this.serverId }),
           telegramText: telegram.formatAlert(`${prefix}OOM Kill`, { ...(serverDetail || {}), Container: name, Image: image, Time: time }),
         });
+        return;
       }
 
-      // Container died
+      // "Gözlənilməz" yalnız non-zero exit code üçün — exit 0 təmiz/qəsdən dayanmadır.
+      const unexpected = exitCode !== undefined && exitCode !== '0' && exitCode !== 0;
+      const verb = unexpected ? 'Crashed' : 'Stopped';
+
       await this._sendNotification('container_die', name, {
-        subject: `${prefix}Container Stopped: ${name}`,
-        html: templates.containerDieTemplate({ containerName: name, containerId: id, image, time, exitCode: exitCode ?? '—', server: this.serverId }),
-        telegramText: telegram.formatAlert(`${prefix}Container Stopped`, { ...(serverDetail || {}), Container: name, Image: image, 'Exit Code': exitCode ?? '—', Time: time }),
+        subject: `${prefix}Container ${verb}: ${name}`,
+        html: templates.containerDieTemplate({ containerName: name, containerId: id, image, time, exitCode: exitCode ?? '—', unexpected, server: this.serverId }),
+        telegramText: telegram.formatAlert(`${prefix}Container ${verb}`, { ...(serverDetail || {}), Container: name, Image: image, 'Exit Code': exitCode ?? '—', Time: time }),
       });
     }
 
@@ -279,23 +285,29 @@ class EventMonitor {
       const cacheSize = diskUsage.BuildCache?.reduce((a, b) => a + (b.Size || 0), 0) || 0;
       const totalUsed = imagesSize + containersSize + volumesSize + cacheSize;
 
+      // thresholdGB Docker-in tutduğu MÜTLƏQ həcm həddidir (disk doluluğu faizi DEYİL).
+      // Əvvəllər GB/50GB nisbəti "faiz" kimi göstərilirdi və yanıldıcı idi — indi mütləq GB ilə.
       const thresholdGB = 50;
       const usedGB = totalUsed / (1024 * 1024 * 1024);
 
       if (usedGB > thresholdGB) {
-        const usagePercent = Math.round((usedGB / thresholdGB) * 100);
         const prefix = this._prefix();
         const serverDetail = this._serverDetail();
         await this._sendNotification('disk_threshold', this.serverId, {
-          subject: `${prefix}Disk Usage Alert: ${formatBytes(totalUsed)} used`,
+          subject: `${prefix}Disk Usage Alert: ${formatBytes(totalUsed)} used (threshold ${thresholdGB} GB)`,
           html: templates.diskAlertTemplate({
-            usagePercent: Math.min(usagePercent, 100),
-            totalSpace: thresholdGB + ' GB (threshold)',
             usedSpace: formatBytes(totalUsed),
-            threshold: thresholdGB,
+            usedGB: usedGB.toFixed(1),
+            thresholdGB,
+            breakdown: {
+              images: formatBytes(imagesSize),
+              containers: formatBytes(containersSize),
+              volumes: formatBytes(volumesSize),
+              buildCache: formatBytes(cacheSize),
+            },
             server: this.serverId,
           }),
-          telegramText: telegram.formatAlert(`${prefix}Disk Usage Alert`, { ...(serverDetail || {}), Used: formatBytes(totalUsed), Threshold: thresholdGB + ' GB', Usage: usagePercent + '%' }),
+          telegramText: telegram.formatAlert(`${prefix}Disk Usage Alert`, { ...(serverDetail || {}), Used: formatBytes(totalUsed), Threshold: thresholdGB + ' GB' }),
         });
       }
     } catch(e) {

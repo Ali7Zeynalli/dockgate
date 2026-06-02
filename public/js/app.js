@@ -189,6 +189,14 @@ async function initServerSwitcher() {
     const select = document.getElementById('server-select');
     if (!select) return;
 
+    // Aktiv server-i Store + localStorage-da saxla — port linkləri host-aware olsun (dockerHostUrl)
+    const activeServer = data.servers.find(s => s.isActive) || data.servers.find(s => s.id === 'local');
+    if (activeServer) {
+      Store.set('activeServer', activeServer);
+      localStorage.setItem('dcc_active_type', activeServer.type || 'local');
+      localStorage.setItem('dcc_active_host', activeServer.host || '');
+    }
+
     // DOM API ilə qur — XSS qoruması (host/id user input-dur)
     select.replaceChildren();
     for (const s of data.servers) {
@@ -208,6 +216,13 @@ async function initServerSwitcher() {
         showToast(`Switching to ${id}...`, 'info');
         await API.post('/servers/active', { id });
         showToast(`Connected to ${id}`, 'success');
+        // Aktiv server-i yenilə — port linkləri yeni host-a uyğun olsun
+        const sel = data.servers.find(s => s.id === id);
+        if (sel) {
+          Store.set('activeServer', sel);
+          localStorage.setItem('dcc_active_type', sel.type || 'local');
+          localStorage.setItem('dcc_active_host', sel.host || '');
+        }
         const currentPage = Store.get('currentPage') || 'dashboard';
         const currentParams = Store.get('currentParams') || {};
         setTimeout(() => Router.navigate(currentPage, currentParams), 300);

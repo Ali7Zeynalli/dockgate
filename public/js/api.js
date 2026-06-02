@@ -85,7 +85,12 @@ function showToast(message, type = 'success', duration = 4000) {
     info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
   };
 
-  toast.innerHTML = `${icons[type] || icons.info}<span>${message}</span>`;
+  // icon SVG statikdir (innerHTML təhlükəsiz), amma message backend error mətni ola bilər —
+  // < > & daşıyarsa toast pozulmasın deyə textContent ilə qoyulur (XSS/format qoruması)
+  toast.innerHTML = icons[type] || icons.info;
+  const msgSpan = document.createElement('span');
+  msgSpan.textContent = message;
+  toast.appendChild(msgSpan);
   container.appendChild(toast);
   setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(100px)'; toast.style.transition = '300ms ease'; setTimeout(() => toast.remove(), 300); }, duration);
 }
@@ -155,6 +160,31 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// Published port linki üçün düzgün host qaytarır.
+// Local aktiv server → DockGate-ə daxil olduğun host (window.location.hostname).
+// Uzaq SSH server → həmin server-in host-u (portlar uzaq maşındadır, localhost yox).
+function dockerHostUrl(port) {
+  let type, host;
+  const active = (typeof Store !== 'undefined') ? Store.get('activeServer') : null;
+  if (active) { type = active.type; host = active.host; }
+  else {
+    // Hard-refresh fallback — switcher hələ yüklənməyibsə localStorage-dan oxu
+    type = localStorage.getItem('dcc_active_type');
+    host = localStorage.getItem('dcc_active_host');
+  }
+  const targetHost = (type && type !== 'local' && host) ? host : window.location.hostname;
+  return `http://${targetHost}:${port}`;
+}
+
+// Auto-refresh zamanı tam re-render fokus/scroll itirir. Modal açıqdırsa və ya
+// istifadəçi input/axtarışda yazırsa bu tick-i ötür. True → render-i atla.
+function shouldSkipAutoRefresh() {
+  const modalOpen = document.querySelector('.modal-overlay');
+  const ae = document.activeElement;
+  const typing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+  return !!(modalOpen || typing);
 }
 
 function syntaxHighlightJSON(json) {

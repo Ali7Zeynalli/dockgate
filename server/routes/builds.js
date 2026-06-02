@@ -32,20 +32,19 @@ router.get('/docker-history', async (req, res) => {
     const hiddenRows = stmts.getHiddenBuilds.all();
     const hiddenSet = new Set(hiddenRows.map(r => r.image_id));
 
-    // Get history for each image / Hər image üçün history al
-    for (const img of images.slice(0, 30)) {
-      try {
-        // Skip hidden images / Gizlədilmiş image-ləri keç
-        if (hiddenSet.has(img.id)) continue;
+    // Get history for each image — PARALEL (əvvəllər seriyalı await idi, çoxlu image-də ləng)
+    const candidates = images.slice(0, 30).filter(img =>
+      !hiddenSet.has(img.id) &&
+      img.repoTags && img.repoTags[0] !== '<none>:<none>'
+    );
 
+    const results = await Promise.all(candidates.map(async (img) => {
+      try {
         const image = dockerService.docker.getImage(img.id);
         const history = await image.history();
-        const tag = (img.repoTags && img.repoTags[0] !== '<none>:<none>') ? img.repoTags[0] : null;
-        if (!tag) continue;
-
-        historyList.push({
+        return {
           imageId: img.id,
-          tag: tag,
+          tag: img.repoTags[0],
           shortId: img.shortId,
           size: img.size,
           created: img.created,
@@ -57,10 +56,11 @@ router.get('/docker-history', async (req, res) => {
             size: h.Size || 0,
             comment: h.Comment || '',
           })),
-        });
-      } catch(e) { /* skip */ }
-    }
+        };
+      } catch(e) { return null; }
+    }));
 
+    historyList.push(...results.filter(Boolean));
     res.json(historyList);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -214,10 +214,11 @@ router.get('/cache', async (req, res) => {
 
 router.post('/cache/prune', async (req, res) => {
   try {
+    // pruneBuildCache host CLI işlədir → assertLocalActive 400 atır (uzaq host aktivdirsə)
     const result = await dockerService.pruneBuildCache();
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -225,6 +226,10 @@ router.post('/cache/prune', async (req, res) => {
 
 router.get('/builders', async (req, res) => {
   try {
+    // buildx ls host CLI-dir — yalnız local daemon. Uzaq host aktivdirsə default builder qaytar.
+    if (!dockerService.isLocalActive()) {
+      return res.json([{ name: 'default', driver: 'docker', status: 'remote', isDefault: true }]);
+    }
     execFile('docker', ['buildx', 'ls', '--format', '{{json .}}'], (err, stdout) => {
       if (err) {
         return res.json([{ name: 'default', driver: 'docker', status: 'running', isDefault: true }]);

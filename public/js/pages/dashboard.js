@@ -382,7 +382,7 @@ Router.register('dashboard', async (content) => {
   }
 
   await render();
-  refreshTimer = setInterval(render, 30000); // 30s interval (15s → 30s, Docker API yükünü azaldır)
+  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 30000); // 30s interval; modal/yazı zamanı atlanır
 
   return () => {
     if (refreshTimer) clearInterval(refreshTimer);

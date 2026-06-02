@@ -469,7 +469,7 @@ Router.register('container-detail', async (content, params) => {
                   <td class="td-mono">${containerPort}</td>
                   <td><span class="badge badge-created">${protocol}</span></td>
                   <td class="td-mono">${b.HostIp === '::' ? '0.0.0.0' : (b.HostIp || '0.0.0.0')}:${b.HostPort || '—'}</td>
-                  <td>${b.HostPort ? `<a href="http://localhost:${b.HostPort}" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} Open</a>` : ''}</td>
+                  <td>${b.HostPort ? `<a href="${dockerHostUrl(b.HostPort)}" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} Open</a>` : ''}</td>
                 </tr>
               `).join('');
             }).join('')}

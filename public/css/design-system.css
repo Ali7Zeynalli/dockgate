@@ -2,7 +2,8 @@
    DOCKGATE CONTROL PANEL — DESIGN SYSTEM
    ============================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Lokal font bundle (air-gap — Google Fonts CDN tələb olunmur) */
+@import url('/vendor/fonts/fonts.css');
 
 :root {
   /* Background Colors */

@@ -112,12 +112,24 @@ router.get('/settings', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Yalnız UI tərəfindən idarə olunan setting açarları yazıla bilər.
+// active_server QƏSDƏN xaricdir — o, yalnız POST /api/servers/active üzərindən dəyişməlidir
+// (dockerService.setActiveServer real client switch edir). Birbaşa yazılsa DB ↔ aktiv
+// client arasında state drift yaranır.
+const ALLOWED_SETTING_KEYS = new Set([
+  'theme', 'refreshInterval', 'defaultView', 'sidebarCollapsed',
+  'logTailLines', 'logTimestamps', 'logAutoScroll', 'logWrapLines',
+  'terminalShell', 'terminalFontSize', 'dateFormat', 'confirmDestructive',
+]);
+
 router.post('/settings', (req, res) => {
   try {
+    const rejected = [];
     Object.entries(req.body).forEach(([key, value]) => {
+      if (!ALLOWED_SETTING_KEYS.has(key)) { rejected.push(key); return; }
       stmts.setSetting.run(key, String(value));
     });
-    res.json({ success: true });
+    res.json({ success: true, ...(rejected.length ? { rejected } : {}) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -368,7 +380,10 @@ async function inspectSelf(docker) {
 // Apply update — pull pre-built image + restart via helper container / Yeniləmə tətbiq et
 router.post('/update/apply', async (req, res) => {
   const dockerService = require('../docker');
-  const docker = dockerService.docker;
+  // DockGate konteyneri HƏMİŞƏ local host-dadır — aktiv (ola bilsin uzaq) client deyil,
+  // təzə local client istifadə et. Əks halda uzaq SSH host aktiv ikən self-update orada
+  // mövcud olmayan konteyneri axtarır və helper uzaq daemon-da qalxırdı.
+  const docker = dockerService.createLocalClient();
 
   try {
     // Step 1: Get own container config / Öz konfiqurasiyamızı al
@@ -380,6 +395,11 @@ router.post('/update/apply', async (req, res) => {
     const restartPolicy = info.HostConfig?.RestartPolicy || { Name: 'always' };
     const nanoCpus = info.HostConfig?.NanoCpus || 0;
     const memory = info.HostConfig?.Memory || 0;
+    const labels = info.Config?.Labels || {};
+    // Default şəbəkələr xaric — custom network-lərə yenidən qoşulmaq lazımdır,
+    // yoxsa yenilənmiş konteyner şəbəkə əlaqəsini itirir.
+    const customNetworks = Object.keys(info.NetworkSettings?.Networks || {})
+      .filter(n => !['bridge', 'host', 'none'].includes(n));
 
     // Step 2: Pull new image / Yeni image-i çək
     console.log(`[Update] Pulling ${DOCKER_IMAGE}:latest ...`);
@@ -419,11 +439,25 @@ router.post('/update/apply', async (req, res) => {
     if (nanoCpus > 0) startArgs.push('--cpus', String(nanoCpus / 1e9));
     if (memory > 0) startArgs.push('--memory', String(memory));
 
+    // Labels (user + compose label-larını qoru)
+    for (const [k, v] of Object.entries(labels)) {
+      startArgs.push('--label', `${k}=${v}`);
+    }
+
+    // İlk custom network-ü run zamanı təyin et (qalanları start-dan sonra connect olunur)
+    if (customNetworks.length > 0) {
+      startArgs.push('--network', customNetworks[0]);
+    }
+
     startArgs.push(`${DOCKER_IMAGE}:latest`);
 
     // Shell-safe: hər arqumenti ayrıca quote et
     const shellEscape = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
-    const runCmd = `docker ${runArgs.map(shellEscape).join(' ')} 2>/dev/null; docker ${rmArgs.map(shellEscape).join(' ')} 2>/dev/null; docker ${startArgs.map(shellEscape).join(' ')}`;
+    // Əlavə custom network-lərə (birincidən sonrakılar) start-dan sonra yenidən qoşul
+    const extraNetCmds = customNetworks.slice(1)
+      .map(n => `; docker network connect ${shellEscape(n)} ${shellEscape(containerName)} 2>/dev/null`)
+      .join('');
+    const runCmd = `docker ${runArgs.map(shellEscape).join(' ')} 2>/dev/null; docker ${rmArgs.map(shellEscape).join(' ')} 2>/dev/null; docker ${startArgs.map(shellEscape).join(' ')}${extraNetCmds}`;
 
     console.log('[Update] Spawning helper container to restart...');
 

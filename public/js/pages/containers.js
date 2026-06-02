@@ -151,7 +151,7 @@ Router.register('containers', async (content) => {
         <td><span class="badge badge-${c.state}"><span class="badge-dot"></span> ${c.state}</span></td>
         <td class="text-sm">
           ${[...new Map(c.ports.filter(p => p.PublicPort).map(p => [`${p.PublicPort}:${p.PrivatePort}`, p])).values()].map(p =>
-            `<a href="http://localhost:${p.PublicPort}" target="_blank" style="margin-right:6px">${p.PublicPort}→${p.PrivatePort}</a>`
+            `<a href="${dockerHostUrl(p.PublicPort)}" target="_blank" style="margin-right:6px">${p.PublicPort}→${p.PrivatePort}</a>`
           ).join('') || '<span class="text-muted">—</span>'}
         </td>
         <td class="text-muted text-sm">${timeAgo(c.created)}</td>
@@ -230,7 +230,7 @@ Router.register('containers', async (content) => {
         <div class="container-card-meta">
           <span class="td-mono">${c.shortId}</span>
           <span>${timeAgo(c.created)}</span>
-          ${[...new Map(c.ports.filter(p => p.PublicPort).map(p => [`${p.PublicPort}:${p.PrivatePort}`, p])).values()].map(p => `<a href="http://localhost:${p.PublicPort}" target="_blank" onclick="event.stopPropagation()">:${p.PublicPort}</a>`).join('')}
+          ${[...new Map(c.ports.filter(p => p.PublicPort).map(p => [`${p.PublicPort}:${p.PrivatePort}`, p])).values()].map(p => `<a href="${dockerHostUrl(p.PublicPort)}" target="_blank" onclick="event.stopPropagation()">:${p.PublicPort}</a>`).join('')}
         </div>
         <div class="container-card-actions" onclick="event.stopPropagation()">
           ${c.state === 'running' ? `
@@ -398,6 +398,6 @@ Router.register('containers', async (content) => {
   }
 
   await render();
-  refreshTimer = setInterval(render, 10000);
+  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 10000);
   return () => { if (refreshTimer) clearInterval(refreshTimer); };
 });

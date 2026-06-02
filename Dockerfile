@@ -1,30 +1,38 @@
-FROM node:18-alpine
+# ---- Stage 1: builder ----
+# Native modulları (better-sqlite3, node-pty) build toolchain ilə qurur.
+# Toolchain yalnız bu mərhələdə qalır — final image-ə daşınmır.
+FROM node:18-alpine AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install native dependencies for sqlite and node-pty
-# Also install docker cli and docker-compose to allow host compose management
-RUN apk add --no-cache python3 make g++ gcc linux-headers docker-cli docker-cli-compose
+# Native build üçün lazımi alətlər (yalnız builder mərhələsində)
+RUN apk add --no-cache python3 make g++ gcc linux-headers
 
-# Copy package files
-COPY package*.json ./
+# Lock-fayl ilə reproduktiv install (npm ci) — optional dependency-lər (node-pty) də daxil
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
-# Install dependencies (including optional ones)
-RUN npm install
+# ---- Stage 2: runtime ----
+# Yalnız runtime — build toolchain yox, image kiçik qalır.
+FROM node:18-alpine
 
-# Copy application code
+WORKDIR /app
+
+# Host Docker / Compose idarəsi üçün docker CLI (build toolchain DEYİL)
+RUN apk add --no-cache docker-cli docker-cli-compose
+
+# Hazır qurulmuş node_modules-i builder-dən köçür (eyni node:18-alpine → ABI uyğun)
+COPY --from=builder /app/node_modules ./node_modules
+
+# Tətbiq kodu (.dockerignore node_modules-i istisna edir → köçürülən qalır)
 COPY . .
 
-# Create data directory
+# Data qovluğu (settings, tags, history, ssh-keys)
 RUN mkdir -p /app/data
 
-# Expose port
 EXPOSE 7077
 
-# Set production env
 ENV NODE_ENV=production
 ENV PORT=7077
 
-# Start application
 CMD ["npm", "start"]

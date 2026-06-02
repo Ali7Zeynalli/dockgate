@@ -2,6 +2,37 @@
 
 ---
 
+## [2.0.4] - 2026-06-02
+
+A correctness-and-hardening release driven by a full-codebase audit. Fixes a class of multi-host bugs where local-only operations silently targeted (or failed against) the wrong daemon, repairs SSH key-passphrase support end to end, makes notifications honest, adds server editing, and bundles all front-end dependencies locally for air-gapped installs.
+
+### Fixed
+- **SSH key passphrase now persists** — the `servers` table gained a `passphrase` column; `POST /api/servers` and the new `PUT` accept and store it, and both the active-client (`createSshClient`) and the per-host `EventMonitor` (`monitor-manager.js`) apply it. Previously an encrypted key passed *Test Connection* but failed on activation (and produced no notifications) because the passphrase was never saved
+- **Self-update & auto-start always act on the local host** — `POST /api/meta/update/apply` and the autostart toggle now use a dedicated local Docker client instead of the active (possibly remote) proxy. Before, triggering an update while a remote SSH host was active made DockGate look for its own container on the *remote* daemon and spawn the helper there
+- **Build success/failure detection** — status is now derived from the Docker stream's structured `error`/`errorDetail` field instead of grepping the log text for `ERROR:` (which mis-flagged successful builds whose output happened to contain that string); the real error message is passed to the build-failed notification
+- **Notification accuracy** — a clean container stop (exit 0) no longer says "stopped **unexpectedly**" (the alert now distinguishes *Stopped* from *Crashed*); an OOM kill (exit 137) sends a single OOM alert instead of OOM **and** a generic "stopped" alert; the disk-threshold alert reports honest absolute volumes (`X GB used / 50 GB threshold`) instead of a misleading GB-as-percent figure that always pinned at 100%
+- **Stale disk/usage after deletes** — `removeImage/removeVolume/removeNetwork`, all `prune*` calls and the create operations now invalidate the cache, so the dashboard's disk usage and counters refresh immediately (previously only container actions did)
+- **Front-end port links are host-aware** — published-port links now point at the active server's host (or the browser's host for local) instead of a hard-coded `localhost`, so they work when a remote SSH host is selected
+- **Toast messages are escaped** — backend error text containing `< > &` no longer breaks toast rendering (`textContent` instead of `innerHTML`)
+
+### Added
+- **Edit existing servers** — `PUT /api/servers/:id` updates host/port/username/key/password/passphrase/description (only the fields sent change); it refreshes the active client and restarts the host's monitor. Previously editing required delete-and-recreate
+- **Air-gapped support** — Socket.IO, Chart.js, xterm.js (+ fit addon) and the Inter / JetBrains Mono fonts are now bundled under `public/vendor/` and served locally; no CDN or internet access is required at runtime
+- **`POST /api/meta/settings` key allow-list** — only known UI settings are writable; `active_server` is rejected so it can only change through `POST /api/servers/active` (prevents DB ↔ active-client state drift)
+
+### Changed
+- **Self-update preserves more config** — labels and custom networks are now carried over to the recreated container (in addition to ports, volumes, env, restart policy and resource limits)
+- **Multi-host CLI guards** — operations that shell out to the host Docker CLI (Compose up/down/restart/pull, `buildx ls`, build-cache prune) now return a clear error when a remote SSH host is active, instead of silently acting on the local machine
+- **`docker-history` parallelised** — per-image `history()` calls now run concurrently (`Promise.all`) instead of sequentially
+- **Auto-refresh respects interaction** — Dashboard / Containers / Images skip their periodic re-render while a modal is open or an input is focused, preventing lost focus and scroll position
+- **Docker image is multi-stage** — native modules are compiled in a builder stage with `npm ci` (reproducible, lock-file driven); the final runtime image drops the build toolchain (python3/make/g++) and keeps only the Docker CLI, shrinking the image
+- **DB migrations are quieter but not silent** — additive `ALTER`/retention statements log genuine errors via `console.warn` while still ignoring expected "duplicate column" noise
+
+### Removed
+- **Dead code** — unused `streamEvents`, `streamContainerStats`, `streamContainerLogs` and `execInContainer` helpers were removed from `server/docker.js` (real-time streaming is built directly in `server/index.js`; the duplicates risked divergence)
+
+---
+
 ## [2.0.3] - 2026-05-07
 
 ### Features — Multi-host Notifications

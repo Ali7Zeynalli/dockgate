@@ -62,6 +62,22 @@ function setActiveServer(serverId) {
 
 function getActiveServerId() { return _activeServerId; }
 
+function isLocalActive() { return _activeServerId === 'local'; }
+
+/**
+ * Host CLI tələb edən əməliyyatlar (compose, buildx, build-cache prune, self-update,
+ * autostart) yalnız local daemon-a tətbiq oluna bilər — uzaq SSH host-da panel-in
+ * öz konteyneri/host filesystem-i yoxdur. Aktiv server local deyilsə aydın xəta at,
+ * səssizcə yanlış host-a iş görməkdənsə.
+ */
+function assertLocalActive(operation) {
+  if (_activeServerId !== 'local') {
+    const err = new Error(`"${operation}" yalnız local host üçün dəstəklənir (aktiv server: ${_activeServerId}). Bu əməliyyat host CLI / host filesystem tələb edir və uzaq SSH host-a tətbiq olunmur. Əvvəlcə Local-a keçin.`);
+    err.statusCode = 400;
+    throw err;
+  }
+}
+
 // docker dəyişəninə hər müraciətdə getter işləyir — dinamik client dönür
 const docker = new Proxy({}, {
   get(_, prop) { return _docker[prop]; },
@@ -212,6 +228,7 @@ function demuxLogs(buffer) {
 
 async function createContainer(config) {
   const container = await docker.createContainer(config);
+  invalidateCache('');
   return { id: container.id };
 }
 
@@ -256,6 +273,7 @@ async function pullImage(repoTag) {
 async function removeImage(id, force = false) {
   const image = docker.getImage(id);
   await image.remove({ force });
+  invalidateCache(''); // disk usage / sayğacları stale qalmasın
   return { success: true };
 }
 
@@ -322,11 +340,14 @@ async function inspectVolume(name) {
 async function removeVolume(name) {
   const volume = docker.getVolume(name);
   await volume.remove();
+  invalidateCache('');
   return { success: true };
 }
 
 async function createVolume(config) {
-  return await docker.createVolume(config);
+  const r = await docker.createVolume(config);
+  invalidateCache('');
+  return r;
 }
 
 // ============ NETWORKS ============
@@ -356,11 +377,14 @@ async function inspectNetwork(id) {
 async function removeNetwork(id) {
   const network = docker.getNetwork(id);
   await network.remove();
+  invalidateCache('');
   return { success: true };
 }
 
 async function createNetwork(config) {
-  return await docker.createNetwork(config);
+  const r = await docker.createNetwork(config);
+  invalidateCache('');
+  return r;
 }
 
 // ============ SYSTEM ============
@@ -479,25 +503,35 @@ async function getCleanupPreview() {
 }
 
 async function pruneContainers() {
-  return await docker.pruneContainers();
+  const r = await docker.pruneContainers();
+  invalidateCache('');
+  return r;
 }
 
 async function pruneImages(dangling = false) {
   // dangling=false → bütün unused image-lər (tagged + dangling) silinir
   // dangling=true  → yalnız dangling (untagged <none>) silinir
-  return await docker.pruneImages({ filters: { dangling: [String(dangling)] } });
+  const r = await docker.pruneImages({ filters: { dangling: [String(dangling)] } });
+  invalidateCache('');
+  return r;
 }
 
 async function pruneVolumes() {
   // Docker 23+ default yalnız anonim volume-ları silir; all=true → named unused də silinir
-  return await docker.pruneVolumes({ filters: { all: ['true'] } });
+  const r = await docker.pruneVolumes({ filters: { all: ['true'] } });
+  invalidateCache('');
+  return r;
 }
 
 async function pruneNetworks() {
-  return await docker.pruneNetworks();
+  const r = await docker.pruneNetworks();
+  invalidateCache('');
+  return r;
 }
 
 async function pruneBuildCache() {
+  // Host CLI (`docker builder prune`) — yalnız local daemon-da işləyir, uzaq SSH host-a yox.
+  assertLocalActive('Build cache prune');
   const { execFile } = require('child_process');
   return new Promise((resolve, reject) => {
     execFile('docker', ['builder', 'prune', '-a', '-f'], (err, stdout) => {
@@ -507,6 +541,7 @@ async function pruneBuildCache() {
       const match = stdout.match(/Total reclaimed space: (.+)/);
       if (match) spaceStr = match[1];
       
+      invalidateCache('');
       resolve({
         Message: "Build cache pruned",
         SpaceReclaimedStr: spaceStr,
@@ -526,80 +561,22 @@ async function systemPrune(volumes = false) {
     // Named + anonim unused volume-ları sil
     results.volumes = await docker.pruneVolumes({ filters: { all: ['true'] } });
   }
+  invalidateCache('');
   return results;
 }
 
-// ============ EVENTS ============
-function streamEvents(callback, filters = {}) {
-  docker.getEvents({ filters }, (err, stream) => {
-    if (err) { callback(err); return; }
-    stream.on('data', (chunk) => {
-      try {
-        const event = JSON.parse(chunk.toString());
-        callback(null, event);
-      } catch (e) { /* ignore parse errors */ }
-    });
-    stream.on('error', (err) => callback(err));
-  });
-}
-
-// ============ STATS STREAM ============
-function streamContainerStats(id, callback) {
-  const container = docker.getContainer(id);
-  container.stats({ stream: true }, (err, stream) => {
-    if (err) { callback(err); return null; }
-    stream.on('data', (chunk) => {
-      try {
-        const stats = JSON.parse(chunk.toString());
-        callback(null, parseStats(stats));
-      } catch (e) { /* ignore */ }
-    });
-    stream.on('error', (err) => callback(err));
-    stream.on('end', () => callback(null, null));
-    return stream;
-  });
-  return { destroy: () => { /* will be handled by caller */ } };
-}
-
-// ============ LOG STREAM ============
-function streamContainerLogs(id, callback, options = {}) {
-  const container = docker.getContainer(id);
-  container.logs({
-    stdout: true,
-    stderr: true,
-    tail: options.tail || 100,
-    follow: true,
-    timestamps: options.timestamps || false,
-  }, (err, stream) => {
-    if (err) { callback(err); return; }
-    stream.on('data', (chunk) => {
-      const text = demuxLogs(chunk);
-      callback(null, text);
-    });
-    stream.on('error', (err) => callback(err));
-    stream.on('end', () => callback(null, null));
-  });
-}
-
-// ============ EXEC ============
-async function execInContainer(id, cmd = ['/bin/sh'], options = {}) {
-  const container = docker.getContainer(id);
-  const exec = await container.exec({
-    Cmd: cmd,
-    AttachStdin: true,
-    AttachStdout: true,
-    AttachStderr: true,
-    Tty: true,
-    ...options,
-  });
-  return exec;
-}
+// NOTE: Real-time stream-lər (events/stats/logs) və container exec birbaşa
+// server/index.js-də socket handler-lərində dockerode üzərindən qurulur.
+// Əvvəlki streamEvents/streamContainerStats/streamContainerLogs/execInContainer
+// wrapper-ləri heç bir caller tərəfindən işlədilmirdi (divergensiya riski) — silindi.
 
 // ============ SETTINGS / SYSTEM ============
+// DockGate öz konteynerini idarə edir (autostart, self-update) — bu HƏMİŞƏ local
+// daemon-dadır, ona görə aktiv (ola bilsin uzaq) client deyil, təzə local client işlədilir.
 async function getAppContainer() {
   const os = require('os');
   const hostname = os.hostname();
-  return docker.getContainer(hostname);
+  return createLocalClient().getContainer(hostname);
 }
 
 async function getAutoStartStatus() {
@@ -644,8 +621,8 @@ async function testServerConnection(serverConfig) {
 }
 
 module.exports = {
-  docker, invalidateCache,
-  setActiveServer, getActiveServerId, testServerConnection,
+  docker, invalidateCache, createLocalClient,
+  setActiveServer, getActiveServerId, isLocalActive, assertLocalActive, testServerConnection,
   listContainers, inspectContainer, getContainerStats, containerAction,
   getContainerLogs, createContainer, parseStats, demuxLogs,
   listImages, inspectImage, pullImage, removeImage, tagImage, buildImage,
@@ -654,6 +631,5 @@ module.exports = {
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,
   getCleanupPreview, pruneContainers, pruneImages, pruneVolumes, pruneNetworks, pruneBuildCache, systemPrune,
-  streamEvents, streamContainerStats, streamContainerLogs, execInContainer,
   getAutoStartStatus, setAutoStart,
 };

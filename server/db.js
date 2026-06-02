@@ -111,13 +111,25 @@ db.exec(`
   );
 `);
 
-// Migration — add new columns to existing build_history table / Mövcud build_history cədvəlinə yeni sütunlar əlavə et
-try { db.exec('ALTER TABLE build_history ADD COLUMN context_url TEXT DEFAULT ""'); } catch(e) {}
-try { db.exec('ALTER TABLE build_history ADD COLUMN build_args TEXT DEFAULT "{}"'); } catch(e) {}
-try { db.exec('ALTER TABLE build_history ADD COLUMN nocache INTEGER DEFAULT 0'); } catch(e) {}
-try { db.exec('ALTER TABLE build_history ADD COLUMN pull INTEGER DEFAULT 0'); } catch(e) {}
-try { db.exec('ALTER TABLE notification_log ADD COLUMN channel TEXT DEFAULT "email"'); } catch(e) {}
-try { db.exec('ALTER TABLE servers ADD COLUMN password TEXT'); } catch(e) {}
+// Idempotent additive migrations / İdempotent additiv migration-lar
+// "duplicate column" təkrar boot-da gözləniləndir — susdurulur; başqa xətalar log olunur ki,
+// genuine corruption/locked-DB problemləri səssiz gizlənməsin.
+function migrate(sql) {
+  try { db.exec(sql); }
+  catch (e) {
+    if (!/duplicate column name|already exists/i.test(e.message)) {
+      console.warn('[db migration]', e.message);
+    }
+  }
+}
+
+migrate('ALTER TABLE build_history ADD COLUMN context_url TEXT DEFAULT ""');
+migrate('ALTER TABLE build_history ADD COLUMN build_args TEXT DEFAULT "{}"');
+migrate('ALTER TABLE build_history ADD COLUMN nocache INTEGER DEFAULT 0');
+migrate('ALTER TABLE build_history ADD COLUMN pull INTEGER DEFAULT 0');
+migrate('ALTER TABLE notification_log ADD COLUMN channel TEXT DEFAULT "email"');
+migrate('ALTER TABLE servers ADD COLUMN password TEXT');
+migrate('ALTER TABLE servers ADD COLUMN passphrase TEXT'); // SSH key passphrase — encrypted private key dəstəyi
 
 // Default notification rules / Defolt bildiriş qaydaları
 const defaultRules = [
@@ -132,15 +144,15 @@ const insertRule = db.prepare('INSERT OR IGNORE INTO notification_rules (event_t
 defaultRules.forEach(([type, desc, cd]) => insertRule.run(type, desc, cd));
 
 // Indexes for frequently queried columns / Tez-tez sorğulanan sütunlar üçün indekslər
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_activity_resource ON activity (resource_id, resource_type)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity (created_at)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_builds_started ON build_history (started_at)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_notif_log_created ON notification_log (created_at)'); } catch(e) {}
+migrate('CREATE INDEX IF NOT EXISTS idx_activity_resource ON activity (resource_id, resource_type)');
+migrate('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity (created_at)');
+migrate('CREATE INDEX IF NOT EXISTS idx_builds_started ON build_history (started_at)');
+migrate('CREATE INDEX IF NOT EXISTS idx_notif_log_created ON notification_log (created_at)');
 
 // Retention — keep only last 1000 activity records and 100 builds
 // Saxlama — yalnız son 1000 fəaliyyət qeydi və 100 build saxla
-try { db.exec('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 1000)'); } catch(e) {}
-try { db.exec('DELETE FROM build_history WHERE id NOT IN (SELECT id FROM build_history ORDER BY started_at DESC LIMIT 100)'); } catch(e) {}
+migrate('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 1000)');
+migrate('DELETE FROM build_history WHERE id NOT IN (SELECT id FROM build_history ORDER BY started_at DESC LIMIT 100)');
 
 // Default settings
 const defaultSettings = {
@@ -233,8 +245,8 @@ const stmts = {
   // Servers (SSH multi-host)
   getServers: db.prepare('SELECT * FROM servers ORDER BY id'),
   getServer: db.prepare('SELECT * FROM servers WHERE id = ?'),
-  insertServer: db.prepare('INSERT INTO servers (id, type, host, port, username, key_path, password, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
-  updateServer: db.prepare('UPDATE servers SET host = ?, port = ?, username = ?, key_path = ?, password = ?, description = ? WHERE id = ?'),
+  insertServer: db.prepare('INSERT INTO servers (id, type, host, port, username, key_path, password, passphrase, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+  updateServer: db.prepare('UPDATE servers SET host = ?, port = ?, username = ?, key_path = ?, password = ?, passphrase = ?, description = ? WHERE id = ?'),
   deleteServer: db.prepare('DELETE FROM servers WHERE id = ?'),
 };
 

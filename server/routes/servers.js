@@ -38,6 +38,7 @@ router.get('/', (req, res) => {
         description: s.description,
         hasKey: !!s.key_path,
         hasPassword: !!s.password,
+        hasPassphrase: !!s.passphrase,
         authMode: s.key_path ? 'key' : (s.password ? 'password' : 'agent'),
         created: s.created_at,
         isActive: activeId === s.id,
@@ -51,11 +52,11 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/servers — yeni SSH server əlavə et
-// body: { id, host, port, username, privateKey?, password?, description? }
+// body: { id, host, port, username, privateKey?, passphrase?, password?, description? }
 // Auth iyerarxiyası: privateKey > password > SSH agent
 router.post('/', (req, res) => {
   try {
-    const { id, host, port = 22, username, privateKey, password, description = '' } = req.body || {};
+    const { id, host, port = 22, username, privateKey, passphrase, password, description = '' } = req.body || {};
 
     if (!validateId(id)) return res.status(400).json({ error: 'id: yalnız hərf, rəqəm, _, - (max 64)' });
     if (id === 'local') return res.status(400).json({ error: '"local" rezerv edilmiş id-dir' });
@@ -74,11 +75,13 @@ router.post('/', (req, res) => {
       keyPath = keyFile;
     }
 
-    // password — DB-də plain text saxlanılır (data/ volume host filesystem qoruması ilə)
+    // password / passphrase — DB-də plain text saxlanılır (data/ volume host filesystem qoruması ilə)
     // DockGate self-hosted istifadə üçündür — auth UI tərəfində yox
     const pwdToStore = password ? String(password) : null;
+    // passphrase yalnız key auth ilə məna kəsb edir (encrypted private key açmaq üçün)
+    const passphraseToStore = (privateKey && passphrase) ? String(passphrase) : null;
 
-    stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, pwdToStore, description);
+    stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, pwdToStore, passphraseToStore, description);
     stmts.logActivity.run(id, 'server', id, 'add', JSON.stringify({ host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent') }));
 
     // Start dedicated monitor so notifications from this host start flowing immediately
@@ -88,7 +91,62 @@ router.post('/', (req, res) => {
       success: true, id, host, port, username,
       hasKey: !!keyPath,
       hasPassword: !!pwdToStore,
+      hasPassphrase: !!passphraseToStore,
       authMode: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent'),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/servers/:id — mövcud SSH server-i redaktə et
+// body: { host?, port?, username?, privateKey?, passphrase?, password?, description? }
+// Yalnız göndərilən sahələr dəyişir (undefined = saxla). password/passphrase boş string = təmizlə.
+router.put('/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    if (id === 'local') return res.status(400).json({ error: 'local server redaktə edilə bilməz' });
+
+    const existing = stmts.getServer.get(id);
+    if (!existing) return res.status(404).json({ error: 'Server tapılmadı' });
+
+    const { host, port, username, privateKey, passphrase, password, description } = req.body || {};
+
+    const newHost = host !== undefined ? host : existing.host;
+    const newPort = port !== undefined ? (parseInt(port) || 22) : existing.port;
+    const newUsername = username !== undefined ? username : existing.username;
+    const newDescription = description !== undefined ? description : existing.description;
+
+    // Key — yeni privateKey gəlibsə fayla yaz, əks halda mövcudu saxla
+    let keyPath = existing.key_path;
+    if (privateKey) {
+      const keyFile = `${id}.pem`;
+      fs.writeFileSync(path.join(SSH_KEYS_DIR, keyFile), privateKey, { mode: 0o600 });
+      keyPath = keyFile;
+    }
+
+    // undefined = dəyişmə, boş string = təmizlə, dolu = yenilə
+    const newPassword = password !== undefined ? (password ? String(password) : null) : existing.password;
+    const newPassphrase = passphrase !== undefined ? (passphrase ? String(passphrase) : null) : existing.passphrase;
+
+    stmts.updateServer.run(newHost, newPort, newUsername, keyPath, newPassword, newPassphrase, newDescription, id);
+    stmts.logActivity.run(id, 'server', id, 'edit', JSON.stringify({ host: newHost, username: newUsername }));
+
+    // Aktiv serverdirsə client-i yenidən qur (config dəyişdi)
+    const activeId = stmts.getSetting.get('active_server')?.value;
+    if (activeId === id) {
+      try { dockerService.setActiveServer(id); } catch(e) { /* qoşulma sonradan yoxlanılacaq */ }
+    }
+
+    // Monitoru config-in yeni halı ilə yenidən başlat (startMonitor öz içində stopMonitor edir)
+    monitorManager.startMonitor(id);
+
+    res.json({
+      success: true, id,
+      hasKey: !!keyPath,
+      hasPassword: !!newPassword,
+      hasPassphrase: !!newPassphrase,
+      authMode: keyPath ? 'key' : (newPassword ? 'password' : 'agent'),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

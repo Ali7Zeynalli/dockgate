@@ -192,6 +192,6 @@ Router.register('images', async (content) => {
   }
 
   await render();
-  refreshTimer = setInterval(render, 15000);
+  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 15000);
   return () => { if (refreshTimer) clearInterval(refreshTimer); };
 });

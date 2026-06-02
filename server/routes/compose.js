@@ -30,48 +30,26 @@ router.get('/:project', async (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/:project/up', async (req, res) => {
+// Compose əmrləri host `docker compose` CLI-ni host filesystem-dəki working dir ilə işlədir —
+// bu yalnız local daemon üçün mənalıdır (uzaq SSH host-un compose faylları əlçatan deyil).
+// Hər mutasiyada əvvəlcə aktiv server-in local olduğunu yoxla.
+async function runComposeAction(req, res, action, label) {
   try {
+    dockerService.assertLocalActive(`Compose ${label}`);
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
     const project = await dockerService.getComposeProject(req.params.project);
-    if (!project.workingDir) return res.status(400).json({ error: 'Working directory not found' });
-    const output = await runCompose(req.params.project, ['up', '-d'], project.workingDir);
-    stmts.logActivity.run(req.params.project, 'compose', req.params.project, 'up', output);
+    if (!project.workingDir) {
+      return res.status(400).json({ error: 'Working directory tapılmadı — proyekt tam down olunubsa label-lardan working dir oxunmur. Compose qovluğundan əl ilə qaldırın.' });
+    }
+    const output = await runCompose(req.params.project, action, project.workingDir);
+    stmts.logActivity.run(req.params.project, 'compose', req.params.project, label, output);
     res.json({ success: true, output });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+}
 
-router.post('/:project/down', async (req, res) => {
-  try {
-    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const project = await dockerService.getComposeProject(req.params.project);
-    if (!project.workingDir) return res.status(400).json({ error: 'Working directory not found' });
-    const output = await runCompose(req.params.project, ['down'], project.workingDir);
-    stmts.logActivity.run(req.params.project, 'compose', req.params.project, 'down', output);
-    res.json({ success: true, output });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-router.post('/:project/restart', async (req, res) => {
-  try {
-    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const project = await dockerService.getComposeProject(req.params.project);
-    if (!project.workingDir) return res.status(400).json({ error: 'Working directory not found' });
-    const output = await runCompose(req.params.project, ['restart'], project.workingDir);
-    stmts.logActivity.run(req.params.project, 'compose', req.params.project, 'restart', output);
-    res.json({ success: true, output });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-router.post('/:project/pull', async (req, res) => {
-  try {
-    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const project = await dockerService.getComposeProject(req.params.project);
-    if (!project.workingDir) return res.status(400).json({ error: 'Working directory not found' });
-    const output = await runCompose(req.params.project, ['pull'], project.workingDir);
-    stmts.logActivity.run(req.params.project, 'compose', req.params.project, 'pull', output);
-    res.json({ success: true, output });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+router.post('/:project/up', (req, res) => runComposeAction(req, res, ['up', '-d'], 'up'));
+router.post('/:project/down', (req, res) => runComposeAction(req, res, ['down'], 'down'));
+router.post('/:project/restart', (req, res) => runComposeAction(req, res, ['restart'], 'restart'));
+router.post('/:project/pull', (req, res) => runComposeAction(req, res, ['pull'], 'pull'));
 
 module.exports = router;

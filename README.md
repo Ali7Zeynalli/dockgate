@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.0.3-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.0.4-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.3-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.4-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~5.3k-informational?style=for-the-badge" alt="Lines of Code">
@@ -156,6 +156,19 @@ DockGate has **14 modules** organized in 4 groups:
 | **Cleanup** | Preview-before-prune for: stopped containers, unused/dangling images, unused volumes, unused networks, build cache, or full system prune |
 | **Settings** | Tabbed UI: General (theme, default view, shell, log timestamps, auto-start), Notifications (**Email SMTP** + **Telegram Bot**, 6 alert rules with cooldown), Notification Log, Software Update |
 
+### Multi-Host (SSH)
+
+DockGate manages both your **local** Docker socket and the Docker daemons of **remote SSH hosts** — all from one panel.
+
+| Capability | Description |
+|------------|-------------|
+| **Server switcher** | A switcher in the sidebar lets you jump between **Local** and any registered SSH host. The whole UI (containers, images, logs, terminal, etc.) follows the active server |
+| **3 auth modes** | **Private key** (with passphrase support for encrypted keys), **password**, or **SSH agent**. Auth hierarchy: **key > password > agent** |
+| **All-host notifications** | A dedicated `EventMonitor` runs per registered host, so alerts arrive from **every** server — not just the active one |
+| **Key & credential storage** | SSH private keys are written to `data/ssh-keys/*.pem` (mode `0600`); server records live in the `servers` table of the SQLite database |
+
+**Usage:** Add a host from the sidebar server switcher — provide host, port, username, and one of: private key (+ optional passphrase), password, or leave blank to use the SSH agent. Test the connection before saving, then switch to it to manage that daemon. Local can never be deleted.
+
 ### Container Actions
 
 `start` · `stop` · `restart` · `kill` · `pause` · `unpause` · `remove` · `rename`
@@ -169,6 +182,7 @@ Browser (Vanilla JS + xterm.js + Chart.js)
     │
     ├── HTTP/REST ──► Express API Server
     │                   ├── /api/dashboard
+    │                   ├── /api/servers      (local + SSH multi-host)
     │                   ├── /api/containers
     │                   ├── /api/images
     │                   ├── /api/builds
@@ -195,7 +209,7 @@ Browser (Vanilla JS + xterm.js + Chart.js)
 dockgate/
 ├── Dockerfile                    # Node.js 18 Alpine + docker-cli
 ├── docker-compose.yml            # Deployment with resource limits
-├── package.json                  # 4 deps + 1 optional (node-pty)
+├── package.json                  # 5 deps + 1 optional (node-pty, unused at runtime)
 ├── server/
 │   ├── index.js                  # Express + Socket.IO server (257 lines)
 │   ├── docker.js                 # Docker API wrapper via dockerode (516 lines)
@@ -204,8 +218,10 @@ dockgate/
 │   │   ├── mailer.js             # SMTP email sender via nodemailer
 │   │   ├── telegram.js           # Telegram Bot API sender (no deps)
 │   │   ├── templates.js          # HTML email templates
-│   │   └── event-monitor.js      # Docker event watcher + alerting
+│   │   ├── event-monitor.js      # Per-host Docker event watcher + alerting
+│   │   └── monitor-manager.js    # Multi-host monitor registry (one monitor per server)
 │   └── routes/
+│       ├── servers.js            # SSH multi-host management (add/edit/test/switch/remove)
 │       ├── containers.js         # Container CRUD & actions
 │       ├── images.js             # Image pull/remove/tag
 │       ├── volumes.js            # Volume CRUD
@@ -217,6 +233,7 @@ dockgate/
 │       └── settings.js           # Favorites, notes, tags, activity, settings, autostart, SMTP, Telegram, notifications
 ├── public/
 │   ├── index.html                # SPA shell
+│   ├── vendor/                   # Locally bundled CDN deps (socket.io, chart.js, xterm, fonts) — air-gap support
 │   ├── css/
 │   │   ├── design-system.css     # Color tokens, typography, spacing
 │   │   ├── layout.css            # Sidebar, topbar, page layout
@@ -254,11 +271,13 @@ dockgate/
 | Real-time | Socket.IO | 4.x |
 | Docker SDK | dockerode | 4.x |
 | Database | better-sqlite3 (WAL mode) | 11.x |
-| Terminal PTY | node-pty (optional) | 1.x |
+| Container Terminal | Docker `exec` API (TTY stream) | — |
 | Frontend | Vanilla JS, CSS3 | ES2020+ |
-| Terminal UI | xterm.js (CDN) | 5.3.0 |
-| Charts | Chart.js (CDN) | 4.4.4 |
-| WebSocket Client | Socket.IO Client (CDN) | 4.7.5 |
+| Terminal UI | xterm.js (bundled in `public/vendor/`) | 5.3.0 |
+| Charts | Chart.js (bundled in `public/vendor/`) | 4.4.4 |
+| WebSocket Client | Socket.IO Client (bundled in `public/vendor/`) | 4.7.5 |
+
+> **Note:** `node-pty` is listed as an optional dependency but is **not** used at runtime — interactive terminals are served via the Docker `exec` API with a TTY-enabled hijacked stream. All front-end libraries are bundled locally under `public/vendor/`, so DockGate runs in **air-gapped** environments without any CDN access.
 
 ---
 
@@ -358,6 +377,19 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | GET | `/api/system/info` | Docker system info |
 | GET | `/api/system/version` | Docker version |
 | GET | `/api/system/df` | Disk usage breakdown |
+
+### Servers (Multi-Host)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/servers` | List all servers (local + SSH); indicates the active one |
+| POST | `/api/servers` | Add a new SSH server — body: `{ "id", "host", "port", "username", "privateKey?", "passphrase?", "password?", "description?" }` |
+| PUT | `/api/servers/:id` | Edit an existing server (only the fields sent are changed) — same body fields |
+| POST | `/api/servers/test` | Test a connection before registering |
+| POST | `/api/servers/active` | Switch the active server — body: `{ "id" }` |
+| DELETE | `/api/servers/:id` | Remove a server (local cannot be deleted) |
+
+> **Note:** Auth hierarchy is **key > password > agent** — if a private key is supplied it is used; otherwise a password; otherwise the SSH agent.
 
 ### Metadata
 
@@ -596,11 +628,9 @@ npm run dev
 
 ## 🌐 Remote Access Solution
 
-> **💡 Need to manage S-RCS from anywhere?**
+> **💡 Need to manage DockGate from anywhere?**
 > 
-> Use **[NovusGate](https://github.com/Ali7Zeynalli/NovusGate)** — our self-hosted VPN solution built on WireGuard® to securely access S-RCS from home, travel, or remote offices **without static IP or port forwarding**.
-> 
-> 👉 **[View Remote Access Guide](REMOTE_ACCESS.md)**
+> Use **[NovusGate](https://github.com/Ali7Zeynalli/NovusGate)** — a self-hosted WireGuard® VPN to securely reach DockGate from home, travel, or remote offices **without static IP or port forwarding**.
 
 ---
 

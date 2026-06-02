@@ -30,11 +30,19 @@ function serverRow(server) {
   return row('Server', `<code style="background:#eef2ff;padding:2px 6px;border-radius:3px;">${server}</code>`);
 }
 
-function containerDieTemplate({ containerName, containerId, image, time, exitCode, server }) {
-  return `${header('Container Stopped')}
+function containerDieTemplate({ containerName, containerId, image, time, exitCode, unexpected = true, server }) {
+  // unexpected=false (exit 0 / qəsdən dayanma) → neytral mavi; non-zero crash → qırmızı xəbərdarlıq
+  const title = unexpected ? 'Container Crashed' : 'Container Stopped';
+  const boxStyle = unexpected
+    ? 'background:#fff3f3;border:1px solid #fecaca;color:#b91c1c;'
+    : 'background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;';
+  const message = unexpected
+    ? `Container <strong>${containerName}</strong> exited unexpectedly (exit code ${exitCode}).`
+    : `Container <strong>${containerName}</strong> has stopped (exit code ${exitCode}).`;
+  return `${header(title)}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
-        <div style="background:#fff3f3;border:1px solid #fecaca;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#b91c1c;">
-          Container <strong>${containerName}</strong> has stopped unexpectedly.
+        <div style="${boxStyle}border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;">
+          ${message}
         </div>
         <table style="width:100%;border-collapse:collapse;">
           ${serverRow(server)}
@@ -108,26 +116,26 @@ function containerOomTemplate({ containerName, containerId, image, time, server 
     ${footer()}`;
 }
 
-function diskAlertTemplate({ usagePercent, totalSpace, usedSpace, threshold, server }) {
-  const barColor = usagePercent > 90 ? '#ef4444' : '#f59e0b';
+// thresholdGB MÜTLƏQ həcm həddidir (host disk doluluğu faizi DEYİL) — Docker-in tutduğu
+// reclaimable həcm bu həddi keçəndə xəbərdarlıq gedir. Əvvəlki versiya GB/həd nisbətini
+// "faiz" kimi göstərirdi və yanıldıcı idi; indi həcmlər mütləq GB ilə dürüst göstərilir.
+function diskAlertTemplate({ usedSpace, usedGB, thresholdGB, breakdown = {}, server }) {
+  const breakdownRows = [
+    breakdown.images != null ? row('Images', breakdown.images) : '',
+    breakdown.containers != null ? row('Containers', breakdown.containers) : '',
+    breakdown.volumes != null ? row('Volumes', breakdown.volumes) : '',
+    breakdown.buildCache != null ? row('Build Cache', breakdown.buildCache) : '',
+  ].join('');
   return `${header('Disk Usage Alert')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
         <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">
-          Docker disk usage has exceeded the <strong>${threshold}%</strong> threshold.
-        </div>
-        <div style="margin-bottom:16px;">
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
-            <span>Disk Usage</span><span style="font-weight:600;">${usagePercent}%</span>
-          </div>
-          <div style="background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden;">
-            <div style="background:${barColor};height:100%;width:${Math.min(usagePercent, 100)}%;border-radius:4px;"></div>
-          </div>
+          Docker reclaimable disk usage (<strong>${usedSpace}</strong>) has exceeded the configured <strong>${thresholdGB} GB</strong> threshold.
         </div>
         <table style="width:100%;border-collapse:collapse;">
           ${serverRow(server)}
-          ${row('Used', usedSpace)}
-          ${row('Total', totalSpace)}
-          ${row('Threshold', threshold + '%')}
+          ${row('Total Used', `${usedSpace} (${usedGB} GB)`)}
+          ${row('Threshold', `${thresholdGB} GB`)}
+          ${breakdownRows}
         </table>
         <div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border-radius:4px;font-size:12px;color:#666;">
           Run docker system prune or use DockGate Cleanup to free disk space.
