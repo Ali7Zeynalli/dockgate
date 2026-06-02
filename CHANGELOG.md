@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.13] - 2026-06-02
+
+### Changed
+- **CI:** bumped `actions/checkout` and `actions/setup-node` from `@v4` to `@v6` — both now run on the Node 24 runtime, clearing GitHub's Node 20 deprecation warning (Node 20 actions are force-migrated on 2026-06-16). No change to application code or behaviour
+
+---
+
 ## [2.0.12] - 2026-06-02
 
 ### Added
