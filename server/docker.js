@@ -19,21 +19,23 @@ function createSshClient(server) {
     port: server.port || 22,
     username: server.username,
   };
-  // Auth iyerarxiyası: key > password > SSH agent
+  // Auth precedence: key > password > SSH agent.
+  // IMPORTANT: docker-modem forwards only host/port/username/password to ssh2 at the top level.
+  // privateKey/passphrase MUST live inside sshOptions or they are silently dropped, which makes
+  // ssh2 fall back to the (absent) agent → "All configured authentication methods failed".
   if (server.key_path) {
     const keyPath = path.isAbsolute(server.key_path)
       ? server.key_path
       : path.join(__dirname, '..', 'data', 'ssh-keys', server.key_path);
-    if (fs.existsSync(keyPath)) {
-      opts.privateKey = fs.readFileSync(keyPath);
-    } else {
-      throw new Error(`SSH key tapılmadı: ${keyPath}`);
-    }
-    if (server.passphrase) opts.passphrase = server.passphrase;
+    if (!fs.existsSync(keyPath)) throw new Error(`SSH key not found: ${keyPath}`);
+    opts.sshOptions = {
+      privateKey: fs.readFileSync(keyPath),
+      ...(server.passphrase ? { passphrase: server.passphrase } : {}),
+    };
   } else if (server.password) {
-    opts.password = server.password;
+    opts.password = server.password; // docker-modem forwards top-level password to ssh2
   }
-  // Heç biri yoxdursa — ssh2 SSH agent istifadə edəcək
+  // If neither is set, ssh2 falls back to the SSH agent.
   return new Docker(opts);
 }
 

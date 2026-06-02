@@ -22,14 +22,17 @@ function buildClient(server) {
     port: server.port || 22,
     username: server.username,
   };
-  // Auth precedence: key > password > SSH agent — same as docker.js createSshClient
+  // Auth precedence: key > password > SSH agent — same as docker.js createSshClient.
+  // privateKey/passphrase must go inside sshOptions; docker-modem drops them at the top level.
   if (server.key_path) {
     const keyPath = path.isAbsolute(server.key_path)
       ? server.key_path
       : path.join(SSH_KEYS_DIR, server.key_path);
     if (fs.existsSync(keyPath)) {
-      opts.privateKey = fs.readFileSync(keyPath);
-      if (server.passphrase) opts.passphrase = server.passphrase; // encrypted key support
+      opts.sshOptions = {
+        privateKey: fs.readFileSync(keyPath),
+        ...(server.passphrase ? { passphrase: server.passphrase } : {}),
+      };
     } else {
       // Key file is missing — the monitor will fall back to SSH agent/anonymous auth; warn instead of failing silently
       console.warn(`[monitor-manager] SSH key not found: ${keyPath} (server: ${server.id}) — falling back to agent auth`);

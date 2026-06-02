@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.8] - 2026-06-02
+
+### Fixed
+- **SSH key authentication now works — it was completely broken** — connecting to a remote host with a **private key** always failed with `All configured authentication methods failed`, even with valid credentials. Root cause: `docker-modem` 5.x forwards only `host` / `port` / `username` / `password` to `ssh2` at the top level, while `privateKey` / `passphrase` must be passed inside `sshOptions`. DockGate set them at the top level, so they were silently dropped and `ssh2` fell back to the (absent) SSH agent. Both the active client (`createSshClient`) and the per-host event monitor (`buildClient`) now pass the key/passphrase via `sshOptions`. Verified end-to-end against a real remote host (add → switch → list remote containers). Password auth was unaffected (docker-modem forwards `password` at the top level)
+
+---
+
 ## [2.0.7] - 2026-06-02
 
 ### Added
