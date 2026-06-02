@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.7] - 2026-06-02
+
+### Added
+- **Automated test suite** — the project's first tests, run with `npm test` (Node's built-in test runner, no extra runtime deps; `supertest` as a dev dependency only):
+  - **Unit** — `parseStats` / `demuxLogs` (Docker stats & log demux), source-IP extraction (`ipFromReq` / `ipFromSocket`)
+  - **Integration** — the `/api/meta` routes against an isolated temp DB (no Docker daemon): settings allow-list (rejects `active_server`), timezone persistence, audit logging with server + source IP, audit search/filter, facets, and log clearing
+- **CI test gate** — GitHub Actions now runs `npm ci && npm test` and the image build only proceeds when tests pass
+- **`DATA_DIR` env override** — lets tests (and custom deploys) point the SQLite database at an isolated directory
+
+---
+
 ## [2.0.6] - 2026-06-02
 
 ### Added
