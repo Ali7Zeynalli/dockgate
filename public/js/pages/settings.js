@@ -4,9 +4,9 @@ Router.register('settings', async (content) => {
 
   async function render() {
     try {
-      // Store-un başlanğıc dəyəri boş obyektdir ({}) — bu truthy olduğundan əvvəllər
-      // hard refresh-də server-dən fetch ATLANIRDI və bütün General ayarları default görünürdü.
-      // Yalnız Store-da DOLU settings olanda cache işlət, əks halda server-dən çək.
+      // Store's initial value is an empty object ({}) — since that is truthy, a hard
+      // refresh used to SKIP the server fetch, so all General settings showed defaults.
+      // Use the cache only when Store actually holds settings, otherwise fetch from the server.
       const cachedSettings = Store.get('settings');
       const haveCached = cachedSettings && Object.keys(cachedSettings).length > 0;
       const [settings, autostartRes] = await Promise.all([

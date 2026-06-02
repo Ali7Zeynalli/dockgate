@@ -124,13 +124,13 @@ class EventMonitor {
     const prefix = this._prefix();
     const serverDetail = this._serverDetail();
 
-    // Container die — Docker hər çıxışda 'die' event-i atır (crash, manual stop, OOM).
-    // 'stop' action-ı ayrıca dinləmirik: o, 'die'-dan əvvəl gəlir və eyni hadisəni ikiqatlayırdı.
+    // Container die — Docker emits a 'die' event on every exit (crash, manual stop, OOM).
+    // We don't listen for 'stop' separately: it fires before 'die' and would double-count the same event.
     if (event.Type === 'container' && event.Action === 'die') {
       const exitCode = attrs.exitCode;
 
-      // OOM kill — exitCode 137. Yalnız OOM bildirişi göndər, sonra çıx —
-      // əks halda eyni hadisə üçün həm OOM, həm "Container Stopped" gedirdi (ikiqat).
+      // OOM kill — exitCode 137. Send only the OOM notification, then return —
+      // otherwise both OOM and "Container Stopped" were sent for the same event (duplicate).
       if (exitCode === '137') {
         await this._sendNotification('container_oom', name, {
           subject: `${prefix}OOM Kill: ${name}`,
@@ -140,7 +140,7 @@ class EventMonitor {
         return;
       }
 
-      // "Gözlənilməz" yalnız non-zero exit code üçün — exit 0 təmiz/qəsdən dayanmadır.
+      // "Unexpected" only for a non-zero exit code — exit 0 is a clean/intentional stop.
       const unexpected = exitCode !== undefined && exitCode !== '0' && exitCode !== 0;
       const verb = unexpected ? 'Crashed' : 'Stopped';
 
@@ -285,8 +285,8 @@ class EventMonitor {
       const cacheSize = diskUsage.BuildCache?.reduce((a, b) => a + (b.Size || 0), 0) || 0;
       const totalUsed = imagesSize + containersSize + volumesSize + cacheSize;
 
-      // thresholdGB Docker-in tutduğu MÜTLƏQ həcm həddidir (disk doluluğu faizi DEYİL).
-      // Əvvəllər GB/50GB nisbəti "faiz" kimi göstərilirdi və yanıldıcı idi — indi mütləq GB ilə.
+      // thresholdGB is an ABSOLUTE size limit on what Docker uses (NOT a disk-fullness percentage).
+      // Previously the GB/50GB ratio was shown as a "percent" and was misleading — now it's in absolute GB.
       const thresholdGB = 50;
       const usedGB = totalUsed / (1024 * 1024 * 1024);
 

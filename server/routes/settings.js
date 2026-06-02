@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { stmts } = require('../db');
+const { stmts, db } = require('../db');
+const { logAction } = require('../audit');
 
 // ============ VERSION ============
 const pkgVersion = require('../../package.json').version;
@@ -90,17 +91,49 @@ router.delete('/tags/:id/:tag', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ============ ACTIVITY ============
+// ============ ACTIVITY / AUDIT LOG ============
+// Filter support: type, action, server, q (search), limit. Unfiltered calls (dashboard/
+// container-detail) work as before — via parameterized SQL (no injection).
 router.get('/activity', (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 50;
-    res.json(stmts.getActivity.all(limit));
+    const { type, action, server, q } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
+    const where = [];
+    const params = [];
+    if (type)   { where.push('resource_type = ?'); params.push(type); }
+    if (action) { where.push('action = ?');        params.push(action); }
+    if (server) { where.push('server = ?');         params.push(server); }
+    if (q) {
+      // Search across all text-searchable columns shown in the audit table:
+      // resource, details, action, server, source IP and type.
+      where.push('(resource_name LIKE ? OR details LIKE ? OR resource_id LIKE ? OR action LIKE ? OR server LIKE ? OR source_ip LIKE ? OR resource_type LIKE ?)');
+      const like = `%${q}%`;
+      params.push(like, like, like, like, like, like, like);
+    }
+    const sql = `SELECT * FROM activity ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC LIMIT ?`;
+    params.push(limit);
+    res.json(db.prepare(sql).all(...params));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Distinct values for filter dropdowns (type / action / server)
+router.get('/activity/facets', (req, res) => {
+  try {
+    res.json({
+      types:   db.prepare('SELECT DISTINCT resource_type AS v FROM activity WHERE resource_type IS NOT NULL ORDER BY v').all().map(r => r.v),
+      actions: db.prepare('SELECT DISTINCT action AS v FROM activity WHERE action IS NOT NULL ORDER BY v').all().map(r => r.v),
+      servers: db.prepare("SELECT DISTINCT server AS v FROM activity WHERE server IS NOT NULL AND server != '' ORDER BY v").all().map(r => r.v),
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.delete('/activity', (req, res) => {
-  try { stmts.clearActivity.run(); res.json({ success: true }); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try {
+    stmts.clearActivity.run();
+    // Clearing the audit log is itself audited (one record remains after it's emptied)
+    logAction({ req, server: 'local', resourceType: 'system', resourceName: 'audit-log', action: 'activity_cleared' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ============ SETTINGS ============
@@ -112,10 +145,10 @@ router.get('/settings', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Yalnız UI tərəfindən idarə olunan setting açarları yazıla bilər.
-// active_server QƏSDƏN xaricdir — o, yalnız POST /api/servers/active üzərindən dəyişməlidir
-// (dockerService.setActiveServer real client switch edir). Birbaşa yazılsa DB ↔ aktiv
-// client arasında state drift yaranır.
+// Only setting keys managed by the UI can be written.
+// active_server is INTENTIONALLY excluded — it must only change via POST /api/servers/active
+// (dockerService.setActiveServer performs the real client switch). Writing it directly causes
+// state drift between the DB and the active client.
 const ALLOWED_SETTING_KEYS = new Set([
   'theme', 'refreshInterval', 'defaultView', 'sidebarCollapsed',
   'logTailLines', 'logTimestamps', 'logAutoScroll', 'logWrapLines',
@@ -125,10 +158,13 @@ const ALLOWED_SETTING_KEYS = new Set([
 router.post('/settings', (req, res) => {
   try {
     const rejected = [];
+    const changed = [];
     Object.entries(req.body).forEach(([key, value]) => {
       if (!ALLOWED_SETTING_KEYS.has(key)) { rejected.push(key); return; }
       stmts.setSetting.run(key, String(value));
+      changed.push(key);
     });
+    if (changed.length) logAction({ req, server: 'local', resourceType: 'system', resourceName: 'settings', action: 'settings_update', details: { changed } });
     res.json({ success: true, ...(rejected.length ? { rejected } : {}) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -156,13 +192,17 @@ router.post('/smtp', (req, res) => {
         stmts.setSmtpConfig.run(key, String(value));
       }
     }
+    logAction({ req, server: 'local', resourceType: 'notification', resourceName: 'SMTP', action: 'smtp_update' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.delete('/smtp', (req, res) => {
-  try { stmts.deleteSmtpConfig.run(); res.json({ success: true }); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try {
+    stmts.deleteSmtpConfig.run();
+    logAction({ req, server: 'local', resourceType: 'notification', resourceName: 'SMTP', action: 'smtp_clear' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.post('/smtp/test', async (req, res) => {
@@ -198,6 +238,7 @@ router.post('/telegram', (req, res) => {
     if (tg_chat_id !== undefined) {
       stmts.setSmtpConfig.run('tg_chat_id', String(tg_chat_id));
     }
+    logAction({ req, server: 'local', resourceType: 'notification', resourceName: 'Telegram', action: 'telegram_update' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -206,6 +247,7 @@ router.delete('/telegram', (req, res) => {
   try {
     const db = require('../db').db;
     db.prepare("DELETE FROM smtp_config WHERE key IN ('tg_token', 'tg_chat_id')").run();
+    logAction({ req, server: 'local', resourceType: 'notification', resourceName: 'Telegram', action: 'telegram_clear' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -241,6 +283,7 @@ router.put('/notifications/rules/:type', (req, res) => {
       const cd = Math.max(1, Math.min(1440, parseInt(req.body.cooldown_minutes) || 5));
       stmts.setRuleCooldown.run(cd, type);
     }
+    logAction({ req, server: 'local', resourceType: 'notification', resourceName: type, action: 'rule_update', details: req.body });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -272,7 +315,7 @@ router.post('/autostart', async (req, res) => {
     const dockerService = require('../docker');
     const enabled = req.body.enabled === true;
     const policy = await dockerService.setAutoStart(enabled);
-    stmts.logActivity.run('', 'system', 'settings', 'autostart_toggle', JSON.stringify({ policy }));
+    logAction({ req, server: 'local', resourceType: 'system', resourceName: 'autostart', action: 'autostart_toggle', details: { policy } });
     res.json({ success: true, policy });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -380,9 +423,10 @@ async function inspectSelf(docker) {
 // Apply update — pull pre-built image + restart via helper container / Yeniləmə tətbiq et
 router.post('/update/apply', async (req, res) => {
   const dockerService = require('../docker');
-  // DockGate konteyneri HƏMİŞƏ local host-dadır — aktiv (ola bilsin uzaq) client deyil,
-  // təzə local client istifadə et. Əks halda uzaq SSH host aktiv ikən self-update orada
-  // mövcud olmayan konteyneri axtarır və helper uzaq daemon-da qalxırdı.
+  // The DockGate container is ALWAYS on the local host — not the active (possibly remote)
+  // client, so use a fresh local client. Otherwise, while a remote SSH host is active, the
+  // self-update would look for a container that doesn't exist there and the helper would
+  // start on the remote daemon.
   const docker = dockerService.createLocalClient();
 
   try {
@@ -396,8 +440,8 @@ router.post('/update/apply', async (req, res) => {
     const nanoCpus = info.HostConfig?.NanoCpus || 0;
     const memory = info.HostConfig?.Memory || 0;
     const labels = info.Config?.Labels || {};
-    // Default şəbəkələr xaric — custom network-lərə yenidən qoşulmaq lazımdır,
-    // yoxsa yenilənmiş konteyner şəbəkə əlaqəsini itirir.
+    // Exclude default networks — custom networks must be reconnected,
+    // otherwise the updated container loses its network connectivity.
     const customNetworks = Object.keys(info.NetworkSettings?.Networks || {})
       .filter(n => !['bridge', 'host', 'none'].includes(n));
 
@@ -439,12 +483,12 @@ router.post('/update/apply', async (req, res) => {
     if (nanoCpus > 0) startArgs.push('--cpus', String(nanoCpus / 1e9));
     if (memory > 0) startArgs.push('--memory', String(memory));
 
-    // Labels (user + compose label-larını qoru)
+    // Labels (preserve user + compose labels)
     for (const [k, v] of Object.entries(labels)) {
       startArgs.push('--label', `${k}=${v}`);
     }
 
-    // İlk custom network-ü run zamanı təyin et (qalanları start-dan sonra connect olunur)
+    // Set the first custom network at run time (the rest are connected after start)
     if (customNetworks.length > 0) {
       startArgs.push('--network', customNetworks[0]);
     }
@@ -453,7 +497,7 @@ router.post('/update/apply', async (req, res) => {
 
     // Shell-safe: hər arqumenti ayrıca quote et
     const shellEscape = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
-    // Əlavə custom network-lərə (birincidən sonrakılar) start-dan sonra yenidən qoşul
+    // Reconnect to the additional custom networks (those after the first) after start
     const extraNetCmds = customNetworks.slice(1)
       .map(n => `; docker network connect ${shellEscape(n)} ${shellEscape(containerName)} 2>/dev/null`)
       .join('');
@@ -476,6 +520,7 @@ router.post('/update/apply', async (req, res) => {
     await helper.start();
     console.log('[Update] Helper container started, restart in ~3 seconds');
 
+    logAction({ req, server: 'local', resourceType: 'system', resourceName: containerName, action: 'self_update', details: { image: `${DOCKER_IMAGE}:latest` } });
     res.json({ success: true, message: 'Image updated. Restarting in a few seconds...' });
 
   } catch(err) {

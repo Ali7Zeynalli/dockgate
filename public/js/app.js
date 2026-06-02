@@ -11,6 +11,7 @@ const navItems = {
   terminal: { label: 'Terminal', icon: Icons.terminal },
   events: { label: 'Events', icon: Icons.events },
   system: { label: 'System', icon: Icons.system },
+  audit: { label: 'Audit Log', icon: Icons.eye },
   cleanup: { label: 'Cleanup', icon: Icons.cleanup },
   settings: { label: 'Settings', icon: Icons.settings }
 };
@@ -18,7 +19,7 @@ const navItems = {
 const navGroups = [
   { label: 'Core', items: ['dashboard', 'containers', 'images', 'volumes', 'networks'] },
   { label: 'Build', items: ['builds', 'compose'] },
-  { label: 'Monitor', items: ['logs', 'terminal', 'events', 'system'] },
+  { label: 'Monitor', items: ['logs', 'terminal', 'events', 'system', 'audit'] },
   { label: 'Manage', items: ['cleanup', 'settings'] }
 ];
 
@@ -189,7 +190,7 @@ async function initServerSwitcher() {
     const select = document.getElementById('server-select');
     if (!select) return;
 
-    // Aktiv server-i Store + localStorage-da saxla — port linkləri host-aware olsun (dockerHostUrl)
+    // Persist the active server in Store + localStorage so port links are host-aware (dockerHostUrl)
     const activeServer = data.servers.find(s => s.isActive) || data.servers.find(s => s.id === 'local');
     if (activeServer) {
       Store.set('activeServer', activeServer);
@@ -216,7 +217,7 @@ async function initServerSwitcher() {
         showToast(`Switching to ${id}...`, 'info');
         await API.post('/servers/active', { id });
         showToast(`Connected to ${id}`, 'success');
-        // Aktiv server-i yenilə — port linkləri yeni host-a uyğun olsun
+        // Update the active server so port links point to the new host
         const sel = data.servers.find(s => s.id === id);
         if (sel) {
           Store.set('activeServer', sel);

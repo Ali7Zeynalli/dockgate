@@ -53,6 +53,7 @@ const Router = {
       system: 'System',
       cleanup: 'Cleanup',
       builds: 'Builds',
+      audit: 'Audit Log',
       settings: 'Settings',
     };
 

@@ -9,6 +9,7 @@ const path = require('path');
 const dockerService = require('../docker');
 const monitorManager = require('../notifications/monitor-manager');
 const { stmts } = require('../db');
+const { logAction } = require('../audit');
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
 if (!fs.existsSync(SSH_KEYS_DIR)) {
@@ -75,14 +76,14 @@ router.post('/', (req, res) => {
       keyPath = keyFile;
     }
 
-    // password / passphrase — DB-də plain text saxlanılır (data/ volume host filesystem qoruması ilə)
+    // password / passphrase — stored as plain text in the DB (protected by the data/ volume host filesystem)
     // DockGate self-hosted istifadə üçündür — auth UI tərəfində yox
     const pwdToStore = password ? String(password) : null;
-    // passphrase yalnız key auth ilə məna kəsb edir (encrypted private key açmaq üçün)
+    // passphrase only makes sense with key auth (to unlock an encrypted private key)
     const passphraseToStore = (privateKey && passphrase) ? String(passphrase) : null;
 
     stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, pwdToStore, passphraseToStore, description);
-    stmts.logActivity.run(id, 'server', id, 'add', JSON.stringify({ host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent') }));
+    logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'add', details: { host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent') } });
 
     // Start dedicated monitor so notifications from this host start flowing immediately
     monitorManager.startMonitor(id);
@@ -99,16 +100,16 @@ router.post('/', (req, res) => {
   }
 });
 
-// PUT /api/servers/:id — mövcud SSH server-i redaktə et
+// PUT /api/servers/:id — edit an existing SSH server
 // body: { host?, port?, username?, privateKey?, passphrase?, password?, description? }
-// Yalnız göndərilən sahələr dəyişir (undefined = saxla). password/passphrase boş string = təmizlə.
+// Only the fields sent are changed (undefined = keep). An empty string for password/passphrase clears it.
 router.put('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    if (id === 'local') return res.status(400).json({ error: 'local server redaktə edilə bilməz' });
+    if (id === 'local') return res.status(400).json({ error: 'the local server cannot be edited' });
 
     const existing = stmts.getServer.get(id);
-    if (!existing) return res.status(404).json({ error: 'Server tapılmadı' });
+    if (!existing) return res.status(404).json({ error: 'Server not found' });
 
     const { host, port, username, privateKey, passphrase, password, description } = req.body || {};
 
@@ -117,7 +118,7 @@ router.put('/:id', (req, res) => {
     const newUsername = username !== undefined ? username : existing.username;
     const newDescription = description !== undefined ? description : existing.description;
 
-    // Key — yeni privateKey gəlibsə fayla yaz, əks halda mövcudu saxla
+    // Key — if a new privateKey is provided, write it to file; otherwise keep the existing one
     let keyPath = existing.key_path;
     if (privateKey) {
       const keyFile = `${id}.pem`;
@@ -125,20 +126,20 @@ router.put('/:id', (req, res) => {
       keyPath = keyFile;
     }
 
-    // undefined = dəyişmə, boş string = təmizlə, dolu = yenilə
+    // undefined = leave unchanged, empty string = clear, non-empty = update
     const newPassword = password !== undefined ? (password ? String(password) : null) : existing.password;
     const newPassphrase = passphrase !== undefined ? (passphrase ? String(passphrase) : null) : existing.passphrase;
 
     stmts.updateServer.run(newHost, newPort, newUsername, keyPath, newPassword, newPassphrase, newDescription, id);
-    stmts.logActivity.run(id, 'server', id, 'edit', JSON.stringify({ host: newHost, username: newUsername }));
+    logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'edit', details: { host: newHost, username: newUsername } });
 
-    // Aktiv serverdirsə client-i yenidən qur (config dəyişdi)
+    // If this is the active server, rebuild the client (config changed)
     const activeId = stmts.getSetting.get('active_server')?.value;
     if (activeId === id) {
-      try { dockerService.setActiveServer(id); } catch(e) { /* qoşulma sonradan yoxlanılacaq */ }
+      try { dockerService.setActiveServer(id); } catch(e) { /* connection will be verified later */ }
     }
 
-    // Monitoru config-in yeni halı ilə yenidən başlat (startMonitor öz içində stopMonitor edir)
+    // Restart the monitor with the new config (startMonitor calls stopMonitor internally)
     monitorManager.startMonitor(id);
 
     res.json({
@@ -201,7 +202,7 @@ router.post('/active', async (req, res) => {
   try {
     const { id = 'local' } = req.body || {};
     const newId = dockerService.setActiveServer(id);
-    stmts.logActivity.run('', 'server', id, 'switch', '');
+    logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'switch' });
     res.json({ success: true, activeId: newId });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -234,7 +235,7 @@ router.delete('/:id', (req, res) => {
     }
 
     stmts.deleteServer.run(id);
-    stmts.logActivity.run(id, 'server', id, 'delete', '');
+    logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'delete' });
 
     // Stop the dedicated monitor for this server
     monitorManager.stopMonitor(id);

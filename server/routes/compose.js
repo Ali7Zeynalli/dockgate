@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const dockerService = require('../docker');
-const { stmts } = require('../db');
+const { logAction } = require('../audit');
 const { execFile } = require('child_process');
 const util = require('util');
 const execFileAsync = util.promisify(execFile);
@@ -30,19 +30,19 @@ router.get('/:project', async (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Compose əmrləri host `docker compose` CLI-ni host filesystem-dəki working dir ilə işlədir —
-// bu yalnız local daemon üçün mənalıdır (uzaq SSH host-un compose faylları əlçatan deyil).
-// Hər mutasiyada əvvəlcə aktiv server-in local olduğunu yoxla.
+// Compose commands run the host `docker compose` CLI against a working dir on the host filesystem —
+// this only makes sense for the local daemon (a remote SSH host's compose files are not reachable).
+// Verify the active server is local before every mutation.
 async function runComposeAction(req, res, action, label) {
   try {
     dockerService.assertLocalActive(`Compose ${label}`);
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
     const project = await dockerService.getComposeProject(req.params.project);
     if (!project.workingDir) {
-      return res.status(400).json({ error: 'Working directory tapılmadı — proyekt tam down olunubsa label-lardan working dir oxunmur. Compose qovluğundan əl ilə qaldırın.' });
+      return res.status(400).json({ error: 'Working directory not found — once a project is fully down, the working dir cannot be read from labels. Bring it up manually from the compose folder.' });
     }
     const output = await runCompose(req.params.project, action, project.workingDir);
-    stmts.logActivity.run(req.params.project, 'compose', req.params.project, label, output);
+    logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: label, details: output });
     res.json({ success: true, output });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 }

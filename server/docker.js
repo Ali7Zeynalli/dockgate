@@ -65,14 +65,14 @@ function getActiveServerId() { return _activeServerId; }
 function isLocalActive() { return _activeServerId === 'local'; }
 
 /**
- * Host CLI tələb edən əməliyyatlar (compose, buildx, build-cache prune, self-update,
- * autostart) yalnız local daemon-a tətbiq oluna bilər — uzaq SSH host-da panel-in
- * öz konteyneri/host filesystem-i yoxdur. Aktiv server local deyilsə aydın xəta at,
- * səssizcə yanlış host-a iş görməkdənsə.
+ * Operations requiring the host CLI (compose, buildx, build-cache prune, self-update,
+ * autostart) can only run against the local daemon — a remote SSH host has no access
+ * to the panel's own container or host filesystem. If the active server isn't local,
+ * throw a clear error instead of silently acting on the wrong host.
  */
 function assertLocalActive(operation) {
   if (_activeServerId !== 'local') {
-    const err = new Error(`"${operation}" yalnız local host üçün dəstəklənir (aktiv server: ${_activeServerId}). Bu əməliyyat host CLI / host filesystem tələb edir və uzaq SSH host-a tətbiq olunmur. Əvvəlcə Local-a keçin.`);
+    const err = new Error(`"${operation}" is only supported on the local host (active server: ${_activeServerId}). This operation requires the host CLI / host filesystem and does not apply to a remote SSH host. Switch to Local first.`);
     err.statusCode = 400;
     throw err;
   }
@@ -273,7 +273,7 @@ async function pullImage(repoTag) {
 async function removeImage(id, force = false) {
   const image = docker.getImage(id);
   await image.remove({ force });
-  invalidateCache(''); // disk usage / sayğacları stale qalmasın
+  invalidateCache(''); // keep disk usage / counters from going stale
   return { success: true };
 }
 
@@ -530,7 +530,7 @@ async function pruneNetworks() {
 }
 
 async function pruneBuildCache() {
-  // Host CLI (`docker builder prune`) — yalnız local daemon-da işləyir, uzaq SSH host-a yox.
+  // Host CLI (`docker builder prune`) — only works on the local daemon, not a remote SSH host.
   assertLocalActive('Build cache prune');
   const { execFile } = require('child_process');
   return new Promise((resolve, reject) => {
@@ -565,14 +565,14 @@ async function systemPrune(volumes = false) {
   return results;
 }
 
-// NOTE: Real-time stream-lər (events/stats/logs) və container exec birbaşa
-// server/index.js-də socket handler-lərində dockerode üzərindən qurulur.
-// Əvvəlki streamEvents/streamContainerStats/streamContainerLogs/execInContainer
-// wrapper-ləri heç bir caller tərəfindən işlədilmirdi (divergensiya riski) — silindi.
+// NOTE: Real-time streams (events/stats/logs) and container exec are wired up
+// directly via dockerode in the socket handlers in server/index.js.
+// The previous streamEvents/streamContainerStats/streamContainerLogs/execInContainer
+// wrappers weren't used by any caller (divergence risk) — removed.
 
 // ============ SETTINGS / SYSTEM ============
-// DockGate öz konteynerini idarə edir (autostart, self-update) — bu HƏMİŞƏ local
-// daemon-dadır, ona görə aktiv (ola bilsin uzaq) client deyil, təzə local client işlədilir.
+// DockGate manages its own container (autostart, self-update) — this is ALWAYS on the
+// local daemon, so use a fresh local client rather than the active (possibly remote) client.
 async function getAppContainer() {
   const os = require('os');
   const hostname = os.hostname();

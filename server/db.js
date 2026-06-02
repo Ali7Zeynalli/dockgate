@@ -111,9 +111,9 @@ db.exec(`
   );
 `);
 
-// Idempotent additive migrations / İdempotent additiv migration-lar
-// "duplicate column" təkrar boot-da gözləniləndir — susdurulur; başqa xətalar log olunur ki,
-// genuine corruption/locked-DB problemləri səssiz gizlənməsin.
+// Idempotent additive migrations
+// "duplicate column" is expected on repeat boots — silenced; other errors are logged
+// so that genuine corruption / locked-DB problems aren't hidden silently.
 function migrate(sql) {
   try { db.exec(sql); }
   catch (e) {
@@ -129,7 +129,9 @@ migrate('ALTER TABLE build_history ADD COLUMN nocache INTEGER DEFAULT 0');
 migrate('ALTER TABLE build_history ADD COLUMN pull INTEGER DEFAULT 0');
 migrate('ALTER TABLE notification_log ADD COLUMN channel TEXT DEFAULT "email"');
 migrate('ALTER TABLE servers ADD COLUMN password TEXT');
-migrate('ALTER TABLE servers ADD COLUMN passphrase TEXT'); // SSH key passphrase — encrypted private key dəstəyi
+migrate('ALTER TABLE servers ADD COLUMN passphrase TEXT'); // SSH key passphrase — support for encrypted private keys
+migrate('ALTER TABLE activity ADD COLUMN server TEXT');     // audit: which host the action was performed on (multi-host context)
+migrate('ALTER TABLE activity ADD COLUMN source_ip TEXT');  // audit: where from (the only "who" signal, since there's no auth)
 
 // Default notification rules / Defolt bildiriş qaydaları
 const defaultRules = [
@@ -199,6 +201,8 @@ const stmts = {
   // Activity
   getActivity: db.prepare('SELECT * FROM activity ORDER BY created_at DESC LIMIT ?'),
   logActivity: db.prepare('INSERT INTO activity (resource_id, resource_type, resource_name, action, details) VALUES (?, ?, ?, ?, ?)'),
+  // Audit — with server + source_ip (used by logAction() in server/audit.js)
+  logActivityFull: db.prepare('INSERT INTO activity (resource_id, resource_type, resource_name, action, details, server, source_ip) VALUES (?, ?, ?, ?, ?, ?, ?)'),
   clearActivity: db.prepare('DELETE FROM activity'),
   // Retention — keep only last N records / Saxlama — yalnız son N qeydi saxla
   trimActivity: db.prepare('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 1000)'),

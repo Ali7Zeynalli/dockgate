@@ -85,8 +85,8 @@ function showToast(message, type = 'success', duration = 4000) {
     info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
   };
 
-  // icon SVG statikdir (innerHTML təhlükəsiz), amma message backend error mətni ola bilər —
-  // < > & daşıyarsa toast pozulmasın deyə textContent ilə qoyulur (XSS/format qoruması)
+  // The icon SVG is static (safe for innerHTML), but message may be backend error text —
+  // if it contains < > & we set it via textContent so the toast isn't broken (XSS/format safety)
   toast.innerHTML = icons[type] || icons.info;
   const msgSpan = document.createElement('span');
   msgSpan.textContent = message;
@@ -162,15 +162,15 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// Published port linki üçün düzgün host qaytarır.
-// Local aktiv server → DockGate-ə daxil olduğun host (window.location.hostname).
-// Uzaq SSH server → həmin server-in host-u (portlar uzaq maşındadır, localhost yox).
+// Returns the correct host for a published port link.
+// Local active server → the host you reached DockGate on (window.location.hostname).
+// Remote SSH server → that server's host (the ports live on the remote machine, not localhost).
 function dockerHostUrl(port) {
   let type, host;
   const active = (typeof Store !== 'undefined') ? Store.get('activeServer') : null;
   if (active) { type = active.type; host = active.host; }
   else {
-    // Hard-refresh fallback — switcher hələ yüklənməyibsə localStorage-dan oxu
+    // Hard-refresh fallback — if the switcher hasn't loaded yet, read from localStorage
     type = localStorage.getItem('dcc_active_type');
     host = localStorage.getItem('dcc_active_host');
   }
@@ -178,8 +178,8 @@ function dockerHostUrl(port) {
   return `http://${targetHost}:${port}`;
 }
 
-// Auto-refresh zamanı tam re-render fokus/scroll itirir. Modal açıqdırsa və ya
-// istifadəçi input/axtarışda yazırsa bu tick-i ötür. True → render-i atla.
+// A full re-render during auto-refresh loses focus/scroll. If a modal is open or
+// the user is typing in an input/search, skip this tick. True → skip the render.
 function shouldSkipAutoRefresh() {
   const modalOpen = document.querySelector('.modal-overlay');
   const ae = document.activeElement;

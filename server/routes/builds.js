@@ -8,6 +8,7 @@ const router = express.Router();
 const { exec, execFile } = require('child_process');
 const dockerService = require('../docker');
 const { stmts } = require('../db');
+const { logAction } = require('../audit');
 
 // ============ BUILD HISTORY ============
 
@@ -32,7 +33,7 @@ router.get('/docker-history', async (req, res) => {
     const hiddenRows = stmts.getHiddenBuilds.all();
     const hiddenSet = new Set(hiddenRows.map(r => r.image_id));
 
-    // Get history for each image — PARALEL (əvvəllər seriyalı await idi, çoxlu image-də ləng)
+    // Get history for each image — PARALLEL (was serial await before, slow with many images)
     const candidates = images.slice(0, 30).filter(img =>
       !hiddenSet.has(img.id) &&
       img.repoTags && img.repoTags[0] !== '<none>:<none>'
@@ -214,8 +215,9 @@ router.get('/cache', async (req, res) => {
 
 router.post('/cache/prune', async (req, res) => {
   try {
-    // pruneBuildCache host CLI işlədir → assertLocalActive 400 atır (uzaq host aktivdirsə)
+    // pruneBuildCache runs the host CLI → assertLocalActive throws 400 (if a remote host is active)
     const result = await dockerService.pruneBuildCache();
+    logAction({ req, server: 'local', resourceType: 'system', resourceName: 'build-cache', action: 'prune_build_cache', details: result });
     res.json(result);
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
@@ -226,7 +228,7 @@ router.post('/cache/prune', async (req, res) => {
 
 router.get('/builders', async (req, res) => {
   try {
-    // buildx ls host CLI-dir — yalnız local daemon. Uzaq host aktivdirsə default builder qaytar.
+    // buildx ls is a host CLI — local daemon only. If a remote host is active, return the default builder.
     if (!dockerService.isLocalActive()) {
       return res.json([{ name: 'default', driver: 'docker', status: 'remote', isDefault: true }]);
     }

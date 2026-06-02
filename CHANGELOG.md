@@ -2,6 +2,25 @@
 
 ---
 
+## [2.0.5] - 2026-06-02
+
+Adds a full audit log so you can see what was done on DockGate, on which host, and from where. Also makes the in-app audit search cover every column and standardizes all in-code comments and UI strings to English.
+
+### Added
+- **Audit Log** — every mutating operation is now recorded with its **host (server)** and **source IP** context: container/image/volume/network actions, Compose, cleanup/prune, image builds, interactive terminal sessions (session-level — keystrokes are not logged), SMTP/Telegram/notification-rule changes, settings changes, server add/edit/delete/switch, and self-update. Since there is no auth, this is a "what was done + from where" trail, not "who did it"
+- **Audit Log page** (sidebar → Monitor → Audit Log) — filter by server / type / action, full-text search, adjustable row limit, and **CSV export**
+- **`GET /api/meta/activity`** filtering (`type`, `action`, `server`, `q`, `limit`) and **`GET /api/meta/activity/facets`** for filter dropdown values
+- `server/audit.js` — central `logAction()` helper that auto-captures the active server and source IP; the `activity` table gains `server` and `source_ip` columns
+- **`trust proxy`** is enabled so the recorded source IP is correct behind a reverse proxy
+
+### Fixed
+- **Audit search now covers every column** — the search box matches resource, details, action, **server, source IP and type** (previously only resource/details/action, so searching by IP, server or type returned nothing)
+
+### Changed
+- **English everywhere** — all in-code comments and the Audit Log UI strings are now in English, matching the rest of the project
+
+---
+
 ## [2.0.4] - 2026-06-02
 
 A correctness-and-hardening release driven by a full-codebase audit. Fixes a class of multi-host bugs where local-only operations silently targeted (or failed against) the wrong daemon, repairs SSH key-passphrase support end to end, makes notifications honest, adds server editing, and bundles all front-end dependencies locally for air-gapped installs.

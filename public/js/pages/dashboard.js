@@ -382,7 +382,7 @@ Router.register('dashboard', async (content) => {
   }
 
   await render();
-  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 30000); // 30s interval; modal/yazı zamanı atlanır
+  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 30000); // 30s interval; skipped while a modal is open or while typing
 
   return () => {
     if (refreshTimer) clearInterval(refreshTimer);

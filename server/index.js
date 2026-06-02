@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const dockerService = require('./docker');
 const { stmts } = require('./db');
+const { logAction } = require('./audit');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,6 +13,9 @@ const io = new Server(server, { cors: { origin: '*' } });
 const monitorManager = require('./notifications/monitor-manager');
 
 const PORT = process.env.PORT || 7077;
+
+// For the correct source IP behind a reverse proxy (nginx, etc.) — audit source_ip is derived from this
+app.set('trust proxy', true);
 
 // Middleware
 app.use(express.json({ limit: '5mb' })); // 5mb — SSH private key upload üçün
@@ -228,8 +232,8 @@ io.on('connection', (socket) => {
       stmts.insertBuild.run(id, tag || 'untagged', dockerfile || 'Dockerfile', contextValue || '', JSON.stringify(buildargs || {}), nocache ? 1 : 0, pull ? 1 : 0, 'building');
       socket.emit('build:started', { buildId: id });
 
-      // contextType branch-ları eyni nəticə verirdi (hər ikisi contextValue) — sadələşdirildi.
-      // dockerode həm URL (git/tarball), həm də digər context dəyərlərini buildImage daxilində emal edir.
+      // The contextType branches produced the same result (both contextValue) — simplified.
+      // dockerode handles both URL (git/tarball) and other context values inside buildImage.
       const context = contextValue;
 
       const stream = await dockerService.buildImage(context, {
@@ -239,7 +243,7 @@ io.on('connection', (socket) => {
 
       let fullLog = '';
       let imageId = null;
-      let buildError = null; // strukturlaşmış error — log mətnindəki 'ERROR:' axtarışı kövrək idi
+      let buildError = null; // structured error — scanning the log text for 'ERROR:' was fragile
 
       stream.on('data', (chunk) => {
         try {
@@ -253,7 +257,7 @@ io.on('connection', (socket) => {
             } else if (json.status) {
               logLine = json.status + (json.progress ? ' ' + json.progress : '') + '\n';
             } else if (json.error || json.errorDetail) {
-              // Docker build error sahəsi — statusu bundan təyin edirik (log mətnindən yox)
+              // Docker build error field — we determine the status from this (not from the log text)
               buildError = json.error || json.errorDetail?.message || 'Build failed';
               logLine = 'ERROR: ' + buildError + '\n';
             } else if (json.aux && json.aux.ID) {
@@ -281,6 +285,8 @@ io.on('connection', (socket) => {
         stmts.appendBuildLog.run(fullLog, id);
 
         socket.emit('build:complete', { buildId: id, status, duration, imageId });
+        // Audit — builds run on local Docker
+        logAction({ socket, server: 'local', resourceType: 'build', resourceName: tag || 'untagged', action: status === 'failed' ? 'build_failed' : 'build_success', details: { buildId: id, duration } });
         if (status === 'failed') {
           // Builds run on local Docker — route the failure through the local monitor
           const localMon = monitorManager.getLocal();
@@ -422,6 +428,8 @@ io.on('connection', (socket) => {
       });
 
       socket._termStream = stream;
+      // Audit — interactive shell access into the container (session level; keystrokes are not logged)
+      logAction({ socket, resourceId: containerId, resourceType: 'container', resourceName: containerId.substring(0, 12), action: 'terminal_open', details: { shell } });
       socket.emit('terminal:ready', { containerId });
     } catch (err) {
       socket.emit('terminal:error', { containerId, error: err.message });

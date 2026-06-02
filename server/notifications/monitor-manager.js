@@ -22,17 +22,17 @@ function buildClient(server) {
     port: server.port || 22,
     username: server.username,
   };
-  // Auth iyerarxiyası: key > password > SSH agent — docker.js createSshClient ilə eyni
+  // Auth precedence: key > password > SSH agent — same as docker.js createSshClient
   if (server.key_path) {
     const keyPath = path.isAbsolute(server.key_path)
       ? server.key_path
       : path.join(SSH_KEYS_DIR, server.key_path);
     if (fs.existsSync(keyPath)) {
       opts.privateKey = fs.readFileSync(keyPath);
-      if (server.passphrase) opts.passphrase = server.passphrase; // encrypted key dəstəyi
+      if (server.passphrase) opts.passphrase = server.passphrase; // encrypted key support
     } else {
-      // Açar faylı yoxdur — monitor SSH agent/anonim auth-a düşəcək; səssiz keçmə, xəbərdar et
-      console.warn(`[monitor-manager] SSH key tapılmadı: ${keyPath} (server: ${server.id}) — agent auth-a keçilir`);
+      // Key file is missing — the monitor will fall back to SSH agent/anonymous auth; warn instead of failing silently
+      console.warn(`[monitor-manager] SSH key not found: ${keyPath} (server: ${server.id}) — falling back to agent auth`);
     }
   } else if (server.password) {
     opts.password = server.password;

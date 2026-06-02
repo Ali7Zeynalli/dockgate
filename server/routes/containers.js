@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const dockerService = require('../docker');
 const { stmts } = require('../db');
+const { logAction } = require('../audit');
 
 // List all containers
 router.get('/', async (req, res) => {
@@ -62,9 +63,9 @@ router.post('/:id/:action', async (req, res) => {
     // Log activity
     try {
       const info = await dockerService.inspectContainer(id);
-      stmts.logActivity.run(id, 'container', info.Name?.replace(/^\//, '') || id.substring(0, 12), action, JSON.stringify(req.body));
+      logAction({ req, resourceId: id, resourceType: 'container', resourceName: info.Name?.replace(/^\//, '') || id.substring(0, 12), action, details: req.body });
     } catch (e) {
-      stmts.logActivity.run(id, 'container', id.substring(0, 12), action, JSON.stringify(req.body));
+      logAction({ req, resourceId: id, resourceType: 'container', resourceName: id.substring(0, 12), action, details: req.body });
     }
     res.json(result);
   } catch (err) {
@@ -76,7 +77,7 @@ router.post('/:id/:action', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const result = await dockerService.createContainer(req.body);
-    stmts.logActivity.run(result.id, 'container', req.body.name || result.id.substring(0, 12), 'create', JSON.stringify(req.body));
+    logAction({ req, resourceId: result.id, resourceType: 'container', resourceName: req.body.name || result.id.substring(0, 12), action: 'create', details: req.body });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

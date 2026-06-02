@@ -2,7 +2,7 @@
    DOCKGATE CONTROL PANEL — DESIGN SYSTEM
    ============================================ */
 
-/* Lokal font bundle (air-gap — Google Fonts CDN tələb olunmur) */
+/* Local font bundle (air-gap — no Google Fonts CDN required) */
 @import url('/vendor/fonts/fonts.css');
 
 :root {

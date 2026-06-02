@@ -31,7 +31,7 @@ function serverRow(server) {
 }
 
 function containerDieTemplate({ containerName, containerId, image, time, exitCode, unexpected = true, server }) {
-  // unexpected=false (exit 0 / qəsdən dayanma) → neytral mavi; non-zero crash → qırmızı xəbərdarlıq
+  // unexpected=false (exit 0 / intentional stop) → neutral blue; non-zero crash → red alert
   const title = unexpected ? 'Container Crashed' : 'Container Stopped';
   const boxStyle = unexpected
     ? 'background:#fff3f3;border:1px solid #fecaca;color:#b91c1c;'
@@ -116,9 +116,9 @@ function containerOomTemplate({ containerName, containerId, image, time, server 
     ${footer()}`;
 }
 
-// thresholdGB MÜTLƏQ həcm həddidir (host disk doluluğu faizi DEYİL) — Docker-in tutduğu
-// reclaimable həcm bu həddi keçəndə xəbərdarlıq gedir. Əvvəlki versiya GB/həd nisbətini
-// "faiz" kimi göstərirdi və yanıldıcı idi; indi həcmlər mütləq GB ilə dürüst göstərilir.
+// thresholdGB is an absolute size limit (NOT a host disk-fullness percentage) — an alert
+// fires when Docker's reclaimable space exceeds this limit. The previous version showed the
+// GB/limit ratio as a "percentage", which was misleading; sizes are now reported accurately in absolute GB.
 function diskAlertTemplate({ usedSpace, usedGB, thresholdGB, breakdown = {}, server }) {
   const breakdownRows = [
     breakdown.images != null ? row('Images', breakdown.images) : '',
