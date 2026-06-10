@@ -25,7 +25,10 @@ Router.register('networks', async (content) => {
       content.innerHTML = `
         <div class="page-header">
           <div><div class="page-title">Networks</div><div class="page-subtitle">${networks.length} network(s)</div></div>
-          <div class="page-actions"><button class="btn btn-secondary" id="net-refresh">${Icons.refresh}</button></div>
+          <div class="page-actions">
+            <button class="btn btn-primary" id="net-new">${Icons.network} New Network</button>
+            <button class="btn btn-secondary" id="net-refresh">${Icons.refresh}</button>
+          </div>
         </div>
 
         ${selectedIds.size > 0 ? `
@@ -56,6 +59,7 @@ Router.register('networks', async (content) => {
                   <td>${n.internal ? '<span class="badge badge-paused">Yes</span>' : '<span class="badge badge-dead">No</span>'}</td>
                   <td><div class="td-actions">
                     <button class="btn-icon" title="Inspect" data-inspect="${n.id}">${Icons.eye}</button>
+                    <button class="btn-icon" title="Clone" data-clone="${n.id}">${Icons.copy}</button>
                     ${canRemove ? `<button class="btn-icon" title="Remove" data-remove="${n.id}" data-name="${escapeHtml(n.name)}" style="color:var(--danger)">${Icons.trash}</button>` : ''}
                   </div></td>
                 </tr>`;
@@ -66,6 +70,16 @@ Router.register('networks', async (content) => {
       `;
 
       document.getElementById('net-refresh')?.addEventListener('click', render);
+      document.getElementById('net-new')?.addEventListener('click', () => openNetworkCreate());
+
+      // Clone — prefill the create form from an existing network's config (N4)
+      content.querySelectorAll('[data-clone]').forEach(btn => btn.addEventListener('click', async () => {
+        try {
+          const d = await API.get(`/networks/${btn.dataset.clone}`);
+          const ipam = (d.IPAM?.Config || [])[0] || {};
+          openNetworkCreate({ name: d.Name + '-clone', driver: d.Driver, subnet: ipam.Subnet || '', gateway: ipam.Gateway || '', iprange: ipam.IPRange || '', internal: d.Internal, attachable: d.Attachable, ipv6: d.EnableIPv6, _clone: true });
+        } catch (e) { showToast(e.message, 'error'); }
+      }));
 
       // Single remove
       content.querySelectorAll('[data-remove]').forEach(btn => {
@@ -111,6 +125,54 @@ Router.register('networks', async (content) => {
 
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
   }
+  // Rich create form (N2) — also used by Clone (N4) with a prefilled config.
+  function openNetworkCreate(prefill = {}) {
+    const drivers = ['bridge', 'macvlan', 'ipvlan', 'overlay'];
+    const body = `<div style="display:flex;flex-direction:column;gap:10px">
+      <div class="input-group"><label>Name *</label><input class="input" id="nc-name" value="${escapeHtml(prefill.name || '')}"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="input-group" style="flex:1;min-width:140px"><label>Driver</label><select class="select" id="nc-driver">${drivers.map(d => `<option value="${d}" ${d === (prefill.driver || 'bridge') ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
+        <div class="input-group" style="flex:1;min-width:140px"><label>Subnet</label><input class="input" id="nc-subnet" placeholder="172.20.0.0/16" value="${escapeHtml(prefill.subnet || '')}"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="input-group" style="flex:1;min-width:140px"><label>Gateway</label><input class="input" id="nc-gateway" placeholder="172.20.0.1" value="${escapeHtml(prefill.gateway || '')}"></div>
+        <div class="input-group" style="flex:1;min-width:140px"><label>IP range (optional)</label><input class="input" id="nc-iprange" value="${escapeHtml(prefill.iprange || '')}"></div>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="nc-internal" ${prefill.internal ? 'checked' : ''}> Internal</label>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="nc-attachable" ${prefill.attachable ? 'checked' : ''}> Attachable</label>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="nc-ipv6" ${prefill.ipv6 ? 'checked' : ''}> IPv6</label>
+      </div>
+      ${prefill._clone ? '<div class="text-xs text-muted">Cloning copies the config — pick a different subnet to avoid an overlap conflict.</div>' : ''}
+    </div>`;
+    const m = showModal(prefill._clone ? 'Clone Network' : 'New Network', body, []);
+    const root = m.overlay;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary'; btn.textContent = 'Create';
+    root.querySelector('#modal-footer').appendChild(btn);
+    btn.addEventListener('click', async () => {
+      const name = root.querySelector('#nc-name').value.trim();
+      if (!name) { showToast('Name required', 'warning'); return; }
+      const config = {
+        Name: name,
+        Driver: root.querySelector('#nc-driver').value,
+        Internal: root.querySelector('#nc-internal').checked,
+        Attachable: root.querySelector('#nc-attachable').checked,
+        EnableIPv6: root.querySelector('#nc-ipv6').checked,
+      };
+      const subnet = root.querySelector('#nc-subnet').value.trim();
+      if (subnet) {
+        const ipamCfg = { Subnet: subnet };
+        const gw = root.querySelector('#nc-gateway').value.trim(); if (gw) ipamCfg.Gateway = gw;
+        const ipr = root.querySelector('#nc-iprange').value.trim(); if (ipr) ipamCfg.IPRange = ipr;
+        config.IPAM = { Config: [ipamCfg] };
+      }
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try { await API.post('/networks', config); showToast(`Network "${name}" created`); m.close(); render(); }
+      catch (e) { showToast(e.message, 'error', 9000); btn.disabled = false; btn.textContent = 'Create'; }
+    });
+  }
+
   // Inspect modal with live container connect/disconnect (networks themselves are immutable).
   async function openNetworkInspect(id) {
     let data, containers = [];

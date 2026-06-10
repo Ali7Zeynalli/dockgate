@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.23] - 2026-06-10
+
+### Added — "L2" networks
+- **New Network** — a rich create form (driver: bridge / macvlan / ipvlan / overlay, subnet, gateway, IP range, internal, attachable, IPv6). The Networks page had no create UI before
+- **Clone** an existing network — prefills the create form from its config (a network's driver/subnet are immutable, so cloning to a new network is the real "edit")
+
+---
+
 ## [2.0.22] - 2026-06-10
 
 ### Added — "L2" container actions
