@@ -32,6 +32,7 @@ app.use('/api/system', require('./routes/system'));
 app.use('/api/cleanup', require('./routes/cleanup'));
 app.use('/api/servers', require('./routes/servers'));
 app.use('/api/registries', require('./routes/registries'));
+app.use('/api/swarm', require('./routes/swarm'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/meta', require('./routes/settings'));
 

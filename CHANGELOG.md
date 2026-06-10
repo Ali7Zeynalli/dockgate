@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.33] - 2026-06-11
+
+### Added — Docker Swarm
+- **Swarm page** (Orchestration group) — manage the active daemon when it's a swarm manager:
+  - **Services** — list (name, image, mode, replicas, ports), **scale** replicated services, view **tasks** (per-replica state), remove
+  - **Nodes** — list (hostname, role, state, availability, leader), set availability (**activate** / **drain**)
+  - Gracefully shows "not in swarm mode" when the host isn't a manager. Uses the same dockerode client + SSH Proxy, so it works on remote hosts too
+- New endpoints under `/api/swarm` (`/`, `/services`, `/services/:id`, `/services/:id/scale`, `/services/:id/tasks`, `/nodes`, `/nodes/:id/availability`)
+
+---
+
 ## [2.0.32] - 2026-06-10
 
 ### Changed

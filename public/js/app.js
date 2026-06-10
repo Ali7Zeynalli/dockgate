@@ -4,6 +4,7 @@ const navItems = {
   containers: { label: 'Containers', icon: Icons.container },
   images: { label: 'Images', icon: Icons.image },
   templates: { label: 'App Templates', icon: Icons.template },
+  swarm: { label: 'Swarm', icon: Icons.swarm },
   builds: { label: 'Builds', icon: Icons.layers },
   volumes: { label: 'Volumes', icon: Icons.volume },
   networks: { label: 'Networks', icon: Icons.network },
@@ -20,6 +21,7 @@ const navItems = {
 const navGroups = [
   { label: 'Core', items: ['dashboard', 'containers', 'images', 'volumes', 'networks'] },
   { label: 'Build', items: ['builds', 'compose', 'templates'] },
+  { label: 'Orchestration', items: ['swarm'] },
   { label: 'Monitor', items: ['logs', 'terminal', 'events', 'audit'] },
   { label: 'Manage', items: ['registries', 'cleanup', 'settings'] }
 ];

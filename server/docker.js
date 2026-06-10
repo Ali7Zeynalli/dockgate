@@ -791,6 +791,99 @@ async function disconnectNetwork(id, container, force = false) {
   return { success: true };
 }
 
+// ============ SWARM ============
+// Swarm uses the same dockerode client (and the same SSH Proxy for remote hosts). Everything here
+// requires the active daemon to be a swarm manager; the routes gate on getSwarmInfo().active.
+
+async function getSwarmInfo() {
+  const info = await docker.info();
+  const sw = info.Swarm || {};
+  return {
+    active: sw.LocalNodeState === 'active',
+    isManager: !!sw.ControlAvailable,
+    nodeId: sw.NodeID,
+    nodes: sw.Nodes,
+    managers: sw.Managers,
+    localNodeState: sw.LocalNodeState,
+  };
+}
+
+async function listServices() {
+  const [services, tasks] = await Promise.all([docker.listServices(), docker.listTasks().catch(() => [])]);
+  return services.map(s => {
+    const spec = s.Spec || {};
+    const mode = spec.Mode || {};
+    const running = tasks.filter(t => t.ServiceID === s.ID && t.Status?.State === 'running').length;
+    return {
+      id: s.ID,
+      name: spec.Name,
+      image: (spec.TaskTemplate?.ContainerSpec?.Image || '').split('@')[0],
+      mode: mode.Global ? 'global' : 'replicated',
+      replicas: mode.Replicated ? mode.Replicated.Replicas : (mode.Global ? null : 0),
+      running,
+      ports: (spec.EndpointSpec?.Ports || []).map(p => `${p.PublishedPort || ''}:${p.TargetPort}/${(p.Protocol || 'tcp')}`),
+      createdAt: s.CreatedAt,
+    };
+  });
+}
+
+async function inspectService(id) { return await docker.getService(id).inspect(); }
+
+/** Scale a replicated service (update the desired replica count). */
+async function scaleService(id, replicas) {
+  const svc = docker.getService(id);
+  const info = await svc.inspect();
+  const spec = info.Spec;
+  if (!spec.Mode || !spec.Mode.Replicated) throw new Error('Only replicated services can be scaled');
+  spec.Mode.Replicated.Replicas = parseInt(replicas) || 0;
+  await svc.update({ ...spec, version: info.Version.Index });
+  return { success: true };
+}
+
+async function removeService(id) {
+  await docker.getService(id).remove();
+  return { success: true };
+}
+
+/** Tasks (replica instances) of a service. */
+async function listServiceTasks(id) {
+  const tasks = await docker.listTasks({ filters: { service: [id] } });
+  return tasks.map(t => ({
+    id: t.ID,
+    nodeId: t.NodeID,
+    slot: t.Slot,
+    state: t.Status?.State,
+    desiredState: t.DesiredState,
+    message: t.Status?.Err || t.Status?.Message || '',
+    image: (t.Spec?.ContainerSpec?.Image || '').split('@')[0],
+    timestamp: t.Status?.Timestamp,
+  }));
+}
+
+async function listNodes() {
+  const nodes = await docker.listNodes();
+  return nodes.map(n => ({
+    id: n.ID,
+    hostname: n.Description?.Hostname,
+    role: n.Spec?.Role,
+    availability: n.Spec?.Availability,
+    state: n.Status?.State,
+    addr: n.Status?.Addr,
+    leader: !!n.ManagerStatus?.Leader,
+    engineVersion: n.Description?.Engine?.EngineVersion,
+  }));
+}
+
+/** Set a node's availability: active | pause | drain. */
+async function updateNodeAvailability(id, availability) {
+  const node = docker.getNode(id);
+  const info = await node.inspect();
+  const spec = info.Spec || {};
+  spec.Availability = availability;
+  await node.update({ ...spec, version: info.Version.Index });
+  return { success: true };
+}
+
 // ============ SYSTEM ============
 async function getSystemInfo() {
   return cached('systemInfo', () => docker.info(), 60000); // 60s cache
@@ -1037,6 +1130,7 @@ module.exports = {
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
   listVolumeFiles, downloadVolumeFile,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
+  getSwarmInfo, listServices, inspectService, scaleService, removeService, listServiceTasks, listNodes, updateNodeAvailability,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,
   getCleanupPreview, pruneContainers, pruneImages, pruneVolumes, pruneNetworks, pruneBuildCache, systemPrune,
