@@ -91,6 +91,7 @@ Router.register('images', async (content) => {
                       <button class="btn-icon" title="Layers / history" data-layers="${img.id}">${Icons.layers}</button>
                       <button class="btn-icon" title="Tags" data-tags="${img.id}">${Icons.tag}</button>
                       <button class="btn-icon" title="Save (download tar)" data-save="${img.id}">${Icons.download}</button>
+                      <button class="btn-icon" title="Build from this (FROM)" data-buildfrom="${escapeHtml(full)}">${Icons.compose}</button>
                       <button class="btn-icon" title="Inspect" data-inspect="${img.id}">${Icons.eye}</button>
                       <button class="btn-icon" title="Remove" data-remove="${img.id}" data-name="${escapeHtml(full)}" style="color:var(--danger)">${Icons.trash}</button>
                     </div>
@@ -201,6 +202,12 @@ Router.register('images', async (content) => {
       content.querySelectorAll('[data-tags]').forEach(btn => {
         btn.addEventListener('click', () => openTagsModal(btn.dataset.tags));
       });
+
+      // Build from this image (I3) → hand off to the Builds page with an inline Dockerfile prefilled
+      content.querySelectorAll('[data-buildfrom]').forEach(btn => btn.addEventListener('click', () => {
+        sessionStorage.setItem('dgt_build_from', btn.dataset.buildfrom);
+        Router.navigate('builds');
+      }));
 
       // Save image → download tar (I2)
       content.querySelectorAll('[data-save]').forEach(btn => btn.addEventListener('click', () => {

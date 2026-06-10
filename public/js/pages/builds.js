@@ -38,7 +38,14 @@ Router.register('builds', async (content) => {
     content.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => { activeTab = btn.dataset.tab; selectedBuildId = null; selectedPanelIds.clear(); selectedDockerIds.clear(); render(); });
     });
-    document.getElementById('new-build-btn')?.addEventListener('click', showNewBuildModal);
+    document.getElementById('new-build-btn')?.addEventListener('click', () => showNewBuildModal());
+
+    // "Build from this image" entry point (set by the Images page) → open the inline Dockerfile build prefilled
+    const buildFrom = sessionStorage.getItem('dgt_build_from');
+    if (buildFrom) {
+      sessionStorage.removeItem('dgt_build_from');
+      showNewBuildModal({ inline: true, dockerfileText: `FROM ${buildFrom}\n`, tag: '' });
+    }
     document.getElementById('builds-refresh')?.addEventListener('click', render);
 
     if (activeTab === 'history') await renderHistory();
@@ -785,20 +792,27 @@ Router.register('builds', async (content) => {
   }
 
   // ============ NEW BUILD MODAL ============
-  function showNewBuildModal() {
+  function showNewBuildModal(prefill = {}) {
+    const inline = !!prefill.inline;
     showModal('New Image Build', `
       <div style="display:flex;flex-direction:column;gap:14px;">
         <div>
           <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--text-secondary);">Image Tag</label>
-          <input type="text" id="build-tag" class="input" placeholder="myapp:latest" style="width:100%;" />
+          <input type="text" id="build-tag" class="input" placeholder="myapp:latest" value="${escapeHtml(prefill.tag || '')}" style="width:100%;" />
         </div>
-        <div>
+        <div class="tab-bar" id="build-src-tabs">
+          <button class="tab-btn ${inline ? '' : 'active'}" data-src="url" type="button">Git / URL</button>
+          <button class="tab-btn ${inline ? 'active' : ''}" data-src="inline" type="button">Inline Dockerfile</button>
+        </div>
+        <div id="build-src-url" style="display:${inline ? 'none' : 'block'}">
           <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--text-secondary);">Context (Git repo URL or remote tarball)</label>
           <input type="text" id="build-context" class="input" placeholder="https://github.com/user/repo.git" style="width:100%;" />
-        </div>
-        <div>
-          <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--text-secondary);">Dockerfile path</label>
+          <label style="display:block;margin:8px 0 4px;font-size:13px;color:var(--text-secondary);">Dockerfile path</label>
           <input type="text" id="build-dockerfile" class="input" placeholder="Dockerfile" value="Dockerfile" style="width:100%;" />
+        </div>
+        <div id="build-src-inline" style="display:${inline ? 'block' : 'none'}">
+          <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--text-secondary);">Dockerfile</label>
+          <textarea id="build-dftext" class="input" spellcheck="false" placeholder="FROM alpine:latest&#10;RUN apk add --no-cache curl" style="width:100%;min-height:160px;font-family:var(--font-mono);font-size:12px;white-space:pre">${escapeHtml(prefill.dockerfileText || '')}</textarea>
         </div>
         <div style="display:flex;gap:16px;">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
@@ -813,19 +827,34 @@ Router.register('builds', async (content) => {
       { label: 'Cancel', className: 'btn btn-secondary' },
       { label: 'Start Build', className: 'btn btn-primary', onClick: startBuild },
     ]);
+    // Source tab toggle
+    const root = document.getElementById('modal-root');
+    root.querySelectorAll('#build-src-tabs .tab-btn').forEach(b => b.addEventListener('click', () => {
+      root.querySelectorAll('#build-src-tabs .tab-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      document.getElementById('build-src-url').style.display = b.dataset.src === 'url' ? 'block' : 'none';
+      document.getElementById('build-src-inline').style.display = b.dataset.src === 'inline' ? 'block' : 'none';
+    }));
   }
 
   function startBuild() {
     const tag = document.getElementById('build-tag')?.value.trim();
-    const contextValue = document.getElementById('build-context')?.value.trim();
-    const dockerfile = document.getElementById('build-dockerfile')?.value.trim() || 'Dockerfile';
     const nocache = document.getElementById('build-nocache')?.checked || false;
     const pull = document.getElementById('build-pull')?.checked || false;
+    const inlineActive = document.querySelector('#build-src-tabs .tab-btn.active')?.dataset.src === 'inline';
 
-    if (!contextValue) { showToast('Context URL is required', 'error'); return; }
-
-    activeBuild = { tag: tag || 'untagged', logs: '', startTime: Date.now() };
-    socket.emit('build:start', { contextType: 'url', contextValue, tag, dockerfile, nocache, pull });
+    if (inlineActive) {
+      const dftext = document.getElementById('build-dftext')?.value.trim();
+      if (!dftext) { showToast('Dockerfile is required', 'error'); return; }
+      activeBuild = { tag: tag || 'untagged', logs: '', startTime: Date.now() };
+      socket.emit('build:start', { contextType: 'inline', contextValue: dftext, tag, dockerfile: 'Dockerfile', nocache, pull });
+    } else {
+      const contextValue = document.getElementById('build-context')?.value.trim();
+      const dockerfile = document.getElementById('build-dockerfile')?.value.trim() || 'Dockerfile';
+      if (!contextValue) { showToast('Context URL is required', 'error'); return; }
+      activeBuild = { tag: tag || 'untagged', logs: '', startTime: Date.now() };
+      socket.emit('build:start', { contextType: 'url', contextValue, tag, dockerfile, nocache, pull });
+    }
     showToast('Build started...', 'info');
     activeTab = 'live';
     render();

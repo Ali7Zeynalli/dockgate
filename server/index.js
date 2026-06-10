@@ -238,9 +238,11 @@ io.on('connection', (socket) => {
       stmts.insertBuild.run(id, tag || 'untagged', dockerfile || 'Dockerfile', contextValue || '', JSON.stringify(buildargs || {}), nocache ? 1 : 0, pull ? 1 : 0, 'building');
       socket.emit('build:started', { buildId: id });
 
-      // The contextType branches produced the same result (both contextValue) — simplified.
-      // dockerode handles both URL (git/tarball) and other context values inside buildImage.
-      const context = contextValue;
+      // 'inline' → build from a Dockerfile typed in the UI (a generated single-file tar context);
+      // 'url' (default) → a Git repo / remote tarball that dockerode fetches.
+      const context = contextType === 'inline'
+        ? dockerService.makeDockerfileTar(contextValue)
+        : contextValue;
 
       const stream = await dockerService.buildImage(context, {
         tag, dockerfile, nocache, pull, buildargs

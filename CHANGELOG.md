@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.31] - 2026-06-10
+
+### Added — "L3" inline build
+- **Inline Dockerfile build** — the New Build dialog now has a **Git/URL** vs **Inline Dockerfile** toggle; paste/type a Dockerfile (no Git context needed) and DockGate builds it from a generated tar context
+- **Build from this** on the Images page — opens the build dialog with `FROM <image>` pre-filled, so you can extend an image into a new one (the practical answer to "edit an image", since image layers are immutable)
+
+---
+
 ## [2.0.30] - 2026-06-10
 
 ### Added — "L3" container file browser

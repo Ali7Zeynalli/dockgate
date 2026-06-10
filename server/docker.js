@@ -518,6 +518,28 @@ async function removeImage(id, force = false) {
  * Modul: Docker service
  * İstifadə: routes/builds.js, server/index.js (WebSocket)
  */
+/**
+ * Build a minimal single-file tar (USTAR) containing just a Dockerfile — the build context for
+ * an inline "build from this image" build (no Git/URL context needed). Avoids a tar dependency.
+ */
+function makeDockerfileTar(content) {
+  const data = Buffer.from(String(content || ''), 'utf8');
+  const h = Buffer.alloc(512);
+  h.write('Dockerfile', 0);                                                   // name
+  h.write('0000644\0', 100);                                                  // mode
+  h.write('0000000\0', 108);                                                  // uid
+  h.write('0000000\0', 116);                                                  // gid
+  h.write(data.length.toString(8).padStart(11, '0') + '\0', 124);             // size (octal)
+  h.write(Math.floor(Date.now() / 1000).toString(8).padStart(11, '0') + '\0', 136); // mtime
+  h.write('        ', 148);                                                    // checksum placeholder (8 spaces)
+  h.write('0', 156);                                                          // typeflag = regular file
+  h.write('ustar\x0000', 257);                                               // magic "ustar\0" + version "00"
+  let sum = 0; for (let i = 0; i < 512; i++) sum += h[i];
+  h.write(sum.toString(8).padStart(6, '0') + '\0 ', 148);                      // real checksum
+  const pad = (512 - (data.length % 512)) % 512;
+  return Buffer.concat([h, data, Buffer.alloc(pad), Buffer.alloc(1024)]);      // + two zero end-blocks
+}
+
 async function buildImage(context, options = {}) {
   const buildOpts = {
     t: options.tag || undefined,
@@ -1010,7 +1032,7 @@ module.exports = {
   containerTop, containerExecOnce, containerExportStream, updateContainer, commitContainer, recreateContainer,
   containerListFiles, containerDownloadFile, containerUpload,
   getContainerLogs, createContainer, parseStats, demuxLogs,
-  listImages, inspectImage, imageHistory, imageSaveStream, loadImage, pullImage, pushImage, removeImage, tagImage, buildImage,
+  listImages, inspectImage, imageHistory, imageSaveStream, loadImage, pullImage, pushImage, removeImage, tagImage, buildImage, makeDockerfileTar,
   registryHostOf, checkRegistryAuth,
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
   listVolumeFiles, downloadVolumeFile,
