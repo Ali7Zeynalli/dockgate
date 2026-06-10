@@ -28,6 +28,31 @@ router.get('/', async (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ---- Cluster bootstrap ----
+// Initialize the active daemon as a swarm manager (works on local or a remote SSH host)
+router.post('/init', async (req, res) => {
+  try {
+    const r = await dockerService.swarmInit((req.body || {}).advertiseAddr);
+    logAction({ req, resourceType: 'swarm', resourceName: 'swarm', action: 'init' });
+    res.json(r);
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// Leave the swarm (force required on the last manager)
+router.post('/leave', async (req, res) => {
+  try {
+    await dockerService.swarmLeave((req.body || {}).force);
+    logAction({ req, resourceType: 'swarm', resourceName: 'swarm', action: 'leave' });
+    res.json({ success: true });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// Worker & manager join tokens + manager address (for `docker swarm join` on another VPS)
+router.get('/jointokens', async (req, res) => {
+  try { await assertSwarm(); res.json(await dockerService.getSwarmJoinTokens()); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 // ---- Services ----
 router.get('/services', async (req, res) => {
   try { await assertSwarm(); res.json(await dockerService.listServices()); }
@@ -103,6 +128,15 @@ router.post('/nodes/:id/availability', async (req, res) => {
     if (!['active', 'pause', 'drain'].includes(availability)) return res.status(400).json({ error: 'availability must be active | pause | drain' });
     await dockerService.updateNodeAvailability(req.params.id, availability);
     logAction({ req, resourceType: 'node', resourceName: req.params.id.substring(0, 12), action: 'availability', details: { availability } });
+    res.json({ success: true });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// Remove a node from the swarm (drain it first; ?force=1 for an unreachable/down node)
+router.delete('/nodes/:id', async (req, res) => {
+  try {
+    await dockerService.removeNode(req.params.id, req.query.force === '1' || req.query.force === 'true');
+    logAction({ req, resourceType: 'node', resourceName: req.params.id.substring(0, 12), action: 'remove' });
     res.json({ success: true });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });

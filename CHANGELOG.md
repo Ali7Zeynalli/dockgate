@@ -2,6 +2,18 @@
 
 ---
 
+## [2.0.36] - 2026-06-11
+
+### Added — Swarm cluster bootstrap (multi-VPS)
+- **Initialize Swarm** from the UI — turn a non-swarm host into a manager (with an optional advertise IP). No SSH needed. `POST /api/swarm/init`
+- **Join a node** — shows the ready-to-run `docker swarm join` commands (worker & manager) plus the required firewall ports, so you can add other VPSes to the cluster. `GET /api/swarm/jointokens`
+- **Leave Swarm** — `POST /api/swarm/leave`
+- **Remove node** — drop a node from the cluster (Nodes tab). `DELETE /api/swarm/nodes/:id`
+
+> Point DockGate at a manager node (Local or an SSH server) and it manages the whole multi-VPS cluster — every node, service and stack — from one place.
+
+---
+
 ## [2.0.35] - 2026-06-11
 
 ### Added — Swarm stacks

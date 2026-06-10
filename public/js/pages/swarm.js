@@ -14,12 +14,24 @@ Router.register('swarm', async (content) => {
     if (!info.active) {
       content.innerHTML = `
         <div class="page-header"><div><div class="page-title">Swarm</div><div class="page-subtitle">Not in swarm mode</div></div></div>
-        <div class="empty-state" style="padding:40px">
-          <h3>This host is not a Swarm manager</h3>
-          <p class="text-muted">Run <code>docker swarm init</code> on the active host, then refresh.</p>
-          <button class="btn btn-secondary mt-2" id="sw-refresh">${Icons.refresh} Refresh</button>
+        <div class="card" style="max-width:580px;margin:24px auto;padding:24px">
+          <h3 style="margin-top:0">Initialize Swarm</h3>
+          <p class="text-muted text-sm">Turn the active host into a swarm <strong>manager</strong>. Other VPSes can then join it as workers/managers (you'll get the join command here).</p>
+          <div class="input-group" style="margin:14px 0">
+            <label>Advertise address — this host's reachable IP (optional, auto-detected if blank)</label>
+            <input class="input" id="sw-adv" placeholder="e.g. 203.0.113.10">
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" id="sw-init">${Icons.swarm} Initialize Swarm</button>
+            <button class="btn btn-secondary" id="sw-refresh">${Icons.refresh} Refresh</button>
+          </div>
         </div>`;
       document.getElementById('sw-refresh')?.addEventListener('click', render);
+      document.getElementById('sw-init')?.addEventListener('click', async () => {
+        const btn = document.getElementById('sw-init'); btn.disabled = true; btn.textContent = 'Initializing…';
+        try { await API.post('/swarm/init', { advertiseAddr: document.getElementById('sw-adv').value.trim() }); showToast('Swarm initialized'); render(); }
+        catch (e) { showToast(e.message, 'error', 10000); btn.disabled = false; btn.textContent = 'Initialize Swarm'; }
+      });
       return;
     }
 
@@ -28,7 +40,9 @@ Router.register('swarm', async (content) => {
         <div><div class="page-title">Swarm</div><div class="page-subtitle">${info.nodes || '?'} node(s) · ${info.managers || '?'} manager(s)${info.isManager ? '' : ' · worker (read-only)'}</div></div>
         <div class="page-actions">
           ${info.isManager ? `<button class="btn btn-primary" id="sw-new-svc">${Icons.play} New Service</button>` : ''}
+          ${info.isManager ? `<button class="btn btn-secondary" id="sw-join">Join a node</button>` : ''}
           <button class="btn btn-secondary" id="sw-refresh">${Icons.refresh}</button>
+          <button class="btn btn-ghost text-danger" id="sw-leave" title="Leave the swarm">Leave</button>
         </div>
       </div>
       <div class="tab-bar" id="sw-tabs">
@@ -39,6 +53,13 @@ Router.register('swarm', async (content) => {
       <div id="sw-content" style="padding-top:16px"></div>`;
     document.getElementById('sw-refresh')?.addEventListener('click', render);
     document.getElementById('sw-new-svc')?.addEventListener('click', () => openServiceCreate(render));
+    document.getElementById('sw-join')?.addEventListener('click', openJoinTokens);
+    document.getElementById('sw-leave')?.addEventListener('click', () => {
+      showConfirm('Leave Swarm', 'Leave the swarm on this host? On the last manager this destroys the swarm and all its services.', async () => {
+        try { await API.post('/swarm/leave', { force: true }); showToast('Left the swarm'); render(); }
+        catch (e) { showToast(e.message, 'error', 9000); }
+      }, true);
+    });
     document.getElementById('sw-tabs').addEventListener('click', (e) => { const b = e.target.closest('.tab-btn'); if (!b) return; tab = b.dataset.tab; render(); });
     if (tab === 'services') renderServices(); else if (tab === 'stacks') renderStacks(); else renderNodes();
   }
@@ -123,6 +144,21 @@ Router.register('swarm', async (content) => {
     }));
   }
 
+  // Join tokens (SW-bootstrap) — the ready-to-run `docker swarm join` commands for another VPS
+  async function openJoinTokens() {
+    let t;
+    try { t = await API.get('/swarm/jointokens'); }
+    catch (e) { showToast(e.message, 'error'); return; }
+    const workerCmd = `docker swarm join --token ${t.worker} ${t.address}`;
+    const managerCmd = `docker swarm join --token ${t.manager} ${t.address}`;
+    const body = `<div style="display:flex;flex-direction:column;gap:14px">
+      <div><div class="detail-label mb-1">Add a <strong>worker</strong> — run this on the other VPS:</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:12px;padding:10px">${escapeHtml(workerCmd)}</pre></div>
+      <div><div class="detail-label mb-1">Add a <strong>manager</strong> (high availability):</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:12px;padding:10px">${escapeHtml(managerCmd)}</pre></div>
+      <div class="text-xs text-muted">Open ports <code>2377/tcp</code>, <code>7946/tcp+udp</code>, <code>4789/udp</code> between the VPSes. Once a node joins, it appears in the Nodes tab and services schedule onto it automatically.</div>
+    </div>`;
+    showModal('Join a node to the swarm', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+  }
+
   // Stacks (SW-b) — list (grouped by namespace label), deploy from compose, remove
   async function renderStacks() {
     const el = document.getElementById('sw-content'); if (!el) return;
@@ -199,11 +235,18 @@ Router.register('swarm', async (content) => {
         <td style="text-align:right"><div class="td-actions">
           ${n.availability !== 'active' ? `<button class="btn btn-xs btn-secondary" data-avail="active" data-node="${n.id}">Activate</button>` : ''}
           ${n.availability !== 'drain' ? `<button class="btn btn-xs btn-secondary" data-avail="drain" data-node="${n.id}">Drain</button>` : ''}
+          ${!n.leader ? `<button class="btn btn-xs btn-ghost text-danger" data-noderm="${n.id}" data-host="${escapeHtml(n.hostname || '')}">${Icons.trash}</button>` : ''}
         </div></td>
       </tr>`).join('')}</tbody></table></div>`;
     el.querySelectorAll('[data-avail]').forEach(b => b.addEventListener('click', async () => {
       try { await API.post(`/swarm/nodes/${b.dataset.node}/availability`, { availability: b.dataset.avail }); showToast(`Node → ${b.dataset.avail}`); render(); }
       catch (e) { showToast(e.message, 'error'); }
+    }));
+    el.querySelectorAll('[data-noderm]').forEach(b => b.addEventListener('click', () => {
+      showConfirm('Remove Node', `Remove node <strong>${escapeHtml(b.dataset.host)}</strong> from the swarm? Drain it first; this forces removal of a down node.`, async () => {
+        try { await API.del(`/swarm/nodes/${b.dataset.noderm}?force=1`); showToast('Node removed'); render(); }
+        catch (e) { showToast(e.message, 'error', 8000); }
+      }, true);
     }));
   }
 

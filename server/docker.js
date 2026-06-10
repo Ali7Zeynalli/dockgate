@@ -808,6 +808,40 @@ async function getSwarmInfo() {
   };
 }
 
+/** Bootstrap the active daemon as a swarm manager. advertiseAddr = this host's reachable IP. */
+async function swarmInit(advertiseAddr) {
+  const opts = { ListenAddr: '0.0.0.0:2377' };
+  if (advertiseAddr) opts.AdvertiseAddr = advertiseAddr;
+  const nodeId = await docker.swarmInit(opts);
+  invalidateCache('');
+  return { nodeId };
+}
+
+/** Leave the swarm (force is required on the last manager). */
+async function swarmLeave(force) {
+  await docker.swarmLeave({ force: !!force });
+  invalidateCache('');
+  return { success: true };
+}
+
+/** Worker & manager join tokens + the manager address, for the `docker swarm join` command. */
+async function getSwarmJoinTokens() {
+  const [sw, info] = await Promise.all([docker.swarmInspect(), docker.info()]);
+  const mgr = (info.Swarm?.RemoteManagers || [])[0];
+  return {
+    worker: sw.JoinTokens?.Worker || '',
+    manager: sw.JoinTokens?.Manager || '',
+    address: mgr?.Addr || '', // ip:2377
+  };
+}
+
+/** Remove a node from the swarm (drain it first; force for an unreachable node). */
+async function removeNode(id, force) {
+  await docker.getNode(id).remove({ force: !!force });
+  invalidateCache('');
+  return { success: true };
+}
+
 async function listServices() {
   const [services, tasks] = await Promise.all([docker.listServices(), docker.listTasks().catch(() => [])]);
   return services.map(s => {
@@ -1188,7 +1222,7 @@ module.exports = {
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
   listVolumeFiles, downloadVolumeFile,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
-  getSwarmInfo, listServices, listStacks, inspectService, createService, updateServiceImage, getServiceLogs, scaleService, removeService, listServiceTasks, listNodes, updateNodeAvailability,
+  getSwarmInfo, swarmInit, swarmLeave, getSwarmJoinTokens, removeNode, listServices, listStacks, inspectService, createService, updateServiceImage, getServiceLogs, scaleService, removeService, listServiceTasks, listNodes, updateNodeAvailability,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,
   getCleanupPreview, pruneContainers, pruneImages, pruneVolumes, pruneNetworks, pruneBuildCache, systemPrune,
