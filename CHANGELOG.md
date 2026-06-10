@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.35] - 2026-06-11
+
+### Added — Swarm stacks
+- **Stacks tab** in Swarm — list stacks (grouped by the `com.docker.stack.namespace` label, works on any active daemon), drill into a stack's **services**, **Deploy** a stack by pasting a compose file (`docker stack deploy`, local host), and **Remove** a stack. `GET /api/swarm/stacks` · `POST /api/swarm/stacks/deploy` · `DELETE /api/swarm/stacks/:name`
+- Deploy/remove are local-host operations (use the host CLI, like Compose); listing works against the active daemon
+
+---
+
 ## [2.0.34] - 2026-06-11
 
 ### Added — Swarm service management (filling the gaps)

@@ -822,9 +822,23 @@ async function listServices() {
       replicas: mode.Replicated ? mode.Replicated.Replicas : (mode.Global ? null : 0),
       running,
       ports: (spec.EndpointSpec?.Ports || []).map(p => `${p.PublishedPort || ''}:${p.TargetPort}/${(p.Protocol || 'tcp')}`),
+      stack: spec.Labels?.['com.docker.stack.namespace'] || null, // services deployed via a stack carry this
       createdAt: s.CreatedAt,
     };
   });
+}
+
+/** Group services into stacks by the com.docker.stack.namespace label (Engine API — works remote too). */
+async function listStacks() {
+  const services = await docker.listServices();
+  const map = {};
+  for (const s of services) {
+    const ns = s.Spec?.Labels?.['com.docker.stack.namespace'];
+    if (!ns) continue;
+    if (!map[ns]) map[ns] = { name: ns, services: 0 };
+    map[ns].services++;
+  }
+  return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function inspectService(id) { return await docker.getService(id).inspect(); }
@@ -1174,7 +1188,7 @@ module.exports = {
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
   listVolumeFiles, downloadVolumeFile,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
-  getSwarmInfo, listServices, inspectService, createService, updateServiceImage, getServiceLogs, scaleService, removeService, listServiceTasks, listNodes, updateNodeAvailability,
+  getSwarmInfo, listServices, listStacks, inspectService, createService, updateServiceImage, getServiceLogs, scaleService, removeService, listServiceTasks, listNodes, updateNodeAvailability,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,
   getCleanupPreview, pruneContainers, pruneImages, pruneVolumes, pruneNetworks, pruneBuildCache, systemPrune,

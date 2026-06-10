@@ -1,7 +1,16 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
+const { execFile } = require('child_process');
+const util = require('util');
+const execFileAsync = util.promisify(execFile);
 const dockerService = require('../docker');
 const { logAction } = require('../audit');
+
+// Managed stack compose files (deploy uses the host `docker stack deploy` CLI — local only).
+const STACKS_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data'), 'stacks');
+function validateStackName(name) { return /^[a-zA-Z0-9_-]+$/.test(name || ''); }
 
 // Every endpoint except GET / requires the active daemon to be a swarm manager.
 async function assertSwarm() {
@@ -96,6 +105,42 @@ router.post('/nodes/:id/availability', async (req, res) => {
     logAction({ req, resourceType: 'node', resourceName: req.params.id.substring(0, 12), action: 'availability', details: { availability } });
     res.json({ success: true });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// ---- Stacks ----
+// Listing groups services by the stack namespace label (Engine API — works on any active daemon).
+router.get('/stacks', async (req, res) => {
+  try { await assertSwarm(); res.json(await dockerService.listStacks()); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// Deploy a stack from a pasted compose file via the host `docker stack deploy` CLI (local only, SW-b).
+router.post('/stacks/deploy', async (req, res) => {
+  try {
+    await assertSwarm();
+    dockerService.assertLocalActive('Stack deploy');
+    const { name, compose } = req.body || {};
+    if (!validateStackName(name)) return res.status(400).json({ error: 'Valid stack name required (a-z A-Z 0-9 _ -)' });
+    if (!compose || !compose.trim()) return res.status(400).json({ error: 'compose file required' });
+    const dir = path.join(STACKS_DIR, name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'docker-compose.yml'), compose);
+    const { stdout, stderr } = await execFileAsync('docker', ['stack', 'deploy', '-c', 'docker-compose.yml', '--detach=true', name], { cwd: dir, maxBuffer: 2 * 1024 * 1024 });
+    logAction({ req, resourceType: 'stack', resourceName: name, action: 'deploy' });
+    res.json({ success: true, output: stdout || stderr });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || 'Deploy failed').toString() }); }
+});
+
+// Remove a stack via the host `docker stack rm` CLI (local only, SW-b).
+router.delete('/stacks/:name', async (req, res) => {
+  try {
+    await assertSwarm();
+    dockerService.assertLocalActive('Stack remove');
+    if (!validateStackName(req.params.name)) return res.status(400).json({ error: 'Invalid stack name' });
+    const { stdout, stderr } = await execFileAsync('docker', ['stack', 'rm', req.params.name], { maxBuffer: 2 * 1024 * 1024 });
+    logAction({ req, resourceType: 'stack', resourceName: req.params.name, action: 'remove' });
+    res.json({ success: true, output: stdout || stderr });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || 'Remove failed').toString() }); }
 });
 
 module.exports = router;
