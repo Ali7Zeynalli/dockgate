@@ -41,6 +41,9 @@ Router.register('container-detail', async (content, params) => {
             ` : `
               <button class="btn btn-primary" data-action="start">${Icons.play} Start</button>
             `}
+            <button class="btn btn-secondary" id="update-btn" title="Edit CPU / memory / restart">${Icons.settings} Resources</button>
+            <button class="btn btn-secondary" id="recreate-btn" title="Recreate with a new image">${Icons.restart} Recreate</button>
+            <button class="btn btn-secondary" id="commit-btn" title="Commit to an image">${Icons.layers} Commit</button>
             <button class="btn btn-secondary" id="export-btn" title="Export filesystem as tar">${Icons.download} Export</button>
             <button class="btn btn-danger" data-action="remove">${Icons.trash} Remove</button>
           </div>
@@ -66,6 +69,67 @@ Router.register('container-detail', async (content, params) => {
         a.download = `${name}.tar`;
         document.body.appendChild(a); a.click(); a.remove();
         showToast('Export started…', 'info');
+      });
+
+      // Edit resources (C1) — live CPU / memory / restart-policy update
+      document.getElementById('update-btn')?.addEventListener('click', () => {
+        const hc = info.HostConfig || {};
+        const curCpus = hc.NanoCpus ? (hc.NanoCpus / 1e9) : '';
+        const curMem = hc.Memory ? Math.round(hc.Memory / 1024 / 1024) + 'm' : '';
+        const curRestart = hc.RestartPolicy?.Name || 'no';
+        const body = `<div style="display:flex;flex-direction:column;gap:10px">
+          <div class="input-group"><label>CPUs</label><input class="input" id="upd-cpus" placeholder="e.g. 0.5" value="${curCpus}"></div>
+          <div class="input-group"><label>Memory</label><input class="input" id="upd-mem" placeholder="e.g. 512m" value="${curMem}"></div>
+          <div class="input-group"><label>Restart policy</label><select class="select" id="upd-restart">${['no', 'unless-stopped', 'always', 'on-failure'].map(r => `<option value="${r}" ${r === curRestart ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+        </div>`;
+        showModal('Edit Resources', body, [
+          { label: 'Cancel', className: 'btn btn-secondary' },
+          { label: 'Apply', className: 'btn btn-primary', onClick: async () => {
+            try {
+              await API.post(`/containers/${id}/update`, { cpus: document.getElementById('upd-cpus').value.trim(), memory: document.getElementById('upd-mem').value.trim(), restart: document.getElementById('upd-restart').value });
+              showToast('Resources updated'); render();
+            } catch (e) { showToast(e.message, 'error', 8000); }
+          } },
+        ]);
+      });
+
+      // Recreate with a new image (C2) — preserves config, removes the old container
+      document.getElementById('recreate-btn')?.addEventListener('click', () => {
+        const curImg = info.Config?.Image || '';
+        const body = `<div style="display:flex;flex-direction:column;gap:8px">
+          <div class="text-sm text-muted">Recreates this container with the same config (env, ports, volumes, networks). Volume data is preserved; the old container is removed.</div>
+          <div class="input-group"><label>Image</label><input class="input" id="recr-img" value="${escapeHtml(curImg)}"></div>
+        </div>`;
+        const m = showModal('Recreate Container', body, []);
+        const root = m.overlay;
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary'; btn.textContent = 'Recreate';
+        root.querySelector('#modal-footer').appendChild(btn);
+        btn.addEventListener('click', async () => {
+          btn.disabled = true; btn.textContent = 'Recreating…';
+          try {
+            const r = await API.post(`/containers/${id}/recreate`, { image: root.querySelector('#recr-img').value.trim() });
+            showToast('Container recreated'); m.close();
+            Router.navigate('container-detail', { id: r.id }); // old id is gone → open the new one
+          } catch (e) { showToast(e.message, 'error', 9000); btn.disabled = false; btn.textContent = 'Recreate'; }
+        });
+      });
+
+      // Commit to an image (C4)
+      document.getElementById('commit-btn')?.addEventListener('click', () => {
+        const body = `<div style="display:flex;flex-direction:column;gap:8px">
+          <div class="input-group"><label>Repository *</label><input class="input" id="commit-repo" placeholder="myrepo/app"></div>
+          <div class="input-group"><label>Tag</label><input class="input" id="commit-tag" placeholder="latest" value="latest"></div>
+        </div>`;
+        showModal('Commit to Image', body, [
+          { label: 'Cancel', className: 'btn btn-secondary' },
+          { label: 'Commit', className: 'btn btn-primary', onClick: async () => {
+            const repo = document.getElementById('commit-repo').value.trim();
+            if (!repo) { showToast('Repository required', 'warning'); return; }
+            try { await API.post(`/containers/${id}/commit`, { repo, tag: document.getElementById('commit-tag').value.trim() || 'latest' }); showToast('Image committed'); }
+            catch (e) { showToast(e.message, 'error', 8000); }
+          } },
+        ]);
       });
 
       // Tab switching

@@ -111,6 +111,47 @@ router.post('/:id/exec', async (req, res) => {
   }
 });
 
+// Live resource / restart-policy update (C1) — body: { cpus?, memory?, restart? }
+router.post('/:id/update', async (req, res) => {
+  try {
+    const { cpus, memory, restart } = req.body || {};
+    const cfg = {};
+    if (cpus !== undefined && cpus !== '') cfg.NanoCpus = Math.round(parseFloat(cpus) * 1e9) || 0;
+    if (memory !== undefined && memory !== '') { const b = parseMemory(memory); cfg.Memory = b; cfg.MemorySwap = b; }
+    if (restart) cfg.RestartPolicy = { Name: restart, MaximumRetryCount: restart === 'on-failure' ? 3 : 0 };
+    if (!Object.keys(cfg).length) return res.status(400).json({ error: 'Nothing to update' });
+    await dockerService.updateContainer(req.params.id, cfg);
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'update', details: { cpus, memory, restart } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+// Commit the container into a new image (C4) — body: { repo, tag?, comment? }
+router.post('/:id/commit', async (req, res) => {
+  try {
+    const { repo, tag, comment } = req.body || {};
+    if (!repo) return res.status(400).json({ error: 'repo required' });
+    const r = await dockerService.commitContainer(req.params.id, { repo, tag: tag || 'latest', comment });
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'commit', details: { repo, tag: tag || 'latest' } });
+    res.json(r);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+// Recreate with (optionally) a new image — the update flow (C2). body: { image? }
+router.post('/:id/recreate', async (req, res) => {
+  try {
+    const r = await dockerService.recreateContainer(req.params.id, (req.body || {}).image);
+    logAction({ req, resourceId: r.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'recreate', details: { image: (req.body || {}).image || '(same)' } });
+    res.json(r);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
 // Container actions
 router.post('/:id/:action', async (req, res) => {
   try {

@@ -170,6 +170,64 @@ function containerExportStream(id) {
   return docker.getContainer(id).export();
 }
 
+/** Update a running container's resource limits / restart policy live (docker update). */
+async function updateContainer(id, updateConfig) {
+  await docker.getContainer(id).update(updateConfig);
+  invalidateCache('');
+  return { success: true };
+}
+
+/** Commit a container's current state into a new image (docker commit). */
+async function commitContainer(id, { repo, tag, comment, author } = {}) {
+  const r = await docker.getContainer(id).commit({ repo, tag, comment, author });
+  invalidateCache('');
+  return { id: r.Id || r.id };
+}
+
+/**
+ * Recreate a container with (optionally) a new image, preserving its config — the "update" flow.
+ * Pulls/verifies the image FIRST so the old container is only removed once the new one can be built;
+ * reconnects any secondary networks afterwards. Volume data persists (volumes are untouched).
+ * @param {string} id
+ * @param {string} [newImage] image to switch to (defaults to the current image, e.g. to pull :latest)
+ */
+async function recreateContainer(id, newImage) {
+  const info = await docker.getContainer(id).inspect();
+  const image = newImage || info.Config.Image;
+  try { await pullImage(image); } catch (e) { /* may already be local */ }
+  try { await docker.getImage(image).inspect(); }
+  catch (e) { throw new Error(`Image not available: ${image}`); } // abort before touching the old container
+
+  const name = (info.Name || '').replace(/^\//, '');
+  const config = {
+    name,
+    Image: image,
+    Hostname: info.Config.Hostname,
+    Env: info.Config.Env,
+    Cmd: info.Config.Cmd,
+    Entrypoint: info.Config.Entrypoint,
+    Labels: info.Config.Labels,
+    WorkingDir: info.Config.WorkingDir,
+    User: info.Config.User,
+    ExposedPorts: info.Config.ExposedPorts,
+    HostConfig: info.HostConfig,
+  };
+
+  await docker.getContainer(id).remove({ force: true });
+  const created = await docker.createContainer(config);
+  await created.start();
+
+  // Re-attach any networks beyond the primary one (NetworkMode is handled by HostConfig).
+  const nets = info.NetworkSettings?.Networks || {};
+  const primary = info.HostConfig?.NetworkMode;
+  for (const netName of Object.keys(nets)) {
+    if (netName === primary || ['default', 'bridge', 'host', 'none'].includes(netName)) continue;
+    try { await docker.getNetwork(netName).connect({ Container: created.id }); } catch (e) { /* best-effort */ }
+  }
+  invalidateCache('');
+  return { id: created.id };
+}
+
 async function getContainerStats(id) {
   const container = docker.getContainer(id);
   const stats = await container.stats({ stream: false });
@@ -760,7 +818,7 @@ module.exports = {
   docker, invalidateCache, createLocalClient,
   setActiveServer, getActiveServerId, isLocalActive, assertLocalActive, testServerConnection,
   listContainers, inspectContainer, getContainerStats, containerAction,
-  containerTop, containerExecOnce, containerExportStream,
+  containerTop, containerExecOnce, containerExportStream, updateContainer, commitContainer, recreateContainer,
   getContainerLogs, createContainer, parseStats, demuxLogs,
   listImages, inspectImage, imageHistory, pullImage, pushImage, removeImage, tagImage, buildImage,
   registryHostOf, checkRegistryAuth,

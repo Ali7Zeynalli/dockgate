@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.22] - 2026-06-10
+
+### Added — "L2" container actions
+- **Edit Resources** — change a container's CPU / memory limits and restart policy live (`docker update`). `POST /api/containers/:id/update`
+- **Recreate** — rebuild a container with (optionally) a new image while preserving its config (env, ports, volumes, networks); volume data is kept, secondary networks are re-attached. The "update an app" flow. `POST /api/containers/:id/recreate`
+- **Commit** — save a container's current state as a new image. `POST /api/containers/:id/commit`
+
+---
+
 ## [2.0.21] - 2026-06-10
 
 ### Added — "L1" page features
