@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.25] - 2026-06-10
+
+### Added — "L2" images
+- **Save** an image to a `.tar` download (`docker save`). `GET /api/images/:id/save`
+- **Load** images from an uploaded `.tar` (`docker load`) — air-gap transfer. `POST /api/images/load` (streamed, no buffering)
+
+> "Build from this image" (I3) is deferred to a later release — the build pipeline currently only accepts a Git/URL context, so it needs inline-Dockerfile build support first.
+
+---
+
 ## [2.0.24] - 2026-06-10
 
 ### Added — "L2" volumes

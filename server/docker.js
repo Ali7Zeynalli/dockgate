@@ -354,6 +354,24 @@ async function imageHistory(id) {
   return await docker.getImage(id).history();
 }
 
+/** I2 — save an image as a tar stream (docker save). The route pipes it to the client. */
+async function imageSaveStream(id) {
+  return await docker.getImage(id).get();
+}
+
+/** I2 — load images from a tar stream (docker load). Resolves with the load progress output. */
+async function loadImage(stream) {
+  return new Promise((resolve, reject) => {
+    docker.loadImage(stream, (err, out) => {
+      if (err) return reject(err);
+      let output = '';
+      out.on('data', d => { output += d.toString(); });
+      out.on('end', () => { invalidateCache(''); resolve({ output }); });
+      out.on('error', reject);
+    });
+  });
+}
+
 /**
  * Extract the registry host from an image reference.
  * Docker rule: the first slash-segment is a registry only if it contains '.' or ':' or is 'localhost';
@@ -872,7 +890,7 @@ module.exports = {
   listContainers, inspectContainer, getContainerStats, containerAction,
   containerTop, containerExecOnce, containerExportStream, updateContainer, commitContainer, recreateContainer,
   getContainerLogs, createContainer, parseStats, demuxLogs,
-  listImages, inspectImage, imageHistory, pullImage, pushImage, removeImage, tagImage, buildImage,
+  listImages, inspectImage, imageHistory, imageSaveStream, loadImage, pullImage, pushImage, removeImage, tagImage, buildImage,
   registryHostOf, checkRegistryAuth,
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, cloneVolume,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,

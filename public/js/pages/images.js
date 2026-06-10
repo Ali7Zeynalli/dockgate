@@ -39,6 +39,7 @@ Router.register('images', async (content) => {
           <div><div class="page-title">Images</div><div class="page-subtitle">${images.length} image(s)</div></div>
           <div class="page-actions">
             <button class="btn btn-primary" id="pull-image-btn">${Icons.download} Pull Image</button>
+            <button class="btn btn-secondary" id="load-image-btn" title="Load an image from a .tar">${Icons.layers} Load</button>
             <button class="btn btn-secondary" id="images-refresh">${Icons.refresh}</button>
           </div>
         </div>
@@ -89,6 +90,7 @@ Router.register('images', async (content) => {
                       <button class="btn-icon" title="Run container" data-run="${escapeHtml(full)}">${Icons.play}</button>
                       <button class="btn-icon" title="Layers / history" data-layers="${img.id}">${Icons.layers}</button>
                       <button class="btn-icon" title="Tags" data-tags="${img.id}">${Icons.tag}</button>
+                      <button class="btn-icon" title="Save (download tar)" data-save="${img.id}">${Icons.download}</button>
                       <button class="btn-icon" title="Inspect" data-inspect="${img.id}">${Icons.eye}</button>
                       <button class="btn-icon" title="Remove" data-remove="${img.id}" data-name="${escapeHtml(full)}" style="color:var(--danger)">${Icons.trash}</button>
                     </div>
@@ -113,6 +115,24 @@ Router.register('images', async (content) => {
           timeout = setTimeout(() => { currentSearch = searchInput.value; render(); }, 300);
         });
       }
+
+      // Load image from a .tar (I2)
+      document.getElementById('load-image-btn')?.addEventListener('click', () => {
+        const inp = document.createElement('input');
+        inp.type = 'file'; inp.accept = '.tar';
+        inp.onchange = async () => {
+          const f = inp.files && inp.files[0];
+          if (!f) return;
+          showToast(`Loading ${f.name}…`, 'info');
+          try {
+            const r = await fetch('/api/images/load', { method: 'POST', headers: { 'Content-Type': 'application/x-tar' }, body: f });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.error || 'Load failed');
+            showToast('Image loaded'); render();
+          } catch (e) { showToast(e.message, 'error', 8000); }
+        };
+        inp.click();
+      });
 
       // Pull image
       document.getElementById('pull-image-btn')?.addEventListener('click', () => {
@@ -181,6 +201,15 @@ Router.register('images', async (content) => {
       content.querySelectorAll('[data-tags]').forEach(btn => {
         btn.addEventListener('click', () => openTagsModal(btn.dataset.tags));
       });
+
+      // Save image → download tar (I2)
+      content.querySelectorAll('[data-save]').forEach(btn => btn.addEventListener('click', () => {
+        const a = document.createElement('a');
+        a.href = `/api/images/${encodeURIComponent(btn.dataset.save)}/save`;
+        a.download = 'image.tar';
+        document.body.appendChild(a); a.click(); a.remove();
+        showToast('Saving image…', 'info');
+      }));
 
       // Selection
       content.querySelectorAll('[data-select]').forEach(el => {

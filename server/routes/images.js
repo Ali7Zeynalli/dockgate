@@ -52,6 +52,19 @@ router.get('/:id/history', async (req, res) => {
   }
 });
 
+// GET /:id/save — download the image as a tar (docker save) — I2
+router.get('/:id/save', async (req, res) => {
+  try {
+    const stream = await dockerService.imageSaveStream(req.params.id);
+    res.setHeader('Content-Type', 'application/x-tar');
+    res.setHeader('Content-Disposition', `attachment; filename="${req.params.id.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 40)}.tar"`);
+    stream.on('error', () => { try { res.destroy(); } catch (e) {} });
+    stream.pipe(res);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
 router.post('/pull', async (req, res) => {
   try {
     const { image } = req.body;
@@ -59,6 +72,18 @@ router.post('/pull', async (req, res) => {
     const result = await dockerService.pullImage(image);
     logAction({ req, resourceType: 'image', resourceName: image, action: 'pull' });
     res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /load — load images from an uploaded tar (docker load) — I2.
+// The body is the raw tar stream (Content-Type isn't application/json, so it bypasses express.json).
+router.post('/load', async (req, res) => {
+  try {
+    const result = await dockerService.loadImage(req);
+    logAction({ req, resourceType: 'image', resourceName: '(loaded)', action: 'load' });
+    res.json({ success: true, output: result.output });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
