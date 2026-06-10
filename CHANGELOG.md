@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.32] - 2026-06-10
+
+### Changed
+- **System info moved into Settings** — the "System" page is no longer a sidebar item; it's now a **System** tab under Settings (engine version, OS, drivers, raw Docker API inspect). Keeps the sidebar focused on day-to-day actions
+
+---
+
 ## [2.0.31] - 2026-06-10
 
 ### Added — "L3" inline build

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.0.31-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.0.32-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.31-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.32-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~9.6k-informational?style=for-the-badge" alt="Lines of Code">
@@ -160,7 +160,7 @@ DockGate has **16 modules** organized in 4 groups, plus multi-host SSH:
 |--------|-------------|
 | **Registries** | Store credentials for private image registries (ghcr.io, GitLab, Docker Hub private, self-hosted, …). Add / edit / delete with a **Test login** that verifies against the registry before saving. Stored credentials are auto-matched by registry host, so pulling/pushing private images "just works" from Images, the Run modal, and Compose. Passwords are never shown back |
 | **Cleanup** | Preview-before-prune for: stopped containers, unused/dangling images, unused volumes, unused networks, build cache, or full system prune |
-| **Settings** | Tabbed UI: General (theme, default view, shell, **display timezone**, log timestamps, auto-start), Notifications (**Email SMTP** + **Telegram Bot**, 6 alert rules with cooldown), Notification Log, Software Update |
+| **Settings** | Tabbed UI: General (theme, default view, shell, **display timezone**, log timestamps, auto-start), Notifications (**Email SMTP** + **Telegram Bot**, 6 alert rules with cooldown), Notification Log, Software Update, **System** info |
 
 ### Multi-Host (SSH)
 

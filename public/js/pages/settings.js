@@ -30,6 +30,7 @@ Router.register('settings', async (content) => {
           <button class="tab-btn" data-tab="notifications">Notifications</button>
           <button class="tab-btn" data-tab="log">Notification Log</button>
           <button class="tab-btn" data-tab="update">Software Update</button>
+          <button class="tab-btn" data-tab="system">System</button>
         </div>
 
         <div id="settings-tab-content" style="padding-top:20px;">
@@ -56,6 +57,7 @@ Router.register('settings', async (content) => {
         else if (tab === 'notifications') renderNotifications();
         else if (tab === 'log') renderLog();
         else if (tab === 'update') renderUpdate();
+        else if (tab === 'system') renderSystemInfo(tabContent); // System info now lives here (global from system.js)
       }
 
       // ==================== GENERAL TAB ====================
