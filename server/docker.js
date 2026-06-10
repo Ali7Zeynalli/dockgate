@@ -139,6 +139,37 @@ async function inspectContainer(id) {
   return await container.inspect();
 }
 
+/** Running processes inside a container (docker top). */
+async function containerTop(id) {
+  return await docker.getContainer(id).top();
+}
+
+/**
+ * Run a one-off command in a container and return its combined output + exit code.
+ * @param {string} id
+ * @param {string[]} cmd argv array (e.g. ["ls", "-la", "/"])
+ */
+async function containerExecOnce(id, cmd) {
+  const exec = await docker.getContainer(id).exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true, Tty: false });
+  const stream = await exec.start({ hijack: true, stdin: false });
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const sink = { write: (d) => chunks.push(d) };
+    docker.modem.demuxStream(stream, sink, sink); // de-multiplex stdout/stderr into one buffer
+    stream.on('end', async () => {
+      let exitCode = null;
+      try { exitCode = (await exec.inspect()).ExitCode; } catch (e) { /* best-effort */ }
+      resolve({ output: Buffer.concat(chunks).toString('utf8'), exitCode });
+    });
+    stream.on('error', reject);
+  });
+}
+
+/** Export a container's filesystem as a tar stream (the route pipes it to the client). */
+function containerExportStream(id) {
+  return docker.getContainer(id).export();
+}
+
 async function getContainerStats(id) {
   const container = docker.getContainer(id);
   const stats = await container.stats({ stream: false });
@@ -258,6 +289,11 @@ async function listImages() {
 async function inspectImage(id) {
   const image = docker.getImage(id);
   return await image.inspect();
+}
+
+/** Layer history of an image (each layer's CreatedBy command + size). */
+async function imageHistory(id) {
+  return await docker.getImage(id).history();
 }
 
 /**
@@ -470,6 +506,20 @@ async function createNetwork(config) {
   const r = await docker.createNetwork(config);
   invalidateCache('');
   return r;
+}
+
+/** Attach a container to a network (networks are immutable, but membership is live). */
+async function connectNetwork(id, container, opts = {}) {
+  await docker.getNetwork(id).connect({ Container: container, ...opts });
+  invalidateCache('');
+  return { success: true };
+}
+
+/** Detach a container from a network. */
+async function disconnectNetwork(id, container, force = false) {
+  await docker.getNetwork(id).disconnect({ Container: container, Force: !!force });
+  invalidateCache('');
+  return { success: true };
 }
 
 // ============ SYSTEM ============
@@ -710,11 +760,12 @@ module.exports = {
   docker, invalidateCache, createLocalClient,
   setActiveServer, getActiveServerId, isLocalActive, assertLocalActive, testServerConnection,
   listContainers, inspectContainer, getContainerStats, containerAction,
+  containerTop, containerExecOnce, containerExportStream,
   getContainerLogs, createContainer, parseStats, demuxLogs,
-  listImages, inspectImage, pullImage, pushImage, removeImage, tagImage, buildImage,
+  listImages, inspectImage, imageHistory, pullImage, pushImage, removeImage, tagImage, buildImage,
   registryHostOf, checkRegistryAuth,
   listVolumes, inspectVolume, removeVolume, createVolume,
-  listNetworks, inspectNetwork, removeNetwork, createNetwork,
+  listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,
   getCleanupPreview, pruneContainers, pruneImages, pruneVolumes, pruneNetworks, pruneBuildCache, systemPrune,

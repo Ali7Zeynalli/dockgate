@@ -74,6 +74,43 @@ router.get('/:id/logs', async (req, res) => {
   }
 });
 
+// Running processes inside the container (docker top)
+router.get('/:id/top', async (req, res) => {
+  try {
+    res.json(await dockerService.containerTop(req.params.id));
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+// Export the container's filesystem as a tar download
+router.get('/:id/export', async (req, res) => {
+  try {
+    const stream = await dockerService.containerExportStream(req.params.id);
+    res.setHeader('Content-Type', 'application/x-tar');
+    res.setHeader('Content-Disposition', `attachment; filename="${req.params.id.substring(0, 12)}.tar"`);
+    stream.on('error', () => { try { res.destroy(); } catch (e) {} });
+    stream.pipe(res);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+// One-off command execution — defined BEFORE "/:id/:action" so "exec" isn't treated as an action.
+// body: { cmd: "ls -la /" | ["ls","-la","/"] }
+router.post('/:id/exec', async (req, res) => {
+  try {
+    const raw = (req.body || {}).cmd;
+    const cmd = Array.isArray(raw) ? raw : String(raw || '').trim().split(/\s+/).filter(Boolean);
+    if (!cmd.length) return res.status(400).json({ error: 'cmd required' });
+    const result = await dockerService.containerExecOnce(req.params.id, cmd);
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'exec', details: { cmd: cmd.join(' ') } });
+    res.json(result);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
 // Container actions
 router.post('/:id/:action', async (req, res) => {
   try {

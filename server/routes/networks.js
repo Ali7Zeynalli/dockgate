@@ -29,4 +29,25 @@ router.delete('/:id', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
+// Attach / detach a container to/from a network (membership is live; the network itself is immutable).
+router.post('/:id/connect', async (req, res) => {
+  try {
+    const { container } = req.body || {};
+    if (!container) return res.status(400).json({ error: 'container required' });
+    await dockerService.connectNetwork(req.params.id, container);
+    logAction({ req, resourceId: req.params.id, resourceType: 'network', resourceName: req.params.id.substring(0, 12), action: 'connect', details: { container } });
+    res.json({ success: true });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+router.post('/:id/disconnect', async (req, res) => {
+  try {
+    const { container, force } = req.body || {};
+    if (!container) return res.status(400).json({ error: 'container required' });
+    await dockerService.disconnectNetwork(req.params.id, container, force);
+    logAction({ req, resourceId: req.params.id, resourceType: 'network', resourceName: req.params.id.substring(0, 12), action: 'disconnect', details: { container } });
+    res.json({ success: true });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 module.exports = router;

@@ -43,6 +43,15 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// GET /:id/history — image layer history (each layer's command + size)
+router.get('/:id/history', async (req, res) => {
+  try {
+    res.json(await dockerService.imageHistory(req.params.id));
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
 router.post('/pull', async (req, res) => {
   try {
     const { image } = req.body;
@@ -52,6 +61,20 @@ router.post('/pull', async (req, res) => {
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /untag — remove a specific repo:tag reference (handles namespaced tags with slashes,
+// which a DELETE /:id path can't carry). Removes just the tag if the image has others.
+router.post('/untag', async (req, res) => {
+  try {
+    const { tag } = req.body || {};
+    if (!tag) return res.status(400).json({ error: 'tag required' });
+    await dockerService.removeImage(tag, false);
+    logAction({ req, resourceType: 'image', resourceName: tag, action: 'untag' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 

@@ -87,6 +87,8 @@ Router.register('images', async (content) => {
                   <td>
                     <div class="td-actions">
                       <button class="btn-icon" title="Run container" data-run="${escapeHtml(full)}">${Icons.play}</button>
+                      <button class="btn-icon" title="Layers / history" data-layers="${img.id}">${Icons.layers}</button>
+                      <button class="btn-icon" title="Tags" data-tags="${img.id}">${Icons.tag}</button>
                       <button class="btn-icon" title="Inspect" data-inspect="${img.id}">${Icons.eye}</button>
                       <button class="btn-icon" title="Remove" data-remove="${img.id}" data-name="${escapeHtml(full)}" style="color:var(--danger)">${Icons.trash}</button>
                     </div>
@@ -161,6 +163,25 @@ Router.register('images', async (content) => {
         });
       });
 
+      // Layers / history (I1)
+      content.querySelectorAll('[data-layers]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          try {
+            const hist = await API.get(`/images/${encodeURIComponent(btn.dataset.layers)}/history`);
+            const rows = (hist || []).map(h => {
+              const cmd = (h.CreatedBy || '').replace(/^\/bin\/sh -c (#\(nop\)\s*)?/, '').trim();
+              return `<tr><td class="text-xs text-muted" style="white-space:nowrap;vertical-align:top">${formatBytes(h.Size || 0)}</td><td class="td-mono text-xs" style="white-space:pre-wrap;word-break:break-all">${escapeHtml(cmd || '—')}</td></tr>`;
+            }).join('');
+            showModal('Image Layers', `<div class="table-wrapper" style="max-height:60vh;overflow:auto"><table><thead><tr><th>Size</th><th>Created By</th></tr></thead><tbody>${rows}</tbody></table></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+          } catch (e) { showToast(e.message, 'error'); }
+        });
+      });
+
+      // Tags — add / untag (I4)
+      content.querySelectorAll('[data-tags]').forEach(btn => {
+        btn.addEventListener('click', () => openTagsModal(btn.dataset.tags));
+      });
+
       // Selection
       content.querySelectorAll('[data-select]').forEach(el => {
         el.addEventListener('click', (e) => {
@@ -197,6 +218,36 @@ Router.register('images', async (content) => {
       });
 
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+  }
+
+  // Tag management — list current tags, add a new one, untag (I4)
+  async function openTagsModal(id) {
+    let info;
+    try { info = await API.get(`/images/${encodeURIComponent(id)}`); }
+    catch (e) { showToast(e.message, 'error'); return; }
+    const tags = (info.RepoTags || []).filter(t => t && t !== '<none>:<none>');
+    const body = `
+      <div class="detail-label mb-1">Current tags</div>
+      ${tags.length ? `<div style="display:flex;flex-direction:column;gap:4px">${tags.map(t => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px"><span class="td-mono text-sm" style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(t)}</span><button class="btn btn-xs btn-secondary" data-untag="${escapeHtml(t)}">Untag</button></div>`).join('')}</div>` : '<div class="text-muted text-sm">No tags.</div>'}
+      <div class="mt-2" style="display:flex;gap:6px;align-items:center">
+        <input class="input" id="newtag" placeholder="repo:tag (e.g. myrepo/app:1.0)" style="flex:1">
+        <button class="btn btn-sm btn-primary" id="addtag-btn">Add tag</button>
+      </div>`;
+    const m = showModal('Image Tags', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    root.querySelector('#addtag-btn')?.addEventListener('click', async () => {
+      const v = root.querySelector('#newtag').value.trim();
+      if (!v) { showToast('Enter repo:tag', 'warning'); return; }
+      const ci = v.lastIndexOf(':');
+      const repo = ci > 0 ? v.slice(0, ci) : v;
+      const tag = ci > 0 ? v.slice(ci + 1) : 'latest';
+      try { await API.post(`/images/${encodeURIComponent(id)}/tag`, { repo, tag }); showToast('Tag added'); m.close(); render(); openTagsModal(id); }
+      catch (e) { showToast(e.message, 'error'); }
+    });
+    root.querySelectorAll('[data-untag]').forEach(b => b.addEventListener('click', async () => {
+      try { await API.post('/images/untag', { tag: b.dataset.untag }); showToast('Untagged'); m.close(); render(); openTagsModal(id); }
+      catch (e) { showToast(e.message, 'error'); }
+    }));
   }
 
   await render();

@@ -41,12 +41,13 @@ Router.register('container-detail', async (content, params) => {
             ` : `
               <button class="btn btn-primary" data-action="start">${Icons.play} Start</button>
             `}
+            <button class="btn btn-secondary" id="export-btn" title="Export filesystem as tar">${Icons.download} Export</button>
             <button class="btn btn-danger" data-action="remove">${Icons.trash} Remove</button>
           </div>
         </div>
 
         <div class="tabs" id="detail-tabs">
-          ${['overview','logs','terminal','stats','environment','ports','volumes','network','inspect','history'].map(t =>
+          ${['overview','logs','terminal','stats','processes','environment','ports','volumes','network','inspect','history'].map(t =>
             `<button class="tab ${currentTab === t ? 'active' : ''}" data-tab="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</button>`
           ).join('')}
         </div>
@@ -57,6 +58,15 @@ Router.register('container-detail', async (content, params) => {
       // Back button
       document.getElementById('back-btn').style.transform = 'rotate(180deg)';
       document.getElementById('back-btn').addEventListener('click', () => Router.navigate('containers'));
+
+      // Export filesystem → tar download (C5)
+      document.getElementById('export-btn')?.addEventListener('click', () => {
+        const a = document.createElement('a');
+        a.href = `/api/containers/${id}/export`;
+        a.download = `${name}.tar`;
+        document.body.appendChild(a); a.click(); a.remove();
+        showToast('Export started…', 'info');
+      });
 
       // Tab switching
       content.querySelectorAll('[data-tab]').forEach(btn => {
@@ -102,6 +112,7 @@ Router.register('container-detail', async (content, params) => {
       case 'logs': renderLogs(tabContent, info); break;
       case 'terminal': renderTerminal(tabContent, info); break;
       case 'stats': renderStats(tabContent, info); break;
+      case 'processes': renderProcesses(tabContent, info); break;
       case 'environment': renderEnvironment(tabContent, info); break;
       case 'ports': renderPorts(tabContent, info); break;
       case 'volumes': renderVolumes(tabContent, info); break;
@@ -132,6 +143,13 @@ Router.register('container-detail', async (content, params) => {
         <div class="detail-item"><div class="detail-label">Working Dir</div><div class="detail-value mono">${cfg.WorkingDir || '/'}</div></div>
         <div class="detail-item"><div class="detail-label">User</div><div class="detail-value">${cfg.User || 'root'}</div></div>
       </div>
+      ${state.Health ? `
+        <div class="mt-3">
+          <div class="detail-label mb-1">Healthcheck — <span class="badge badge-${state.Health.Status === 'healthy' ? 'running' : 'created'}">${escapeHtml(state.Health.Status || '')}</span> · failing streak: ${state.Health.FailingStreak || 0}</div>
+          <div class="table-wrapper"><table><thead><tr><th>Time</th><th>Exit</th><th>Output</th></tr></thead>
+            <tbody>${(state.Health.Log || []).slice(-5).reverse().map(l => `<tr><td class="text-xs text-muted" style="white-space:nowrap">${l.Start ? formatTime(l.Start) : ''}</td><td>${l.ExitCode}</td><td class="td-mono text-xs" style="white-space:pre-wrap;word-break:break-all;max-width:420px">${escapeHtml((l.Output || '').trim().slice(0, 300))}</td></tr>`).join('') || '<tr><td colspan="3" class="text-muted text-sm">No checks yet.</td></tr>'}</tbody>
+          </table></div>
+        </div>` : ''}
       ${Object.keys(cfg.Labels || {}).length > 0 ? `
         <div class="mt-3">
           <div class="detail-label mb-1">Labels</div>
@@ -143,6 +161,44 @@ Router.register('container-detail', async (content, params) => {
           </div>
         </div>` : ''}
     `;
+  }
+
+  // Processes (top) + one-off exec (C6 + C8)
+  function renderProcesses(el, info) {
+    el.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div class="detail-label">Running processes</div><button class="btn btn-xs btn-secondary" id="proc-refresh">${Icons.refresh}</button></div>
+          <div class="table-wrapper" id="proc-table"><div class="text-muted text-sm" style="padding:12px">Loading…</div></div>
+        </div>
+        <div>
+          <div class="detail-label mb-1">Run a one-off command</div>
+          <div style="display:flex;gap:6px"><input class="input" id="exec-cmd" placeholder="e.g. ls -la /" style="flex:1"><button class="btn btn-sm btn-primary" id="exec-run">Run</button></div>
+          <pre id="exec-out" class="log-viewer" style="margin-top:6px;max-height:240px;display:none;white-space:pre-wrap"></pre>
+        </div>
+      </div>`;
+    async function loadTop() {
+      const t = document.getElementById('proc-table');
+      if (!t) return;
+      if (info.State?.Status !== 'running') { t.innerHTML = '<div class="text-muted text-sm" style="padding:12px">Container is not running.</div>'; return; }
+      try {
+        const data = await API.get(`/containers/${id}/top`);
+        const titles = data.Titles || [], procs = data.Processes || [];
+        t.innerHTML = `<table><thead><tr>${titles.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${procs.map(rw => `<tr>${rw.map(c => `<td class="text-xs td-mono">${escapeHtml(String(c))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+      } catch (e) { t.innerHTML = `<div class="text-danger text-sm" style="padding:12px">${escapeHtml(e.message)}</div>`; }
+    }
+    document.getElementById('proc-refresh')?.addEventListener('click', loadTop);
+    const runExec = async () => {
+      const cmd = document.getElementById('exec-cmd').value.trim();
+      if (!cmd) return;
+      const out = document.getElementById('exec-out');
+      out.style.display = 'block'; out.textContent = 'Running…';
+      try { const r = await API.post(`/containers/${id}/exec`, { cmd }); out.textContent = (r.output || '(no output)') + `\n[exit ${r.exitCode}]`; }
+      catch (e) { out.textContent = 'Error: ' + e.message; }
+    };
+    document.getElementById('exec-run')?.addEventListener('click', runExec);
+    document.getElementById('exec-cmd')?.addEventListener('keydown', e => { if (e.key === 'Enter') runExec(); });
+    loadTop();
   }
 
   function renderLogs(el, info) {
@@ -535,14 +591,18 @@ Router.register('container-detail', async (content, params) => {
     `;
   }
 
-  function renderNetwork(el, info) {
+  async function renderNetwork(el, info) {
     const networks = info.NetworkSettings?.Networks || {};
     const netList = Object.entries(networks);
+    const connectedNames = new Set(netList.map(([n]) => n));
+    let allNets = [];
+    try { allNets = await API.get('/networks').catch(() => []); } catch (e) {}
+    const candidates = (allNets || []).filter(n => !connectedNames.has(n.name) && !['host', 'none'].includes(n.name)).map(n => n.name);
 
     el.innerHTML = `
       <div class="table-wrapper">
         <table>
-          <thead><tr><th>Network</th><th>IP Address</th><th>Gateway</th><th>MAC Address</th></tr></thead>
+          <thead><tr><th>Network</th><th>IP Address</th><th>Gateway</th><th>MAC Address</th><th></th></tr></thead>
           <tbody>
             ${netList.map(([name, n]) => `
               <tr>
@@ -550,12 +610,27 @@ Router.register('container-detail', async (content, params) => {
                 <td class="td-mono">${n.IPAddress || '—'}</td>
                 <td class="td-mono">${n.Gateway || '—'}</td>
                 <td class="td-mono">${n.MacAddress || '—'}</td>
+                <td style="text-align:right"><button class="btn btn-xs btn-secondary" data-netdisc="${escapeHtml(name)}">Disconnect</button></td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       </div>
+      <div class="mt-2" style="display:flex;gap:6px;align-items:center">
+        <select class="select" id="net-attach-sel" style="flex:1"><option value="">Connect to a network…</option>${candidates.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}</select>
+        <button class="btn btn-sm btn-primary" id="net-attach-btn">Connect</button>
+      </div>
     `;
+    el.querySelector('#net-attach-btn')?.addEventListener('click', async () => {
+      const net = el.querySelector('#net-attach-sel').value;
+      if (!net) { showToast('Pick a network', 'warning'); return; }
+      try { await API.post(`/networks/${net}/connect`, { container: id }); showToast(`Connected to ${net}`); render(); }
+      catch (e) { showToast(e.message, 'error'); }
+    });
+    el.querySelectorAll('[data-netdisc]').forEach(b => b.addEventListener('click', async () => {
+      try { await API.post(`/networks/${b.dataset.netdisc}/disconnect`, { container: id, force: true }); showToast(`Disconnected from ${b.dataset.netdisc}`); render(); }
+      catch (e) { showToast(e.message, 'error'); }
+    }));
   }
 
   function renderInspect(el, info) {

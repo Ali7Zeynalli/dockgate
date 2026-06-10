@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.0.20-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.0.21-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.20-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.21-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~9.6k-informational?style=for-the-badge" alt="Lines of Code">
@@ -131,7 +131,7 @@ DockGate has **16 modules** organized in 4 groups, plus multi-host SSH:
 |--------|-------------|
 | **Dashboard** | Real-time overview — container counts, disk usage, compose stacks, favorites, activity log, and smart insights (warns about stopped containers older than 7 days, unused images wasting disk, dangling layers) |
 | **Containers** | Full fleet management — **Run Container** (launch a new container from any image via a guided form: ports, volumes, env, restart policy, network, CPU/memory limits; with **Docker Hub search**, volume autocomplete/presets and bulk **Paste .env**), group by compose project, bulk actions (start/stop/restart/remove multiple), tags, notes, favorites, search by name/image/ID/port, table or card view |
-| **Container Detail** | Deep inspect with **10 tabs**: Overview, Logs, Terminal, Stats (live CPU/memory charts), Environment, Ports, Volumes, Network, Inspect (raw JSON), History |
+| **Container Detail** | Deep inspect with **11 tabs**: Overview (+ healthcheck), Logs, Terminal, Stats (live CPU/memory charts), **Processes** (top + one-off exec), Environment, Ports, Volumes, Network (+ connect/disconnect), Inspect (raw JSON), History. Plus **Export** filesystem to tar |
 | **Images** | Pull (+ **Search Docker Hub**), **push to a private registry**, **Run** (launch a container straight from the image), remove, tag — filter by in-use, unused, or dangling |
 | **Volumes** | Track usage, see which containers are attached, prune unused |
 | **Networks** | View all network types (bridge, host, overlay, macvlan, none), subnet/gateway info, container counts |
@@ -322,6 +322,9 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | POST | `/api/containers/:id/:action` | Execute: `start`, `stop`, `restart`, `kill`, `pause`, `unpause`, `remove`, `rename` |
 | POST | `/api/containers` | Create container (raw dockerode config) |
 | POST | `/api/containers/run` | Guided run — body: `{ image, name?, pull?, ports[], volumes[], env[], restart, network, cmd, cpus, memory }` → pulls if missing, creates, starts |
+| GET | `/api/containers/:id/top` | Running processes inside the container |
+| POST | `/api/containers/:id/exec` | One-off command — body: `{ cmd }` → `{ output, exitCode }` |
+| GET | `/api/containers/:id/export` | Stream the container filesystem as a tar download |
 
 ### Images
 
@@ -330,6 +333,8 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | GET | `/api/images` | List all images (with in-use/dangling flags) |
 | GET | `/api/images/:id` | Inspect image |
 | GET | `/api/images/search?q=` | Search Docker Hub (server-side proxy) — returns `{ name, description, stars, official }[]` |
+| GET | `/api/images/:id/history` | Image layer history (command + size per layer) |
+| POST | `/api/images/untag` | Remove a specific `repo:tag` reference — body: `{ tag }` |
 | POST | `/api/images/pull` | Pull image — body: `{ "image": "nginx:latest" }`. Auto-authenticates if a matching registry credential is stored |
 | POST | `/api/images/push` | Push a tagged local image to its registry — body: `{ "repoTag": "ghcr.io/owner/app:1.0" }`. Credential auto-matched by host |
 | DELETE | `/api/images/:id` | Remove image (`?force=true`) |
@@ -367,6 +372,8 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | GET | `/api/networks/:id` | Inspect network |
 | POST | `/api/networks` | Create network |
 | DELETE | `/api/networks/:id` | Remove network |
+| POST | `/api/networks/:id/connect` | Attach a container — body: `{ container }` |
+| POST | `/api/networks/:id/disconnect` | Detach a container — body: `{ container, force? }` |
 
 ### Compose
 

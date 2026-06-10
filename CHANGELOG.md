@@ -2,6 +2,22 @@
 
 ---
 
+## [2.0.21] - 2026-06-10
+
+### Added — "L1" page features
+- **Networks**
+  - **Connect / disconnect a container** to/from a network, live, from the inspect modal (which now also shows subnet & gateway). Networks themselves are immutable in Docker, so this membership control is the real "edit". `POST /api/networks/:id/connect` · `POST /api/networks/:id/disconnect`
+- **Images**
+  - **Layers / history** viewer (each layer's command + size). `GET /api/images/:id/history`
+  - **Tag management** — add a tag or untag a specific reference. `POST /api/images/untag`
+- **Container detail**
+  - New **Processes** tab — live process list (`top`) + a **one-off command** runner. `GET /api/containers/:id/top` · `POST /api/containers/:id/exec`
+  - **Export** the container filesystem as a `.tar` download. `GET /api/containers/:id/export`
+  - **Healthcheck** detail in Overview (status, failing streak, last check outputs)
+  - **Connect / disconnect networks** directly from the Network tab
+
+---
+
 ## [2.0.20] - 2026-06-10
 
 ### Changed

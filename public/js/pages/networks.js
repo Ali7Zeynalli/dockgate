@@ -77,29 +77,9 @@ Router.register('networks', async (content) => {
         });
       });
 
-      // Inspect
+      // Inspect (+ live connect/disconnect)
       content.querySelectorAll('[data-inspect]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          try {
-            const data = await API.get(`/networks/${btn.dataset.inspect}`);
-            const containers = Object.entries(data.Containers || {});
-            showModal('Network Details', `
-              <div class="detail-grid" style="grid-template-columns:1fr">
-                <div class="detail-item"><div class="detail-label">Name</div><div class="detail-value">${escapeHtml(data.Name)}</div></div>
-                <div class="detail-item"><div class="detail-label">Driver</div><div class="detail-value">${data.Driver}</div></div>
-                <div class="detail-item"><div class="detail-label">Scope</div><div class="detail-value">${data.Scope}</div></div>
-                <div class="detail-item"><div class="detail-label">Internal</div><div class="detail-value">${data.Internal ? 'Yes' : 'No'}</div></div>
-                <div class="detail-item"><div class="detail-label">IPv6</div><div class="detail-value">${data.EnableIPv6 ? 'Enabled' : 'Disabled'}</div></div>
-              </div>
-              ${containers.length > 0 ? `
-                <div class="mt-2"><div class="detail-label mb-1">Connected Containers</div>
-                  <div class="table-wrapper"><table><thead><tr><th>Name</th><th>IPv4</th><th>MAC</th></tr></thead>
-                    <tbody>${containers.map(([, c]) => `<tr><td class="td-mono">${escapeHtml(c.Name)}</td><td class="td-mono">${c.IPv4Address || '—'}</td><td class="td-mono">${c.MacAddress || '—'}</td></tr>`).join('')}</tbody>
-                  </table></div>
-                </div>` : ''}
-            `, [{ label: 'Close', className: 'btn btn-secondary' }]);
-          } catch (err) { showToast(err.message, 'error'); }
-        });
+        btn.addEventListener('click', () => openNetworkInspect(btn.dataset.inspect));
       });
 
       // Selection — only removable networks can be selected
@@ -131,6 +111,48 @@ Router.register('networks', async (content) => {
 
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
   }
+  // Inspect modal with live container connect/disconnect (networks themselves are immutable).
+  async function openNetworkInspect(id) {
+    let data, containers = [];
+    try { [data, containers] = await Promise.all([API.get(`/networks/${id}`), API.get('/containers').catch(() => [])]); }
+    catch (err) { showToast(err.message, 'error'); return; }
+    const connected = Object.entries(data.Containers || {}); // [endpointId, { Name, IPv4Address, ... }]
+    const connectedNames = new Set(connected.map(([, c]) => c.Name));
+    const ipam = (data.IPAM?.Config || [])[0] || {};
+    const candidates = (containers || []).filter(c => !connectedNames.has(c.name)).map(c => c.name);
+    const canAttach = !['host', 'none'].includes(data.Name);
+    const body = `
+      <div class="detail-grid" style="grid-template-columns:1fr 1fr">
+        <div class="detail-item"><div class="detail-label">Name</div><div class="detail-value">${escapeHtml(data.Name)}</div></div>
+        <div class="detail-item"><div class="detail-label">Driver</div><div class="detail-value">${data.Driver}</div></div>
+        <div class="detail-item"><div class="detail-label">Scope</div><div class="detail-value">${data.Scope}</div></div>
+        <div class="detail-item"><div class="detail-label">Internal</div><div class="detail-value">${data.Internal ? 'Yes' : 'No'}</div></div>
+        <div class="detail-item"><div class="detail-label">Subnet</div><div class="detail-value td-mono">${ipam.Subnet || '—'}</div></div>
+        <div class="detail-item"><div class="detail-label">Gateway</div><div class="detail-value td-mono">${ipam.Gateway || '—'}</div></div>
+      </div>
+      <div class="mt-2"><div class="detail-label mb-1">Connected Containers</div>
+        ${connected.length ? `<div class="table-wrapper"><table><thead><tr><th>Name</th><th>IPv4</th><th></th></tr></thead><tbody>
+          ${connected.map(([, c]) => `<tr><td class="td-mono">${escapeHtml(c.Name)}</td><td class="td-mono">${c.IPv4Address || '—'}</td><td style="text-align:right">${canAttach ? `<button class="btn btn-xs btn-secondary" data-disc="${escapeHtml(c.Name)}">Disconnect</button>` : ''}</td></tr>`).join('')}
+        </tbody></table></div>` : '<div class="text-muted text-sm">No containers connected.</div>'}
+      </div>
+      ${canAttach ? `<div class="mt-2" style="display:flex;gap:6px;align-items:center">
+        <select class="select" id="net-conn-sel" style="flex:1"><option value="">Connect a container…</option>${candidates.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}</select>
+        <button class="btn btn-sm btn-primary" id="net-conn-btn">Connect</button>
+      </div>` : ''}`;
+    const m = showModal('Network: ' + escapeHtml(data.Name), body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    root.querySelector('#net-conn-btn')?.addEventListener('click', async () => {
+      const c = root.querySelector('#net-conn-sel').value;
+      if (!c) { showToast('Pick a container', 'warning'); return; }
+      try { await API.post(`/networks/${id}/connect`, { container: c }); showToast(`Connected ${c}`); m.close(); render(); openNetworkInspect(id); }
+      catch (e) { showToast(e.message, 'error'); }
+    });
+    root.querySelectorAll('[data-disc]').forEach(b => b.addEventListener('click', async () => {
+      try { await API.post(`/networks/${id}/disconnect`, { container: b.dataset.disc, force: true }); showToast(`Disconnected ${b.dataset.disc}`); m.close(); render(); openNetworkInspect(id); }
+      catch (e) { showToast(e.message, 'error'); }
+    }));
+  }
+
   await render();
   // Auto-refresh (skips while a modal is open or an input is focused) + cleanup on navigation
   refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 15000);
