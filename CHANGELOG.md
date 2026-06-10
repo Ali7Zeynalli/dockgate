@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.20] - 2026-06-10
+
+### Changed
+- **Compose guided "Add service" is now row-based** — the ports, volumes and environment inputs use the same repeatable-row UX as the Run Container modal: per-row fields, volume host autocomplete (existing volumes) + presets (docker.sock / ./data / ./config), **Paste .env** bulk import, and image-declared env-key suggestions. The service block is still generated into the editable YAML. The editor's action button also moved to the sticky modal footer
+
+---
+
 ## [2.0.19] - 2026-06-10
 
 ### Added
