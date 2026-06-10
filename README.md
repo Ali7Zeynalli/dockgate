@@ -5,7 +5,7 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.14-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
-  <img src="https://img.shields.io/badge/Lines-~5.3k-informational?style=for-the-badge" alt="Lines of Code">
+  <img src="https://img.shields.io/badge/Lines-~9.6k-informational?style=for-the-badge" alt="Lines of Code">
 </p>
 
 <h1 align="center">DockGate</h1>
@@ -33,11 +33,14 @@
 
 DockGate is a browser-based Docker control panel that runs as a single container. It connects directly to your Docker socket (`/var/run/docker.sock`) and gives you full control over containers, images, volumes, networks, and compose stacks — all from a clean, macOS-inspired UI.
 
+Beyond inspecting, DockGate also **does**: run a new container from any image with a guided form, create and edit compose projects in the browser, store private-registry credentials (auto-used on pull/push), and manage **remote Docker hosts over SSH** — all from the same panel.
+
 - **Zero config** — no `.env` files, API keys, or accounts
 - **Ultra-lightweight** — ~30-80 MB RAM, <5% CPU at idle
 - **Real-time** — live logs, stats, events, and terminal via WebSocket
+- **Multi-host** — manage local + remote SSH daemons from one place
 - **Self-contained** — everything runs inside a single Docker container
-- **~5,300 lines of code** — easy to read, easy to contribute
+- **~9,600 lines of JavaScript** — easy to read, easy to contribute
 
 ---
 
@@ -120,16 +123,16 @@ docker compose pull && docker compose up -d
 
 ## Features
 
-DockGate has **14 modules** organized in 4 groups:
+DockGate has **15 modules** organized in 4 groups, plus multi-host SSH:
 
 ### Core
 
 | Module | Description |
 |--------|-------------|
 | **Dashboard** | Real-time overview — container counts, disk usage, compose stacks, favorites, activity log, and smart insights (warns about stopped containers older than 7 days, unused images wasting disk, dangling layers) |
-| **Containers** | Full fleet management — group by compose project, bulk actions (start/stop/restart/remove multiple), tags, notes, favorites, search by name/image/ID/port, table or card view |
+| **Containers** | Full fleet management — **Run Container** (launch a new container from any image via a guided form: ports, volumes, env, restart policy, network, CPU/memory limits), group by compose project, bulk actions (start/stop/restart/remove multiple), tags, notes, favorites, search by name/image/ID/port, table or card view |
 | **Container Detail** | Deep inspect with **10 tabs**: Overview, Logs, Terminal, Stats (live CPU/memory charts), Environment, Ports, Volumes, Network, Inspect (raw JSON), History |
-| **Images** | Pull, remove, tag — filter by in-use, unused, or dangling |
+| **Images** | Pull, **push to a private registry**, **Run** (launch a container straight from the image), remove, tag — filter by in-use, unused, or dangling |
 | **Volumes** | Track usage, see which containers are attached, prune unused |
 | **Networks** | View all network types (bridge, host, overlay, macvlan, none), subnet/gateway info, container counts |
 
@@ -138,7 +141,7 @@ DockGate has **14 modules** organized in 4 groups:
 | Module | Description |
 |--------|-------------|
 | **Builds** | Docker Desktop-style build management — Build History (Docker image layer history with expandable steps, bulk selection & deletion), Build Cache (grouped by image name), Builders (buildx instances), real-time build streaming, build detail with Info/Source/Logs/History tabs |
-| **Compose** | Auto-discover projects via `com.docker.compose.project` labels. Stack actions: up, down, restart, pull |
+| **Compose** | Auto-discover projects via `com.docker.compose.project` labels. Stack actions: up, down, restart, pull. **Create & edit projects in the UI** — a raw `docker-compose.yml` editor plus a guided "add service" builder; managed files are stored under `data/compose/<project>/`, validated with `docker compose config`, then brought up |
 
 ### Monitor
 
@@ -148,13 +151,15 @@ DockGate has **14 modules** organized in 4 groups:
 | **Terminal** | Interactive xterm.js shell with full PTY support — auto-detects bash/sh/zsh, resizable, copy/paste |
 | **Events** | Live Docker daemon event stream — create, start, die, destroy, pull, mount, etc. Color-coded by type |
 | **System** | Docker version, API version, OS, kernel, CPU count, total RAM, storage driver, interactive disk usage charts |
+| **Audit Log** | History of every mutation performed through DockGate — *what* was done, on *which host*, and *from where* (source IP). Filter by server/type/action, full-text search, and CSV export. Since there is no auth, this is a "what + from where" audit, not "who" |
 
 ### Manage
 
 | Module | Description |
 |--------|-------------|
+| **Registries** | Store credentials for private image registries (ghcr.io, GitLab, Docker Hub private, self-hosted, …). Add / edit / delete with a **Test login** that verifies against the registry before saving. Stored credentials are auto-matched by registry host, so pulling/pushing private images "just works" from Images, the Run modal, and Compose. Passwords are never shown back |
 | **Cleanup** | Preview-before-prune for: stopped containers, unused/dangling images, unused volumes, unused networks, build cache, or full system prune |
-| **Settings** | Tabbed UI: General (theme, default view, shell, log timestamps, auto-start), Notifications (**Email SMTP** + **Telegram Bot**, 6 alert rules with cooldown), Notification Log, Software Update |
+| **Settings** | Tabbed UI: General (theme, default view, shell, **display timezone**, log timestamps, auto-start), Notifications (**Email SMTP** + **Telegram Bot**, 6 alert rules with cooldown), Notification Log, Software Update |
 
 ### Multi-Host (SSH)
 
@@ -189,6 +194,7 @@ Browser (Vanilla JS + xterm.js + Chart.js)
     │                   ├── /api/volumes
     │                   ├── /api/networks
     │                   ├── /api/compose
+    │                   ├── /api/registries  (private registry credentials)
     │                   ├── /api/cleanup
     │                   ├── /api/system
     │                   └── /api/meta
@@ -211,9 +217,10 @@ dockgate/
 ├── docker-compose.yml            # Deployment with resource limits
 ├── package.json                  # 5 deps + 1 optional (node-pty, unused at runtime)
 ├── server/
-│   ├── index.js                  # Express + Socket.IO server (257 lines)
-│   ├── docker.js                 # Docker API wrapper via dockerode (516 lines)
+│   ├── index.js                  # Express + Socket.IO server (~486 lines)
+│   ├── docker.js                 # Docker API wrapper via dockerode — local/SSH client hot-swap (~722 lines)
 │   ├── db.js                     # SQLite schema & prepared statements
+│   ├── audit.js                  # Central audit-log helper (server + source-IP context)
 │   ├── notifications/
 │   │   ├── mailer.js             # SMTP email sender via nodemailer
 │   │   ├── telegram.js           # Telegram Bot API sender (no deps)
@@ -222,11 +229,12 @@ dockgate/
 │   │   └── monitor-manager.js    # Multi-host monitor registry (one monitor per server)
 │   └── routes/
 │       ├── servers.js            # SSH multi-host management (add/edit/test/switch/remove)
-│       ├── containers.js         # Container CRUD & actions
-│       ├── images.js             # Image pull/remove/tag
+│       ├── registries.js         # Private registry credential CRUD + login test
+│       ├── containers.js         # Container CRUD, actions & guided run
+│       ├── images.js             # Image pull/push/remove/tag
 │       ├── volumes.js            # Volume CRUD
 │       ├── networks.js           # Network CRUD
-│       ├── compose.js            # Compose stack orchestration
+│       ├── compose.js            # Compose stack orchestration + create/edit managed projects
 │       ├── builds.js             # Build cache list & prune
 │       ├── cleanup.js            # Prune operations
 │       ├── system.js             # System info/version/df
@@ -242,11 +250,12 @@ dockgate/
 │       ├── app.js                # Sidebar & navigation
 │       ├── router.js             # Client-side SPA router
 │       ├── store.js              # Simple reactive state store
-│       ├── api.js                # HTTP client + Socket.IO + UI utilities
-│       └── pages/                # 14 page modules
+│       ├── api.js                # HTTP client + Socket.IO + UI utilities + icons
+│       ├── run-modal.js          # Shared "Run Container" guided form (Images + Containers)
+│       └── pages/                # 16 page modules
 │           ├── dashboard.js
 │           ├── containers.js
-│           ├── container-detail.js  # 10-tab detail view (506 lines)
+│           ├── container-detail.js  # 10-tab detail view (~616 lines)
 │           ├── images.js
 │           ├── volumes.js
 │           ├── networks.js
@@ -256,10 +265,14 @@ dockgate/
 │           ├── terminal.js
 │           ├── events.js
 │           ├── system.js
+│           ├── audit.js          # Audit log (filter/search/CSV)
+│           ├── registries.js     # Private registry credentials
 │           ├── cleanup.js
 │           └── settings.js
 └── data/
-    └── docker-panel.db           # SQLite (auto-created at runtime)
+    ├── docker-panel.db           # SQLite (auto-created at runtime)
+    ├── ssh-keys/                 # SSH private keys for remote hosts (mode 0600)
+    └── compose/                  # UI-created (managed) compose projects
 ```
 
 ### Tech Stack
@@ -269,7 +282,7 @@ dockgate/
 | Runtime | Node.js (Alpine) | 18 |
 | Web Framework | Express | 4.x |
 | Real-time | Socket.IO | 4.x |
-| Docker SDK | dockerode | 4.x |
+| Docker SDK | dockerode | 5.x |
 | Database | better-sqlite3 (WAL mode) | 11.x |
 | Container Terminal | Docker `exec` API (TTY stream) | — |
 | Frontend | Vanilla JS, CSS3 | ES2020+ |
@@ -300,7 +313,8 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | GET | `/api/containers/:id/stats` | One-shot stats: CPU, RAM, network I/O, block I/O, PIDs |
 | GET | `/api/containers/:id/logs` | Fetch logs (`?tail=200&timestamps=false`) |
 | POST | `/api/containers/:id/:action` | Execute: `start`, `stop`, `restart`, `kill`, `pause`, `unpause`, `remove`, `rename` |
-| POST | `/api/containers` | Create container |
+| POST | `/api/containers` | Create container (raw dockerode config) |
+| POST | `/api/containers/run` | Guided run — body: `{ image, name?, pull?, ports[], volumes[], env[], restart, network, cmd, cpus, memory }` → pulls if missing, creates, starts |
 
 ### Images
 
@@ -308,7 +322,8 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 |--------|----------|-------------|
 | GET | `/api/images` | List all images (with in-use/dangling flags) |
 | GET | `/api/images/:id` | Inspect image |
-| POST | `/api/images/pull` | Pull image — body: `{ "image": "nginx:latest" }` |
+| POST | `/api/images/pull` | Pull image — body: `{ "image": "nginx:latest" }`. Auto-authenticates if a matching registry credential is stored |
+| POST | `/api/images/push` | Push a tagged local image to its registry — body: `{ "repoTag": "ghcr.io/owner/app:1.0" }`. Credential auto-matched by host |
 | DELETE | `/api/images/:id` | Remove image (`?force=true`) |
 | POST | `/api/images/:id/tag` | Tag image — body: `{ "repo": "myrepo", "tag": "v1" }` |
 
@@ -355,8 +370,11 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | POST | `/api/compose/:project/down` | `docker compose -p <project> down` |
 | POST | `/api/compose/:project/restart` | `docker compose -p <project> restart` |
 | POST | `/api/compose/:project/pull` | `docker compose -p <project> pull` |
+| POST | `/api/compose/create` | Create a managed project — body: `{ project, yaml, up? }`. Writes `data/compose/<project>/docker-compose.yml`, validates, optionally brings it up |
+| GET | `/api/compose/:project/file` | Read a managed project's `docker-compose.yml` |
+| PUT | `/api/compose/:project/file` | Overwrite a managed project's YAML — body: `{ yaml, up? }` |
 
-> **Note:** Compose actions require the project's `working_dir` label to be set in containers. This is standard for Docker Compose-created containers.
+> **Note:** Compose actions require the host CLI, so they run on the **local** host only. Discovered projects use the `working_dir` label; managed projects (created in the UI) fall back to `data/compose/<project>`, so even a fully `down` managed project can be brought back up.
 
 ### Cleanup
 
@@ -391,6 +409,18 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 
 > **Note:** Auth hierarchy is **key > password > agent** — if a private key is supplied it is used; otherwise a password; otherwise the SSH agent.
 
+### Registries (Private Registry Credentials)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/registries` | List stored credentials (passwords masked → `hasPassword`) |
+| POST | `/api/registries` | Add — body: `{ "name?", "serverAddress", "username", "password" }` (address is unique) |
+| PUT | `/api/registries/:id` | Edit — same fields; an empty/omitted password keeps the current one |
+| DELETE | `/api/registries/:id` | Remove a credential |
+| POST | `/api/registries/test` | Verify against the registry — body: `{ "serverAddress", "username", "password" }` or `{ "id" }`. Returns 401 on bad credentials |
+
+> Credentials are stored in the SQLite `registries` table (same trust model as SSH passwords — protected by the `data/` volume; DockGate is self-hosted). They are matched to an image by registry host on pull/push, with Docker Hub recognised under its canonical aliases.
+
 ### Metadata
 
 | Method | Endpoint | Description |
@@ -406,7 +436,8 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | GET | `/api/meta/tags/:id` | Get tags for resource (`?type=container`) |
 | POST | `/api/meta/tags` | Add tag — body: `{ "id", "type", "tag", "color" }` |
 | DELETE | `/api/meta/tags/:id/:tag` | Remove tag (`?type=container`) |
-| GET | `/api/meta/activity` | Activity log (`?limit=50`) |
+| GET | `/api/meta/activity` | Audit log (`?server=&type=&action=&q=&limit=`) |
+| GET | `/api/meta/activity/facets` | Distinct servers/types/actions for filters |
 | DELETE | `/api/meta/activity` | Clear activity log |
 | GET | `/api/meta/settings` | Get all settings |
 | POST | `/api/meta/settings` | Update settings — body: `{ "key": "value" }` |
@@ -425,7 +456,8 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | GET | `/api/meta/notifications/log` | Notification log with channel (`?limit=50`) |
 | DELETE | `/api/meta/notifications/log` | Clear notification log |
 | GET | `/api/meta/update/check` | Check for updates from GitHub |
-| POST | `/api/meta/update/apply` | Pull latest changes and restart server |
+| POST | `/api/meta/update/apply` | Pull latest image and recreate the container (local host) |
+| GET | `/api/meta/update/instructions` | Manual update instructions |
 
 ---
 
@@ -580,12 +612,14 @@ SQLite (WAL mode) at `data/docker-panel.db` — auto-created, persisted via volu
 | `favorites` | Pinned resources | `id`, `type`, `name` |
 | `notes` | User notes per resource | `id`, `type`, `note` |
 | `tags` | Color-coded labels | `id`, `type`, `tag`, `color` |
-| `activity` | Action audit log | `resource_id`, `resource_type`, `action`, `details` |
+| `activity` | Action audit log (what + on which host + from where) | `resource_id`, `resource_type`, `action`, `details`, `server`, `source_ip` |
 | `settings` | Panel preferences | `key`, `value` |
 | `smtp_config` | SMTP + Telegram config (key-value) | `key`, `value` |
 | `notification_rules` | Alert rules (6 event types) | `event_type`, `enabled`, `cooldown_minutes` |
 | `notification_log` | Sent/failed notification history | `event_type`, `subject`, `status`, `channel` |
 | `build_history` | Panel build records | `image_tag`, `status`, `started_at` |
+| `servers` | Registered SSH hosts (multi-host) | `id`, `host`, `username`, `key_path` |
+| `registries` | Private registry credentials | `name`, `server_address`, `username`, `password` |
 
 All Docker state is read live from the engine — nothing is cached in the database.
 
