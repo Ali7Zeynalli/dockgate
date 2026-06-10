@@ -114,7 +114,9 @@ Router.register('images', async (content) => {
 
       // Pull image
       document.getElementById('pull-image-btn')?.addEventListener('click', () => {
-        showModal('Pull Image', '<div class="input-group"><label>Image Name (e.g., nginx:latest)</label><input type="text" id="pull-image-input" placeholder="nginx:latest"></div>', [
+        const m = showModal('Pull Image',
+          '<div class="input-group"><label>Image Name (e.g., nginx:latest)</label><input type="text" id="pull-image-input" placeholder="nginx:latest"></div>' +
+          `<button type="button" class="btn btn-xs btn-secondary" id="pull-hub-btn">${Icons.search} Search Docker Hub</button>`, [
           { label: 'Cancel', className: 'btn btn-secondary' },
           { label: 'Pull', className: 'btn btn-primary', onClick: async () => {
             const image = document.getElementById('pull-image-input')?.value;
@@ -124,6 +126,10 @@ Router.register('images', async (content) => {
             catch (err) { showToast(err.message, 'error'); }
           }},
         ]);
+        // Search Docker Hub → fill the image name field
+        m.overlay.querySelector('#pull-hub-btn')?.addEventListener('click', () => openHubSearch(name => {
+          m.overlay.querySelector('#pull-image-input').value = name;
+        }));
       });
 
       // Run a container from this image (opens the guided Run modal pre-filled)

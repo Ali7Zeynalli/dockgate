@@ -31,6 +31,7 @@ async function openRunContainerModal(prefill = '') {
         <input class="input" id="run-image" list="run-image-list" placeholder="e.g. nginx:alpine" value="${escapeHtml(prefillImage)}">
         <datalist id="run-image-list">${imageOpts.map(o => `<option value="${escapeHtml(o)}">`).join('')}</datalist>
         <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400"><input type="checkbox" id="run-pull"${p.pull ? ' checked' : ''}> Pull image before running</label>
+        <button type="button" class="btn btn-xs btn-secondary" id="run-hub-btn" style="margin-top:6px">${Icons.search} Search Docker Hub</button>
       </div>
       <div class="input-group"><label>Container name (optional)</label><input class="input" id="run-name" placeholder="my-app" value="${escapeHtml(p.name || '')}"></div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
@@ -69,6 +70,12 @@ async function openRunContainerModal(prefill = '') {
   submitBtn.id = 'run-submit';
   submitBtn.innerHTML = `${Icons.play} Run Container`;
   root.querySelector('#modal-footer').appendChild(submitBtn);
+
+  // Search Docker Hub → fill the image field with the chosen repository
+  root.querySelector('#run-hub-btn')?.addEventListener('click', () => openHubSearch(name => {
+    root.querySelector('#run-image').value = name;
+    root.querySelector('#run-pull').checked = true; // a Hub image is usually not present locally yet
+  }));
 
   // Repeatable rows — addRow can optionally fill the new row's inputs (used for template prefill)
   const addRow = (listId, builder, fill) => {

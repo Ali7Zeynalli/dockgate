@@ -12,6 +12,28 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /search?q= — proxy Docker Hub image search (browser CORS blocks calling Hub directly).
+// Defined before "/:id" so "search" isn't captured as an image id. Returns normalized results.
+router.get('/search', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.json({ count: 0, results: [] });
+    const url = `https://hub.docker.com/v2/search/repositories/?query=${encodeURIComponent(q)}&page_size=25`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return res.status(502).json({ error: `Docker Hub HTTP ${r.status}` });
+    const data = await r.json();
+    const results = (data.results || []).map(x => ({
+      name: x.repo_name,
+      description: x.short_description || '',
+      stars: x.star_count || 0,
+      official: !!x.is_official,
+    }));
+    res.json({ count: data.count || results.length, results });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const data = await dockerService.inspectImage(req.params.id);

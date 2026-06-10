@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.18] - 2026-06-10
+
+### Added
+- **Search Docker Hub** — the Run Container modal and the Images "Pull Image" dialog now have a **Search Docker Hub** button. It opens a live search (repository name, description, star count, official badge); picking a result fills the image field (and ticks "pull" in the Run modal). Backed by a new `GET /api/images/search?q=` endpoint that proxies the Docker Hub search API server-side (the Hub API isn't reachable from the browser due to CORS)
+  - Note: *pulling* from Docker Hub already worked by typing any image name — this adds **discovery/search** so you don't have to know the exact name
+
+---
+
 ## [2.0.17] - 2026-06-10
 
 ### Changed

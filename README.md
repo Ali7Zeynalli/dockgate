@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.0.17-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.0.18-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.17-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.18-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~9.6k-informational?style=for-the-badge" alt="Lines of Code">
@@ -132,7 +132,7 @@ DockGate has **16 modules** organized in 4 groups, plus multi-host SSH:
 | **Dashboard** | Real-time overview — container counts, disk usage, compose stacks, favorites, activity log, and smart insights (warns about stopped containers older than 7 days, unused images wasting disk, dangling layers) |
 | **Containers** | Full fleet management — **Run Container** (launch a new container from any image via a guided form: ports, volumes, env, restart policy, network, CPU/memory limits), group by compose project, bulk actions (start/stop/restart/remove multiple), tags, notes, favorites, search by name/image/ID/port, table or card view |
 | **Container Detail** | Deep inspect with **10 tabs**: Overview, Logs, Terminal, Stats (live CPU/memory charts), Environment, Ports, Volumes, Network, Inspect (raw JSON), History |
-| **Images** | Pull, **push to a private registry**, **Run** (launch a container straight from the image), remove, tag — filter by in-use, unused, or dangling |
+| **Images** | Pull (+ **Search Docker Hub**), **push to a private registry**, **Run** (launch a container straight from the image), remove, tag — filter by in-use, unused, or dangling |
 | **Volumes** | Track usage, see which containers are attached, prune unused |
 | **Networks** | View all network types (bridge, host, overlay, macvlan, none), subnet/gateway info, container counts |
 
@@ -257,6 +257,7 @@ dockgate/
 │       ├── api.js                # HTTP client + Socket.IO + UI utilities + icons
 │       ├── run-modal.js          # Shared "Run Container" guided form (Images + Containers + Templates)
 │       ├── compose-editor.js     # Shared Compose editor (Compose page + Templates stacks)
+│       ├── hub-search.js         # Shared Docker Hub image search modal (Run + Pull)
 │       └── pages/                # 17 page modules
 │           ├── dashboard.js
 │           ├── containers.js
@@ -328,6 +329,7 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 |--------|----------|-------------|
 | GET | `/api/images` | List all images (with in-use/dangling flags) |
 | GET | `/api/images/:id` | Inspect image |
+| GET | `/api/images/search?q=` | Search Docker Hub (server-side proxy) — returns `{ name, description, stars, official }[]` |
 | POST | `/api/images/pull` | Pull image — body: `{ "image": "nginx:latest" }`. Auto-authenticates if a matching registry credential is stored |
 | POST | `/api/images/push` | Push a tagged local image to its registry — body: `{ "repoTag": "ghcr.io/owner/app:1.0" }`. Credential auto-matched by host |
 | DELETE | `/api/images/:id` | Remove image (`?force=true`) |
