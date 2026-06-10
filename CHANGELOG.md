@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.42] - 2026-06-11
+
+### Added — "P3" private registries & GitHub repos end-to-end
+- **Builds can now pull private base images** — stored registry credentials are sent as the build's `X-Registry-Config`, so `FROM ghcr.io/you/private:tag` works in Git-context and inline-Dockerfile builds
+- **Build from a private Git repo** — the New Build form has an optional **Git token** field (e.g. a GitHub PAT); it's embedded only into the clone URL handed to the daemon and is **never stored or logged** (the build history keeps the clean URL)
+- **Compose can pull private images** — `docker compose up/pull/build` now runs with a generated `DOCKER_CONFIG` containing the stored registry credentials (previously compose ignored DockGate's registries and required a manual `docker login`)
+- **Compose Build action** — a **Build** button per project runs `docker compose build` (for services with a `build:` section)
+
+---
+
 ## [2.0.41] - 2026-06-11
 
 ### Added — "P2b" Swarm cross-module handoffs

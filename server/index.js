@@ -234,7 +234,7 @@ io.on('connection', (socket) => {
 
   // ---- Docker Image Build streaming ----
   let buildStream = null;
-  socket.on('build:start', async ({ buildId, contextType, contextValue, tag, dockerfile, nocache, pull, buildargs }) => {
+  socket.on('build:start', async ({ buildId, contextType, contextValue, gitToken, tag, dockerfile, nocache, pull, buildargs }) => {
     try {
       const crypto = require('crypto');
       const id = buildId || crypto.randomUUID();
@@ -250,9 +250,16 @@ io.on('connection', (socket) => {
 
       // 'inline' → build from a Dockerfile typed in the UI (a generated single-file tar context);
       // 'url' (default) → a Git repo / remote tarball that dockerode fetches.
-      const context = contextType === 'inline'
-        ? dockerService.makeDockerfileTar(contextValue)
-        : contextValue;
+      // gitToken (private repo): URL-in userinfo hissəsinə daxil edilir — daemon git clone-u
+      // onunla edir. DB-yə YALNIZ təmiz URL yazılır (yuxarıda), token heç yerdə saxlanmır/loglanmır.
+      let context;
+      if (contextType === 'inline') {
+        context = dockerService.makeDockerfileTar(contextValue);
+      } else if (gitToken && /^https:\/\//i.test(contextValue || '')) {
+        context = contextValue.replace(/^https:\/\//i, `https://${encodeURIComponent(gitToken)}@`);
+      } else {
+        context = contextValue;
+      }
 
       const stream = await dockerService.buildImage(context, {
         tag, dockerfile, nocache, pull, buildargs

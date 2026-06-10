@@ -540,6 +540,27 @@ function makeDockerfileTar(content) {
   return Buffer.concat([h, data, Buffer.alloc(pad), Buffer.alloc(1024)]);      // + two zero end-blocks
 }
 
+/**
+ * Bütün saxlanan registry credential-larını X-Registry-Config xəritəsinə çevir —
+ * build zamanı private FROM image-ləri (məs. ghcr.io) çəkilə bilsin.
+ * @returns {Object|undefined} { "<serveraddress>": {username,password} } və ya boşdursa undefined
+ */
+function allRegistryAuthMap() {
+  try {
+    const { stmts } = require('./db'); // late require — circular dependency-dən qaçmaq üçün
+    const rows = stmts.getRegistries.all();
+    const map = {};
+    for (const r of rows) {
+      map[r.server_address] = { username: r.username, password: r.password };
+      // Docker Hub bütün canonical adları ilə tanınsın
+      if (['docker.io', 'index.docker.io', 'registry-1.docker.io'].includes(r.server_address)) {
+        map['https://index.docker.io/v1/'] = { username: r.username, password: r.password };
+      }
+    }
+    return Object.keys(map).length ? map : undefined;
+  } catch (e) { return undefined; }
+}
+
 async function buildImage(context, options = {}) {
   const buildOpts = {
     t: options.tag || undefined,
@@ -549,6 +570,9 @@ async function buildImage(context, options = {}) {
     buildargs: options.buildargs || {},
     rm: true,
   };
+  // Saxlanan registry creds → daemon private base image-ləri (FROM ghcr.io/...) çəkə bilsin
+  const registryconfig = allRegistryAuthMap();
+  if (registryconfig) buildOpts.registryconfig = registryconfig;
 
   return new Promise((resolve, reject) => {
     docker.buildImage(context, buildOpts, (err, stream) => {

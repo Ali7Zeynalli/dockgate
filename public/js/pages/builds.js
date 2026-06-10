@@ -807,6 +807,8 @@ Router.register('builds', async (content) => {
         <div id="build-src-url" style="display:${inline ? 'none' : 'block'}">
           <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--text-secondary);">Context (Git repo URL or remote tarball)</label>
           <input type="text" id="build-context" class="input" placeholder="https://github.com/user/repo.git" style="width:100%;" />
+          <label style="display:block;margin:8px 0 4px;font-size:13px;color:var(--text-secondary);">Git token — only for a <strong>private</strong> repo (e.g. GitHub PAT with <code>repo</code> scope; not stored)</label>
+          <input type="password" id="build-gittoken" class="input" placeholder="optional — leave blank for public repos" autocomplete="new-password" style="width:100%;" />
           <label style="display:block;margin:8px 0 4px;font-size:13px;color:var(--text-secondary);">Dockerfile path</label>
           <input type="text" id="build-dockerfile" class="input" placeholder="Dockerfile" value="Dockerfile" style="width:100%;" />
         </div>
@@ -851,9 +853,10 @@ Router.register('builds', async (content) => {
     } else {
       const contextValue = document.getElementById('build-context')?.value.trim();
       const dockerfile = document.getElementById('build-dockerfile')?.value.trim() || 'Dockerfile';
+      const gitToken = document.getElementById('build-gittoken')?.value.trim() || '';
       if (!contextValue) { showToast('Context URL is required', 'error'); return; }
       activeBuild = { tag: tag || 'untagged', logs: '', startTime: Date.now() };
-      socket.emit('build:start', { contextType: 'url', contextValue, tag, dockerfile, nocache, pull });
+      socket.emit('build:start', { contextType: 'url', contextValue, gitToken, tag, dockerfile, nocache, pull });
     }
     showToast('Build started...', 'info');
     activeTab = 'live';

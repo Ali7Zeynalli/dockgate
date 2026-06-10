@@ -27,11 +27,32 @@ async function validateComposeFile(cwd) {
   await execFileAsync('docker', ['compose', '-f', 'docker-compose.yml', 'config', '-q'], { cwd });
 }
 
+// Saxlanan registry credential-larını müvəqqəti DOCKER_CONFIG-ə yaz — `docker compose pull/up/build`
+// private image-ləri (məs. ghcr.io) çəkə bilsin. CLI yalnız config.json oxuyur, DockGate DB-ni yox.
+function composeEnvWithRegistryAuth() {
+  try {
+    const { stmts } = require('../db');
+    const regs = stmts.getRegistries.all();
+    if (!regs.length) return process.env;
+    const auths = {};
+    for (const r of regs) {
+      auths[r.server_address] = { auth: Buffer.from(`${r.username}:${r.password}`).toString('base64') };
+      if (['docker.io', 'index.docker.io', 'registry-1.docker.io'].includes(r.server_address)) {
+        auths['https://index.docker.io/v1/'] = auths[r.server_address];
+      }
+    }
+    const dir = path.join(COMPOSE_DIR, '.docker-config');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ auths }), { mode: 0o600 });
+    return { ...process.env, DOCKER_CONFIG: dir };
+  } catch (e) { return process.env; }
+}
+
 // Run docker compose command safely using execFile (no shell injection)
 // Docker compose əmrini təhlükəsiz şəkildə execFile ilə işlət (shell injection yoxdur)
 async function runCompose(project, action, cwd) {
   const args = ['compose', '-p', project, ...action];
-  const { stdout, stderr } = await execFileAsync('docker', args, { cwd });
+  const { stdout, stderr } = await execFileAsync('docker', args, { cwd, env: composeEnvWithRegistryAuth(), maxBuffer: 4 * 1024 * 1024 });
   return stdout || stderr;
 }
 
@@ -72,6 +93,8 @@ router.post('/:project/up', (req, res) => runComposeAction(req, res, ['up', '-d'
 router.post('/:project/down', (req, res) => runComposeAction(req, res, ['down'], 'down'));
 router.post('/:project/restart', (req, res) => runComposeAction(req, res, ['restart'], 'restart'));
 router.post('/:project/pull', (req, res) => runComposeAction(req, res, ['pull'], 'pull'));
+// docker compose build — compose faylındakı `build:` bölməli servislərin image-lərini qurur
+router.post('/:project/build', (req, res) => runComposeAction(req, res, ['build'], 'build'));
 
 // ---- DockGate-managed compose files (create / read / edit) — local host only ----
 
