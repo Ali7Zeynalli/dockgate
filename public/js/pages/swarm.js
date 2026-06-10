@@ -58,7 +58,7 @@ Router.register('swarm', async (content) => {
       </div>
       <div id="sw-content" style="padding-top:16px"></div>`;
     document.getElementById('sw-refresh')?.addEventListener('click', render);
-    document.getElementById('sw-new-svc')?.addEventListener('click', () => openServiceCreate(render));
+    document.getElementById('sw-new-svc')?.addEventListener('click', () => openSwarmServiceCreate({}, render));
     document.getElementById('sw-join')?.addEventListener('click', openJoinTokens);
     document.getElementById('sw-leave')?.addEventListener('click', () => {
       showConfirm('Leave Swarm', 'Leave the swarm on this host? On the last manager this destroys the swarm and all its services.', async () => {
@@ -311,42 +311,8 @@ Router.register('swarm', async (content) => {
     }));
   }
 
-  // Create a new service (SW-a) — simplified form (name, image, replicas, ports, mounts, env)
-  function openServiceCreate(onDone) {
-    const body = `<div style="display:flex;flex-direction:column;gap:10px">
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div class="input-group" style="flex:2;min-width:160px"><label>Name *</label><input class="input" id="cs-name" placeholder="web"></div>
-        <div class="input-group" style="flex:1;min-width:90px"><label>Replicas</label><input class="input" id="cs-rep" type="number" min="0" value="1"></div>
-      </div>
-      <div class="input-group"><label>Image *</label><input class="input" id="cs-image" placeholder="nginx:latest"></div>
-      <div class="input-group"><label>Ports (comma, published:target)</label><input class="input" id="cs-ports" placeholder="8080:80, 443:443"></div>
-      <div class="input-group"><label>Mounts (comma, source:target[:ro])</label><input class="input" id="cs-mounts" placeholder="mydata:/data, /etc/host:/etc/app:ro"></div>
-      <div class="input-group"><label>Env (one KEY=VAL per line)</label><textarea class="input" id="cs-env" style="min-height:70px;font-family:var(--font-mono);font-size:12px" placeholder="NODE_ENV=production"></textarea></div>
-    </div>`;
-    const m = showModal('New Service', body, []);
-    const root = m.overlay;
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-primary'; btn.textContent = 'Create';
-    root.querySelector('#modal-footer').appendChild(btn);
-    btn.addEventListener('click', async () => {
-      const name = root.querySelector('#cs-name').value.trim();
-      const image = root.querySelector('#cs-image').value.trim();
-      if (!name || !image) { showToast('Name and image required', 'warning'); return; }
-      const ports = root.querySelector('#cs-ports').value.split(',').map(s => s.trim()).filter(Boolean).map(p => {
-        const [a, b] = p.split(':'); return b ? { published: a, target: b } : { target: a };
-      });
-      const mounts = root.querySelector('#cs-mounts').value.split(',').map(s => s.trim()).filter(Boolean).map(s => {
-        const [source, target, mode] = s.split(':');
-        return { type: source.startsWith('/') ? 'bind' : 'volume', source, target, mode };
-      }).filter(mt => mt.target);
-      const env = root.querySelector('#cs-env').value.split('\n').map(s => s.trim()).filter(l => l && l.includes('='));
-      btn.disabled = true; btn.textContent = 'Creating…';
-      try {
-        await API.post('/swarm/services', { name, image, replicas: root.querySelector('#cs-rep').value, ports, mounts, env });
-        showToast(`Service "${name}" created`); m.close(); onDone && onDone();
-      } catch (e) { showToast(e.message, 'error', 9000); btn.disabled = false; btn.textContent = 'Create'; }
-    });
-  }
+  // "New Service" formu artıq qlobal openSwarmServiceCreate-dədir (swarm-service-modal.js) —
+  // cross-module giriş nöqtələri (Images → Deploy as Service və s.) də onu istifadə edir.
 
   await render();
   refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 10000);

@@ -892,7 +892,22 @@ async function listStacks() {
 
 async function inspectService(id) { return await docker.getService(id).inspect(); }
 
-/** Create a replicated swarm service from a simplified spec. */
+/** "512m" / "1g" / "1073741824" → bytes (0 = unset). */
+function parseMemBytes(v) {
+  if (!v) return 0;
+  const m = String(v).trim().match(/^([\d.]+)\s*([kmgt]?)b?$/i);
+  if (!m) return parseInt(v) || 0;
+  const mult = { '': 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3, t: 1024 ** 4 }[m[2].toLowerCase()];
+  return Math.round(parseFloat(m[1]) * mult);
+}
+
+/**
+ * Create a replicated swarm service.
+ * b: { name, image, replicas, env[], cmd, ports:[{published,target,proto}],
+ *      mounts:[{type,source,target,mode}], restart ('any'|'on-failure'|'none'),
+ *      network (overlay adı), cpus, memory,
+ *      secrets:[{id,name,target}], configs:[{id,name,target}] }
+ */
 async function createService(b = {}) {
   const ports = (b.ports || []).map(p => {
     const port = { Protocol: p.proto || 'tcp', TargetPort: parseInt(p.target) };
@@ -902,6 +917,17 @@ async function createService(b = {}) {
   const mounts = (b.mounts || []).map(m => ({
     Type: m.type || 'volume', Source: m.source || undefined, Target: m.target, ReadOnly: m.mode === 'ro',
   })).filter(m => m.Target);
+  // Secret/config mount referansları (File.Mode 0444 = 292)
+  const secretRefs = (b.secrets || []).filter(s => s.id).map(s => ({
+    SecretID: s.id, SecretName: s.name,
+    File: { Name: s.target || `/run/secrets/${s.name}`, UID: '0', GID: '0', Mode: 292 },
+  }));
+  const configRefs = (b.configs || []).filter(c => c.id).map(c => ({
+    ConfigID: c.id, ConfigName: c.name,
+    File: { Name: c.target || `/${c.name}`, UID: '0', GID: '0', Mode: 292 },
+  }));
+  const nanoCpus = b.cpus ? Math.round(parseFloat(b.cpus) * 1e9) : 0;
+  const memBytes = parseMemBytes(b.memory);
   const spec = {
     Name: b.name,
     TaskTemplate: {
@@ -910,7 +936,12 @@ async function createService(b = {}) {
         Env: (b.env || []).filter(Boolean),
         ...(mounts.length ? { Mounts: mounts } : {}),
         ...(b.cmd ? { Command: String(b.cmd).split(/\s+/).filter(Boolean) } : {}),
+        ...(secretRefs.length ? { Secrets: secretRefs } : {}),
+        ...(configRefs.length ? { Configs: configRefs } : {}),
       },
+      ...(b.restart && b.restart !== 'any' ? { RestartPolicy: { Condition: b.restart } } : {}),
+      ...((nanoCpus || memBytes) ? { Resources: { Limits: { ...(nanoCpus ? { NanoCPUs: nanoCpus } : {}), ...(memBytes ? { MemoryBytes: memBytes } : {}) } } } : {}),
+      ...(b.network ? { Networks: [{ Target: b.network }] } : {}),
     },
     Mode: { Replicated: { Replicas: parseInt(b.replicas) || 1 } },
     ...(ports.length ? { EndpointSpec: { Ports: ports } } : {}),

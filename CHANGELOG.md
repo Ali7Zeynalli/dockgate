@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.40] - 2026-06-11
+
+### Added — "P2a" Swarm service form at full power
+- **New Swarm Service form completely rebuilt** (now a shared module, `swarm-service-modal.js`) with every Run-Container convenience: **Docker Hub search**, local-image autocomplete, **image ENV-key suggestions**, row-based **ports** (with **udp**), row-based **mounts** with volume autocomplete + quick presets, **Paste .env** bulk import, command override
+- **New swarm-only fields:** restart condition (any / on-failure / none), **overlay network** attach (service-to-service DNS), **CPU / memory limits** per replica, and **mount existing secrets & configs** into the service (dropdown + target path)
+- Backend `createService` extended accordingly (RestartPolicy, Resources.Limits, TaskTemplate.Networks, SecretReference/ConfigReference)
+
+---
+
 ## [2.0.39] - 2026-06-11
 
 ### Fixed — "P1" correctness & audit batch
