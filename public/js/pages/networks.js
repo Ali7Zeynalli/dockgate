@@ -125,18 +125,35 @@ Router.register('networks', async (content) => {
 
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
   }
-  // Rich create form (N2) — also used by Clone (N4) with a prefilled config.
-  function openNetworkCreate(prefill = {}) {
+  // Suggest a free private subnet (+ gateway + IP range) avoiding the ones already in use.
+  // `used` is the list of existing subnets; `extra` lets the Suggest button advance past the current value.
+  function suggestSubnet(used, extra = []) {
+    const taken = new Set([...used, ...extra].filter(Boolean).map(s => s.split('/')[0].split('.').slice(0, 2).join('.')));
+    const make = (b) => ({ subnet: `${b}.0.0/16`, gateway: `${b}.0.1`, iprange: `${b}.0.0/24` });
+    for (let i = 18; i <= 31; i++) { const b = `172.${i}`; if (!taken.has(b)) return make(b); }
+    for (let i = 20; i <= 250; i++) { const b = `10.${i}`; if (!taken.has(b)) return make(b); }
+    return { subnet: '', gateway: '', iprange: '' };
+  }
+
+  // Rich create form (N2) — also used by Clone (N4) with a prefilled config. Auto-suggests a free subnet.
+  async function openNetworkCreate(prefill = {}) {
     const drivers = ['bridge', 'macvlan', 'ipvlan', 'overlay'];
+    // Existing subnets → suggest a free one (the page list already carries each network's subnet)
+    let used = [];
+    try { used = (await API.get('/networks').catch(() => [])).map(n => n.subnet).filter(Boolean); } catch (e) {}
+    const sug = suggestSubnet(used); // a clone's copied subnet would conflict, so always offer a fresh one
+    const subnet0 = prefill._clone || !prefill.subnet ? sug.subnet : prefill.subnet;
+    const gw0 = prefill._clone || !prefill.gateway ? sug.gateway : prefill.gateway;
+    const ipr0 = prefill._clone || !prefill.iprange ? sug.iprange : prefill.iprange;
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
       <div class="input-group"><label>Name *</label><input class="input" id="nc-name" value="${escapeHtml(prefill.name || '')}"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <div class="input-group" style="flex:1;min-width:140px"><label>Driver</label><select class="select" id="nc-driver">${drivers.map(d => `<option value="${d}" ${d === (prefill.driver || 'bridge') ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
-        <div class="input-group" style="flex:1;min-width:140px"><label>Subnet</label><input class="input" id="nc-subnet" placeholder="172.20.0.0/16" value="${escapeHtml(prefill.subnet || '')}"></div>
+        <div class="input-group" style="flex:1;min-width:140px"><label style="display:flex;justify-content:space-between;align-items:center">Subnet <button type="button" id="nc-suggest" class="btn btn-xs btn-ghost" style="font-weight:400">↻ Suggest</button></label><input class="input" id="nc-subnet" placeholder="172.20.0.0/16" value="${escapeHtml(subnet0)}"></div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div class="input-group" style="flex:1;min-width:140px"><label>Gateway</label><input class="input" id="nc-gateway" placeholder="172.20.0.1" value="${escapeHtml(prefill.gateway || '')}"></div>
-        <div class="input-group" style="flex:1;min-width:140px"><label>IP range (optional)</label><input class="input" id="nc-iprange" value="${escapeHtml(prefill.iprange || '')}"></div>
+        <div class="input-group" style="flex:1;min-width:140px"><label>Gateway</label><input class="input" id="nc-gateway" placeholder="172.20.0.1" value="${escapeHtml(gw0)}"></div>
+        <div class="input-group" style="flex:1;min-width:140px"><label>IP range (optional)</label><input class="input" id="nc-iprange" value="${escapeHtml(ipr0)}"></div>
       </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap">
         <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="nc-internal" ${prefill.internal ? 'checked' : ''}> Internal</label>
@@ -147,6 +164,15 @@ Router.register('networks', async (content) => {
     </div>`;
     const m = showModal(prefill._clone ? 'Clone Network' : 'New Network', body, []);
     const root = m.overlay;
+    // Suggest → pick the next free subnet (advances past the current one)
+    root.querySelector('#nc-suggest')?.addEventListener('click', () => {
+      const cur = root.querySelector('#nc-subnet').value.trim();
+      const s = suggestSubnet(used, [cur]);
+      if (!s.subnet) { showToast('No free subnet found', 'warning'); return; }
+      root.querySelector('#nc-subnet').value = s.subnet;
+      root.querySelector('#nc-gateway').value = s.gateway;
+      root.querySelector('#nc-iprange').value = s.iprange;
+    });
     const btn = document.createElement('button');
     btn.className = 'btn btn-primary'; btn.textContent = 'Create';
     root.querySelector('#modal-footer').appendChild(btn);

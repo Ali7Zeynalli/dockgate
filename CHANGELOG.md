@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.26] - 2026-06-10
+
+### Improved
+- **Network create form auto-suggests networking** — opening **New Network** (or **Clone**) now pre-fills a **free** private subnet, gateway and IP range (scanning existing networks to avoid overlaps), with a **↻ Suggest** button to cycle to the next free range. No more typing CIDRs by hand
+- The driver list stays bridge / macvlan / ipvlan / overlay — `host` and `none` are Docker's built-in singleton networks and **cannot be created** (so they're intentionally not offered)
+
+---
+
 ## [2.0.25] - 2026-06-10
 
 ### Added — "L2" images
