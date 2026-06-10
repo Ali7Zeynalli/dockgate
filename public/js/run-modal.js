@@ -90,6 +90,40 @@ async function openRunContainerModal(prefill = '') {
   submitBtn.innerHTML = `${Icons.play} Run Container`;
   root.querySelector('#modal-footer').appendChild(submitBtn);
 
+  // Cross-module handoff: convert the current form into a Swarm service prefill.
+  // Only shown when the active daemon is a swarm manager.
+  API.get('/swarm').then(s => {
+    if (!s || !s.active || !s.isManager) return;
+    const swBtn = document.createElement('button');
+    swBtn.className = 'btn btn-secondary';
+    swBtn.textContent = 'Deploy to Swarm →';
+    swBtn.title = 'Open the Swarm service form with these values';
+    root.querySelector('#modal-footer').prepend(swBtn);
+    swBtn.addEventListener('click', () => {
+      const prefill = {
+        image: root.querySelector('#run-image').value.trim(),
+        name: root.querySelector('#run-name').value.trim(),
+        cmd: root.querySelector('#run-cmd').value.trim(),
+        ports: [...root.querySelectorAll('#run-ports .run-row')].map(r => ({
+          published: r.querySelector('.run-p-host').value.trim(),
+          target: r.querySelector('.run-p-cont').value.trim(),
+          proto: r.querySelector('.run-p-proto').value,
+        })).filter(pt => pt.target),
+        mounts: [...root.querySelectorAll('#run-vols .run-row')].map(r => ({
+          source: r.querySelector('.run-v-host').value.trim(),
+          target: r.querySelector('.run-v-cont').value.trim(),
+          mode: r.querySelector('.run-v-mode').value,
+        })).filter(mt => mt.source && mt.target),
+        env: [...root.querySelectorAll('#run-envs .run-row')].map(r => {
+          const k = r.querySelector('.run-e-key').value.trim();
+          return k ? `${k}=${r.querySelector('.run-e-val').value}` : null;
+        }).filter(Boolean),
+      };
+      m.close();
+      openSwarmServiceCreate(prefill, () => Router.navigate('swarm'));
+    });
+  }).catch(() => {});
+
   // Search Docker Hub → fill the image field with the chosen repository
   root.querySelector('#run-hub-btn')?.addEventListener('click', () => openHubSearch(name => {
     root.querySelector('#run-image').value = name;

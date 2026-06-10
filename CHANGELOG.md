@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.41] - 2026-06-11
+
+### Added — "P2b" Swarm cross-module handoffs
+When the active daemon is a swarm manager, Swarm entry points appear across the app:
+- **Images** — a "Deploy as Swarm service" action on every image row (opens the service form prefilled)
+- **Run Container modal** — a "**Deploy to Swarm →**" button that converts the filled form (image, name, ports, volumes, env, command) into the Swarm service form
+- **Compose editor** — "**Deploy as Stack (Swarm)**" deploys the same YAML with `docker stack deploy`
+- **App Templates** — stack templates get a one-click "**Swarm**" deploy (stack name prompt → `docker stack deploy`)
+
+---
+
 ## [2.0.40] - 2026-06-11
 
 ### Added — "P2a" Swarm service form at full power
