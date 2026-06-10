@@ -43,7 +43,7 @@ Router.register('registries', async (content) => {
           <label>Registry address *</label>
           <input class="input" id="reg-addr" list="reg-addr-list" placeholder="ghcr.io" value="${existing ? escapeHtml(existing.server_address) : ''}">
           <datalist id="reg-addr-list">${PRESETS.map(p => `<option value="${p}">`).join('')}</datalist>
-          <span class="text-xs text-muted">Host only — e.g. <code>ghcr.io</code>, <code>registry.gitlab.com</code>, <code>docker.io</code> for Docker Hub.</span>
+          <span class="text-xs text-muted">Host only — e.g. <code>ghcr.io</code>, <code>registry.gitlab.com</code>, <code>docker.io</code> for Docker Hub.<br>GitHub (<code>ghcr.io</code>): password = a Personal Access Token with <code>read:packages</code> (<code>write:packages</code> to push). Then pull using the full ref, e.g. <code>ghcr.io/user/image:tag</code> — the stored credential is attached automatically.</span>
         </div>
         <div class="input-group">
           <label>Username *</label>

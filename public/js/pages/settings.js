@@ -212,6 +212,8 @@ Router.register('settings', async (content) => {
             <div id="auth-key" class="auth-pane">
               <label class="text-xs text-muted">Private key (paste OpenSSH format):</label>
               <textarea class="input" id="srv-key" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="font-family:var(--font-mono);font-size:11px;width:100%;margin-top:4px;"></textarea>
+              <label class="text-xs text-muted" style="display:block;margin-top:8px;">Key passphrase (only if the key is encrypted — leave blank otherwise):</label>
+              <input class="input" id="srv-passphrase" type="password" placeholder="passphrase (optional)" autocomplete="new-password" style="margin-top:4px;width:100%;" />
             </div>
 
             <div id="auth-password" class="auth-pane" style="display:none;">
@@ -238,13 +240,12 @@ Router.register('settings', async (content) => {
             </div>
           </div>
           <div class="settings-section" style="margin-top:20px;">
-            <div class="settings-section-title">Required on remote server</div>
+            <div class="settings-section-title">Connection troubleshooting (two separate stages)</div>
             <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;font-family:var(--font-mono);font-size:12px;line-height:1.7;">
-              <div class="text-xs text-muted" style="margin-bottom:6px;font-family:var(--font-sans);">User-in Docker socket-ə çıxışı olmalıdır:</div>
-              <div># Server-də:</div>
+              <div class="text-xs text-muted" style="margin-bottom:6px;font-family:var(--font-sans);"><strong>Stage 1 — SSH login</strong> ("All configured authentication methods failed"): wrong user (Coolify servers → usually <code>root</code>), the public key is missing from that user's <code>~/.ssh/authorized_keys</code>, an encrypted key without its passphrase, or a non-OpenSSH key format. Verify from a terminal first:</div>
+              <div>ssh -i &lt;keyfile&gt; user@host docker ps</div>
+              <div class="text-xs text-muted" style="margin:8px 0 6px;font-family:var(--font-sans);"><strong>Stage 2 — Docker permission</strong> ("permission denied … docker.sock", only after SSH login works):</div>
               <div>sudo usermod -aG docker $USER</div>
-              <div># SSH ilə test:</div>
-              <div>ssh user@host docker ps</div>
             </div>
           </div>
         `;
@@ -252,6 +253,13 @@ Router.register('settings', async (content) => {
         Object.assign(tabContent, { innerHTML: html });
 
         attachServerHandlers(data.servers);
+      }
+
+      // Stage-1 SSH auth failures get a actionable hint (usermod fixes stage 2, not this).
+      function sshErrorHint(msg) {
+        return /authentication methods failed/i.test(String(msg))
+          ? `${msg} → SSH login itself failed: check the user (Coolify → usually root), that the public key is in that user's authorized_keys, and the key passphrase. ("usermod -aG docker" does NOT fix this — it's for the docker-permission stage after login.)`
+          : msg;
       }
 
       function attachServerHandlers(servers = []) {
@@ -282,7 +290,7 @@ Router.register('settings', async (content) => {
                 if (r.success) {
                   showToast(`✓ ${r.version} (${r.containers} containers, ${r.images} images)`, 'success', 6000);
                 } else {
-                  showToast(`✗ ${r.error}`, 'error', 8000);
+                  showToast(`✗ ${sshErrorHint(r.error)}`, 'error', 12000);
                 }
               } else if (action === 'edit') {
                 const s = servers.find(x => x.id === id);
@@ -308,6 +316,8 @@ Router.register('settings', async (content) => {
           if (authMode === 'key') {
             const k = document.getElementById('srv-key').value;
             if (k && k.trim()) base.privateKey = k;
+            const ph = document.getElementById('srv-passphrase')?.value;
+            if (ph) base.passphrase = ph;
           } else if (authMode === 'password') {
             const p = document.getElementById('srv-password').value;
             if (p) base.password = p;
@@ -334,7 +344,7 @@ Router.register('settings', async (content) => {
               out.textContent = `✓ ${r.version} — ${r.containers} containers`;
             } else {
               out.style.color = 'var(--danger)';
-              out.textContent = `✗ ${r.error}`;
+              out.textContent = `✗ ${sshErrorHint(r.error)}`;
             }
             result.appendChild(out);
           } catch (e) {
@@ -342,7 +352,7 @@ Router.register('settings', async (content) => {
             const out = document.createElement('span');
             out.className = 'text-xs';
             out.style.color = 'var(--danger)';
-            out.textContent = `✗ ${e.message}`;
+            out.textContent = `✗ ${sshErrorHint(e.message)}`;
             result.appendChild(out);
           }
         });

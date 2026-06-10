@@ -19,6 +19,15 @@ app.set('trust proxy', true);
 
 // Middleware
 app.use(express.json({ limit: '5mb' })); // 5mb — SSH private key upload üçün
+
+// Cache-busting: index.html-dəki hər asset URL-i ?v=<versiya> ilə möhürlənir (__V__ placeholder),
+// beləcə hər relizdən sonra brauzer köhnə JS/CSS-i yox, təzəsini çəkir (hard refresh lazım olmur).
+const APP_VERSION = require('../package.json').version;
+const INDEX_HTML = require('fs')
+  .readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8')
+  .replace(/__V__/g, APP_VERSION);
+app.get(['/', '/index.html'], (req, res) => res.type('html').send(INDEX_HTML));
+
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // REST Routes

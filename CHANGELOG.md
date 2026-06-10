@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.38] - 2026-06-11
+
+### Fixed / Improved — "P0" quality batch
+- **Cache-busting** — every JS/CSS asset URL in `index.html` is stamped with `?v=<version>` (server-side substitution). Browsers now pick up new code right after an update — no more hard-refresh to see new features
+- **SSH server form** — the Add form now has a **key passphrase** field (it existed only in Edit before, so adding a server with an encrypted key always failed). Auth-failure messages now explain the two stages: *SSH login* ("All configured authentication methods failed" → user/key/passphrase) vs *Docker permission* (`usermod -aG docker`), with a matching troubleshooting panel
+- **Swarm init form** — advertise-address hints: single host → `127.0.0.1`; multi-VPS → run init on that VPS (switch the active server) with *its own* public IP
+- **Registries form** — GHCR how-to hint (PAT with `read:packages`, pull via full `ghcr.io/user/image:tag` ref)
+
+---
+
 ## [2.0.37] - 2026-06-11
 
 ### Added — Swarm secrets & configs

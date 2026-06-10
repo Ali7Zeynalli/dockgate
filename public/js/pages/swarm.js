@@ -20,6 +20,11 @@ Router.register('swarm', async (content) => {
           <div class="input-group" style="margin:14px 0">
             <label>Advertise address — this host's reachable IP (optional, auto-detected if blank)</label>
             <input class="input" id="sw-adv" placeholder="e.g. 203.0.113.10">
+            <span class="text-xs text-muted" style="margin-top:6px;display:block">
+              <strong>Single host (just this machine):</strong> enter <code>127.0.0.1</code>.<br>
+              <strong>Multi-VPS cluster:</strong> run init on the VPS itself (add it as an SSH server, switch to it above) and enter <em>that VPS's</em> public IP — it must be an address belonging to this host, not another machine's.<br>
+              Blank works only when the host has a single network address ("could not choose an IP" → specify one).
+            </span>
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-primary" id="sw-init">${Icons.swarm} Initialize Swarm</button>
