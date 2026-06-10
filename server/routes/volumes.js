@@ -23,6 +23,18 @@ router.get('/:name/backup', async (req, res) => {
   }
 });
 
+// V2 — restore the volume from an uploaded .tar.gz (helper container extracts the streamed upload).
+// The body is the raw tar.gz (Content-Type isn't application/json, so it bypasses express.json).
+router.post('/:name/restore', async (req, res) => {
+  try {
+    await dockerService.restoreVolumeFromRequest(req.params.name, req);
+    logAction({ req, resourceType: 'volume', resourceName: req.params.name, action: 'restore' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
 // V4 — clone the volume into a new one (helper container copies the data)
 router.post('/:name/clone', async (req, res) => {
   try {

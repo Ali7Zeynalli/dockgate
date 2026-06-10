@@ -56,6 +56,7 @@ Router.register('volumes', async (content) => {
                 <td><div class="td-actions">
                   <button class="btn-icon" title="Inspect" data-inspect="${escapeHtml(v.name)}">${Icons.eye}</button>
                   <button class="btn-icon" title="Backup (download tar.gz)" data-backup="${escapeHtml(v.name)}">${Icons.download}</button>
+                  <button class="btn-icon" title="Restore (upload tar.gz)" data-restore="${escapeHtml(v.name)}">${Icons.arrowUp}</button>
                   <button class="btn-icon" title="Clone" data-clone="${escapeHtml(v.name)}">${Icons.copy}</button>
                   ${!v.inUse ? `<button class="btn-icon" title="Remove" data-remove="${escapeHtml(v.name)}" style="color:var(--danger)">${Icons.trash}</button>` : ''}
                 </div></td>
@@ -76,6 +77,25 @@ Router.register('volumes', async (content) => {
         a.download = `${name}.tar.gz`;
         document.body.appendChild(a); a.click(); a.remove();
         showToast('Backup started…', 'info');
+      }));
+
+      // Restore ← upload tar.gz (V2)
+      content.querySelectorAll('[data-restore]').forEach(btn => btn.addEventListener('click', () => {
+        const name = btn.dataset.restore;
+        const inp = document.createElement('input');
+        inp.type = 'file'; inp.accept = '.tar.gz,.tgz,.gz,.tar';
+        inp.onchange = async () => {
+          const f = inp.files && inp.files[0];
+          if (!f) return;
+          showToast(`Restoring into ${name}…`, 'info');
+          try {
+            const r = await fetch(`/api/volumes/${encodeURIComponent(name)}/restore`, { method: 'POST', headers: { 'Content-Type': 'application/gzip' }, body: f });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data.error || 'Restore failed');
+            showToast('Volume restored'); render();
+          } catch (e) { showToast(e.message, 'error', 8000); }
+        };
+        inp.click();
       }));
 
       // Clone (V4)

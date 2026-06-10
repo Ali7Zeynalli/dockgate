@@ -582,6 +582,31 @@ async function backupVolumeToResponse(volName, res) {
 }
 
 /**
+ * V2 — restore a volume from an uploaded gzipped tar (the inverse of backup).
+ * A helper container extracts the upload (piped into its stdin) into the volume.
+ * @param {string} volName
+ * @param {import('stream').Readable} req the request body stream (the .tar.gz upload)
+ */
+async function restoreVolumeFromRequest(volName, req) {
+  await ensureHelperImage();
+  const helper = await docker.createContainer({
+    Image: VOL_HELPER_IMAGE,
+    Cmd: ['sh', '-c', 'tar xzf - -C /volume'],
+    HostConfig: { Binds: [`${volName}:/volume`], AutoRemove: false },
+    AttachStdin: true, OpenStdin: true, StdinOnce: true,
+    AttachStdout: true, AttachStderr: true, Tty: false,
+  });
+  const stream = await helper.attach({ stream: true, stdin: true, stdout: true, stderr: true, hijack: true });
+  await helper.start();
+  req.pipe(stream); // upload → container stdin; StdinOnce closes stdin when the upload ends
+  const result = await helper.wait();
+  try { await helper.remove({ force: true }); } catch (e) {}
+  invalidateCache('');
+  if (result.StatusCode !== 0) throw new Error(`Restore failed (tar exited ${result.StatusCode})`);
+  return { success: true };
+}
+
+/**
  * V4 — clone a volume's contents into a new volume (a helper container `cp -a`s the data).
  */
 async function cloneVolume(srcName, destName) {
@@ -892,7 +917,7 @@ module.exports = {
   getContainerLogs, createContainer, parseStats, demuxLogs,
   listImages, inspectImage, imageHistory, imageSaveStream, loadImage, pullImage, pushImage, removeImage, tagImage, buildImage,
   registryHostOf, checkRegistryAuth,
-  listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, cloneVolume,
+  listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,

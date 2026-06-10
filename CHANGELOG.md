@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.28] - 2026-06-10
+
+### Added — "L3" volume restore
+- **Restore a volume** from an uploaded `.tar.gz` (the inverse of Backup) — a helper container extracts the streamed upload into the volume, completing the backup ⇄ restore round-trip. `POST /api/volumes/:name/restore`
+
+---
+
 ## [2.0.27] - 2026-06-10
 
 ### Fixed
