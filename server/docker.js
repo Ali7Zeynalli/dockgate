@@ -966,6 +966,27 @@ async function listNodes() {
   }));
 }
 
+// ---- Secrets & Configs (swarm) ----
+async function listSecrets() {
+  const s = await docker.listSecrets();
+  return s.map(x => ({ id: x.ID, name: x.Spec?.Name, createdAt: x.CreatedAt }));
+}
+async function createSecret(name, data) {
+  const r = await docker.createSecret({ Name: name, Data: Buffer.from(String(data), 'utf8').toString('base64') });
+  return { id: r.ID || r.id };
+}
+async function removeSecret(id) { await docker.getSecret(id).remove(); return { success: true }; }
+
+async function listConfigs() {
+  const c = await docker.listConfigs();
+  return c.map(x => ({ id: x.ID, name: x.Spec?.Name, createdAt: x.CreatedAt }));
+}
+async function createConfig(name, data) {
+  const r = await docker.createConfig({ Name: name, Data: Buffer.from(String(data), 'utf8').toString('base64') });
+  return { id: r.ID || r.id };
+}
+async function removeConfig(id) { await docker.getConfig(id).remove(); return { success: true }; }
+
 /** Set a node's availability: active | pause | drain. */
 async function updateNodeAvailability(id, availability) {
   const node = docker.getNode(id);
@@ -1223,6 +1244,7 @@ module.exports = {
   listVolumeFiles, downloadVolumeFile,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
   getSwarmInfo, swarmInit, swarmLeave, getSwarmJoinTokens, removeNode, listServices, listStacks, inspectService, createService, updateServiceImage, getServiceLogs, scaleService, removeService, listServiceTasks, listNodes, updateNodeAvailability,
+  listSecrets, createSecret, removeSecret, listConfigs, createConfig, removeConfig,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,
   getCleanupPreview, pruneContainers, pruneImages, pruneVolumes, pruneNetworks, pruneBuildCache, systemPrune,

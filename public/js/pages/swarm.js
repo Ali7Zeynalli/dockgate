@@ -48,6 +48,7 @@ Router.register('swarm', async (content) => {
       <div class="tab-bar" id="sw-tabs">
         <button class="tab-btn ${tab === 'services' ? 'active' : ''}" data-tab="services">Services</button>
         <button class="tab-btn ${tab === 'stacks' ? 'active' : ''}" data-tab="stacks">Stacks</button>
+        <button class="tab-btn ${tab === 'secrets' ? 'active' : ''}" data-tab="secrets">Secrets &amp; Configs</button>
         <button class="tab-btn ${tab === 'nodes' ? 'active' : ''}" data-tab="nodes">Nodes</button>
       </div>
       <div id="sw-content" style="padding-top:16px"></div>`;
@@ -61,7 +62,10 @@ Router.register('swarm', async (content) => {
       }, true);
     });
     document.getElementById('sw-tabs').addEventListener('click', (e) => { const b = e.target.closest('.tab-btn'); if (!b) return; tab = b.dataset.tab; render(); });
-    if (tab === 'services') renderServices(); else if (tab === 'stacks') renderStacks(); else renderNodes();
+    if (tab === 'services') renderServices();
+    else if (tab === 'stacks') renderStacks();
+    else if (tab === 'secrets') renderSecretsConfigs();
+    else renderNodes();
   }
 
   async function renderServices() {
@@ -216,6 +220,58 @@ Router.register('swarm', async (content) => {
       btn.disabled = true; btn.textContent = 'Deploying…';
       try { await API.post('/swarm/stacks/deploy', { name, compose }); showToast('Stack deployed'); m.close(); render(); }
       catch (e) { showToast(e.message, 'error', 12000); btn.disabled = false; btn.textContent = 'Deploy'; }
+    });
+  }
+
+  // Secrets & Configs (SW-c) — one tab, two sections
+  async function renderSecretsConfigs() {
+    const el = document.getElementById('sw-content'); if (!el) return;
+    let secrets = [], configs = [];
+    try { [secrets, configs] = await Promise.all([API.get('/swarm/secrets'), API.get('/swarm/configs')]); }
+    catch (e) { el.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; return; }
+    const tableFor = (items, kind) => `<div class="table-wrapper"><table>
+      <thead><tr><th>Name</th><th>Created</th><th style="text-align:right">Actions</th></tr></thead>
+      <tbody>${items.map(x => `<tr>
+        <td class="td-name">${escapeHtml(x.name || '')}</td>
+        <td class="text-muted text-sm">${x.createdAt ? timeAgo(x.createdAt) : ''}</td>
+        <td style="text-align:right"><button class="btn btn-xs btn-ghost text-danger" data-rm-${kind}="${x.id}" data-name="${escapeHtml(x.name || '')}">${Icons.trash}</button></td>
+      </tr>`).join('') || `<tr><td colspan="3" class="text-muted text-sm" style="padding:12px">No ${kind}s.</td></tr>`}</tbody></table></div>`;
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 8px"><h3 style="margin:0;font-size:15px">Secrets</h3><button class="btn btn-xs btn-primary" id="new-secret">New Secret</button></div>
+      ${tableFor(secrets, 'secret')}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 8px"><h3 style="margin:0;font-size:15px">Configs</h3><button class="btn btn-xs btn-primary" id="new-config">New Config</button></div>
+      ${tableFor(configs, 'config')}`;
+    el.querySelector('#new-secret')?.addEventListener('click', () => openSecretCreate('secret'));
+    el.querySelector('#new-config')?.addEventListener('click', () => openSecretCreate('config'));
+    el.querySelectorAll('[data-rm-secret]').forEach(b => b.addEventListener('click', () => rmSecretConfig('secret', b.dataset.rmSecret, b.dataset.name)));
+    el.querySelectorAll('[data-rm-config]').forEach(b => b.addEventListener('click', () => rmSecretConfig('config', b.dataset.rmConfig, b.dataset.name)));
+  }
+
+  function rmSecretConfig(kind, id, name) {
+    showConfirm(`Remove ${kind}`, `Remove ${kind} <strong>${escapeHtml(name)}</strong>? An in-use ${kind} can't be removed.`, async () => {
+      try { await API.del(`/swarm/${kind}s/${id}`); showToast(`${kind} removed`); render(); }
+      catch (e) { showToast(e.message, 'error', 8000); }
+    }, true);
+  }
+
+  function openSecretCreate(kind) {
+    const body = `<div style="display:flex;flex-direction:column;gap:10px">
+      <div class="input-group"><label>Name *</label><input class="input" id="sc-name" placeholder="db_password"></div>
+      <div class="input-group"><label>Value *</label><textarea class="input" id="sc-data" style="min-height:100px;font-family:var(--font-mono);font-size:12px" placeholder="the ${kind} value"></textarea></div>
+      ${kind === 'secret' ? '<div class="text-xs text-muted">Secret values are write-only — they cannot be read back after creation.</div>' : ''}
+    </div>`;
+    const m = showModal(`New ${kind === 'secret' ? 'Secret' : 'Config'}`, body, []);
+    const root = m.overlay;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary'; btn.textContent = 'Create';
+    root.querySelector('#modal-footer').appendChild(btn);
+    btn.addEventListener('click', async () => {
+      const name = root.querySelector('#sc-name').value.trim();
+      const data = root.querySelector('#sc-data').value;
+      if (!name || !data) { showToast('Name and value required', 'warning'); return; }
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try { await API.post(`/swarm/${kind}s`, { name, data }); showToast(`${kind} created`); m.close(); render(); }
+      catch (e) { showToast(e.message, 'error', 9000); btn.disabled = false; btn.textContent = 'Create'; }
     });
   }
 

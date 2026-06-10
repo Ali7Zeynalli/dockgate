@@ -177,4 +177,49 @@ router.delete('/stacks/:name', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || 'Remove failed').toString() }); }
 });
 
+// ---- Secrets & Configs (SW-c) ----
+router.get('/secrets', async (req, res) => {
+  try { await assertSwarm(); res.json(await dockerService.listSecrets()); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+router.post('/secrets', async (req, res) => {
+  try {
+    await assertSwarm();
+    const { name, data } = req.body || {};
+    if (!name || data === undefined || data === '') return res.status(400).json({ error: 'name and data are required' });
+    const r = await dockerService.createSecret(name, data);
+    logAction({ req, resourceType: 'secret', resourceName: name, action: 'create' });
+    res.json(r);
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+router.delete('/secrets/:id', async (req, res) => {
+  try {
+    await dockerService.removeSecret(req.params.id);
+    logAction({ req, resourceType: 'secret', resourceName: req.params.id.substring(0, 12), action: 'remove' });
+    res.json({ success: true });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+router.get('/configs', async (req, res) => {
+  try { await assertSwarm(); res.json(await dockerService.listConfigs()); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+router.post('/configs', async (req, res) => {
+  try {
+    await assertSwarm();
+    const { name, data } = req.body || {};
+    if (!name || data === undefined || data === '') return res.status(400).json({ error: 'name and data are required' });
+    const r = await dockerService.createConfig(name, data);
+    logAction({ req, resourceType: 'config', resourceName: name, action: 'create' });
+    res.json(r);
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+router.delete('/configs/:id', async (req, res) => {
+  try {
+    await dockerService.removeConfig(req.params.id);
+    logAction({ req, resourceType: 'config', resourceName: req.params.id.substring(0, 12), action: 'remove' });
+    res.json({ success: true });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 module.exports = router;

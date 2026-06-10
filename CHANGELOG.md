@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.37] - 2026-06-11
+
+### Added — Swarm secrets & configs
+- **Secrets & Configs tab** in Swarm — list, create (name + value, base64-encoded server-side) and remove swarm **secrets** (write-only) and **configs**. `GET/POST /api/swarm/secrets` · `DELETE /api/swarm/secrets/:id` · same for `/configs`
+
+This completes the Swarm module: cluster bootstrap (init/join/leave/nodes), services (create/scale/update/logs/inspect/remove), stacks (deploy/remove), and secrets/configs.
+
+---
+
 ## [2.0.36] - 2026-06-11
 
 ### Added — Swarm cluster bootstrap (multi-VPS)
