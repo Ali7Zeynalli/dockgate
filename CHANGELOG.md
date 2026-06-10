@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.19] - 2026-06-10
+
+### Added
+- **Faster volume & environment entry** in the Run Container modal:
+  - **Volumes** — the host field autocompletes from your existing Docker volumes (datalist), plus quick-preset buttons (**docker.sock**, **./data**, **./config**) that drop in a prefilled volume row
+  - **Environment** — a **Paste .env** panel bulk-imports `KEY=VALUE` lines (handles `#` comments, `export `, and quotes) into individual env rows; the env KEY field also suggests the selected **local** image's declared variables (read from its `Config.Env`)
+- The Compose guided "Add service" panel gets the same **volume presets** and **Paste .env** import (adapted to its comma-separated fields)
+- Shared `parseDotEnv()` helper underpins both
+
+---
+
 ## [2.0.18] - 2026-06-10
 
 ### Added

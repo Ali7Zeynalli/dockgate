@@ -222,6 +222,24 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Parse pasted .env text into [{key, val}] — skips blank lines and # comments, splits on the first '=',
+// strips an optional "export " prefix and surrounding quotes. Used by the Run modal / Compose editor.
+function parseDotEnv(text) {
+  return String(text || '').split(/\r?\n/).map(line => {
+    let s = line.trim();
+    if (!s || s.startsWith('#')) return null;
+    if (s.startsWith('export ')) s = s.slice(7).trim();
+    const i = s.indexOf('=');
+    if (i === -1) return null;
+    const key = s.slice(0, i).trim();
+    let val = s.slice(i + 1).trim();
+    if (val.length >= 2 && ((val[0] === '"' && val.endsWith('"')) || (val[0] === "'" && val.endsWith("'")))) {
+      val = val.slice(1, -1);
+    }
+    return key ? { key, val } : null;
+  }).filter(Boolean);
+}
+
 // Returns the correct host for a published port link.
 // Local active server → the host you reached DockGate on (window.location.hostname).
 // Remote SSH server → that server's host (the ports live on the remote machine, not localhost).

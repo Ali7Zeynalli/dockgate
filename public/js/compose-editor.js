@@ -24,7 +24,14 @@ async function openComposeEditor(existing, opts = {}) {
           <input class="input" id="gs-name" placeholder="service name (e.g. web)">
           <input class="input" id="gs-image" placeholder="image (e.g. nginx:alpine)">
           <input class="input" id="gs-ports" placeholder='ports, comma-separated (e.g. 8080:80, 443:443)'>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button type="button" class="btn btn-xs btn-secondary" data-gsvol="/var/run/docker.sock:/var/run/docker.sock:ro">+ docker.sock</button>
+            <button type="button" class="btn btn-xs btn-secondary" data-gsvol="./data:/data">+ ./data</button>
+            <button type="button" class="btn btn-xs btn-secondary" data-gsvol="./config:/config">+ ./config</button>
+          </div>
           <input class="input" id="gs-vols" placeholder='volumes, comma-separated (e.g. ./data:/data)'>
+          <div style="display:flex;align-items:center;gap:6px"><span style="flex:1;font-size:12px;color:var(--text-secondary)">env</span><button type="button" class="btn btn-xs btn-secondary" id="gs-paste-env">Paste .env</button></div>
+          <textarea class="input" id="gs-env-paste" placeholder="Paste a .env (KEY=VALUE per line), then click Paste .env again to import" style="display:none;min-height:70px;font-family:var(--font-mono);font-size:12px"></textarea>
           <input class="input" id="gs-env" placeholder='env, comma-separated (e.g. KEY=val, FOO=bar)'>
           <button class="btn btn-sm btn-secondary" id="gs-add" type="button">Append service to YAML ↓</button>
         </div>
@@ -55,6 +62,25 @@ async function openComposeEditor(existing, opts = {}) {
     if (!/^services:/m.test(cur)) cur = (cur ? cur + '\n' : '') + 'services:';
     ta.value = cur + '\n' + block;
     ['gs-name', 'gs-image', 'gs-ports', 'gs-vols', 'gs-env'].forEach(id => { root.querySelector('#' + id).value = ''; });
+  });
+
+  // Volume presets append to the comma-separated volumes field
+  root.querySelectorAll('[data-gsvol]').forEach(b => b.addEventListener('click', () => {
+    const f = root.querySelector('#gs-vols');
+    f.value = f.value.trim() ? f.value.replace(/,\s*$/, '') + ', ' + b.dataset.gsvol : b.dataset.gsvol;
+  }));
+  // Paste .env: first click reveals the textarea, second click imports its KEY=VALUE lines into the env field
+  const gsPaste = root.querySelector('#gs-env-paste');
+  root.querySelector('#gs-paste-env')?.addEventListener('click', () => {
+    if (gsPaste.style.display === 'none') { gsPaste.style.display = 'block'; gsPaste.focus(); return; }
+    const pairs = parseDotEnv(gsPaste.value);
+    if (pairs.length) {
+      const ef = root.querySelector('#gs-env');
+      const joined = pairs.map(p => `${p.key}=${p.val}`).join(', ');
+      ef.value = ef.value.trim() ? ef.value.replace(/,\s*$/, '') + ', ' + joined : joined;
+      showToast(`${pairs.length} variable(s) added`);
+    }
+    gsPaste.value = ''; gsPaste.style.display = 'none';
   });
 
   root.querySelector('#cmp-submit')?.addEventListener('click', async () => {

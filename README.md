@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.0.18-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.0.19-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.18-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.19-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~9.6k-informational?style=for-the-badge" alt="Lines of Code">
@@ -130,7 +130,7 @@ DockGate has **16 modules** organized in 4 groups, plus multi-host SSH:
 | Module | Description |
 |--------|-------------|
 | **Dashboard** | Real-time overview — container counts, disk usage, compose stacks, favorites, activity log, and smart insights (warns about stopped containers older than 7 days, unused images wasting disk, dangling layers) |
-| **Containers** | Full fleet management — **Run Container** (launch a new container from any image via a guided form: ports, volumes, env, restart policy, network, CPU/memory limits), group by compose project, bulk actions (start/stop/restart/remove multiple), tags, notes, favorites, search by name/image/ID/port, table or card view |
+| **Containers** | Full fleet management — **Run Container** (launch a new container from any image via a guided form: ports, volumes, env, restart policy, network, CPU/memory limits; with **Docker Hub search**, volume autocomplete/presets and bulk **Paste .env**), group by compose project, bulk actions (start/stop/restart/remove multiple), tags, notes, favorites, search by name/image/ID/port, table or card view |
 | **Container Detail** | Deep inspect with **10 tabs**: Overview, Logs, Terminal, Stats (live CPU/memory charts), Environment, Ports, Volumes, Network, Inspect (raw JSON), History |
 | **Images** | Pull (+ **Search Docker Hub**), **push to a private registry**, **Run** (launch a container straight from the image), remove, tag — filter by in-use, unused, or dangling |
 | **Volumes** | Track usage, see which containers are attached, prune unused |
