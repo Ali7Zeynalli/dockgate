@@ -2,6 +2,19 @@
 
 ---
 
+## [2.0.14] - 2026-06-10
+
+### Added
+- **Private registry credentials** — a new **Registries** page (under Manage) to store and manage credentials for private image registries (ghcr.io, GitLab, Docker Hub private, self-hosted, …). Add / edit / delete, plus a **Test login** that verifies the credentials against the registry before saving. Passwords are never sent back to the browser (masked)
+- **Automatic authentication on pull** — stored credentials are matched to an image by its registry host, so pulling a private image now works everywhere it already worked for public images: the Images "Pull", the **Run Container** modal, and the `/run` pull-on-missing path — no code change needed at the call sites
+- **Push images to a registry** — `POST /api/images/push` pushes a tagged local image to its registry, authenticating with the matching stored credential
+- New endpoints: `GET/POST /api/registries`, `PUT/DELETE /api/registries/:id`, `POST /api/registries/test`
+
+### Notes
+- Credentials are stored in the local SQLite database (same trust model as the existing SSH server passwords — protected by the `data/` volume on the host; DockGate is self-hosted, single-user)
+
+---
+
 ## [2.0.13] - 2026-06-02
 
 ### Changed

@@ -110,6 +110,15 @@ db.exec(`
     description TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS registries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    server_address TEXT NOT NULL UNIQUE,
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Idempotent additive migrations
@@ -254,6 +263,14 @@ const stmts = {
   insertServer: db.prepare('INSERT INTO servers (id, type, host, port, username, key_path, password, passphrase, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
   updateServer: db.prepare('UPDATE servers SET host = ?, port = ?, username = ?, key_path = ?, password = ?, passphrase = ?, description = ? WHERE id = ?'),
   deleteServer: db.prepare('DELETE FROM servers WHERE id = ?'),
+
+  // Registries (private image registry credentials — used to authenticate pull/push)
+  getRegistries: db.prepare('SELECT * FROM registries ORDER BY server_address'),
+  getRegistry: db.prepare('SELECT * FROM registries WHERE id = ?'),
+  getRegistryByHost: db.prepare('SELECT * FROM registries WHERE server_address = ?'),
+  insertRegistry: db.prepare('INSERT INTO registries (name, server_address, username, password) VALUES (?, ?, ?, ?)'),
+  updateRegistry: db.prepare('UPDATE registries SET name = ?, server_address = ?, username = ?, password = ? WHERE id = ?'),
+  deleteRegistry: db.prepare('DELETE FROM registries WHERE id = ?'),
 };
 
 module.exports = { db, stmts };

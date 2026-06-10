@@ -260,14 +260,97 @@ async function inspectImage(id) {
   return await image.inspect();
 }
 
-async function pullImage(repoTag) {
+/**
+ * Extract the registry host from an image reference.
+ * Docker rule: the first slash-segment is a registry only if it contains '.' or ':' or is 'localhost';
+ * otherwise the reference targets Docker Hub.
+ * e.g. "ghcr.io/owner/app:1.0" → "ghcr.io"; "localhost:5000/app" → "localhost:5000"; "nginx:latest" → "docker.io".
+ * @param {string} repoTag
+ * @returns {string} registry host
+ */
+function registryHostOf(repoTag) {
+  const firstSlash = repoTag.indexOf('/');
+  if (firstSlash === -1) return 'docker.io';
+  const maybeHost = repoTag.slice(0, firstSlash);
+  if (maybeHost === 'localhost' || maybeHost.includes('.') || maybeHost.includes(':')) {
+    return maybeHost;
+  }
+  return 'docker.io';
+}
+
+/**
+ * Look up stored credentials for the registry that hosts `repoTag`.
+ * Returns a dockerode authconfig ({ username, password, serveraddress }) or undefined if none stored.
+ * Docker Hub is matched under any of its canonical addresses so the user can save it however they like.
+ * @param {string} repoTag
+ * @returns {{username:string,password:string,serveraddress:string}|undefined}
+ */
+function lookupAuthConfig(repoTag) {
+  const { stmts } = require('./db'); // late require — avoid circular dependency
+  const host = registryHostOf(repoTag);
+  const candidates = host === 'docker.io'
+    ? ['docker.io', 'index.docker.io', 'https://index.docker.io/v1/', 'registry-1.docker.io']
+    : [host];
+  for (const addr of candidates) {
+    const reg = stmts.getRegistryByHost.get(addr);
+    if (reg) return { username: reg.username, password: reg.password, serveraddress: addr };
+  }
+  return undefined;
+}
+
+/**
+ * Pull an image. If `auth` is omitted, a stored private-registry credential matching the
+ * image's registry host is used automatically; public images still pull with no auth.
+ * @param {string} repoTag
+ * @param {object} [auth] explicit dockerode authconfig (overrides auto-lookup)
+ */
+async function pullImage(repoTag, auth) {
+  const authconfig = auth || lookupAuthConfig(repoTag);
   return new Promise((resolve, reject) => {
-    docker.pull(repoTag, (err, stream) => {
+    const opts = authconfig ? { authconfig } : {};
+    docker.pull(repoTag, opts, (err, stream) => {
       if (err) return reject(err);
       docker.modem.followProgress(stream, (err, output) => {
         if (err) return reject(err);
         resolve(output);
       });
+    });
+  });
+}
+
+/**
+ * Push a local image (repoTag must include the target repository) to its registry.
+ * Auto-matches a stored credential by registry host unless `auth` is provided.
+ * The push stream reports auth/denied failures as in-band JSON, so the output is scanned for errors.
+ * @param {string} repoTag
+ * @param {object} [auth] explicit dockerode authconfig
+ */
+async function pushImage(repoTag, auth) {
+  const authconfig = auth || lookupAuthConfig(repoTag);
+  const image = docker.getImage(repoTag);
+  return new Promise((resolve, reject) => {
+    image.push({ authconfig }, (err, stream) => {
+      if (err) return reject(err);
+      docker.modem.followProgress(stream, (err, output) => {
+        if (err) return reject(err);
+        const failed = (output || []).find(o => o && o.error);
+        if (failed) return reject(new Error(failed.error));
+        resolve(output);
+      });
+    });
+  });
+}
+
+/**
+ * Verify registry credentials against the registry (Docker Engine POST /auth). Does not persist.
+ * @param {{serveraddress:string, username:string, password:string}} creds
+ * @returns {Promise<object>} the registry response (e.g. { Status: 'Login Succeeded' })
+ */
+async function checkRegistryAuth({ serveraddress, username, password }) {
+  return new Promise((resolve, reject) => {
+    docker.checkAuth({ username, password, serveraddress }, (err, data) => {
+      if (err) return reject(err);
+      resolve(data || { Status: 'Login Succeeded' });
     });
   });
 }
@@ -628,7 +711,8 @@ module.exports = {
   setActiveServer, getActiveServerId, isLocalActive, assertLocalActive, testServerConnection,
   listContainers, inspectContainer, getContainerStats, containerAction,
   getContainerLogs, createContainer, parseStats, demuxLogs,
-  listImages, inspectImage, pullImage, removeImage, tagImage, buildImage,
+  listImages, inspectImage, pullImage, pushImage, removeImage, tagImage, buildImage,
+  registryHostOf, checkRegistryAuth,
   listVolumes, inspectVolume, removeVolume, createVolume,
   listNetworks, inspectNetwork, removeNetwork, createNetwork,
   getSystemInfo, getDockerVersion, getDiskUsage,

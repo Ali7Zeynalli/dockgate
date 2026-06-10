@@ -44,6 +44,21 @@ router.post('/:id/tag', async (req, res) => {
   }
 });
 
+// POST /push — push a local image to its registry. The credential is auto-matched by registry host
+// (see docker.pushImage). repoTag is taken from the body so registry/owner slashes are preserved.
+// body: { repoTag }  e.g. "ghcr.io/owner/app:1.0"
+router.post('/push', async (req, res) => {
+  try {
+    const { repoTag } = req.body || {};
+    if (!repoTag) return res.status(400).json({ error: 'repoTag required' });
+    const result = await dockerService.pushImage(repoTag);
+    logAction({ req, resourceType: 'image', resourceName: repoTag, action: 'push' });
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/:id', async (req, res) => {
   try {
     const force = req.query.force === 'true';
