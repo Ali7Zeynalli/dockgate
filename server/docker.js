@@ -829,6 +829,50 @@ async function listServices() {
 
 async function inspectService(id) { return await docker.getService(id).inspect(); }
 
+/** Create a replicated swarm service from a simplified spec. */
+async function createService(b = {}) {
+  const ports = (b.ports || []).map(p => {
+    const port = { Protocol: p.proto || 'tcp', TargetPort: parseInt(p.target) };
+    if (p.published) port.PublishedPort = parseInt(p.published);
+    return port;
+  }).filter(p => p.TargetPort);
+  const mounts = (b.mounts || []).map(m => ({
+    Type: m.type || 'volume', Source: m.source || undefined, Target: m.target, ReadOnly: m.mode === 'ro',
+  })).filter(m => m.Target);
+  const spec = {
+    Name: b.name,
+    TaskTemplate: {
+      ContainerSpec: {
+        Image: b.image,
+        Env: (b.env || []).filter(Boolean),
+        ...(mounts.length ? { Mounts: mounts } : {}),
+        ...(b.cmd ? { Command: String(b.cmd).split(/\s+/).filter(Boolean) } : {}),
+      },
+    },
+    Mode: { Replicated: { Replicas: parseInt(b.replicas) || 1 } },
+    ...(ports.length ? { EndpointSpec: { Ports: ports } } : {}),
+  };
+  const r = await docker.createService(spec);
+  invalidateCache('');
+  return { id: r.ID || r.id };
+}
+
+/** Rolling update of a service's image (keeps the rest of the spec). */
+async function updateServiceImage(id, image) {
+  const svc = docker.getService(id);
+  const info = await svc.inspect();
+  const spec = info.Spec;
+  spec.TaskTemplate.ContainerSpec.Image = image;
+  await svc.update({ ...spec, version: info.Version.Index });
+  return { success: true };
+}
+
+/** Aggregated service logs (across replicas). */
+async function getServiceLogs(id, tail) {
+  const logs = await docker.getService(id).logs({ stdout: true, stderr: true, tail: tail || 200, timestamps: false });
+  return demuxLogs(logs);
+}
+
 /** Scale a replicated service (update the desired replica count). */
 async function scaleService(id, replicas) {
   const svc = docker.getService(id);
@@ -1130,7 +1174,7 @@ module.exports = {
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
   listVolumeFiles, downloadVolumeFile,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
-  getSwarmInfo, listServices, inspectService, scaleService, removeService, listServiceTasks, listNodes, updateNodeAvailability,
+  getSwarmInfo, listServices, inspectService, createService, updateServiceImage, getServiceLogs, scaleService, removeService, listServiceTasks, listNodes, updateNodeAvailability,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,
   getCleanupPreview, pruneContainers, pruneImages, pruneVolumes, pruneNetworks, pruneBuildCache, systemPrune,

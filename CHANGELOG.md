@@ -2,6 +2,19 @@
 
 ---
 
+## [2.0.34] - 2026-06-11
+
+### Added — Swarm service management (filling the gaps)
+- **Create Service** — a New Service form (name, image, replicas, ports, mounts, env) deploys a replicated service. `POST /api/swarm/services`
+- **Rolling update** — change a service's image (triggers a swarm rolling update). `POST /api/swarm/services/:id/update`
+- **Service logs** — view a service's aggregated logs across replicas. `GET /api/swarm/services/:id/logs`
+- **Service inspect** — raw service spec in a modal. `GET /api/swarm/services/:id`
+- All mutations are written to the Audit Log (create / update / scale / remove)
+
+> Publishing ports on a service requires the swarm's ingress network (present on a normal `docker swarm init`).
+
+---
+
 ## [2.0.33] - 2026-06-11
 
 ### Added — Docker Swarm

@@ -25,6 +25,18 @@ router.get('/services', async (req, res) => {
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
+// Create a new service (SW-a)
+router.post('/services', async (req, res) => {
+  try {
+    await assertSwarm();
+    const b = req.body || {};
+    if (!b.name || !b.image) return res.status(400).json({ error: 'name and image are required' });
+    const r = await dockerService.createService(b);
+    logAction({ req, resourceType: 'service', resourceName: b.name, action: 'create', details: { image: b.image } });
+    res.json(r);
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 router.get('/services/:id', async (req, res) => {
   try { res.json(await dockerService.inspectService(req.params.id)); }
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
@@ -33,6 +45,23 @@ router.get('/services/:id', async (req, res) => {
 router.get('/services/:id/tasks', async (req, res) => {
   try { res.json(await dockerService.listServiceTasks(req.params.id)); }
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// Aggregated service logs (SW-a)
+router.get('/services/:id/logs', async (req, res) => {
+  try { res.json({ logs: await dockerService.getServiceLogs(req.params.id, parseInt(req.query.tail) || 200) }); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// Rolling image update (SW-a)
+router.post('/services/:id/update', async (req, res) => {
+  try {
+    const { image } = req.body || {};
+    if (!image) return res.status(400).json({ error: 'image required' });
+    await dockerService.updateServiceImage(req.params.id, image);
+    logAction({ req, resourceType: 'service', resourceName: req.params.id.substring(0, 12), action: 'update', details: { image } });
+    res.json({ success: true });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
 router.post('/services/:id/scale', async (req, res) => {
