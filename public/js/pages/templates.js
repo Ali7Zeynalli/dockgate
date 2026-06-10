@@ -112,17 +112,32 @@ Router.register('templates', async (content) => {
     if (empty) empty.style.display = filtered.length ? 'none' : 'block';
   }
 
+  // Well-known Portainer-format catalogs (verified). The community list aggregates 500+ apps,
+  // overlapping heavily with the services Portainer and Coolify offer.
+  const PRESETS = [
+    { label: 'Bundled (offline)', url: '' },
+    { label: 'Portainer Official', url: 'https://raw.githubusercontent.com/portainer/templates/v3/templates.json' },
+    { label: 'Community 500+ (Lissy93)', url: 'https://raw.githubusercontent.com/Lissy93/portainer-templates/main/templates.json' },
+  ];
+
   // Configure the catalog source (template_url) in a small modal.
   async function openSourceModal() {
     let current = '';
     try { current = (await API.get('/meta/settings')).template_url || ''; } catch (e) {}
     const body = `
       <div style="display:flex;flex-direction:column;gap:10px">
-        <div class="text-sm text-muted">Leave blank to use the bundled catalog. Paste a Portainer-format <code>templates.json</code> URL (e.g. a community catalog) to load 100+ apps.</div>
+        <div class="text-sm text-muted">Pick a catalog or paste any Portainer-format <code>templates.json</code> URL. Blank = the bundled offline set. Community catalogs load 500+ apps (databases, web apps, tools — overlapping Portainer & Coolify).</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${PRESETS.map(p => `<button type="button" class="btn btn-xs btn-secondary" data-preset="${escapeHtml(p.url)}">${escapeHtml(p.label)}</button>`).join('')}
+        </div>
         <input class="input" id="tpl-url" placeholder="https://.../templates.json" value="${escapeHtml(current)}">
       </div>`;
     const m = showModal('Template source', body, []);
     const root = m.overlay;
+    // Preset buttons fill the input (user then clicks Save & reload)
+    root.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => {
+      root.querySelector('#tpl-url').value = b.dataset.preset;
+    }));
     const footer = root.querySelector('#modal-footer');
     const save = document.createElement('button');
     save.className = 'btn btn-primary';

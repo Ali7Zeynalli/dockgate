@@ -25,7 +25,7 @@ async function openRunContainerModal(prefill = '') {
   const envRow = () => row(`<input class="input run-e-key" placeholder="KEY" style="flex:1"><span>=</span><input class="input run-e-val" placeholder="value" style="flex:2">`);
 
   const body = `
-    <div class="run-form" style="display:flex;flex-direction:column;gap:12px;max-height:65vh;overflow:auto;padding-right:4px">
+    <div class="run-form" style="display:flex;flex-direction:column;gap:12px">
       <div class="input-group">
         <label>Image *</label>
         <input class="input" id="run-image" list="run-image-list" placeholder="e.g. nginx:alpine" value="${escapeHtml(prefillImage)}">
@@ -58,14 +58,17 @@ async function openRunContainerModal(prefill = '') {
       <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><label style="font-weight:600">Ports</label><button type="button" class="btn btn-xs btn-secondary" id="run-add-port">+ Add port</button></div><div id="run-ports"></div></div>
       <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><label style="font-weight:600">Volumes</label><button type="button" class="btn btn-xs btn-secondary" id="run-add-vol">+ Add volume</button></div><div id="run-vols"></div></div>
       <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><label style="font-weight:600">Environment</label><button type="button" class="btn btn-xs btn-secondary" id="run-add-env">+ Add variable</button></div><div id="run-envs"></div></div>
-
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
-        <button class="btn btn-primary" id="run-submit">${Icons.play} Run Container</button>
-      </div>
     </div>`;
 
   const m = showModal('Run Container', body, []);
   const root = m.overlay;
+
+  // Run button lives in the (sticky) modal footer so it's always visible regardless of form length.
+  const submitBtn = document.createElement('button');
+  submitBtn.className = 'btn btn-primary';
+  submitBtn.id = 'run-submit';
+  submitBtn.innerHTML = `${Icons.play} Run Container`;
+  root.querySelector('#modal-footer').appendChild(submitBtn);
 
   // Repeatable rows — addRow can optionally fill the new row's inputs (used for template prefill)
   const addRow = (listId, builder, fill) => {

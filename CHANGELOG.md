@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.17] - 2026-06-10
+
+### Changed
+- **App Templates now shows a large catalog out of the box** — the default source is the community **500+** Portainer-format catalog (databases, web apps, tools — overlapping what Portainer and Coolify offer). It loads automatically; if offline it falls back to the bundled ~14. A **Source** picker (Bundled / Portainer Official / Community 500+ / custom URL) lets you switch or go fully offline
+
+### Fixed
+- **Modals now fit the screen** — modals use a flex layout so the header and action footer stay fixed while only the body scrolls. Tall modals (Run Container, Compose editor) no longer overflow the viewport, and the primary action button is always visible (the Run button moved into a sticky footer)
+- **No more horizontal scrolling in the Run Container modal** — the port / volume / env rows now shrink correctly (`.input` gets `min-width: 0`), so adding rows no longer pushes the modal sideways. Same fix also tidies the multi-column server-edit form
+
+---
+
 ## [2.0.16] - 2026-06-10
 
 ### Added

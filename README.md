@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.0.16-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.0.17-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.16-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.17-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~9.6k-informational?style=for-the-badge" alt="Lines of Code">
@@ -142,7 +142,7 @@ DockGate has **16 modules** organized in 4 groups, plus multi-host SSH:
 |--------|-------------|
 | **Builds** | Docker Desktop-style build management — Build History (Docker image layer history with expandable steps, bulk selection & deletion), Build Cache (grouped by image name), Builders (buildx instances), real-time build streaming, build detail with Info/Source/Logs/History tabs |
 | **Compose** | Auto-discover projects via `com.docker.compose.project` labels. Stack actions: up, down, restart, pull. **Create & edit projects in the UI** — a raw `docker-compose.yml` editor plus a guided "add service" builder; managed files are stored under `data/compose/<project>/`, validated with `docker compose config`, then brought up |
-| **App Templates** | A searchable, category-filtered marketplace of ready-to-deploy apps (Portainer "App Templates" v2 format). **Deploy** a container template → prefilled Run modal; a stack template → prefilled Compose editor. Ships with ~14 curated apps offline; set `template_url` to a community catalog for 100+ |
+| **App Templates** | A searchable, category-filtered marketplace of ready-to-deploy apps (Portainer "App Templates" v2/v3 format). **Deploy** a container template → prefilled Run modal; a stack template → prefilled Compose editor. Defaults to the community **500+** catalog (falls back to ~14 bundled offline); a **Source** picker switches between Bundled / Portainer Official / Community / custom URL |
 
 ### Monitor
 

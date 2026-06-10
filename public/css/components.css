@@ -381,7 +381,11 @@ tbody td {
   width: 90%;
   max-width: 520px;
   max-height: 85vh;
-  overflow-y: auto;
+  /* Flex column so the header/footer stay fixed and only the body scrolls — keeps tall
+     modals (Run Container, Compose editor) within the viewport with the action button always visible. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
   animation: slideUp 250ms ease;
 }
@@ -392,11 +396,12 @@ tbody td {
   justify-content: space-between;
   padding: 20px 24px 16px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .modal-title { font-size: 16px; font-weight: 700; }
 
-.modal-body { padding: 20px 24px; }
+.modal-body { padding: 20px 24px; overflow-y: auto; min-height: 0; }
 
 .modal-footer {
   display: flex;
@@ -404,7 +409,11 @@ tbody td {
   gap: 8px;
   padding: 16px 24px 20px;
   border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
+
+/* An empty footer (modals that put their action button inside the body) shouldn't show a border/padding */
+.modal-footer:empty { display: none; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
@@ -899,6 +908,9 @@ tbody td {
   color: var(--text-primary);
   font-size: 13px;
   transition: all var(--transition-fast);
+  /* Allow inputs to shrink below their intrinsic width inside flex/grid rows (e.g. the Run modal's
+     port/volume/env rows, the server-edit grid) — without this they overflow and force a horizontal scrollbar. */
+  min-width: 0;
 }
 
 .input:focus {
