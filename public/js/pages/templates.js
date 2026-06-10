@@ -115,9 +115,9 @@ Router.register('templates', async (content) => {
   // Well-known Portainer-format catalogs (verified). The community list aggregates 500+ apps,
   // overlapping heavily with the services Portainer and Coolify offer.
   const PRESETS = [
-    { label: 'Bundled (offline)', url: '' },
+    { label: 'Community 500+ (default)', url: '' },
     { label: 'Portainer Official', url: 'https://raw.githubusercontent.com/portainer/templates/v3/templates.json' },
-    { label: 'Community 500+ (Lissy93)', url: 'https://raw.githubusercontent.com/Lissy93/portainer-templates/main/templates.json' },
+    { label: 'Bundled (offline only)', url: 'bundled' },
   ];
 
   // Configure the catalog source (template_url) in a small modal.
@@ -126,7 +126,7 @@ Router.register('templates', async (content) => {
     try { current = (await API.get('/meta/settings')).template_url || ''; } catch (e) {}
     const body = `
       <div style="display:flex;flex-direction:column;gap:10px">
-        <div class="text-sm text-muted">Pick a catalog or paste any Portainer-format <code>templates.json</code> URL. Blank = the bundled offline set. Community catalogs load 500+ apps (databases, web apps, tools — overlapping Portainer & Coolify).</div>
+        <div class="text-sm text-muted">Pick a catalog or paste any Portainer-format <code>templates.json</code> URL. <strong>Blank = the default community catalog (500+ apps)</strong> — loads automatically. Choose <em>Bundled</em> to force the offline ~15 set.</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${PRESETS.map(p => `<button type="button" class="btn btn-xs btn-secondary" data-preset="${escapeHtml(p.url)}">${escapeHtml(p.label)}</button>`).join('')}
         </div>

@@ -182,9 +182,9 @@ const defaultSettings = {
   confirmDestructive: 'true',
   timezone: 'auto', // display timezone — 'auto' = browser/host; otherwise an IANA zone (e.g. Asia/Baku)
   active_server: 'local',
-  // App Templates catalog — defaults to the community 500+ list so the page shows a big catalog
-  // out of the box. Falls back to the bundled set if offline. Clear it in Settings to use bundled only.
-  template_url: 'https://raw.githubusercontent.com/Lissy93/portainer-templates/main/templates.json',
+  // App Templates catalog source. Empty = the default community catalog (500+ apps, auto-loaded by
+  // the backend); a URL = custom catalog; the sentinel 'bundled' = the offline ~15 set only.
+  template_url: '',
 };
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

@@ -9,6 +9,10 @@ const { stmts } = require('../db');
 // The bundled set works fully offline; pointing template_url at an aggregated list (e.g. a community
 // catalog) yields 100+ apps when online.
 const BUNDLED = path.join(__dirname, '..', 'templates.json');
+// When `template_url` is unset/empty we default to this community catalog (500+ apps) so the page
+// auto-loads a big list out of the box. The user can set a custom URL, or the sentinel 'bundled'
+// to force the offline set only.
+const DEFAULT_CATALOG = 'https://raw.githubusercontent.com/Lissy93/portainer-templates/main/templates.json';
 const TTL_MS = 10 * 60 * 1000; // cache remote catalogs for 10 minutes
 let cache = { at: 0, url: null, data: null };
 
@@ -20,8 +24,10 @@ function loadBundled() {
 // GET /api/templates — return the catalog ({ version, templates[], source }).
 router.get('/', async (req, res) => {
   try {
-    const url = (stmts.getSetting.get('template_url')?.value || '').trim();
-    if (!url) return res.json({ ...loadBundled(), source: 'bundled' });
+    const setting = (stmts.getSetting.get('template_url')?.value || '').trim();
+    if (setting === 'bundled') return res.json({ ...loadBundled(), source: 'bundled' });
+    // Empty/unset → the default community catalog (auto-load); any other value is a custom URL.
+    const url = setting || DEFAULT_CATALOG;
 
     if (cache.data && cache.url === url && (Date.now() - cache.at) < TTL_MS) {
       return res.json({ ...cache.data, source: 'remote', url });

@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.27] - 2026-06-10
+
+### Fixed
+- **App Templates now auto-load the big catalog** — previously an empty/unset `template_url` showed only the bundled ~15. Now empty = the **default community catalog (500+ apps)**, fetched automatically (falls back to bundled if offline). To force the offline set, pick **Bundled (offline only)** in the Source picker (sets the sentinel `bundled`). This fixes instances that had the source cleared during testing
+
+---
+
 ## [2.0.26] - 2026-06-10
 
 ### Improved
