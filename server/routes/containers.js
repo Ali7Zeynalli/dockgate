@@ -152,6 +152,29 @@ router.post('/:id/recreate', async (req, res) => {
   }
 });
 
+// C3 — browse files inside a (running) container
+router.get('/:id/files', async (req, res) => {
+  try { res.json(await dockerService.containerListFiles(req.params.id, req.query.path || '/')); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// C3 — download a single file from a container
+router.get('/:id/file', async (req, res) => {
+  try {
+    if (!req.query.path) return res.status(400).json({ error: 'path required' });
+    await dockerService.containerDownloadFile(req.params.id, req.query.path, res);
+  } catch (err) { if (!res.headersSent) res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// C3 — copy in: extract an uploaded tar into the container at ?path= (raw tar body). Before /:id/:action.
+router.post('/:id/upload', async (req, res) => {
+  try {
+    await dockerService.containerUpload(req.params.id, req.query.path || '/', req);
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'cp-in', details: { path: req.query.path || '/' } });
+    res.json({ success: true });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 // Container actions
 router.post('/:id/:action', async (req, res) => {
   try {

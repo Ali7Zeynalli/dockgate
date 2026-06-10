@@ -50,7 +50,7 @@ Router.register('container-detail', async (content, params) => {
         </div>
 
         <div class="tabs" id="detail-tabs">
-          ${['overview','logs','terminal','stats','processes','environment','ports','volumes','network','inspect','history'].map(t =>
+          ${['overview','logs','terminal','stats','processes','environment','ports','volumes','files','network','inspect','history'].map(t =>
             `<button class="tab ${currentTab === t ? 'active' : ''}" data-tab="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</button>`
           ).join('')}
         </div>
@@ -180,6 +180,7 @@ Router.register('container-detail', async (content, params) => {
       case 'environment': renderEnvironment(tabContent, info); break;
       case 'ports': renderPorts(tabContent, info); break;
       case 'volumes': renderVolumes(tabContent, info); break;
+      case 'files': renderFiles(tabContent, info); break;
       case 'network': renderNetwork(tabContent, info); break;
       case 'inspect': renderInspect(tabContent, info); break;
       case 'history': renderHistory(tabContent, info); break;
@@ -653,6 +654,58 @@ Router.register('container-detail', async (content, params) => {
         </table>
       </div>
     `;
+  }
+
+  // File browser (C3) — navigate the container fs, download files, upload a tar to extract
+  function renderFiles(el, info) {
+    if (info.State?.Status !== 'running') {
+      el.innerHTML = '<div class="empty-state" style="padding:30px"><p class="text-muted">The file browser needs a running container (it uses exec).</p></div>';
+      return;
+    }
+    let curPath = '/';
+    async function load(path) {
+      let data;
+      try { data = await API.get(`/containers/${id}/files?path=${encodeURIComponent(path)}`); }
+      catch (e) { el.innerHTML = `<div class="text-danger" style="padding:20px">${escapeHtml(e.message)}</div>`; return; }
+      curPath = data.path || '/';
+      const parts = curPath.split('/').filter(Boolean);
+      const crumb = [`<a href="#" data-nav="/">/</a>`]
+        .concat(parts.map((p, i) => `<a href="#" data-nav="/${parts.slice(0, i + 1).join('/')}">${escapeHtml(p)}</a>`))
+        .join(' <span class="text-muted">/</span> ');
+      const join = (n) => (curPath === '/' ? '' : curPath) + '/' + n;
+      const rows = (data.entries || []).map(e => e.type === 'dir'
+        ? `<tr><td><a href="#" class="td-name" data-dir="${escapeHtml(join(e.name))}">📁 ${escapeHtml(e.name)}</a></td><td></td><td></td></tr>`
+        : `<tr><td class="td-name">📄 ${escapeHtml(e.name)}</td><td class="text-xs text-muted" style="white-space:nowrap">${formatBytes(e.size)}</td><td style="text-align:right"><button class="btn btn-xs btn-secondary" data-dl="${escapeHtml(join(e.name))}">${Icons.download}</button></td></tr>`
+      ).join('');
+      el.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="text-sm" style="word-break:break-all">${crumb}</div>
+          <button class="btn btn-xs btn-secondary" id="cp-up" title="Upload a .tar — extracted into the current folder">${Icons.arrowUp} Upload .tar here</button>
+        </div>
+        <div class="table-wrapper" style="max-height:55vh;overflow:auto"><table><tbody>${rows || '<tr><td class="text-muted text-sm" style="padding:10px">Empty</td></tr>'}</tbody></table></div>
+      </div>`;
+      el.querySelectorAll('[data-dir]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); load(a.dataset.dir); }));
+      el.querySelectorAll('[data-nav]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); load(a.dataset.nav); }));
+      el.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => {
+        const a = document.createElement('a'); a.href = `/api/containers/${id}/file?path=${encodeURIComponent(b.dataset.dl)}`;
+        document.body.appendChild(a); a.click(); a.remove();
+      }));
+      el.querySelector('#cp-up')?.addEventListener('click', () => {
+        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.tar';
+        inp.onchange = async () => {
+          const f = inp.files && inp.files[0]; if (!f) return;
+          showToast(`Uploading ${f.name} → ${curPath}…`, 'info');
+          try {
+            const r = await fetch(`/api/containers/${id}/upload?path=${encodeURIComponent(curPath)}`, { method: 'POST', headers: { 'Content-Type': 'application/x-tar' }, body: f });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(d.error || 'Upload failed');
+            showToast('Extracted into container'); load(curPath);
+          } catch (e) { showToast(e.message, 'error', 8000); }
+        };
+        inp.click();
+      });
+    }
+    load('/');
   }
 
   async function renderNetwork(el, info) {

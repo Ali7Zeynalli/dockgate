@@ -170,6 +170,44 @@ function containerExportStream(id) {
   return docker.getContainer(id).export();
 }
 
+// Confine a browse path: ensure it's absolute and strip any "../".
+function safeFsPath(p) {
+  return ('/' + String(p || '')).replace(/\/+/g, '/').replace(/\.\.(\/|$)/g, '').replace(/\/$/, '') || '/';
+}
+
+/** C3 — list a directory inside a (running) container via exec. Returns { path, entries[] }. */
+async function containerListFiles(id, path) {
+  const safe = safeFsPath(path);
+  const script = `cd "${safe}" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
+  const { output } = await containerExecOnce(id, ['sh', '-c', script]);
+  const entries = String(output || '').split('\n').filter(Boolean).map(line => {
+    const i1 = line.indexOf('\t'), i2 = line.indexOf('\t', i1 + 1);
+    if (i1 < 0 || i2 < 0) return null;
+    return { type: line.slice(0, i1) === 'd' ? 'dir' : 'file', size: parseInt(line.slice(i1 + 1, i2)) || 0, name: line.slice(i2 + 1).replace(/\r$/, '') };
+  }).filter(Boolean).sort((a, b) => (a.type === b.type) ? a.name.localeCompare(b.name) : (a.type === 'dir' ? -1 : 1));
+  return { path: safe, entries };
+}
+
+/** C3 — stream a single file from a container as a download (binary-safe, via exec cat). */
+async function containerDownloadFile(id, path, res) {
+  const safe = safeFsPath(path);
+  const exec = await docker.getContainer(id).exec({ Cmd: ['cat', safe], AttachStdout: true, AttachStderr: true, Tty: false });
+  const stream = await exec.start({ hijack: true, stdin: false });
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${(safe.split('/').pop() || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')}"`);
+  const { Writable } = require('stream');
+  const devnull = new Writable({ write(c, e, cb) { cb(); } });
+  docker.modem.demuxStream(stream, res, devnull);
+  stream.on('end', () => { try { res.end(); } catch (e) {} });
+  stream.on('error', () => { try { res.destroy(); } catch (e) {} });
+}
+
+/** C3 — extract an uploaded tar into the container at `path` (docker cp in / putArchive). */
+async function containerUpload(id, path, req) {
+  await docker.getContainer(id).putArchive(req, { path: safeFsPath(path) });
+  return { success: true };
+}
+
 /** Update a running container's resource limits / restart policy live (docker update). */
 async function updateContainer(id, updateConfig) {
   await docker.getContainer(id).update(updateConfig);
@@ -970,6 +1008,7 @@ module.exports = {
   setActiveServer, getActiveServerId, isLocalActive, assertLocalActive, testServerConnection,
   listContainers, inspectContainer, getContainerStats, containerAction,
   containerTop, containerExecOnce, containerExportStream, updateContainer, commitContainer, recreateContainer,
+  containerListFiles, containerDownloadFile, containerUpload,
   getContainerLogs, createContainer, parseStats, demuxLogs,
   listImages, inspectImage, imageHistory, imageSaveStream, loadImage, pullImage, pushImage, removeImage, tagImage, buildImage,
   registryHostOf, checkRegistryAuth,

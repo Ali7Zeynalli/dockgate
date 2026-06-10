@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.0.29-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.0.30-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.29-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.30-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~9.6k-informational?style=for-the-badge" alt="Lines of Code">
@@ -131,7 +131,7 @@ DockGate has **16 modules** organized in 4 groups, plus multi-host SSH:
 |--------|-------------|
 | **Dashboard** | Real-time overview — container counts, disk usage, compose stacks, favorites, activity log, and smart insights (warns about stopped containers older than 7 days, unused images wasting disk, dangling layers) |
 | **Containers** | Full fleet management — **Run Container** (launch a new container from any image via a guided form: ports, volumes, env, restart policy, network, CPU/memory limits; with **Docker Hub search**, volume autocomplete/presets and bulk **Paste .env**), group by compose project, bulk actions (start/stop/restart/remove multiple), tags, notes, favorites, search by name/image/ID/port, table or card view |
-| **Container Detail** | Deep inspect with **11 tabs**: Overview (+ healthcheck), Logs, Terminal, Stats (live CPU/memory charts), **Processes** (top + one-off exec), Environment, Ports, Volumes, Network (+ connect/disconnect), Inspect (raw JSON), History. Plus **Export** filesystem to tar, **edit resources** (CPU/memory/restart live), **Recreate** (update image, keep config) and **Commit** to an image |
+| **Container Detail** | Deep inspect with **12 tabs**: Overview (+ healthcheck), Logs, Terminal, Stats (live CPU/memory charts), **Processes** (top + one-off exec), Environment, Ports, Volumes, Network (+ connect/disconnect), **Files** (browse/download/copy-in), Inspect (raw JSON), History. Plus **Export** filesystem to tar, **edit resources** (CPU/memory/restart live), **Recreate** (update image, keep config) and **Commit** to an image |
 | **Images** | Pull (+ **Search Docker Hub**), **push to a private registry**, **Run** (launch a container straight from the image), **Layers** viewer, **Tags** (add/untag), **Save**/**Load** `.tar` (air-gap), remove, tag — filter by in-use, unused, or dangling |
 | **Volumes** | Track usage, see which containers are attached, prune unused. **Create** (driver/opts/labels), **Backup**/**Restore** `.tar.gz`, **Clone**, **browse files** a volume's data |
 | **Networks** | View all network types (bridge, host, overlay, macvlan, none), subnet/gateway info, container counts. **Create** (driver/subnet/gateway/internal/attachable/IPv6), **Clone** an existing network, connect/disconnect containers |

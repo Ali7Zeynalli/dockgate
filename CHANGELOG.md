@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.30] - 2026-06-10
+
+### Added — "L3" container file browser
+- **Files tab** in Container Detail — browse the container's filesystem, **download** files, and **copy in** (upload a `.tar` that's extracted at the current path). Uses `docker cp`-style `exec` / `putArchive` (running containers). `GET /api/containers/:id/files` · `GET /api/containers/:id/file` · `POST /api/containers/:id/upload`
+
+---
+
 ## [2.0.29] - 2026-06-10
 
 ### Added — "L3" volume file browser
