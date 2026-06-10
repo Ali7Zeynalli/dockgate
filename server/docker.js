@@ -529,6 +529,58 @@ async function createVolume(config) {
   return r;
 }
 
+// Volume backup / clone use a throwaway helper container (busybox/alpine) that mounts the volume.
+const VOL_HELPER_IMAGE = 'alpine';
+async function ensureHelperImage() {
+  try { await docker.getImage(VOL_HELPER_IMAGE).inspect(); }
+  catch (e) { await pullImage(VOL_HELPER_IMAGE); }
+}
+
+/**
+ * V1 — stream a gzipped tar of a volume's contents to an HTTP response.
+ * A helper container mounts the volume read-only and runs `tar`; its stdout (the tar) is
+ * de-multiplexed straight to the response, then the helper is removed.
+ */
+async function backupVolumeToResponse(volName, res) {
+  await ensureHelperImage();
+  const helper = await docker.createContainer({
+    Image: VOL_HELPER_IMAGE,
+    Cmd: ['sh', '-c', 'tar czf - -C /volume . 2>/dev/null'],
+    HostConfig: { Binds: [`${volName}:/volume:ro`], AutoRemove: false },
+    AttachStdout: true, AttachStderr: true, Tty: false,
+  });
+  const stream = await helper.attach({ stream: true, stdout: true, stderr: true });
+  res.setHeader('Content-Type', 'application/gzip');
+  res.setHeader('Content-Disposition', `attachment; filename="${volName}.tar.gz"`);
+  const { Writable } = require('stream');
+  const devnull = new Writable({ write(c, e, cb) { cb(); } });
+  docker.modem.demuxStream(stream, res, devnull); // stdout (tar) → res, stderr → discard
+  let removed = false;
+  const cleanup = async () => { if (removed) return; removed = true; try { await helper.remove({ force: true }); } catch (e) {} };
+  await helper.start();
+  stream.on('end', () => { res.end(); cleanup(); });
+  stream.on('error', () => { try { res.destroy(); } catch (e) {} cleanup(); });
+  res.on('close', cleanup);
+}
+
+/**
+ * V4 — clone a volume's contents into a new volume (a helper container `cp -a`s the data).
+ */
+async function cloneVolume(srcName, destName) {
+  await ensureHelperImage();
+  await docker.createVolume({ Name: destName });
+  const helper = await docker.createContainer({
+    Image: VOL_HELPER_IMAGE,
+    Cmd: ['sh', '-c', 'cp -a /from/. /to/ 2>/dev/null || true'],
+    HostConfig: { Binds: [`${srcName}:/from:ro`, `${destName}:/to`], AutoRemove: false },
+  });
+  await helper.start();
+  await helper.wait();
+  try { await helper.remove({ force: true }); } catch (e) {}
+  invalidateCache('');
+  return { success: true, name: destName };
+}
+
 // ============ NETWORKS ============
 async function listNetworks() {
   const networks = await docker.listNetworks();
@@ -822,7 +874,7 @@ module.exports = {
   getContainerLogs, createContainer, parseStats, demuxLogs,
   listImages, inspectImage, imageHistory, pullImage, pushImage, removeImage, tagImage, buildImage,
   registryHostOf, checkRegistryAuth,
-  listVolumes, inspectVolume, removeVolume, createVolume,
+  listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, cloneVolume,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,

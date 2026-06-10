@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.24] - 2026-06-10
+
+### Added — "L2" volumes
+- **New Volume** — a create form (name, driver, driver options, labels). The Volumes page had no create UI before
+- **Backup** — download a volume's contents as a `.tar.gz` (a throwaway helper container mounts it read-only and streams the tar). `GET /api/volumes/:name/backup`
+- **Clone** — copy a volume's data into a new volume (helper container `cp -a`). `POST /api/volumes/:name/clone`
+
+> Volumes can't be relocated in Docker, so **clone** (copy to a new volume) is the practical equivalent. Restore-from-upload is planned for a later (L3) release.
+
+---
+
 ## [2.0.23] - 2026-06-10
 
 ### Added — "L2" networks
