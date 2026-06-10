@@ -86,6 +86,7 @@ router.get('/:id/top', async (req, res) => {
 // Export the container's filesystem as a tar download
 router.get('/:id/export', async (req, res) => {
   try {
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'export' });
     const stream = await dockerService.containerExportStream(req.params.id);
     res.setHeader('Content-Type', 'application/x-tar');
     res.setHeader('Content-Disposition', `attachment; filename="${req.params.id.substring(0, 12)}.tar"`);
@@ -117,7 +118,8 @@ router.post('/:id/update', async (req, res) => {
     const { cpus, memory, restart } = req.body || {};
     const cfg = {};
     if (cpus !== undefined && cpus !== '') cfg.NanoCpus = Math.round(parseFloat(cpus) * 1e9) || 0;
-    if (memory !== undefined && memory !== '') { const b = parseMemory(memory); cfg.Memory = b; cfg.MemorySwap = b; }
+    // MemorySwap = -1 → limitsiz swap (Docker qaydası: MemorySwap ≥ Memory; bərabər qoymaq swap-ı 0 edərdi)
+    if (memory !== undefined && memory !== '') { cfg.Memory = parseMemory(memory); cfg.MemorySwap = -1; }
     if (restart) cfg.RestartPolicy = { Name: restart, MaximumRetryCount: restart === 'on-failure' ? 3 : 0 };
     if (!Object.keys(cfg).length) return res.status(400).json({ error: 'Nothing to update' });
     await dockerService.updateContainer(req.params.id, cfg);
@@ -162,6 +164,7 @@ router.get('/:id/files', async (req, res) => {
 router.get('/:id/file', async (req, res) => {
   try {
     if (!req.query.path) return res.status(400).json({ error: 'path required' });
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'file-download', details: { path: req.query.path } });
     await dockerService.containerDownloadFile(req.params.id, req.query.path, res);
   } catch (err) { if (!res.headersSent) res.status(err.statusCode || 500).json({ error: err.message }); }
 });

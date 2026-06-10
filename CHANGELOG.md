@@ -2,6 +2,18 @@
 
 ---
 
+## [2.0.39] - 2026-06-11
+
+### Fixed — "P1" correctness & audit batch
+- **Memory limit no longer disables swap** — Edit Resources used to set `MemorySwap = Memory` (which means *zero* swap). Now `MemorySwap = -1` (unlimited swap; only RAM is capped)
+- **Audit log coverage** — 15+ previously-unlogged actions are now recorded: container **export** / **file download**, image **save**, volume **file download**, registry **credential test** (success *and* failed attempts), build history **hide/unhide/delete/clear**, notification-log clear, SMTP/Telegram tests, favorites/notes/tags changes. Settings changes now log **before → after** values
+- **Swarm gating hardened** — every swarm endpoint now checks the node is a **manager** (workers got raw Docker errors before); service/node/secret/config mutations gate up-front with a clear 400
+- **Secret/config size pre-validation** (500KB / 1000KB) with friendly errors
+- **Leader node remove** is blocked with a clear message (demote first)
+- **Helper-image errors** (volume backup/browse on air-gapped remote hosts) now explain the cause instead of an opaque failure
+
+---
+
 ## [2.0.38] - 2026-06-11
 
 ### Fixed / Improved — "P0" quality batch

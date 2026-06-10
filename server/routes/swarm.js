@@ -12,11 +12,17 @@ const { logAction } = require('../audit');
 const STACKS_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data'), 'stacks');
 function validateStackName(name) { return /^[a-zA-Z0-9_-]+$/.test(name || ''); }
 
-// Every endpoint except GET / requires the active daemon to be a swarm manager.
+// Every endpoint except GET / and POST /init requires the active daemon to be a swarm MANAGER
+// (workers are 'active' but can't run any control-plane operation — ControlAvailable=false).
 async function assertSwarm() {
   const info = await dockerService.getSwarmInfo();
   if (!info.active) {
     const e = new Error('The active host is not in Swarm mode. Run "docker swarm init" on it first.');
+    e.statusCode = 400;
+    throw e;
+  }
+  if (!info.isManager) {
+    const e = new Error('The active host is a swarm WORKER — control operations need a manager node. Switch to a manager (or promote this node).');
     e.statusCode = 400;
     throw e;
   }
@@ -72,24 +78,25 @@ router.post('/services', async (req, res) => {
 });
 
 router.get('/services/:id', async (req, res) => {
-  try { res.json(await dockerService.inspectService(req.params.id)); }
+  try { await assertSwarm(); res.json(await dockerService.inspectService(req.params.id)); }
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
 router.get('/services/:id/tasks', async (req, res) => {
-  try { res.json(await dockerService.listServiceTasks(req.params.id)); }
+  try { await assertSwarm(); res.json(await dockerService.listServiceTasks(req.params.id)); }
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
 // Aggregated service logs (SW-a)
 router.get('/services/:id/logs', async (req, res) => {
-  try { res.json({ logs: await dockerService.getServiceLogs(req.params.id, parseInt(req.query.tail) || 200) }); }
+  try { await assertSwarm(); res.json({ logs: await dockerService.getServiceLogs(req.params.id, parseInt(req.query.tail) || 200) }); }
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
 // Rolling image update (SW-a)
 router.post('/services/:id/update', async (req, res) => {
   try {
+    await assertSwarm();
     const { image } = req.body || {};
     if (!image) return res.status(400).json({ error: 'image required' });
     await dockerService.updateServiceImage(req.params.id, image);
@@ -100,6 +107,7 @@ router.post('/services/:id/update', async (req, res) => {
 
 router.post('/services/:id/scale', async (req, res) => {
   try {
+    await assertSwarm();
     const { replicas } = req.body || {};
     if (replicas === undefined || replicas === '') return res.status(400).json({ error: 'replicas required' });
     await dockerService.scaleService(req.params.id, replicas);
@@ -110,6 +118,7 @@ router.post('/services/:id/scale', async (req, res) => {
 
 router.delete('/services/:id', async (req, res) => {
   try {
+    await assertSwarm();
     await dockerService.removeService(req.params.id);
     logAction({ req, resourceType: 'service', resourceName: req.params.id.substring(0, 12), action: 'remove' });
     res.json({ success: true });
@@ -124,6 +133,7 @@ router.get('/nodes', async (req, res) => {
 
 router.post('/nodes/:id/availability', async (req, res) => {
   try {
+    await assertSwarm();
     const { availability } = req.body || {};
     if (!['active', 'pause', 'drain'].includes(availability)) return res.status(400).json({ error: 'availability must be active | pause | drain' });
     await dockerService.updateNodeAvailability(req.params.id, availability);
@@ -135,6 +145,7 @@ router.post('/nodes/:id/availability', async (req, res) => {
 // Remove a node from the swarm (drain it first; ?force=1 for an unreachable/down node)
 router.delete('/nodes/:id', async (req, res) => {
   try {
+    await assertSwarm();
     await dockerService.removeNode(req.params.id, req.query.force === '1' || req.query.force === 'true');
     logAction({ req, resourceType: 'node', resourceName: req.params.id.substring(0, 12), action: 'remove' });
     res.json({ success: true });
@@ -187,6 +198,8 @@ router.post('/secrets', async (req, res) => {
     await assertSwarm();
     const { name, data } = req.body || {};
     if (!name || data === undefined || data === '') return res.status(400).json({ error: 'name and data are required' });
+    // Swarm secret limiti ~500KB (raw bytes) — daemon-a getmədən aydın mesajla rədd et
+    if (Buffer.byteLength(String(data), 'utf8') > 500 * 1024) return res.status(400).json({ error: 'Secret data exceeds the 500KB swarm limit' });
     const r = await dockerService.createSecret(name, data);
     logAction({ req, resourceType: 'secret', resourceName: name, action: 'create' });
     res.json(r);
@@ -194,6 +207,7 @@ router.post('/secrets', async (req, res) => {
 });
 router.delete('/secrets/:id', async (req, res) => {
   try {
+    await assertSwarm();
     await dockerService.removeSecret(req.params.id);
     logAction({ req, resourceType: 'secret', resourceName: req.params.id.substring(0, 12), action: 'remove' });
     res.json({ success: true });
@@ -209,6 +223,8 @@ router.post('/configs', async (req, res) => {
     await assertSwarm();
     const { name, data } = req.body || {};
     if (!name || data === undefined || data === '') return res.status(400).json({ error: 'name and data are required' });
+    // Config limiti Docker versiyasına görə 500KB-1000KB arası dəyişir — 1000KB-da pre-flight rədd
+    if (Buffer.byteLength(String(data), 'utf8') > 1000 * 1024) return res.status(400).json({ error: 'Config data exceeds the 1000KB swarm limit' });
     const r = await dockerService.createConfig(name, data);
     logAction({ req, resourceType: 'config', resourceName: name, action: 'create' });
     res.json(r);
@@ -216,6 +232,7 @@ router.post('/configs', async (req, res) => {
 });
 router.delete('/configs/:id', async (req, res) => {
   try {
+    await assertSwarm();
     await dockerService.removeConfig(req.params.id);
     logAction({ req, resourceType: 'config', resourceName: req.params.id.substring(0, 12), action: 'remove' });
     res.json({ success: true });

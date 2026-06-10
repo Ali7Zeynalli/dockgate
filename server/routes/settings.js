@@ -20,6 +20,7 @@ router.post('/favorites', (req, res) => {
   try {
     const { id, type = 'container', name = '' } = req.body;
     stmts.addFavorite.run(id, type, name);
+    logAction({ req, server: 'local', resourceType: type, resourceName: name || id, action: 'favorite-add' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -28,6 +29,7 @@ router.delete('/favorites/:id', (req, res) => {
   try {
     const type = req.query.type || 'container';
     stmts.removeFavorite.run(req.params.id, type);
+    logAction({ req, server: 'local', resourceType: type, resourceName: req.params.id, action: 'favorite-remove' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -50,6 +52,7 @@ router.post('/notes', (req, res) => {
   try {
     const { id, type = 'container', note } = req.body;
     stmts.setNote.run(id, type, note);
+    logAction({ req, server: 'local', resourceType: type, resourceName: id, action: 'note-set' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -58,6 +61,7 @@ router.delete('/notes/:id', (req, res) => {
   try {
     const type = req.query.type || 'container';
     stmts.deleteNote.run(req.params.id, type);
+    logAction({ req, server: 'local', resourceType: type, resourceName: req.params.id, action: 'note-delete' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -79,6 +83,7 @@ router.post('/tags', (req, res) => {
   try {
     const { id, type = 'container', tag, color = '#00d4aa' } = req.body;
     stmts.addTag.run(id, type, tag, color);
+    logAction({ req, server: 'local', resourceType: type, resourceName: id, action: 'tag-add', details: { tag } });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -87,6 +92,7 @@ router.delete('/tags/:id/:tag', (req, res) => {
   try {
     const type = req.query.type || 'container';
     stmts.removeTag.run(req.params.id, type, req.params.tag);
+    logAction({ req, server: 'local', resourceType: type, resourceName: req.params.id, action: 'tag-remove', details: { tag: req.params.tag } });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -159,11 +165,13 @@ const ALLOWED_SETTING_KEYS = new Set([
 router.post('/settings', (req, res) => {
   try {
     const rejected = [];
-    const changed = [];
+    const changed = []; // [{key, from, to}] — audit-də əvvəl/sonra dəyər görünsün deyə
     Object.entries(req.body).forEach(([key, value]) => {
       if (!ALLOWED_SETTING_KEYS.has(key)) { rejected.push(key); return; }
-      stmts.setSetting.run(key, String(value));
-      changed.push(key);
+      const from = stmts.getSetting.get(key)?.value;
+      const to = String(value);
+      stmts.setSetting.run(key, to);
+      if (from !== to) changed.push({ key, from: from ?? null, to });
     });
     if (changed.length) logAction({ req, server: 'local', resourceType: 'system', resourceName: 'settings', action: 'settings_update', details: { changed } });
     res.json({ success: true, ...(rejected.length ? { rejected } : {}) });
@@ -210,6 +218,7 @@ router.post('/smtp/test', async (req, res) => {
   try {
     const mailer = require('../notifications/mailer');
     const result = await mailer.sendTestEmail();
+    logAction({ req, server: 'local', resourceType: 'system', resourceName: 'smtp', action: 'smtp-test', details: { result: result.success ? 'success' : 'failed' } });
     if (result.success) {
       res.json({ success: true });
     } else {
@@ -257,6 +266,7 @@ router.post('/telegram/test', async (req, res) => {
   try {
     const tg = require('../notifications/telegram');
     const result = await tg.sendTestMessage();
+    logAction({ req, server: 'local', resourceType: 'system', resourceName: 'telegram', action: 'telegram-test', details: { result: result.success ? 'success' : 'failed' } });
     if (result.success) {
       res.json({ success: true });
     } else {
@@ -298,8 +308,11 @@ router.get('/notifications/log', (req, res) => {
 });
 
 router.delete('/notifications/log', (req, res) => {
-  try { stmts.clearNotificationLogs.run(); res.json({ success: true }); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try {
+    stmts.clearNotificationLogs.run();
+    logAction({ req, server: 'local', resourceType: 'system', resourceName: 'notification-log', action: 'notifications_cleared' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ============ SYSTEM AUTO-START ============

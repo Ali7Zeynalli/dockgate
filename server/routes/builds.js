@@ -74,6 +74,7 @@ router.post('/docker-history/hide', async (req, res) => {
     const { imageId } = req.body;
     if (!imageId) return res.status(400).json({ error: 'imageId required' });
     stmts.hideBuild.run(imageId);
+    logAction({ req, server: 'local', resourceType: 'build', resourceName: imageId.substring(0, 20), action: 'hide' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -84,6 +85,7 @@ router.post('/docker-history/hide', async (req, res) => {
 router.delete('/docker-history/hidden', async (req, res) => {
   try {
     stmts.clearHiddenBuilds.run();
+    logAction({ req, server: 'local', resourceType: 'build', resourceName: 'hidden-builds', action: 'unhide-all' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -104,6 +106,7 @@ router.get('/detail/:id', async (req, res) => {
 router.delete('/detail/:id', async (req, res) => {
   try {
     stmts.deleteBuild.run(req.params.id);
+    logAction({ req, server: 'local', resourceType: 'build', resourceName: req.params.id.substring(0, 20), action: 'delete' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -113,6 +116,7 @@ router.delete('/detail/:id', async (req, res) => {
 router.delete('/', async (req, res) => {
   try {
     stmts.clearBuilds.run();
+    logAction({ req, server: 'local', resourceType: 'build', resourceName: 'all-builds', action: 'clear-history' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

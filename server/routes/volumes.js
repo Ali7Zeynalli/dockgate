@@ -36,6 +36,7 @@ router.get('/:name/files', async (req, res) => {
 router.get('/:name/file', async (req, res) => {
   try {
     if (!req.query.path) return res.status(400).json({ error: 'path required' });
+    logAction({ req, resourceType: 'volume', resourceName: req.params.name, action: 'file-download', details: { path: req.query.path } });
     await dockerService.downloadVolumeFile(req.params.name, req.query.path, res);
   } catch (err) {
     if (!res.headersSent) res.status(err.statusCode || 500).json({ error: err.message });

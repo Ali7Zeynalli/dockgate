@@ -105,6 +105,7 @@ router.post('/test', async (req, res) => {
       return res.status(400).json({ error: 'serverAddress, username and password are required' });
     }
     const data = await dockerService.checkRegistryAuth({ serveraddress: serverAddress, username, password });
+    logAction({ req, resourceType: 'registry', resourceName: serverAddress, action: 'test', details: { username, result: 'success' } });
     res.json({ success: true, status: data.Status || 'Login Succeeded' });
   } catch (err) {
     // The Docker daemon wraps a registry 401 as its own HTTP 500 whose message still mentions the
@@ -113,6 +114,7 @@ router.post('/test', async (req, res) => {
     const m = (err.message || '').toLowerCase();
     const isAuthFail = err.statusCode === 401
       || /\b401\b|unauthorized|incorrect username or password|authentication required/.test(m);
+    logAction({ req, resourceType: 'registry', resourceName: (req.body || {}).serverAddress || '', action: 'test', details: { result: isAuthFail ? 'auth-failed' : 'error' } });
     res.status(isAuthFail ? 401 : 500).json({ error: err.message });
   }
 });

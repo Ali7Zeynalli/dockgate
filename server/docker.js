@@ -611,7 +611,15 @@ async function createVolume(config) {
 const VOL_HELPER_IMAGE = 'alpine';
 async function ensureHelperImage() {
   try { await docker.getImage(VOL_HELPER_IMAGE).inspect(); }
-  catch (e) { await pullImage(VOL_HELPER_IMAGE); }
+  catch (e) {
+    try { await pullImage(VOL_HELPER_IMAGE); }
+    catch (pullErr) {
+      // Remote/air-gapped daemon-da opaque xəta əvəzinə aydın səbəb
+      const err = new Error(`Helper image "${VOL_HELPER_IMAGE}" is not available on the active daemon and could not be pulled (no internet?). Pull it manually on that host: docker pull ${VOL_HELPER_IMAGE}. (${pullErr.message})`);
+      err.statusCode = 502;
+      throw err;
+    }
+  }
 }
 
 /**
@@ -837,6 +845,13 @@ async function getSwarmJoinTokens() {
 
 /** Remove a node from the swarm (drain it first; force for an unreachable node). */
 async function removeNode(id, force) {
+  // Leader silinə bilməz — Docker onsuz da rədd edir, amma aydın mesaj verək
+  const info = await docker.getNode(id).inspect();
+  if (info.ManagerStatus?.Leader) {
+    const e = new Error('Cannot remove the LEADER node. Demote it first (or let another manager take leadership).');
+    e.statusCode = 400;
+    throw e;
+  }
   await docker.getNode(id).remove({ force: !!force });
   invalidateCache('');
   return { success: true };

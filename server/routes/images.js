@@ -55,6 +55,7 @@ router.get('/:id/history', async (req, res) => {
 // GET /:id/save — download the image as a tar (docker save) — I2
 router.get('/:id/save', async (req, res) => {
   try {
+    logAction({ req, resourceType: 'image', resourceName: req.params.id.substring(0, 40), action: 'save' });
     const stream = await dockerService.imageSaveStream(req.params.id);
     res.setHeader('Content-Type', 'application/x-tar');
     res.setHeader('Content-Disposition', `attachment; filename="${req.params.id.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 40)}.tar"`);
