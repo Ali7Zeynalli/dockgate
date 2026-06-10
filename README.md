@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.0.14-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.0.15-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.14-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.15-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~9.6k-informational?style=for-the-badge" alt="Lines of Code">
@@ -172,7 +172,7 @@ DockGate manages both your **local** Docker socket and the Docker daemons of **r
 | **All-host notifications** | A dedicated `EventMonitor` runs per registered host, so alerts arrive from **every** server — not just the active one |
 | **Key & credential storage** | SSH private keys are written to `data/ssh-keys/*.pem` (mode `0600`); server records live in the `servers` table of the SQLite database |
 
-**Usage:** Add a host from the sidebar server switcher — provide host, port, username, and one of: private key (+ optional passphrase), password, or leave blank to use the SSH agent. Test the connection before saving, then switch to it to manage that daemon. Local can never be deleted.
+**Usage:** Add a host in **Settings → Servers** — provide host, port, username, and one of: private key (+ optional passphrase), password, or leave blank to use the SSH agent. Test the connection before saving, then switch to it (sidebar **SRV** dropdown) to manage that daemon. Existing servers can be **edited** in place (host/port/user/auth) via the row's Edit button. Local can never be deleted.
 
 ### Container Actions
 

@@ -4,6 +4,25 @@ const dockerService = require('../docker');
 const { stmts } = require('../db');
 const { logAction } = require('../audit');
 
+/**
+ * Return a shallow copy of an audit `details` body with secret-bearing values masked, so
+ * environment variables (tokens, passwords, …) never land in the audit log or its CSV export.
+ * Masks the values of an `Env` array ("KEY=secret" → "KEY=***"); everything else is left intact.
+ * @param {*} body the raw request body about to be logged
+ * @returns {*} a safe-to-log copy (or the original if there is nothing to redact)
+ */
+function redactSecrets(body) {
+  if (!body || typeof body !== 'object' || !Array.isArray(body.Env)) return body;
+  return {
+    ...body,
+    Env: body.Env.map(e => {
+      const s = String(e);
+      const i = s.indexOf('=');
+      return i === -1 ? s : s.slice(0, i) + '=***';
+    }),
+  };
+}
+
 // List all containers
 router.get('/', async (req, res) => {
   try {
@@ -63,9 +82,9 @@ router.post('/:id/:action', async (req, res) => {
     // Log activity
     try {
       const info = await dockerService.inspectContainer(id);
-      logAction({ req, resourceId: id, resourceType: 'container', resourceName: info.Name?.replace(/^\//, '') || id.substring(0, 12), action, details: req.body });
+      logAction({ req, resourceId: id, resourceType: 'container', resourceName: info.Name?.replace(/^\//, '') || id.substring(0, 12), action, details: redactSecrets(req.body) });
     } catch (e) {
-      logAction({ req, resourceId: id, resourceType: 'container', resourceName: id.substring(0, 12), action, details: req.body });
+      logAction({ req, resourceId: id, resourceType: 'container', resourceName: id.substring(0, 12), action, details: redactSecrets(req.body) });
     }
     res.json(result);
   } catch (err) {
@@ -77,7 +96,7 @@ router.post('/:id/:action', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const result = await dockerService.createContainer(req.body);
-    logAction({ req, resourceId: result.id, resourceType: 'container', resourceName: req.body.name || result.id.substring(0, 12), action: 'create', details: req.body });
+    logAction({ req, resourceId: result.id, resourceType: 'container', resourceName: req.body.name || result.id.substring(0, 12), action: 'create', details: redactSecrets(req.body) });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

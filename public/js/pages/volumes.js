@@ -83,7 +83,7 @@ Router.register('volumes', async (content) => {
                 <div class="detail-item"><div class="detail-label">Driver</div><div class="detail-value">${data.Driver}</div></div>
                 <div class="detail-item"><div class="detail-label">Mountpoint</div><div class="detail-value mono">${escapeHtml(data.Mountpoint)}</div></div>
                 <div class="detail-item"><div class="detail-label">Scope</div><div class="detail-value">${data.Scope}</div></div>
-                <div class="detail-item"><div class="detail-label">Created</div><div class="detail-value">${data.CreatedAt ? new Date(data.CreatedAt).toLocaleString() : 'N/A'}</div></div>
+                <div class="detail-item"><div class="detail-label">Created</div><div class="detail-value">${data.CreatedAt ? formatTime(data.CreatedAt) : 'N/A'}</div></div>
               </div>
               ${Object.keys(data.Labels || {}).length > 0 ? `<div class="mt-2"><div class="detail-label mb-1">Labels</div><pre class="json-viewer" style="max-height:200px">${syntaxHighlightJSON(JSON.stringify(data.Labels, null, 2))}</pre></div>` : ''}
             `, [{ label: 'Close', className: 'btn btn-secondary' }]);

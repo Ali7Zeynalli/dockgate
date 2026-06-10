@@ -175,6 +175,7 @@ Router.register('settings', async (content) => {
               <td>
                 ${!s.isActive ? `<button class="btn btn-xs btn-secondary" data-action="activate" data-id="${escapeHtml(s.id)}">Use</button>` : ''}
                 <button class="btn btn-xs btn-secondary" data-action="test" data-id="${escapeHtml(s.id)}">Test</button>
+                ${!isLocal ? `<button class="btn btn-xs btn-secondary" data-action="edit" data-id="${escapeHtml(s.id)}">Edit</button>` : ''}
                 ${!isLocal ? `<button class="btn btn-xs btn-ghost text-danger" data-action="delete" data-id="${escapeHtml(s.id)}">${Icons.trash}</button>` : ''}
               </td>
             </tr>`;
@@ -248,10 +249,10 @@ Router.register('settings', async (content) => {
         // setHTML helper — escapeHtml() artıq tətbiq olunub yuxarıda
         Object.assign(tabContent, { innerHTML: html });
 
-        attachServerHandlers();
+        attachServerHandlers(data.servers);
       }
 
-      function attachServerHandlers() {
+      function attachServerHandlers(servers = []) {
         // Auth tabs (key / password / agent)
         let authMode = 'key';
         tabContent.querySelectorAll('#auth-tabs .tab-btn').forEach(btn => {
@@ -281,6 +282,9 @@ Router.register('settings', async (content) => {
                 } else {
                   showToast(`✗ ${r.error}`, 'error', 8000);
                 }
+              } else if (action === 'edit') {
+                const s = servers.find(x => x.id === id);
+                if (s) openServerEditModal(s);
               } else if (action === 'delete') {
                 showConfirm('Delete Server', `Server "${id}" silinsin? SSH key faylı da silinir.`, async () => {
                   await API.del(`/servers/${id}`);
@@ -355,6 +359,105 @@ Router.register('settings', async (content) => {
             if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
             renderServers();
           } catch (e) { showToast(e.message, 'error'); }
+        });
+      }
+
+      // Edit an existing SSH server in a modal. ID is immutable (it's the PK / URL param).
+      // Key and password are never returned by the API, so leaving them blank keeps the current secret;
+      // entering a new one replaces it (PUT /servers/:id only updates the fields that are sent).
+      function openServerEditModal(s) {
+        const body = `
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="text-xs text-muted">Editing <b>${escapeHtml(s.id)}</b> — the ID cannot be changed.</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <input class="input" id="esrv-host" placeholder="Host" value="${escapeHtml(s.host || '')}" />
+              <input class="input" id="esrv-port" type="number" placeholder="Port" value="${s.port || 22}" />
+              <input class="input" id="esrv-user" placeholder="SSH user" value="${escapeHtml(s.username || '')}" />
+              <input class="input" id="esrv-desc" placeholder="Description" value="${escapeHtml(s.description || '')}" />
+            </div>
+            <div class="tab-bar" id="esrv-auth-tabs">
+              <button class="tab-btn ${s.authMode !== 'password' ? 'active' : ''}" data-auth="key" type="button">🔑 Private Key</button>
+              <button class="tab-btn ${s.authMode === 'password' ? 'active' : ''}" data-auth="password" type="button">🔒 Password</button>
+            </div>
+            <div id="esrv-pane-key" class="esrv-pane" style="display:${s.authMode !== 'password' ? 'block' : 'none'}">
+              <label class="text-xs text-muted">New private key — leave blank to keep the current ${s.hasKey ? 'key' : 'auth'}:</label>
+              <textarea class="input" id="esrv-key" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="font-family:var(--font-mono);font-size:11px;width:100%;margin-top:4px;"></textarea>
+            </div>
+            <div id="esrv-pane-password" class="esrv-pane" style="display:${s.authMode === 'password' ? 'block' : 'none'}">
+              <label class="text-xs text-muted">New password — leave blank to keep the current one:</label>
+              <input class="input" id="esrv-pass" type="password" placeholder="••••••••" style="width:100%;margin-top:4px;" />
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-secondary btn-sm" id="esrv-test" type="button">Test Connection</button>
+              <span id="esrv-test-result" class="text-xs"></span>
+            </div>
+            <div class="text-xs text-muted">Test verifies the saved server unless you enter a new key/password above.</div>
+          </div>`;
+
+        const m = showModal(`Edit server: ${escapeHtml(s.id)}`, body, []);
+        const root = document.getElementById('modal-root');
+        let authMode = s.authMode === 'password' ? 'password' : 'key';
+
+        root.querySelectorAll('#esrv-auth-tabs .tab-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            authMode = btn.dataset.auth;
+            root.querySelectorAll('#esrv-auth-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            root.querySelector('#esrv-pane-key').style.display = authMode === 'key' ? 'block' : 'none';
+            root.querySelector('#esrv-pane-password').style.display = authMode === 'password' ? 'block' : 'none';
+          });
+        });
+
+        // Build the PUT body — only include a secret if a new one was actually entered.
+        function buildEditBody() {
+          const b = {
+            host: root.querySelector('#esrv-host').value.trim(),
+            port: parseInt(root.querySelector('#esrv-port').value) || 22,
+            username: root.querySelector('#esrv-user').value.trim(),
+            description: root.querySelector('#esrv-desc').value.trim(),
+          };
+          if (authMode === 'key') {
+            const k = root.querySelector('#esrv-key').value;
+            if (k && k.trim()) b.privateKey = k;
+          } else {
+            const p = root.querySelector('#esrv-pass').value;
+            if (p) b.password = p;
+          }
+          return b;
+        }
+
+        root.querySelector('#esrv-test').addEventListener('click', async () => {
+          const r = root.querySelector('#esrv-test-result');
+          r.textContent = 'Testing…'; r.style.color = 'var(--text-secondary)';
+          try {
+            const b = buildEditBody();
+            // No new secret entered → test the saved server by id (uses stored credentials)
+            const payload = (b.privateKey || b.password) ? b : { id: s.id };
+            const res = await API.post('/servers/test', payload);
+            if (res.success) { r.textContent = `✓ ${res.version} — ${res.containers} containers`; r.style.color = 'var(--success)'; }
+            else { r.textContent = `✗ ${res.error}`; r.style.color = 'var(--danger)'; }
+          } catch (e) { r.textContent = '✗ ' + e.message; r.style.color = 'var(--danger)'; }
+        });
+
+        const footer = root.querySelector('#modal-footer');
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'btn btn-primary';
+        saveBtn.textContent = 'Save Changes';
+        footer.appendChild(saveBtn);
+        saveBtn.addEventListener('click', async () => {
+          const b = buildEditBody();
+          if (!b.host || !b.username) { showToast('Host and username are required', 'warning'); return; }
+          saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+          try {
+            await API.put('/servers/' + s.id, b);
+            showToast(`Server "${s.id}" updated`);
+            m.close();
+            if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
+            renderServers();
+          } catch (e) {
+            showToast(e.message, 'error', 8000);
+            saveBtn.disabled = false; saveBtn.textContent = 'Save Changes';
+          }
         });
       }
 
@@ -616,7 +719,7 @@ Router.register('settings', async (content) => {
                   <tbody>
                     ${notifLogs.map(l => `
                       <tr>
-                        <td class="text-xs text-muted" style="white-space:nowrap;">${new Date(l.created_at).toLocaleString()}</td>
+                        <td class="text-xs text-muted" style="white-space:nowrap;">${formatTime(l.created_at)}</td>
                         <td class="td-mono text-xs" style="text-align:center;">${l.channel === 'telegram' ? '📱 TG' : '📧 Email'}</td>
                         <td class="td-mono text-xs">${escapeHtml(l.event_type)}</td>
                         <td class="text-sm">${escapeHtml(l.subject)}</td>

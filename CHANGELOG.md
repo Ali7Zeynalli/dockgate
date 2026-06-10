@@ -2,6 +2,19 @@
 
 ---
 
+## [2.0.15] - 2026-06-10
+
+### Added
+- **Edit registered SSH servers from the UI** — each remote server in Settings → Servers now has an **Edit** button that opens a modal to change host, port, username, description, or auth (private key / password). Leaving the key/password blank keeps the current secret; a **Test Connection** verifies the saved server or the new credentials. (The `PUT /api/servers/:id` endpoint already existed — this wires up the front-end.)
+
+### Changed
+- **Display timezone now applies everywhere** — the timestamps on Volume detail, Builds (history/detail), Container detail (Created/Started/Finished), and the Notification Log now honour the timezone selected in Settings → General, instead of always using the browser's local time
+
+### Fixed / Security
+- **Secrets no longer leak into the audit log** — when a container is created with environment variables, the audit record now masks the values (`DB_PASSWORD=***`) instead of storing them in plain text (which also flowed into the CSV export). Keys are kept, values are redacted
+
+---
+
 ## [2.0.14] - 2026-06-10
 
 ### Added

@@ -305,7 +305,7 @@ Router.register('builds', async (content) => {
               <div class="text-muted text-sm" style="margin-top:4px;display:flex;align-items:center;gap:8px;">
                 ${buildStatusBadge(build.status)}
                 ${build.duration_ms ? `<span>${formatDuration(build.duration_ms)}</span>` : ''}
-                ${build.started_at ? `<span>${new Date(build.started_at).toLocaleString()}</span>` : ''}
+                ${build.started_at ? `<span>${formatTime(build.started_at)}</span>` : ''}
               </div>
             </div>
             <button class="btn btn-danger btn-sm" id="delete-this-build">${Icons.trash} Delete</button>
@@ -469,11 +469,11 @@ Router.register('builds', async (content) => {
             <div style="position:absolute;left:7px;top:8px;bottom:8px;width:2px;background:var(--border);"></div>
             <div style="display:flex;align-items:center;gap:10px;">
               <span style="width:12px;height:12px;border-radius:50%;background:var(--accent);position:relative;z-index:1;flex-shrink:0;"></span>
-              <span class="text-sm">Started: ${build.started_at ? new Date(build.started_at).toLocaleString() : '—'}</span>
+              <span class="text-sm">Started: ${build.started_at ? formatTime(build.started_at) : '—'}</span>
             </div>
             <div style="display:flex;align-items:center;gap:10px;">
               <span style="width:12px;height:12px;border-radius:50%;background:${build.status === 'success' ? 'var(--success)' : build.status === 'failed' ? 'var(--danger)' : 'var(--warning)'};position:relative;z-index:1;flex-shrink:0;"></span>
-              <span class="text-sm">Finished: ${build.finished_at ? new Date(build.finished_at).toLocaleString() : 'In progress...'}</span>
+              <span class="text-sm">Finished: ${build.finished_at ? formatTime(build.finished_at) : 'In progress...'}</span>
             </div>
           </div>
         </div>
@@ -609,7 +609,7 @@ Router.register('builds', async (content) => {
                   <div class="build-status-icon build-status-${b.status}" style="width:24px;height:24px;font-size:11px;">
                     ${b.status === 'success' ? '✓' : b.status === 'failed' ? '✗' : '●'}
                   </div>
-                  <span class="text-sm">${b.started_at ? new Date(b.started_at).toLocaleString() : '—'}</span>
+                  <span class="text-sm">${b.started_at ? formatTime(b.started_at) : '—'}</span>
                   ${b.id === build.id ? '<span class="badge badge-running" style="font-size:9px;">Current</span>' : ''}
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;">

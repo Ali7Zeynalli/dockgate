@@ -125,9 +125,9 @@ Router.register('container-detail', async (content, params) => {
         <div class="detail-item"><div class="detail-label">Health</div><div class="detail-value">${state.Health?.Status || 'No healthcheck'}</div></div>
         <div class="detail-item"><div class="detail-label">Restart Count</div><div class="detail-value">${info.RestartCount || 0}</div></div>
         <div class="detail-item"><div class="detail-label">Exit Code</div><div class="detail-value">${state.ExitCode ?? 'N/A'}</div></div>
-        <div class="detail-item"><div class="detail-label">Created</div><div class="detail-value">${info.Created ? new Date(info.Created).toLocaleString() : 'N/A'}</div></div>
-        <div class="detail-item"><div class="detail-label">Started</div><div class="detail-value">${state.StartedAt ? new Date(state.StartedAt).toLocaleString() : 'N/A'}</div></div>
-        <div class="detail-item"><div class="detail-label">Finished</div><div class="detail-value">${state.FinishedAt && state.FinishedAt !== '0001-01-01T00:00:00Z' ? new Date(state.FinishedAt).toLocaleString() : 'N/A'}</div></div>
+        <div class="detail-item"><div class="detail-label">Created</div><div class="detail-value">${info.Created ? formatTime(info.Created) : 'N/A'}</div></div>
+        <div class="detail-item"><div class="detail-label">Started</div><div class="detail-value">${state.StartedAt ? formatTime(state.StartedAt) : 'N/A'}</div></div>
+        <div class="detail-item"><div class="detail-label">Finished</div><div class="detail-value">${state.FinishedAt && state.FinishedAt !== '0001-01-01T00:00:00Z' ? formatTime(state.FinishedAt) : 'N/A'}</div></div>
         <div class="detail-item"><div class="detail-label">Restart Policy</div><div class="detail-value">${hc.RestartPolicy?.Name || 'N/A'} (max: ${hc.RestartPolicy?.MaximumRetryCount || 0})</div></div>
         <div class="detail-item"><div class="detail-label">Working Dir</div><div class="detail-value mono">${cfg.WorkingDir || '/'}</div></div>
         <div class="detail-item"><div class="detail-label">User</div><div class="detail-value">${cfg.User || 'root'}</div></div>
