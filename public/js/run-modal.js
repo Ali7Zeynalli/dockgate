@@ -1,6 +1,10 @@
 // Shared "Run Container" guided form — used by the Images page (per-image) and the
 // Containers page (header button). Pulls (optionally) → creates → starts via POST /containers/run.
-async function openRunContainerModal(prefillImage = '') {
+async function openRunContainerModal(prefill = '') {
+  // Accept either an image string (Images/Containers buttons) or a full prefill object from a
+  // template: { image, name, ports:[{host,container,proto}], volumes:[{host,container,mode}], env:[{key,val}], pull }.
+  const p = (typeof prefill === 'string') ? { image: prefill } : (prefill || {});
+  const prefillImage = p.image || '';
   let images = [];
   let networks = [];
   try {
@@ -26,9 +30,9 @@ async function openRunContainerModal(prefillImage = '') {
         <label>Image *</label>
         <input class="input" id="run-image" list="run-image-list" placeholder="e.g. nginx:alpine" value="${escapeHtml(prefillImage)}">
         <datalist id="run-image-list">${imageOpts.map(o => `<option value="${escapeHtml(o)}">`).join('')}</datalist>
-        <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400"><input type="checkbox" id="run-pull"> Pull image before running</label>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400"><input type="checkbox" id="run-pull"${p.pull ? ' checked' : ''}> Pull image before running</label>
       </div>
-      <div class="input-group"><label>Container name (optional)</label><input class="input" id="run-name" placeholder="my-app"></div>
+      <div class="input-group"><label>Container name (optional)</label><input class="input" id="run-name" placeholder="my-app" value="${escapeHtml(p.name || '')}"></div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="input-group" style="flex:1;min-width:160px"><label>Restart policy</label>
           <select class="select" id="run-restart">
@@ -63,20 +67,39 @@ async function openRunContainerModal(prefillImage = '') {
   const m = showModal('Run Container', body, []);
   const root = m.overlay;
 
-  // Repeatable rows
-  const wire = (addBtnId, listId, builder) => {
+  // Repeatable rows — addRow can optionally fill the new row's inputs (used for template prefill)
+  const addRow = (listId, builder, fill) => {
     const list = root.querySelector('#' + listId);
-    root.querySelector('#' + addBtnId)?.addEventListener('click', () => {
-      const wrap = document.createElement('div');
-      wrap.innerHTML = builder();
-      const el = wrap.firstElementChild;
-      el.querySelector('.run-row-del')?.addEventListener('click', () => el.remove());
-      list.appendChild(el);
-    });
+    const wrap = document.createElement('div');
+    wrap.innerHTML = builder();
+    const el = wrap.firstElementChild;
+    el.querySelector('.run-row-del')?.addEventListener('click', () => el.remove());
+    if (fill) fill(el);
+    list.appendChild(el);
+    return el;
+  };
+  const wire = (addBtnId, listId, builder) => {
+    root.querySelector('#' + addBtnId)?.addEventListener('click', () => addRow(listId, builder));
   };
   wire('run-add-port', 'run-ports', portRow);
   wire('run-add-vol', 'run-vols', volRow);
   wire('run-add-env', 'run-envs', envRow);
+
+  // Prefill rows from a template (no-op for the plain image-string usage)
+  (p.ports || []).forEach(pt => addRow('run-ports', portRow, el => {
+    el.querySelector('.run-p-host').value = pt.host || '';
+    el.querySelector('.run-p-cont').value = pt.container || '';
+    if (pt.proto) el.querySelector('.run-p-proto').value = pt.proto;
+  }));
+  (p.volumes || []).forEach(v => addRow('run-vols', volRow, el => {
+    el.querySelector('.run-v-host').value = v.host || '';
+    el.querySelector('.run-v-cont').value = v.container || '';
+    if (v.mode) el.querySelector('.run-v-mode').value = v.mode;
+  }));
+  (p.env || []).forEach(e => addRow('run-envs', envRow, el => {
+    el.querySelector('.run-e-key').value = e.key || '';
+    el.querySelector('.run-e-val').value = e.val != null ? e.val : '';
+  }));
 
   root.querySelector('#run-submit')?.addEventListener('click', async () => {
     const image = root.querySelector('#run-image').value.trim();

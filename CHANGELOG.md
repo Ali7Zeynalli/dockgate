@@ -2,6 +2,21 @@
 
 ---
 
+## [2.0.16] - 2026-06-10
+
+### Added
+- **App Templates** — a new marketplace page (Build → App Templates) with a searchable, category-filterable catalog of ready-to-deploy apps in the Portainer "App Templates" v2 format. Click **Deploy**:
+  - a **container** template prefills the Run Container modal (image, name, ports, volumes, env, pull)
+  - a **stack** template prefills the Compose editor with its `docker-compose.yml`, ready to create & up
+- **Bundled catalog** — ships with ~14 curated apps (nginx, postgres, redis, mysql, mongo, grafana, adminer, Uptime Kuma, WordPress+MySQL, Nextcloud+PostgreSQL, …) that work fully offline
+- **Configurable source** — Settings key `template_url`: point it at a Portainer-format catalog URL (e.g. a community list) to load 100+ apps; blank uses the bundled set. Remote catalogs are cached and fall back to the bundled set if unreachable
+- New endpoints: `GET /api/templates`, `GET /api/templates/stackfile?url=` (server-side proxy, http(s) only)
+
+### Changed
+- The Compose editor (New Project / Edit YAML) is now a shared global (`public/js/compose-editor.js`) so the Templates page can reuse it; `openRunContainerModal()` now also accepts a full prefill object (image + ports + volumes + env). No change to existing behaviour
+
+---
+
 ## [2.0.15] - 2026-06-10
 
 ### Added

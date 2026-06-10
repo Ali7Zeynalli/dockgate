@@ -153,7 +153,7 @@ const ALLOWED_SETTING_KEYS = new Set([
   'theme', 'refreshInterval', 'defaultView', 'sidebarCollapsed',
   'logTailLines', 'logTimestamps', 'logAutoScroll', 'logWrapLines',
   'terminalShell', 'terminalFontSize', 'dateFormat', 'confirmDestructive',
-  'timezone',
+  'timezone', 'template_url',
 ]);
 
 router.post('/settings', (req, res) => {

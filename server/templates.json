@@ -1,0 +1,177 @@
+{
+  "version": "2",
+  "templates": [
+    {
+      "type": 1,
+      "title": "Nginx",
+      "description": "High-performance web server and reverse proxy.",
+      "categories": ["webserver"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/nginx",
+      "image": "nginx:alpine",
+      "ports": ["80/tcp"],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "Apache HTTP Server",
+      "description": "The Apache HTTP Server (httpd).",
+      "categories": ["webserver"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/apache",
+      "image": "httpd:alpine",
+      "ports": ["80/tcp"],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "Redis",
+      "description": "In-memory data store, used as a database, cache and message broker.",
+      "categories": ["database", "cache"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/redis",
+      "image": "redis:alpine",
+      "ports": ["6379/tcp"],
+      "volumes": [{ "container": "/data" }],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "PostgreSQL",
+      "description": "Powerful open-source relational database.",
+      "categories": ["database"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/postgresql",
+      "image": "postgres:16-alpine",
+      "ports": ["5432/tcp"],
+      "volumes": [{ "container": "/var/lib/postgresql/data" }],
+      "env": [
+        { "name": "POSTGRES_PASSWORD", "label": "Superuser password", "default": "changeme" },
+        { "name": "POSTGRES_USER", "label": "Superuser name", "default": "postgres" },
+        { "name": "POSTGRES_DB", "label": "Default database", "default": "app" }
+      ],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "MySQL",
+      "description": "The world's most popular open-source relational database.",
+      "categories": ["database"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/mysql",
+      "image": "mysql:8",
+      "ports": ["3306/tcp"],
+      "volumes": [{ "container": "/var/lib/mysql" }],
+      "env": [
+        { "name": "MYSQL_ROOT_PASSWORD", "label": "Root password", "default": "changeme" },
+        { "name": "MYSQL_DATABASE", "label": "Default database", "default": "app" }
+      ],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "MongoDB",
+      "description": "Document-oriented NoSQL database.",
+      "categories": ["database"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/mongodb",
+      "image": "mongo:7",
+      "ports": ["27017/tcp"],
+      "volumes": [{ "container": "/data/db" }],
+      "env": [
+        { "name": "MONGO_INITDB_ROOT_USERNAME", "label": "Root username", "default": "root" },
+        { "name": "MONGO_INITDB_ROOT_PASSWORD", "label": "Root password", "default": "changeme" }
+      ],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "Adminer",
+      "description": "Full-featured database management tool in a single file.",
+      "categories": ["database", "tools"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/adminer",
+      "image": "adminer:latest",
+      "ports": ["8080:8080/tcp"],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "Grafana",
+      "description": "Open-source analytics and interactive visualization dashboards.",
+      "categories": ["monitoring"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/grafana",
+      "image": "grafana/grafana:latest",
+      "ports": ["3000:3000/tcp"],
+      "volumes": [{ "container": "/var/lib/grafana" }],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "Uptime Kuma",
+      "description": "Self-hosted monitoring tool — a beautiful uptime/status page.",
+      "categories": ["monitoring"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/uptimekuma",
+      "image": "louislam/uptime-kuma:1",
+      "ports": ["3001:3001/tcp"],
+      "volumes": [{ "container": "/app/data" }],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "Portainer CE",
+      "description": "Lightweight Docker management UI (the one DockGate is a lighter alternative to).",
+      "categories": ["tools"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/portainer",
+      "image": "portainer/portainer-ce:latest",
+      "ports": ["9000:9000/tcp"],
+      "volumes": [
+        { "bind": "/var/run/docker.sock", "container": "/var/run/docker.sock" },
+        { "container": "/data" }
+      ],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "whoami",
+      "description": "Tiny Go server that prints OS/HTTP request info — handy for testing proxies.",
+      "categories": ["tools"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/traefikproxy",
+      "image": "traefik/whoami:latest",
+      "ports": ["80/tcp"],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 1,
+      "title": "Memcached",
+      "description": "High-performance distributed memory object caching system.",
+      "categories": ["cache", "database"],
+      "platform": "linux",
+      "image": "memcached:alpine",
+      "ports": ["11211/tcp"],
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "type": 3,
+      "title": "WordPress + MySQL",
+      "description": "WordPress CMS with a dedicated MySQL database (multi-service stack).",
+      "categories": ["cms"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/wordpress",
+      "compose": "services:\n  db:\n    image: mysql:8\n    restart: unless-stopped\n    environment:\n      - MYSQL_ROOT_PASSWORD=changeme\n      - MYSQL_DATABASE=wordpress\n      - MYSQL_USER=wordpress\n      - MYSQL_PASSWORD=wordpress\n    volumes:\n      - db_data:/var/lib/mysql\n  wordpress:\n    image: wordpress:latest\n    restart: unless-stopped\n    depends_on:\n      - db\n    ports:\n      - \"8000:80\"\n    environment:\n      - WORDPRESS_DB_HOST=db\n      - WORDPRESS_DB_USER=wordpress\n      - WORDPRESS_DB_PASSWORD=wordpress\n      - WORDPRESS_DB_NAME=wordpress\n    volumes:\n      - wp_data:/var/www/html\nvolumes:\n  db_data:\n  wp_data:\n"
+    },
+    {
+      "type": 3,
+      "title": "Nextcloud + PostgreSQL",
+      "description": "Self-hosted file sync & share with a PostgreSQL database (multi-service stack).",
+      "categories": ["cms", "tools"],
+      "platform": "linux",
+      "logo": "https://cdn.simpleicons.org/nextcloud",
+      "compose": "services:\n  db:\n    image: postgres:16-alpine\n    restart: unless-stopped\n    environment:\n      - POSTGRES_PASSWORD=changeme\n      - POSTGRES_DB=nextcloud\n      - POSTGRES_USER=nextcloud\n    volumes:\n      - nc_db:/var/lib/postgresql/data\n  app:\n    image: nextcloud:latest\n    restart: unless-stopped\n    depends_on:\n      - db\n    ports:\n      - \"8081:80\"\n    environment:\n      - POSTGRES_HOST=db\n      - POSTGRES_DB=nextcloud\n      - POSTGRES_USER=nextcloud\n      - POSTGRES_PASSWORD=changeme\n    volumes:\n      - nc_data:/var/www/html\nvolumes:\n  nc_db:\n  nc_data:\n"
+    }
+  ]
+}

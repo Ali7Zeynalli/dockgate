@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.0.15-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.0.16-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.15-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.0.16-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
   <img src="https://img.shields.io/badge/Lines-~9.6k-informational?style=for-the-badge" alt="Lines of Code">
@@ -123,7 +123,7 @@ docker compose pull && docker compose up -d
 
 ## Features
 
-DockGate has **15 modules** organized in 4 groups, plus multi-host SSH:
+DockGate has **16 modules** organized in 4 groups, plus multi-host SSH:
 
 ### Core
 
@@ -142,6 +142,7 @@ DockGate has **15 modules** organized in 4 groups, plus multi-host SSH:
 |--------|-------------|
 | **Builds** | Docker Desktop-style build management — Build History (Docker image layer history with expandable steps, bulk selection & deletion), Build Cache (grouped by image name), Builders (buildx instances), real-time build streaming, build detail with Info/Source/Logs/History tabs |
 | **Compose** | Auto-discover projects via `com.docker.compose.project` labels. Stack actions: up, down, restart, pull. **Create & edit projects in the UI** — a raw `docker-compose.yml` editor plus a guided "add service" builder; managed files are stored under `data/compose/<project>/`, validated with `docker compose config`, then brought up |
+| **App Templates** | A searchable, category-filtered marketplace of ready-to-deploy apps (Portainer "App Templates" v2 format). **Deploy** a container template → prefilled Run modal; a stack template → prefilled Compose editor. Ships with ~14 curated apps offline; set `template_url` to a community catalog for 100+ |
 
 ### Monitor
 
@@ -195,6 +196,7 @@ Browser (Vanilla JS + xterm.js + Chart.js)
     │                   ├── /api/networks
     │                   ├── /api/compose
     │                   ├── /api/registries  (private registry credentials)
+    │                   ├── /api/templates   (app templates catalog)
     │                   ├── /api/cleanup
     │                   ├── /api/system
     │                   └── /api/meta
@@ -221,6 +223,7 @@ dockgate/
 │   ├── docker.js                 # Docker API wrapper via dockerode — local/SSH client hot-swap (~722 lines)
 │   ├── db.js                     # SQLite schema & prepared statements
 │   ├── audit.js                  # Central audit-log helper (server + source-IP context)
+│   ├── templates.json            # Bundled App Templates catalog (offline)
 │   ├── notifications/
 │   │   ├── mailer.js             # SMTP email sender via nodemailer
 │   │   ├── telegram.js           # Telegram Bot API sender (no deps)
@@ -230,6 +233,7 @@ dockgate/
 │   └── routes/
 │       ├── servers.js            # SSH multi-host management (add/edit/test/switch/remove)
 │       ├── registries.js         # Private registry credential CRUD + login test
+│       ├── templates.js          # App Templates catalog + compose stackfile proxy
 │       ├── containers.js         # Container CRUD, actions & guided run
 │       ├── images.js             # Image pull/push/remove/tag
 │       ├── volumes.js            # Volume CRUD
@@ -251,8 +255,9 @@ dockgate/
 │       ├── router.js             # Client-side SPA router
 │       ├── store.js              # Simple reactive state store
 │       ├── api.js                # HTTP client + Socket.IO + UI utilities + icons
-│       ├── run-modal.js          # Shared "Run Container" guided form (Images + Containers)
-│       └── pages/                # 16 page modules
+│       ├── run-modal.js          # Shared "Run Container" guided form (Images + Containers + Templates)
+│       ├── compose-editor.js     # Shared Compose editor (Compose page + Templates stacks)
+│       └── pages/                # 17 page modules
 │           ├── dashboard.js
 │           ├── containers.js
 │           ├── container-detail.js  # 10-tab detail view (~616 lines)
@@ -267,6 +272,7 @@ dockgate/
 │           ├── system.js
 │           ├── audit.js          # Audit log (filter/search/CSV)
 │           ├── registries.js     # Private registry credentials
+│           ├── templates.js      # App Templates marketplace
 │           ├── cleanup.js
 │           └── settings.js
 └── data/
@@ -420,6 +426,15 @@ All endpoints are prefixed with `/api`. All responses are JSON.
 | POST | `/api/registries/test` | Verify against the registry — body: `{ "serverAddress", "username", "password" }` or `{ "id" }`. Returns 401 on bad credentials |
 
 > Credentials are stored in the SQLite `registries` table (same trust model as SSH passwords — protected by the `data/` volume; DockGate is self-hosted). They are matched to an image by registry host on pull/push, with Docker Hub recognised under its canonical aliases.
+
+### App Templates
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/templates` | The catalog (`{ version, templates[], source }`) — from `template_url` (cached) or the bundled set |
+| GET | `/api/templates/stackfile?url=` | Server-side proxy that fetches a stack template's compose file (http(s) URLs only) |
+
+> Source is controlled by the `template_url` setting (blank = bundled). The bundled catalog (`server/templates.json`) ships ~14 curated apps that work offline; a remote catalog yields 100+ but falls back to bundled if unreachable.
 
 ### Metadata
 

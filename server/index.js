@@ -32,6 +32,7 @@ app.use('/api/system', require('./routes/system'));
 app.use('/api/cleanup', require('./routes/cleanup'));
 app.use('/api/servers', require('./routes/servers'));
 app.use('/api/registries', require('./routes/registries'));
+app.use('/api/templates', require('./routes/templates'));
 app.use('/api/meta', require('./routes/settings'));
 
 // Startup-da saxlanmış aktiv server-i bərpa et (yalnız "local" olmadıqda)

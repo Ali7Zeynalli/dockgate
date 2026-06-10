@@ -3,6 +3,7 @@ const navItems = {
   dashboard: { label: 'Dashboard', icon: Icons.dashboard },
   containers: { label: 'Containers', icon: Icons.container },
   images: { label: 'Images', icon: Icons.image },
+  templates: { label: 'App Templates', icon: Icons.template },
   builds: { label: 'Builds', icon: Icons.layers },
   volumes: { label: 'Volumes', icon: Icons.volume },
   networks: { label: 'Networks', icon: Icons.network },
@@ -19,7 +20,7 @@ const navItems = {
 
 const navGroups = [
   { label: 'Core', items: ['dashboard', 'containers', 'images', 'volumes', 'networks'] },
-  { label: 'Build', items: ['builds', 'compose'] },
+  { label: 'Build', items: ['builds', 'compose', 'templates'] },
   { label: 'Monitor', items: ['logs', 'terminal', 'events', 'system', 'audit'] },
   { label: 'Manage', items: ['registries', 'cleanup', 'settings'] }
 ];
