@@ -23,6 +23,25 @@ router.get('/:name/backup', async (req, res) => {
   }
 });
 
+// V3 — list a directory inside the volume (helper container, read-only)
+router.get('/:name/files', async (req, res) => {
+  try {
+    res.json(await dockerService.listVolumeFiles(req.params.name, req.query.path || ''));
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+// V3 — download a single file from the volume
+router.get('/:name/file', async (req, res) => {
+  try {
+    if (!req.query.path) return res.status(400).json({ error: 'path required' });
+    await dockerService.downloadVolumeFile(req.params.name, req.query.path, res);
+  } catch (err) {
+    if (!res.headersSent) res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
 // V2 — restore the volume from an uploaded .tar.gz (helper container extracts the streamed upload).
 // The body is the raw tar.gz (Content-Type isn't application/json, so it bypasses express.json).
 router.post('/:name/restore', async (req, res) => {

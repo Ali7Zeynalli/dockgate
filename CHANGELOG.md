@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.29] - 2026-06-10
+
+### Added — "L3" volume file browser
+- **Browse a volume's files** — navigate directories and download individual files, served by a read-only helper container. Path traversal is blocked (`../` is stripped). `GET /api/volumes/:name/files?path=` · `GET /api/volumes/:name/file?path=`
+
+---
+
 ## [2.0.28] - 2026-06-10
 
 ### Added — "L3" volume restore

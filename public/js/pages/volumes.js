@@ -55,6 +55,7 @@ Router.register('volumes', async (content) => {
                 <td><span class="badge ${v.inUse ? 'badge-running' : 'badge-stopped'}">${v.inUse ? 'In Use' : 'Unused'}</span></td>
                 <td><div class="td-actions">
                   <button class="btn-icon" title="Inspect" data-inspect="${escapeHtml(v.name)}">${Icons.eye}</button>
+                  <button class="btn-icon" title="Browse files" data-files="${escapeHtml(v.name)}">${Icons.logs}</button>
                   <button class="btn-icon" title="Backup (download tar.gz)" data-backup="${escapeHtml(v.name)}">${Icons.download}</button>
                   <button class="btn-icon" title="Restore (upload tar.gz)" data-restore="${escapeHtml(v.name)}">${Icons.arrowUp}</button>
                   <button class="btn-icon" title="Clone" data-clone="${escapeHtml(v.name)}">${Icons.copy}</button>
@@ -78,6 +79,9 @@ Router.register('volumes', async (content) => {
         document.body.appendChild(a); a.click(); a.remove();
         showToast('Backup started…', 'info');
       }));
+
+      // Browse files (V3)
+      content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', () => openVolumeBrowser(btn.dataset.files, '')));
 
       // Restore ← upload tar.gz (V2)
       content.querySelectorAll('[data-restore]').forEach(btn => btn.addEventListener('click', () => {
@@ -173,6 +177,35 @@ Router.register('volumes', async (content) => {
       });
 
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+  }
+
+  // File browser (V3) — navigate directories and download files (read-only helper container).
+  async function openVolumeBrowser(name, path) {
+    let data;
+    try { data = await API.get(`/volumes/${encodeURIComponent(name)}/files?path=${encodeURIComponent(path || '')}`); }
+    catch (e) { showToast(e.message, 'error'); return; }
+    const cur = data.path || '';
+    const parts = cur.split('/').filter(Boolean);
+    const crumb = [`<a href="#" data-nav="">${escapeHtml(name)}</a>`]
+      .concat(parts.map((p, i) => `<a href="#" data-nav="/${parts.slice(0, i + 1).join('/')}">${escapeHtml(p)}</a>`))
+      .join(' <span class="text-muted">/</span> ');
+    const rows = (data.entries || []).map(e => e.type === 'dir'
+      ? `<tr><td><a href="#" class="td-name" data-dir="${escapeHtml(cur + '/' + e.name)}">📁 ${escapeHtml(e.name)}</a></td><td></td><td></td></tr>`
+      : `<tr><td class="td-name">📄 ${escapeHtml(e.name)}</td><td class="text-xs text-muted" style="white-space:nowrap">${formatBytes(e.size)}</td><td style="text-align:right"><button class="btn btn-xs btn-secondary" data-dl="${escapeHtml(cur + '/' + e.name)}">${Icons.download}</button></td></tr>`
+    ).join('');
+    const body = `<div style="display:flex;flex-direction:column;gap:8px">
+      <div class="text-sm" id="vb-crumb" style="word-break:break-all">${crumb}</div>
+      <div class="table-wrapper" style="max-height:50vh;overflow:auto"><table><tbody>${rows || '<tr><td class="text-muted text-sm" style="padding:10px">Empty</td></tr>'}</tbody></table></div>
+    </div>`;
+    const m = showModal(`Files — ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    root.querySelectorAll('[data-dir]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); m.close(); openVolumeBrowser(name, a.dataset.dir); }));
+    root.querySelectorAll('[data-nav]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); m.close(); openVolumeBrowser(name, a.dataset.nav); }));
+    root.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.href = `/api/volumes/${encodeURIComponent(name)}/file?path=${encodeURIComponent(b.dataset.dl)}`;
+      document.body.appendChild(a); a.click(); a.remove();
+    }));
   }
 
   // Rich create form (V5) — name, driver, driver options & labels (comma KEY=val)

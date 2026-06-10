@@ -606,6 +606,62 @@ async function restoreVolumeFromRequest(volName, req) {
   return { success: true };
 }
 
+// Confine a browse path to the volume mount — strip any "../" so it can't escape /volume.
+function safeVolPath(p) {
+  return ('/' + String(p || '')).replace(/\/+/g, '/').replace(/\.\.(\/|$)/g, '').replace(/\/$/, '') || '';
+}
+
+/**
+ * V3 — list a directory inside a volume (one helper container per request, read-only mount).
+ * Returns { path, entries:[{ type:'dir'|'file', size, name }] }.
+ */
+async function listVolumeFiles(volName, path) {
+  await ensureHelperImage();
+  const safe = safeVolPath(path);
+  const script = `cd "/volume${safe}" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
+  const helper = await docker.createContainer({
+    Image: VOL_HELPER_IMAGE,
+    Cmd: ['sh', '-c', script],
+    HostConfig: { Binds: [`${volName}:/volume:ro`], AutoRemove: false },
+    Tty: true, // raw (un-framed) text output
+  });
+  await helper.start();
+  await helper.wait();
+  const buf = await helper.logs({ stdout: true, stderr: false });
+  try { await helper.remove({ force: true }); } catch (e) {}
+  const text = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
+  const entries = text.split('\n').filter(Boolean).map(line => {
+    const i1 = line.indexOf('\t'), i2 = line.indexOf('\t', i1 + 1);
+    if (i1 < 0 || i2 < 0) return null;
+    return { type: line.slice(0, i1) === 'd' ? 'dir' : 'file', size: parseInt(line.slice(i1 + 1, i2)) || 0, name: line.slice(i2 + 1).replace(/\r$/, '') };
+  }).filter(Boolean).sort((a, b) => (a.type === b.type) ? a.name.localeCompare(b.name) : (a.type === 'dir' ? -1 : 1));
+  return { path: safe, entries };
+}
+
+/** V3 — stream a single file from a volume as a download (binary-safe). */
+async function downloadVolumeFile(volName, path, res) {
+  await ensureHelperImage();
+  const safe = safeVolPath(path);
+  const helper = await docker.createContainer({
+    Image: VOL_HELPER_IMAGE,
+    Cmd: ['cat', `/volume${safe}`],
+    HostConfig: { Binds: [`${volName}:/volume:ro`], AutoRemove: false },
+    AttachStdout: true, AttachStderr: true, Tty: false,
+  });
+  const stream = await helper.attach({ stream: true, stdout: true, stderr: true });
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${(safe.split('/').pop() || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')}"`);
+  const { Writable } = require('stream');
+  const devnull = new Writable({ write(c, e, cb) { cb(); } });
+  docker.modem.demuxStream(stream, res, devnull);
+  let removed = false;
+  const cleanup = async () => { if (removed) return; removed = true; try { await helper.remove({ force: true }); } catch (e) {} };
+  await helper.start();
+  stream.on('end', () => { res.end(); cleanup(); });
+  stream.on('error', () => { try { res.destroy(); } catch (e) {} cleanup(); });
+  res.on('close', cleanup);
+}
+
 /**
  * V4 — clone a volume's contents into a new volume (a helper container `cp -a`s the data).
  */
@@ -918,6 +974,7 @@ module.exports = {
   listImages, inspectImage, imageHistory, imageSaveStream, loadImage, pullImage, pushImage, removeImage, tagImage, buildImage,
   registryHostOf, checkRegistryAuth,
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
+  listVolumeFiles, downloadVolumeFile,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,
