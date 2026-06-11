@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.52] - 2026-06-11
+
+### Added — Deploy from a folder
+- **Compose → "Deploy from folder"** — pick a local project folder (containing a `docker-compose.yml`); DockGate uploads it as a managed project and runs `docker compose up`. Works on the **active host**, so you can deploy a ready project straight to a **remote SSH server**. `.git` / `node_modules` are skipped, subfolders are preserved, paths are sanitized (no escaping the project dir). `POST /api/compose/deploy-folder`
+
+---
+
 ## [2.0.51] - 2026-06-11
 
 ### Improved — "Join a node" dialog redesigned

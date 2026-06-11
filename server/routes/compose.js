@@ -23,6 +23,15 @@ function managedDir(project) {
   return path.join(COMPOSE_DIR, project);
 }
 
+// Sanitize an uploaded relative file path: drop leading slashes and any "../" so it can't escape the dir.
+function safeRelPath(p) {
+  const norm = path.normalize(String(p || '')).replace(/^([/\\]|\.\.([/\\]|$))+/, '');
+  return norm.includes('..') ? '' : norm;
+}
+
+// Standard compose filenames docker compose auto-detects.
+const COMPOSE_FILENAMES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'];
+
 // Validate a compose file with `docker compose config -q` (throws with stderr if invalid)
 async function validateComposeFile(cwd) {
   await execFileAsync('docker', ['compose', '-f', 'docker-compose.yml', 'config', '-q'], { cwd });
@@ -130,6 +139,43 @@ router.put('/:project/file', async (req, res) => {
     if (up) output = await runCompose(req.params.project, ['up', '-d'], dir);
     logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'edit', details: { up } });
     res.json({ success: true, output });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// Deploy a whole project FOLDER (uploaded from the browser as base64 files) → write to the managed
+// dir → up. Works on the active daemon (local or remote via DOCKER_HOST=ssh, #2-A). Image-based
+// compose is ideal; build contexts upload to the daemon, bind-mount paths resolve on the daemon's host.
+router.post('/deploy-folder', express.json({ limit: '60mb' }), async (req, res) => {
+  try {
+    const { project, files, up = true } = req.body || {};
+    if (!validateProjectName(project || '')) return res.status(400).json({ error: 'Invalid project name (a-z, 0-9, _, -)' });
+    if (!Array.isArray(files) || !files.length) return res.status(400).json({ error: 'No files uploaded' });
+    if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
+      return res.status(409).json({ error: `A project named "${project}" already exists` });
+    }
+    const dir = managedDir(project);
+    fs.mkdirSync(dir, { recursive: true });
+    let total = 0;
+    for (const f of files) {
+      if (!f || typeof f.path !== 'string' || typeof f.b64 !== 'string') continue;
+      const rel = safeRelPath(f.path);
+      if (!rel) continue;
+      const dest = path.join(dir, rel);
+      if (dest !== dir && !dest.startsWith(dir + path.sep)) continue; // traversal guard
+      const buf = Buffer.from(f.b64, 'base64');
+      total += buf.length;
+      if (total > 50 * 1024 * 1024) return res.status(400).json({ error: 'Folder exceeds the 50MB upload limit — use pre-built images or git-based deploy for large projects' });
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, buf);
+    }
+    const composeFile = COMPOSE_FILENAMES.find(n => fs.existsSync(path.join(dir, n)));
+    if (!composeFile) return res.status(400).json({ error: 'No docker-compose.yml (or compose.yaml) found in the folder' });
+    try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: dir }); }
+    catch (e) { return res.status(400).json({ error: 'Invalid compose file: ' + (e.stderr || e.message) }); }
+    let output = '';
+    if (up) output = await runCompose(project, ['up', '-d'], dir);
+    logAction({ req, resourceId: project, resourceType: 'compose', resourceName: project, action: 'deploy-folder', details: { files: files.length, composeFile } });
+    res.json({ success: true, output, composeFile });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 

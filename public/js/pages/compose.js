@@ -23,6 +23,7 @@ Router.register('compose', async (content) => {
           <div><div class="page-title">Compose Projects</div><div class="page-subtitle">${projects.length} project(s)</div></div>
           <div class="page-actions">
             <button class="btn btn-primary" id="compose-new" ${dis}>${Icons.compose} New Project</button>
+            <button class="btn btn-secondary" id="compose-folder">${Icons.arrowUp || Icons.compose} Deploy from folder</button>
             <button class="btn btn-secondary" id="compose-refresh">${Icons.refresh}</button>
           </div>
         </div>
@@ -54,6 +55,7 @@ Router.register('compose', async (content) => {
 
       document.getElementById('compose-refresh')?.addEventListener('click', render);
       document.getElementById('compose-new')?.addEventListener('click', () => openComposeEditor(null));
+      document.getElementById('compose-folder')?.addEventListener('click', openFolderDeploy);
       content.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
       });
@@ -107,6 +109,67 @@ Router.register('compose', async (content) => {
       });
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
   }
+
+  // Read a File as base64 (without the data: prefix)
+  function fileToB64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(',')[1] || '');
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  // #2-A — upload a whole project folder → managed project → compose up (active daemon, local or remote)
+  function openFolderDeploy() {
+    const remote = isRemoteActive();
+    const body = `<div style="display:flex;flex-direction:column;gap:10px">
+      <div class="input-group"><label>Project name *</label><input class="input" id="fd-name" placeholder="my-app"></div>
+      <div class="input-group"><label>Project folder (must contain a docker-compose.yml)</label>
+        <input type="file" id="fd-folder" webkitdirectory directory multiple style="font-size:12px">
+        <span class="text-xs text-muted" id="fd-info" style="margin-top:4px;display:block">No folder selected.</span>
+      </div>
+      <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (over SSH). ' : ''}Files upload to DockGate, then <code>docker compose up</code> runs. <code>.git</code> / <code>node_modules</code> are skipped. Build contexts upload to the daemon; bind-mount paths resolve on the daemon's host. Best with image-based compose; ~50MB max.</div>
+    </div>`;
+    const m = showModal('Deploy from folder', body, []);
+    const root = m.overlay;
+    let picked = [];
+    root.querySelector('#fd-folder').addEventListener('change', (e) => {
+      picked = [...e.target.files].filter(f => {
+        const rel = f.webkitRelativePath.split('/').slice(1).join('/');
+        return rel && !rel.startsWith('.git/') && !/(^|\/)node_modules\//.test(rel);
+      });
+      const folderName = e.target.files[0]?.webkitRelativePath.split('/')[0];
+      const nameInput = root.querySelector('#fd-name');
+      if (folderName && !nameInput.value) nameInput.value = folderName.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+      const hasCompose = picked.some(f => /(^|\/)(docker-)?compose\.ya?ml$/.test(f.webkitRelativePath));
+      const bytes = picked.reduce((a, f) => a + f.size, 0);
+      root.querySelector('#fd-info').innerHTML = `${picked.length} file(s), ${formatBytes(bytes)}${hasCompose ? '' : ' — <span style="color:var(--warning)">⚠ no docker-compose.yml found</span>'}`;
+    });
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary'; btn.textContent = 'Deploy';
+    root.querySelector('#modal-footer').appendChild(btn);
+    btn.addEventListener('click', async () => {
+      const project = root.querySelector('#fd-name').value.trim();
+      if (!project) { showToast('Project name required', 'warning'); return; }
+      if (!picked.length) { showToast('Select a project folder first', 'warning'); return; }
+      const bytes = picked.reduce((a, f) => a + f.size, 0);
+      if (bytes > 50 * 1024 * 1024) { showToast('Folder exceeds the 50MB limit', 'error'); return; }
+      btn.disabled = true; btn.textContent = 'Reading…';
+      try {
+        const files = [];
+        for (const f of picked) {
+          files.push({ path: f.webkitRelativePath.split('/').slice(1).join('/'), b64: await fileToB64(f) });
+        }
+        btn.textContent = 'Deploying…';
+        const r = await API.post('/compose/deploy-folder', { project, files, up: true });
+        showToast(`Deployed "${project}" (${r.composeFile})`);
+        m.close();
+        render();
+      } catch (e) { showToast(e.message, 'error', 11000); btn.disabled = false; btn.textContent = 'Deploy'; }
+    });
+  }
+
   await render();
   // Auto-refresh project running counts; skip while a modal/input is active
   refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 15000);
