@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.44] - 2026-06-11
+
+### Added — one-click Docker access on remote servers
+- **"Grant Docker access"** for SSH servers — a checkbox on the Add-Server form (runs it right after adding) and a per-server button. DockGate SSHes in and runs `sudo usermod -aG docker <user>` for you, so you don't have to do the stage-2 step manually. Requires the SSH user to have **passwordless sudo**; the action is audit-logged
+- Runs in an isolated worker process so it never contends with the live event-monitor SSH connections
+
+---
+
 ## [2.0.43] - 2026-06-11
 
 ### Added — Swarm node auto-join (zero manual commands)

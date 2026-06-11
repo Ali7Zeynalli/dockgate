@@ -21,6 +21,27 @@ function validateId(id) {
   return /^[a-zA-Z0-9_-]{1,64}$/.test(id);
 }
 
+/**
+ * Stage-2 köməkçisi: serverə SSH ilə girib `sudo -n usermod -aG docker <user>` işlədir —
+ * beləcə DockGate user-i docker socket-ə çata bilir. Passwordless sudo tələb olunur.
+ * İZOLƏ child-process-də işləyir (grant-docker-worker.js): əsas serverdə eyni host-a açıq olan
+ * EventMonitor ssh2 bağlantıları ilə konkurensiyada auth ilişirdi — ayrı proses bunu həll edir.
+ * @param {object} server DB-dəki server sətri (host/port/username/key_path/password/passphrase)
+ */
+function grantDockerAccess(server) {
+  const { execFile } = require('child_process');
+  const keyPath = server.key_path
+    ? (path.isAbsolute(server.key_path) ? server.key_path : path.join(SSH_KEYS_DIR, server.key_path))
+    : null;
+  const cfg = { host: server.host, port: server.port, username: server.username, keyPath, password: server.password, passphrase: server.passphrase };
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, [path.join(__dirname, '..', 'grant-docker-worker.js'), JSON.stringify(cfg)], { timeout: 30000 }, (err, stdout, stderr) => {
+      if (err) return reject(new Error((stderr || err.message || 'grant failed').toString().trim()));
+      resolve({ success: true });
+    });
+  });
+}
+
 // GET /api/servers — bütün server-lər (local + ssh)
 router.get('/', (req, res) => {
   try {
@@ -97,6 +118,20 @@ router.post('/', (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/servers/:id/grant-docker — user-i remote-da docker qrupuna əlavə et (sudo usermod).
+// Opt-in əməliyyat: SSH login işləməlidir, user-in passwordless sudo-su olmalıdır.
+router.post('/:id/grant-docker', async (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server tapılmadı' });
+    await grantDockerAccess(server);
+    logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'server', resourceName: req.params.id, action: 'grant-docker', details: { user: server.username } });
+    res.json({ success: true, message: `"${server.username}" added to the docker group — re-test the connection.` });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

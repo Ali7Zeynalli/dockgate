@@ -177,6 +177,7 @@ Router.register('settings', async (content) => {
               <td>
                 ${!s.isActive ? `<button class="btn btn-xs btn-secondary" data-action="activate" data-id="${escapeHtml(s.id)}">Use</button>` : ''}
                 <button class="btn btn-xs btn-secondary" data-action="test" data-id="${escapeHtml(s.id)}">Test</button>
+                ${!isLocal ? `<button class="btn btn-xs btn-secondary" data-action="grant" data-id="${escapeHtml(s.id)}" title="Run sudo usermod -aG docker on the server (needs passwordless sudo)">Grant Docker</button>` : ''}
                 ${!isLocal ? `<button class="btn btn-xs btn-secondary" data-action="edit" data-id="${escapeHtml(s.id)}">Edit</button>` : ''}
                 ${!isLocal ? `<button class="btn btn-xs btn-ghost text-danger" data-action="delete" data-id="${escapeHtml(s.id)}">${Icons.trash}</button>` : ''}
               </td>
@@ -233,6 +234,9 @@ Router.register('settings', async (content) => {
             </div>
 
             <input class="input" id="srv-desc" placeholder="Description (optional)" style="margin:8px 0;width:100%;" />
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:4px 0 8px;cursor:pointer;color:var(--text-secondary)">
+              <input type="checkbox" id="srv-grant-docker"> Grant Docker access after adding (runs <code style="margin:0 3px">sudo usermod -aG docker</code> — needs passwordless sudo)
+            </label>
             <div style="display:flex;gap:8px;">
               <button class="btn btn-secondary btn-sm" id="srv-test-new">Test Connection</button>
               <button class="btn btn-primary btn-sm" id="srv-add">Add Server</button>
@@ -292,6 +296,13 @@ Router.register('settings', async (content) => {
                 } else {
                   showToast(`✗ ${sshErrorHint(r.error)}`, 'error', 12000);
                 }
+              } else if (action === 'grant') {
+                showConfirm('Grant Docker access', `Run <code>sudo usermod -aG docker</code> on <strong>${escapeHtml(id)}</strong>? Requires that the SSH user has passwordless sudo. Takes effect on the next connection.`, async () => {
+                  try {
+                    const r = await API.post(`/servers/${id}/grant-docker`, {});
+                    showToast(r.message || 'Docker access granted', 'success', 7000);
+                  } catch (e) { showToast(sshErrorHint(e.message), 'error', 10000); }
+                });
               } else if (action === 'edit') {
                 const s = servers.find(x => x.id === id);
                 if (s) openServerEditModal(s);
@@ -368,6 +379,13 @@ Router.register('settings', async (content) => {
           try {
             await API.post('/servers', { id, ...auth, description });
             showToast(`Server "${id}" (${authMode}) əlavə olundu`);
+            // Opt-in: grant docker access right after adding
+            if (document.getElementById('srv-grant-docker')?.checked) {
+              try {
+                const g = await API.post(`/servers/${id}/grant-docker`, {});
+                showToast(g.message || 'Docker access granted', 'success', 7000);
+              } catch (ge) { showToast('Added, but granting Docker access failed: ' + sshErrorHint(ge.message), 'warning', 10000); }
+            }
             if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
             renderServers();
           } catch (e) { showToast(e.message, 'error'); }
