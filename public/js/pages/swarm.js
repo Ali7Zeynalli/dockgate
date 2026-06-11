@@ -175,44 +175,74 @@ Router.register('swarm', async (content) => {
     }));
   }
 
-  // Join tokens (SW-bootstrap) — one-click auto-join for DockGate's SSH servers + manual fallback command
+  // Join tokens (SW-bootstrap) — one-click auto-join + manual fallback, redesigned (diagram, copy, cards).
   async function openJoinTokens() {
     let t, servers = [];
     try { t = await API.get('/swarm/jointokens'); }
     catch (e) { showToast(e.message, 'error'); return; }
     try { servers = (await API.get('/servers')).servers || []; } catch (e) {}
-    // Joinable = remote SSH servers that aren't the active manager
     const joinable = servers.filter(s => s.id !== 'local' && !s.isActive);
     const loopback = /^(127\.|::1|0\.0\.0\.0)/.test(t.address || '');
-    const workerCmd = `docker swarm join --token ${t.worker} ${t.address}`;
-    const managerCmd = `docker swarm join --token ${t.manager} ${t.address}`;
+    const cmds = {
+      worker: `docker swarm join --token ${t.worker} ${t.address}`,
+      manager: `docker swarm join --token ${t.manager} ${t.address}`,
+      ports: 'Open ports 2377/tcp, 7946/tcp+udp, 4789/udp between the nodes',
+    };
+    const shortTok = (tok) => (tok && tok.length > 28) ? tok.slice(0, 18) + '…' + tok.slice(-6) : (tok || '');
 
-    const autoSection = `
-      <div class="card" style="padding:14px;background:var(--accent-dim)">
-        <div style="font-weight:600;margin-bottom:6px">Auto-join one of your servers (no manual command)</div>
-        ${loopback ? `<div class="text-xs" style="color:var(--warning);margin-bottom:8px">⚠ The manager advertises <code>${escapeHtml(t.address)}</code> — other nodes can't reach a loopback address. Re-initialize the swarm with the manager's public IP (Leave → Initialize with its IP) for auto-join to work.</div>` : ''}
-        ${joinable.length ? `
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <select class="select" id="join-server" style="flex:1;min-width:160px">${joinable.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.id)}${s.host ? ' (' + escapeHtml(s.host) + ')' : ''}</option>`).join('')}</select>
-            <select class="select" id="join-role" style="width:130px"><option value="worker">worker</option><option value="manager">manager</option></select>
-            <button class="btn btn-primary" id="join-go" ${loopback ? 'disabled' : ''}>Join →</button>
-          </div>
-          <div class="text-xs text-muted" style="margin-top:6px">DockGate connects to the chosen server and runs the join for you. Ports <code>2377/tcp</code>, <code>7946/tcp+udp</code>, <code>4789/udp</code> must be open between the VPSes.</div>
-        ` : `<div class="text-xs text-muted">Add other VPSes as SSH servers (Settings → Servers) to enable one-click join.</div>`}
-      </div>`;
+    // Small hub-and-spoke diagram: manager (accent) + worker/manager nodes.
+    const diagram = `
+      <svg viewBox="0 0 220 84" style="width:190px;height:68px;display:block;margin:2px auto 0" fill="none">
+        <line x1="110" y1="24" x2="48" y2="64" stroke="var(--border)" stroke-width="1.5"/>
+        <line x1="110" y1="24" x2="110" y2="64" stroke="var(--border)" stroke-width="1.5"/>
+        <line x1="110" y1="24" x2="172" y2="64" stroke="var(--border)" stroke-width="1.5"/>
+        <circle cx="110" cy="22" r="12" fill="var(--accent)"/>
+        <circle cx="48" cy="64" r="8" fill="var(--bg-primary)" stroke="var(--border)" stroke-width="1.5"/>
+        <circle cx="110" cy="64" r="8" fill="var(--bg-primary)" stroke="var(--border)" stroke-width="1.5"/>
+        <circle cx="172" cy="64" r="8" fill="var(--bg-primary)" stroke="var(--border)" stroke-width="1.5"/>
+      </svg>
+      <div class="text-xs text-muted" style="text-align:center;margin-bottom:6px">This host (manager) + the worker/manager nodes that join it</div>`;
 
     const body = `<div style="display:flex;flex-direction:column;gap:14px">
-      ${autoSection}
-      <details><summary class="text-sm" style="cursor:pointer">Or run the command manually on the other VPS</summary>
-        <div style="margin-top:10px"><div class="detail-label mb-1">Worker:</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:12px;padding:10px">${escapeHtml(workerCmd)}</pre></div>
-        <div style="margin-top:8px"><div class="detail-label mb-1">Manager (HA):</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:12px;padding:10px">${escapeHtml(managerCmd)}</pre></div>
+      ${diagram}
+
+      <div class="card" style="padding:14px;background:var(--accent-dim)">
+        <div style="font-weight:600;margin-bottom:8px">① One-click <span class="badge badge-running" style="font-size:10px">recommended</span></div>
+        ${loopback ? `<div class="text-xs" style="color:var(--warning);margin-bottom:8px">⚠ Manager advertises <code>${escapeHtml(t.address)}</code> (loopback) — other nodes can't reach it. Leave → Initialize with the manager's public IP first.</div>` : ''}
+        ${joinable.length ? `
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select class="select" id="join-server" style="flex:1;min-width:150px">${joinable.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.id)}${s.host ? ' (' + escapeHtml(s.host) + ')' : ''}</option>`).join('')}</select>
+            <select class="select" id="join-role" style="width:120px"><option value="worker">worker</option><option value="manager">manager</option></select>
+            <button class="btn btn-primary" id="join-go" ${loopback ? 'disabled' : ''}>Join →</button>
+          </div>
+          <div class="text-xs text-muted" style="margin-top:6px"><strong>worker</strong> runs tasks · <strong>manager</strong> = HA control plane (keep an odd count). DockGate runs the join on the chosen server for you.</div>
+        ` : `
+          <div class="text-sm text-muted" style="margin-bottom:8px">Add your other VPS as an SSH server, then join it here in one click.</div>
+          <button class="btn btn-secondary btn-sm" id="join-addserver">+ Add a server</button>
+        `}
+      </div>
+
+      <details>
+        <summary class="text-sm" style="cursor:pointer;font-weight:600">② Manual command (run on the other VPS)</summary>
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px"><span class="detail-label" style="width:64px">Worker</span><code class="td-mono text-xs" style="flex:1;word-break:break-all">${escapeHtml(shortTok(t.worker))}</code><button class="btn btn-xs btn-secondary" data-copy="worker">📋 Copy</button></div>
+          <div style="display:flex;align-items:center;gap:8px"><span class="detail-label" style="width:64px">Manager</span><code class="td-mono text-xs" style="flex:1;word-break:break-all">${escapeHtml(shortTok(t.manager))}</code><button class="btn btn-xs btn-secondary" data-copy="manager">📋 Copy</button></div>
+          <div class="text-xs text-muted">Copy pastes the full <code>docker swarm join …</code> command for <code>${escapeHtml(t.address)}</code>.</div>
+        </div>
       </details>
+
+      <div class="text-xs text-muted" style="display:flex;align-items:center;gap:8px"><span>⚠ Ports <code>2377/tcp</code> · <code>7946 tcp+udp</code> · <code>4789 udp</code> open between nodes</span><button class="btn btn-xs btn-secondary" data-copy="ports">📋</button></div>
     </div>`;
+
     const m = showModal('Join a node to the swarm', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
-    m.overlay.querySelector('#join-go')?.addEventListener('click', async () => {
-      const serverId = m.overlay.querySelector('#join-server').value;
-      const role = m.overlay.querySelector('#join-role').value;
-      const btn = m.overlay.querySelector('#join-go');
+    const root = m.overlay;
+    const copy = (text) => navigator.clipboard?.writeText(text).then(() => showToast('Copied to clipboard', 'success', 2000)).catch(() => showToast('Copy failed — select & copy manually', 'warning'));
+    root.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => copy(cmds[b.dataset.copy])));
+    root.querySelector('#join-addserver')?.addEventListener('click', () => { m.close(); Router.navigate('settings'); });
+    root.querySelector('#join-go')?.addEventListener('click', async () => {
+      const serverId = root.querySelector('#join-server').value;
+      const role = root.querySelector('#join-role').value;
+      const btn = root.querySelector('#join-go');
       btn.disabled = true; btn.textContent = 'Joining…';
       try {
         const r = await API.post('/swarm/nodes/join', { serverId, role });

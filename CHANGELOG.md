@@ -2,6 +2,21 @@
 
 ---
 
+## [2.0.51] - 2026-06-11
+
+### Improved — "Join a node" dialog redesigned
+- A small **cluster diagram** (this manager + the nodes that join it), a clear **① One-click** card (server + role + Join, or a "+ Add a server" shortcut), and a collapsed **② Manual command** section
+- **Copy buttons** for the worker/manager join commands and the firewall ports; long tokens are shown **truncated** (the full command is copied)
+
+---
+
+## [2.0.50] - 2026-06-11
+
+### Changed
+- **Tighter sidebar spacing** so all navigation items fit without a scrollbar (slightly reduced item padding and group gaps)
+
+---
+
 ## [2.0.49] - 2026-06-11
 
 ### Fixed — stable Swarm page (no flicker on SSH)
