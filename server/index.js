@@ -8,7 +8,8 @@ const { logAction } = require('./audit');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+// maxHttpBufferSize: 10MB so large streamed messages (build logs, exec output) don't trip the 1MB default.
+const io = new Server(server, { cors: { origin: '*' }, maxHttpBufferSize: 10 * 1024 * 1024 });
 
 const monitorManager = require('./notifications/monitor-manager');
 
@@ -18,7 +19,12 @@ const PORT = process.env.PORT || 7077;
 app.set('trust proxy', true);
 
 // Middleware
-app.use(express.json({ limit: '5mb' })); // 5mb — SSH private key upload üçün
+// Body parsing: 5MB protects every endpoint (SSH key uploads, normal API payloads). The folder-deploy
+// upload sends a whole project as base64 JSON (≈50MB of files → ≈67MB base64), so THAT one route gets
+// 100MB. A single global 5MB parser would otherwise reject it first ("Payload Too Large").
+const jsonSmall = express.json({ limit: '5mb' });
+const jsonLarge = express.json({ limit: '100mb' });
+app.use((req, res, next) => (req.path === '/api/compose/deploy-folder' ? jsonLarge : jsonSmall)(req, res, next));
 
 // Cache-busting: index.html-dəki hər asset URL-i ?v=<versiya> ilə möhürlənir (__V__ placeholder),
 // beləcə hər relizdən sonra brauzer köhnə JS/CSS-i yox, təzəsini çəkir (hard refresh lazım olmur).
@@ -226,6 +232,16 @@ app.get('*', (req, res) => {
   if (!req.path.startsWith('/api')) {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
   }
+});
+
+// Error handler — turn an oversized body (and other thrown errors) into a clean JSON response
+// instead of Express's default HTML stack. Must come after the routes.
+app.use((err, req, res, next) => {
+  if (err && (err.status === 413 || err.type === 'entity.too.large')) {
+    return res.status(413).json({ error: 'Request body too large. Folder deploy accepts up to ~50MB of files; other endpoints up to 5MB. For bigger projects use pre-built images or Deploy from Git.' });
+  }
+  if (err) return res.status(err.status || 500).json({ error: err.message || 'Server error' });
+  next();
 });
 
 // ============ WEBSOCKET ============

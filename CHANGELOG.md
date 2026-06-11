@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.54] - 2026-06-11
+
+### Fixed — "Payload Too Large" when deploying from a folder
+- The global 5MB JSON body limit was rejecting folder uploads before the route's own limit applied (a folder of files is sent as base64 JSON, which inflates ~33%). The body parser is now **path-aware**: `/api/compose/deploy-folder` accepts up to **100MB** (≈50MB of files), every other endpoint keeps the 5MB limit
+- Oversized requests now return a **clean JSON 413** ("Request body too large…") instead of an HTML error page
+- Raised the WebSocket `maxHttpBufferSize` to 10MB so large build-log / exec streams don't trip the 1MB default
+
+---
+
 ## [2.0.53] - 2026-06-11
 
 ### Added — Deploy from Git (clone, re-deploy, webhook)

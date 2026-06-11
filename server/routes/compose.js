@@ -174,7 +174,7 @@ router.put('/:project/file', async (req, res) => {
 // Deploy a whole project FOLDER (uploaded from the browser as base64 files) → write to the managed
 // dir → up. Works on the active daemon (local or remote via DOCKER_HOST=ssh, #2-A). Image-based
 // compose is ideal; build contexts upload to the daemon, bind-mount paths resolve on the daemon's host.
-router.post('/deploy-folder', express.json({ limit: '60mb' }), async (req, res) => {
+router.post('/deploy-folder', async (req, res) => {
   try {
     const { project, files, up = true } = req.body || {};
     if (!validateProjectName(project || '')) return res.status(400).json({ error: 'Invalid project name (a-z, 0-9, _, -)' });
