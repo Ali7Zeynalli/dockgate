@@ -23,6 +23,7 @@ Router.register('compose', async (content) => {
           <div><div class="page-title">Compose Projects</div><div class="page-subtitle">${projects.length} project(s)</div></div>
           <div class="page-actions">
             <button class="btn btn-primary" id="compose-new" ${dis}>${Icons.compose} New Project</button>
+            <button class="btn btn-secondary" id="compose-git">${Icons.registry || Icons.compose} Deploy from Git</button>
             <button class="btn btn-secondary" id="compose-folder">${Icons.arrowUp || Icons.compose} Deploy from folder</button>
             <button class="btn btn-secondary" id="compose-refresh">${Icons.refresh}</button>
           </div>
@@ -56,6 +57,7 @@ Router.register('compose', async (content) => {
       document.getElementById('compose-refresh')?.addEventListener('click', render);
       document.getElementById('compose-new')?.addEventListener('click', () => openComposeEditor(null));
       document.getElementById('compose-folder')?.addEventListener('click', openFolderDeploy);
+      document.getElementById('compose-git')?.addEventListener('click', openGitDeploy);
       content.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
       });
@@ -87,8 +89,22 @@ Router.register('compose', async (content) => {
       content.querySelectorAll('[data-detail]').forEach(btn => {
         btn.addEventListener('click', async () => {
           try {
-            const data = await API.get(`/compose/${btn.dataset.detail}`);
-            showModal(`Compose: ${data.name}`, `
+            const name = btn.dataset.detail;
+            const [data, git] = await Promise.all([
+              API.get(`/compose/${name}`),
+              API.get(`/compose/${name}/git`).catch(() => ({ gitManaged: false })),
+            ]);
+            const webhookUrl = git.gitManaged ? `${location.origin}/api/compose/webhook/${encodeURIComponent(name)}?key=${git.webhookSecret}` : '';
+            const gitSection = git.gitManaged ? `
+              <div class="card mb-2" style="padding:12px;background:var(--accent-dim)">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+                  <div class="text-sm"><strong>Git</strong> — <code>${escapeHtml(git.repoUrl)}</code> @ <code>${escapeHtml(git.branch)}</code>${git.subdir ? ' /' + escapeHtml(git.subdir) : ''}</div>
+                  <button class="btn btn-sm btn-primary" id="cd-redeploy">↻ Redeploy (pull latest)</button>
+                </div>
+                <div style="margin-top:8px"><div class="detail-label mb-1">Webhook URL (POST → re-deploy on push)</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:11px;padding:8px;margin:0">${escapeHtml(webhookUrl)}</pre><button class="btn btn-xs btn-secondary" id="cd-copy-hook" style="margin-top:6px">📋 Copy webhook URL</button></div>
+              </div>` : '';
+            const dm = showModal(`Compose: ${data.name}`, `
+              ${gitSection}
               <div class="detail-grid mb-2">
                 <div class="detail-item"><div class="detail-label">Working Directory</div><div class="detail-value mono">${escapeHtml(data.workingDir)}</div></div>
                 <div class="detail-item"><div class="detail-label">Config Files</div><div class="detail-value mono">${escapeHtml(data.configFiles)}</div></div>
@@ -104,6 +120,12 @@ Router.register('compose', async (content) => {
                 </table>
               </div>
             `, [{ label: 'Close', className: 'btn btn-secondary' }]);
+            dm.overlay.querySelector('#cd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
+            dm.overlay.querySelector('#cd-redeploy')?.addEventListener('click', async (e) => {
+              const b = e.target; b.disabled = true; b.textContent = 'Redeploying…';
+              try { await API.post(`/compose/${name}/redeploy`); showToast('Redeployed from Git'); dm.close(); render(); }
+              catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '↻ Redeploy (pull latest)'; }
+            });
           } catch (e) { showToast(e.message, 'error'); }
         });
       });
@@ -117,6 +139,60 @@ Router.register('compose', async (content) => {
       r.onload = () => resolve(String(r.result).split(',')[1] || '');
       r.onerror = reject;
       r.readAsDataURL(file);
+    });
+  }
+
+  // #2-B — clone a Git repo → managed project → up. Shows the webhook URL for push-triggered re-deploys.
+  function openGitDeploy() {
+    const remote = isRemoteActive();
+    const body = `<div style="display:flex;flex-direction:column;gap:10px">
+      <div class="input-group"><label>Repository URL *</label><input class="input" id="gd-url" placeholder="https://github.com/user/repo"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="input-group" style="flex:1;min-width:120px"><label>Branch</label><input class="input" id="gd-branch" placeholder="main"></div>
+        <div class="input-group" style="flex:1;min-width:120px"><label>Subdir (monorepo, optional)</label><input class="input" id="gd-subdir" placeholder="e.g. apps/web"></div>
+      </div>
+      <div class="input-group"><label>Project name *</label><input class="input" id="gd-name" placeholder="my-app"></div>
+      <div class="input-group"><label>Access token (private repos only)</label><input class="input" id="gd-token" type="password" placeholder="GitHub PAT with repo scope — not logged" autocomplete="new-password"></div>
+      <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host.</strong> ' : ''}DockGate clones the repo and runs <code>docker compose up</code> (must contain a docker-compose.yml). You'll get a <strong>webhook URL</strong> to auto-redeploy on push.</div>
+    </div>`;
+    const m = showModal('Deploy from Git', body, []);
+    const root = m.overlay;
+    root.querySelector('#gd-url').addEventListener('input', (e) => {
+      const nameInput = root.querySelector('#gd-name');
+      if (!nameInput.value) {
+        const repo = (e.target.value.split('/').pop() || '').replace(/\.git$/, '');
+        if (repo) nameInput.value = repo.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+      }
+    });
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary'; btn.textContent = 'Clone & Deploy';
+    root.querySelector('#modal-footer').appendChild(btn);
+    btn.addEventListener('click', async () => {
+      const project = root.querySelector('#gd-name').value.trim();
+      const repoUrl = root.querySelector('#gd-url').value.trim();
+      if (!project || !repoUrl) { showToast('Repo URL and project name are required', 'warning'); return; }
+      btn.disabled = true; btn.textContent = 'Cloning & deploying…';
+      try {
+        const r = await API.post('/compose/deploy-git', {
+          project, repoUrl,
+          branch: root.querySelector('#gd-branch').value.trim(),
+          subdir: root.querySelector('#gd-subdir').value.trim(),
+          token: root.querySelector('#gd-token').value,
+          up: true,
+        });
+        m.close();
+        const webhookUrl = `${location.origin}/api/compose/webhook/${encodeURIComponent(project)}?key=${r.webhookSecret}`;
+        const wm = showModal('Deployed from Git ✓', `
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="text-sm">Project <strong>${escapeHtml(project)}</strong> is up (<code>${escapeHtml(r.composeFile)}</code>).</div>
+            <div><div class="detail-label mb-1">Webhook URL (POST → auto re-deploy on push):</div>
+              <pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:11px;padding:10px">${escapeHtml(webhookUrl)}</pre>
+              <button class="btn btn-xs btn-secondary" id="gd-copy-hook">📋 Copy webhook URL</button></div>
+            <div class="text-xs text-muted">Add it as a GitHub webhook (Settings → Webhooks, content-type JSON). Keep the key secret. The webhook re-deploys onto the currently active host.</div>
+          </div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+        wm.overlay.querySelector('#gd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
+        render();
+      } catch (e) { showToast(e.message, 'error', 12000); btn.disabled = false; btn.textContent = 'Clone & Deploy'; }
     });
   }
 

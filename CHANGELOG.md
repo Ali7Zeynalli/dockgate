@@ -2,6 +2,18 @@
 
 ---
 
+## [2.0.53] - 2026-06-11
+
+### Added — Deploy from Git (clone, re-deploy, webhook)
+- **Compose → "Deploy from Git"** — clone a repo (branch + monorepo subdir supported), then `docker compose up` on the active host (local or remote). Private repos: supply an access token (embedded into the https URL, never logged). `POST /api/compose/deploy-git`
+- **Re-deploy** — the project detail dialog shows the repo/branch and a **Redeploy (pull latest)** button: fetches the latest commit, hard-resets, and `up --build`. `POST /api/compose/:project/redeploy`
+- **Webhook** — each Git project gets a secret **webhook URL**; POST to it (e.g. a GitHub push webhook) to auto re-deploy. Secured by the per-project key; wrong/missing key → 403. `POST /api/compose/webhook/:project?key=…`
+- Shallow clone with an automatic **full-clone fallback** for servers that don't support it (dumb-HTTP / older git). The Docker image now includes `git`
+
+> Verified end-to-end: cloned a public repo, deployed over HTTP with the shallow→full fallback, re-deployed, and triggered a webhook (right key → redeploy, wrong key → 403).
+
+---
+
 ## [2.0.52] - 2026-06-11
 
 ### Added — Deploy from a folder

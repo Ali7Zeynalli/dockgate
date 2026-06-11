@@ -20,7 +20,8 @@ WORKDIR /app
 
 # Host Docker / Compose idarəsi üçün docker CLI (build toolchain DEYİL).
 # openssh-client: uzaq SSH host-da compose/stack əməlləri üçün (DOCKER_HOST=ssh:// connhelper ssh-ə bağlıdır).
-RUN apk add --no-cache docker-cli docker-cli-compose openssh-client
+# git: "Deploy from Git" — repo clone/pull (#2-B).
+RUN apk add --no-cache docker-cli docker-cli-compose openssh-client git
 
 # Hazır qurulmuş node_modules-i builder-dən köçür (eyni node:18-alpine → ABI uyğun)
 COPY --from=builder /app/node_modules ./node_modules
