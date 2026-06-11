@@ -59,6 +59,22 @@ router.get('/jointokens', async (req, res) => {
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
+// AUTO-JOIN: bir DockGate SSH serverini swarm-a bir-klik qoş (manual əmr lazım deyil).
+// body: { serverId, role: 'worker'|'manager' }
+router.post('/nodes/join', async (req, res) => {
+  try {
+    await assertSwarm();
+    const { serverId, role } = req.body || {};
+    if (!serverId) return res.status(400).json({ error: 'serverId required' });
+    const tokens = await dockerService.getSwarmJoinTokens();
+    if (!tokens.address) return res.status(400).json({ error: 'Manager address is unknown — re-initialize the swarm with a reachable IP (not 127.0.0.1).' });
+    const token = role === 'manager' ? tokens.manager : tokens.worker;
+    const r = await dockerService.joinServerToSwarm(serverId, token, tokens.address);
+    logAction({ req, resourceType: 'node', resourceName: serverId, action: 'join', details: { role: role || 'worker', manager: tokens.address } });
+    res.json(r);
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 // ---- Services ----
 router.get('/services', async (req, res) => {
   try { await assertSwarm(); res.json(await dockerService.listServices()); }

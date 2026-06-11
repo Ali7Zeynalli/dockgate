@@ -21,9 +21,9 @@ Router.register('swarm', async (content) => {
             <label>Advertise address — this host's reachable IP (optional, auto-detected if blank)</label>
             <input class="input" id="sw-adv" placeholder="e.g. 203.0.113.10">
             <span class="text-xs text-muted" style="margin-top:6px;display:block">
-              <strong>Single host (just this machine):</strong> enter <code>127.0.0.1</code>.<br>
-              <strong>Multi-VPS cluster:</strong> run init on the VPS itself (add it as an SSH server, switch to it above) and enter <em>that VPS's</em> public IP — it must be an address belonging to this host, not another machine's.<br>
-              Blank works only when the host has a single network address ("could not choose an IP" → specify one).
+              <strong>Remote SSH server:</strong> leave this blank — DockGate auto-advertises that server's host IP, so other VPSes can join it.<br>
+              <strong>Just this local machine:</strong> enter <code>127.0.0.1</code> (single-node swarm).<br>
+              Override only if the host has multiple IPs and you want a specific one.
             </span>
           </div>
           <div style="display:flex;gap:8px">
@@ -153,19 +153,51 @@ Router.register('swarm', async (content) => {
     }));
   }
 
-  // Join tokens (SW-bootstrap) — the ready-to-run `docker swarm join` commands for another VPS
+  // Join tokens (SW-bootstrap) — one-click auto-join for DockGate's SSH servers + manual fallback command
   async function openJoinTokens() {
-    let t;
+    let t, servers = [];
     try { t = await API.get('/swarm/jointokens'); }
     catch (e) { showToast(e.message, 'error'); return; }
+    try { servers = (await API.get('/servers')).servers || []; } catch (e) {}
+    // Joinable = remote SSH servers that aren't the active manager
+    const joinable = servers.filter(s => s.id !== 'local' && !s.isActive);
+    const loopback = /^(127\.|::1|0\.0\.0\.0)/.test(t.address || '');
     const workerCmd = `docker swarm join --token ${t.worker} ${t.address}`;
     const managerCmd = `docker swarm join --token ${t.manager} ${t.address}`;
+
+    const autoSection = `
+      <div class="card" style="padding:14px;background:var(--accent-dim)">
+        <div style="font-weight:600;margin-bottom:6px">Auto-join one of your servers (no manual command)</div>
+        ${loopback ? `<div class="text-xs" style="color:var(--warning);margin-bottom:8px">⚠ The manager advertises <code>${escapeHtml(t.address)}</code> — other nodes can't reach a loopback address. Re-initialize the swarm with the manager's public IP (Leave → Initialize with its IP) for auto-join to work.</div>` : ''}
+        ${joinable.length ? `
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select class="select" id="join-server" style="flex:1;min-width:160px">${joinable.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.id)}${s.host ? ' (' + escapeHtml(s.host) + ')' : ''}</option>`).join('')}</select>
+            <select class="select" id="join-role" style="width:130px"><option value="worker">worker</option><option value="manager">manager</option></select>
+            <button class="btn btn-primary" id="join-go" ${loopback ? 'disabled' : ''}>Join →</button>
+          </div>
+          <div class="text-xs text-muted" style="margin-top:6px">DockGate connects to the chosen server and runs the join for you. Ports <code>2377/tcp</code>, <code>7946/tcp+udp</code>, <code>4789/udp</code> must be open between the VPSes.</div>
+        ` : `<div class="text-xs text-muted">Add other VPSes as SSH servers (Settings → Servers) to enable one-click join.</div>`}
+      </div>`;
+
     const body = `<div style="display:flex;flex-direction:column;gap:14px">
-      <div><div class="detail-label mb-1">Add a <strong>worker</strong> — run this on the other VPS:</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:12px;padding:10px">${escapeHtml(workerCmd)}</pre></div>
-      <div><div class="detail-label mb-1">Add a <strong>manager</strong> (high availability):</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:12px;padding:10px">${escapeHtml(managerCmd)}</pre></div>
-      <div class="text-xs text-muted">Open ports <code>2377/tcp</code>, <code>7946/tcp+udp</code>, <code>4789/udp</code> between the VPSes. Once a node joins, it appears in the Nodes tab and services schedule onto it automatically.</div>
+      ${autoSection}
+      <details><summary class="text-sm" style="cursor:pointer">Or run the command manually on the other VPS</summary>
+        <div style="margin-top:10px"><div class="detail-label mb-1">Worker:</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:12px;padding:10px">${escapeHtml(workerCmd)}</pre></div>
+        <div style="margin-top:8px"><div class="detail-label mb-1">Manager (HA):</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:12px;padding:10px">${escapeHtml(managerCmd)}</pre></div>
+      </details>
     </div>`;
-    showModal('Join a node to the swarm', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const m = showModal('Join a node to the swarm', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    m.overlay.querySelector('#join-go')?.addEventListener('click', async () => {
+      const serverId = m.overlay.querySelector('#join-server').value;
+      const role = m.overlay.querySelector('#join-role').value;
+      const btn = m.overlay.querySelector('#join-go');
+      btn.disabled = true; btn.textContent = 'Joining…';
+      try {
+        const r = await API.post('/swarm/nodes/join', { serverId, role });
+        showToast(`${serverId} (${r.host}) joined as ${role}`);
+        m.close(); render();
+      } catch (e) { showToast(e.message, 'error', 12000); btn.disabled = false; btn.textContent = 'Join →'; }
+    });
   }
 
   // Stacks (SW-b) — list (grouped by namespace label), deploy from compose, remove

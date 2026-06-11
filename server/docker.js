@@ -66,6 +66,14 @@ function getActiveServerId() { return _activeServerId; }
 
 function isLocalActive() { return _activeServerId === 'local'; }
 
+/** Aktiv serverin host-u (swarm manager ünvanı üçün). Local-da null. */
+function getActiveServerHost() {
+  if (_activeServerId === 'local') return null;
+  const { stmts } = require('./db');
+  const s = stmts.getServer.get(_activeServerId);
+  return s ? s.host : null;
+}
+
 /**
  * Operations requiring the host CLI (compose, buildx, build-cache prune, self-update,
  * autostart) can only run against the local daemon — a remote SSH host has no access
@@ -840,13 +848,19 @@ async function getSwarmInfo() {
   };
 }
 
-/** Bootstrap the active daemon as a swarm manager. advertiseAddr = this host's reachable IP. */
+/**
+ * Bootstrap the active daemon as a swarm manager. advertiseAddr = this host's reachable IP.
+ * Remote SSH serverdə advertise verilməyibsə, serverin öz host IP-si işlədilir (multi-VPS üçün
+ * düzgün — beləcə başqa node-lar manager-ə çata bilir, 127.0.0.1 yox).
+ */
 async function swarmInit(advertiseAddr) {
   const opts = { ListenAddr: '0.0.0.0:2377' };
-  if (advertiseAddr) opts.AdvertiseAddr = advertiseAddr;
+  let adv = advertiseAddr;
+  if (!adv) { const h = getActiveServerHost(); if (h) adv = h; }
+  if (adv) opts.AdvertiseAddr = adv;
   const nodeId = await docker.swarmInit(opts);
   invalidateCache('');
-  return { nodeId };
+  return { nodeId, advertiseAddr: adv || null };
 }
 
 /** Leave the swarm (force is required on the last manager). */
@@ -860,11 +874,41 @@ async function swarmLeave(force) {
 async function getSwarmJoinTokens() {
   const [sw, info] = await Promise.all([docker.swarmInspect(), docker.info()]);
   const mgr = (info.Swarm?.RemoteManagers || [])[0];
+  let address = mgr?.Addr || ''; // ip:2377
+  // Loopback/boş advertise (məs. swarm 127.0.0.1 ilə init olunub) → aktiv SSH serverin host-u ilə
+  // əvəz et ki, başqa VPS-lər qoşula bilsin.
+  const host = getActiveServerHost();
+  if (host && (!address || /^(127\.|::1|0\.0\.0\.0)/.test(address))) address = `${host}:2377`;
   return {
     worker: sw.JoinTokens?.Worker || '',
     manager: sw.JoinTokens?.Manager || '',
-    address: mgr?.Addr || '', // ip:2377
+    address,
   };
+}
+
+/**
+ * Bir DockGate SSH serverini swarm-a AVTOMATİK qoşur — target serverin daemon-una qoşulub
+ * orada `swarmJoin` işlədir (manual `docker swarm join` lazım deyil).
+ * @param {string} targetServerId qoşulacaq serverin id-si (aktiv manager-dən fərqli)
+ * @param {string} joinToken worker və ya manager join token
+ * @param {string} managerAddr manager-in çatılan ünvanı (ip:2377)
+ */
+async function joinServerToSwarm(targetServerId, joinToken, managerAddr) {
+  const { stmts } = require('./db');
+  if (!targetServerId || targetServerId === 'local') throw new Error('Pick a remote SSH server to join');
+  if (targetServerId === _activeServerId) throw new Error('That server is the manager itself');
+  const target = stmts.getServer.get(targetServerId);
+  if (!target) throw new Error(`Server tapılmadı: ${targetServerId}`);
+  if (!managerAddr) throw new Error('Manager address unknown — re-initialize the swarm with a reachable IP');
+  const client = createSshClient(target);
+  await client.swarmJoin({
+    ListenAddr: '0.0.0.0:2377',
+    AdvertiseAddr: target.host, // qoşulan node-un öz IP-si
+    RemoteAddrs: [managerAddr],
+    JoinToken: joinToken,
+  });
+  invalidateCache('');
+  return { success: true, host: target.host };
 }
 
 /** Remove a node from the swarm (drain it first; force for an unreachable node). */
@@ -1313,7 +1357,7 @@ module.exports = {
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
   listVolumeFiles, downloadVolumeFile,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
-  getSwarmInfo, swarmInit, swarmLeave, getSwarmJoinTokens, removeNode, listServices, listStacks, inspectService, createService, updateServiceImage, getServiceLogs, scaleService, removeService, listServiceTasks, listNodes, updateNodeAvailability,
+  getSwarmInfo, swarmInit, swarmLeave, getSwarmJoinTokens, joinServerToSwarm, removeNode, listServices, listStacks, inspectService, createService, updateServiceImage, getServiceLogs, scaleService, removeService, listServiceTasks, listNodes, updateNodeAvailability,
   listSecrets, createSecret, removeSecret, listConfigs, createConfig, removeConfig,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,

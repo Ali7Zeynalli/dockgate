@@ -2,6 +2,18 @@
 
 ---
 
+## [2.0.43] - 2026-06-11
+
+### Added — Swarm node auto-join (zero manual commands)
+- **Initialize Swarm on a remote SSH server now auto-advertises that server's host IP** — leave the advertise field blank and other VPSes can reach it (no more useless `127.0.0.1`)
+- **Join-token address is corrected** — a loopback/empty advertise is replaced with the active server's host so the printed `docker swarm join` command is actually usable
+- **One-click "Join a node"** — instead of copy-pasting a command, pick one of your DockGate SSH servers and a role (worker/manager); DockGate connects to that server and runs the join for you. Guarded when the manager only advertises a loopback address
+- New endpoint `POST /api/swarm/nodes/join { serverId, role }`
+
+> Firewall ports between nodes (`2377/tcp`, `7946/tcp+udp`, `4789/udp`) still have to be opened on your provider/host — DockGate can't do that for you.
+
+---
+
 ## [2.0.42] - 2026-06-11
 
 ### Added — "P3" private registries & GitHub repos end-to-end
