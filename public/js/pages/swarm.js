@@ -5,6 +5,28 @@ Router.register('swarm', async (content) => {
   let refreshTimer = null;
   const pageNavId = Router._navId;
 
+  // Stability on SSH: only update #sw-content when the tab's HTML actually changed (no blink / scroll
+  // loss on polls), and let the poll refresh ONLY the active tab — not the whole page.
+  const lastTab = {};
+  function renderUnchanged(key, html) {
+    const el = document.getElementById('sw-content');
+    if (!el) return true; // nothing to render into → treat as "no change", skip handlers
+    if (el.dataset.tabKey === key && lastTab[key] === html) return true; // identical → leave DOM alone
+    lastTab[key] = html;
+    el.dataset.tabKey = key;
+    el.innerHTML = html;
+    return false; // changed → caller (re)attaches handlers
+  }
+  function refreshActiveTab() {
+    // Active swarm view present → refresh just the current tab (no header/tabs rebuild, no /swarm call).
+    // Not-active state (Initialize form) → skip the poll so we don't clobber the advertise-address input.
+    if (!document.getElementById('sw-content')) return;
+    if (tab === 'services') renderServices();
+    else if (tab === 'stacks') renderStacks();
+    else if (tab === 'secrets') renderSecretsConfigs();
+    else renderNodes();
+  }
+
   async function render() {
     let info;
     try { info = await API.get('/swarm'); }
@@ -77,8 +99,8 @@ Router.register('swarm', async (content) => {
     const el = document.getElementById('sw-content'); if (!el) return;
     let services;
     try { services = await API.get('/swarm/services'); }
-    catch (e) { el.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; return; }
-    el.innerHTML = `<div class="table-wrapper"><table>
+    catch (e) { renderUnchanged('services', `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`); return; }
+    if (renderUnchanged('services', `<div class="table-wrapper"><table>
       <thead><tr><th>Name</th><th>Image</th><th>Mode</th><th>Replicas</th><th>Ports</th><th style="text-align:right">Actions</th></tr></thead>
       <tbody>${services.map(s => `<tr>
         <td class="td-name">${escapeHtml(s.name)}</td>
@@ -94,7 +116,7 @@ Router.register('swarm', async (content) => {
           <button class="btn btn-xs btn-secondary" data-svcinspect="${s.id}" data-name="${escapeHtml(s.name)}">${Icons.eye}</button>
           <button class="btn btn-xs btn-ghost text-danger" data-rmsvc="${s.id}" data-name="${escapeHtml(s.name)}">${Icons.trash}</button>
         </div></td>
-      </tr>`).join('') || '<tr><td colspan="6" class="text-muted text-sm" style="padding:14px">No services.</td></tr>'}</tbody></table></div>`;
+      </tr>`).join('') || '<tr><td colspan="6" class="text-muted text-sm" style="padding:14px">No services.</td></tr>'}</tbody></table></div>`)) return;
 
     el.querySelectorAll('[data-scale]').forEach(b => b.addEventListener('click', () => {
       const body = `<div class="input-group"><label>Replicas for ${escapeHtml(b.dataset.name)}</label><input class="input" id="sc-rep" type="number" min="0" value="${b.dataset.rep}"></div>`;
@@ -205,8 +227,8 @@ Router.register('swarm', async (content) => {
     const el = document.getElementById('sw-content'); if (!el) return;
     let stacks;
     try { stacks = await API.get('/swarm/stacks'); }
-    catch (e) { el.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; return; }
-    el.innerHTML = `
+    catch (e) { renderUnchanged('stacks', `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`); return; }
+    if (renderUnchanged('stacks', `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <div class="text-sm text-muted">${stacks.length} stack(s)</div>
         <button class="btn btn-sm btn-primary" id="stk-deploy">${Icons.play} Deploy Stack</button>
@@ -220,7 +242,7 @@ Router.register('swarm', async (content) => {
             <button class="btn btn-xs btn-secondary" data-stk-svcs="${escapeHtml(s.name)}">Services</button>
             <button class="btn btn-xs btn-ghost text-danger" data-stk-rm="${escapeHtml(s.name)}">${Icons.trash}</button>
           </div></td>
-        </tr>`).join('') || '<tr><td colspan="3" class="text-muted text-sm" style="padding:14px">No stacks deployed.</td></tr>'}</tbody></table></div>`;
+        </tr>`).join('') || '<tr><td colspan="3" class="text-muted text-sm" style="padding:14px">No stacks deployed.</td></tr>'}</tbody></table></div>`)) return;
     el.querySelector('#stk-deploy')?.addEventListener('click', openStackDeploy);
     el.querySelectorAll('[data-stk-rm]').forEach(b => b.addEventListener('click', () => {
       showConfirm('Remove Stack', `Remove stack <strong>${escapeHtml(b.dataset.stkRm)}</strong> and all its services?`, async () => {
@@ -265,7 +287,7 @@ Router.register('swarm', async (content) => {
     const el = document.getElementById('sw-content'); if (!el) return;
     let secrets = [], configs = [];
     try { [secrets, configs] = await Promise.all([API.get('/swarm/secrets'), API.get('/swarm/configs')]); }
-    catch (e) { el.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; return; }
+    catch (e) { renderUnchanged('secrets', `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`); return; }
     const tableFor = (items, kind) => `<div class="table-wrapper"><table>
       <thead><tr><th>Name</th><th>Created</th><th style="text-align:right">Actions</th></tr></thead>
       <tbody>${items.map(x => `<tr>
@@ -273,11 +295,11 @@ Router.register('swarm', async (content) => {
         <td class="text-muted text-sm">${x.createdAt ? timeAgo(x.createdAt) : ''}</td>
         <td style="text-align:right"><button class="btn btn-xs btn-ghost text-danger" data-rm-${kind}="${x.id}" data-name="${escapeHtml(x.name || '')}">${Icons.trash}</button></td>
       </tr>`).join('') || `<tr><td colspan="3" class="text-muted text-sm" style="padding:12px">No ${kind}s.</td></tr>`}</tbody></table></div>`;
-    el.innerHTML = `
+    if (renderUnchanged('secrets', `
       <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 8px"><h3 style="margin:0;font-size:15px">Secrets</h3><button class="btn btn-xs btn-primary" id="new-secret">New Secret</button></div>
       ${tableFor(secrets, 'secret')}
       <div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 8px"><h3 style="margin:0;font-size:15px">Configs</h3><button class="btn btn-xs btn-primary" id="new-config">New Config</button></div>
-      ${tableFor(configs, 'config')}`;
+      ${tableFor(configs, 'config')}`)) return;
     el.querySelector('#new-secret')?.addEventListener('click', () => openSecretCreate('secret'));
     el.querySelector('#new-config')?.addEventListener('click', () => openSecretCreate('config'));
     el.querySelectorAll('[data-rm-secret]').forEach(b => b.addEventListener('click', () => rmSecretConfig('secret', b.dataset.rmSecret, b.dataset.name)));
@@ -316,8 +338,8 @@ Router.register('swarm', async (content) => {
     const el = document.getElementById('sw-content'); if (!el) return;
     let nodes;
     try { nodes = await API.get('/swarm/nodes'); }
-    catch (e) { el.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; return; }
-    el.innerHTML = `<div class="table-wrapper"><table>
+    catch (e) { renderUnchanged('nodes', `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`); return; }
+    if (renderUnchanged('nodes', `<div class="table-wrapper"><table>
       <thead><tr><th>Hostname</th><th>Role</th><th>State</th><th>Availability</th><th>Engine</th><th style="text-align:right">Actions</th></tr></thead>
       <tbody>${nodes.map(n => `<tr>
         <td class="td-name">${escapeHtml(n.hostname || '')} ${n.leader ? '<span class="badge badge-running" style="font-size:10px">leader</span>' : ''}</td>
@@ -330,7 +352,7 @@ Router.register('swarm', async (content) => {
           ${n.availability !== 'drain' ? `<button class="btn btn-xs btn-secondary" data-avail="drain" data-node="${n.id}">Drain</button>` : ''}
           ${!n.leader ? `<button class="btn btn-xs btn-ghost text-danger" data-noderm="${n.id}" data-host="${escapeHtml(n.hostname || '')}">${Icons.trash}</button>` : ''}
         </div></td>
-      </tr>`).join('')}</tbody></table></div>`;
+      </tr>`).join('')}</tbody></table></div>`)) return;
     el.querySelectorAll('[data-avail]').forEach(b => b.addEventListener('click', async () => {
       try { await API.post(`/swarm/nodes/${b.dataset.node}/availability`, { availability: b.dataset.avail }); showToast(`Node → ${b.dataset.avail}`); render(); }
       catch (e) { showToast(e.message, 'error'); }
@@ -347,6 +369,6 @@ Router.register('swarm', async (content) => {
   // cross-module giriş nöqtələri (Images → Deploy as Service və s.) də onu istifadə edir.
 
   await render();
-  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 10000);
+  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) refreshActiveTab(); }, 10000);
   return () => { if (refreshTimer) clearInterval(refreshTimer); };
 });

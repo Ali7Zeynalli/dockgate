@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.49] - 2026-06-11
+
+### Fixed — stable Swarm page (no flicker on SSH)
+- The Swarm page no longer rebuilds the whole page on its 10s auto-refresh. Now it refreshes **only the active tab**, and **only touches the DOM when the data actually changed** — so the table no longer blinks, scroll position is kept, and row buttons stay responsive. This is most noticeable on a remote SSH host, where each refresh previously rebuilt everything over the slower SSH transport
+- The Initialize-Swarm form is no longer re-rendered by the poll (your advertise-address input isn't cleared mid-typing)
+
+---
+
 ## [2.0.48] - 2026-06-11
 
 ### Added — Compose & Swarm stacks now work on remote SSH hosts
