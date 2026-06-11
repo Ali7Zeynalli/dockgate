@@ -61,9 +61,15 @@ function safeRelPath(p) {
 // Standard compose filenames docker compose auto-detects.
 const COMPOSE_FILENAMES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'];
 
+// The managed project's compose file — ANY of the standard names (.yml AND .yaml). A folder/git deploy
+// may bring docker-compose.yaml, so nothing may hardcode docker-compose.yml.
+function findComposeFile(dir) {
+  return COMPOSE_FILENAMES.find(n => fs.existsSync(path.join(dir, n))) || null;
+}
+
 // Validate a compose file with `docker compose config -q` (throws with stderr if invalid)
-async function validateComposeFile(cwd) {
-  await execFileAsync('docker', ['compose', '-f', 'docker-compose.yml', 'config', '-q'], { cwd });
+async function validateComposeFile(cwd, file = 'docker-compose.yml') {
+  await execFileAsync('docker', ['compose', '-f', file, 'config', '-q'], { cwd });
 }
 
 // Run docker compose command safely using execFile (no shell injection).
@@ -94,7 +100,7 @@ async function runComposeAction(req, res, action, label) {
     const isLocal = dockerService.isLocalActive();
     const project = await dockerService.getComposeProject(req.params.project);
     const mDir = managedDir(req.params.project);
-    const hasManaged = fs.existsSync(path.join(mDir, 'docker-compose.yml'));
+    const hasManaged = !!findComposeFile(mDir);
     let cwd;
     if (isLocal) {
       cwd = project.workingDir;
@@ -143,17 +149,20 @@ router.post('/create', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// Read a managed project's YAML (for the editor)
+// Read a managed project's YAML (for the editor) — finds ANY standard compose filename (.yml/.yaml)
 router.get('/:project/file', (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const f = path.join(managedDir(req.params.project), 'docker-compose.yml');
-    if (!fs.existsSync(f)) return res.status(404).json({ error: 'No DockGate-managed compose file for this project' });
-    res.json({ project: req.params.project, yaml: fs.readFileSync(f, 'utf8'), managed: true });
+    const dir = managedDir(req.params.project);
+    const name = findComposeFile(dir);
+    if (!name) return res.status(404).json({ error: 'No DockGate-managed compose file for this project' });
+    res.json({ project: req.params.project, yaml: fs.readFileSync(path.join(dir, name), 'utf8'), managed: true, file: name });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Overwrite a managed project's YAML → validate → (optional) re-up
+// Overwrite a managed project's YAML → validate → (optional) re-up.
+// Writes back to the project's EXISTING compose filename (e.g. docker-compose.yaml) — otherwise a
+// second .yml file would shadow/be shadowed and edits would silently not apply.
 router.put('/:project/file', async (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
@@ -161,8 +170,9 @@ router.put('/:project/file', async (req, res) => {
     if (!yaml || !yaml.trim()) return res.status(400).json({ error: 'Compose YAML is required' });
     const dir = managedDir(req.params.project);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'docker-compose.yml'), yaml, 'utf8');
-    try { await validateComposeFile(dir); }
+    const name = findComposeFile(dir) || 'docker-compose.yml';
+    fs.writeFileSync(path.join(dir, name), yaml, 'utf8');
+    try { await validateComposeFile(dir, name); }
     catch (e) { return res.status(400).json({ error: 'Invalid compose file: ' + (e.stderr || e.message) }); }
     let output = '';
     if (up) output = await runCompose(req.params.project, ['up', '-d'], dir);
@@ -197,7 +207,7 @@ router.post('/deploy-folder', async (req, res) => {
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, buf);
     }
-    const composeFile = COMPOSE_FILENAMES.find(n => fs.existsSync(path.join(dir, n)));
+    const composeFile = findComposeFile(dir);
     if (!composeFile) return res.status(400).json({ error: 'No docker-compose.yml (or compose.yaml) found in the folder' });
     try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: dir }); }
     catch (e) { return res.status(400).json({ error: 'Invalid compose file: ' + (e.stderr || e.message) }); }
@@ -273,7 +283,7 @@ router.post('/deploy-folder-finish', async (req, res) => {
     const { uploadId, up = true } = req.body || {};
     if (!u) return res.status(410).json({ error: 'Upload session expired — start over' });
     if (!u.files) return res.status(400).json({ error: 'No files uploaded' });
-    const composeFile = COMPOSE_FILENAMES.find(n => fs.existsSync(path.join(u.dir, n)));
+    const composeFile = findComposeFile(u.dir);
     if (!composeFile) { throw Object.assign(new Error('No docker-compose.yml (or compose.yaml) found in the folder'), { statusCode: 400 }); }
     try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: u.dir }); }
     catch (e) { throw Object.assign(new Error('Invalid compose file: ' + (e.stderr || e.message)), { statusCode: 400 }); }
@@ -321,7 +331,7 @@ router.post('/deploy-git', async (req, res) => {
 
     const relSub = safeRelPath(subdir);
     const projectDir = relSub ? path.join(dir, relSub) : dir;
-    const composeFile = COMPOSE_FILENAMES.find(n => fs.existsSync(path.join(projectDir, n)));
+    const composeFile = findComposeFile(projectDir);
     if (!composeFile) return res.status(400).json({ error: `No docker-compose.yml found in the repo${relSub ? ' subdir "' + relSub + '"' : ''}` });
 
     const secret = crypto.randomBytes(18).toString('hex');
@@ -344,7 +354,7 @@ async function gitRedeploy(project) {
   const projectDir = meta.subdir ? path.join(dir, meta.subdir) : dir;
   await gitRun(['-C', dir, 'fetch', '--depth', '1', 'origin', meta.branch || 'HEAD']);
   await gitRun(['-C', dir, 'reset', '--hard', 'FETCH_HEAD']);
-  const composeFile = meta.composeFile || COMPOSE_FILENAMES.find(n => fs.existsSync(path.join(projectDir, n)));
+  const composeFile = meta.composeFile || findComposeFile(projectDir);
   const output = await runCompose(project, ['up', '-d', '--build'], projectDir);
   return { output, composeFile };
 }

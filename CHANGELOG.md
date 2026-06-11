@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.58] - 2026-06-12
+
+### Fixed — Compose editor opened empty for `.yaml` projects
+- The editor (and managed-project detection) only looked for `docker-compose.yml`, so a project deployed with **`docker-compose.yaml`** (e.g. via Deploy from folder) opened as an empty "paste YAML to adopt" editor even though its file was right there. Now **all standard names** are found: `docker-compose.yml/.yaml`, `compose.yml/.yaml`
+- Editing writes back to the project's **existing** compose filename — previously an adopt would create a second `.yml` next to the `.yaml`, and since Docker Compose prefers `.yaml`, edits silently never applied
+- Remote deploys and validation use the same lookup (a `.yaml` managed project now works on a remote host too)
+
+---
+
 ## [2.0.57] - 2026-06-12
 
 ### Fixed — Events page no longer sits on "Waiting for events…"
