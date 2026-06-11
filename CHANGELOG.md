@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.55] - 2026-06-11
+
+### Fixed — audit-log coverage gaps (full-app audit)
+A 143-action audit of every section confirmed all mutations are logged except four gaps — now closed:
+- **Build start is audited** (`build_start`) — previously only the outcome (`build_success`/`build_failed`) was logged, so a cancelled or never-finishing build left no trace
+- **Build cancel is audited** (`build_cancel`) — destroying an active build is a state-changing operation and now appears in the Audit Log with the build's tag and id
+- **Network attach/detach is dual-logged** — alongside the existing network-perspective entry, a container-perspective entry (`network-connect`/`network-disconnect`) is written so the action shows up in the container's history too
+- **Registry operations log `server: local`** — registries live in DockGate's own DB (control-plane), so their audit entries no longer inherit the active Docker host's name
+
+---
+
 ## [2.0.54] - 2026-06-11
 
 ### Fixed — "Payload Too Large" when deploying from a folder

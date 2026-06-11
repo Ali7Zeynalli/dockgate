@@ -250,6 +250,7 @@ io.on('connection', (socket) => {
 
   // ---- Docker Image Build streaming ----
   let buildStream = null;
+  let activeBuildInfo = null; // {id, tag, server} — so build:cancel can write a meaningful audit entry
   socket.on('build:start', async ({ buildId, contextType, contextValue, gitToken, tag, dockerfile, nocache, pull, buildargs }) => {
     try {
       const crypto = require('crypto');
@@ -263,6 +264,9 @@ io.on('connection', (socket) => {
       // Insert build record into DB / DB-yə build qeydini əlavə et
       stmts.insertBuild.run(id, tag || 'untagged', dockerfile || 'Dockerfile', contextValue || '', JSON.stringify(buildargs || {}), nocache ? 1 : 0, pull ? 1 : 0, 'building');
       socket.emit('build:started', { buildId: id });
+      // Audit the INITIATION too (not just the outcome) — a cancelled/never-finishing build must leave a trace
+      logAction({ socket, server: buildServer, resourceType: 'build', resourceName: tag || 'untagged', action: 'build_start', details: { buildId: id, contextType: contextType || 'url' } });
+      activeBuildInfo = { id, tag: tag || 'untagged', server: buildServer };
 
       // 'inline' → build from a Dockerfile typed in the UI (a generated single-file tar context);
       // 'url' (default) → a Git repo / remote tarball that dockerode fetches.
@@ -334,6 +338,7 @@ io.on('connection', (socket) => {
           if (mon) mon.triggerBuildFailed({ imageTag: tag, buildId: id, error: buildError, duration });
         }
         buildStream = null;
+        activeBuildInfo = null;
       });
 
       stream.on('error', (err) => {
@@ -343,6 +348,7 @@ io.on('connection', (socket) => {
 
         socket.emit('build:error', { buildId: id, error: err.message });
         buildStream = null;
+        activeBuildInfo = null;
       });
 
     } catch (err) {
@@ -355,6 +361,11 @@ io.on('connection', (socket) => {
       try { buildStream.destroy(); } catch(e) {}
       buildStream = null;
       socket.emit('build:cancelled');
+      // Audit the cancellation — destroying an active build is a state-changing operation
+      if (activeBuildInfo) {
+        logAction({ socket, server: activeBuildInfo.server, resourceType: 'build', resourceName: activeBuildInfo.tag, action: 'build_cancel', details: { buildId: activeBuildInfo.id } });
+        activeBuildInfo = null;
+      }
     }
   });
 
