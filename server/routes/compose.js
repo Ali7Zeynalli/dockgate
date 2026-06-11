@@ -208,6 +208,98 @@ router.post('/deploy-folder', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
+// ---- Per-file folder deploy (#2-A v2: live progress) ----
+// The UI uploads files ONE BY ONE into a staging dir so it can show a real "12/45 uploaded" list,
+// then finish validates the compose file and brings the project up. The single-shot /deploy-folder
+// above stays for API compatibility.
+const STAGING_DIR = path.join(COMPOSE_DIR, '.staging');
+const folderUploads = new Map(); // uploadId → { project, dir, total, files, created }
+const UPLOAD_TTL_MS = 30 * 60 * 1000;
+const UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
+
+// Drop stale sessions (browser closed mid-upload) so staging dirs don't accumulate.
+function gcFolderUploads() {
+  const now = Date.now();
+  for (const [id, u] of folderUploads) {
+    if (now - u.created > UPLOAD_TTL_MS) {
+      fs.rmSync(u.dir, { recursive: true, force: true });
+      folderUploads.delete(id);
+    }
+  }
+}
+
+router.post('/deploy-folder-start', async (req, res) => {
+  try {
+    gcFolderUploads();
+    const { project } = req.body || {};
+    if (!validateProjectName(project || '')) return res.status(400).json({ error: 'Invalid project name (a-z, 0-9, _, -)' });
+    if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
+      return res.status(409).json({ error: `A project named "${project}" already exists` });
+    }
+    const uploadId = crypto.randomBytes(16).toString('hex');
+    const dir = path.join(STAGING_DIR, `${project}-${uploadId}`);
+    fs.mkdirSync(dir, { recursive: true });
+    folderUploads.set(uploadId, { project, dir, total: 0, files: 0, created: Date.now() });
+    res.json({ uploadId });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/deploy-folder-file', (req, res) => {
+  try {
+    const { uploadId, path: relPath, b64 } = req.body || {};
+    const u = folderUploads.get(uploadId);
+    if (!u) return res.status(410).json({ error: 'Upload session expired — start over' });
+    const rel = safeRelPath(relPath);
+    if (!rel) return res.status(400).json({ error: 'Invalid file path' });
+    const dest = path.join(u.dir, rel);
+    if (!dest.startsWith(u.dir + path.sep)) return res.status(400).json({ error: 'Invalid file path' }); // traversal guard
+    const buf = Buffer.from(String(b64 || ''), 'base64');
+    u.total += buf.length;
+    if (u.total > UPLOAD_MAX_BYTES) {
+      fs.rmSync(u.dir, { recursive: true, force: true });
+      folderUploads.delete(uploadId);
+      return res.status(400).json({ error: 'Folder exceeds the 50MB upload limit — use pre-built images or git-based deploy for large projects' });
+    }
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, buf);
+    u.files++;
+    res.json({ success: true, files: u.files, bytes: u.total });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/deploy-folder-finish', async (req, res) => {
+  const u = folderUploads.get((req.body || {}).uploadId);
+  try {
+    const { uploadId, up = true } = req.body || {};
+    if (!u) return res.status(410).json({ error: 'Upload session expired — start over' });
+    if (!u.files) return res.status(400).json({ error: 'No files uploaded' });
+    const composeFile = COMPOSE_FILENAMES.find(n => fs.existsSync(path.join(u.dir, n)));
+    if (!composeFile) { throw Object.assign(new Error('No docker-compose.yml (or compose.yaml) found in the folder'), { statusCode: 400 }); }
+    try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: u.dir }); }
+    catch (e) { throw Object.assign(new Error('Invalid compose file: ' + (e.stderr || e.message)), { statusCode: 400 }); }
+    // Staging is valid → promote it to the managed project dir.
+    const dir = managedDir(u.project);
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.renameSync(u.dir, dir);
+    folderUploads.delete(uploadId);
+    let output = '';
+    if (up) output = await runCompose(u.project, ['up', '-d'], dir);
+    logAction({ req, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder', details: { files: u.files, composeFile } });
+    res.json({ success: true, output, composeFile });
+  } catch (err) {
+    // Validation/up failure → clean the staging dir so a retry starts fresh.
+    if (u) { fs.rmSync(u.dir, { recursive: true, force: true }); folderUploads.delete((req.body || {}).uploadId); }
+    res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || '').toString() });
+  }
+});
+
+// Cancel/close mid-upload — drop the staging dir.
+router.post('/deploy-folder-abort', (req, res) => {
+  const u = folderUploads.get((req.body || {}).uploadId);
+  if (u) { fs.rmSync(u.dir, { recursive: true, force: true }); folderUploads.delete((req.body || {}).uploadId); }
+  res.json({ success: true });
+});
+
 // Deploy from a Git repo (#2-B): clone → managed project → up. Stores repo/branch/token + a webhook
 // secret for later re-deploys. Private repos: supply a token (embedded into the https URL; not logged).
 router.post('/deploy-git', async (req, res) => {

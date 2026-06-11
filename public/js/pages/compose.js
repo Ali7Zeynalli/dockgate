@@ -196,7 +196,8 @@ Router.register('compose', async (content) => {
     });
   }
 
-  // #2-A — upload a whole project folder → managed project → compose up (active daemon, local or remote)
+  // #2-A v2 — upload a project folder FILE BY FILE (staging session) so the modal shows a live
+  // "uploaded n / total" list, then finish → validate → compose up (active daemon, local or remote).
   function openFolderDeploy() {
     const remote = isRemoteActive();
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
@@ -205,11 +206,20 @@ Router.register('compose', async (content) => {
         <input type="file" id="fd-folder" webkitdirectory directory multiple style="font-size:12px">
         <span class="text-xs text-muted" id="fd-info" style="margin-top:4px;display:block">No folder selected.</span>
       </div>
-      <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (over SSH). ' : ''}Files upload to DockGate, then <code>docker compose up</code> runs. <code>.git</code> / <code>node_modules</code> are skipped. Build contexts upload to the daemon; bind-mount paths resolve on the daemon's host. Best with image-based compose; ~50MB max.</div>
+      <div id="fd-progress" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span class="text-sm" id="fd-counter">0 / 0</span>
+          <span class="text-xs text-muted" id="fd-remaining"></span>
+        </div>
+        <div style="height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden"><div id="fd-bar" style="height:100%;width:0%;background:var(--accent);transition:width .2s"></div></div>
+        <div id="fd-list" style="margin-top:8px;max-height:180px;overflow-y:auto;font-size:12px;font-family:var(--font-mono,monospace);line-height:1.7"></div>
+      </div>
+      <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (over SSH). ' : ''}Files upload one by one, then <code>docker compose up</code> runs. <code>.git</code> / <code>node_modules</code> are skipped. Bind-mount paths resolve on the daemon's host. ~50MB max.</div>
     </div>`;
     const m = showModal('Deploy from folder', body, []);
     const root = m.overlay;
     let picked = [];
+    let uploadId = null; // active staging session — aborted if the modal closes mid-upload
     root.querySelector('#fd-folder').addEventListener('change', (e) => {
       picked = [...e.target.files].filter(f => {
         const rel = f.webkitRelativePath.split('/').slice(1).join('/');
@@ -231,18 +241,47 @@ Router.register('compose', async (content) => {
       if (!picked.length) { showToast('Select a project folder first', 'warning'); return; }
       const bytes = picked.reduce((a, f) => a + f.size, 0);
       if (bytes > 50 * 1024 * 1024) { showToast('Folder exceeds the 50MB limit', 'error'); return; }
-      btn.disabled = true; btn.textContent = 'Reading…';
+      btn.disabled = true; btn.textContent = 'Uploading…';
+      const prog = root.querySelector('#fd-progress');
+      const list = root.querySelector('#fd-list');
+      const bar = root.querySelector('#fd-bar');
+      const counter = root.querySelector('#fd-counter');
+      const remaining = root.querySelector('#fd-remaining');
+      prog.style.display = 'block';
+      // Render the full file list once; each row's status icon is updated in place as it uploads.
+      list.innerHTML = picked.map((f, i) => {
+        const rel = f.webkitRelativePath.split('/').slice(1).join('/');
+        return `<div id="fd-row-${i}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span id="fd-st-${i}">·</span> ${escapeHtml(rel)} <span class="text-muted">(${formatBytes(f.size)})</span></div>`;
+      }).join('');
+      const setStatus = (i, icon, color) => { const el = root.querySelector(`#fd-st-${i}`); if (el) { el.textContent = icon; el.style.color = color || ''; } };
       try {
-        const files = [];
-        for (const f of picked) {
-          files.push({ path: f.webkitRelativePath.split('/').slice(1).join('/'), b64: await fileToB64(f) });
+        uploadId = (await API.post('/compose/deploy-folder-start', { project })).uploadId;
+        for (let i = 0; i < picked.length; i++) {
+          const f = picked[i];
+          setStatus(i, '⏳', 'var(--accent)');
+          root.querySelector(`#fd-row-${i}`)?.scrollIntoView({ block: 'nearest' });
+          const b64 = await fileToB64(f);
+          await API.post('/compose/deploy-folder-file', { uploadId, path: f.webkitRelativePath.split('/').slice(1).join('/'), b64 });
+          setStatus(i, '✓', 'var(--success,#3fb950)');
+          counter.textContent = `${i + 1} / ${picked.length}`;
+          remaining.textContent = i + 1 < picked.length ? `${picked.length - i - 1} remaining` : 'validating & starting…';
+          bar.style.width = `${Math.round(((i + 1) / picked.length) * 100)}%`;
         }
-        btn.textContent = 'Deploying…';
-        const r = await API.post('/compose/deploy-folder', { project, files, up: true });
+        btn.textContent = 'Starting…';
+        const r = await API.post('/compose/deploy-folder-finish', { uploadId, up: true });
+        uploadId = null;
         showToast(`Deployed "${project}" (${r.composeFile})`);
         m.close();
         render();
-      } catch (e) { showToast(e.message, 'error', 11000); btn.disabled = false; btn.textContent = 'Deploy'; }
+      } catch (e) {
+        // Mark the failing file (the first non-✓ row) and drop the staging session.
+        const idx = [...list.querySelectorAll('[id^="fd-st-"]')].findIndex(el => el.textContent !== '✓');
+        if (idx >= 0) setStatus(idx, '✗', 'var(--danger,#f85149)');
+        if (uploadId) { API.post('/compose/deploy-folder-abort', { uploadId }).catch(() => {}); uploadId = null; }
+        showToast(e.message, 'error', 11000);
+        btn.disabled = false; btn.textContent = 'Deploy';
+        remaining.textContent = 'failed';
+      }
     });
   }
 

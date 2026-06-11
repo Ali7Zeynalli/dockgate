@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.56] - 2026-06-12
+
+### Improved — Deploy from folder shows live per-file upload progress
+- Files now upload **one by one** into a staging session, so the dialog shows a live list — **"12 / 45 uploaded, 33 remaining"** counter, progress bar, and a scrolling file list with per-file status (· waiting → ⏳ uploading → ✓ done / ✗ failed)
+- New endpoints: `deploy-folder-start` → `deploy-folder-file` (per file) → `deploy-folder-finish` (validate + `compose up`), plus `deploy-folder-abort`; stale sessions are cleaned up automatically (30min TTL)
+- Side benefit: no single giant request anymore — large folders no longer brush against the request-size limit, and a failure shows exactly which file it stopped on
+- The original single-shot `POST /api/compose/deploy-folder` endpoint still works (API compatibility)
+
+---
+
 ## [2.0.55] - 2026-06-11
 
 ### Fixed — audit-log coverage gaps (full-app audit)
