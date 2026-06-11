@@ -31,7 +31,8 @@ async function openComposeEditor(existing, opts = {}) {
   const body = `
     <div style="display:flex;flex-direction:column;gap:10px">
       <div class="input-group"><label>Project name *</label>
-        <input class="input" id="cmp-name" placeholder="my-stack" value="${escapeHtml(prefillName)}" ${existing ? 'readonly' : ''}></div>
+        <input class="input" id="cmp-name" placeholder="my-stack" value="${escapeHtml(prefillName)}" ${existing ? 'readonly' : ''}>
+        <span class="text-xs text-muted">Private images (e.g. <code>ghcr.io/...</code>) pull automatically if you've added the registry under <strong>Registries</strong> — no <code>docker login</code> needed.</span></div>
       <details class="card" style="padding:8px 12px">
         <summary style="cursor:pointer;font-weight:600">+ Add a service (guided)</summary>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">

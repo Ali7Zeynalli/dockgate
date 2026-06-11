@@ -824,6 +824,9 @@ Router.register('builds', async (content) => {
             <input type="checkbox" id="build-pull" /> Always pull base image
           </label>
         </div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">
+          <strong>Private base image?</strong> A <code>FROM ghcr.io/you/private:tag</code> pulls automatically if that registry is saved under <strong>Registries</strong> (the credentials are sent to the build). <strong>Private repo?</strong> use the Git token field above.
+        </div>
       </div>
     `, [
       { label: 'Cancel', className: 'btn btn-secondary' },

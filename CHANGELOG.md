@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.45] - 2026-06-11
+
+### Improved — in-app guidance for private images/repos
+- Inline hints added where they're needed: **Pull Image** (use the full ref + add the registry first), **Compose editor** (private images pull automatically with a saved registry — no `docker login`), **New Build** (private `FROM` uses saved registry creds; private repos use the Git token field). Complements the existing GHCR hint on the Registries form
+
+---
+
 ## [2.0.44] - 2026-06-11
 
 ### Added — one-click Docker access on remote servers

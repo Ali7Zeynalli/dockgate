@@ -140,7 +140,8 @@ Router.register('images', async (content) => {
       document.getElementById('pull-image-btn')?.addEventListener('click', () => {
         const m = showModal('Pull Image',
           '<div class="input-group"><label>Image Name (e.g., nginx:latest)</label><input type="text" id="pull-image-input" placeholder="nginx:latest"></div>' +
-          `<button type="button" class="btn btn-xs btn-secondary" id="pull-hub-btn">${Icons.search} Search Docker Hub</button>`, [
+          `<button type="button" class="btn btn-xs btn-secondary" id="pull-hub-btn">${Icons.search} Search Docker Hub</button>` +
+          '<div class="text-xs text-muted" style="margin-top:8px">Private image? Use the full reference (e.g. <code>ghcr.io/user/app:tag</code>) and add the registry under <strong>Registries</strong> first — the stored credential is attached automatically.</div>', [
           { label: 'Cancel', className: 'btn btn-secondary' },
           { label: 'Pull', className: 'btn btn-primary', onClick: async () => {
             const image = document.getElementById('pull-image-input')?.value;
