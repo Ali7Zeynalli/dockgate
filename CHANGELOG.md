@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.46] - 2026-06-11
+
+### Fixed
+- **Swarm service form only offers overlay networks now** — picking a local bridge network used to fail with `network ... cannot be used with services` (403). A service can only attach to a swarm-scoped **overlay** network, so the dropdown lists only those (with a hint to create one when there are none)
+- **Removed the SSH "Connection troubleshooting" panel** from the Add-Server form (the Grant Docker button and the on-error hint already cover it)
+
+---
+
 ## [2.0.45] - 2026-06-11
 
 ### Improved — in-app guidance for private images/repos

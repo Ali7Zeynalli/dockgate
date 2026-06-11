@@ -22,8 +22,9 @@ async function openSwarmServiceCreate(prefill = {}, onDone) {
     .map(i => (i.repoTags && i.repoTags[0] !== '<none>:<none>') ? i.repoTags[0] : null)
     .filter(Boolean);
   const volOpts = (volumes || []).map(v => v.name).filter(Boolean);
-  // Swarm services attach to overlay networks; others are listed too but flagged.
-  const netOpts = (networks || []).filter(n => !['host', 'none', 'ingress'].includes(n.name));
+  // A swarm service can ONLY attach to a swarm-scoped overlay network (a local bridge network yields
+  // "network ... cannot be used with services" — 403). So offer only those.
+  const netOpts = (networks || []).filter(n => n.driver === 'overlay' && n.scope === 'swarm' && n.name !== 'ingress');
 
   const row = (cells) => `<div class="sw-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center">${cells}<button type="button" class="btn-icon sw-row-del" title="Remove" style="color:var(--danger)">${Icons.trash}</button></div>`;
   const portRow = () => row(`<input class="input sw-p-pub" placeholder="published (e.g. 8080)" style="flex:1"><span>:</span><input class="input sw-p-tgt" placeholder="target (e.g. 80)" style="flex:1"><select class="select sw-p-proto" style="width:80px"><option value="tcp">tcp</option><option value="udp">udp</option></select>`);
@@ -56,9 +57,9 @@ async function openSwarmServiceCreate(prefill = {}, onDone) {
         <div class="input-group" style="flex:1;min-width:160px"><label>Network (overlay)</label>
           <select class="select" id="sws-network">
             <option value="">— none (ingress only) —</option>
-            ${netOpts.map(n => `<option value="${escapeHtml(n.name)}">${escapeHtml(n.name)}${n.driver !== 'overlay' ? ' (' + escapeHtml(n.driver || '') + ')' : ''}</option>`).join('')}
+            ${netOpts.map(n => `<option value="${escapeHtml(n.name)}">${escapeHtml(n.name)}</option>`).join('')}
           </select>
-          <span class="text-xs text-muted">Service-to-service DNS needs a shared overlay network.</span>
+          <span class="text-xs text-muted">${netOpts.length ? 'Only swarm overlay networks attach to a service.' : 'No overlay networks yet — create one in <strong>Networks</strong> (driver: overlay) for service-to-service DNS.'}</span>
         </div>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">

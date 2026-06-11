@@ -243,15 +243,6 @@ Router.register('settings', async (content) => {
               <div id="srv-test-result" style="align-self:center;"></div>
             </div>
           </div>
-          <div class="settings-section" style="margin-top:20px;">
-            <div class="settings-section-title">Connection troubleshooting (two separate stages)</div>
-            <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;font-family:var(--font-mono);font-size:12px;line-height:1.7;">
-              <div class="text-xs text-muted" style="margin-bottom:6px;font-family:var(--font-sans);"><strong>Stage 1 — SSH login</strong> ("All configured authentication methods failed"): wrong user (Coolify servers → usually <code>root</code>), the public key is missing from that user's <code>~/.ssh/authorized_keys</code>, an encrypted key without its passphrase, or a non-OpenSSH key format. Verify from a terminal first:</div>
-              <div>ssh -i &lt;keyfile&gt; user@host docker ps</div>
-              <div class="text-xs text-muted" style="margin:8px 0 6px;font-family:var(--font-sans);"><strong>Stage 2 — Docker permission</strong> ("permission denied … docker.sock", only after SSH login works):</div>
-              <div>sudo usermod -aG docker $USER</div>
-            </div>
-          </div>
         `;
         // setHTML helper — escapeHtml() artıq tətbiq olunub yuxarıda
         Object.assign(tabContent, { innerHTML: html });
