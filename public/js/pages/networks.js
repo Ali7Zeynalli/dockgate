@@ -160,10 +160,21 @@ Router.register('networks', async (content) => {
         <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="nc-attachable" ${prefill.attachable ? 'checked' : ''}> Attachable</label>
         <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="nc-ipv6" ${prefill.ipv6 ? 'checked' : ''}> IPv6</label>
       </div>
+      <div id="nc-overlay-note" class="text-xs text-muted" style="display:none">An <strong>overlay</strong> network requires Swarm mode (it spans the cluster). Keep <strong>Attachable</strong> on if standalone containers should also use it; swarm services can attach either way.</div>
       ${prefill._clone ? '<div class="text-xs text-muted">Cloning copies the config — pick a different subnet to avoid an overlap conflict.</div>' : ''}
     </div>`;
     const m = showModal(prefill._clone ? 'Clone Network' : 'New Network', body, []);
     const root = m.overlay;
+    // Overlay → swarm-only; default Attachable on and show a note. (Service create points users here.)
+    const driverSel = root.querySelector('#nc-driver');
+    const overlayNote = root.querySelector('#nc-overlay-note');
+    const syncOverlay = () => {
+      const isOverlay = driverSel.value === 'overlay';
+      overlayNote.style.display = isOverlay ? 'block' : 'none';
+      if (isOverlay && !root.querySelector('#nc-attachable').checked) root.querySelector('#nc-attachable').checked = true;
+    };
+    driverSel.addEventListener('change', syncOverlay);
+    syncOverlay();
     // Suggest → pick the next free subnet (advances past the current one)
     root.querySelector('#nc-suggest')?.addEventListener('click', () => {
       const cur = root.querySelector('#nc-subnet').value.trim();

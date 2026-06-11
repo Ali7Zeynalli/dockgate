@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.47] - 2026-06-11
+
+### Improved
+- **Network create form guides overlay use** — selecting the `overlay` driver now auto-enables **Attachable** and explains that it needs Swarm mode and spans the cluster. This is the network you create for swarm services (pairs with the service form, which now lists only overlay networks)
+
+---
+
 ## [2.0.46] - 2026-06-11
 
 ### Fixed
