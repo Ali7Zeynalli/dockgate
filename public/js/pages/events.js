@@ -8,7 +8,13 @@ Router.register('events', async (content) => {
         <div><div class="page-title">Docker Events</div><div class="page-subtitle">Real-time system events stream</div></div>
       </div>
       
-      <div class="log-toolbar mb-3">
+      <div class="log-toolbar mb-3" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select class="select" id="event-range" style="width:auto" title="Show past events from this range, then keep streaming live">
+          <option value="900">Last 15 min</option>
+          <option value="3600" selected>Last 1 hour</option>
+          <option value="86400">Last 24 hours</option>
+          <option value="0">Live only</option>
+        </select>
         <button class="btn btn-secondary" id="event-pause">${Icons.pause} Pause</button>
         <button class="btn btn-secondary" id="event-clear">Clear</button>
       </div>
@@ -28,10 +34,21 @@ Router.register('events', async (content) => {
     let isPaused = false;
     let eventCount = 0;
 
-    // Subscribe now and re-subscribe on socket reconnect (server drops the stream on disconnect)
-    const subscribe = () => socket.emit('events:subscribe');
+    // Subscribe with the selected history range: Docker replays past events (since), then streams live.
+    // Re-subscribed on socket reconnect (server drops the stream on disconnect).
+    const rangeSel = document.getElementById('event-range');
+    const subscribe = () => {
+      const secs = parseInt(rangeSel.value, 10) || 0;
+      socket.emit('events:subscribe', secs > 0 ? { since: Math.floor(Date.now() / 1000) - secs } : {});
+    };
     subscribe();
     window._activeResub = subscribe;
+    rangeSel.addEventListener('change', () => {
+      tbody.innerHTML = '';
+      eventCount = 0;
+      if (empty) { empty.textContent = 'Waiting for events...'; empty.style.display = 'block'; }
+      subscribe(); // server replaces the old stream with the new range
+    });
 
     const onEventData = (event) => {
       if (isPaused) return;

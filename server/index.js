@@ -420,14 +420,16 @@ io.on('connection', (socket) => {
 
   // Docker events streaming
   let eventStream = null;
-  socket.on('events:subscribe', async (filters) => {
+  socket.on('events:subscribe', async (payload) => {
     try {
       // Destroy previous stream if exists / Əvvəlki stream varsa sil
       if (eventStream) { try { eventStream.destroy(); } catch(e){} eventStream = null; }
 
-      // Docker getEvents — don't pass empty filters object, use undefined instead
-      // Boş filters object göndərmə, undefined istifadə et
+      // payload: { filters?, since? } — since (unix saniyə) Docker-a keçmiş hadisələri replay etdirir,
+      // sonra axın canlı davam edir. since yoxdursa yalnız yeni hadisələr gəlir (köhnə davranış).
+      const { filters, since } = payload || {};
       const opts = (filters && Object.keys(filters).length > 0) ? { filters } : {};
+      if (Number.isFinite(since) && since > 0) opts.since = Math.floor(since);
       eventStream = await new Promise((resolve, reject) => {
         dockerService.docker.getEvents(opts, (err, stream) => {
           if (err) reject(err);

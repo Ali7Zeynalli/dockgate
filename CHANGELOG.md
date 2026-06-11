@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.57] - 2026-06-12
+
+### Fixed — Events page no longer sits on "Waiting for events…"
+- The Events page now **replays recent history** when it opens (Docker `since`), then keeps streaming live — previously it only showed events that happened *after* the page was opened, so on a quiet host it looked stuck on "Waiting for events…" until the next activity burst
+- New **range selector**: Last 15 min / **Last 1 hour** (default) / Last 24 hours / Live only — switching ranges re-subscribes instantly
+
+---
+
 ## [2.0.56] - 2026-06-12
 
 ### Improved — Deploy from folder shows live per-file upload progress
