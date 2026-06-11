@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.59] - 2026-06-12
+
+### Added — System (host) terminal
+- The Terminal page now has two tabs: **🐳 Container** (the existing exec-into-a-container shell) and **💻 System** — a shell on the **server itself**
+- The System terminal targets the **active server from the header**: a **real SSH shell** on a remote host (DockGate already holds the key/password — manage it directly: apt, systemctl, docker…), or the DockGate container shell when Local is active. No separate connection setup — it follows whichever server you've switched to
+- Audited as `hostterm_open` with the host name; sessions are cleaned up on disconnect
+
+---
+
 ## [2.0.58] - 2026-06-12
 
 ### Fixed — Compose editor opened empty for `.yaml` projects

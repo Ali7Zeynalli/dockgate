@@ -12,6 +12,7 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' }, maxHttpBufferSize: 10 * 1024 * 1024 });
 
 const monitorManager = require('./notifications/monitor-manager');
+const { attachHostTerminal } = require('./host-terminal');
 
 const PORT = process.env.PORT || 7077;
 
@@ -248,6 +249,9 @@ app.use((err, req, res, next) => {
 // ============ WEBSOCKET ============
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+
+  // System (host) terminal — shell on the active server (remote SSH host or local container). See host-terminal.js.
+  attachHostTerminal(socket, { dockerService, stmts, logAction });
 
   // ---- Docker Image Build streaming ----
   let buildStream = null;
