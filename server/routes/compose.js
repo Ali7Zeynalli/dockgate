@@ -7,6 +7,7 @@ const { logAction } = require('../audit');
 const { execFile } = require('child_process');
 const util = require('util');
 const execFileAsync = util.promisify(execFile);
+const { buildCliEnv } = require('../remote-cli-env');
 
 // DockGate-managed compose projects live here (created/edited from the UI).
 // Respects DATA_DIR (same as db.js) so tests/custom deploys use an isolated location.
@@ -27,32 +28,12 @@ async function validateComposeFile(cwd) {
   await execFileAsync('docker', ['compose', '-f', 'docker-compose.yml', 'config', '-q'], { cwd });
 }
 
-// Saxlanan registry credential-larını müvəqqəti DOCKER_CONFIG-ə yaz — `docker compose pull/up/build`
-// private image-ləri (məs. ghcr.io) çəkə bilsin. CLI yalnız config.json oxuyur, DockGate DB-ni yox.
-function composeEnvWithRegistryAuth() {
-  try {
-    const { stmts } = require('../db');
-    const regs = stmts.getRegistries.all();
-    if (!regs.length) return process.env;
-    const auths = {};
-    for (const r of regs) {
-      auths[r.server_address] = { auth: Buffer.from(`${r.username}:${r.password}`).toString('base64') };
-      if (['docker.io', 'index.docker.io', 'registry-1.docker.io'].includes(r.server_address)) {
-        auths['https://index.docker.io/v1/'] = auths[r.server_address];
-      }
-    }
-    const dir = path.join(COMPOSE_DIR, '.docker-config');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ auths }), { mode: 0o600 });
-    return { ...process.env, DOCKER_CONFIG: dir };
-  } catch (e) { return process.env; }
-}
-
-// Run docker compose command safely using execFile (no shell injection)
-// Docker compose əmrini təhlükəsiz şəkildə execFile ilə işlət (shell injection yoxdur)
+// Run docker compose command safely using execFile (no shell injection).
+// env: registry creds (private image pull) + DOCKER_HOST=ssh when the active server is remote.
 async function runCompose(project, action, cwd) {
+  const { env } = buildCliEnv(dockerService.getActiveServerId(), 'compose');
   const args = ['compose', '-p', project, ...action];
-  const { stdout, stderr } = await execFileAsync('docker', args, { cwd, env: composeEnvWithRegistryAuth(), maxBuffer: 4 * 1024 * 1024 });
+  const { stdout, stderr } = await execFileAsync('docker', args, { cwd, env, maxBuffer: 4 * 1024 * 1024 });
   return stdout || stderr;
 }
 
@@ -66,24 +47,27 @@ router.get('/:project', async (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Compose commands run the host `docker compose` CLI against a working dir on the host filesystem —
-// this only makes sense for the local daemon (a remote SSH host's compose files are not reachable).
-// Verify the active server is local before every mutation.
+// Compose commands run the host `docker compose` CLI in a working dir on DockGate's filesystem.
+// Local → the local daemon. Remote SSH host → DOCKER_HOST=ssh:// (buildCliEnv) targets that daemon,
+// but the compose file must be local, so only DockGate-managed projects can be (re)deployed remotely.
 async function runComposeAction(req, res, action, label) {
   try {
-    dockerService.assertLocalActive(`Compose ${label}`);
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const isLocal = dockerService.isLocalActive();
     const project = await dockerService.getComposeProject(req.params.project);
-    // Working dir from labels; fall back to the DockGate-managed dir (also lets a fully-down
-    // managed project be brought back up — the label-only path could not).
-    let cwd = project.workingDir;
-    if (!cwd && fs.existsSync(path.join(managedDir(req.params.project), 'docker-compose.yml'))) {
-      cwd = managedDir(req.params.project);
+    const mDir = managedDir(req.params.project);
+    const hasManaged = fs.existsSync(path.join(mDir, 'docker-compose.yml'));
+    let cwd;
+    if (isLocal) {
+      cwd = project.workingDir;
+      if (!cwd && hasManaged) cwd = mDir;
+      if (!cwd) return res.status(400).json({ error: 'Working directory not found — this project has no running containers and is not DockGate-managed. Bring it up from its compose folder.' });
+    } else {
+      // Remote daemon: the local CLI can only read a local compose file, so require a managed project.
+      if (!hasManaged) return res.status(400).json({ error: 'On a remote host, only DockGate-managed Compose projects can be deployed (the compose file must live on DockGate). Create it here first.' });
+      cwd = mDir;
     }
-    if (!cwd) {
-      return res.status(400).json({ error: 'Working directory not found — this project has no running containers and is not DockGate-managed. Bring it up from its compose folder.' });
-    }
-    const output = await runCompose(req.params.project, action, cwd);
+    const output = await runCompose(req.params.project, action, cwd); // buildCliEnv throws 400 for unsupported remote auth
     logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: label, details: output });
     res.json({ success: true, output });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
@@ -101,7 +85,8 @@ router.post('/:project/build', (req, res) => runComposeAction(req, res, ['build'
 // Create a new managed project: write YAML → validate → up -d
 router.post('/create', async (req, res) => {
   try {
-    dockerService.assertLocalActive('Compose create');
+    // The YAML is written to DockGate's local managed dir; `up` targets the active daemon
+    // (local, or remote via DOCKER_HOST=ssh from runCompose). No local-only gate needed.
     const { project, yaml, up = true } = req.body || {};
     if (!validateProjectName(project || '')) return res.status(400).json({ error: 'Invalid project name (only a-z, 0-9, _, -)' });
     if (!yaml || !yaml.trim()) return res.status(400).json({ error: 'Compose YAML is required' });
@@ -133,7 +118,6 @@ router.get('/:project/file', (req, res) => {
 // Overwrite a managed project's YAML → validate → (optional) re-up
 router.put('/:project/file', async (req, res) => {
   try {
-    dockerService.assertLocalActive('Compose edit');
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
     const { yaml, up = false } = req.body || {};
     if (!yaml || !yaml.trim()) return res.status(400).json({ error: 'Compose YAML is required' });

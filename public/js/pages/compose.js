@@ -13,10 +13,11 @@ Router.register('compose', async (content) => {
 
       // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
       if (!Router.isActiveNav(pageNavId)) return;
-      // Compose runs the host `docker compose` CLI against host-filesystem paths → local-only.
-      // On a remote SSH host the actions return 400, so gate them in the UI proactively.
+      // Compose runs the host `docker compose` CLI. On a remote SSH host it targets that daemon via
+      // DOCKER_HOST=ssh (DockGate-managed projects only; key-auth, no passphrase). The backend returns a
+      // clear 400 if unsupported, so we no longer pre-disable — just show an informational note.
       const remote = isRemoteActive();
-      const dis = remote ? 'disabled title="Switch to Local — Compose runs on the host filesystem"' : '';
+      const dis = '';
       content.innerHTML = `
         <div class="page-header">
           <div><div class="page-title">Compose Projects</div><div class="page-subtitle">${projects.length} project(s)</div></div>
@@ -25,7 +26,7 @@ Router.register('compose', async (content) => {
             <button class="btn btn-secondary" id="compose-refresh">${Icons.refresh}</button>
           </div>
         </div>
-        ${remote ? '<div class="card mb-3" style="border-left:3px solid var(--warning);padding:10px 14px;font-size:13px;color:var(--text-secondary)">A remote SSH host is active. Compose actions run on the local host only — switch to <strong>Local</strong> to manage Compose projects.</div>' : ''}
+        ${remote ? '<div class="card mb-3" style="border-left:3px solid var(--accent);padding:10px 14px;font-size:13px;color:var(--text-secondary)">Remote host active — only <strong>DockGate-managed</strong> projects can be deployed (the compose file lives on DockGate). Needs a key-based SSH server without a passphrase; bind-mount paths resolve on the remote host.</div>' : ''}
         ${projects.length === 0 ? '<div class="empty-state"><h3>No Compose Projects</h3></div>' : `
           <div class="table-wrapper">
             <table>

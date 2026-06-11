@@ -2,6 +2,18 @@
 
 ---
 
+## [2.0.48] - 2026-06-11
+
+### Added — Compose & Swarm stacks now work on remote SSH hosts
+- **Compose actions and `docker stack deploy` no longer require switching to Local.** When a remote SSH host is active, the host CLI is pointed at that daemon via `DOCKER_HOST=ssh://…` (using DockGate's stored key), so you can deploy/manage Compose projects and Swarm stacks on a remote host straight from the UI
+- Compose: only **DockGate-managed** projects deploy remotely (the compose file lives on DockGate); private images still pull via stored registry credentials
+- Requires a **key-based** SSH server **without a passphrase** (the SSH connection helper runs non-interactively); password/passphrase servers get a clear message to switch to Local. Bind-mount paths resolve on the remote host
+- The Dockerfile now installs `openssh-client` for the remote CLI transport
+
+> Verified end-to-end on a real remote host: created a Compose project + deployed a Swarm stack remotely, then tore them down — all from DockGate.
+
+---
+
 ## [2.0.47] - 2026-06-11
 
 ### Improved
