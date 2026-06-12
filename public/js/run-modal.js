@@ -30,13 +30,13 @@ async function openRunContainerModal(prefill = '') {
   const body = `
     <div class="run-form" style="display:flex;flex-direction:column;gap:12px">
       <div class="input-group">
-        <label>Image *</label>
+        <label for="run-image">Image *</label>
         <input class="input" id="run-image" list="run-image-list" placeholder="e.g. nginx:alpine" value="${escapeHtml(prefillImage)}">
         <datalist id="run-image-list">${imageOpts.map(o => `<option value="${escapeHtml(o)}">`).join('')}</datalist>
         <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400"><input type="checkbox" id="run-pull"${p.pull ? ' checked' : ''}> Pull image before running</label>
         <button type="button" class="btn btn-xs btn-secondary" id="run-hub-btn" style="margin-top:6px">${Icons.search} Search Docker Hub</button>
       </div>
-      <div class="input-group"><label>Container name (optional)</label><input class="input" id="run-name" placeholder="my-app" value="${escapeHtml(p.name || '')}"></div>
+      <div class="input-group"><label for="run-name">Container name (optional)</label><input class="input" id="run-name" placeholder="my-app" value="${escapeHtml(p.name || '')}"></div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="input-group" style="flex:1;min-width:160px"><label>Restart policy</label>
           <select class="select" id="run-restart">

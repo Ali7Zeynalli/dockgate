@@ -105,7 +105,7 @@ Router.register('volumes', async (content) => {
       // Clone (V4)
       content.querySelectorAll('[data-clone]').forEach(btn => btn.addEventListener('click', () => {
         const src = btn.dataset.clone;
-        const body = `<div class="input-group"><label>New volume name *</label><input class="input" id="clone-dest" value="${escapeHtml(src)}-copy"></div><div class="text-xs text-muted">Copies all data from <b>${escapeHtml(src)}</b> into a new volume.</div>`;
+        const body = `<div class="input-group"><label for="clone-dest">New volume name *</label><input class="input" id="clone-dest" value="${escapeHtml(src)}-copy"></div><div class="text-xs text-muted">Copies all data from <b>${escapeHtml(src)}</b> into a new volume.</div>`;
         const m = showModal('Clone Volume', body, []);
         const root = m.overlay;
         const b = document.createElement('button');

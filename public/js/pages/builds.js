@@ -797,7 +797,7 @@ Router.register('builds', async (content) => {
     showModal('New Image Build', `
       <div style="display:flex;flex-direction:column;gap:14px;">
         <div>
-          <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--text-secondary);">Image Tag</label>
+          <label for="build-tag" style="display:block;margin-bottom:4px;font-size:13px;color:var(--text-secondary);">Image Tag</label>
           <input type="text" id="build-tag" class="input" placeholder="myapp:latest" value="${escapeHtml(prefill.tag || '')}" style="width:100%;" />
         </div>
         <div class="tab-bar" id="build-src-tabs">

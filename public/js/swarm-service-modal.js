@@ -36,14 +36,14 @@ async function openSwarmServiceCreate(prefill = {}, onDone) {
   const body = `
     <div class="sw-svc-form" style="display:flex;flex-direction:column;gap:12px">
       <div class="input-group">
-        <label>Image *</label>
+        <label for="sws-image">Image *</label>
         <input class="input" id="sws-image" list="sws-image-list" placeholder="e.g. nginx:alpine" value="${escapeHtml(p.image || '')}">
         <datalist id="sws-image-list">${imageOpts.map(o => `<option value="${escapeHtml(o)}">`).join('')}</datalist>
         <button type="button" class="btn btn-xs btn-secondary" id="sws-hub-btn" style="margin-top:6px">${Icons.search} Search Docker Hub</button>
         <span class="text-xs text-muted" style="display:block;margin-top:4px">Each node pulls the image itself when a task is scheduled on it.</span>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <div class="input-group" style="flex:2;min-width:160px"><label>Service name *</label><input class="input" id="sws-name" placeholder="web" value="${escapeHtml(p.name || '')}"></div>
+        <div class="input-group" style="flex:2;min-width:160px"><label for="sws-name">Service name *</label><input class="input" id="sws-name" placeholder="web" value="${escapeHtml(p.name || '')}"></div>
         <div class="input-group" style="flex:1;min-width:90px"><label>Replicas</label><input class="input" id="sws-rep" type="number" min="0" value="${p.replicas != null ? p.replicas : 1}"></div>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">

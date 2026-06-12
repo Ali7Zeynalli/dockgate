@@ -146,7 +146,7 @@ Router.register('networks', async (content) => {
     const gw0 = prefill._clone || !prefill.gateway ? sug.gateway : prefill.gateway;
     const ipr0 = prefill._clone || !prefill.iprange ? sug.iprange : prefill.iprange;
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
-      <div class="input-group"><label>Name *</label><input class="input" id="nc-name" value="${escapeHtml(prefill.name || '')}"></div>
+      <div class="input-group"><label for="nc-name">Name *</label><input class="input" id="nc-name" value="${escapeHtml(prefill.name || '')}"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <div class="input-group" style="flex:1;min-width:140px"><label>Driver</label><select class="select" id="nc-driver">${drivers.map(d => `<option value="${d}" ${d === (prefill.driver || 'bridge') ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
         <div class="input-group" style="flex:1;min-width:140px"><label style="display:flex;justify-content:space-between;align-items:center">Subnet <button type="button" id="nc-suggest" class="btn btn-xs btn-ghost" style="font-weight:400">↻ Suggest</button></label><input class="input" id="nc-subnet" placeholder="172.20.0.0/16" value="${escapeHtml(subnet0)}"></div>

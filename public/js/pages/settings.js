@@ -220,9 +220,9 @@ Router.register('settings', async (content, params) => {
             </div>
 
             <div id="auth-key" class="auth-pane">
-              <label class="text-xs text-muted">Private key (paste OpenSSH format):</label>
+              <label class="text-xs text-muted" for="srv-key">Private key (paste OpenSSH format):</label>
               <textarea class="input" id="srv-key" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="font-family:var(--font-mono);font-size:11px;width:100%;margin-top:4px;"></textarea>
-              <label class="text-xs text-muted" style="display:block;margin-top:8px;">Key passphrase (only if the key is encrypted — leave blank otherwise):</label>
+              <label class="text-xs text-muted" style="display:block;margin-top:8px;" for="srv-passphrase">Key passphrase (only if the key is encrypted — leave blank otherwise):</label>
               <input class="input" id="srv-passphrase" type="password" placeholder="passphrase (optional)" autocomplete="new-password" style="margin-top:4px;width:100%;" />
             </div>
 
