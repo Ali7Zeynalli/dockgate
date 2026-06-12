@@ -62,4 +62,49 @@ router.get('/stackfile', async (req, res) => {
   }
 });
 
+// GET /api/templates/hubstats?image=<image> — Docker Hub popularity (pull/star count) for a template's
+// image. Proxied server-side (CORS) and cached. Non-Docker-Hub registries (ghcr.io, quay.io…) → unavailable.
+const hubCache = new Map(); // repo → { at, data }
+const HUB_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+// Resolve a docker image reference to a Docker Hub repo path ('library/<name>' for official), or null.
+function hubRepoOf(image) {
+  let ref = String(image || '').trim().split('@')[0]; // drop digest
+  if (!ref) return null;
+  const lastSlash = ref.lastIndexOf('/');
+  const lastColon = ref.lastIndexOf(':');
+  if (lastColon > lastSlash) ref = ref.slice(0, lastColon); // drop :tag (but keep registry:port before a /)
+  const firstSeg = ref.split('/')[0];
+  if (firstSeg.includes('.') || firstSeg.includes(':')) return null; // a registry host → not Docker Hub
+  return ref.includes('/') ? ref : 'library/' + ref; // official images live under library/
+}
+
+router.get('/hubstats', async (req, res) => {
+  try {
+    const repo = hubRepoOf(req.query.image);
+    if (!repo) return res.json({ available: false, reason: 'not on Docker Hub' });
+    const cached = hubCache.get(repo);
+    if (cached && Date.now() - cached.at < HUB_TTL_MS) return res.json(cached.data);
+    let data;
+    try {
+      const r = await fetch(`https://hub.docker.com/v2/repositories/${repo}/`, { signal: AbortSignal.timeout(6000) });
+      if (!r.ok) data = { available: false };
+      else {
+        const j = await r.json();
+        const isOfficial = repo.startsWith('library/');
+        data = {
+          available: true,
+          repo,
+          pulls: j.pull_count || 0,
+          stars: j.star_count || 0,
+          description: j.description || '',
+          url: isOfficial ? `https://hub.docker.com/_/${repo.slice('library/'.length)}` : `https://hub.docker.com/r/${repo}`,
+        };
+      }
+    } catch (e) { data = { available: false }; }
+    hubCache.set(repo, { at: Date.now(), data });
+    res.json(data);
+  } catch (err) { res.json({ available: false, error: err.message }); }
+});
+
 module.exports = router;

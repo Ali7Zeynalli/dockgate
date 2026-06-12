@@ -105,7 +105,7 @@ Router.register('templates', async (content) => {
       ? `<img src="${escapeHtml(t.logo)}" alt="" style="width:40px;height:40px;object-fit:contain;border-radius:6px;background:var(--bg-primary)" onerror="this.style.visibility='hidden'">`
       : `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">${Icons.template}</div>`;
     return `
-      <div class="card" style="display:flex;flex-direction:column;gap:8px;padding:14px">
+      <div class="card" data-tpldetail="${idx}" style="display:flex;flex-direction:column;gap:8px;padding:14px;cursor:pointer" title="Click for details">
         <div style="display:flex;gap:10px;align-items:center">
           ${logo}
           <div style="min-width:0">
@@ -120,6 +120,53 @@ Router.register('templates', async (content) => {
           ${isStack && swarmOk ? `<button class="btn btn-secondary btn-sm" data-deploysw="${idx}" title="Deploy as a Swarm stack">${Icons.swarm}</button>` : ''}
         </div>
       </div>`;
+  }
+
+  // Format a big count (Docker Hub pulls/stars) compactly: 1234567 → 1.2M.
+  function fmtNum(n) {
+    n = Number(n) || 0;
+    if (n >= 1e9) return (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+
+  // App detail modal — full description, env vars, ports, volumes + Docker Hub popularity (pulls/stars).
+  function openTemplateDetail(t) {
+    const isStack = t.type === 2 || t.type === 3;
+    const cats = (t.categories || []).map(c => `<span class="badge badge-created" style="font-size:10px">${escapeHtml(c)}</span>`).join(' ');
+    const env = (t.env || []).map(e => `<li><code>${escapeHtml(e.name || '')}</code>${e.label ? ' — ' + escapeHtml(e.label) : ''}${e.default != null && e.default !== '' ? ' <span class="text-muted">= ' + escapeHtml(String(e.default)) + '</span>' : ''}</li>`).join('');
+    const ports = (t.ports || []).map(p => escapeHtml(typeof p === 'string' ? p : (p.host ? `${p.host}:${p.container}` : JSON.stringify(p)))).join(', ');
+    const vols = (t.volumes || []).map(v => escapeHtml(typeof v === 'string' ? v : (v.container || v.bind || JSON.stringify(v)))).join(', ');
+    const desc = t.note || t.description || '';
+    const body = `<div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:12px;align-items:center">
+        ${t.logo ? `<img src="${escapeHtml(t.logo)}" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:var(--bg-primary)" onerror="this.style.display='none'">` : ''}
+        <div style="min-width:0">
+          <div style="font-weight:700;font-size:16px">${escapeHtml(t.title || t.image || 'App')}</div>
+          <div class="text-xs text-muted">${isStack ? '🧩 Stack' : '📦 Container'}${t.image ? ' · <code>' + escapeHtml(t.image) + '</code>' : ''}${t.platform ? ' · ' + escapeHtml(t.platform) : ''}</div>
+          <div id="tpl-hub" class="text-xs text-muted" style="margin-top:3px">Loading popularity…</div>
+        </div>
+      </div>
+      ${cats ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${cats}</div>` : ''}
+      ${desc ? `<div class="text-sm" style="line-height:1.5">${escapeHtml(desc)}</div>` : ''}
+      ${env ? `<div><div class="detail-label mb-1">Environment variables</div><ul class="text-xs" style="margin:0;padding-left:18px;line-height:1.7">${env}</ul></div>` : ''}
+      ${ports ? `<div class="text-xs"><strong>Ports:</strong> ${ports}</div>` : ''}
+      ${vols ? `<div class="text-xs"><strong>Volumes:</strong> ${vols}</div>` : ''}
+    </div>`;
+    const m = showModal(t.title || 'App', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const dep = document.createElement('button');
+    dep.className = 'btn btn-primary'; dep.innerHTML = `${Icons.play} Deploy`;
+    m.overlay.querySelector('#modal-footer').appendChild(dep);
+    dep.addEventListener('click', () => { m.close(); deploy(t); });
+    // Docker Hub popularity (proxied server-side, cached). Non-Hub images → just hide the line.
+    if (t.image) {
+      API.get(`/templates/hubstats?image=${encodeURIComponent(t.image)}`).then(s => {
+        const el = m.overlay.querySelector('#tpl-hub'); if (!el) return;
+        if (s && s.available) el.innerHTML = `⭐ Docker Hub: <strong>${fmtNum(s.pulls)}</strong> pulls · <strong>${fmtNum(s.stars)}</strong> stars${s.url ? ` · <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">view</a>` : ''}`;
+        else el.style.display = 'none';
+      }).catch(() => { const el = m.overlay.querySelector('#tpl-hub'); if (el) el.style.display = 'none'; });
+    } else { const el = m.overlay.querySelector('#tpl-hub'); if (el) el.style.display = 'none'; }
   }
 
   function applyFilters() {
@@ -234,9 +281,10 @@ Router.register('templates', async (content) => {
         return;
       }
       const btn = e.target.closest('[data-deploy]');
-      if (!btn) return;
-      const t = all[parseInt(btn.dataset.deploy, 10)];
-      if (t) deploy(t);
+      if (btn) { const t = all[parseInt(btn.dataset.deploy, 10)]; if (t) deploy(t); return; }
+      // Anywhere else on the card → open the app detail view.
+      const card = e.target.closest('[data-tpldetail]');
+      if (card) { const t = all[parseInt(card.dataset.tpldetail, 10)]; if (t) openTemplateDetail(t); }
     });
 
     applyFilters();

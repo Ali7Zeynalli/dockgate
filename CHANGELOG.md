@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.71] - 2026-06-12
+
+### Added — App Templates: click an app for full details + Docker Hub popularity
+- Clicking a template card now opens a **detail view**: logo, image, full description, categories, **environment variables** (name/label/default), exposed ports and volumes, and a **Deploy** button
+- Shows **Docker Hub popularity** for the app's image — **pull count + star count** (a real "how popular is this" signal), fetched server-side and cached (`GET /api/templates/hubstats`). Non-Docker-Hub images (ghcr.io, quay.io…) simply omit the line
+- Note: the Portainer template format has no screenshots or star-ratings; the logo + Docker Hub stats are the available signals
+
+---
+
 ## [2.0.70] - 2026-06-12
 
 ### Added — Deploys console on the Compose page
