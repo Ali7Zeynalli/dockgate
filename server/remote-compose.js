@@ -112,9 +112,14 @@ async function uploadDirToRemote(server, localDir, remoteDir) {
 }
 
 // Run `docker compose` for a project in its remote folder. actionArgs is an array, e.g. ['up','-d'].
+// Uses a DockGate-owned, WRITABLE DOCKER_CONFIG so `--build` doesn't fail when the user's ~/.docker is
+// root-owned (e.g. a host previously used by Coolify/root → "buildx/.lock: permission denied"). Any
+// existing registry auth (~/.docker/config.json) is copied in so private-image pulls still work.
 async function runComposeInRemoteDir(server, remoteDir, project, actionArgs) {
   const args = ['compose', '-p', project, ...actionArgs].map(shq).join(' ');
-  const r = await execRemote(server, `cd ${shq(remoteDir)} && docker ${args} 2>&1`);
+  const cfg = '"$HOME/.dockgate/.docker-config"';
+  const prep = `mkdir -p ${cfg} && { cp -f "$HOME/.docker/config.json" ${cfg}/config.json 2>/dev/null; true; }`;
+  const r = await execRemote(server, `cd ${shq(remoteDir)} && ${prep} && DOCKER_CONFIG=${cfg} docker ${args} 2>&1`);
   if (r.code !== 0) { const e = new Error((r.stdout || r.stderr || 'compose failed').trim()); e.statusCode = 400; throw e; }
   return r.stdout || r.stderr || '';
 }

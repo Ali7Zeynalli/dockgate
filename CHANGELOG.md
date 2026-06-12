@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.67] - 2026-06-12
+
+### Fixed — remote builds failed with "buildx/.lock: permission denied"
+- On a remote host where `~/.docker` is owned by root (e.g. a server previously used by Coolify/root), deploying a project that **builds an image** failed with `open ~/.docker/buildx/.lock: permission denied` and appeared to hang on "starting". DockGate now runs remote `docker compose` with a **writable, DockGate-owned `DOCKER_CONFIG`** (`~/.dockgate/.docker-config`), so builds work regardless of who owns `~/.docker`. Existing registry credentials (`~/.docker/config.json`) are copied in so private-image pulls still work
+- Verified on a real host whose `~/.docker` was root-owned: a `build:`-based project built and came up cleanly
+
+---
+
 ## [2.0.66] - 2026-06-12
 
 ### Improved — folder deploy runs as a background job (won't get lost if you close the modal)
