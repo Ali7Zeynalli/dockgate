@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.65] - 2026-06-12
+
+### Added — Update a remote folder-deployed project (re-upload + rebuild)
+- A remote project deployed from a folder now has an **↻ Update** button: re-pick the (updated) local folder, the files are uploaded to the project's **existing folder on the server**, and `docker compose up -d --build` applies the changes — no need to delete and redeploy
+- Two modes: **overwrite** (default — changed/new files only, keeps the rest) or **clean replace** (wipe the folder's contents first). The project name and target path are locked to the existing deployment
+
+---
+
 ## [2.0.64] - 2026-06-12
 
 ### Improved — pick the deploy folder by browsing the server

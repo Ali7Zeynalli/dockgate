@@ -95,16 +95,20 @@ async function runCompose(project, action, cwd) {
 router.get('/', async (req, res) => {
   try {
     const list = await dockerService.listComposeProjects();
-    // Merge in REMOTE-deployed projects that are currently down (no containers → not in the daemon list)
-    // for the active server, so the user can still see and bring them back up.
     const activeId = dockerService.getActiveServerId();
     if (activeId !== 'local' && fs.existsSync(COMPOSE_DIR)) {
+      // Annotate running remote folder-deployed projects so the UI can show Update/etc.
+      for (const p of list) {
+        const meta = readDeployMeta(p.name);
+        if (meta && meta.mode === 'remote' && meta.serverId === activeId) { p.remote = true; p.deploySource = meta.source || 'folder'; }
+      }
+      // Merge in remote-deployed projects that are currently DOWN (no containers → not in the daemon list).
       const seen = new Set(list.map(p => p.name));
       for (const name of fs.readdirSync(COMPOSE_DIR)) {
         if (seen.has(name) || !validateProjectName(name)) continue;
         const meta = readDeployMeta(name);
         if (meta && meta.mode === 'remote' && meta.serverId === activeId) {
-          list.push({ name, workingDir: meta.remotePath, configFiles: meta.composeFile || '', services: [], running: 0, stopped: 0, total: 0, remote: true });
+          list.push({ name, workingDir: meta.remotePath, configFiles: meta.composeFile || '', services: [], running: 0, stopped: 0, total: 0, remote: true, deploySource: meta.source || 'folder' });
         }
       }
     }
@@ -422,27 +426,40 @@ function gcFolderUploads() {
 router.post('/deploy-folder-start', async (req, res) => {
   try {
     gcFolderUploads();
-    const { project, target } = req.body || {};
+    const { project, target, update } = req.body || {};
     if (!validateProjectName(project || '')) return res.status(400).json({ error: 'Invalid project name (a-z, 0-9, _, -)' });
-    if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
-      return res.status(409).json({ error: `A project named "${project}" already exists` });
-    }
-    // target: { mode: 'remote', remotePath } → files land on the active remote host. Default: local (DockGate).
     let deploy = { mode: 'local' };
-    if (target && target.mode === 'remote') {
+
+    if (update) {
+      // Re-upload an EXISTING remote folder-deployed project to its stored path, then rebuild.
+      const meta = readDeployMeta(project);
+      if (!meta || meta.mode !== 'remote') return res.status(400).json({ error: 'Update from folder is only for remote folder-deployed projects.' });
       const server = remoteCompose.getActiveRemoteServer();
-      if (!server) return res.status(400).json({ error: 'Remote deploy needs a remote SSH server active in the header.' });
-      if (!(await remoteCompose.checkComposeAvailable(server))) {
-        return res.status(400).json({ error: 'docker compose (v2) is not available on the remote host — install it there first.' });
+      if (!server || meta.serverId !== dockerService.getActiveServerId()) {
+        return res.status(400).json({ error: 'Switch to the server this project was deployed to, then update.' });
       }
-      const remotePath = await remoteCompose.resolveRemotePath(server, (target.remotePath || `~/.dockgate/projects/${project}`));
-      deploy = { mode: 'remote', server, remotePath };
+      deploy = { mode: 'remote', server, remotePath: meta.remotePath, update: true, clean: !!(target && target.clean), source: meta.source || 'folder' };
+    } else {
+      if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
+        return res.status(409).json({ error: `A project named "${project}" already exists` });
+      }
+      // target: { mode: 'remote', remotePath } → files land on the active remote host. Default: local (DockGate).
+      if (target && target.mode === 'remote') {
+        const server = remoteCompose.getActiveRemoteServer();
+        if (!server) return res.status(400).json({ error: 'Remote deploy needs a remote SSH server active in the header.' });
+        if (!(await remoteCompose.checkComposeAvailable(server))) {
+          return res.status(400).json({ error: 'docker compose (v2) is not available on the remote host — install it there first.' });
+        }
+        const remotePath = await remoteCompose.resolveRemotePath(server, (target.remotePath || `~/.dockgate/projects/${project}`));
+        deploy = { mode: 'remote', server, remotePath, source: 'folder' };
+      }
     }
+
     const uploadId = crypto.randomBytes(16).toString('hex');
     const dir = path.join(STAGING_DIR, `${project}-${uploadId}`);
     fs.mkdirSync(dir, { recursive: true });
     folderUploads.set(uploadId, { project, dir, total: 0, files: 0, created: Date.now(), deploy });
-    res.json({ uploadId, target: deploy.mode, remotePath: deploy.remotePath });
+    res.json({ uploadId, target: deploy.mode, remotePath: deploy.remotePath, update: !!deploy.update });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -482,15 +499,18 @@ router.post('/deploy-folder-finish', async (req, res) => {
 
     // ---- Remote-native: upload the files to the chosen folder ON the remote host, then up there ----
     if (u.deploy && u.deploy.mode === 'remote') {
-      const { server, remotePath } = u.deploy;
+      const { server, remotePath, update, clean } = u.deploy;
+      if (update && clean) { try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) { /* may not exist */ } }
       const n = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath);
       fs.rmSync(u.dir, { recursive: true, force: true });
       folderUploads.delete(uploadId);
       writeDeployMeta(u.project, { mode: 'remote', serverId: dockerService.getActiveServerId(), remotePath, composeFile, source: 'folder' });
+      // On update, rebuild from the new source; on first deploy, a plain up is enough.
+      const upArgs = update ? ['up', '-d', '--build'] : ['up', '-d'];
       let output = '';
-      if (up) output = await remoteCompose.runComposeInRemoteDir(server, remotePath, u.project, ['up', '-d']);
-      logAction({ req, server: dockerService.getActiveServerId(), resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder', details: { files: n, composeFile, remotePath } });
-      return res.json({ success: true, output, composeFile, remotePath });
+      if (up) output = await remoteCompose.runComposeInRemoteDir(server, remotePath, u.project, upArgs);
+      logAction({ req, server: dockerService.getActiveServerId(), resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: update ? 'update-folder' : 'deploy-folder', details: { files: n, composeFile, remotePath, clean: !!clean } });
+      return res.json({ success: true, output, composeFile, remotePath, updated: !!update });
     }
 
     // ---- Local (DockGate-managed): promote staging → managed dir, up via the active daemon ----

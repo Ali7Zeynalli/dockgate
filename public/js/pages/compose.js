@@ -44,6 +44,7 @@ Router.register('compose', async (content) => {
                     <button class="btn-sm btn-secondary" data-action="down" data-project="${p.name}" ${dis}>${Icons.stop} Down</button>
                     <button class="btn-sm btn-secondary" data-action="restart" data-project="${p.name}" ${dis}>${Icons.restart}</button>
                     <button class="btn-sm btn-secondary" data-action="rebuild" data-project="${p.name}" ${dis} title="Rebuild images from source + up (docker compose up -d --build)">${Icons.layers} Rebuild</button>
+                    ${p.deploySource === 'folder' ? `<button class="btn-sm btn-secondary" data-update="${p.name}" data-rpath="${escapeHtml(p.workingDir || '')}" title="Re-upload the (updated) folder & rebuild">${Icons.refresh} Update</button>` : ''}
                     <button class="btn-icon" title="Edit YAML" data-edit="${p.name}" ${dis}>${Icons.settings}</button>
                     <button class="btn-icon" title="Project files (Dockerfile, .env…)" data-files="${p.name}">${Icons.folder || Icons.compose}</button>
                     <button class="btn-icon" title="View Services" data-detail="${p.name}">${Icons.eye}</button>
@@ -62,6 +63,7 @@ Router.register('compose', async (content) => {
       document.getElementById('compose-git')?.addEventListener('click', openGitDeploy);
       content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
       content.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote); }));
+      content.querySelectorAll('[data-update]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openFolderDeploy({ update: btn.dataset.update, remotePath: btn.dataset.rpath }); }));
       content.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
       });
@@ -333,13 +335,20 @@ Router.register('compose', async (content) => {
     refresh();
   }
 
-  // #2-A v2 — upload a project folder FILE BY FILE (staging session) so the modal shows a live
-  // "uploaded n / total" list, then finish → validate → compose up (active daemon, local or remote).
-  function openFolderDeploy() {
-    const remote = isRemoteActive();
+  // #2-A v2 — upload a project folder FILE BY FILE (staging session) with a live "uploaded n / total"
+  // list, then finish → validate → compose up. opts.update = re-upload an existing remote project to
+  // its stored folder + rebuild (project name & path locked; optional clean replace).
+  function openFolderDeploy(opts = {}) {
+    const isUpdate = !!opts.update;
+    const remote = isUpdate ? true : isRemoteActive();
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
-      <div class="input-group"><label>Project name *</label><input class="input" id="fd-name" placeholder="my-app"></div>
-      ${remote ? `
+      <div class="input-group"><label>Project name *</label><input class="input" id="fd-name" placeholder="my-app" value="${isUpdate ? escapeHtml(opts.update) : ''}" ${isUpdate ? 'readonly' : ''}></div>
+      ${isUpdate ? `
+      <div class="card" style="padding:10px 12px;background:var(--accent-dim)">
+        <div style="font-weight:600;font-size:13px;margin-bottom:4px">↻ Update on the remote server</div>
+        <div class="text-xs text-muted">Re-pick the updated folder — files are uploaded to <code>${escapeHtml(opts.remotePath || 'its existing folder')}</code> and <code>docker compose up -d --build</code> applies the changes.</div>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin-top:8px;font-size:13px"><input type="checkbox" id="fd-clean"> Clean replace — delete the folder's contents first (removes files you've dropped from the project)</label>
+      </div>` : remote ? `
       <div class="card" style="padding:10px 12px;background:var(--accent-dim)">
         <div style="font-weight:600;font-size:13px;margin-bottom:6px">Deploy target: remote server ⭐</div>
         <div class="input-group"><label>Folder on the server (files live &amp; run here)</label>
@@ -365,7 +374,7 @@ Router.register('compose', async (content) => {
       </div>
       <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (over SSH). ' : ''}Files upload one by one, then <code>docker compose up</code> runs. <code>.git</code> / <code>node_modules</code> are skipped. Bind-mount paths resolve on the daemon's host. ~50MB max.</div>
     </div>`;
-    const m = showModal('Deploy from folder', body, []);
+    const m = showModal(isUpdate ? `Update “${opts.update}” from folder` : 'Deploy from folder', body, []);
     const root = m.overlay;
     let picked = [];
     let uploadId = null; // active staging session — aborted if the modal closes mid-upload
@@ -389,7 +398,7 @@ Router.register('compose', async (content) => {
       });
     });
     const btn = document.createElement('button');
-    btn.className = 'btn btn-primary'; btn.textContent = 'Deploy';
+    btn.className = 'btn btn-primary'; btn.textContent = isUpdate ? 'Update & Rebuild' : 'Deploy';
     root.querySelector('#modal-footer').appendChild(btn);
     btn.addEventListener('click', async () => {
       const project = root.querySelector('#fd-name').value.trim();
@@ -412,7 +421,10 @@ Router.register('compose', async (content) => {
       const setStatus = (i, icon, color) => { const el = root.querySelector(`#fd-st-${i}`); if (el) { el.textContent = icon; el.style.color = color || ''; } };
       try {
         const startBody = { project };
-        if (remote) {
+        if (isUpdate) {
+          startBody.update = true;
+          startBody.target = { clean: !!root.querySelector('#fd-clean')?.checked };
+        } else if (remote) {
           const rpath = (root.querySelector('#fd-rpath')?.value || '').trim() || `~/.dockgate/projects/${project}`;
           startBody.target = { mode: 'remote', remotePath: rpath };
         }
@@ -429,10 +441,10 @@ Router.register('compose', async (content) => {
           remaining.textContent = i + 1 < picked.length ? `${picked.length - i - 1} remaining` : 'validating & starting…';
           bar.style.width = `${Math.round(((i + 1) / picked.length) * 100)}%`;
         }
-        btn.textContent = 'Starting…';
+        btn.textContent = isUpdate ? 'Rebuilding…' : 'Starting…';
         const r = await API.post('/compose/deploy-folder-finish', { uploadId, up: true });
         uploadId = null;
-        showToast(r.remotePath ? `Deployed "${project}" → ${r.remotePath}` : `Deployed "${project}" (${r.composeFile})`, 'success', 5000);
+        showToast(r.updated ? `Updated "${project}" → ${r.remotePath}` : (r.remotePath ? `Deployed "${project}" → ${r.remotePath}` : `Deployed "${project}" (${r.composeFile})`), 'success', 5000);
         m.close();
         render();
       } catch (e) {
@@ -441,7 +453,7 @@ Router.register('compose', async (content) => {
         if (idx >= 0) setStatus(idx, '✗', 'var(--danger,#f85149)');
         if (uploadId) { API.post('/compose/deploy-folder-abort', { uploadId }).catch(() => {}); uploadId = null; }
         showToast(e.message, 'error', 11000);
-        btn.disabled = false; btn.textContent = 'Deploy';
+        btn.disabled = false; btn.textContent = isUpdate ? 'Update & Rebuild' : 'Deploy';
         remaining.textContent = 'failed';
       }
     });
