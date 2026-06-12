@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.70] - 2026-06-12
+
+### Added — Deploys console on the Compose page
+- A **Deploys** panel under the project list shows running and recent background deploy jobs (● running / ✓ done / ✗ failed) with their current phase. **"view log"** re-opens the **live log** of any job — so if you closed the deploy dialog or navigated away, you can come back and watch it (the deploy keeps running on the server). `GET /api/compose/deploy-jobs`
+
+---
+
 ## [2.0.69] - 2026-06-12
 
 ### Fixed — remote project: Update now applies, and Files shows the actual server files

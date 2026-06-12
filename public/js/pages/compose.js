@@ -3,6 +3,7 @@ Router.register('compose', async (content) => {
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
   let refreshTimer = null;
+  let deployTimer = null;
 
   // The Compose editor (New Project / Edit YAML) now lives in the shared global openComposeEditor()
   // (public/js/compose-editor.js) so the Templates page can reuse it to deploy stack templates.
@@ -55,8 +56,10 @@ Router.register('compose', async (content) => {
             </table>
           </div>
         `}
+        <div id="deploy-console" style="margin-top:18px"></div>
       `;
 
+      renderDeploys();
       document.getElementById('compose-refresh')?.addEventListener('click', render);
       document.getElementById('compose-new')?.addEventListener('click', () => openComposeEditor(null));
       document.getElementById('compose-folder')?.addEventListener('click', openFolderDeploy);
@@ -492,8 +495,53 @@ Router.register('compose', async (content) => {
     });
   }
 
+  // ① Deploys console — running/recent background deploy jobs, re-openable live log (modal can be closed).
+  async function renderDeploys() {
+    const el = document.getElementById('deploy-console');
+    if (!el) return;
+    let jobs = [];
+    try { jobs = await API.get('/compose/deploy-jobs'); } catch (e) { return; }
+    if (!document.getElementById('deploy-console')) return;
+    if (!jobs.length) { el.innerHTML = ''; return; }
+    const active = jobs.filter(j => j.status === 'running').length;
+    const icon = (s) => s === 'running' ? '<span class="spinner" style="display:inline-block;width:10px;height:10px;border:2px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite"></span>' : (s === 'done' ? '<span style="color:var(--success,#3fb950)">✓</span>' : '<span style="color:var(--danger,#f85149)">✗</span>');
+    el.innerHTML = `
+      <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">Deploys${active ? ` <span class="badge badge-running" style="font-size:10px">${active} active</span>` : ''}</div>
+      <div class="table-wrapper"><table><tbody>${jobs.map(j => `<tr>
+        <td style="width:24px">${icon(j.status)}</td>
+        <td class="td-name">${escapeHtml(j.project)}</td>
+        <td class="text-xs text-muted">${escapeHtml(j.phase)}</td>
+        <td class="text-xs text-muted">${j.finishedAt ? timeAgo(j.finishedAt) : 'running…'}</td>
+        <td style="text-align:right"><button class="btn btn-xs btn-secondary" data-joblog="${j.id}" data-jobproj="${escapeHtml(j.project)}">view log</button></td>
+      </tr>`).join('')}</tbody></table></div>`;
+    el.querySelectorAll('[data-joblog]').forEach(b => b.addEventListener('click', () => openDeployLog(b.dataset.joblog, b.dataset.jobproj)));
+  }
+
+  // Re-openable live log for a deploy job — poll until done; closing just stops polling (job keeps running).
+  function openDeployLog(jobId, project) {
+    const m = showModal(`Deploy — ${escapeHtml(project)}`, `<div class="text-xs text-muted mb-1" id="dl-phase">…</div><pre class="logs-viewer" id="dl-log" style="max-height:55vh;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-word">loading…</pre>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    (async () => {
+      while (document.body.contains(root)) {
+        let job;
+        try { job = await API.get(`/compose/deploy-job/${jobId}`); }
+        catch (e) { const p = root.querySelector('#dl-phase'); if (p) p.textContent = 'job expired'; break; }
+        const logEl = root.querySelector('#dl-log'); const phEl = root.querySelector('#dl-phase');
+        if (!logEl) return;
+        logEl.textContent = job.log || '';
+        logEl.scrollTop = logEl.scrollHeight;
+        phEl.textContent = `${job.status} · ${job.phase}`;
+        if (job.status !== 'running') { renderDeploys(); break; }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    })();
+  }
+
   await render();
   // Auto-refresh project running counts; skip while a modal/input is active
   refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 15000);
-  return () => { if (refreshTimer) clearInterval(refreshTimer); };
+  // Refresh the Deploys console more often while something is running (cheap; in-memory job list)
+  deployTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) renderDeploys(); }, 3000);
+  return () => { if (refreshTimer) clearInterval(refreshTimer); if (deployTimer) clearInterval(deployTimer); };
 });

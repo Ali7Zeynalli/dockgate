@@ -133,6 +133,17 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// List all background deploy jobs (running + recent) — powers the "Deploys" console on the Compose page.
+// Defined BEFORE /:project so the literal path isn't captured as a project name. (deployJobs is defined
+// further down but referenced at call time, which is always after module load.)
+router.get('/deploy-jobs', (req, res) => {
+  gcDeployJobs();
+  const jobs = [...deployJobs.values()]
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .map(j => ({ id: j.id, project: j.project, status: j.status, phase: j.phase, startedAt: j.startedAt, finishedAt: j.finishedAt }));
+  res.json(jobs);
+});
+
 router.get('/:project', async (req, res) => {
   try { res.json(await dockerService.getComposeProject(req.params.project)); }
   catch (err) { res.status(500).json({ error: err.message }); }
