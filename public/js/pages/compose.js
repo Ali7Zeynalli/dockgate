@@ -200,6 +200,41 @@ Router.register('compose', async (content) => {
     });
   }
 
+  // Remote folder picker — navigate the active server's directory tree and pick a parent folder.
+  async function openRemoteFolderPicker(onPick) {
+    let cwd = '/';
+    try { const ctx = await API.get('/files/context'); cwd = ctx.home || '/'; } catch (e) {}
+    const m = showModal('Choose a folder on the server', `
+      <div class="text-xs text-muted mb-2">Open a folder, then <strong>Select</strong> it — the project folder is created inside the selected folder.</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+        <button class="btn btn-xs btn-secondary" id="rp-up">⬆ Up</button>
+        <code id="rp-path" class="text-xs" style="flex:1;word-break:break-all"></code>
+      </div>
+      <div id="rp-list" style="max-height:48vh;overflow-y:auto;border:1px solid var(--border);border-radius:6px"></div>`,
+      [{ label: 'Cancel', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    const sel = document.createElement('button'); sel.className = 'btn btn-primary'; sel.textContent = 'Select this folder';
+    root.querySelector('#modal-footer').appendChild(sel);
+    sel.addEventListener('click', () => { m.close(); onPick(cwd); });
+    const parentOf = (p) => { if (!p || p === '/') return '/'; const i = p.replace(/\/$/, '').lastIndexOf('/'); return i <= 0 ? '/' : p.slice(0, i); };
+    root.querySelector('#rp-up').addEventListener('click', () => { cwd = parentOf(cwd); load(); });
+    async function load() {
+      const list = root.querySelector('#rp-list');
+      list.innerHTML = '<div class="text-muted text-sm" style="padding:10px">Loading…</div>';
+      try {
+        const d = await API.get(`/files?path=${encodeURIComponent(cwd)}`);
+        cwd = d.path;
+        root.querySelector('#rp-path').textContent = cwd;
+        const dirs = (d.entries || []).filter(e => e.type === 'dir');
+        list.innerHTML = dirs.length
+          ? dirs.map(e => `<div class="rp-dir" data-d="${escapeHtml(e.name)}" style="padding:6px 10px;cursor:pointer">📁 ${escapeHtml(e.name)}</div>`).join('')
+          : '<div class="text-muted text-sm" style="padding:10px">No sub-folders here — Select to use this folder.</div>';
+        list.querySelectorAll('.rp-dir').forEach(el => el.addEventListener('click', () => { cwd = (cwd === '/' ? '' : cwd) + '/' + el.dataset.d; load(); }));
+      } catch (e) { list.innerHTML = `<div class="text-danger" style="padding:10px">${escapeHtml(e.message)}</div>`; }
+    }
+    load();
+  }
+
   // Delete a whole project: down (+volumes opt) + remove its files (remote folder / local managed dir).
   function openDeleteProject(project, isRemote) {
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
@@ -307,10 +342,14 @@ Router.register('compose', async (content) => {
       ${remote ? `
       <div class="card" style="padding:10px 12px;background:var(--accent-dim)">
         <div style="font-weight:600;font-size:13px;margin-bottom:6px">Deploy target: remote server ⭐</div>
-        <div class="input-group"><label>Folder on the server (files live & run here)</label>
-          <input class="input" id="fd-rpath" placeholder="~/.dockgate/projects/&lt;project&gt;" style="font-family:var(--font-mono,monospace)">
-          <span class="text-xs text-muted" style="margin-top:4px;display:block">Files are uploaded to this folder on the active server; <code>docker compose up</code> runs there (bind-mounts work, data persists).</span>
+        <div class="input-group"><label>Folder on the server (files live &amp; run here)</label>
+          <div style="display:flex;gap:6px">
+            <input class="input" id="fd-rpath" placeholder="~/.dockgate/projects/&lt;project&gt;" style="flex:1;font-family:var(--font-mono,monospace)">
+            <button type="button" class="btn btn-secondary btn-sm" id="fd-browse" style="white-space:nowrap">📁 Browse</button>
+          </div>
+          <span class="text-xs text-muted" style="margin-top:4px;display:block">Default <code>~/.dockgate/projects/&lt;project&gt;</code>. <strong>Browse</strong> to pick another parent — the project folder is created under it.</span>
         </div>
+        <div class="text-xs" style="margin-top:6px;color:var(--text-secondary)">📌 These files stay on the server and survive <strong>Down / Up / restart</strong>. They're removed only when you <strong>Delete</strong> the project with “remove files”.</div>
       </div>` : ''}
       <div class="input-group"><label>Project folder (must contain a docker-compose.yml)</label>
         <input type="file" id="fd-folder" webkitdirectory directory multiple style="font-size:12px">
@@ -341,6 +380,13 @@ Router.register('compose', async (content) => {
       const hasCompose = picked.some(f => /(^|\/)(docker-)?compose\.ya?ml$/.test(f.webkitRelativePath));
       const bytes = picked.reduce((a, f) => a + f.size, 0);
       root.querySelector('#fd-info').innerHTML = `${picked.length} file(s), ${formatBytes(bytes)}${hasCompose ? '' : ' — <span style="color:var(--warning)">⚠ no docker-compose.yml found</span>'}`;
+    });
+    // Browse the remote server's folders → pick a PARENT → project folder is created under it.
+    root.querySelector('#fd-browse')?.addEventListener('click', () => {
+      const project = root.querySelector('#fd-name').value.trim() || 'project';
+      openRemoteFolderPicker((parentDir) => {
+        root.querySelector('#fd-rpath').value = (parentDir === '/' ? '' : parentDir) + '/' + project;
+      });
     });
     const btn = document.createElement('button');
     btn.className = 'btn btn-primary'; btn.textContent = 'Deploy';

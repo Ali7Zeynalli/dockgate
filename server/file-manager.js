@@ -56,6 +56,11 @@ function joinRemote(dir, name) {
   return normRemote(dir + '/' + clean);
 }
 
+// The remote user's home directory (absolute) — used as a friendly starting point for the folder picker.
+function homeDir(server) {
+  return withSftp(server, sftp => new Promise((resolve) => sftp.realpath('.', (e, abs) => resolve(e ? '/' : abs))));
+}
+
 async function listDir(server, p) {
   const dir = normRemote(p);
   const list = await withSftp(server, sftp => new Promise((resolve, reject) => sftp.readdir(dir, (e, l) => e ? reject(e) : resolve(l))));
@@ -136,4 +141,4 @@ async function remove(server, p, isDir) {
   return { path: target };
 }
 
-module.exports = { listDir, downloadTo, uploadFrom, mkdir, rename, remove, normRemote };
+module.exports = { listDir, downloadTo, uploadFrom, mkdir, rename, remove, normRemote, homeDir };

@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.64] - 2026-06-12
+
+### Improved — pick the deploy folder by browsing the server
+- The remote **Deploy from folder** dialog now has a **📁 Browse** button: navigate the server's directory tree (starting at your home) and pick the parent folder — the project folder is created under it. The path field is still editable, and the default stays `~/.dockgate/projects/<project>`
+- Clearer note: the files **persist on the server** through Down/Up/restart and are removed **only** when you Delete the project with “remove files”
+- `GET /api/files/context` now also returns the remote `home` directory
+
+---
+
 ## [2.0.63] - 2026-06-12
 
 ### Added — Delete a whole Compose project (containers + files)

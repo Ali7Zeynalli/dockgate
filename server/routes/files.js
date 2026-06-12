@@ -16,12 +16,15 @@ function activeRemote(res) {
   return { id, s };
 }
 
-// Whether the active server is a remote SSH host (used by the UI to show/hide the manager).
-router.get('/context', (req, res) => {
+// Whether the active server is a remote SSH host (used by the UI to show/hide the manager + folder picker).
+router.get('/context', async (req, res) => {
   const id = dockerService.getActiveServerId();
   if (id === 'local') return res.json({ remote: false });
   const s = stmts.getServer.get(id);
-  res.json({ remote: !!s, serverId: id, host: s ? s.host : null });
+  if (!s) return res.json({ remote: false });
+  let home = '/';
+  try { home = await fm.homeDir(s); } catch (e) {}
+  res.json({ remote: true, serverId: id, host: s.host, home });
 });
 
 router.get('/', async (req, res) => {
