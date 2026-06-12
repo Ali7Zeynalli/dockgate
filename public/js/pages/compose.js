@@ -445,7 +445,7 @@ Router.register('compose', async (content) => {
         }
         // Upload done → hand off to a background job that keeps running even if this modal closes.
         btn.textContent = isUpdate ? 'Rebuilding…' : 'Starting…';
-        const started = await API.post('/compose/deploy-folder-finish', { uploadId, up: true });
+        const finished = await API.post('/compose/deploy-folder-finish', { uploadId, up: true });
         uploadId = null; // the backend job owns the staging now — aborting on close no longer applies
         const joblog = root.querySelector('#fd-joblog');
         joblog.style.display = 'block';
@@ -454,7 +454,7 @@ Router.register('compose', async (content) => {
         // Poll the job; closing the modal just stops polling — the deploy still finishes server-side.
         while (true) {
           let job;
-          try { job = await API.get(`/compose/deploy-job/${started.jobId}`); }
+          try { job = await API.get(`/compose/deploy-job/${finished.jobId}`); }
           catch (e) { remaining.textContent = 'running in background'; break; } // job expired or modal gone
           if (!document.body.contains(root)) return; // modal closed → leave it running on the backend
           joblog.textContent = job.log || '';

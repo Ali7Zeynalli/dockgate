@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.68] - 2026-06-12
+
+### Fixed — Compose page broke (SyntaxError: 'started' already declared)
+- A duplicate `const started` introduced with the background-deploy job (2.0.66) made `compose.js` fail to parse, breaking the Compose page. Renamed the second one; the page loads again
+
+---
+
 ## [2.0.67] - 2026-06-12
 
 ### Fixed — remote builds failed with "buildx/.lock: permission denied"
