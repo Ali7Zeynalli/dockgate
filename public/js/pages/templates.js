@@ -98,11 +98,17 @@ Router.register('templates', async (content) => {
     }
   }
 
+  // Build the <img src> for a logo. `data:` URIs are already inline/same-origin → use as-is;
+  // http(s) logos go through our same-origin proxy so external CORP: same-origin can't block them.
+  function logoSrc(logo) {
+    return /^data:/i.test(logo) ? escapeHtml(logo) : '/api/templates/logo?url=' + encodeURIComponent(logo);
+  }
+
   function cardHtml(t, idx) {
     const isStack = t.type === 2 || t.type === 3;
     const cats = (t.categories || []).slice(0, 3).map(c => `<span class="badge badge-created" style="font-size:10px">${escapeHtml(c)}</span>`).join(' ');
     const logo = t.logo
-      ? `<img src="${escapeHtml(t.logo)}" alt="" style="width:40px;height:40px;object-fit:contain;border-radius:6px;background:var(--bg-primary)" onerror="this.style.visibility='hidden'">`
+      ? `<img src="${logoSrc(t.logo)}" alt="" loading="lazy" style="width:40px;height:40px;object-fit:contain;border-radius:6px;background:var(--bg-primary)" onerror="this.style.visibility='hidden'">`
       : `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">${Icons.template}</div>`;
     return `
       <div class="card" data-tpldetail="${idx}" style="display:flex;flex-direction:column;gap:8px;padding:14px;cursor:pointer" title="Click for details">
@@ -141,7 +147,7 @@ Router.register('templates', async (content) => {
     const desc = t.note || t.description || '';
     const body = `<div style="display:flex;flex-direction:column;gap:12px">
       <div style="display:flex;gap:12px;align-items:center">
-        ${t.logo ? `<img src="${escapeHtml(t.logo)}" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:var(--bg-primary)" onerror="this.style.display='none'">` : ''}
+        ${t.logo ? `<img src="${logoSrc(t.logo)}" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:var(--bg-primary)" onerror="this.style.display='none'">` : ''}
         <div style="min-width:0">
           <div style="font-weight:700;font-size:16px">${escapeHtml(t.title || t.image || 'App')}</div>
           <div class="text-xs text-muted">${isStack ? '🧩 Stack' : '📦 Container'}${t.image ? ' · <code>' + escapeHtml(t.image) + '</code>' : ''}${t.platform ? ' · ' + escapeHtml(t.platform) : ''}</div>
