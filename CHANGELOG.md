@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.61] - 2026-06-12
+
+### Added — Files: a server file manager (remote SSH/SFTP)
+- New **Files** section (sidebar → Monitor) to manage files on the **active server** over SFTP: browse folders, **upload**, **download**, create folders, **rename**, and **delete** — DockGate uses the SSH key/password it already stores, no extra setup
+- Path breadcrumb + up/refresh, per-row download/rename/delete, drag-to-folder navigation. Every operation is audited (`upload`/`download`/`mkdir`/`rename`/`delete`)
+- When **Local** is the active server, the page shows a "switch to a remote server" notice (local host browsing is intentionally not enabled). Refuses to delete `/`
+
+---
+
 ## [2.0.60] - 2026-06-12
 
 ### Added — Compose project file browser/editor (not just the YAML)
