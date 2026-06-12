@@ -45,6 +45,7 @@ Router.register('compose', async (content) => {
                     <button class="btn-sm btn-secondary" data-action="restart" data-project="${p.name}" ${dis}>${Icons.restart}</button>
                     <button class="btn-sm btn-secondary" data-action="build" data-project="${p.name}" ${dis} title="docker compose build — rebuild services that have a build: section">${Icons.layers} Build</button>
                     <button class="btn-icon" title="Edit YAML" data-edit="${p.name}" ${dis}>${Icons.settings}</button>
+                    <button class="btn-icon" title="Project files (Dockerfile, .env…)" data-files="${p.name}">${Icons.folder || Icons.compose}</button>
                     <button class="btn-icon" title="View Services" data-detail="${p.name}">${Icons.eye}</button>
                   </div></td>
                 </tr>`).join('')}
@@ -58,6 +59,7 @@ Router.register('compose', async (content) => {
       document.getElementById('compose-new')?.addEventListener('click', () => openComposeEditor(null));
       document.getElementById('compose-folder')?.addEventListener('click', openFolderDeploy);
       document.getElementById('compose-git')?.addEventListener('click', openGitDeploy);
+      content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
       content.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
       });
@@ -194,6 +196,79 @@ Router.register('compose', async (content) => {
         render();
       } catch (e) { showToast(e.message, 'error', 12000); btn.disabled = false; btn.textContent = 'Clone & Deploy'; }
     });
+  }
+
+  // Phase 1 — browse/edit ALL files of a managed project (Dockerfile, .dockerignore, .env, configs…)
+  function fileIcon(f, composeFile) {
+    if (f.type === 'dir') return '📁';
+    if (f.path === composeFile) return '🐳';
+    const n = f.path.split('/').pop().toLowerCase();
+    if (n === 'dockerfile' || n.endsWith('.dockerfile')) return '📦';
+    if (n === '.dockerignore' || n === '.gitignore') return '🚫';
+    if (n === '.env' || n.startsWith('.env')) return '🔑';
+    return '📄';
+  }
+  function openFileEditor(project, filePath, content, onSave) {
+    const m = showModal(`Edit — ${escapeHtml(filePath)}`, `<textarea id="pf-edit" class="input" spellcheck="false" style="width:100%;height:50vh;font-family:var(--font-mono,monospace);font-size:13px;white-space:pre;overflow:auto"></textarea>`, [{ label: 'Cancel', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    root.querySelector('#pf-edit').value = content; // set via value (avoids HTML-escaping issues)
+    const save = document.createElement('button'); save.className = 'btn btn-primary'; save.textContent = 'Save';
+    root.querySelector('#modal-footer').appendChild(save);
+    save.addEventListener('click', async () => {
+      save.disabled = true; save.textContent = 'Saving…';
+      try {
+        await API.put(`/compose/${project}/filecontent`, { path: filePath, content: root.querySelector('#pf-edit').value });
+        showToast('Saved');
+        m.close();
+        if (onSave) onSave();
+      } catch (e) { showToast(e.message, 'error', 9000); save.disabled = false; save.textContent = 'Save'; }
+    });
+  }
+  async function editFileFromTree(project, filePath, onSave) {
+    try {
+      const d = await API.get(`/compose/${project}/filecontent?path=${encodeURIComponent(filePath)}`);
+      if (d.isBinary) { showToast(`Binary file (${formatBytes(d.size)}) — not editable here`, 'warning', 4000); return; }
+      openFileEditor(project, filePath, d.content, onSave);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+  async function openProjectFiles(project) {
+    let data;
+    try { data = await API.get(`/compose/${project}/tree`); }
+    catch (e) { showToast(e.message, 'error', 9000); return; }
+    const m = showModal(`Files — ${escapeHtml(project)}`, `<div class="text-xs text-muted mb-2">Project files on DockGate (Dockerfile, .dockerignore, .env, configs…). The compose file is also editable from here.</div><div id="pf-list" style="max-height:58vh;overflow-y:auto"></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    const newBtn = document.createElement('button'); newBtn.className = 'btn btn-secondary btn-sm'; newBtn.textContent = '+ New file';
+    root.querySelector('#modal-footer').prepend(newBtn);
+    newBtn.addEventListener('click', () => {
+      const p = prompt('New file path (relative to the project), e.g. Dockerfile or conf/app.conf');
+      if (p && p.trim()) openFileEditor(project, p.trim(), '', refresh);
+    });
+    function rowHtml(f) {
+      const depth = f.path.split('/').length - 1;
+      const name = f.path.split('/').pop();
+      const isCompose = f.path === data.composeFile;
+      const acts = f.type === 'file' ? `
+        <button class="btn btn-xs btn-secondary" data-edit-file="${escapeHtml(f.path)}">Edit</button>
+        ${isCompose ? '' : `<button class="btn btn-xs btn-ghost text-danger" data-del-file="${escapeHtml(f.path)}">${Icons.trash}</button>`}` : '';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;padding-left:${depth * 16}px">
+        <span>${fileIcon(f, data.composeFile)}</span>
+        <span class="td-mono text-sm" style="flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(name)}${isCompose ? ' <span class="badge badge-running" style="font-size:9px">compose</span>' : ''}</span>
+        <span class="text-xs text-muted">${f.type === 'file' ? formatBytes(f.size) : ''}</span>${acts}</div>`;
+    }
+    async function refresh() {
+      try { data = await API.get(`/compose/${project}/tree`); } catch (e) {}
+      const el = root.querySelector('#pf-list');
+      if (!el) return;
+      el.innerHTML = data.files.length ? data.files.map(rowHtml).join('') : '<div class="text-muted text-sm" style="padding:14px">No files.</div>';
+      el.querySelectorAll('[data-edit-file]').forEach(b => b.addEventListener('click', () => editFileFromTree(project, b.dataset.editFile, refresh)));
+      el.querySelectorAll('[data-del-file]').forEach(b => b.addEventListener('click', () => {
+        showConfirm('Delete file', `Delete "${escapeHtml(b.dataset.delFile)}"?`, async () => {
+          try { await API.del(`/compose/${project}/filecontent?path=${encodeURIComponent(b.dataset.delFile)}`); showToast('Deleted'); refresh(); }
+          catch (e) { showToast(e.message, 'error'); }
+        }, true);
+      }));
+    }
+    refresh();
   }
 
   // #2-A v2 — upload a project folder FILE BY FILE (staging session) so the modal shows a live

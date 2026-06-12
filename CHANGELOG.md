@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.60] - 2026-06-12
+
+### Added — Compose project file browser/editor (not just the YAML)
+- A managed Compose project keeps more than `docker-compose.yml` — **Dockerfile, .dockerignore, .env, config files** (from Deploy-from-folder/Git). The new **📁 Files** button on each project lists them all and lets you **view and edit** any text file, add a new file, or delete one (the compose file itself is protected)
+- Endpoints: `GET /api/compose/:project/tree`, `GET/PUT/DELETE /api/compose/:project/filecontent`. Path-traversal + symlink-escape guarded; the stored git token (`.dockgate-git.json`) and `.git` internals are hidden; binary/oversized files are flagged (not opened); edits are audited (`file-edit` / `file-delete`)
+
+---
+
 ## [2.0.59] - 2026-06-12
 
 ### Added — System (host) terminal

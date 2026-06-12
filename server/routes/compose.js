@@ -181,6 +181,107 @@ router.put('/:project/file', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
+// ---- Managed project file tree (Phase 1): browse/edit ALL files of a project, not just the compose YAML
+// (Dockerfile, .dockerignore, .env, configs…). Files live in COMPOSE_DIR/<project>/ on DockGate. ----
+
+// Files that must never be read/written/deleted via the file API (token leak / git internals).
+function isProtectedProjectFile(rel) {
+  return rel === '.dockgate-git.json' || rel === '.git' || rel.startsWith('.git/');
+}
+
+// Resolve a project-relative path to an absolute path INSIDE the managed dir, or null if it escapes
+// (traversal or symlink). Used for read/write/delete of individual project files.
+function safeProjectFile(project, relPath) {
+  const dir = managedDir(project);
+  const rel = safeRelPath(relPath);
+  if (!rel || isProtectedProjectFile(rel)) return null;
+  const abs = path.join(dir, rel);
+  if (abs !== dir && !abs.startsWith(dir + path.sep)) return null;
+  try { // symlink-escape guard (only meaningful for existing paths)
+    const realDir = fs.realpathSync(dir);
+    const real = fs.realpathSync(abs);
+    if (real !== realDir && !real.startsWith(realDir + path.sep)) return null;
+  } catch (e) { /* path may not exist yet (new file) — prefix check above already guards */ }
+  return abs;
+}
+
+// Treat a file as binary (non-editable) if it's large or contains a NUL byte in its head.
+function isBinaryFile(abs, size) {
+  if (size > 2 * 1024 * 1024) return true;
+  try {
+    const fd = fs.openSync(abs, 'r');
+    const n = Math.min(size, 8000);
+    const buf = Buffer.alloc(n);
+    fs.readSync(fd, buf, 0, n, 0);
+    fs.closeSync(fd);
+    return buf.includes(0);
+  } catch (e) { return false; }
+}
+
+// GET file tree (flat, sorted) of a managed project — skips .git internals + the git-secret file.
+router.get('/:project/tree', (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const dir = managedDir(req.params.project);
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: 'No DockGate-managed files for this project' });
+    const out = [];
+    const walk = (cur, rel) => {
+      for (const name of fs.readdirSync(cur).sort()) {
+        const r = rel ? rel + '/' + name : name;
+        if (isProtectedProjectFile(r)) continue;
+        let st; try { st = fs.statSync(path.join(cur, name)); } catch (e) { continue; }
+        if (st.isDirectory()) { out.push({ path: r, type: 'dir', size: 0 }); walk(path.join(cur, name), r); }
+        else out.push({ path: r, type: 'file', size: st.size });
+      }
+    };
+    walk(dir, '');
+    res.json({ project: req.params.project, files: out, composeFile: findComposeFile(dir) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET a single file's content (text). Binary/oversized → metadata only.
+router.get('/:project/filecontent', (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const abs = safeProjectFile(req.params.project, req.query.path);
+    if (!abs) return res.status(400).json({ error: 'Invalid or protected path' });
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return res.status(404).json({ error: 'File not found' });
+    const size = fs.statSync(abs).size;
+    if (isBinaryFile(abs, size)) return res.json({ path: req.query.path, isBinary: true, size });
+    res.json({ path: req.query.path, isBinary: false, size, content: fs.readFileSync(abs, 'utf8') });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT a single file's content (create or overwrite).
+router.put('/:project/filecontent', (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const { path: rel, content } = req.body || {};
+    if (typeof content !== 'string') return res.status(400).json({ error: 'content (string) required' });
+    const abs = safeProjectFile(req.params.project, rel);
+    if (!abs) return res.status(400).json({ error: 'Invalid or protected path' });
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content, 'utf8');
+    logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'file-edit', details: { file: safeRelPath(rel) } });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE a single project file (not the compose file itself, not protected files).
+router.delete('/:project/filecontent', (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const rel = safeRelPath(req.query.path);
+    const abs = safeProjectFile(req.params.project, req.query.path);
+    if (!abs) return res.status(400).json({ error: 'Invalid or protected path' });
+    if (COMPOSE_FILENAMES.includes(rel)) return res.status(400).json({ error: 'Cannot delete the compose file itself' });
+    if (!fs.existsSync(abs)) return res.status(404).json({ error: 'File not found' });
+    fs.rmSync(abs, { recursive: true, force: true });
+    logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'file-delete', details: { file: rel } });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Deploy a whole project FOLDER (uploaded from the browser as base64 files) → write to the managed
 // dir → up. Works on the active daemon (local or remote via DOCKER_HOST=ssh, #2-A). Image-based
 // compose is ideal; build contexts upload to the daemon, bind-mount paths resolve on the daemon's host.
