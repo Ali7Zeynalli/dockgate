@@ -108,11 +108,22 @@ async function boot() {
     initMacSidebar();
     initGlobalSearch();
 
-    // Navigate to default or last visited page (using localStorage for hard refresh)
-    const lastPage = localStorage.getItem('dcc_last_page') || 'dashboard';
-    let lastParams = {};
-    try { lastParams = JSON.parse(localStorage.getItem('dcc_last_params')) || {}; } catch(e){}
-    await Router.navigate(lastPage, lastParams);
+    // Enable browser Back/Forward navigation + hash deep-links
+    Router.init();
+
+    // Restore the page+params: prefer the URL hash (shareable, survives refresh),
+    // then fall back to localStorage (legacy hard-refresh persistence), then default.
+    const fromHash = Router._parseHash();
+    let startPage, startParams = {};
+    if (fromHash && Router.routes[fromHash.path]) {
+      startPage = fromHash.path;
+      startParams = fromHash.params;
+    } else {
+      startPage = localStorage.getItem('dcc_last_page') || 'dashboard';
+      try { startParams = JSON.parse(localStorage.getItem('dcc_last_params')) || {}; } catch(e){ startParams = {}; }
+    }
+    // replace:true → set the initial hash without adding a spurious history entry
+    await Router.navigate(startPage, startParams, { replace: true });
 
     // Load theme + display timezone from server settings / Server settings-dən tema və timezone yüklə
     API.get('/meta/settings').then(s => {

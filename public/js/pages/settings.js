@@ -1,5 +1,5 @@
 // Settings Page — tabbed layout
-Router.register('settings', async (content) => {
+Router.register('settings', async (content, params) => {
   const pageNavId = Router._navId;
 
   async function render() {
@@ -39,7 +39,14 @@ Router.register('settings', async (content) => {
       `;
 
       const tabContent = document.getElementById('settings-tab-content');
-      let activeTab = 'general';
+      // Restore the active tab from the URL params (deep-link / refresh / Back), default General.
+      const validTabs = ['general', 'servers', 'notifications', 'log', 'update', 'system'];
+      let activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'general';
+
+      // Reflect the restored tab in the tab-bar highlight (default markup highlights General).
+      document.querySelectorAll('#settings-tabs .tab-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === activeTab);
+      });
 
       // Tab switching
       document.getElementById('settings-tabs').addEventListener('click', (e) => {
@@ -49,6 +56,8 @@ Router.register('settings', async (content) => {
         btn.classList.add('active');
         activeTab = btn.dataset.tab;
         renderTab(activeTab);
+        // Sync the tab into the URL hash so Back/Forward + refresh land on this tab.
+        Router.updateParams({ tab: activeTab });
       });
 
       function renderTab(tab) {
@@ -884,8 +893,8 @@ Router.register('settings', async (content) => {
         }
       });
 
-      // Initial tab render
-      renderGeneral();
+      // Initial tab render — honour the restored activeTab (not always General)
+      renderTab(activeTab);
 
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
   }
