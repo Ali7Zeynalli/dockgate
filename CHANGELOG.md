@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.66] - 2026-06-12
+
+### Improved — folder deploy runs as a background job (won't get lost if you close the modal)
+- Once the upload finishes, the **SFTP transfer + `docker compose up`** run as a **tracked background job**. Closing the dialog (or even the browser) no longer aborts it — the deploy keeps running on the server and the project appears when it's done
+- The dialog now shows the **live phase and output** (uploading → compose up → image pull / build logs), doesn't auto-close, and ends with a **Close** button. `GET /api/compose/deploy-job/:id` exposes the job's status + log
+
+---
+
 ## [2.0.65] - 2026-06-12
 
 ### Added — Update a remote folder-deployed project (re-upload + rebuild)

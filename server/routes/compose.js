@@ -423,6 +423,60 @@ function gcFolderUploads() {
   }
 }
 
+// ---- Background deploy jobs ----
+// Once the post-upload phase starts (SFTP to the remote + docker compose up), it runs as a tracked
+// job that keeps going even if the browser/modal closes. The UI polls GET /deploy-job/:id for live
+// phase + log, and can safely close at any time.
+const deployJobs = new Map();
+const DEPLOY_JOB_TTL_MS = 30 * 60 * 1000;
+function gcDeployJobs() {
+  const now = Date.now();
+  for (const [id, j] of deployJobs) { if (j.finishedAt && now - j.finishedAt > DEPLOY_JOB_TTL_MS) deployJobs.delete(id); }
+}
+function jobLog(job, line) { job.log += line + '\n'; }
+
+// The async worker: upload to the remote (or promote locally) + docker compose up, all logged into the job.
+async function runDeployJob(job, u, composeFile, up, reqIp) {
+  try {
+    const serverId = dockerService.getActiveServerId();
+    if (u.deploy && u.deploy.mode === 'remote') {
+      const { server, remotePath, update, clean } = u.deploy;
+      if (update && clean) { job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server…`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) {} }
+      job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server…`);
+      const n = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath);
+      jobLog(job, `Uploaded ${n} file(s).`);
+      fs.rmSync(u.dir, { recursive: true, force: true });
+      writeDeployMeta(u.project, { mode: 'remote', serverId, remotePath, composeFile, source: 'folder' });
+      if (up) {
+        job.phase = 'up'; jobLog(job, `Running docker compose up${update ? ' --build' : ''}…`);
+        const out = await remoteCompose.runComposeInRemoteDir(server, remotePath, u.project, update ? ['up', '-d', '--build'] : ['up', '-d']);
+        jobLog(job, (out || '').trim());
+      }
+      job.result = { composeFile, remotePath, updated: !!update };
+      logAction({ sourceIp: reqIp, server: serverId, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: update ? 'update-folder' : 'deploy-folder', details: { files: n, composeFile, remotePath, clean: !!clean } });
+    } else {
+      const dir = managedDir(u.project);
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.renameSync(u.dir, dir);
+      if (up) { job.phase = 'up'; jobLog(job, 'Running docker compose up…'); const out = await runCompose(u.project, ['up', '-d'], dir); jobLog(job, (out || '').trim()); }
+      job.result = { composeFile };
+      logAction({ sourceIp: reqIp, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder', details: { files: u.files, composeFile } });
+    }
+    job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
+  } catch (err) {
+    job.status = 'error'; job.phase = 'error'; job.error = (err.stderr || err.message || 'deploy failed').toString();
+    jobLog(job, '✗ ' + job.error); job.finishedAt = Date.now();
+    try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) {}
+  }
+}
+
+// Poll a deploy job's live status + log.
+router.get('/deploy-job/:id', (req, res) => {
+  const job = deployJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Deploy job not found (it may have finished and expired)' });
+  res.json({ id: job.id, project: job.project, status: job.status, phase: job.phase, log: job.log, error: job.error, result: job.result });
+});
+
 router.post('/deploy-folder-start', async (req, res) => {
   try {
     gcFolderUploads();
@@ -489,41 +543,25 @@ router.post('/deploy-folder-file', (req, res) => {
 router.post('/deploy-folder-finish', async (req, res) => {
   const u = folderUploads.get((req.body || {}).uploadId);
   try {
+    gcDeployJobs();
     const { uploadId, up = true } = req.body || {};
     if (!u) return res.status(410).json({ error: 'Upload session expired — start over' });
     if (!u.files) return res.status(400).json({ error: 'No files uploaded' });
     const composeFile = findComposeFile(u.dir);
     if (!composeFile) { throw Object.assign(new Error('No docker-compose.yml (or compose.yaml) found in the folder'), { statusCode: 400 }); }
+    // Validate synchronously so a bad compose fails fast (before the background job starts).
     try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: u.dir }); }
     catch (e) { throw Object.assign(new Error('Invalid compose file: ' + (e.stderr || e.message)), { statusCode: 400 }); }
 
-    // ---- Remote-native: upload the files to the chosen folder ON the remote host, then up there ----
-    if (u.deploy && u.deploy.mode === 'remote') {
-      const { server, remotePath, update, clean } = u.deploy;
-      if (update && clean) { try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) { /* may not exist */ } }
-      const n = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath);
-      fs.rmSync(u.dir, { recursive: true, force: true });
-      folderUploads.delete(uploadId);
-      writeDeployMeta(u.project, { mode: 'remote', serverId: dockerService.getActiveServerId(), remotePath, composeFile, source: 'folder' });
-      // On update, rebuild from the new source; on first deploy, a plain up is enough.
-      const upArgs = update ? ['up', '-d', '--build'] : ['up', '-d'];
-      let output = '';
-      if (up) output = await remoteCompose.runComposeInRemoteDir(server, remotePath, u.project, upArgs);
-      logAction({ req, server: dockerService.getActiveServerId(), resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: update ? 'update-folder' : 'deploy-folder', details: { files: n, composeFile, remotePath, clean: !!clean } });
-      return res.json({ success: true, output, composeFile, remotePath, updated: !!update });
-    }
-
-    // ---- Local (DockGate-managed): promote staging → managed dir, up via the active daemon ----
-    const dir = managedDir(u.project);
-    fs.rmSync(dir, { recursive: true, force: true });
-    fs.renameSync(u.dir, dir);
-    folderUploads.delete(uploadId);
-    let output = '';
-    if (up) output = await runCompose(u.project, ['up', '-d'], dir);
-    logAction({ req, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder', details: { files: u.files, composeFile } });
-    res.json({ success: true, output, composeFile });
+    // Hand the staging session to a background job: the upload + `docker compose up` continue on the
+    // backend even if the client/modal closes. Return the job id immediately so the UI can poll it.
+    folderUploads.delete(uploadId); // the job now owns u.dir
+    const job = { id: crypto.randomBytes(8).toString('hex'), project: u.project, status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
+    deployJobs.set(job.id, job);
+    runDeployJob(job, u, composeFile, up, req.ip); // not awaited — runs in the background
+    res.json({ jobId: job.id, project: u.project });
   } catch (err) {
-    // Validation/up failure → clean the staging dir so a retry starts fresh.
+    // Validation/setup failure → clean the staging dir so a retry starts fresh.
     if (u) { fs.rmSync(u.dir, { recursive: true, force: true }); folderUploads.delete((req.body || {}).uploadId); }
     res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || '').toString() });
   }

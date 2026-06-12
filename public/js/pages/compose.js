@@ -371,6 +371,8 @@ Router.register('compose', async (content) => {
         </div>
         <div style="height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden"><div id="fd-bar" style="height:100%;width:0%;background:var(--accent);transition:width .2s"></div></div>
         <div id="fd-list" style="margin-top:8px;max-height:180px;overflow-y:auto;font-size:12px;font-family:var(--font-mono,monospace);line-height:1.7"></div>
+        <pre id="fd-joblog" class="logs-viewer" style="display:none;margin-top:8px;max-height:200px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-word"></pre>
+        <div id="fd-jobnote" class="text-xs text-muted" style="display:none;margin-top:6px">You can close this — the deploy keeps running on the server.</div>
       </div>
       <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (over SSH). ' : ''}Files upload one by one, then <code>docker compose up</code> runs. <code>.git</code> / <code>node_modules</code> are skipped. Bind-mount paths resolve on the daemon's host. ~50MB max.</div>
     </div>`;
@@ -441,14 +443,44 @@ Router.register('compose', async (content) => {
           remaining.textContent = i + 1 < picked.length ? `${picked.length - i - 1} remaining` : 'validating & starting…';
           bar.style.width = `${Math.round(((i + 1) / picked.length) * 100)}%`;
         }
+        // Upload done → hand off to a background job that keeps running even if this modal closes.
         btn.textContent = isUpdate ? 'Rebuilding…' : 'Starting…';
-        const r = await API.post('/compose/deploy-folder-finish', { uploadId, up: true });
-        uploadId = null;
-        showToast(r.updated ? `Updated "${project}" → ${r.remotePath}` : (r.remotePath ? `Deployed "${project}" → ${r.remotePath}` : `Deployed "${project}" (${r.composeFile})`), 'success', 5000);
-        m.close();
-        render();
+        const started = await API.post('/compose/deploy-folder-finish', { uploadId, up: true });
+        uploadId = null; // the backend job owns the staging now — aborting on close no longer applies
+        const joblog = root.querySelector('#fd-joblog');
+        joblog.style.display = 'block';
+        root.querySelector('#fd-jobnote').style.display = 'block';
+        const phaseLabel = { starting: 'starting…', clean: 'cleaning the folder…', upload: 'uploading to the server…', up: 'docker compose up…', done: 'done', error: 'failed' };
+        // Poll the job; closing the modal just stops polling — the deploy still finishes server-side.
+        while (true) {
+          let job;
+          try { job = await API.get(`/compose/deploy-job/${started.jobId}`); }
+          catch (e) { remaining.textContent = 'running in background'; break; } // job expired or modal gone
+          if (!document.body.contains(root)) return; // modal closed → leave it running on the backend
+          joblog.textContent = job.log || '';
+          joblog.scrollTop = joblog.scrollHeight;
+          remaining.textContent = phaseLabel[job.phase] || job.phase;
+          if (job.status === 'done') {
+            bar.style.width = '100%';
+            showToast(job.result?.updated ? `Updated "${project}"` : `Deployed "${project}"`, 'success', 5000);
+            // Swap the Deploy button for a fresh Close (clone drops the old deploy listener).
+            const closeBtn = btn.cloneNode(true);
+            closeBtn.textContent = 'Close'; closeBtn.disabled = false; closeBtn.className = 'btn btn-secondary';
+            btn.replaceWith(closeBtn);
+            closeBtn.addEventListener('click', () => m.close());
+            render();
+            return;
+          }
+          if (job.status === 'error') {
+            showToast(job.error || 'Deploy failed', 'error', 12000);
+            btn.disabled = false; btn.textContent = isUpdate ? 'Update & Rebuild' : 'Deploy';
+            remaining.textContent = 'failed';
+            return;
+          }
+          await new Promise(r => setTimeout(r, 1000));
+        }
       } catch (e) {
-        // Mark the failing file (the first non-✓ row) and drop the staging session.
+        // Failure during the upload phase (before the job starts) → mark the file + drop staging.
         const idx = [...list.querySelectorAll('[id^="fd-st-"]')].findIndex(el => el.textContent !== '✓');
         if (idx >= 0) setStatus(idx, '✗', 'var(--danger,#f85149)');
         if (uploadId) { API.post('/compose/deploy-folder-abort', { uploadId }).catch(() => {}); uploadId = null; }
