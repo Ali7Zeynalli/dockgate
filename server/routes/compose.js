@@ -168,6 +168,42 @@ router.post('/:project/build', (req, res) => runComposeAction(req, res, ['build'
 // Rebuild = rebuild images from source + bring up (most useful for build:-based projects after edits)
 router.post('/:project/rebuild', (req, res) => runComposeAction(req, res, ['up', '-d', '--build'], 'rebuild'));
 
+// Delete a whole project: stop+remove containers (compose down), optionally remove data volumes (-v),
+// optionally remove the project FILES (the remote folder, or the local managed dir), and drop DockGate's
+// tracking. ?volumes=1 also removes named volumes (data loss). ?files=0 keeps the files.
+router.delete('/:project', async (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const project = req.params.project;
+    const removeVolumes = req.query.volumes === '1' || req.query.volumes === 'true';
+    const removeFiles = !(req.query.files === '0' || req.query.files === 'false'); // default: remove files
+    const downArgs = removeVolumes ? ['down', '-v'] : ['down'];
+    const isLocal = dockerService.isLocalActive();
+    const proj = await dockerService.getComposeProject(project).catch(() => ({ workingDir: '' }));
+    const mDir = managedDir(project);
+    const meta = readDeployMeta(project);
+
+    if (!isLocal) {
+      const server = remoteCompose.getActiveRemoteServer();
+      const remoteDir = (meta && meta.mode === 'remote' && meta.serverId === dockerService.getActiveServerId() ? meta.remotePath : null) || proj.workingDir;
+      if (!server || !remoteDir) return res.status(400).json({ error: 'Cannot resolve the remote project to delete.' });
+      try { await remoteCompose.runComposeInRemoteDir(server, remoteDir, project, downArgs); } catch (e) { /* may already be down */ }
+      let removedPath = null;
+      if (removeFiles) removedPath = await remoteCompose.removeRemoteDir(server, remoteDir);
+      fs.rmSync(mDir, { recursive: true, force: true }); // drop the local pointer → untrack
+      logAction({ req, server: dockerService.getActiveServerId(), resourceId: project, resourceType: 'compose', resourceName: project, action: 'delete', details: { removeVolumes, removeFiles, remoteDir: removedPath || remoteDir } });
+      return res.json({ success: true, removedPath });
+    }
+
+    // Local daemon.
+    const cwd = proj.workingDir || (findComposeFile(mDir) ? mDir : null);
+    if (cwd) { try { await runCompose(project, downArgs, cwd); } catch (e) { /* may already be down */ } }
+    if (removeFiles && findComposeFile(mDir)) fs.rmSync(mDir, { recursive: true, force: true }); // only DockGate-managed files
+    logAction({ req, resourceId: project, resourceType: 'compose', resourceName: project, action: 'delete', details: { removeVolumes, removeFiles } });
+    res.json({ success: true });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 // ---- DockGate-managed compose files (create / read / edit) — local host only ----
 
 // Create a new managed project: write YAML → validate → up -d

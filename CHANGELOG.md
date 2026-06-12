@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.63] - 2026-06-12
+
+### Added — Delete a whole Compose project (containers + files)
+- A new **🗑 Delete** button on each project: stops & removes the containers (`docker compose down`), and — with a clear confirmation — also removes the **project files** (the folder on the remote server, or the DockGate-managed files) and, optionally, the **data volumes** (irreversible). Then DockGate stops tracking it
+- For remote projects this runs `docker compose down` and `rm -rf` **in the project's own folder on the remote host** (the path DockGate stored). Safety guard: only deep, absolute paths are ever removed — never `/`, `/home`, a home root, or anything with `..`
+- `DELETE /api/compose/:project?volumes=&files=` — audited
+
+---
+
 ## [2.0.62] - 2026-06-12
 
 ### Added — Deploy a folder TO the remote server (files live & run there)

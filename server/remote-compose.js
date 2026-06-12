@@ -119,7 +119,20 @@ async function runComposeInRemoteDir(server, remoteDir, project, actionArgs) {
   return r.stdout || r.stderr || '';
 }
 
+// Recursively delete a remote directory. SAFETY: only deep, absolute paths (≥3 segments) — never '/',
+// '/home', '/home/<user>', '/opt', etc. Always called with the path DockGate itself stored at deploy time.
+async function removeRemoteDir(server, remoteDir) {
+  const p = String(remoteDir || '').replace(/\/+$/, '');
+  const segs = p.split('/').filter(Boolean);
+  if (!p.startsWith('/') || p.includes('..') || segs.length < 3) {
+    const e = new Error(`Refusing to delete an unsafe path: ${p || '(empty)'}`); e.statusCode = 400; throw e;
+  }
+  const r = await execRemote(server, `rm -rf ${shq(p)}`);
+  if (r.code !== 0) { const e = new Error('Remote rm failed: ' + (r.stderr || r.stdout || '')); e.statusCode = 500; throw e; }
+  return p;
+}
+
 module.exports = {
   getActiveRemoteServer, execRemote, resolveRemotePath, checkComposeAvailable,
-  uploadDirToRemote, runComposeInRemoteDir, shq,
+  uploadDirToRemote, runComposeInRemoteDir, removeRemoteDir, shq,
 };

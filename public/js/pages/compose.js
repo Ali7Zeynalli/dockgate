@@ -47,6 +47,7 @@ Router.register('compose', async (content) => {
                     <button class="btn-icon" title="Edit YAML" data-edit="${p.name}" ${dis}>${Icons.settings}</button>
                     <button class="btn-icon" title="Project files (Dockerfile, .env…)" data-files="${p.name}">${Icons.folder || Icons.compose}</button>
                     <button class="btn-icon" title="View Services" data-detail="${p.name}">${Icons.eye}</button>
+                    <button class="btn-icon text-danger" title="Delete project (containers + files)" data-delproj="${p.name}" data-remote="${p.remote ? 1 : ''}">${Icons.trash}</button>
                   </div></td>
                 </tr>`).join('')}
               </tbody>
@@ -60,6 +61,7 @@ Router.register('compose', async (content) => {
       document.getElementById('compose-folder')?.addEventListener('click', openFolderDeploy);
       document.getElementById('compose-git')?.addEventListener('click', openGitDeploy);
       content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
+      content.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote); }));
       content.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
       });
@@ -195,6 +197,31 @@ Router.register('compose', async (content) => {
         wm.overlay.querySelector('#gd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
         render();
       } catch (e) { showToast(e.message, 'error', 12000); btn.disabled = false; btn.textContent = 'Clone & Deploy'; }
+    });
+  }
+
+  // Delete a whole project: down (+volumes opt) + remove its files (remote folder / local managed dir).
+  function openDeleteProject(project, isRemote) {
+    const body = `<div style="display:flex;flex-direction:column;gap:10px">
+      <div class="text-sm">Delete project <strong>${escapeHtml(project)}</strong>?</div>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="del-down" checked disabled> Stop &amp; remove containers (<code>docker compose down</code>)</label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="del-files" checked> Remove the project files ${isRemote ? '(the folder on the remote server)' : '(DockGate-managed files)'}</label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;color:var(--danger,#f85149)"><input type="checkbox" id="del-vols"> Also delete data volumes — <strong>irreversible data loss</strong></label>
+    </div>`;
+    const m = showModal('Delete project', body, [{ label: 'Cancel', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    const btn = document.createElement('button'); btn.className = 'btn btn-danger'; btn.textContent = 'Delete';
+    root.querySelector('#modal-footer').appendChild(btn);
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = 'Deleting…';
+      const vols = root.querySelector('#del-vols').checked ? 1 : 0;
+      const files = root.querySelector('#del-files').checked ? 1 : 0;
+      try {
+        await API.del(`/compose/${project}?volumes=${vols}&files=${files}`);
+        showToast(`Deleted "${project}"`);
+        m.close();
+        render();
+      } catch (e) { showToast(e.message, 'error', 11000); btn.disabled = false; btn.textContent = 'Delete'; }
     });
   }
 
