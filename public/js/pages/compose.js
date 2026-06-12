@@ -43,7 +43,7 @@ Router.register('compose', async (content) => {
                     <button class="btn-sm btn-primary" data-action="up" data-project="${p.name}" ${dis}>${Icons.play} Up</button>
                     <button class="btn-sm btn-secondary" data-action="down" data-project="${p.name}" ${dis}>${Icons.stop} Down</button>
                     <button class="btn-sm btn-secondary" data-action="restart" data-project="${p.name}" ${dis}>${Icons.restart}</button>
-                    <button class="btn-sm btn-secondary" data-action="build" data-project="${p.name}" ${dis} title="docker compose build — rebuild services that have a build: section">${Icons.layers} Build</button>
+                    <button class="btn-sm btn-secondary" data-action="rebuild" data-project="${p.name}" ${dis} title="Rebuild images from source + up (docker compose up -d --build)">${Icons.layers} Rebuild</button>
                     <button class="btn-icon" title="Edit YAML" data-edit="${p.name}" ${dis}>${Icons.settings}</button>
                     <button class="btn-icon" title="Project files (Dockerfile, .env…)" data-files="${p.name}">${Icons.folder || Icons.compose}</button>
                     <button class="btn-icon" title="View Services" data-detail="${p.name}">${Icons.eye}</button>
@@ -277,6 +277,14 @@ Router.register('compose', async (content) => {
     const remote = isRemoteActive();
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
       <div class="input-group"><label>Project name *</label><input class="input" id="fd-name" placeholder="my-app"></div>
+      ${remote ? `
+      <div class="card" style="padding:10px 12px;background:var(--accent-dim)">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px">Deploy target: remote server ⭐</div>
+        <div class="input-group"><label>Folder on the server (files live & run here)</label>
+          <input class="input" id="fd-rpath" placeholder="~/.dockgate/projects/&lt;project&gt;" style="font-family:var(--font-mono,monospace)">
+          <span class="text-xs text-muted" style="margin-top:4px;display:block">Files are uploaded to this folder on the active server; <code>docker compose up</code> runs there (bind-mounts work, data persists).</span>
+        </div>
+      </div>` : ''}
       <div class="input-group"><label>Project folder (must contain a docker-compose.yml)</label>
         <input type="file" id="fd-folder" webkitdirectory directory multiple style="font-size:12px">
         <span class="text-xs text-muted" id="fd-info" style="margin-top:4px;display:block">No folder selected.</span>
@@ -330,7 +338,13 @@ Router.register('compose', async (content) => {
       }).join('');
       const setStatus = (i, icon, color) => { const el = root.querySelector(`#fd-st-${i}`); if (el) { el.textContent = icon; el.style.color = color || ''; } };
       try {
-        uploadId = (await API.post('/compose/deploy-folder-start', { project })).uploadId;
+        const startBody = { project };
+        if (remote) {
+          const rpath = (root.querySelector('#fd-rpath')?.value || '').trim() || `~/.dockgate/projects/${project}`;
+          startBody.target = { mode: 'remote', remotePath: rpath };
+        }
+        const started = await API.post('/compose/deploy-folder-start', startBody);
+        uploadId = started.uploadId;
         for (let i = 0; i < picked.length; i++) {
           const f = picked[i];
           setStatus(i, '⏳', 'var(--accent)');
@@ -345,7 +359,7 @@ Router.register('compose', async (content) => {
         btn.textContent = 'Starting…';
         const r = await API.post('/compose/deploy-folder-finish', { uploadId, up: true });
         uploadId = null;
-        showToast(`Deployed "${project}" (${r.composeFile})`);
+        showToast(r.remotePath ? `Deployed "${project}" → ${r.remotePath}` : `Deployed "${project}" (${r.composeFile})`, 'success', 5000);
         m.close();
         render();
       } catch (e) {

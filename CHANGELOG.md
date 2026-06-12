@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.62] - 2026-06-12
+
+### Added — Deploy a folder TO the remote server (files live & run there)
+- When a remote SSH server is active, **Deploy from folder** can now put the project **on that server**: pick the target folder (default `~/.dockgate/projects/<project>`), the files are uploaded there over SFTP, and `docker compose up` runs **in that folder on the remote** — so **bind-mounts and build contexts resolve correctly and the files persist** where they run (you can SSH in and find them)
+- Up / Down / Restart / **Rebuild** (`up -d --build`) for a remote project run `docker compose` in its remote folder over SSH. A remote project that's brought down stays listed (via a small local pointer) so you can bring it back up
+- Local deploys are unchanged (files stay on DockGate). Requires `docker compose` (v2) on the remote; falls back with a clear message if missing
+
+---
+
 ## [2.0.61] - 2026-06-12
 
 ### Added — Files: a server file manager (remote SSH/SFTP)
