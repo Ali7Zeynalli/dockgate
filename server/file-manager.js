@@ -141,4 +141,58 @@ async function remove(server, p, isDir) {
   return { path: target };
 }
 
-module.exports = { listDir, downloadTo, uploadFrom, mkdir, rename, remove, normRemote, homeDir };
+// Recursively list a remote directory (flat, sorted) — for the project Files tree on a remote host.
+function listTree(server, baseDir) {
+  const base = normRemote(baseDir);
+  return withSftp(server, sftp => new Promise((resolve, reject) => {
+    const out = [];
+    const walk = (dir, rel, cb) => {
+      sftp.readdir(dir, (e, list) => {
+        if (e) return cb(e);
+        let i = 0;
+        const next = () => {
+          if (i >= list.length) return cb();
+          const ent = list[i++];
+          const r = rel ? rel + '/' + ent.filename : ent.filename;
+          if (ent.attrs.isDirectory()) { out.push({ path: r, type: 'dir', size: 0 }); walk(dir + '/' + ent.filename, r, (er) => er ? cb(er) : next()); }
+          else { out.push({ path: r, type: 'file', size: ent.attrs.size }); next(); }
+        };
+        next();
+      });
+    };
+    walk(base, '', (e) => e ? reject(e) : resolve(out.sort((a, b) => a.path.localeCompare(b.path))));
+  }));
+}
+
+// Read a remote file as text (binary/oversized → metadata only), for the in-project editor.
+function readFileText(server, p) {
+  const file = normRemote(p);
+  return withSftp(server, sftp => new Promise((resolve, reject) => {
+    sftp.stat(file, (e, st) => {
+      if (e) return reject(e);
+      const size = st.size;
+      if (size > 2 * 1024 * 1024) return resolve({ isBinary: true, size });
+      const chunks = [];
+      const rs = sftp.createReadStream(file);
+      rs.on('data', d => chunks.push(d));
+      rs.on('error', reject);
+      rs.on('end', () => {
+        const buf = Buffer.concat(chunks);
+        const isBinary = buf.subarray(0, 8000).includes(0);
+        resolve(isBinary ? { isBinary: true, size } : { isBinary: false, size, content: buf.toString('utf8') });
+      });
+    });
+  }));
+}
+
+// Write text to a remote file (create/overwrite).
+function writeFileText(server, p, content) {
+  const file = normRemote(p);
+  return withSftp(server, sftp => new Promise((resolve, reject) => {
+    const ws = sftp.createWriteStream(file);
+    ws.on('close', resolve); ws.on('error', reject);
+    ws.end(Buffer.from(String(content), 'utf8'));
+  }));
+}
+
+module.exports = { listDir, downloadTo, uploadFrom, mkdir, rename, remove, normRemote, homeDir, listTree, readFileText, writeFileText };

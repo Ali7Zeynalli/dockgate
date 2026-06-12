@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.69] - 2026-06-12
+
+### Fixed — remote project: Update now applies, and Files shows the actual server files
+- **Update / Rebuild now force-recreate the container** (`up -d --build --force-recreate`) — previously a re-upload could rebuild the image but leave the old container running, so changes didn't take effect
+- **📁 Files on a remote-deployed project now browses the folder ON THE SERVER over SFTP** (view / edit / delete), instead of DockGate's local pointer dir (which only held the deploy metadata and showed empty). The dialog opens instantly with a loading state, then lists the remote files. Edits are written back over SFTP and audited
+
+---
+
 ## [2.0.68] - 2026-06-12
 
 ### Fixed — Compose page broke (SyntaxError: 'started' already declared)

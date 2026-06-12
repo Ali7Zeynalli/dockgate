@@ -296,10 +296,9 @@ Router.register('compose', async (content) => {
     } catch (e) { showToast(e.message, 'error'); }
   }
   async function openProjectFiles(project) {
-    let data;
-    try { data = await API.get(`/compose/${project}/tree`); }
-    catch (e) { showToast(e.message, 'error', 9000); return; }
-    const m = showModal(`Files — ${escapeHtml(project)}`, `<div class="text-xs text-muted mb-2">Project files on DockGate (Dockerfile, .dockerignore, .env, configs…). The compose file is also editable from here.</div><div id="pf-list" style="max-height:58vh;overflow-y:auto"></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    // Open the modal immediately with a loading state, then fetch ONCE (remote = SFTP, can take a couple seconds).
+    let data = { files: [], composeFile: null };
+    const m = showModal(`Files — ${escapeHtml(project)}`, `<div class="text-xs text-muted mb-2">Project files (Dockerfile, .dockerignore, .env, configs…). On a remote-deployed project these are the files on the server. The compose file is also editable from here.</div><div id="pf-list" style="max-height:58vh;overflow-y:auto"><div class="text-muted text-sm" style="padding:14px">Loading…</div></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
     const root = m.overlay;
     const newBtn = document.createElement('button'); newBtn.className = 'btn btn-secondary btn-sm'; newBtn.textContent = '+ New file';
     root.querySelector('#modal-footer').prepend(newBtn);
@@ -320,9 +319,11 @@ Router.register('compose', async (content) => {
         <span class="text-xs text-muted">${f.type === 'file' ? formatBytes(f.size) : ''}</span>${acts}</div>`;
     }
     async function refresh() {
-      try { data = await API.get(`/compose/${project}/tree`); } catch (e) {}
       const el = root.querySelector('#pf-list');
       if (!el) return;
+      try { data = await API.get(`/compose/${project}/tree`); }
+      catch (e) { if (root.querySelector('#pf-list')) el.innerHTML = `<div class="text-danger text-sm" style="padding:14px">${escapeHtml(e.message)}</div>`; return; }
+      if (!root.querySelector('#pf-list')) return; // modal closed during the fetch
       el.innerHTML = data.files.length ? data.files.map(rowHtml).join('') : '<div class="text-muted text-sm" style="padding:14px">No files.</div>';
       el.querySelectorAll('[data-edit-file]').forEach(b => b.addEventListener('click', () => editFileFromTree(project, b.dataset.editFile, refresh)));
       el.querySelectorAll('[data-del-file]').forEach(b => b.addEventListener('click', () => {
