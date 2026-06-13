@@ -191,8 +191,7 @@ Router.register('infra', async (content, params) => {
               } catch (e) { showToast(sshErrorHint(e.message), 'error', 10000); }
             });
           } else if (action === 'console') {
-            const s = servers.find(x => x.id === id);
-            if (s) renderServerConsole(s);
+            Router.navigate('server-console', { id });
           } else if (action === 'edit') {
             const s = servers.find(x => x.id === id);
             if (s) openServerEditModal(s);
@@ -373,37 +372,6 @@ Router.register('infra', async (content, params) => {
         saveBtn.disabled = false; saveBtn.textContent = 'Save Changes';
       }
     });
-  }
-
-  // Per-server console — opens in place of the server list (Setup / Monitoring / Logs / Overview).
-  // Setup hosts the provisioning panel; the others are placeholders until host monitoring (PHASE 3).
-  function renderServerConsole(server) {
-    const tabs = [['setup', 'Setup'], ['monitoring', 'Monitoring'], ['logs', 'Logs'], ['overview', 'Overview']];
-    let active = 'setup';
-    tabContent.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-        <button class="btn btn-xs btn-secondary" id="con-back">← Servers</button>
-        <div style="font-weight:600">${escapeHtml(server.id)}</div>
-        <div class="text-xs text-muted">${server.host ? escapeHtml((server.username || '') + '@' + server.host) : ''}</div>
-      </div>
-      <div class="tab-bar" id="con-tabs">${tabs.map(([v, l]) => `<button class="tab-btn ${v === active ? 'active' : ''}" data-ctab="${v}">${l}</button>`).join('')}</div>
-      <div id="con-content" style="padding-top:16px"></div>`;
-    const content = tabContent.querySelector('#con-content');
-    tabContent.querySelector('#con-back').addEventListener('click', () => renderServers());
-
-    const ph = (title, desc) => `<div class="empty-state" style="padding:48px 24px;text-align:center"><h3>${title}</h3><p class="text-muted">${desc}</p><p class="text-xs text-muted" style="margin-top:8px">Bu tab host monitoring (PHASE 3) ilə gələcək.</p></div>`;
-    function renderConTab(tab) {
-      if (tab === 'setup') renderProvisionPanel(server.id, content);
-      else if (tab === 'monitoring') content.innerHTML = ph('Monitoring', 'CPU / RAM / disk / load / uptime — canlı göstəricilər.');
-      else if (tab === 'logs') content.innerHTML = ph('Logs', 'Host logları (journald / auth / dmesg).');
-      else content.innerHTML = ph('Overview', 'Readiness + canlı gauge + Docker xülasə.');
-    }
-    tabContent.querySelector('#con-tabs').addEventListener('click', (e) => {
-      const b = e.target.closest('.tab-btn'); if (!b) return;
-      tabContent.querySelectorAll('#con-tabs .tab-btn').forEach(x => x.classList.remove('active'));
-      b.classList.add('active'); active = b.dataset.ctab; renderConTab(active);
-    });
-    renderConTab(active);
   }
 
   renderTab(activeTab);

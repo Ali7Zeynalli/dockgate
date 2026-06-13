@@ -56,6 +56,7 @@ const Router = {
       builds: 'Builds',
       audit: 'Audit Log',
       infra: 'Infrastructure',
+      'server-console': 'Server Console',
       settings: 'Settings',
     };
 
