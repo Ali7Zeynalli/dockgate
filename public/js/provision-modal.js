@@ -44,22 +44,48 @@ function renderProvisionForm(serverId, catalog, scan, container) {
       <div><div style="font-weight:600">${escapeHtml(label)}</div><div class="text-xs text-muted" style="margin-top:2px">${escapeHtml(desc)}</div></div>
     </label>`).join('');
 
-  const itemRows = items.map(it => {
-    const st = stateOf(it.id);
-    const pill = st === 'present' ? '<span class="badge" style="background:rgba(34,197,94,.15);color:var(--success)">installed</span>'
-      : st === 'na' ? '<span class="badge" style="opacity:.55">n/a</span>'
-      : '<span class="badge" style="background:var(--bg-primary);color:var(--text-muted)">missing</span>';
-    return `<label style="display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;${st === 'na' ? 'opacity:.5' : ''}">
-      <input type="checkbox" class="pv-item" value="${escapeHtml(it.id)}" data-risk="${escapeHtml(it.risk)}"${st === 'na' ? ' disabled' : ''}>
-      <div style="flex:1"><span style="font-weight:500">${escapeHtml(it.label)}</span>${it.risk === 'high' ? ' <span style="color:var(--danger);font-size:11px">⚠ risky</span>' : ''}</div>
-      ${pill}
+  // On-card status: border colour + a pill, matching the Overview component cards.
+  const pvState = {
+    present: { col: 'var(--success)', pill: '<span class="badge badge-healthy">installed</span>' },
+    missing: { col: 'var(--warning, #f59e0b)', pill: '<span class="badge" style="background:var(--bg-primary);color:var(--text-muted)">missing</span>' },
+    na:      { col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.55">n/a</span>' },
+    unknown: { col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.55">unknown</span>' },
+  };
+  const itemCard = (it) => {
+    const st = stateOf(it.id), m = pvState[st] || pvState.unknown;
+    return `<label class="card pv-item-card" style="display:flex;gap:10px;align-items:flex-start;border-left:3px solid ${m.col};padding:12px 14px;opacity:${st === 'na' ? 0.55 : 1}">
+      <input type="checkbox" class="pv-item" value="${escapeHtml(it.id)}" data-risk="${escapeHtml(it.risk)}"${st === 'na' ? ' data-na="1"' : ''} disabled style="margin-top:3px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <span style="font-weight:600">${escapeHtml(it.label)}</span>${m.pill}
+        </div>
+        ${it.description ? `<div class="text-xs text-muted" style="margin-top:3px">${escapeHtml(it.description)}</div>` : ''}
+        ${it.risk === 'high' ? '<div class="text-xs" style="color:var(--danger);margin-top:3px">⚠ risky — can lock you out if misconfigured</div>' : ''}
+      </div>
     </label>`;
+  };
+  const groupLabel = (g) => ({ base: 'Base', security: 'Security', system: 'System' }[g] || (g ? g[0].toUpperCase() + g.slice(1) : 'Other'));
+  const ord = ['base', 'security', 'system'];
+  const groupKeys = [...new Set(items.map(it => it.group))].sort((a, b) => (ord.indexOf(a) < 0 ? 99 : ord.indexOf(a)) - (ord.indexOf(b) < 0 ? 99 : ord.indexOf(b)));
+  const itemCardsGrouped = groupKeys.map(g => {
+    const gItems = items.filter(it => it.group === g);
+    if (!gItems.length) return '';
+    return `<div style="margin-bottom:14px"><div style="font-weight:600;margin-bottom:8px">${groupLabel(g)}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">${gItems.map(itemCard).join('')}</div></div>`;
   }).join('');
 
+  // "How it works" — clean detail-grid rows (Detect / Install / Verify) instead of a raw <pre> dump.
   const explainer = items.map(it => `
-    <details style="margin-bottom:6px"><summary>${escapeHtml(it.label)} <span class="text-xs text-muted">[${escapeHtml(it.group)}${it.risk === 'high' ? ' · risky' : ''}]</span></summary>
-      <div class="text-xs text-muted" style="padding:6px 0 0 12px">${escapeHtml(it.description)}</div>
-      ${it.commands ? `<pre style="white-space:pre-wrap;padding:6px 12px;background:var(--bg-primary);border-radius:6px;margin-top:4px;font-size:11px">detect:  ${escapeHtml(it.commands.detect)}\ninstall: ${escapeHtml(it.commands.install)}\nverify:  ${escapeHtml(it.commands.verify)}</pre>` : ''}
+    <details style="margin-bottom:8px">
+      <summary style="cursor:pointer;font-weight:500">${escapeHtml(it.label)} <span class="text-xs text-muted">[${escapeHtml(it.group)}${it.risk === 'high' ? ' · risky' : ''}]</span></summary>
+      <div style="padding:10px 0 4px 12px">
+        ${it.description ? `<div class="text-sm text-muted" style="margin-bottom:8px">${escapeHtml(it.description)}</div>` : ''}
+        ${it.commands ? `<div class="detail-grid" style="grid-template-columns:1fr;gap:8px">
+          <div class="detail-item"><div class="detail-label">Detect</div><div class="detail-value mono" style="white-space:pre;overflow-x:auto">${escapeHtml(it.commands.detect)}</div></div>
+          <div class="detail-item"><div class="detail-label">Install</div><div class="detail-value mono" style="white-space:pre;overflow-x:auto">${escapeHtml(it.commands.install)}</div></div>
+          <div class="detail-item"><div class="detail-label">Verify</div><div class="detail-value mono" style="white-space:pre;overflow-x:auto">${escapeHtml(it.commands.verify)}</div></div>
+        </div>` : ''}
+      </div>
     </details>`).join('');
 
   container.innerHTML = `
@@ -74,9 +100,12 @@ function renderProvisionForm(serverId, catalog, scan, container) {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">${presetCards}</div>
       </div>
 
-      <div id="pv-custom" class="card" style="display:none">
-        <div style="font-weight:600;margin-bottom:6px">Items <span class="text-xs text-muted">(✓ installed · ○ missing · ⊘ n/a)</span></div>
-        ${itemRows}
+      <div id="pv-items">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+          <div style="font-weight:600">2 · Components on this server</div>
+          <div class="text-xs text-muted" id="pv-custom-hint">Switch to <b>Custom</b> to tick individual items</div>
+        </div>
+        ${itemCardsGrouped}
       </div>
 
       <div id="pv-confirm-wrap" class="card" style="display:none;border-color:var(--danger);background:rgba(248,81,73,.06)">
@@ -101,14 +130,18 @@ function renderProvisionForm(serverId, catalog, scan, container) {
       card.style.borderColor = on ? 'var(--accent, #00d4aa)' : 'var(--border)';
       card.style.background = on ? 'rgba(0,212,170,.07)' : 'transparent';
     });
-    container.querySelector('#pv-custom').style.display = preset === 'custom' ? 'block' : 'none';
-    const risky = preset === 'custom'
+    const custom = preset === 'custom';
+    // Custom = you tick items; other presets show the same cards read-only (live status preview).
+    container.querySelectorAll('.pv-item').forEach(cb => { cb.disabled = !custom || cb.dataset.na === '1'; });
+    const hint = container.querySelector('#pv-custom-hint');
+    if (hint) hint.textContent = custom ? 'Tick the items you want to install' : 'Switch to Custom to tick individual items';
+    const risky = custom
       ? [...container.querySelectorAll('.pv-item:checked')].some(c => c.dataset.risk === 'high')
       : (preset === 'secure-baseline' || preset === 'full');
     container.querySelector('#pv-confirm-wrap').style.display = risky ? 'block' : 'none';
   }
   container.querySelectorAll('input[name="pv-preset"]').forEach(r => r.addEventListener('change', update));
-  container.querySelector('#pv-custom').addEventListener('change', update);
+  container.querySelector('#pv-items').addEventListener('change', update);
   update();
 
   container.querySelector('#pv-run').addEventListener('click', async () => {
