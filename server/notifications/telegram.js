@@ -95,4 +95,13 @@ function escapeHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-module.exports = { sendMessage, sendTestMessage, getTelegramSettings, isConfigured, formatAlert };
+// A "Recent logs" <pre> block to append after formatAlert(). Tail-trimmed + escaped. Empty if no logs.
+function formatLogs(logs, max = 700) {
+  if (!logs) return '';
+  let t = String(logs).trim();
+  if (!t) return '';
+  if (t.length > max) t = '…' + t.slice(-max);
+  return `\n\n📋 <b>Recent logs:</b>\n<pre>${escapeHtml(t)}</pre>`;
+}
+
+module.exports = { sendMessage, sendTestMessage, getTelegramSettings, isConfigured, formatAlert, formatLogs };

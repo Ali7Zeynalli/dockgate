@@ -30,7 +30,22 @@ function serverRow(server) {
   return row('Server', `<code style="background:#eef2ff;padding:2px 6px;border-radius:3px;">${server}</code>`);
 }
 
-function containerDieTemplate({ containerName, containerId, image, time, exitCode, unexpected = true, server }) {
+// HTML-escape free-form text (container logs can contain < > &).
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// A dark "Recent container logs" block — the WHY behind a crash/OOM/unhealthy event. Empty if no logs.
+function logsBlock(logs) {
+  if (!logs || !String(logs).trim()) return '';
+  return `
+        <div style="margin-top:16px;">
+          <div style="font-size:12px;color:#666;margin-bottom:4px;">Recent container logs</div>
+          <pre style="margin:0;padding:10px 14px;background:#0b1021;color:#cdd6f4;border-radius:4px;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all;max-height:340px;overflow:auto;">${esc(logs)}</pre>
+        </div>`;
+}
+
+function containerDieTemplate({ containerName, containerId, image, time, exitCode, unexpected = true, server, logs }) {
   // unexpected=false (exit 0 / intentional stop) → neutral blue; non-zero crash → red alert
   const title = unexpected ? 'Container Crashed' : 'Container Stopped';
   const boxStyle = unexpected
@@ -52,6 +67,7 @@ function containerDieTemplate({ containerName, containerId, image, time, exitCod
           ${row('Exit Code', exitCode ?? '—')}
           ${row('Time', time)}
         </table>
+        ${logsBlock(logs)}
       </div>
     ${footer()}`;
 }
@@ -74,7 +90,7 @@ function containerRestartTemplate({ containerName, containerId, image, time, res
     ${footer()}`;
 }
 
-function containerUnhealthyTemplate({ containerName, containerId, image, time, failingStreak, lastOutput, server }) {
+function containerUnhealthyTemplate({ containerName, containerId, image, time, failingStreak, lastOutput, server, logs }) {
   return `${header('Container Unhealthy')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
         <div style="background:#fff3f3;border:1px solid #fecaca;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#b91c1c;">
@@ -92,11 +108,12 @@ function containerUnhealthyTemplate({ containerName, containerId, image, time, f
         <div style="margin-top:12px;padding:10px 14px;background:#f9fafb;border-radius:4px;font-size:12px;color:#666;">
           The container is running but its health check is failing. Check application logs for details.
         </div>
+        ${logsBlock(logs)}
       </div>
     ${footer()}`;
 }
 
-function containerOomTemplate({ containerName, containerId, image, time, server }) {
+function containerOomTemplate({ containerName, containerId, image, time, server, logs }) {
   return `${header('OOM Kill Detected')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
         <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">
@@ -112,6 +129,7 @@ function containerOomTemplate({ containerName, containerId, image, time, server 
         <div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border-radius:4px;font-size:12px;color:#666;">
           Consider increasing the memory limit for this container.
         </div>
+        ${logsBlock(logs)}
       </div>
     ${footer()}`;
 }

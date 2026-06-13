@@ -112,6 +112,17 @@ class EventMonitor {
     this.cooldowns.set(this._cooldownKey(eventType, resourceKey), Date.now());
   }
 
+  // Tail recent container logs (the WHY behind a failure). Best-effort — returns '' on any error.
+  async _tailLogs(containerId, lines = 40) {
+    if (!containerId) return '';
+    try {
+      const { demuxLogs } = require('../docker');
+      const buf = await this.docker.getContainer(containerId).logs({ stdout: true, stderr: true, tail: lines, timestamps: false, follow: false });
+      const text = demuxLogs(buf) || '';
+      return text.length > 6000 ? text.slice(-6000) : text;
+    } catch (e) { return ''; }
+  }
+
   async _handleEvent(event) {
     if (!mailer.isConfigured() && !telegram.isConfigured()) return;
     if (!event.Type || !event.Action) return;
@@ -128,26 +139,28 @@ class EventMonitor {
     // We don't listen for 'stop' separately: it fires before 'die' and would double-count the same event.
     if (event.Type === 'container' && event.Action === 'die') {
       const exitCode = attrs.exitCode;
+      // "Unexpected" only for a non-zero exit code — exit 0 is a clean/intentional stop.
+      const unexpected = exitCode !== undefined && exitCode !== '0' && exitCode !== 0;
+      // Logs explain WHY it died — fetch for OOM / crash, not for a clean exit-0 stop.
+      const logs = (exitCode === '137' || unexpected) ? await this._tailLogs(event.Actor?.ID) : '';
 
       // OOM kill — exitCode 137. Send only the OOM notification, then return —
       // otherwise both OOM and "Container Stopped" were sent for the same event (duplicate).
       if (exitCode === '137') {
         await this._sendNotification('container_oom', name, {
           subject: `${prefix}OOM Kill: ${name}`,
-          html: templates.containerOomTemplate({ containerName: name, containerId: id, image, time, server: this.serverId }),
-          telegramText: telegram.formatAlert(`${prefix}OOM Kill`, { ...(serverDetail || {}), Container: name, Image: image, Time: time }),
+          html: templates.containerOomTemplate({ containerName: name, containerId: id, image, time, server: this.serverId, logs }),
+          telegramText: telegram.formatAlert(`${prefix}OOM Kill`, { ...(serverDetail || {}), Container: name, Image: image, Time: time }) + telegram.formatLogs(logs),
         });
         return;
       }
 
-      // "Unexpected" only for a non-zero exit code — exit 0 is a clean/intentional stop.
-      const unexpected = exitCode !== undefined && exitCode !== '0' && exitCode !== 0;
       const verb = unexpected ? 'Crashed' : 'Stopped';
 
       await this._sendNotification('container_die', name, {
         subject: `${prefix}Container ${verb}: ${name}`,
-        html: templates.containerDieTemplate({ containerName: name, containerId: id, image, time, exitCode: exitCode ?? '—', unexpected, server: this.serverId }),
-        telegramText: telegram.formatAlert(`${prefix}Container ${verb}`, { ...(serverDetail || {}), Container: name, Image: image, 'Exit Code': exitCode ?? '—', Time: time }),
+        html: templates.containerDieTemplate({ containerName: name, containerId: id, image, time, exitCode: exitCode ?? '—', unexpected, server: this.serverId, logs }),
+        telegramText: telegram.formatAlert(`${prefix}Container ${verb}`, { ...(serverDetail || {}), Container: name, Image: image, 'Exit Code': exitCode ?? '—', Time: time }) + telegram.formatLogs(logs),
       });
     }
 
@@ -179,10 +192,11 @@ class EventMonitor {
         }
       } catch(e) {}
 
+      const logs = await this._tailLogs(event.Actor?.ID);
       await this._sendNotification('container_unhealthy', name, {
         subject: `${prefix}Container Unhealthy: ${name}`,
-        html: templates.containerUnhealthyTemplate({ containerName: name, containerId: id, image, time, failingStreak, lastOutput, server: this.serverId }),
-        telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: image, 'Failing Streak': failingStreak, Time: time }),
+        html: templates.containerUnhealthyTemplate({ containerName: name, containerId: id, image, time, failingStreak, lastOutput, server: this.serverId, logs }),
+        telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: image, 'Failing Streak': failingStreak, Time: time }) + telegram.formatLogs(logs),
       });
     }
   }
@@ -216,6 +230,7 @@ class EventMonitor {
           }
         } catch(e) {}
 
+        const logs = await this._tailLogs(c.Id);
         await this._sendNotification('container_unhealthy', name, {
           subject: `${prefix}Container Unhealthy: ${name}`,
           html: templates.containerUnhealthyTemplate({
@@ -226,8 +241,9 @@ class EventMonitor {
             failingStreak,
             lastOutput,
             server: this.serverId,
+            logs,
           }),
-          telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: c.Image, 'Failing Streak': failingStreak }),
+          telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: c.Image, 'Failing Streak': failingStreak }) + telegram.formatLogs(logs),
         });
         break; // one notification per cycle, cooldown handles others
       }

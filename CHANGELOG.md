@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.134] - 2026-06-13
+
+### Added — notifications now include the container's recent logs (the WHY)
+- **Crash, OOM and Unhealthy alerts now carry the last ~40 lines of the container's logs** — so you can see *why* it failed without SSHing in. Email gets a dark "Recent container logs" block; Telegram appends a trimmed `<pre>` snippet. Logs are HTML-escaped, size-capped, and only fetched for failures (a clean exit-0 stop adds none)
+- Applied to **both** the central monitor (`event-monitor.js`) and the on-host **agent** (`notifier-agent/`), kept byte-in-sync
+- Note on "Container Unhealthy · Failing Streak N": this fires when the container's **Docker HEALTHCHECK** command fails N times in a row — the app may still serve traffic while the *healthcheck itself* is misconfigured (wrong port/path, missing curl/wget, too-short start period). The attached logs + the existing health-check output are there to diagnose exactly that
+
+---
+
 ## [2.0.133] - 2026-06-13
 
 ### Changed — Edge Notifier: "Install on servers…" now lets you pick which servers
