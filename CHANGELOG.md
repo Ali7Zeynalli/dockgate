@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.127] - 2026-06-13
+
+### Improved — console Overview: zoned grid layout + auto-refresh (P4.15, P4.20)
+- The Overview is now organised into clear **zones** instead of one long stack: a readiness banner on top, a **two-column row (Docker | Components)**, then the live host-metrics dashboard full-width below. Components render as compact rows (status icon + label + state) rather than a wall of cards — much tidier
+- The **Docker counts auto-refresh every 30s** (self-terminating when you leave the view; skipped while a modal is open or you're typing); host metrics keep their own 5s tick. The readiness scan stays one-shot (slow + rarely changes)
+
+---
+
 ## [2.0.126] - 2026-06-13
 
 ### Changed — SSH hardening is now lockout-proof (no password / root-login disable)

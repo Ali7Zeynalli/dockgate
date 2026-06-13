@@ -200,18 +200,23 @@ async function renderConsoleOverview(serverId, container, onSetup) {
     na:      { ic: '⊘', col: 'var(--text-muted)', txt: 'n/a on this OS' },
     unknown: { ic: '?', col: 'var(--text-muted)', txt: 'unknown' },
   };
-  const cardFor = (it) => {
+  // Compact component row (status icon + label + state) — no nested cards, so the Components zone stays tidy.
+  const compRow = (it) => {
     const st = it.alwaysRun ? 'action' : stateOf(it.id), c = meta[st] || meta.unknown;
-    return `<div class="card" style="border-left:3px solid ${c.col};opacity:${st === 'na' ? 0.55 : 1}">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <div style="font-weight:600">${escapeHtml(it.label)}</div>
-        <div style="color:${c.col};font-size:18px;line-height:1">${c.ic}</div>
-      </div>
-      <div class="text-xs text-muted" style="margin-top:3px">${c.txt}${it.risk === 'high' ? ' · ⚠ risky' : ''}</div>
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;border-bottom:1px solid var(--border);opacity:${st === 'na' ? 0.55 : 1}">
+      <span style="color:${c.col};width:14px;text-align:center">${c.ic}</span>
+      <span style="flex:1;min-width:0">${escapeHtml(it.label)}${it.risk === 'high' ? ' <span class="text-xs" style="color:var(--danger)">⚠</span>' : ''}</span>
+      <span class="text-xs text-muted">${c.txt}</span>
     </div>`;
   };
   const groups = [['base', 'Base'], ['security', 'Security'], ['system', 'System']];
+  const componentsHtml = groups.map(([g, glabel]) => {
+    const gItems = items.filter(it => it.group === g);
+    if (!gItems.length) return '';
+    return `<div style="margin-bottom:10px"><div class="text-xs text-muted" style="font-weight:700;letter-spacing:.4px;margin-bottom:2px">${glabel.toUpperCase()}</div>${gItems.map(compRow).join('')}</div>`;
+  }).join('');
 
+  // Zoned layout: readiness banner (top) · grid-2 [Docker | Components] · live host metrics (full width).
   container.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:16px">
       <div class="card" style="border-left:4px solid ${ready ? 'var(--success)' : 'var(--warning, #f59e0b)'}">
@@ -224,40 +229,42 @@ async function renderConsoleOverview(serverId, container, onSetup) {
         </div>
       </div>
 
-      <!-- Docker resource counts for this server (best-effort; hidden if the remote Docker isn't reachable) -->
-      <div id="ov-docker"></div>
+      <div class="grid-2">
+        <div class="card">
+          <div style="font-size:15px;font-weight:700;margin-bottom:10px">Docker</div>
+          <div id="ov-docker"><div class="text-xs text-muted">loading…</div></div>
+        </div>
+        <div class="card">
+          <div style="font-size:15px;font-weight:700;margin-bottom:10px">Components</div>
+          ${componentsHtml || '<div class="text-xs text-muted">No components</div>'}
+          <div class="text-xs text-muted" style="margin-top:8px">Scanned over SSH · use <b>Setup</b> to install missing.</div>
+        </div>
+      </div>
 
-      <!-- Live host metrics — renderHostMonitoring owns this subtree + its own self-terminating 5s poll -->
-      <div id="ov-host"></div>
-
-      <div style="font-size:15px;font-weight:700">Components</div>
-      ${groups.map(([g, glabel]) => {
-        const gItems = items.filter(it => it.group === g);
-        if (!gItems.length) return '';
-        return `<div><div style="font-weight:600;margin-bottom:8px">${glabel}</div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${gItems.map(cardFor).join('')}</div></div>`;
-      }).join('')}
-      <div class="text-xs text-muted">Scanned live over SSH (read-only). Use the <b>Setup</b> tab to install missing items.</div>
+      <div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">Live host metrics</div>
+        <div id="ov-host"></div>
+      </div>
     </div>`;
   container.querySelector('#ov-setup')?.addEventListener('click', () => { if (typeof onSetup === 'function') onSetup(); });
 
-  // Docker resource counts (separate, best-effort fetch — a slow/unreachable remote Docker must not block
-  // the readiness + host-metrics view).
-  const dockEl = container.querySelector('#ov-docker');
-  if (dockEl) {
-    API.get(`/servers/${serverId}/docker/summary`).then(d => {
-      if (!document.body.contains(dockEl)) return;
-      const tile = (icon, color, val, label) => `<div class="summary-card"><div class="summary-card-icon ${color}"><span class="nav-item-icon">${icon}</span></div><div class="summary-card-content"><div class="summary-card-value">${val}</div><div class="summary-card-label">${label}</div></div></div>`;
-      dockEl.innerHTML = `<div style="font-size:15px;font-weight:700;margin-bottom:8px">Docker</div>
-        <div class="summary-grid" style="margin-bottom:0">
-          ${tile(Icons.container, 'teal', d.containers, 'Containers')}
-          ${tile(Icons.play, 'green', d.running, 'Running')}
-          ${tile(Icons.image, 'blue', d.images, 'Images')}
-          ${tile(Icons.volume, 'purple', d.volumes, 'Volumes')}
-          ${tile(Icons.network, 'yellow', d.networks, 'Networks')}
-        </div>`;
-    }).catch(() => { if (dockEl) dockEl.innerHTML = ''; }); // remote Docker unreachable → just omit the zone
+  // Docker counts — compact stat row, auto-refreshed every 30s (self-terminating; skipped while a modal
+  // is open or the user is typing). The readiness scan is one-shot (slow + rarely changes); host metrics
+  // refresh on their own 5s tick.
+  const dockerStat = (d) => {
+    const s = (v, l, col) => `<div style="text-align:center;min-width:60px"><div style="font-size:20px;font-weight:800;line-height:1.1;color:${col || 'var(--text-primary)'}">${v}</div><div class="text-xs text-muted">${l}</div></div>`;
+    return `<div style="display:flex;gap:16px;flex-wrap:wrap">${s(d.containers, 'Containers')}${s(d.running, 'Running', 'var(--success)')}${s(d.images, 'Images')}${s(d.volumes, 'Volumes')}${s(d.networks, 'Networks')}</div>`;
+  };
+  let dt = null;
+  async function refreshDocker() {
+    const el = container.querySelector('#ov-docker');
+    if (!el || !document.body.contains(el)) { if (dt) clearInterval(dt); return; } // view swapped out
+    if (typeof shouldSkipAutoRefresh === 'function' && shouldSkipAutoRefresh()) return; // modal open / typing
+    try { const d = await API.get(`/servers/${serverId}/docker/summary`); if (document.body.contains(el)) el.innerHTML = dockerStat(d); }
+    catch (e) { if (document.body.contains(el)) el.innerHTML = '<div class="text-xs text-muted">Docker not reachable on this host</div>'; }
   }
+  refreshDocker();
+  dt = setInterval(refreshDocker, 30000);
 
   // Embed the live host-metrics dashboard; it self-terminates its 5s poll when this view is swapped out.
   const hostEl = container.querySelector('#ov-host');
