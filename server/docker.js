@@ -1091,7 +1091,7 @@ async function dockerSummaryForServer(server) {
 }
 
 module.exports = {
-  docker, invalidateCache, createLocalClient, dockerSummaryForServer,
+  docker, invalidateCache, createLocalClient, createSshClient, dockerSummaryForServer,
   setActiveServer, getActiveServerId, isLocalActive, assertLocalActive, testServerConnection,
   listContainers, inspectContainer, getContainerStats, containerAction,
   containerTop, containerExecOnce, containerExportStream, updateContainer, commitContainer, recreateContainer,
