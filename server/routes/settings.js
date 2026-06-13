@@ -193,12 +193,14 @@ router.get('/smtp', (req, res) => {
 
 router.post('/smtp', (req, res) => {
   try {
+    const { encrypt } = require('../auth/secrets');
     const allowedKeys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_to'];
     for (const [key, value] of Object.entries(req.body)) {
       if (allowedKeys.includes(key) && value !== undefined) {
         // Don't overwrite password with mask
         if (key === 'smtp_pass' && value === '••••••••') continue;
-        stmts.setSmtpConfig.run(key, String(value));
+        // Encrypt the password at rest; other fields stay plaintext.
+        stmts.setSmtpConfig.run(key, key === 'smtp_pass' ? encrypt(String(value)) : String(value));
       }
     }
     logAction({ req, server: 'local', resourceType: 'notification', resourceName: 'SMTP', action: 'smtp_update' });
@@ -241,9 +243,10 @@ router.get('/telegram', (req, res) => {
 
 router.post('/telegram', (req, res) => {
   try {
+    const { encrypt } = require('../auth/secrets');
     const { tg_token, tg_chat_id } = req.body;
     if (tg_token && !tg_token.startsWith('••••')) {
-      stmts.setSmtpConfig.run('tg_token', String(tg_token));
+      stmts.setSmtpConfig.run('tg_token', encrypt(String(tg_token)));
     }
     if (tg_chat_id !== undefined) {
       stmts.setSmtpConfig.run('tg_chat_id', String(tg_chat_id));

@@ -161,6 +161,41 @@ db.exec(`
     cpu REAL, mem_pct REAL, disk_pct REAL, swap_pct REAL,
     load1 REAL, net_rx INTEGER, net_tx INTEGER, procs INTEGER
   );
+
+  -- Per-server notification-channel overrides for the edge notifier agent. When a row exists
+  -- the agent on that host uses these values instead of the global smtp_config. tg_token and
+  -- smtp_pass are encrypted at rest (see the secret-encryption migration below).
+  CREATE TABLE IF NOT EXISTS server_channels (
+    server_id TEXT PRIMARY KEY,
+    tg_token TEXT,
+    tg_chat_id TEXT,
+    smtp_host TEXT,
+    smtp_port TEXT,
+    smtp_user TEXT,
+    smtp_pass TEXT,
+    smtp_from TEXT,
+    smtp_to TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- Edge-notifier deploy jobs (install / update / remove / install-all). Persisted so the live
+  -- log survives a closed modal / browser, mirroring provision_runs.
+  CREATE TABLE IF NOT EXISTS agent_jobs (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    server_id TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    total INTEGER DEFAULT 1,
+    ok INTEGER DEFAULT 0,
+    failed INTEGER DEFAULT 0,
+    phase TEXT,
+    servers TEXT DEFAULT '[]',
+    log TEXT DEFAULT '',
+    error TEXT,
+    source_ip TEXT,
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    finished_at DATETIME
+  );
 `);
 
 // Idempotent additive migrations
@@ -343,6 +378,23 @@ const stmts = {
   getHostMetrics: db.prepare('SELECT ts, cpu, mem_pct, disk_pct, swap_pct, load1, net_rx, net_tx, procs FROM host_metrics WHERE server_id = ? ORDER BY id DESC LIMIT ?'),
   trimHostMetrics: db.prepare('DELETE FROM host_metrics WHERE server_id = ? AND id NOT IN (SELECT id FROM host_metrics WHERE server_id = ? ORDER BY id DESC LIMIT ?)'),
   deleteHostMetrics: db.prepare('DELETE FROM host_metrics WHERE server_id = ?'),
+
+  // Per-server notification-channel overrides (edge notifier agent). Secrets encrypted at rest.
+  getServerChannel: db.prepare('SELECT * FROM server_channels WHERE server_id = ?'),
+  upsertServerChannel: db.prepare(`INSERT INTO server_channels (server_id, tg_token, tg_chat_id, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, smtp_to, updated_at)
+    VALUES (@server_id, @tg_token, @tg_chat_id, @smtp_host, @smtp_port, @smtp_user, @smtp_pass, @smtp_from, @smtp_to, CURRENT_TIMESTAMP)
+    ON CONFLICT(server_id) DO UPDATE SET tg_token=@tg_token, tg_chat_id=@tg_chat_id, smtp_host=@smtp_host, smtp_port=@smtp_port, smtp_user=@smtp_user, smtp_pass=@smtp_pass, smtp_from=@smtp_from, smtp_to=@smtp_to, updated_at=CURRENT_TIMESTAMP`),
+  deleteServerChannel: db.prepare('DELETE FROM server_channels WHERE server_id = ?'),
+
+  // Edge-notifier deploy jobs (install / update / remove / install-all) — re-openable progress.
+  insertAgentJob: db.prepare('INSERT INTO agent_jobs (id, kind, server_id, status, total, source_ip) VALUES (?, ?, ?, ?, ?, ?)'),
+  updateAgentJobProgress: db.prepare('UPDATE agent_jobs SET ok = ?, failed = ?, phase = ? WHERE id = ?'),
+  finishAgentJob: db.prepare('UPDATE agent_jobs SET status = ?, ok = ?, failed = ?, error = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?'),
+  setAgentJobServers: db.prepare('UPDATE agent_jobs SET servers = ? WHERE id = ?'),
+  appendAgentJobLog: db.prepare('UPDATE agent_jobs SET log = log || ? WHERE id = ?'),
+  getAgentJob: db.prepare('SELECT * FROM agent_jobs WHERE id = ?'),
+  getAgentJobs: db.prepare('SELECT id, kind, server_id, status, total, ok, failed, started_at, finished_at FROM agent_jobs ORDER BY started_at DESC LIMIT ?'),
+  trimAgentJobs: db.prepare('DELETE FROM agent_jobs WHERE id NOT IN (SELECT id FROM agent_jobs ORDER BY started_at DESC LIMIT 200)'),
 };
 
 // One-time at-rest encryption of stored secrets (idempotent — already-encrypted rows are skipped, so
@@ -358,6 +410,18 @@ try {
   const updR = db.prepare('UPDATE registries SET password = ? WHERE id = ?');
   for (const r of db.prepare('SELECT id, password FROM registries').all()) {
     if (r.password && !isEncrypted(r.password)) updR.run(encrypt(r.password), r.id);
+  }
+  // smtp_config: encrypt the two secret keys (Telegram bot token + SMTP password) at rest.
+  const updCfg = db.prepare('UPDATE smtp_config SET value = ? WHERE key = ?');
+  for (const row of db.prepare("SELECT key, value FROM smtp_config WHERE key IN ('tg_token','smtp_pass')").all()) {
+    if (row.value && !isEncrypted(row.value)) updCfg.run(encrypt(row.value), row.key);
+  }
+  // server_channels: encrypt per-server secret overrides (token + smtp password).
+  const updSc = db.prepare('UPDATE server_channels SET tg_token = ?, smtp_pass = ? WHERE server_id = ?');
+  for (const sc of db.prepare('SELECT server_id, tg_token, smtp_pass FROM server_channels').all()) {
+    if ((sc.tg_token && !isEncrypted(sc.tg_token)) || (sc.smtp_pass && !isEncrypted(sc.smtp_pass))) {
+      updSc.run(sc.tg_token ? encrypt(sc.tg_token) : sc.tg_token, sc.smtp_pass ? encrypt(sc.smtp_pass) : sc.smtp_pass, sc.server_id);
+    }
   }
 } catch (e) { console.warn('[db] secret encryption migration failed:', e.message); }
 

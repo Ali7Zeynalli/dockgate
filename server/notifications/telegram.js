@@ -1,12 +1,14 @@
 // Telegram Bot notification service
 const https = require('https');
 const { stmts } = require('../db');
+const { decrypt } = require('../auth/secrets');
 
 function getTelegramSettings() {
   const rows = stmts.getSmtpConfig.all(); // shared config table
   const config = {};
   rows.forEach(r => { config[r.key] = r.value; });
-  return { token: config.tg_token || '', chatId: config.tg_chat_id || '' };
+  // tg_token is stored encrypted at rest; decrypt() passes plaintext through unchanged (idempotent).
+  return { token: decrypt(config.tg_token || ''), chatId: config.tg_chat_id || '' };
 }
 
 function isConfigured() {

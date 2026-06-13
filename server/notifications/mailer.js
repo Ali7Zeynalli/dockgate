@@ -1,12 +1,15 @@
 // SMTP mailer service
 const nodemailer = require('nodemailer');
 const { stmts } = require('../db');
+const { decrypt } = require('../auth/secrets');
 const templates = require('./templates');
 
 function getSmtpSettings() {
   const rows = stmts.getSmtpConfig.all();
   const config = {};
   rows.forEach(r => { config[r.key] = r.value; });
+  // smtp_pass is stored encrypted at rest; decrypt() passes plaintext through unchanged (idempotent).
+  if (config.smtp_pass) config.smtp_pass = decrypt(config.smtp_pass);
   return config;
 }
 
