@@ -191,4 +191,163 @@ function guardedResolve({ hasKey, preset, only, confirm }) {
   return { itemIds: ids, skipped };
 }
 
-module.exports = { ITEMS, PRESETS, byId, distroFamily, resolveItems, buildPlanForDistro, guardedResolve };
+// ============================================================================
+// PHASE 5 — Service control (post-setup management). ADDITIVE: this does not touch
+// the ITEMS/PRESETS provisioning matrix above. Each manageable item declares, per distro
+// family, the systemd/openrc unit + an ALLOWLIST of editable config paths. The UI passes
+// only an itemId + an action id (and, for a write, a content blob) — NEVER free shell and
+// NEVER a path. The concrete command is resolved HERE from catalog constants.
+// ============================================================================
+const SERVICE = {
+  timesync: {
+    risk: 'low',
+    family: {
+      debian: { manager: 'systemd', unit: 'chrony',   configPaths: ['/etc/chrony/chrony.conf'] },
+      rhel:   { manager: 'systemd', unit: 'chronyd',  configPaths: ['/etc/chrony.conf'] },
+      alpine: { manager: 'openrc',  unit: 'chronyd',  configPaths: ['/etc/chrony/chrony.conf'] },
+    },
+  },
+  firewall: {
+    risk: 'high',
+    family: {
+      debian: { manager: 'systemd', unit: 'ufw',       configPaths: ['/etc/default/ufw'] },
+      rhel:   { manager: 'systemd', unit: 'firewalld', configPaths: ['/etc/firewalld/firewalld.conf'], validate: 'sudo firewall-cmd --check-config' },
+    },
+  },
+  'ssh-hardening': {
+    risk: 'high', requiresKeyForConfig: true,
+    family: {
+      debian: { manager: 'systemd', unit: 'ssh',  reload: true, configPaths: ['/etc/ssh/sshd_config.d/99-dockgate.conf'], validate: 'sudo sshd -t' },
+      rhel:   { manager: 'systemd', unit: 'sshd', reload: true, configPaths: ['/etc/ssh/sshd_config.d/99-dockgate.conf'], validate: 'sudo sshd -t' },
+    },
+  },
+  fail2ban: {
+    risk: 'low',
+    family: {
+      debian: { manager: 'systemd', unit: 'fail2ban', configPaths: ['/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
+      rhel:   { manager: 'systemd', unit: 'fail2ban', configPaths: ['/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
+    },
+  },
+  'unattended-upgrades': {
+    risk: 'low',
+    family: {
+      debian: { manager: 'systemd', unit: 'apt-daily-upgrade.timer', timer: true, configPaths: ['/etc/apt/apt.conf.d/20auto-upgrades'] },
+      rhel:   { manager: 'systemd', unit: 'dnf-automatic.timer',     timer: true, configPaths: ['/etc/dnf/automatic.conf'] },
+    },
+  },
+  docker: {
+    risk: 'medium',
+    family: {
+      debian: { manager: 'systemd', unit: 'docker', configPaths: ['/etc/docker/daemon.json'] },
+      rhel:   { manager: 'systemd', unit: 'docker', configPaths: ['/etc/docker/daemon.json'] },
+      alpine: { manager: 'openrc',  unit: 'docker', configPaths: ['/etc/docker/daemon.json'] },
+    },
+  },
+};
+
+const SERVICE_ACTIONS = ['start', 'stop', 'restart', 'enable', 'disable'];
+// Destructive actions that, on a high-risk service (firewall/ssh) or on docker, require confirm.
+const DESTRUCTIVE = ['stop', 'restart', 'disable'];
+
+// Concrete action/status commands for a unit, per init system. unit comes from SERVICE (a catalog
+// constant), never from the request — so interpolation here cannot be an injection vector.
+function serviceVerbs(manager, unit, reload) {
+  if (manager === 'openrc') {
+    return {
+      start:   `sudo rc-service ${unit} start`,
+      stop:    `sudo rc-service ${unit} stop`,
+      restart: `sudo rc-service ${unit} restart`,
+      enable:  `sudo rc-update add ${unit} default && sudo rc-service ${unit} start`,
+      disable: `sudo rc-update del ${unit} default && sudo rc-service ${unit} stop`,
+      apply:   `sudo rc-service ${unit} restart`,
+      status:  `rc-service ${unit} status >/dev/null 2>&1 && echo active || echo inactive`,
+      enabled: `rc-update show default 2>/dev/null | grep -qw ${unit} && echo enabled || echo disabled`,
+    };
+  }
+  return {
+    start:   `sudo systemctl start ${unit}`,
+    stop:    `sudo systemctl stop ${unit}`,
+    restart: reload ? `sudo systemctl reload ${unit}` : `sudo systemctl restart ${unit}`,
+    enable:  `sudo systemctl enable --now ${unit}`,
+    disable: `sudo systemctl disable --now ${unit}`,
+    apply:   reload ? `sudo systemctl reload ${unit}` : `sudo systemctl restart ${unit}`,
+    status:  `systemctl is-active ${unit} 2>/dev/null || echo inactive`,
+    enabled: `systemctl is-enabled ${unit} 2>/dev/null || echo disabled`,
+  };
+}
+
+// Ids that have a service block (manageable post-setup). Order = catalog seq.
+function manageableItems() {
+  return ITEMS.filter(i => SERVICE[i.id]).map(i => i.id);
+}
+
+// Resolve a manageable service for a distro. null = not a manageable item; {na:true} = no variant on
+// this distro family; throws 400 on an unknown distro (no fabricated commands).
+function serviceFor(itemId, osId) {
+  const item = byId[itemId];
+  const def = SERVICE[itemId];
+  if (!item || !def) return null;
+  const family = distroFamily(osId);
+  if (!family) { const e = new Error(`Unsupported distro: ${osId || '(unknown)'}`); e.statusCode = 400; throw e; }
+  const f = def.family[family];
+  if (!f) return { itemId, label: item.label, na: true, reason: `not manageable on ${family}`, risk: def.risk || item.risk };
+  return {
+    itemId, label: item.label, family, manager: f.manager, unit: f.unit,
+    timer: !!f.timer, reload: !!f.reload, risk: def.risk || item.risk,
+    requiresKeyForConfig: !!def.requiresKeyForConfig,
+    configPaths: (f.configPaths || []).slice(),
+    validate: f.validate || null,
+    verbs: serviceVerbs(f.manager, f.unit, f.reload),
+  };
+}
+
+// The fixed shell command for a lifecycle action. Throws 400 on unknown action/item/na.
+function serviceAction(itemId, osId, action) {
+  if (!SERVICE_ACTIONS.includes(action)) { const e = new Error(`Unknown action: ${action}`); e.statusCode = 400; throw e; }
+  const svc = serviceFor(itemId, osId);
+  if (!svc) { const e = new Error(`Not a manageable service: ${itemId}`); e.statusCode = 400; throw e; }
+  if (svc.na) { const e = new Error(svc.reason); e.statusCode = 400; throw e; }
+  return svc.verbs[action];
+}
+
+// Exact-match allowlist check for a config path. Rejects non-absolute, traversal, NUL, and any path
+// not declared in the item's configPaths for this distro.
+function isConfigPathAllowed(itemId, osId, path) {
+  if (typeof path !== 'string' || !path.startsWith('/') || path.includes('..') || path.includes('\0')) return false;
+  let svc;
+  try { svc = serviceFor(itemId, osId); } catch { return false; }
+  if (!svc || svc.na) return false;
+  return svc.configPaths.includes(path);
+}
+
+// Guard for any server-mutating service operation. Throws 409 (+.risks) when confirmation is required
+// but not given, or 400 for an SSH-config write over a password login (lockout). Pure — no DB/SSH.
+function guardedServiceAction({ hasKey, itemId, osId, action, isConfigWrite, confirm }) {
+  const item = byId[itemId];
+  if (!item || !SERVICE[itemId]) { const e = new Error(`Not a manageable service: ${itemId}`); e.statusCode = 400; throw e; }
+  const svc = serviceFor(itemId, osId); // throws 400 on unknown distro
+  if (svc.na) { const e = new Error(svc.reason); e.statusCode = 400; throw e; }
+  if (!isConfigWrite && !SERVICE_ACTIONS.includes(action)) { const e = new Error(`Unknown action: ${action}`); e.statusCode = 400; throw e; }
+  const highRisk = svc.risk === 'high';
+  // SSH config edit over a password login would lock you out — refuse.
+  if (isConfigWrite && svc.requiresKeyForConfig && !hasKey) {
+    const e = new Error('Editing SSH config over a password login could lock you out — connect with an SSH key first');
+    e.statusCode = 400; throw e;
+  }
+  // Confirm gate: every config write, plus destructive actions on a high-risk service or on docker.
+  const destructive = DESTRUCTIVE.includes(action) && (highRisk || itemId === 'docker');
+  const needsConfirm = isConfigWrite || destructive;
+  if (needsConfirm && !confirm) {
+    const e = new Error('Confirmation required for this action');
+    e.statusCode = 409;
+    e.risks = [{ id: itemId, label: item.label, reason: isConfigWrite ? 'edits a config file on the server' : 'restart/stop disrupts the service' }];
+    throw e;
+  }
+  return { ok: true, svc, highRisk, destructive };
+}
+
+module.exports = {
+  ITEMS, PRESETS, byId, distroFamily, resolveItems, buildPlanForDistro, guardedResolve,
+  // PHASE 5 service control
+  SERVICE, SERVICE_ACTIONS, serviceVerbs, manageableItems, serviceFor, serviceAction, isConfigPathAllowed, guardedServiceAction,
+};

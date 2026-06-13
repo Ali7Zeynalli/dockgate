@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.101] - 2026-06-13
+
+### Added — service-control catalog matrix (PHASE 5 groundwork)
+- `server/provision/catalog.js` gains an **additive** per-distro `service` block for the 6 manageable services (Docker, fail2ban, firewall, SSH, time sync, auto-updates): the systemd/openrc unit, lifecycle action commands, and an **allowlist** of editable config paths
+- Pure helpers — `serviceFor` / `serviceAction` / `manageableItems` / `isConfigPathAllowed` / `guardedServiceAction` — resolve every command from catalog constants, so the UI can only pass an item id + an action (never free shell, never a path). The guard refuses an SSH-config edit over a password login (lockout) and requires confirmation for config writes + destructive actions on high-risk services / Docker. +8 unit tests
+- No SSH or endpoints yet — the read-only status worker and the Manage UI land in the next versions
+
+---
+
 ## [2.0.100] - 2026-06-13
 
 ### Docs — backfilled the changelog for v2.0.72 → v2.0.99
