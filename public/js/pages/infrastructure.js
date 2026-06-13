@@ -75,6 +75,7 @@ Router.register('infra', async (content, params) => {
           <td>
             ${!s.isActive ? `<button class="btn btn-xs btn-secondary" data-action="activate" data-id="${escapeHtml(s.id)}">Use</button>` : ''}
             <button class="btn btn-xs btn-secondary" data-action="test" data-id="${escapeHtml(s.id)}">Test</button>
+            ${!isLocal ? `<button class="btn btn-xs btn-secondary" data-action="provision" data-id="${escapeHtml(s.id)}" title="Set up this server — Docker, firewall, fail2ban…">Setup</button>` : ''}
             ${!isLocal ? `<button class="btn btn-xs btn-secondary" data-action="grant" data-id="${escapeHtml(s.id)}" title="Run sudo usermod -aG docker on the server (needs passwordless sudo)">Grant Docker</button>` : ''}
             ${!isLocal ? `<button class="btn btn-xs btn-secondary" data-action="edit" data-id="${escapeHtml(s.id)}">Edit</button>` : ''}
             ${!isLocal ? `<button class="btn btn-xs btn-ghost text-danger" data-action="delete" data-id="${escapeHtml(s.id)}">${Icons.trash}</button>` : ''}
@@ -189,6 +190,8 @@ Router.register('infra', async (content, params) => {
                 showToast(r.message || 'Docker access granted', 'success', 7000);
               } catch (e) { showToast(sshErrorHint(e.message), 'error', 10000); }
             });
+          } else if (action === 'provision') {
+            openProvisionModal(id);
           } else if (action === 'edit') {
             const s = servers.find(x => x.id === id);
             if (s) openServerEditModal(s);
