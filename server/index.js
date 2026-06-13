@@ -38,6 +38,15 @@ app.get(['/', '/index.html'], (req, res) => res.type('html').send(INDEX_HTML));
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// ---- Authentication gate ----
+// /api/auth/* (login/logout/status/setup) is open; EVERY other /api route + the dashboard require a
+// valid session cookie. Static SPA assets stay public (they're the app shell, no data); the client
+// renders the login/setup screen when /api/auth/status reports unauthenticated. Registered BEFORE the
+// business routes so requireAuth runs first for them.
+app.use('/api/auth', require('./routes/auth'));
+const { requireAuth } = require('./auth/middleware');
+app.use('/api', requireAuth);
+
 // REST Routes
 app.use('/api/containers', require('./routes/containers'));
 app.use('/api/images', require('./routes/images'));
