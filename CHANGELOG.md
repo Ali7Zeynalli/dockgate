@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.107] - 2026-06-13
+
+### Changed — sidebar regrouped: Docker vs Server management
+- The navigation is now split into clear domains so server-control is no longer mixed in with Docker: **Docker** (Dashboard, Containers, Images, Volumes, Networks, Builds, Compose, Templates, Swarm), **Activity** (Logs, Terminal, Events, Files, Audit), **Server** (Infrastructure, Server Console), and **System** (Settings)
+
+---
+
 ## [2.0.106] - 2026-06-13
 
 ### Fixed — Software Update check never worked on Alpine (always showed "up to date")

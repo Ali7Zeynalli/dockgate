@@ -19,12 +19,13 @@ const navItems = {
   settings: { label: 'Settings', icon: Icons.settings }
 };
 
+// Two clear domains: DOCKER management (the daemon's resources + tools) vs SERVER management (the host
+// itself — provisioning, monitoring, services), then app System. Keeps server-control out of the Docker area.
 const navGroups = [
-  { label: 'Core', items: ['dashboard', 'containers', 'images', 'volumes', 'networks'] },
-  { label: 'Build', items: ['builds', 'compose', 'templates'] },
-  { label: 'Orchestration', items: ['swarm'] },
-  { label: 'Monitor', items: ['logs', 'terminal', 'events', 'files', 'audit'] },
-  { label: 'Manage', items: ['infra', 'server-console', 'settings'] }
+  { label: 'Docker', items: ['dashboard', 'containers', 'images', 'volumes', 'networks', 'builds', 'compose', 'templates', 'swarm'] },
+  { label: 'Activity', items: ['logs', 'terminal', 'events', 'files', 'audit'] },
+  { label: 'Server', items: ['infra', 'server-console'] },
+  { label: 'System', items: ['settings'] }
 ];
 
 function initMacSidebar() {
