@@ -42,11 +42,19 @@
   }
 
   // Live deploy-log modal. Polls the job; stops cleanly when the job ends or the modal is closed.
+  // Always shows a Close button, and a prominent status that turns green/red when the job finishes.
   function openJobModal(jobId, onDone) {
     const body = `<pre id="edge-job-log" style="max-height:340px;overflow:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;">Starting…</pre>
-      <div id="edge-job-status" class="text-xs text-muted" style="margin-top:8px;"></div>`;
+      <div id="edge-job-status" style="margin-top:10px;font-size:13px;font-weight:600;color:var(--text-muted);">⏳ Working…</div>`;
     const m = showModal('Notifier agent — deploy', body, []);
-    let timer = null, done = false;
+    const footer = m.overlay.querySelector('#modal-footer');
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn btn-secondary';
+    closeBtn.textContent = 'Close';
+    closeBtn.onclick = () => m.close();
+    if (footer) footer.appendChild(closeBtn);
+
+    let timer = null, finished = false;
     async function poll() {
       if (!m.overlay || !m.overlay.isConnected) { if (timer) clearTimeout(timer); return; }
       try {
@@ -54,19 +62,26 @@
         const le = m.overlay.querySelector('#edge-job-log');
         if (le) { le.textContent = j.log || '(no output yet)'; le.scrollTop = le.scrollHeight; }
         const se = m.overlay.querySelector('#edge-job-status');
-        if (se) {
-          const per = (j.servers || []).map(s => `${s.id}: ${s.state}${s.message ? ' — ' + s.message : ''}`).join('   ·   ');
-          se.textContent = `${j.status}${j.total > 1 ? ` (${j.ok}/${j.total} ok, ${j.failed} failed)` : ''}` + (per ? '   |   ' + per : '');
-        }
-        if (j.status !== 'running' && !done) {
-          done = true;
-          showToast(j.status === 'done' ? 'Deploy finished' : 'Deploy failed', j.status === 'done' ? 'success' : 'error');
+        const per = (j.servers || []).map(s => `${s.id}: ${s.state}${s.message ? ' — ' + s.message : ''}`).join('   ·   ');
+        if (j.status === 'running') {
+          if (se) { se.style.color = 'var(--text-muted)'; se.textContent = `⏳ Working…${j.total > 1 ? ` (${j.ok}/${j.total})` : ''}` + (per ? '   |   ' + per : ''); }
+        } else if (!finished) {
+          finished = true;
+          const okAll = j.status === 'done' && (j.failed || 0) === 0;
+          if (se) {
+            se.style.color = okAll ? '#16a34a' : (j.status === 'failed' ? '#dc2626' : '#d97706');
+            se.textContent = (okAll ? '✓ Completed' : (j.status === 'failed' ? '✗ Failed' : '⚠ Completed with errors'))
+              + (j.total > 1 ? ` — ${j.ok}/${j.total} ok, ${j.failed} failed` : '')
+              + (per ? '   |   ' + per : '');
+          }
+          closeBtn.className = 'btn btn-primary';   // highlight Close once it's done
+          showToast(okAll ? 'Deploy finished' : (j.status === 'failed' ? 'Deploy failed' : 'Deploy finished with errors'), okAll ? 'success' : 'error');
           if (typeof onDone === 'function') onDone();
           if (timer) clearTimeout(timer);
           return;
         }
       } catch (e) { /* transient — keep polling */ }
-      timer = setTimeout(poll, 1200);
+      if (!finished) timer = setTimeout(poll, 1200);
     }
     poll();
   }

@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.136] - 2026-06-13
+
+### Fixed — notifier deploy modal now has a Close button + a clear finished state
+- The "Notifier agent — deploy" log modal always shows a **Close** button (highlighted when the job ends), and the status line turns a bold **green ✓ Completed** / **red ✗ Failed** / **amber ⚠ Completed with errors** so it's obvious the deploy finished — previously the footer was empty and the status was a muted, easy-to-miss line
+
+---
+
 ## [2.0.135] - 2026-06-13
 
 ### Fixed — notifier agent now installs with zero manual steps (runtime-tested)
