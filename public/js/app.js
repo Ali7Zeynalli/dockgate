@@ -15,6 +15,7 @@ const navItems = {
   events: { label: 'Events', icon: Icons.events },
   audit: { label: 'Audit Log', icon: Icons.eye },
   infra: { label: 'Infrastructure', icon: Icons.system },
+  'server-console': { label: 'Server Console', icon: Icons.terminal },
   settings: { label: 'Settings', icon: Icons.settings }
 };
 
@@ -23,7 +24,7 @@ const navGroups = [
   { label: 'Build', items: ['builds', 'compose', 'templates'] },
   { label: 'Orchestration', items: ['swarm'] },
   { label: 'Monitor', items: ['logs', 'terminal', 'events', 'files', 'audit'] },
-  { label: 'Manage', items: ['infra', 'settings'] }
+  { label: 'Manage', items: ['infra', 'server-console', 'settings'] }
 ];
 
 function initMacSidebar() {
@@ -62,11 +63,21 @@ function initMacSidebar() {
   
   sidebarNav.innerHTML = html;
 
+  // "Server Console" is hidden until a remote server exists (initServerSwitcher unhides it).
+  const consoleNav = sidebarNav.querySelector('.nav-item[data-page="server-console"]');
+  if (consoleNav) consoleNav.style.display = 'none';
+
   sidebarNav.addEventListener('click', (e) => {
     const item = e.target.closest('.nav-item');
     if (!item) return;
-    
     const page = item.dataset.page;
+    if (page === 'server-console') {
+      // Open the active remote server's console; if none active, send the user to pick one.
+      const active = Store.get('activeServer');
+      if (active && active.id !== 'local' && active.type !== 'local') Router.navigate('server-console', { id: active.id });
+      else Router.navigate('infra', { tab: 'servers' });
+      return;
+    }
     if (page) Router.navigate(page);
   });
 }
@@ -279,6 +290,10 @@ async function initServerSwitcher() {
       localStorage.setItem('dcc_active_type', activeServer.type || 'local');
       localStorage.setItem('dcc_active_host', activeServer.host || '');
     }
+
+    // Reveal the "Server Console" nav item once at least one remote SSH server is registered.
+    const consoleNav = document.querySelector('.nav-item[data-page="server-console"]');
+    if (consoleNav) consoleNav.style.display = data.servers.some(s => s.id !== 'local' && s.type !== 'local') ? '' : 'none';
 
     // DOM API ilə qur — XSS qoruması (host/id user input-dur)
     select.replaceChildren();
