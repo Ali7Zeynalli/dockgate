@@ -14,8 +14,7 @@ const navItems = {
   terminal: { label: 'Terminal', icon: Icons.terminal },
   events: { label: 'Events', icon: Icons.events },
   audit: { label: 'Audit Log', icon: Icons.eye },
-  registries: { label: 'Registries', icon: Icons.registry },
-  cleanup: { label: 'Cleanup', icon: Icons.cleanup },
+  infra: { label: 'Infrastructure', icon: Icons.system },
   settings: { label: 'Settings', icon: Icons.settings }
 };
 
@@ -24,7 +23,7 @@ const navGroups = [
   { label: 'Build', items: ['builds', 'compose', 'templates'] },
   { label: 'Orchestration', items: ['swarm'] },
   { label: 'Monitor', items: ['logs', 'terminal', 'events', 'files', 'audit'] },
-  { label: 'Manage', items: ['registries', 'cleanup', 'settings'] }
+  { label: 'Manage', items: ['infra', 'settings'] }
 ];
 
 function initMacSidebar() {

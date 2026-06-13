@@ -1,5 +1,5 @@
 // System Cleanup Page
-Router.register('cleanup', async (content) => {
+async function renderCleanupInto(content, { embedded = false } = {}) {
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
 
@@ -54,10 +54,10 @@ Router.register('cleanup', async (content) => {
       ];
 
       content.innerHTML = `
-        <div class="page-header">
+        ${embedded ? `<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-secondary" id="cleanup-refresh">${Icons.refresh}</button></div>` : `<div class="page-header">
           <div><div class="page-title">System Cleanup</div><div class="page-subtitle">Safely remove unused data to free up space</div></div>
           <div class="page-actions"><button class="btn btn-secondary" id="cleanup-refresh">${Icons.refresh}</button></div>
-        </div>
+        </div>`}
 
         <div class="grid-2">
           <div>
@@ -133,4 +133,4 @@ Router.register('cleanup', async (content) => {
   }
   
   await render();
-});
+}

@@ -1,5 +1,7 @@
 // Settings Page — tabbed layout
 Router.register('settings', async (content, params) => {
+  // Servers moved to the Infrastructure section — redirect old #/settings?tab=servers deep-links.
+  if (params && params.tab === 'servers') { Router.navigate('infra', { tab: 'servers' }, { replace: true }); return; }
   const pageNavId = Router._navId;
 
   async function render() {
@@ -26,7 +28,6 @@ Router.register('settings', async (content, params) => {
 
         <div class="tab-bar" id="settings-tabs">
           <button class="tab-btn active" data-tab="general">General</button>
-          <button class="tab-btn" data-tab="servers">Servers</button>
           <button class="tab-btn" data-tab="notifications">Notifications</button>
           <button class="tab-btn" data-tab="log">Notification Log</button>
           <button class="tab-btn" data-tab="update">Software Update</button>
@@ -40,7 +41,7 @@ Router.register('settings', async (content, params) => {
 
       const tabContent = document.getElementById('settings-tab-content');
       // Restore the active tab from the URL params (deep-link / refresh / Back), default General.
-      const validTabs = ['general', 'servers', 'notifications', 'log', 'update', 'system'];
+      const validTabs = ['general', 'notifications', 'log', 'update', 'system'];
       let activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'general';
 
       // Reflect the restored tab in the tab-bar highlight (default markup highlights General).
@@ -62,7 +63,6 @@ Router.register('settings', async (content, params) => {
 
       function renderTab(tab) {
         if (tab === 'general') renderGeneral();
-        else if (tab === 'servers') renderServers();
         else if (tab === 'notifications') renderNotifications();
         else if (tab === 'log') renderLog();
         else if (tab === 'update') renderUpdate();
@@ -149,8 +149,11 @@ Router.register('settings', async (content, params) => {
         document.getElementById('set-autostart')?.addEventListener('click', function() { this.classList.toggle('active'); });
       }
 
-      // ==================== SERVERS TAB (SSH multi-host) ====================
-      // Bütün user input-lar escapeHtml() ilə sanitize olunur — XSS-ə qarşı
+      // ==================== SERVERS TAB — MOVED to Infrastructure (pages/infrastructure.js) ====================
+      // DEAD CODE: no tab button / validTab / renderTab branch references these anymore. Kept temporarily
+      // to avoid an untested 340-line cut; delete this whole block (down to NOTIFICATIONS) once the
+      // Infrastructure refactor is verified in a browser. (P1.11 — deferred.)
+      // eslint-disable-next-line no-unused-vars
       async function renderServers() {
         // Yükleme — DOM API
         const loading = document.createElement('div');

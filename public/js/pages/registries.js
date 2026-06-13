@@ -1,7 +1,7 @@
 // Registries Page — manage private image-registry credentials (ghcr.io, GitLab, Docker Hub private, …).
 // Stored credentials are auto-matched by registry host when pulling/pushing images, so private
 // images "just work" from the Run modal, Images pull, and Compose. Passwords are never shown back.
-Router.register('registries', async (content) => {
+async function renderRegistriesInto(content, { embedded = false } = {}) {
   // Well-known registries offered as autocomplete suggestions for the address field.
   const PRESETS = ['docker.io', 'ghcr.io', 'registry.gitlab.com', 'quay.io', 'registry-1.docker.io'];
 
@@ -116,7 +116,10 @@ Router.register('registries', async (content) => {
   }
 
   content.innerHTML = `
-    <div class="page-header">
+    ${embedded ? `<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
+      <button class="btn btn-secondary" id="reg-refresh">${Icons.refresh} Refresh</button>
+      <button class="btn btn-primary" id="reg-add">${Icons.key} Add Registry</button>
+    </div>` : `<div class="page-header">
       <div>
         <div class="page-title">Registries</div>
         <div class="page-subtitle">Private registry credentials — used automatically when pulling or pushing images</div>
@@ -125,7 +128,7 @@ Router.register('registries', async (content) => {
         <button class="btn btn-secondary" id="reg-refresh">${Icons.refresh} Refresh</button>
         <button class="btn btn-primary" id="reg-add">${Icons.key} Add Registry</button>
       </div>
-    </div>
+    </div>`}
 
     <div class="table-wrapper">
       <table>
@@ -185,4 +188,4 @@ Router.register('registries', async (content) => {
   });
 
   await load();
-});
+}

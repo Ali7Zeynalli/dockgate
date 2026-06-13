@@ -238,7 +238,7 @@ Router.register('swarm', async (content) => {
     const root = m.overlay;
     const copy = (text) => navigator.clipboard?.writeText(text).then(() => showToast('Copied to clipboard', 'success', 2000)).catch(() => showToast('Copy failed — select & copy manually', 'warning'));
     root.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => copy(cmds[b.dataset.copy])));
-    root.querySelector('#join-addserver')?.addEventListener('click', () => { m.close(); Router.navigate('settings'); });
+    root.querySelector('#join-addserver')?.addEventListener('click', () => { m.close(); Router.navigate('infra', { tab: 'servers' }); });
     root.querySelector('#join-go')?.addEventListener('click', async () => {
       const serverId = root.querySelector('#join-server').value;
       const role = root.querySelector('#join-role').value;
