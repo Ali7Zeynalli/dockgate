@@ -13,6 +13,7 @@ const { logAction, ipFromReq } = require('../audit');
 const { encrypt, decrypt } = require('../auth/secrets');
 const catalog = require('../provision/catalog');
 const provisionRunner = require('../provision/provision-runner');
+const hostStats = require('../host-stats');
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
 if (!fs.existsSync(SSH_KEYS_DIR)) {
@@ -373,6 +374,17 @@ router.post('/:id/provision', (req, res) => {
     if (err.statusCode === 409) return res.status(409).json({ error: err.message, risks: err.risks || [] });
     res.status(err.statusCode || 500).json({ error: err.message });
   }
+});
+
+// GET /api/servers/:id/host/stats — one live snapshot: CPU/RAM/swap/disk/net/load/uptime/top procs/open ports.
+router.get('/:id/host/stats', async (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Host stats target a remote SSH server' });
+    const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    res.json(await hostStats.collectHostStats(cfg));
+  } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
 module.exports = router;
