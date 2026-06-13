@@ -8,10 +8,18 @@ Router.register('dashboard', async (content) => {
 
   async function render() {
     try {
-      const data = await API.get('/dashboard');
+      const [data, srvData] = await Promise.all([
+        API.get('/dashboard'),
+        API.get('/servers').catch(() => ({ servers: [], activeId: 'local' })),
+      ]);
 
       // Abort if user navigated away during API call / API çağırışı zamanı istifadəçi başqa səhifəyə keçibsə dayandır
       if (!Router.isActiveNav(pageNavId)) return;
+
+      // The dashboard reflects the ACTIVE server only: its Docker (below) + its host metrics (if remote).
+      const activeId = srvData.activeId || 'local';
+      const activeSrv = (srvData.servers || []).find(x => x.id === activeId);
+      const isRemote = !!activeSrv && activeId !== 'local' && activeSrv.type !== 'local';
 
       const s = data.summary;
       const disk = data.diskUsage;
@@ -24,13 +32,16 @@ Router.register('dashboard', async (content) => {
         <div class="page-header">
           <div>
             <div class="page-title">Dashboard</div>
-            <div class="page-subtitle">Overview of your Docker environment</div>
+            <div class="page-subtitle">${isRemote ? '🔐 ' + escapeHtml(activeId) + ' — host &amp; Docker' : '🖥 Local — Docker environment'}</div>
           </div>
           <div class="page-actions">
             <button class="btn btn-secondary" onclick="Router.navigate('infra', {tab:'cleanup'})">${Icons.cleanup} Cleanup</button>
             <button class="btn btn-primary" id="dash-refresh">${Icons.refresh} Refresh</button>
           </div>
         </div>
+
+        <!-- Active remote server's host metrics (renderHostMonitoring owns its own 5s poll) -->
+        ${isRemote ? '<div id="dash-host" class="mb-3"></div>' : ''}
 
         <!-- Summary Cards / Xülasə Kartları -->
         <div class="summary-grid">
@@ -307,6 +318,12 @@ Router.register('dashboard', async (content) => {
 
       // Event listeners / Hadisə dinləyiciləri
       document.getElementById('dash-refresh')?.addEventListener('click', render);
+
+      // Embed the active REMOTE server's host metrics (CPU/RAM/disk/trend/ports/procs) — reuses
+      // renderHostMonitoring, which owns its own 5s poll and self-terminates when this content is
+      // re-rendered or navigated away. Local host metrics need the /proc mount (deferred), so skipped.
+      const dashHost = document.getElementById('dash-host');
+      if (isRemote && dashHost && typeof renderHostMonitoring === 'function') renderHostMonitoring(activeId, dashHost);
 
       // Quick Actions / Sürətli əməliyyatlar
       document.getElementById('qa-start-all')?.addEventListener('click', () => {

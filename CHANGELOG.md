@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.118] - 2026-06-13
+
+### Changed — dashboard reflects the active server: host metrics + Docker (not just Docker)
+- When the **active server** (header SRV dropdown) is a remote SSH host, the Dashboard now leads with that server's **host metrics** — CPU / memory / disk / swap / load / uptime, the trend chart, open ports and top processes — above the existing Docker overview. So the dashboard shows the *whole* active server (host + Docker), matching DockGate's server-management direction
+- It shows **only the active server** (switch servers in the header to change it), not a fleet. Local stays Docker-only (host metrics need the `/proc` mount, deferred). Reuses the console's host monitor (its own 5s poll, self-terminating); the subtitle names the active server
+
+---
+
 ## [2.0.117] - 2026-06-13
 
 ### Changed — nicer tabs everywhere (segmented control)
