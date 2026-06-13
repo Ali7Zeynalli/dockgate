@@ -3,6 +3,7 @@ const router = express.Router();
 const dockerService = require('../docker');
 const { stmts } = require('../db');
 const { logAction } = require('../audit');
+const { encrypt, decrypt } = require('../auth/secrets');
 
 /**
  * Shape a registry row for the API — the stored password is NEVER returned, only whether one exists.
@@ -39,7 +40,7 @@ router.post('/', (req, res) => {
     if (stmts.getRegistryByHost.get(serverAddress)) {
       return res.status(409).json({ error: `A credential for "${serverAddress}" already exists` });
     }
-    const info = stmts.insertRegistry.run(name || serverAddress, serverAddress, username, String(password));
+    const info = stmts.insertRegistry.run(name || serverAddress, serverAddress, username, encrypt(String(password)));
     logAction({ req, server: 'local', resourceType: 'registry', resourceName: serverAddress, action: 'add', details: { username } });
     res.json({ success: true, id: info.lastInsertRowid });
   } catch (err) {
@@ -68,7 +69,7 @@ router.put('/:id', (req, res) => {
     // undefined or empty string = keep existing password; non-empty = update
     const newPass = (password !== undefined && password !== '') ? String(password) : existing.password;
 
-    stmts.updateRegistry.run(newName, newAddr, newUser, newPass, existing.id);
+    stmts.updateRegistry.run(newName, newAddr, newUser, encrypt(newPass), existing.id);
     logAction({ req, server: 'local', resourceType: 'registry', resourceName: newAddr, action: 'edit', details: { username: newUser } });
     res.json({ success: true });
   } catch (err) {
@@ -99,7 +100,7 @@ router.post('/test', async (req, res) => {
       if (!reg) return res.status(404).json({ error: 'Registry not found' });
       serverAddress = reg.server_address;
       username = reg.username;
-      password = reg.password;
+      password = decrypt(reg.password);
     }
     if (!serverAddress || !username || !password) {
       return res.status(400).json({ error: 'serverAddress, username and password are required' });

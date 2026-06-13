@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const EventMonitor = require('./event-monitor');
 const { stmts } = require('../db');
+const { decrypt } = require('../auth/secrets');
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
 
@@ -31,14 +32,14 @@ function buildClient(server) {
     if (fs.existsSync(keyPath)) {
       opts.sshOptions = {
         privateKey: fs.readFileSync(keyPath),
-        ...(server.passphrase ? { passphrase: server.passphrase } : {}),
+        ...(server.passphrase ? { passphrase: decrypt(server.passphrase) } : {}),
       };
     } else {
       // Key file is missing — the monitor will fall back to SSH agent/anonymous auth; warn instead of failing silently
       console.warn(`[monitor-manager] SSH key not found: ${keyPath} (server: ${server.id}) — falling back to agent auth`);
     }
   } else if (server.password) {
-    opts.password = server.password;
+    opts.password = decrypt(server.password);
   }
   return new Docker(opts);
 }

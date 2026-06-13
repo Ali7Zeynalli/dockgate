@@ -278,4 +278,20 @@ const stmts = {
   deleteRegistry: db.prepare('DELETE FROM registries WHERE id = ?'),
 };
 
+// One-time at-rest encryption of stored secrets (idempotent — already-encrypted rows are skipped, so
+// this is safe to run on every boot). Late require to avoid load-order coupling.
+try {
+  const { encrypt, isEncrypted } = require('./auth/secrets');
+  const updS = db.prepare('UPDATE servers SET password = ?, passphrase = ? WHERE id = ?');
+  for (const s of db.prepare('SELECT id, password, passphrase FROM servers').all()) {
+    if ((s.password && !isEncrypted(s.password)) || (s.passphrase && !isEncrypted(s.passphrase))) {
+      updS.run(s.password ? encrypt(s.password) : s.password, s.passphrase ? encrypt(s.passphrase) : s.passphrase, s.id);
+    }
+  }
+  const updR = db.prepare('UPDATE registries SET password = ? WHERE id = ?');
+  for (const r of db.prepare('SELECT id, password FROM registries').all()) {
+    if (r.password && !isEncrypted(r.password)) updR.run(encrypt(r.password), r.id);
+  }
+} catch (e) { console.warn('[db] secret encryption migration failed:', e.message); }
+
 module.exports = { db, stmts };

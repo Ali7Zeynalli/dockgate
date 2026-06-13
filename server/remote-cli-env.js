@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { stmts } = require('./db');
+const { decrypt } = require('./auth/secrets');
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', 'data', 'ssh-keys');
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
@@ -26,7 +27,7 @@ function writeRegistryConfig(subdir) {
     if (!regs.length) return null;
     const auths = {};
     for (const r of regs) {
-      auths[r.server_address] = { auth: Buffer.from(`${r.username}:${r.password}`).toString('base64') };
+      auths[r.server_address] = { auth: Buffer.from(`${r.username}:${decrypt(r.password)}`).toString('base64') };
       if (['docker.io', 'index.docker.io', 'registry-1.docker.io'].includes(r.server_address)) {
         auths['https://index.docker.io/v1/'] = auths[r.server_address];
       }

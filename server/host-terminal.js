@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('ssh2');
+const { decrypt } = require('./auth/secrets');
 
 let pty = null;
 try { pty = require('node-pty'); } catch (e) { /* optional dep — local host terminal disabled if missing */ }
@@ -59,9 +60,9 @@ function attachHostTerminal(socket, { dockerService, stmts, logAction }) {
         const keyPath = path.isAbsolute(s.key_path) ? s.key_path : path.join(SSH_KEYS_DIR, s.key_path);
         if (!fs.existsSync(keyPath)) { socket.emit('hostterm:error', { error: `SSH key not found: ${keyPath}` }); return; }
         opts.privateKey = fs.readFileSync(keyPath);
-        if (s.passphrase) opts.passphrase = s.passphrase;
+        if (s.passphrase) opts.passphrase = decrypt(s.passphrase);
       } else if (s.password) {
-        opts.password = s.password;
+        opts.password = decrypt(s.password);
       } // else: agent — left to ssh2 defaults
 
       const conn = new Client();

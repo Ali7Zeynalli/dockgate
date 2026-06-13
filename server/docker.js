@@ -1,6 +1,7 @@
 const Docker = require('dockerode');
 const fs = require('fs');
 const path = require('path');
+const { decrypt } = require('./auth/secrets');
 
 // ============ DYNAMIC DOCKER CLIENT ============
 // Active Docker client — local socket default, SSH əlaqələrə switch oluna bilər
@@ -30,10 +31,10 @@ function createSshClient(server) {
     if (!fs.existsSync(keyPath)) throw new Error(`SSH key not found: ${keyPath}`);
     opts.sshOptions = {
       privateKey: fs.readFileSync(keyPath),
-      ...(server.passphrase ? { passphrase: server.passphrase } : {}),
+      ...(server.passphrase ? { passphrase: decrypt(server.passphrase) } : {}),
     };
   } else if (server.password) {
-    opts.password = server.password; // docker-modem forwards top-level password to ssh2
+    opts.password = decrypt(server.password); // docker-modem forwards top-level password to ssh2
   }
   // If neither is set, ssh2 falls back to the SSH agent.
   return new Docker(opts);
@@ -460,7 +461,7 @@ function lookupAuthConfig(repoTag) {
     : [host];
   for (const addr of candidates) {
     const reg = stmts.getRegistryByHost.get(addr);
-    if (reg) return { username: reg.username, password: reg.password, serveraddress: addr };
+    if (reg) return { username: reg.username, password: decrypt(reg.password), serveraddress: addr };
   }
   return undefined;
 }
@@ -568,10 +569,11 @@ function allRegistryAuthMap() {
     const rows = stmts.getRegistries.all();
     const map = {};
     for (const r of rows) {
-      map[r.server_address] = { username: r.username, password: r.password };
+      const password = decrypt(r.password);
+      map[r.server_address] = { username: r.username, password };
       // Docker Hub bütün canonical adları ilə tanınsın
       if (['docker.io', 'index.docker.io', 'registry-1.docker.io'].includes(r.server_address)) {
-        map['https://index.docker.io/v1/'] = { username: r.username, password: r.password };
+        map['https://index.docker.io/v1/'] = { username: r.username, password };
       }
     }
     return Object.keys(map).length ? map : undefined;

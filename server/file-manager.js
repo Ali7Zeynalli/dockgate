@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('ssh2');
+const { decrypt } = require('./auth/secrets');
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', 'data', 'ssh-keys');
 
@@ -14,9 +15,9 @@ function authFor(s) {
     const keyPath = path.isAbsolute(s.key_path) ? s.key_path : path.join(SSH_KEYS_DIR, s.key_path);
     if (!fs.existsSync(keyPath)) throw new Error(`SSH key not found: ${keyPath}`);
     opts.privateKey = fs.readFileSync(keyPath);
-    if (s.passphrase) opts.passphrase = s.passphrase;
+    if (s.passphrase) opts.passphrase = decrypt(s.passphrase);
   } else if (s.password) {
-    opts.password = s.password;
+    opts.password = decrypt(s.password);
   }
   return opts;
 }

@@ -10,6 +10,7 @@ const dockerService = require('../docker');
 const monitorManager = require('../notifications/monitor-manager');
 const { stmts } = require('../db');
 const { logAction } = require('../audit');
+const { encrypt, decrypt } = require('../auth/secrets');
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
 if (!fs.existsSync(SSH_KEYS_DIR)) {
@@ -33,7 +34,7 @@ function grantDockerAccess(server) {
   const keyPath = server.key_path
     ? (path.isAbsolute(server.key_path) ? server.key_path : path.join(SSH_KEYS_DIR, server.key_path))
     : null;
-  const cfg = { host: server.host, port: server.port, username: server.username, keyPath, password: server.password, passphrase: server.passphrase };
+  const cfg = { host: server.host, port: server.port, username: server.username, keyPath, password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
   return new Promise((resolve, reject) => {
     execFile(process.execPath, [path.join(__dirname, '..', 'grant-docker-worker.js'), JSON.stringify(cfg)], { timeout: 30000 }, (err, stdout, stderr) => {
       if (err) return reject(new Error((stderr || err.message || 'grant failed').toString().trim()));
@@ -103,7 +104,7 @@ router.post('/', (req, res) => {
     // passphrase only makes sense with key auth (to unlock an encrypted private key)
     const passphraseToStore = (privateKey && passphrase) ? String(passphrase) : null;
 
-    stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, pwdToStore, passphraseToStore, description);
+    stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, encrypt(pwdToStore), encrypt(passphraseToStore), description);
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'add', details: { host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent') } });
 
     // Start dedicated monitor so notifications from this host start flowing immediately
@@ -165,7 +166,7 @@ router.put('/:id', (req, res) => {
     const newPassword = password !== undefined ? (password ? String(password) : null) : existing.password;
     const newPassphrase = passphrase !== undefined ? (passphrase ? String(passphrase) : null) : existing.passphrase;
 
-    stmts.updateServer.run(newHost, newPort, newUsername, keyPath, newPassword, newPassphrase, newDescription, id);
+    stmts.updateServer.run(newHost, newPort, newUsername, keyPath, encrypt(newPassword), encrypt(newPassphrase), newDescription, id);
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'edit', details: { host: newHost, username: newUsername } });
 
     // If this is the active server, rebuild the client (config changed)
