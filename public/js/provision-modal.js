@@ -1,17 +1,13 @@
-// Provisioning modal — set up a remote server (Docker, firewall, fail2ban, ...) over SSH.
+// Provisioning panel — renders INTO a container (the per-server console's Setup tab), not a modal.
 // On open it LIVE-SCANS the server (read-only detect of every catalog item) so you see what's already
-// installed before choosing what to run. Opened from the Setup button on a server row. Global: openProvisionModal(id).
+// installed before choosing what to run. Global: renderProvisionPanel(serverId, container).
 const PV_ICON = { verified: '✓', installed: '✓', present: '✓', failed: '✗', skipped: '⏭', unknown: '○' };
 
-async function openProvisionModal(serverId) {
-  const m = showModal(`Provision: ${escapeHtml(serverId)}`,
-    `<div id="pv-body" style="display:flex;flex-direction:column;gap:10px;max-height:65vh;overflow:auto">
-       <div class="text-sm text-muted">🔍 Scanning <b>${escapeHtml(serverId)}</b> over SSH — checking what's already installed…</div>
-       <div class="skeleton" style="height:16px;width:60%"></div>
-       <div class="skeleton" style="height:16px;width:45%"></div>
-     </div>`, []);
-  const root = m.overlay;
-
+async function renderProvisionPanel(serverId, container) {
+  container.innerHTML = `
+    <div class="text-sm text-muted">🔍 Scanning <b>${escapeHtml(serverId)}</b> over SSH — checking what's already installed…</div>
+    <div class="skeleton" style="height:16px;width:60%;margin-top:10px"></div>
+    <div class="skeleton" style="height:16px;width:45%;margin-top:6px"></div>`;
   let catalog, scan;
   try {
     [catalog, scan] = await Promise.all([
@@ -19,16 +15,18 @@ async function openProvisionModal(serverId) {
       API.get(`/servers/${serverId}/provision/scan`),
     ]);
   } catch (e) {
-    root.querySelector('#pv-body').innerHTML =
+    container.innerHTML =
       `<div class="text-danger text-sm">Scan failed: ${escapeHtml(e.message)}</div>
-       <div class="text-xs text-muted" style="margin-top:6px">The server may be unreachable, or it's using password auth that the scan couldn't use. Fix the connection (Test) and reopen Setup.</div>`;
+       <div class="text-xs text-muted" style="margin-top:6px">The server may be unreachable, or it uses password auth the scan couldn't use. Fix the connection (Test) then retry.</div>
+       <button class="btn btn-secondary btn-sm" id="pv-retry" style="margin-top:10px">Retry scan</button>`;
+    container.querySelector('#pv-retry')?.addEventListener('click', () => renderProvisionPanel(serverId, container));
     return;
   }
-  renderProvisionForm(serverId, catalog, scan, root, m);
+  renderProvisionForm(serverId, catalog, scan, container);
 }
 
-function renderProvisionForm(serverId, catalog, scan, root, modal) {
-  const present = {}; // id -> {present, na}
+function renderProvisionForm(serverId, catalog, scan, container) {
+  const present = {};
   for (const it of (scan.items || [])) present[it.id] = it;
   const stateOf = (id) => { const s = present[id]; return s ? (s.na ? 'na' : (s.present ? 'present' : 'missing')) : 'unknown'; };
   const icon = (st) => ({ present: '✓', missing: '○', na: '⊘', unknown: '○' }[st] || '○');
@@ -41,7 +39,7 @@ function renderProvisionForm(serverId, catalog, scan, root, modal) {
     ['custom', 'Custom', 'Pick individual items below'],
   ];
   const presetHtml = presets.map(([v, label, desc], i) => `
-    <label style="display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:6px">
+    <label style="display:flex;gap:8px;align-items:flex-start;padding:10px;border:1px solid var(--border);border-radius:8px;cursor:pointer">
       <input type="radio" name="pv-preset" value="${v}"${i === 1 ? ' checked' : ''} style="margin-top:3px">
       <div><div style="font-weight:600">${escapeHtml(label)}</div><div class="text-xs text-muted">${escapeHtml(desc)}</div></div>
     </label>`).join('');
@@ -62,69 +60,73 @@ function renderProvisionForm(serverId, catalog, scan, root, modal) {
       ${it.commands ? `<pre style="white-space:pre-wrap;padding:6px 12px;background:var(--bg-primary);border-radius:6px;margin-top:4px;font-size:11px">detect:  ${escapeHtml(it.commands.detect)}\ninstall: ${escapeHtml(it.commands.install)}\nverify:  ${escapeHtml(it.commands.verify)}</pre>` : ''}
     </details>`).join('');
 
-  root.querySelector('#pv-body').innerHTML = `
-    <div class="text-sm">Scanned <b>${escapeHtml(serverId)}</b>${scan.distro ? ` · OS: <b>${escapeHtml(scan.distro)}</b>` : ''} — <b>${missingCount}</b> item(s) missing. detect → install → verify runs over SSH; already-present items are skipped.</div>
-    <div><div style="font-weight:600;margin-bottom:6px">Preset</div>${presetHtml}</div>
-    <div id="pv-custom" style="display:none"><div style="font-weight:600;margin-bottom:4px">Items <span class="text-xs text-muted">(✓ installed · ○ missing · ⊘ n/a)</span></div>${itemHtml}</div>
-    <label id="pv-confirm-wrap" style="display:none;gap:8px;align-items:center;color:var(--danger)">
-      <input type="checkbox" id="pv-confirm"> I understand the risky steps (firewall / SSH hardening) and want to proceed
-    </label>
-    <details><summary style="font-weight:600">Server status (live)</summary>
-      <div style="padding-top:6px">${(catalog.items || []).map(it => { const st = stateOf(it.id); return `<div class="text-sm">${icon(st)} ${escapeHtml(it.label)} <span class="text-xs text-muted">${st}</span></div>`; }).join('')}</div>
-    </details>
-    <details><summary style="font-weight:600">How it works</summary><div style="padding-top:6px">${explainer}</div></details>`;
+  container.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px;max-width:760px">
+      <div class="text-sm">Scanned <b>${escapeHtml(serverId)}</b>${scan.distro ? ` · OS <b>${escapeHtml(scan.distro)}</b>` : ''} — <b>${missingCount}</b> item(s) missing. detect → install → verify runs over SSH; already-present items are skipped.</div>
+      <div class="settings-section">
+        <div class="settings-section-title">Preset</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">${presetHtml}</div>
+        <div id="pv-custom" style="display:none;margin-top:10px"><div style="font-weight:600;margin-bottom:4px">Items <span class="text-xs text-muted">(✓ installed · ○ missing · ⊘ n/a)</span></div>${itemHtml}</div>
+        <label id="pv-confirm-wrap" style="display:none;gap:8px;align-items:center;color:var(--danger);margin-top:10px">
+          <input type="checkbox" id="pv-confirm"> I understand the risky steps (firewall / SSH hardening) and want to proceed
+        </label>
+        <div style="margin-top:14px"><button class="btn btn-primary" id="pv-run">Run provisioning</button></div>
+      </div>
+      <details class="settings-section"><summary style="font-weight:600;cursor:pointer">Server status (live)</summary>
+        <div style="padding-top:8px">${(catalog.items || []).map(it => { const st = stateOf(it.id); return `<div class="text-sm">${icon(st)} ${escapeHtml(it.label)} <span class="text-xs text-muted">${st}</span></div>`; }).join('')}</div>
+      </details>
+      <details class="settings-section"><summary style="font-weight:600;cursor:pointer">How it works</summary><div style="padding-top:8px">${explainer}</div></details>
+    </div>`;
 
   function update() {
-    const preset = root.querySelector('input[name="pv-preset"]:checked')?.value;
-    root.querySelector('#pv-custom').style.display = preset === 'custom' ? 'block' : 'none';
+    const preset = container.querySelector('input[name="pv-preset"]:checked')?.value;
+    container.querySelector('#pv-custom').style.display = preset === 'custom' ? 'block' : 'none';
     let risky;
-    if (preset === 'custom') risky = [...root.querySelectorAll('.pv-item:checked')].some(c => c.dataset.risk === 'high');
+    if (preset === 'custom') risky = [...container.querySelectorAll('.pv-item:checked')].some(c => c.dataset.risk === 'high');
     else risky = (preset === 'secure-baseline' || preset === 'full');
-    root.querySelector('#pv-confirm-wrap').style.display = risky ? 'flex' : 'none';
+    container.querySelector('#pv-confirm-wrap').style.display = risky ? 'flex' : 'none';
   }
-  root.querySelectorAll('input[name="pv-preset"]').forEach(r => r.addEventListener('change', update));
-  root.querySelector('#pv-custom').addEventListener('change', update);
+  container.querySelectorAll('input[name="pv-preset"]').forEach(r => r.addEventListener('change', update));
+  container.querySelector('#pv-custom').addEventListener('change', update);
   update();
 
-  const footer = root.querySelector('#modal-footer');
-  footer.innerHTML = '';
-  const runBtn = document.createElement('button');
-  runBtn.className = 'btn btn-primary';
-  runBtn.textContent = 'Run provisioning';
-  footer.appendChild(runBtn);
-
-  runBtn.addEventListener('click', async () => {
-    const preset = root.querySelector('input[name="pv-preset"]:checked')?.value || 'secure-baseline';
-    const only = preset === 'custom' ? [...root.querySelectorAll('.pv-item:checked')].map(c => c.value) : undefined;
-    const confirm = !!root.querySelector('#pv-confirm')?.checked;
+  container.querySelector('#pv-run').addEventListener('click', async () => {
+    const runBtn = container.querySelector('#pv-run');
+    const preset = container.querySelector('input[name="pv-preset"]:checked')?.value || 'secure-baseline';
+    const only = preset === 'custom' ? [...container.querySelectorAll('.pv-item:checked')].map(c => c.value) : undefined;
+    const confirm = !!container.querySelector('#pv-confirm')?.checked;
     if (preset === 'custom' && (!only || !only.length)) { showToast('Pick at least one item', 'warning'); return; }
     runBtn.disabled = true; runBtn.textContent = 'Starting…';
     try {
       const r = await API.post(`/servers/${serverId}/provision`, { preset, only, confirm });
-      streamProvisionJob(serverId, r.jobId, root);
+      streamProvisionJob(serverId, r.jobId, container);
     } catch (e) {
       runBtn.disabled = false; runBtn.textContent = 'Run provisioning';
-      if (/confirm/i.test(e.message || '')) { root.querySelector('#pv-confirm-wrap').style.display = 'flex'; showToast('Tick the risky-steps confirmation first', 'warning', 6000); }
+      if (/confirm/i.test(e.message || '')) { container.querySelector('#pv-confirm-wrap').style.display = 'flex'; showToast('Tick the risky-steps confirmation first', 'warning', 6000); }
       else showToast(e.message, 'error', 8000);
     }
   });
 }
 
-// Switch the modal body to a live log + per-item status; poll the job (keeps running if the modal closes).
-function streamProvisionJob(serverId, jobId, root) {
-  const bodyEl = root.querySelector('#pv-body');
-  bodyEl.innerHTML = `
-    <div class="text-sm">Provisioning <b>${escapeHtml(serverId)}</b>… (keeps running on the server even if you close this)</div>
-    <div id="pv-steps" style="margin:8px 0;line-height:1.9"></div>
-    <pre id="pv-log" style="white-space:pre-wrap;background:#0d1117;color:#c9d1d9;padding:10px;border-radius:8px;max-height:40vh;overflow:auto;font-size:12px"></pre>`;
-  const logEl = root.querySelector('#pv-log');
-  const stepsEl = root.querySelector('#pv-steps');
+// Live log + per-item status; polls the job (keeps running server-side if you navigate away).
+function streamProvisionJob(serverId, jobId, container) {
+  container.innerHTML = `
+    <div style="max-width:760px">
+      <div class="text-sm">Provisioning <b>${escapeHtml(serverId)}</b>… (keeps running on the server even if you leave this page)</div>
+      <div id="pv-steps" style="margin:8px 0;line-height:1.9"></div>
+      <pre id="pv-log" style="white-space:pre-wrap;background:#0d1117;color:#c9d1d9;padding:10px;border-radius:8px;max-height:45vh;overflow:auto;font-size:12px"></pre>
+      <button class="btn btn-secondary btn-sm" id="pv-rescan" style="margin-top:10px;display:none">↻ Re-scan</button>
+    </div>`;
+  const logEl = container.querySelector('#pv-log');
+  const stepsEl = container.querySelector('#pv-steps');
+  const rescan = container.querySelector('#pv-rescan');
+  rescan.addEventListener('click', () => renderProvisionPanel(serverId, container));
   let timer = null;
   const poll = async () => {
-    if (!document.body.contains(logEl)) { clearInterval(timer); return; } // modal closed → stop (job continues)
+    if (!document.body.contains(logEl)) { clearInterval(timer); return; }
     let job;
     try { job = await API.get(`/servers/provision/job/${jobId}`); }
-    catch (e) { clearInterval(timer); if (document.body.contains(logEl)) logEl.textContent += '\n(job finished — see Run history)'; return; }
+    catch (e) { clearInterval(timer); if (document.body.contains(logEl)) { logEl.textContent += '\n(job finished — see Run history)'; rescan.style.display = ''; } return; }
     logEl.textContent = job.log || '';
     logEl.scrollTop = logEl.scrollHeight;
     stepsEl.innerHTML = (job.items || []).map(i => {
@@ -133,6 +135,7 @@ function streamProvisionJob(serverId, jobId, root) {
     }).join('');
     if (job.status && job.status !== 'running') {
       clearInterval(timer);
+      rescan.style.display = '';
       const ok = (job.items || []).filter(i => ['verified', 'present'].includes(i.state)).length;
       const failed = (job.items || []).filter(i => i.state === 'failed').length;
       showToast(`Provisioning ${job.status}: ${ok} ok, ${failed} failed`, failed ? 'warning' : 'success', 8000);
