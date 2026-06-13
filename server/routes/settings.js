@@ -341,11 +341,14 @@ const DOCKER_IMAGE = `ghcr.io/${REPO_OWNER.toLowerCase()}/${REPO_NAME}`;
 const REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
 
 // Fetch file from GitHub (wget — Node.js https hangs on Alpine) / GitHub-dan fayl al (wget ilə)
+// NOTE: the runtime image is node:18-alpine → busybox wget, which does NOT accept the GNU long flag
+// `--timeout=`. Use `-T SEC`, which both busybox AND GNU wget support, so the check works on a real
+// deploy (previously every Alpine instance failed the fetch and silently showed "up to date").
 function githubRawFetch(filePath) {
   const { execFile } = require('child_process');
   const url = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${filePath}`;
   return new Promise((resolve, reject) => {
-    execFile('wget', ['-qO-', '--timeout=5', url], { timeout: 8000 }, (err, stdout) => {
+    execFile('wget', ['-q', '-O', '-', '-T', '5', url], { timeout: 8000 }, (err, stdout) => {
       if (err) return reject(err);
       resolve(stdout);
     });

@@ -826,6 +826,22 @@ Router.register('settings', async (content, params) => {
             document.getElementById('copy-update-cmd')?.addEventListener('click', () => {
               navigator.clipboard.writeText('docker compose pull && docker compose up -d').then(() => showToast('Commands copied'));
             });
+          } else if (updateInfo.error) {
+            // The check itself failed server-side (e.g. no network / wget). Don't pretend "up to date".
+            tabContent.innerHTML = `
+              <div class="settings-section">
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <span class="text-muted">&#9888;</span>
+                  <div>
+                    <div class="text-sm">Could not check for updates</div>
+                    <div class="text-xs text-muted">${escapeHtml(updateInfo.error)} (current v${updateInfo.currentVersion})</div>
+                  </div>
+                  <button class="btn btn-xs btn-secondary" id="check-update-btn">${Icons.refresh} Retry</button>
+                  <a href="${updateInfo.repoUrl || 'https://github.com/Ali7Zeynalli/dockgate'}" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} GitHub</a>
+                </div>
+              </div>
+            `;
+            document.getElementById('check-update-btn')?.addEventListener('click', () => renderUpdate());
           } else {
             tabContent.innerHTML = `
               <div class="settings-section">

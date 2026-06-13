@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.106] - 2026-06-13
+
+### Fixed — Software Update check never worked on Alpine (always showed "up to date")
+- The update check fetched GitHub with `wget --timeout=5`, but the runtime image is `node:18-alpine` → **busybox wget**, which does not accept the GNU `--timeout=` long flag, so the fetch failed on every deployed instance. Switched to `-T 5` (supported by both busybox and GNU wget)
+- The failure was also **silent**: `/update/check` swallowed the error and returned `updateAvailable:false`, and the UI rendered "DockGate is up to date" regardless. The Software Update tab now shows **"Could not check for updates"** (with the reason) when the check fails, instead of falsely claiming it's current
+
+---
+
 ## [2.0.105] - 2026-06-13
 
 ### Changed — Setup tab decluttered
