@@ -103,11 +103,59 @@ async function doAction() {
   ok({ ok: true, action: cfg.action, after, out: r.out.trim().slice(-2000) });
 }
 
+const sudoErr = (out) => /password is required|a terminal is required|^sudo:/im.test(out) ? 'passwordless sudo is required for config editing' : '';
+
+// op:'writeconfig' — FIXED, guarded sequence. Content arrives base64-encoded (cfg.contentB64) and is
+// decoded on the remote, so the raw bytes NEVER touch the command string. The path is re-checked against
+// the catalog allowlist here. backup → write → validate → (on fail) restore → apply → (if the service
+// fails to come back) restore + re-apply. A service is never left with a broken config.
+async function doWriteConfig() {
+  const distro = await detectDistro();
+  const p = cfg.configPath;
+  if (!catalog.isConfigPathAllowed(cfg.itemId, distro, p)) return fail('config path not allowed');
+  const svc = catalog.serviceFor(cfg.itemId, distro);
+  if (!svc || svc.na) return fail('service not manageable on this distro');
+  const b64 = cfg.contentB64;
+  if (typeof b64 !== 'string' || !/^[A-Za-z0-9+/=\s]*$/.test(b64)) return fail('invalid content encoding');
+
+  const bak = `${p}.dockgate.bak.${Date.now()}`;
+  const existed = (await run(`test -f '${p}' && echo Y || echo N`)).out.includes('Y');
+  const restore = async () => { if (existed) await run(`sudo -n cp -a -- '${bak}' '${p}'`); else await run(`sudo -n rm -f -- '${p}'`); };
+
+  if (existed) {
+    const cp = await run(`sudo -n cp -a -- '${p}' '${bak}'`);
+    if (cp.code !== 0) return fail(sudoErr(cp.out) || 'backup failed');
+  }
+  // write via base64 → tee (bytes never interpolated as raw text)
+  const w = await run(`printf '%s' '${b64}' | base64 -d | sudo -n tee -- '${p}' >/dev/null`);
+  if (w.code !== 0) { await restore(); return fail(sudoErr(w.out) || 'write failed'); }
+
+  // pre-apply validation where the service supports it (sshd -t / fail2ban-client -t / firewalld --check-config)
+  let validatorOut = '';
+  if (svc.validate) {
+    const v = await run(svc.validate);
+    validatorOut = v.out.trim().slice(-800);
+    if (v.code !== 0) { await restore(); return fail('validation failed (config restored): ' + (validatorOut || 'invalid config')); }
+  }
+  // apply (reload for ssh, restart otherwise)
+  const applyCmd = svc.verbs.apply || svc.verbs.restart;
+  const ap = await run(applyCmd);
+  // post-apply health check — a daemon that fails to come back gets the old config restored + re-applied
+  let healthOk = true;
+  if (!svc.timer) healthOk = lastLine((await run(svc.verbs.status)).out) === 'active';
+  if (ap.code !== 0 || !healthOk) {
+    await restore(); await run(applyCmd);
+    return fail('service failed to start with the new config — restored the previous config' + (validatorOut ? ' · ' + validatorOut : ''));
+  }
+  ok({ ok: true, backup: existed ? bak : null, validated: !!svc.validate, validatorOut });
+}
+
 conn.on('ready', async () => {
   try {
     if (cfg.op === 'status') return await doStatus();
     if (cfg.op === 'readconfig') return await doReadConfig();
     if (cfg.op === 'action') return await doAction();
+    if (cfg.op === 'writeconfig') return await doWriteConfig();
     fail('unknown op: ' + cfg.op);
   } catch (e) { fail(e && e.message ? e.message : String(e)); }
 }).on('error', e => fail(e.message)).connect(opts);

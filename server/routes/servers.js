@@ -431,4 +431,42 @@ router.post('/:id/services/:itemId/action', async (req, res) => {
   }
 });
 
+// GET /api/servers/:id/services/:itemId/config?path= — read an allowlisted config file (the worker
+// re-checks the path against the catalog allowlist for the detected distro).
+router.get('/:id/services/:itemId/config', async (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Service management targets a remote SSH server' });
+    const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    res.json(await serviceCtl.readServiceConfig(cfg, req.params.itemId, req.query.path));
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// POST /api/servers/:id/services/:itemId/config — body { path, content, confirm }. Guarded write:
+// allowlist + backup + validate + auto-restore on failure + restart, all inside the worker. confirm
+// is mandatory; editing the SSH config over a password login is refused (lockout).
+router.post('/:id/services/:itemId/config', async (req, res) => {
+  const itemId = req.params.itemId;
+  const { path: cfgPath, content, confirm } = req.body || {};
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Service management targets a remote SSH server' });
+    const keyPath = resolveKeyPath(server);
+    catalog.guardedServiceAction({ hasKey: !!keyPath, itemId, isConfigWrite: true, confirm }); // 409 without confirm, 400 ssh-over-password
+    if (typeof content !== 'string') return res.status(400).json({ error: 'content (string) is required' });
+    const contentB64 = Buffer.from(content, 'utf8').toString('base64');
+    const cfg = { ...server, keyPath, password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    const result = await serviceCtl.writeServiceConfig(cfg, itemId, cfgPath, contentB64);
+    logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'service', resourceName: itemId, action: 'service-config-write', details: { itemId, path: cfgPath, bytes: content.length, backup: result.backup, validated: result.validated } });
+    res.json(result);
+  } catch (err) {
+    if (err.statusCode === 409) return res.status(409).json({ error: err.message, risks: err.risks || [] });
+    if (err.statusCode === 400) return res.status(400).json({ error: err.message });
+    logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'service', resourceName: itemId, action: 'service-config-write', details: { itemId, path: cfgPath, failed: true, error: String(err.message).slice(0, 200) } });
+    res.status(502).json({ error: err.message });
+  }
+});
+
 module.exports = router;

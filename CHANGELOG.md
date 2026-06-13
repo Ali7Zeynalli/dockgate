@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.104] - 2026-06-13
+
+### Added — Manage tab: guarded config editor (completes PHASE 5 service management)
+- Each manageable service now has an **Edit config** panel that reads its allowlisted config file over SSH into an editor
+- Saving runs a strict, guarded sequence in the isolated worker: re-check the path against the allowlist → back up the file (timestamped) → write via base64 (raw bytes never touch the command line) → validate where possible (`sshd -t` / `fail2ban-client -t` / `firewalld --check-config`) → on validation failure restore the backup → restart/reload → if the service fails to come back active, restore the backup and re-apply. **A service is never left with a broken config.**
+- Editing the SSH config over a password login is refused (lockout); firewall / SSH edits show a lockout warning and require explicit confirmation. Every write (success and failure) is audited
+
+---
+
 ## [2.0.103] - 2026-06-13
 
 ### Added — Manage tab: service control (start / stop / restart / enable / disable)
