@@ -2,6 +2,18 @@
 
 ---
 
+## [2.0.108] - 2026-06-13
+
+### Security — PHASE 5 service-management hardening (adversarial-review follow-up)
+- **Lockout symmetry:** stopping or disabling SSH over a password login is now refused (it was only confirm-gated) — that is a worse lockout than editing the SSH config, which was already refused. `restart` (which maps to `reload` for SSH and keeps the connection) stays allowed
+- **Timer health check:** a config write now always probes `is-active` after applying — including timer units like auto-updates, which previously skipped the check — so a write that fails to come back is caught and auto-restored. Added an `apt-config` validator for the auto-updates config
+- **Verified rollback:** after an auto-restore the worker re-probes and reports whether the service actually recovered (vs "still down — manual intervention needed")
+- **Backup retention:** only the 5 most recent `.dockgate.bak.*` files per config path are kept (was unbounded under `/etc`)
+- **Read errors:** a failed config read returns a fixed message instead of echoing raw `sudo` stderr
+- +1 unit test (31 total)
+
+---
+
 ## [2.0.107] - 2026-06-13
 
 ### Changed — sidebar regrouped: Docker vs Server management

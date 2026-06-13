@@ -231,7 +231,7 @@ const SERVICE = {
   'unattended-upgrades': {
     risk: 'low',
     family: {
-      debian: { manager: 'systemd', unit: 'apt-daily-upgrade.timer', timer: true, configPaths: ['/etc/apt/apt.conf.d/20auto-upgrades'] },
+      debian: { manager: 'systemd', unit: 'apt-daily-upgrade.timer', timer: true, configPaths: ['/etc/apt/apt.conf.d/20auto-upgrades'], validate: 'apt-config dump >/dev/null 2>&1' },
       rhel:   { manager: 'systemd', unit: 'dnf-automatic.timer',     timer: true, configPaths: ['/etc/dnf/automatic.conf'] },
     },
   },
@@ -334,6 +334,12 @@ function guardedServiceAction({ hasKey, itemId, osId, action, isConfigWrite, con
   // SSH config edit over a password login would lock you out — refuse.
   if (isConfigWrite && def.requiresKeyForConfig && !hasKey) {
     const e = new Error('Editing SSH config over a password login could lock you out — connect with an SSH key first');
+    e.statusCode = 400; throw e;
+  }
+  // Stopping or disabling the SSH daemon over a password login would lock you out (reload/restart keeps
+  // the live connection, but stop/disable kills it). requiresKeyForConfig marks ssh-hardening as that lifeline.
+  if (def.requiresKeyForConfig && !hasKey && (action === 'stop' || action === 'disable')) {
+    const e = new Error('Stopping or disabling SSH over a password login would lock you out — connect with an SSH key first');
     e.statusCode = 400; throw e;
   }
   // Confirm gate: every config write, plus destructive actions on a high-risk service or on docker.

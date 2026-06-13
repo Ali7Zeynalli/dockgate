@@ -76,7 +76,7 @@ async function doReadConfig() {
   const ex = await run(`test -f '${p}' && echo DG_YES || echo DG_NO`);
   if (!/DG_YES/.test(ex.out)) return ok({ path: p, exists: false, content: '' });
   const c = await run(`sudo -n cat -- '${p}'`);
-  if (c.code !== 0) return fail(c.out.trim() || 'read failed (passwordless sudo required)');
+  if (c.code !== 0) { const sudo = /password is required|a terminal is required|^sudo:/im.test(c.out); return fail(sudo ? 'passwordless sudo is required to read this config' : 'read failed'); }
   ok({ path: p, exists: true, content: c.out });
 }
 
@@ -140,13 +140,17 @@ async function doWriteConfig() {
   // apply (reload for ssh, restart otherwise)
   const applyCmd = svc.verbs.apply || svc.verbs.restart;
   const ap = await run(applyCmd);
-  // post-apply health check — a daemon that fails to come back gets the old config restored + re-applied
-  let healthOk = true;
-  if (!svc.timer) healthOk = lastLine((await run(svc.verbs.status)).out) === 'active';
+  // Always probe is-active (valid for timers too — an enabled timer reports "active"); a daemon/timer
+  // that fails to come up gets the previous config restored and re-applied.
+  const healthOk = lastLine((await run(svc.verbs.status)).out) === 'active';
   if (ap.code !== 0 || !healthOk) {
-    await restore(); await run(applyCmd);
-    return fail('service failed to start with the new config — restored the previous config' + (validatorOut ? ' · ' + validatorOut : ''));
+    await restore();
+    const re = await run(applyCmd);
+    const backOk = lastLine((await run(svc.verbs.status)).out) === 'active' || re.code === 0;
+    return fail('service failed to start with the new config — previous config restored and ' + (backOk ? 'the service is back up' : 'the service is STILL DOWN, manual intervention needed') + (validatorOut ? ' · ' + validatorOut : ''));
   }
+  // Keep only the 5 most recent backups for this path (avoids unbounded .dockgate.bak.* in /etc).
+  if (existed) await run(`for f in $(ls -1t '${p}'.dockgate.bak.* 2>/dev/null | tail -n +6); do sudo -n rm -f -- "$f"; done`);
   ok({ ok: true, backup: existed ? bak : null, validated: !!svc.validate, validatorOut });
 }
 

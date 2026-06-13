@@ -63,6 +63,20 @@ test('service.guardedServiceAction: SSH config write over a password login is re
   assert.doesNotThrow(() => cat.guardedServiceAction({ hasKey: true, itemId: 'ssh-hardening', osId: 'ubuntu', isConfigWrite: true, confirm: true }));
 });
 
+test('service.guardedServiceAction: stopping/disabling SSH over a password login is refused (400 lockout)', () => {
+  for (const action of ['stop', 'disable']) {
+    assert.throws(
+      () => cat.guardedServiceAction({ hasKey: false, itemId: 'ssh-hardening', action, confirm: true }),
+      (e) => e.statusCode === 400 && /lock you out/i.test(e.message),
+      `${action} ssh over password must 400`
+    );
+  }
+  // restart maps to reload for ssh (keeps the connection) → allowed with confirm even over a password login
+  assert.doesNotThrow(() => cat.guardedServiceAction({ hasKey: false, itemId: 'ssh-hardening', action: 'restart', confirm: true }));
+  // with a key, stop/disable is allowed (still confirm-gated, which the caller satisfies here)
+  assert.doesNotThrow(() => cat.guardedServiceAction({ hasKey: true, itemId: 'ssh-hardening', action: 'disable', confirm: true }));
+});
+
 test('service.guardedServiceAction: destructive on high-risk/docker needs confirm; harmless restart does not', () => {
   // high-risk firewall stop → confirm
   assert.throws(() => cat.guardedServiceAction({ hasKey: true, itemId: 'firewall', osId: 'ubuntu', action: 'stop', confirm: false }), (e) => e.statusCode === 409);
