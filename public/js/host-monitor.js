@@ -9,12 +9,60 @@ function renderHostMonitoring(serverId, container) {
       <div style="font-size:15px;font-weight:700">Host Metrics</div>
       <span class="badge badge-restarting" id="hm-status"><span class="badge-dot"></span> connecting…</span>
     </div>
+    <div class="card" id="hm-trend-card" style="margin-bottom:16px;display:none">
+      <div style="font-size:15px;font-weight:700;margin-bottom:12px">Trend — CPU / Memory / Disk (%)</div>
+      <div style="height:180px"><canvas id="hm-trend-canvas"></canvas></div>
+    </div>
     <div id="hm-body">
       <div class="summary-grid">${Array(6).fill('<div class="summary-card"><div class="skeleton" style="width:100%;height:42px"></div></div>').join('')}</div>
     </div>`;
   const statusEl = container.querySelector('#hm-status');
   const body = container.querySelector('#hm-body');
   let timer = null, first = true;
+
+  // ---- Trend chart (chart.js) — seeded from stored /host/metrics, then appended live each poll.
+  let chart = null, seeded = false;
+  const buf = []; // [{cpu,mem,disk}], capped at 120 points
+  const C = { cpu: '#00d4aa', mem: '#3b82f6', disk: '#8b5cf6' };
+  function ensureChart() {
+    if (chart || typeof Chart === 'undefined') return;
+    const cv = container.querySelector('#hm-trend-canvas');
+    if (!cv) return;
+    container.querySelector('#hm-trend-card').style.display = '';
+    const ds = (label, color) => ({ label, data: [], borderColor: color, backgroundColor: 'transparent', tension: 0.3, pointRadius: 0, borderWidth: 2 });
+    chart = new Chart(cv, {
+      type: 'line',
+      data: { labels: [], datasets: [ds('CPU', C.cpu), ds('Memory', C.mem), ds('Disk', C.disk)] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        scales: { y: { min: 0, max: 100, ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } }, x: { display: false } },
+        plugins: { legend: { position: 'top', labels: { color: '#9ca3af', font: { size: 11 }, usePointStyle: true, pointStyleWidth: 8, boxHeight: 6 } } },
+      },
+    });
+  }
+  function applyBuf() {
+    if (!chart) return;
+    chart.data.labels = buf.map(() => '');
+    chart.data.datasets[0].data = buf.map(p => p.cpu);
+    chart.data.datasets[1].data = buf.map(p => p.mem);
+    chart.data.datasets[2].data = buf.map(p => p.disk);
+    chart.update('none');
+  }
+  async function seedTrend() {
+    if (seeded) return; seeded = true;
+    try {
+      const r = await API.get(`/servers/${serverId}/host/metrics?limit=120`);
+      for (const m of (r.metrics || [])) buf.push({ cpu: m.cpu || 0, mem: m.mem_pct || 0, disk: m.disk_pct || 0 });
+      if (buf.length > 120) buf.splice(0, buf.length - 120);
+    } catch (e) { /* no history yet — chart fills from live samples */ }
+  }
+  function pushSample(s) {
+    const memPct = s.mem && s.mem.total ? Math.round(s.mem.used / s.mem.total * 100) : 0;
+    const rootDisk = (s.disks || []).find(d => d.mount === '/') || (s.disks || [])[0] || { usePct: 0 };
+    buf.push({ cpu: s.cpu || 0, mem: memPct, disk: rootDisk.usePct || 0 });
+    if (buf.length > 120) buf.shift();
+    ensureChart(); applyBuf();
+  }
 
   // Colour helpers — shared 70 / 90 thresholds, mapped onto the design-system colour classes.
   const barClass = (p) => p >= 90 ? 'red' : p >= 70 ? 'yellow' : 'green';
@@ -138,10 +186,13 @@ function renderHostMonitoring(serverId, container) {
   };
 
   const poll = async () => {
-    if (!document.body.contains(body)) { clearInterval(timer); return; } // tab/page changed → stop
+    if (!document.body.contains(body)) { clearInterval(timer); if (chart) { chart.destroy(); chart = null; } return; } // tab/page changed → stop
     try {
+      if (first) await seedTrend(); // pull stored history before the first live sample
       const s = await API.get(`/servers/${serverId}/host/stats`);
+      if (!document.body.contains(body)) return;
       render(s);
+      pushSample(s);
       statusEl.className = 'badge badge-running';
       statusEl.innerHTML = '<span class="badge-dot"></span> live · 5s';
       first = false;

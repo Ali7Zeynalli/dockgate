@@ -153,6 +153,14 @@ db.exec(`
     reason TEXT,
     finished_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS host_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server_id TEXT NOT NULL,
+    ts DATETIME DEFAULT CURRENT_TIMESTAMP,
+    cpu REAL, mem_pct REAL, disk_pct REAL, swap_pct REAL,
+    load1 REAL, net_rx INTEGER, net_tx INTEGER, procs INTEGER
+  );
 `);
 
 // Idempotent additive migrations
@@ -197,6 +205,7 @@ migrate('CREATE INDEX IF NOT EXISTS idx_notif_log_created ON notification_log (c
 migrate('CREATE INDEX IF NOT EXISTS idx_prov_runs_server ON provision_runs (server_id, started_at)');
 migrate('CREATE INDEX IF NOT EXISTS idx_prov_items_run ON provision_items (run_id)');
 migrate('CREATE INDEX IF NOT EXISTS idx_prov_items_server_item ON provision_items (server_id, item_id, id)');
+migrate('CREATE INDEX IF NOT EXISTS idx_host_metrics_server ON host_metrics (server_id, id)');
 // Retention — keep the last 200 provision runs; drop items whose run was trimmed
 migrate('DELETE FROM provision_runs WHERE id NOT IN (SELECT id FROM provision_runs ORDER BY started_at DESC LIMIT 200)');
 migrate('DELETE FROM provision_items WHERE run_id NOT IN (SELECT id FROM provision_runs)');
@@ -328,6 +337,12 @@ const stmts = {
   // Matrix — the latest recorded state of each item_id for a server (newest row per item).
   getLatestItemsPerServer: db.prepare('SELECT pi.* FROM provision_items pi WHERE pi.server_id = ? AND pi.id = (SELECT MAX(pi2.id) FROM provision_items pi2 WHERE pi2.server_id = pi.server_id AND pi2.item_id = pi.item_id)'),
   trimProvisionRuns: db.prepare('DELETE FROM provision_runs WHERE id NOT IN (SELECT id FROM provision_runs ORDER BY started_at DESC LIMIT 200)'),
+
+  // Host metrics (time-series — opportunistic samples taken whenever /host/stats is fetched)
+  insertHostMetric: db.prepare('INSERT INTO host_metrics (server_id, cpu, mem_pct, disk_pct, swap_pct, load1, net_rx, net_tx, procs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+  getHostMetrics: db.prepare('SELECT ts, cpu, mem_pct, disk_pct, swap_pct, load1, net_rx, net_tx, procs FROM host_metrics WHERE server_id = ? ORDER BY id DESC LIMIT ?'),
+  trimHostMetrics: db.prepare('DELETE FROM host_metrics WHERE server_id = ? AND id NOT IN (SELECT id FROM host_metrics WHERE server_id = ? ORDER BY id DESC LIMIT ?)'),
+  deleteHostMetrics: db.prepare('DELETE FROM host_metrics WHERE server_id = ?'),
 };
 
 // One-time at-rest encryption of stored secrets (idempotent — already-encrypted rows are skipped, so

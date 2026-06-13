@@ -278,6 +278,7 @@ router.delete('/:id', (req, res) => {
     }
 
     stmts.deleteServer.run(id);
+    try { stmts.deleteHostMetrics.run(id); } catch (e) { console.warn('[host-metrics] cleanup failed:', e.message); }
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'delete' });
 
     // Stop the dedicated monitor for this server
@@ -391,8 +392,27 @@ router.get('/:id/host/stats', async (req, res) => {
     if (!server) return res.status(404).json({ error: 'Server not found' });
     if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Host stats target a remote SSH server' });
     const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
-    res.json(await hostStats.collectHostStats(cfg));
+    const s = await hostStats.collectHostStats(cfg);
+    // Opportunistic time-series sample (best-effort; a DB hiccup must not fail the live view).
+    try {
+      const memPct = s.mem && s.mem.total ? Math.round(s.mem.used / s.mem.total * 100) : null;
+      const swapPct = s.mem && s.mem.swapTotal ? Math.round(s.mem.swapUsed / s.mem.swapTotal * 100) : 0;
+      const rootDisk = (s.disks || []).find(d => d.mount === '/') || (s.disks || [])[0];
+      stmts.insertHostMetric.run(req.params.id, s.cpu ?? null, memPct, rootDisk ? rootDisk.usePct : null, swapPct,
+        s.load ? s.load.load1 : null, s.net ? Math.round(s.net.rxBytesSec) : null, s.net ? Math.round(s.net.txBytesSec) : null, s.load ? s.load.procsRunning : null);
+      stmts.trimHostMetrics.run(req.params.id, req.params.id, 2000);
+    } catch (e) { console.warn('[host-metrics] persist failed:', e.message); }
+    res.json(s);
   } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// GET /api/servers/:id/host/metrics?limit= — stored time-series samples (chronological) for trend charts.
+router.get('/:id/host/metrics', (req, res) => {
+  try {
+    if (!stmts.getServer.get(req.params.id)) return res.status(404).json({ error: 'Server not found' });
+    const limit = Math.min(2000, Math.max(10, parseInt(req.query.limit, 10) || 240));
+    res.json({ serverId: req.params.id, metrics: stmts.getHostMetrics.all(req.params.id, limit).reverse() });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // GET /api/servers/:id/host/logs?source=journald|auth|syslog|dmesg&lines= — last N lines of a host log.

@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.112] - 2026-06-13
+
+### Added — host metrics history + trend chart (PHASE 3)
+- A `host_metrics` time-series table stores a compact sample (CPU / memory% / disk% / swap% / load / net / processes) each time the live monitor fetches `/host/stats` — **opportunistic sampling** (no always-on background poller hammering every server). `GET /api/servers/:id/host/metrics?limit=` returns the stored series (kept to ~2000 rows per server; cleared when the server is deleted)
+- The Monitoring view now leads with a **Trend chart** (chart.js) of CPU / Memory / Disk over time — seeded from the stored history on open, then appended live on each 5s tick
+
+---
+
 ## [2.0.111] - 2026-06-13
 
 ### Added — host logs in the console (PHASE 3)
