@@ -119,6 +119,40 @@ db.exec(`
     password TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS provision_runs (
+    id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL,
+    preset TEXT NOT NULL,
+    distro TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    item_total INTEGER DEFAULT 0,
+    item_ok INTEGER DEFAULT 0,
+    item_failed INTEGER DEFAULT 0,
+    source_ip TEXT,
+    log TEXT DEFAULT '',
+    error TEXT,
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    finished_at DATETIME
+  );
+
+  CREATE TABLE IF NOT EXISTS provision_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    server_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    seq INTEGER,
+    label TEXT,
+    state TEXT NOT NULL,
+    detect_cmd TEXT,
+    install_cmd TEXT,
+    verify_cmd TEXT,
+    log TEXT DEFAULT '',
+    duration_ms INTEGER,
+    error TEXT,
+    reason TEXT,
+    finished_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Idempotent additive migrations
@@ -160,6 +194,12 @@ migrate('CREATE INDEX IF NOT EXISTS idx_activity_resource ON activity (resource_
 migrate('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity (created_at)');
 migrate('CREATE INDEX IF NOT EXISTS idx_builds_started ON build_history (started_at)');
 migrate('CREATE INDEX IF NOT EXISTS idx_notif_log_created ON notification_log (created_at)');
+migrate('CREATE INDEX IF NOT EXISTS idx_prov_runs_server ON provision_runs (server_id, started_at)');
+migrate('CREATE INDEX IF NOT EXISTS idx_prov_items_run ON provision_items (run_id)');
+migrate('CREATE INDEX IF NOT EXISTS idx_prov_items_server_item ON provision_items (server_id, item_id, id)');
+// Retention — keep the last 200 provision runs; drop items whose run was trimmed
+migrate('DELETE FROM provision_runs WHERE id NOT IN (SELECT id FROM provision_runs ORDER BY started_at DESC LIMIT 200)');
+migrate('DELETE FROM provision_items WHERE run_id NOT IN (SELECT id FROM provision_runs)');
 
 // Retention — keep only last 1000 activity records and 100 builds
 // Saxlama — yalnız son 1000 fəaliyyət qeydi və 100 build saxla
@@ -276,6 +316,18 @@ const stmts = {
   insertRegistry: db.prepare('INSERT INTO registries (name, server_address, username, password) VALUES (?, ?, ?, ?)'),
   updateRegistry: db.prepare('UPDATE registries SET name = ?, server_address = ?, username = ?, password = ? WHERE id = ?'),
   deleteRegistry: db.prepare('DELETE FROM registries WHERE id = ?'),
+
+  // Provisioning runs + items (server-setup history)
+  insertProvisionRun: db.prepare('INSERT INTO provision_runs (id, server_id, preset, distro, status, item_total, source_ip) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+  updateProvisionRunStatus: db.prepare('UPDATE provision_runs SET status = ?, item_ok = ?, item_failed = ?, error = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?'),
+  appendProvisionRunLog: db.prepare('UPDATE provision_runs SET log = log || ? WHERE id = ?'),
+  getProvisionRuns: db.prepare('SELECT id, server_id, preset, distro, status, item_total, item_ok, item_failed, started_at, finished_at FROM provision_runs WHERE server_id = ? ORDER BY started_at DESC LIMIT ?'),
+  getProvisionRun: db.prepare('SELECT * FROM provision_runs WHERE id = ?'),
+  insertProvisionItem: db.prepare('INSERT INTO provision_items (run_id, server_id, item_id, seq, label, state, detect_cmd, install_cmd, verify_cmd, log, duration_ms, error, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+  getProvisionItems: db.prepare('SELECT * FROM provision_items WHERE run_id = ? ORDER BY seq'),
+  // Matrix — the latest recorded state of each item_id for a server (newest row per item).
+  getLatestItemsPerServer: db.prepare('SELECT pi.* FROM provision_items pi WHERE pi.server_id = ? AND pi.id = (SELECT MAX(pi2.id) FROM provision_items pi2 WHERE pi2.server_id = pi.server_id AND pi2.item_id = pi.item_id)'),
+  trimProvisionRuns: db.prepare('DELETE FROM provision_runs WHERE id NOT IN (SELECT id FROM provision_runs ORDER BY started_at DESC LIMIT 200)'),
 };
 
 // One-time at-rest encryption of stored secrets (idempotent — already-encrypted rows are skipped, so
