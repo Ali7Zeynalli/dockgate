@@ -63,7 +63,7 @@ function renderProvisionForm(serverId, catalog, scan, container) {
     </details>`).join('');
 
   container.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:16px;max-width:900px">
+    <div style="display:flex;flex-direction:column;gap:16px">
       <div class="card">
         <div style="font-weight:700;font-size:15px">Set up ${escapeHtml(serverId)}</div>
         <div class="text-xs text-muted" style="margin-top:2px">${scan.distro ? 'OS ' + escapeHtml(scan.distro) + ' · ' : ''}${missingCount} missing · detect → install → verify over SSH (present items are skipped)</div>
@@ -169,8 +169,19 @@ async function renderProvisionOverview(serverId, container, onSetup) {
   };
   const groups = [['base', 'Base'], ['security', 'Security'], ['system', 'System']];
 
+  // KPI tiles — same summary-card markup as the main Dashboard.
+  const ovKpi = (icon, color, value, label) => `
+    <div class="summary-card"><div class="summary-card-icon ${color}"><span class="nav-item-icon">${icon}</span></div>
+      <div class="summary-card-content"><div class="summary-card-value">${value}</div><div class="summary-card-label">${label}</div></div></div>`;
+
   container.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:16px;max-width:900px">
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="summary-grid" style="margin-bottom:0">
+        ${ovKpi(Icons.success, 'green', installed, 'Installed')}
+        ${ovKpi(Icons.warning, missing ? 'yellow' : 'green', missing, 'Missing')}
+        ${naCount ? ovKpi(Icons.info, 'blue', naCount, 'N/A on this OS') : ''}
+        ${ovKpi(Icons.container, ready ? 'green' : 'red', ready ? 'Ready' : 'No', 'Docker Engine')}
+      </div>
       <div class="card" style="border-left:4px solid ${ready ? 'var(--success)' : 'var(--warning, #f59e0b)'}">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
           <div>
@@ -194,7 +205,7 @@ async function renderProvisionOverview(serverId, container, onSetup) {
 // ---------- Run progress — step cards (primary) + collapsible log (secondary, not a raw terminal) ----------
 function streamProvisionJob(serverId, jobId, container) {
   container.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:14px;max-width:900px">
+    <div style="display:flex;flex-direction:column;gap:14px">
       <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div><div style="font-weight:700" id="pv-title">Provisioning ${escapeHtml(serverId)}…</div>
           <div class="text-xs text-muted">Runs on the server even if you leave this page.</div></div>
