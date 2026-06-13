@@ -178,16 +178,25 @@ function containerExportStream(id) {
   return docker.getContainer(id).export();
 }
 
-// Confine a browse path: ensure it's absolute and strip any "../".
+// Confine a browse path to an absolute path, resolving '.'/'..' by segment (can't escape '/').
+// Segment-based (not regex) so overlap tricks like "....//" can't slip a "../" through.
 function safeFsPath(p) {
-  return ('/' + String(p || '')).replace(/\/+/g, '/').replace(/\.\.(\/|$)/g, '').replace(/\/$/, '') || '/';
+  const parts = [];
+  for (const seg of String(p || '').split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return '/' + parts.join('/');
 }
 
 /** C3 — list a directory inside a (running) container via exec. Returns { path, entries[] }. */
 async function containerListFiles(id, path) {
   const safe = safeFsPath(path);
-  const script = `cd "${safe}" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
-  const { output } = await containerExecOnce(id, ['sh', '-c', script]);
+  // Pass the path as $1 (a positional arg) instead of interpolating it into the script — the shell
+  // treats $1 as a literal, so a path containing quotes/$/backtick/; cannot inject commands.
+  const script = `cd "$1" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
+  const { output } = await containerExecOnce(id, ['sh', '-c', script, 'sh', safe]);
   const entries = String(output || '').split('\n').filter(Boolean).map(line => {
     const i1 = line.indexOf('\t'), i2 = line.indexOf('\t', i1 + 1);
     if (i1 < 0 || i2 < 0) return null;
@@ -706,9 +715,15 @@ async function restoreVolumeFromRequest(volName, req) {
   return { success: true };
 }
 
-// Confine a browse path to the volume mount — strip any "../" so it can't escape /volume.
+// Confine a browse path to the volume mount — resolve '.'/'..' by segment so it can't escape /volume.
 function safeVolPath(p) {
-  return ('/' + String(p || '')).replace(/\/+/g, '/').replace(/\.\.(\/|$)/g, '').replace(/\/$/, '') || '';
+  const parts = [];
+  for (const seg of String(p || '').split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return parts.length ? '/' + parts.join('/') : '';
 }
 
 /**
@@ -718,10 +733,11 @@ function safeVolPath(p) {
 async function listVolumeFiles(volName, path) {
   await ensureHelperImage();
   const safe = safeVolPath(path);
-  const script = `cd "/volume${safe}" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
+  // Path passed as $1 (literal positional arg) — see containerListFiles; prevents shell injection.
+  const script = `cd "/volume$1" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
   const helper = await docker.createContainer({
     Image: VOL_HELPER_IMAGE,
-    Cmd: ['sh', '-c', script],
+    Cmd: ['sh', '-c', script, 'sh', safe],
     HostConfig: { Binds: [`${volName}:/volume:ro`], AutoRemove: false },
     Tty: true, // raw (un-framed) text output
   });

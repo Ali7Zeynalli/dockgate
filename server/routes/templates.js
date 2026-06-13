@@ -48,13 +48,18 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/templates/stackfile?url=... — fetch a compose stackfile referenced by a stack template.
-// Proxied server-side to avoid browser CORS. Only http(s) URLs are accepted.
+// Proxied server-side to avoid browser CORS. http(s) only, SSRF-guarded (no internal/metadata hosts;
+// redirects rejected — a public host could otherwise bounce into the private network). isBlockedLogoHost
+// is hoisted (function declaration below).
 router.get('/stackfile', async (req, res) => {
   try {
-    const url = String(req.query.url || '');
-    if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'Only http(s) URLs are allowed' });
-    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) return res.status(502).json({ error: `Upstream HTTP ${r.status}` });
+    const raw = String(req.query.url || '');
+    let u;
+    try { u = new URL(raw); } catch { return res.status(400).json({ error: 'bad url' }); }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return res.status(400).json({ error: 'Only http(s) URLs are allowed' });
+    if (isBlockedLogoHost(u.hostname)) return res.status(400).json({ error: 'blocked host' });
+    const r = await fetch(raw, { signal: AbortSignal.timeout(8000), redirect: 'manual' });
+    if (!r.ok) return res.status(502).json({ error: r.type === 'opaqueredirect' ? 'redirects are not allowed' : `Upstream HTTP ${r.status}` });
     const yaml = await r.text();
     res.json({ yaml });
   } catch (err) {
