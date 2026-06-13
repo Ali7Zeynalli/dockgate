@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.128] - 2026-06-13
+
+### Fixed — optional steps no longer nag as "missing" (swap, docker-group)
+- **Swap** (an OOM safety net — most cloud VPSes ship without it) and **docker-group** (sudo-less `docker` convenience; pointless when you connect as root) are genuinely optional, but were shown perpetually as "missing" with a "Set up N missing →" nag — the same problem System update had
+- They're now marked **optional**: rendered as "optional · not installed" (neutral), excluded from the missing count and the Needs-setup banner. Provisioning still installs them when a preset includes them (Full / Custom). If your "missing" item is a *required* one that's wrongly flagged, it's likely a passwordless-sudo detect issue — check the Components list
+
+---
+
 ## [2.0.127] - 2026-06-13
 
 ### Improved — console Overview: zoned grid layout + auto-refresh (P4.15, P4.20)

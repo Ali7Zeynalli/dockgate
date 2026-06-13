@@ -93,7 +93,7 @@ const ITEMS = [
     },
   },
   {
-    id: 'swap', seq: 80, label: 'Swap file', group: 'system', risk: 'low', needsSudo: true,
+    id: 'swap', seq: 80, label: 'Swap file', group: 'system', risk: 'low', needsSudo: true, optional: true,
     description: 'A 2GB swap file + low swappiness — an OOM safety net for Docker build/run on small VPSes.',
     distro: {
       debian: { detect: 'swapon --show | grep -q .', install: 'sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && (grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null) && echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swappiness.conf >/dev/null && sudo sysctl --system >/dev/null', verify: 'swapon --show | grep -q .' },
@@ -111,7 +111,7 @@ const ITEMS = [
     },
   },
   {
-    id: 'docker-group', seq: 100, label: 'Docker group (rootless CLI)', group: 'base', risk: 'medium', needsSudo: true,
+    id: 'docker-group', seq: 100, label: 'Docker group (rootless CLI)', group: 'base', risk: 'medium', needsSudo: true, optional: true,
     description: 'Add the SSH user to the docker group so `docker` runs without sudo. NOTE: docker-group membership is root-equivalent.',
     dependsOn: ['docker'],
     distro: {

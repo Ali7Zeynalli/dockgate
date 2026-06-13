@@ -324,7 +324,7 @@ router.get('/provision/catalog', (req, res) => {
       const svc = catalog.SERVICE[i.id];
       return {
         id: i.id, seq: i.seq, label: i.label, description: i.description, group: i.group,
-        risk: i.risk, requiresKey: !!i.requiresKey, alwaysRun: !!i.alwaysRun, dependsOn: i.dependsOn || [],
+        risk: i.risk, requiresKey: !!i.requiresKey, alwaysRun: !!i.alwaysRun, optional: !!i.optional, dependsOn: i.dependsOn || [],
         distros: Object.keys(i.distro), commands: i.distro.debian || null,
         // PHASE 5: whether this item is a manageable service (the live unit/configPaths come from /services/status).
         service: svc ? { risk: svc.risk, requiresKeyForConfig: !!svc.requiresKeyForConfig, families: Object.keys(svc.family) } : null,

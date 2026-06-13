@@ -29,7 +29,7 @@ async function renderProvisionPanel(serverId, container) {
 function renderProvisionForm(serverId, catalog, scan, container) {
   const stateOf = PV_STATE(scan.items);
   const items = catalog.items || [];
-  const missingCount = items.filter(it => !it.alwaysRun && stateOf(it.id) === 'missing').length;
+  const missingCount = items.filter(it => !it.alwaysRun && !it.optional && stateOf(it.id) === 'missing').length;
 
   const presets = [
     ['just-docker', 'Just Docker', '🐳', 'Docker Engine + compose plugin'],
@@ -49,11 +49,12 @@ function renderProvisionForm(serverId, catalog, scan, container) {
     present: { col: 'var(--success)', pill: '<span class="badge badge-healthy">installed</span>' },
     missing: { col: 'var(--warning, #f59e0b)', pill: '<span class="badge" style="background:var(--bg-primary);color:var(--text-muted)">missing</span>' },
     action:  { col: 'var(--info)', pill: '<span class="badge" style="background:var(--info-bg);color:var(--info)">runs every time</span>' },
+    optional:{ col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.6">optional</span>' },
     na:      { col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.55">n/a</span>' },
     unknown: { col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.55">unknown</span>' },
   };
   const itemCard = (it) => {
-    const st = it.alwaysRun ? 'action' : stateOf(it.id), m = pvState[st] || pvState.unknown;
+    const st = it.alwaysRun ? 'action' : (it.optional && stateOf(it.id) === 'missing' ? 'optional' : stateOf(it.id)), m = pvState[st] || pvState.unknown;
     return `<label class="card pv-item-card" style="display:flex;gap:10px;align-items:flex-start;border-left:3px solid ${m.col};padding:12px 14px;opacity:${st === 'na' ? 0.55 : 1};transition:background .12s,box-shadow .12s">
       <input type="checkbox" class="pv-item" value="${escapeHtml(it.id)}" data-risk="${escapeHtml(it.risk)}"${st === 'na' ? ' data-na="1"' : ''} style="margin-top:3px;accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">
       <div style="flex:1;min-width:0">
@@ -189,7 +190,7 @@ async function renderConsoleOverview(serverId, container, onSetup) {
   const stateOf = PV_STATE(scan.items);
   const items = catalog.items || [];
   const installed = items.filter(it => stateOf(it.id) === 'present').length;
-  const missing = items.filter(it => !it.alwaysRun && stateOf(it.id) === 'missing').length;
+  const missing = items.filter(it => !it.alwaysRun && !it.optional && stateOf(it.id) === 'missing').length;
   const naCount = items.filter(it => stateOf(it.id) === 'na').length;
   const ready = stateOf('docker') === 'present';
 
@@ -197,12 +198,13 @@ async function renderConsoleOverview(serverId, container, onSetup) {
     present: { ic: '✓', col: 'var(--success)', txt: 'installed' },
     missing: { ic: '○', col: 'var(--text-muted)', txt: 'missing' },
     action:  { ic: '↻', col: 'var(--info)', txt: 'runs every time' },
+    optional:{ ic: '◦', col: 'var(--text-muted)', txt: 'optional · not installed' },
     na:      { ic: '⊘', col: 'var(--text-muted)', txt: 'n/a on this OS' },
     unknown: { ic: '?', col: 'var(--text-muted)', txt: 'unknown' },
   };
   // Compact component row (status icon + label + state) — no nested cards, so the Components zone stays tidy.
   const compRow = (it) => {
-    const st = it.alwaysRun ? 'action' : stateOf(it.id), c = meta[st] || meta.unknown;
+    const st = it.alwaysRun ? 'action' : (it.optional && stateOf(it.id) === 'missing' ? 'optional' : stateOf(it.id)), c = meta[st] || meta.unknown;
     return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;border-bottom:1px solid var(--border);opacity:${st === 'na' ? 0.55 : 1}">
       <span style="color:${c.col};width:14px;text-align:center">${c.ic}</span>
       <span style="flex:1;min-width:0">${escapeHtml(it.label)}${it.risk === 'high' ? ' <span class="text-xs" style="color:var(--danger)">⚠</span>' : ''}</span>
