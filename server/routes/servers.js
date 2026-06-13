@@ -425,6 +425,15 @@ router.get('/:id/host/stats', async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
+// GET /api/servers/:id/docker/summary — Docker resource counts for this server (console Overview).
+router.get('/:id/docker/summary', async (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    res.json(await dockerService.dockerSummaryForServer(server));
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
 // GET /api/servers/:id/host/metrics?limit= — stored time-series samples (chronological) for trend charts.
 router.get('/:id/host/metrics', (req, res) => {
   try {

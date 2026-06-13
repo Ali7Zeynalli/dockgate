@@ -1363,8 +1363,23 @@ async function testServerConnection(serverConfig) {
   }
 }
 
+// Resource counts for a SPECIFIC server (the per-server console Overview) — does NOT change the active
+// client. Best-effort with a hard timeout so a slow/unreachable host can't hang the request.
+async function dockerSummaryForServer(server) {
+  const client = (server.id === 'local' || server.type === 'local') ? createLocalClient() : createSshClient(server);
+  const withTimeout = (p) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('docker summary timed out')), 12000))]);
+  const [containers, images, volumes, networks] = await withTimeout(Promise.all([
+    client.listContainers({ all: true }),
+    client.listImages(),
+    client.listVolumes().then(v => (v && v.Volumes) || []),
+    client.listNetworks(),
+  ]));
+  const running = containers.filter(c => c.State === 'running').length;
+  return { containers: containers.length, running, stopped: containers.length - running, images: images.length, volumes: volumes.length, networks: networks.length };
+}
+
 module.exports = {
-  docker, invalidateCache, createLocalClient,
+  docker, invalidateCache, createLocalClient, dockerSummaryForServer,
   setActiveServer, getActiveServerId, isLocalActive, assertLocalActive, testServerConnection,
   listContainers, inspectContainer, getContainerStats, containerAction,
   containerTop, containerExecOnce, containerExportStream, updateContainer, commitContainer, recreateContainer,

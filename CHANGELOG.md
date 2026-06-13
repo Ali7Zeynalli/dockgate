@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.115] - 2026-06-13
+
+### Added — Docker resource counts in the console Overview (PHASE 4)
+- The server console Overview now shows the remote server's **Docker** counts (Containers / Running / Images / Volumes / Networks) via `GET /api/servers/:id/docker/summary` (a per-server dockerode client — does not change the active server)
+- Best-effort: a separate fetch with a 12s timeout that doesn't block the readiness + host-metrics view, and is omitted if the remote Docker isn't reachable
+
+---
+
 ## [2.0.114] - 2026-06-13
 
 ### Added — monitoring insight bridges (PHASE 4)

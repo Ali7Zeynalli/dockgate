@@ -200,6 +200,9 @@ async function renderConsoleOverview(serverId, container, onSetup) {
         </div>
       </div>
 
+      <!-- Docker resource counts for this server (best-effort; hidden if the remote Docker isn't reachable) -->
+      <div id="ov-docker"></div>
+
       <!-- Live host metrics — renderHostMonitoring owns this subtree + its own self-terminating 5s poll -->
       <div id="ov-host"></div>
 
@@ -213,6 +216,24 @@ async function renderConsoleOverview(serverId, container, onSetup) {
       <div class="text-xs text-muted">Scanned live over SSH (read-only). Use the <b>Setup</b> tab to install missing items.</div>
     </div>`;
   container.querySelector('#ov-setup')?.addEventListener('click', () => { if (typeof onSetup === 'function') onSetup(); });
+
+  // Docker resource counts (separate, best-effort fetch — a slow/unreachable remote Docker must not block
+  // the readiness + host-metrics view).
+  const dockEl = container.querySelector('#ov-docker');
+  if (dockEl) {
+    API.get(`/servers/${serverId}/docker/summary`).then(d => {
+      if (!document.body.contains(dockEl)) return;
+      const tile = (icon, color, val, label) => `<div class="summary-card"><div class="summary-card-icon ${color}"><span class="nav-item-icon">${icon}</span></div><div class="summary-card-content"><div class="summary-card-value">${val}</div><div class="summary-card-label">${label}</div></div></div>`;
+      dockEl.innerHTML = `<div style="font-size:15px;font-weight:700;margin-bottom:8px">Docker</div>
+        <div class="summary-grid" style="margin-bottom:0">
+          ${tile(Icons.container, 'teal', d.containers, 'Containers')}
+          ${tile(Icons.play, 'green', d.running, 'Running')}
+          ${tile(Icons.image, 'blue', d.images, 'Images')}
+          ${tile(Icons.volume, 'purple', d.volumes, 'Volumes')}
+          ${tile(Icons.network, 'yellow', d.networks, 'Networks')}
+        </div>`;
+    }).catch(() => { if (dockEl) dockEl.innerHTML = ''; }); // remote Docker unreachable → just omit the zone
+  }
 
   // Embed the live host-metrics dashboard; it self-terminates its 5s poll when this view is swapped out.
   const hostEl = container.querySelector('#ov-host');
