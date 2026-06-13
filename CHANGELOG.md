@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.123] - 2026-06-13
+
+### Improved — Setup presets show which items they install
+- Selecting a preset (Just Docker / Secure baseline / Full) now **ticks and rings the exact component cards** that preset will install, so you see the selection before running — not just an opaque preset name. Items are read-only under a preset; switch to **Custom** to choose individually (the current ticks carry over as a starting point). The risky-steps confirmation reflects the ticked high-risk items
+
+---
+
 ## [2.0.122] - 2026-06-13
 
 ### Fixed — server dropdown unreadable in dark mode

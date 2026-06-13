@@ -116,13 +116,23 @@ function renderProvisionForm(serverId, catalog, scan, container) {
       card.style.background = on ? 'rgba(0,212,170,.07)' : 'transparent';
     });
     const custom = preset === 'custom';
-    // Custom = you tick items; other presets show the same cards read-only (live status preview).
-    container.querySelectorAll('.pv-item').forEach(cb => { cb.disabled = !custom || cb.dataset.na === '1'; });
+    const presetIds = custom ? null : (catalog.presets[preset] || []);
+    // Non-custom: TICK exactly the items this preset installs (read-only) so you SEE the selection.
+    // Custom: checkboxes are editable; keep whatever is ticked (a sensible start when switching presets).
+    container.querySelectorAll('.pv-item').forEach(cb => {
+      const na = cb.dataset.na === '1';
+      if (custom) { cb.disabled = na; }
+      else { cb.checked = !na && presetIds.includes(cb.value); cb.disabled = true; }
+      // Ring the selected items so the preset's selection is visible at a glance.
+      const card = cb.closest('.pv-item-card');
+      if (card) card.style.boxShadow = cb.checked ? 'inset 0 0 0 1.5px var(--accent)' : 'none';
+    });
     const hint = container.querySelector('#pv-custom-hint');
-    if (hint) hint.textContent = custom ? 'Tick the items you want to install' : 'Switch to Custom to tick individual items';
-    const risky = custom
-      ? [...container.querySelectorAll('.pv-item:checked')].some(c => c.dataset.risk === 'high')
-      : (preset === 'secure-baseline' || preset === 'full');
+    if (hint) hint.textContent = custom
+      ? 'Tick the items you want to install'
+      : 'These items will be installed by this preset — switch to Custom to change';
+    // Risky = any TICKED high-risk item (works for both modes, since the preset's items are ticked above).
+    const risky = [...container.querySelectorAll('.pv-item:checked')].some(c => c.dataset.risk === 'high');
     container.querySelector('#pv-confirm-wrap').style.display = risky ? 'block' : 'none';
   }
   container.querySelectorAll('input[name="pv-preset"]').forEach(r => r.addEventListener('change', update));
