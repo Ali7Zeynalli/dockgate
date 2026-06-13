@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.105] - 2026-06-13
+
+### Changed — Setup tab decluttered
+- Removed the long per-item "How it works — detect / install / verify" command dump at the bottom of the Setup tab (it was tiring to scroll). The component status cards already show each item's name, description and install state; the detect-first behaviour is noted next to the Run button
+
+---
+
 ## [2.0.104] - 2026-06-13
 
 ### Added — Manage tab: guarded config editor (completes PHASE 5 service management)

@@ -74,20 +74,6 @@ function renderProvisionForm(serverId, catalog, scan, container) {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">${gItems.map(itemCard).join('')}</div></div>`;
   }).join('');
 
-  // "How it works" — clean detail-grid rows (Detect / Install / Verify) instead of a raw <pre> dump.
-  const explainer = items.map(it => `
-    <details style="margin-bottom:8px">
-      <summary style="cursor:pointer;font-weight:500">${escapeHtml(it.label)} <span class="text-xs text-muted">[${escapeHtml(it.group)}${it.risk === 'high' ? ' · risky' : ''}]</span></summary>
-      <div style="padding:10px 0 4px 12px">
-        ${it.description ? `<div class="text-sm text-muted" style="margin-bottom:8px">${escapeHtml(it.description)}</div>` : ''}
-        ${it.commands ? `<div class="detail-grid" style="grid-template-columns:1fr;gap:8px">
-          <div class="detail-item"><div class="detail-label">Detect</div><div class="detail-value mono" style="white-space:pre;overflow-x:auto">${escapeHtml(it.commands.detect)}</div></div>
-          <div class="detail-item"><div class="detail-label">Install</div><div class="detail-value mono" style="white-space:pre;overflow-x:auto">${escapeHtml(it.commands.install)}</div></div>
-          <div class="detail-item"><div class="detail-label">Verify</div><div class="detail-value mono" style="white-space:pre;overflow-x:auto">${escapeHtml(it.commands.verify)}</div></div>
-        </div>` : ''}
-      </div>
-    </details>`).join('');
-
   container.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:16px">
       <div class="card">
@@ -117,10 +103,8 @@ function renderProvisionForm(serverId, catalog, scan, container) {
 
       <div style="display:flex;gap:10px;align-items:center">
         <button class="btn btn-primary" id="pv-run">▶ Run provisioning</button>
-        <span class="text-xs text-muted">Runs in the background — safe to navigate away.</span>
+        <span class="text-xs text-muted">Runs in the background — safe to navigate away. Each item is detected first and skipped if already present.</span>
       </div>
-
-      <details class="card"><summary style="font-weight:600;cursor:pointer">How it works — detect / install / verify per item</summary><div style="padding-top:10px">${explainer}</div></details>
     </div>`;
 
   function update() {
