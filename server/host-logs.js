@@ -17,6 +17,7 @@ const SOURCES = {
 };
 
 const VALID_UNIT = /^[A-Za-z0-9@:._-]+$/;                         // systemd unit — no shell metacharacters
+const isValidUnit = (u) => typeof u === 'string' && VALID_UNIT.test(u);
 const isLogFile = (p) => typeof p === 'string' && /^\/var\/log\/[A-Za-z0-9._/-]+$/.test(p) && !p.includes('..');
 
 // Run a SERVER-BUILT command through the isolated worker and resolve its stdout.
@@ -70,4 +71,4 @@ function collectHostLogs(server, opts, lines) {
   });
 }
 
-module.exports = { SOURCES, discoverLogSources, collectHostLogs };
+module.exports = { SOURCES, discoverLogSources, collectHostLogs, isValidUnit, isLogFile };

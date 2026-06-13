@@ -59,3 +59,25 @@ test('catalog.guardedResolve: high-risk items require confirm (409); just-docker
   );
   assert.doesNotThrow(() => cat.guardedResolve({ hasKey: true, preset: 'just-docker', confirm: false }));
 });
+
+test('catalog: swap + docker-group are OPTIONAL (do not nag as missing); docker itself is required', () => {
+  assert.ok(cat.byId.swap.optional, 'swap is optional (OOM net)');
+  assert.ok(cat.byId['docker-group'].optional, 'docker-group is optional (sudo-less convenience)');
+  assert.ok(!cat.byId.docker.optional, 'docker engine is required');
+  assert.ok(!cat.byId.firewall.optional, 'firewall is not optional');
+});
+
+test('catalog: System update is alwaysRun (an action, detect is `false` so it never reports "installed")', () => {
+  assert.ok(cat.byId.update.alwaysRun, 'update marked alwaysRun');
+  assert.equal(cat.byId.update.distro.debian.detect, 'false', 'detect always fails → never skipped, never "present"');
+});
+
+test('catalog: ssh-hardening is SAFE — no PasswordAuthentication/PermitRootLogin disable; sets MaxAuthTries', () => {
+  for (const fam of ['debian', 'rhel']) {
+    const inst = cat.byId['ssh-hardening'].distro[fam].install;
+    assert.ok(!/PasswordAuthentication\s+no/i.test(inst), `${fam}: must NOT disable password auth (lockout)`);
+    assert.ok(!/PermitRootLogin/i.test(inst), `${fam}: must NOT change root login (lockout)`);
+    assert.ok(/MaxAuthTries/i.test(inst), `${fam}: should set MaxAuthTries (safe hardening)`);
+    assert.ok(/X11Forwarding\s+no/i.test(inst), `${fam}: should disable X11 forwarding`);
+  }
+});

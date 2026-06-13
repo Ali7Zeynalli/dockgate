@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.129] - 2026-06-13
+
+### Added — tests for the new log/catalog logic + audit-coverage verified
+- New unit tests: host-logs path/unit **validators** (injection + traversal rejection, `/var/log`-only), the **optional**-item flag (swap / docker-group), **alwaysRun** (System update), and that **SSH hardening is safe** (no `PasswordAuthentication`/`PermitRootLogin` disable, sets `MaxAuthTries`/`X11Forwarding`). **40 pure-logic tests** total (was 33)
+- Verified that **every mutating server-management action is written to the audit log** — provisioning (start/finish), service start/stop/restart/enable/disable, config write, fail2ban/ufw ops, grant-docker, and server add/edit/delete/switch. No gaps (only the read-only connection test is, correctly, not audited)
+
+---
+
 ## [2.0.128] - 2026-06-13
 
 ### Fixed — optional steps no longer nag as "missing" (swap, docker-group)
