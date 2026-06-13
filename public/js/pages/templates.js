@@ -4,7 +4,6 @@
 Router.register('templates', async (content) => {
   let all = [];      // every template from the catalog
   let source = '';   // 'bundled' | 'remote' | 'bundled-fallback'
-  let swarmOk = false; // aktiv daemon swarm manager-dirsə stack template-lərdə "Swarm" düyməsi çıxır
 
   // "80/tcp" or "8080:80/tcp" → { host, container, proto } for the Run modal.
   function parsePort(p) {
@@ -72,32 +71,6 @@ Router.register('templates', async (content) => {
     }
   }
 
-  // Stack template → SWARM STACK (docker stack deploy). Yalnız swarm manager aktiv olduqda görünür.
-  async function deployToSwarm(t) {
-    try {
-      showToast('Loading compose definition…', 'info', 2000);
-      const yaml = await resolveStackYaml(t);
-      const slug = (t.title || 'stack').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      const body = `<div class="input-group"><label>Stack name</label><input class="input" id="tpl-stk-name" value="${escapeHtml(slug)}"></div>
-        <div class="text-xs text-muted">Deployed with <code>docker stack deploy</code> on the local manager.</div>`;
-      const m = showModal(`Deploy to Swarm — ${escapeHtml(t.title || '')}`, body, []);
-      const btn = document.createElement('button');
-      btn.className = 'btn btn-primary'; btn.textContent = 'Deploy Stack';
-      m.overlay.querySelector('#modal-footer').appendChild(btn);
-      btn.addEventListener('click', async () => {
-        const name = m.overlay.querySelector('#tpl-stk-name').value.trim();
-        if (!name) { showToast('Stack name required', 'warning'); return; }
-        btn.disabled = true; btn.textContent = 'Deploying…';
-        try {
-          await API.post('/swarm/stacks/deploy', { name, compose: yaml });
-          showToast(`Stack "${name}" deployed`); m.close(); Router.navigate('deploy',{tab:'swarm'});
-        } catch (e) { showToast(e.message, 'error', 10000); btn.disabled = false; btn.textContent = 'Deploy Stack'; }
-      });
-    } catch (err) {
-      showToast('Cannot deploy: ' + err.message, 'error', 8000);
-    }
-  }
-
   // Build the <img src> for a logo. `data:` URIs are already inline/same-origin → use as-is;
   // http(s) logos go through our same-origin proxy so external CORP: same-origin can't block them.
   function logoSrc(logo) {
@@ -123,7 +96,6 @@ Router.register('templates', async (content) => {
         <div style="display:flex;gap:4px;flex-wrap:wrap">${cats}</div>
         <div style="display:flex;gap:6px">
           <button class="btn btn-primary btn-sm" data-deploy="${idx}" style="flex:1">${Icons.play} Deploy</button>
-          ${isStack && swarmOk ? `<button class="btn btn-secondary btn-sm" data-deploysw="${idx}" title="Deploy as a Swarm stack">${Icons.swarm}</button>` : ''}
         </div>
       </div>`;
   }
@@ -280,12 +252,6 @@ Router.register('templates', async (content) => {
     document.getElementById('tpl-search')?.addEventListener('input', applyFilters);
     document.getElementById('tpl-cat')?.addEventListener('change', applyFilters);
     document.getElementById('tpl-grid')?.addEventListener('click', (e) => {
-      const sw = e.target.closest('[data-deploysw]');
-      if (sw) {
-        const t = all[parseInt(sw.dataset.deploysw, 10)];
-        if (t) deployToSwarm(t);
-        return;
-      }
       const btn = e.target.closest('[data-deploy]');
       if (btn) { const t = all[parseInt(btn.dataset.deploy, 10)]; if (t) deploy(t); return; }
       // Anywhere else on the card → open the app detail view.
@@ -294,11 +260,6 @@ Router.register('templates', async (content) => {
     });
 
     applyFilters();
-
-    // Swarm manager aktivdirsə stack kartlarında "Swarm" düyməsini göstər (grid yenidən render olunur)
-    API.get('/swarm').then(s => {
-      if (s && s.active && s.isManager && !swarmOk) { swarmOk = true; applyFilters(); }
-    }).catch(() => {});
   }
 
   await load();

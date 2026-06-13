@@ -88,7 +88,6 @@ Router.register('images', async (content) => {
                   <td>
                     <div class="td-actions">
                       <button class="btn-icon" title="Run container" data-run="${escapeHtml(full)}">${Icons.play}</button>
-                      <button class="btn-icon sw-only" title="Deploy as Swarm service" data-swarmsvc="${escapeHtml(full)}" style="display:none">${Icons.swarm}</button>
                       <button class="btn-icon" title="Layers / history" data-layers="${img.id}">${Icons.layers}</button>
                       <button class="btn-icon" title="Tags" data-tags="${img.id}">${Icons.tag}</button>
                       <button class="btn-icon" title="Save (download tar)" data-save="${img.id}">${Icons.download}</button>
@@ -204,14 +203,6 @@ Router.register('images', async (content) => {
       content.querySelectorAll('[data-tags]').forEach(btn => {
         btn.addEventListener('click', () => openTagsModal(btn.dataset.tags));
       });
-
-      // Deploy as Swarm service — buttons stay hidden unless the active daemon is a swarm manager
-      content.querySelectorAll('[data-swarmsvc]').forEach(btn => btn.addEventListener('click', () => {
-        openSwarmServiceCreate({ image: btn.dataset.swarmsvc }, () => Router.navigate('deploy',{tab:'swarm'}));
-      }));
-      API.get('/swarm').then(s => {
-        if (s && s.active && s.isManager) content.querySelectorAll('.sw-only').forEach(b => { b.style.display = ''; });
-      }).catch(() => {});
 
       // Build from this image (I3) → hand off to the Builds page with an inline Dockerfile prefilled
       content.querySelectorAll('[data-buildfrom]').forEach(btn => btn.addEventListener('click', () => {

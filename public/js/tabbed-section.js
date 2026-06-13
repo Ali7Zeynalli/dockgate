@@ -51,7 +51,7 @@ Router.register('resources', (content, params) => renderTabbedSection(content, p
   default: 'containers',
 }));
 Router.register('deploy', (content, params) => renderTabbedSection(content, params, {
-  tabs: [['compose', 'Compose'], ['templates', 'App Templates'], ['swarm', 'Swarm']],
+  tabs: [['compose', 'Compose'], ['templates', 'App Templates']],
   default: 'compose',
 }));
 Router.register('activity', (content, params) => renderTabbedSection(content, params, {

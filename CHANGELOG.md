@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.130] - 2026-06-13
+
+### Removed — Docker Swarm (entirely)
+- **Docker Swarm support is fully removed** — no one was using it and it could not work for the common topology (a local/NAT'd manager that internet VPSes can't reach). Gone: the Deploy → **Swarm** tab and the whole swarm page (Services, Stacks, Nodes, Secrets, Configs, Initialize, Join-a-node), the **New Swarm Service** modal, and the cross-module "Deploy to Swarm" / "Deploy as Stack (Swarm)" handoffs in the Run modal, Images, Compose editor and App Templates
+- **Backend:** removed the entire `/api/swarm/*` route module and all 23 swarm/service/node/stack/secret/config functions from `server/docker.js` (plus their exports and the swarm-only `getActiveServerHost` helper). Shared infrastructure (`createSshClient`, `getActiveServerId`, `buildCliEnv`, `invalidateCache`, the docker Proxy) is untouched — Compose, remote SSH hosts, provisioning and every other feature keep working
+- **Files deleted:** `server/routes/swarm.js`, `public/js/pages/swarm.js`, `public/js/swarm-service-modal.js`. The overlay-network note on the Networks page was reworded to drop the Swarm framing (the `overlay` driver itself stays)
+- Zero swarm remnants remain (`grep -ri swarm` over `server/` + `public/` is clean); all 40 pure-logic unit tests still pass and every edited file is syntax-clean
+
+---
+
 ## [2.0.129] - 2026-06-13
 
 ### Added — tests for the new log/catalog logic + audit-coverage verified

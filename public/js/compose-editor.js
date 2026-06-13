@@ -79,32 +79,6 @@ async function openComposeEditor(existing, opts = {}) {
   submitBtn.textContent = existing ? 'Save & Up' : 'Create & Up';
   root.querySelector('#modal-footer').appendChild(submitBtn);
 
-  // Cross-module: eyni compose YAML SWARM STACK kimi də deploy oluna bilər (docker stack deploy,
-  // yalnız lokal manager). Düymə yalnız aktiv daemon swarm manager olduqda görünür.
-  API.get('/swarm').then(s => {
-    if (!s || !s.active || !s.isManager) return;
-    const stkBtn = document.createElement('button');
-    stkBtn.className = 'btn btn-secondary';
-    stkBtn.textContent = 'Deploy as Stack (Swarm)';
-    root.querySelector('#modal-footer').prepend(stkBtn);
-    stkBtn.addEventListener('click', async () => {
-      const project = root.querySelector('#cmp-name').value.trim() || existing || '';
-      const yamlVal = ta.value;
-      if (!project) { showToast('Project/stack name is required', 'warning'); return; }
-      if (!yamlVal.trim()) { showToast('Compose YAML is required', 'warning'); return; }
-      stkBtn.disabled = true; stkBtn.textContent = 'Deploying…';
-      try {
-        await API.post('/swarm/stacks/deploy', { name: project, compose: yamlVal });
-        showToast(`Stack "${project}" deployed`);
-        m.close();
-        Router.navigate('deploy',{tab:'swarm'});
-      } catch (err) {
-        showToast(err.message, 'error', 10000);
-        stkBtn.disabled = false; stkBtn.textContent = 'Deploy as Stack (Swarm)';
-      }
-    });
-  }).catch(() => {});
-
   // Repeatable-row machinery (addRow can prefill the new row's inputs).
   const addRow = (listId, builder, fill) => {
     const list = root.querySelector('#' + listId);
