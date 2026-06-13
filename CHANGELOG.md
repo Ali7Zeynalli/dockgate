@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.138] - 2026-06-13
+
+### Fixed — a container restart is now ONE alert, not "Stopped" then "Restarted"
+- `docker restart` emits `die → … → restart` (and an unresponsive container is SIGKILLed = exit 137), so a single restart used to arrive as **two** notifications: *Stopped/OOM* then *Restarted*. The `die` alert is now **debounced ~3s**; if a `restart` event for the same container follows, the die alert is cancelled and only **Restarted** is sent
+- A real stop / crash / OOM (no restart follows) still alerts — just ~3s later. Fixed a race where the die handler's log-fetch ran before the debounce was registered (logs are now fetched lazily when the debounce fires, so the cancel is reliable)
+- Applied to both the central monitor and the agent; **runtime-verified on a real daemon**: restart (graceful & SIGKILL'd) → 1 alert, plain stop → 1 alert
+
+---
+
 ## [2.0.137] - 2026-06-13
 
 ### Added — central rule/channel changes now auto-propagate to installed agents

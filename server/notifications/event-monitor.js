@@ -7,6 +7,10 @@ const mailer = require('./mailer');
 const telegram = require('./telegram');
 const templates = require('./templates');
 
+// A `docker restart` emits die→…→restart. Hold a "Stopped/Crashed" alert this long so a following
+// `restart` event can cancel it — otherwise a restart looks like Stop-then-Restart (two alerts).
+const DIE_DEBOUNCE_MS = 3000;
+
 class EventMonitor {
   /**
    * @param {string} serverId — 'local' or registered SSH server id
@@ -17,6 +21,7 @@ class EventMonitor {
     this.docker = docker;
     this.stream = null;
     this.cooldowns = new Map(); // (event_type + resourceKey) → last_sent timestamp
+    this.pendingDie = new Map(); // containerId → timer (debounced die alert, cancelled by a restart)
     this.reconnectTimer = null;
     this.diskCheckTimer = null;
     this.healthCheckTimer = null;
@@ -37,6 +42,8 @@ class EventMonitor {
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (this.diskCheckTimer) { clearInterval(this.diskCheckTimer); this.diskCheckTimer = null; }
     if (this.healthCheckTimer) { clearInterval(this.healthCheckTimer); this.healthCheckTimer = null; }
+    for (const t of this.pendingDie.values()) { try { clearTimeout(t); } catch (e) {} }
+    this.pendingDie.clear();
     console.log(`[EventMonitor:${this.serverId}] Stopped`);
   }
 
@@ -141,31 +148,48 @@ class EventMonitor {
       const exitCode = attrs.exitCode;
       // "Unexpected" only for a non-zero exit code — exit 0 is a clean/intentional stop.
       const unexpected = exitCode !== undefined && exitCode !== '0' && exitCode !== 0;
-      // Logs explain WHY it died — fetch for OOM / crash, not for a clean exit-0 stop.
-      const logs = (exitCode === '137' || unexpected) ? await this._tailLogs(event.Actor?.ID) : '';
+      const cid = event.Actor?.ID;
 
-      // OOM kill — exitCode 137. Send only the OOM notification, then return —
-      // otherwise both OOM and "Container Stopped" were sent for the same event (duplicate).
-      if (exitCode === '137') {
-        await this._sendNotification('container_oom', name, {
-          subject: `${prefix}OOM Kill: ${name}`,
-          html: templates.containerOomTemplate({ containerName: name, containerId: id, image, time, server: this.serverId, logs }),
-          telegramText: telegram.formatAlert(`${prefix}OOM Kill`, { ...(serverDetail || {}), Container: name, Image: image, Time: time }) + telegram.formatLogs(logs),
-        });
-        return;
+      // Build + send the death alert LAZILY (logs fetched only when the debounce fires). Keeping the
+      // log-fetch out of the synchronous path is what lets the debounce work: pendingDie is set with
+      // NO prior await, so a concurrent `restart` handler reliably finds and cancels it.
+      const send = async () => {
+        const logs = (exitCode === '137' || unexpected) ? await this._tailLogs(cid) : '';
+        let eventType, payload;
+        if (exitCode === '137') {
+          eventType = 'container_oom';
+          payload = {
+            subject: `${prefix}OOM Kill: ${name}`,
+            html: templates.containerOomTemplate({ containerName: name, containerId: id, image, time, server: this.serverId, logs }),
+            telegramText: telegram.formatAlert(`${prefix}OOM Kill`, { ...(serverDetail || {}), Container: name, Image: image, Time: time }) + telegram.formatLogs(logs),
+          };
+        } else {
+          const verb = unexpected ? 'Crashed' : 'Stopped';
+          eventType = 'container_die';
+          payload = {
+            subject: `${prefix}Container ${verb}: ${name}`,
+            html: templates.containerDieTemplate({ containerName: name, containerId: id, image, time, exitCode: exitCode ?? '—', unexpected, server: this.serverId, logs }),
+            telegramText: telegram.formatAlert(`${prefix}Container ${verb}`, { ...(serverDetail || {}), Container: name, Image: image, 'Exit Code': exitCode ?? '—', Time: time }) + telegram.formatLogs(logs),
+          };
+        }
+        await this._sendNotification(eventType, name, payload);
+      };
+
+      // Debounce: a `docker restart` fires die→…→restart (an unresponsive container is SIGKILLed=137).
+      // Hold the alert; the restart handler cancels it so one restart isn't reported as Stop+Restart.
+      if (cid) {
+        if (this.pendingDie.has(cid)) clearTimeout(this.pendingDie.get(cid));
+        this.pendingDie.set(cid, setTimeout(() => { this.pendingDie.delete(cid); send(); }, DIE_DEBOUNCE_MS));
+      } else {
+        await send();
       }
-
-      const verb = unexpected ? 'Crashed' : 'Stopped';
-
-      await this._sendNotification('container_die', name, {
-        subject: `${prefix}Container ${verb}: ${name}`,
-        html: templates.containerDieTemplate({ containerName: name, containerId: id, image, time, exitCode: exitCode ?? '—', unexpected, server: this.serverId, logs }),
-        telegramText: telegram.formatAlert(`${prefix}Container ${verb}`, { ...(serverDetail || {}), Container: name, Image: image, 'Exit Code': exitCode ?? '—', Time: time }) + telegram.formatLogs(logs),
-      });
     }
 
     // Container restart
     if (event.Type === 'container' && event.Action === 'restart') {
+      // Cancel the pending "Stopped/Crashed" alert from the die event that preceded this restart.
+      const rcid = event.Actor?.ID;
+      if (rcid && this.pendingDie.has(rcid)) { clearTimeout(this.pendingDie.get(rcid)); this.pendingDie.delete(rcid); }
       let restartCount = '—';
       try {
         const info = await this.docker.getContainer(event.Actor?.ID).inspect();
