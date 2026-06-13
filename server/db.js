@@ -185,6 +185,8 @@ const defaultSettings = {
   // App Templates catalog source. Empty = the default community catalog (500+ apps, auto-loaded by
   // the backend); a URL = custom catalog; the sentinel 'bundled' = the offline ~15 set only.
   template_url: '',
+  // Auth: first-run setup writes auth_password_hash + auth_salt into settings; this flag gates the setup screen.
+  admin_setup_done: 'false',
 };
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
