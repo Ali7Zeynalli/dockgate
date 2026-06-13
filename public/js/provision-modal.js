@@ -108,6 +108,76 @@ function renderProvisionForm(serverId, catalog, scan, container) {
   });
 }
 
+// Overview — a card-based "where does this server stand" dashboard built from the live scan.
+// Shows, per item, what's installed / missing / n-a, grouped, so you can see the state at a glance.
+// onSetup() is called by the "Set up missing" button (the console switches to the Setup tab).
+async function renderProvisionOverview(serverId, container, onSetup) {
+  container.innerHTML = `
+    <div class="text-sm text-muted">🔍 Scanning <b>${escapeHtml(serverId)}</b> over SSH…</div>
+    <div class="skeleton" style="height:18px;width:55%;margin-top:10px"></div>
+    <div class="skeleton" style="height:18px;width:40%;margin-top:6px"></div>`;
+  let catalog, scan;
+  try {
+    [catalog, scan] = await Promise.all([
+      API.get('/servers/provision/catalog'),
+      API.get(`/servers/${serverId}/provision/scan`),
+    ]);
+  } catch (e) {
+    container.innerHTML = `<div class="text-danger text-sm">Scan failed: ${escapeHtml(e.message)}</div>
+      <button class="btn btn-secondary btn-sm" id="ov-retry" style="margin-top:10px">Retry scan</button>`;
+    container.querySelector('#ov-retry')?.addEventListener('click', () => renderProvisionOverview(serverId, container, onSetup));
+    return;
+  }
+
+  const present = {};
+  for (const it of (scan.items || [])) present[it.id] = it;
+  const stateOf = (id) => { const s = present[id]; return s ? (s.na ? 'na' : (s.present ? 'present' : 'missing')) : 'unknown'; };
+  const items = catalog.items || [];
+  const installed = items.filter(it => stateOf(it.id) === 'present').length;
+  const missing = items.filter(it => stateOf(it.id) === 'missing').length;
+  const naCount = items.filter(it => stateOf(it.id) === 'na').length;
+  const ready = stateOf('docker') === 'present';
+
+  const meta = {
+    present: { ic: '✓', col: 'var(--success)', txt: 'installed' },
+    missing: { ic: '○', col: 'var(--text-muted)', txt: 'missing' },
+    na:      { ic: '⊘', col: 'var(--text-muted)', txt: 'n/a on this OS' },
+    unknown: { ic: '?', col: 'var(--text-muted)', txt: 'unknown' },
+  };
+  const cardFor = (it) => {
+    const st = stateOf(it.id), c = meta[st];
+    return `<div class="card" style="border-left:3px solid ${c.col};opacity:${st === 'na' ? 0.55 : 1}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-weight:600">${escapeHtml(it.label)}</div>
+        <div style="color:${c.col};font-size:18px;line-height:1">${c.ic}</div>
+      </div>
+      <div class="text-xs text-muted" style="margin-top:3px">${c.txt}${it.risk === 'high' ? ' · ⚠ risky' : ''}</div>
+    </div>`;
+  };
+  const groups = [['base', 'Base'], ['security', 'Security'], ['system', 'System']];
+
+  container.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:16px;max-width:900px">
+      <div class="card" style="border-left:4px solid ${ready ? 'var(--success)' : 'var(--warning, #f59e0b)'}">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-size:17px;font-weight:700">${ready ? '✓ Ready' : '⚠ Needs setup'}</div>
+            <div class="text-sm text-muted">${scan.distro ? 'OS: ' + escapeHtml(scan.distro) + ' · ' : ''}${installed} installed · ${missing} missing${naCount ? ` · ${naCount} n/a` : ''}</div>
+          </div>
+          ${missing ? `<button class="btn btn-primary btn-sm" id="ov-setup">Set up ${missing} missing →</button>` : ''}
+        </div>
+      </div>
+      ${groups.map(([g, glabel]) => {
+        const gItems = items.filter(it => it.group === g);
+        if (!gItems.length) return '';
+        return `<div><div style="font-weight:600;margin-bottom:8px">${glabel}</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${gItems.map(cardFor).join('')}</div></div>`;
+      }).join('')}
+      <div class="text-xs text-muted">Scanned live over SSH (read-only). Use the <b>Setup</b> tab to install the missing items.</div>
+    </div>`;
+  container.querySelector('#ov-setup')?.addEventListener('click', () => { if (typeof onSetup === 'function') onSetup(); });
+}
+
 // Live log + per-item status; polls the job (keeps running server-side if you navigate away).
 function streamProvisionJob(serverId, jobId, container) {
   container.innerHTML = `

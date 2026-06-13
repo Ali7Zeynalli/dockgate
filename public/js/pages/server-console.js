@@ -9,9 +9,9 @@ Router.register('server-console', async (content, params) => {
   let server = { id };
   try { const data = await API.get('/servers'); server = (data.servers || []).find(s => s.id === id) || { id }; } catch (e) {}
 
-  const tabs = [['setup', 'Setup'], ['monitoring', 'Monitoring'], ['logs', 'Logs'], ['overview', 'Overview']];
+  const tabs = [['overview', 'Overview'], ['setup', 'Setup'], ['monitoring', 'Monitoring'], ['logs', 'Logs']];
   const validTabs = tabs.map(t => t[0]);
-  let active = (params && validTabs.includes(params.tab)) ? params.tab : 'setup';
+  let active = (params && validTabs.includes(params.tab)) ? params.tab : 'overview';
 
   content.innerHTML = `
     <div class="page-header">
@@ -31,16 +31,19 @@ Router.register('server-console', async (content, params) => {
 
   const ph = (title, desc) => `<div class="empty-state" style="padding:48px 24px;text-align:center"><h3>${title}</h3><p class="text-muted">${desc}</p><p class="text-xs text-muted" style="margin-top:8px">Bu tab host monitoring (PHASE 3) ilə gələcək.</p></div>`;
   function renderConTab(tab) {
-    if (tab === 'setup') renderProvisionPanel(id, con);
+    if (tab === 'overview') renderProvisionOverview(id, con, () => goTab('setup'));
+    else if (tab === 'setup') renderProvisionPanel(id, con);
     else if (tab === 'monitoring') con.innerHTML = ph('Monitoring', 'CPU / RAM / disk / load / uptime — canlı göstəricilər.');
-    else if (tab === 'logs') con.innerHTML = ph('Logs', 'Host logları (journald / auth / dmesg).');
-    else con.innerHTML = ph('Overview', 'Readiness + canlı gauge + Docker xülasə.');
+    else con.innerHTML = ph('Logs', 'Host logları (journald / auth / dmesg).');
+  }
+  function goTab(tab) {
+    active = tab;
+    content.querySelectorAll('#con-tabs .tab-btn').forEach(x => x.classList.toggle('active', x.dataset.ctab === tab));
+    Router.updateParams({ id, tab }); // deep-link the sub-tab
+    renderConTab(tab);
   }
   content.querySelector('#con-tabs').addEventListener('click', (e) => {
-    const b = e.target.closest('.tab-btn'); if (!b) return;
-    content.querySelectorAll('#con-tabs .tab-btn').forEach(x => x.classList.remove('active'));
-    b.classList.add('active'); active = b.dataset.ctab; renderConTab(active);
-    Router.updateParams({ id, tab: active }); // deep-link the sub-tab
+    const b = e.target.closest('.tab-btn'); if (b) goTab(b.dataset.ctab);
   });
   renderConTab(active);
 });
