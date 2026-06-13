@@ -54,11 +54,15 @@ function renderProvisionForm(serverId, catalog, scan, container) {
   };
   const itemCard = (it) => {
     const st = it.alwaysRun ? 'action' : stateOf(it.id), m = pvState[st] || pvState.unknown;
-    return `<label class="card pv-item-card" style="display:flex;gap:10px;align-items:flex-start;border-left:3px solid ${m.col};padding:12px 14px;opacity:${st === 'na' ? 0.55 : 1}">
-      <input type="checkbox" class="pv-item" value="${escapeHtml(it.id)}" data-risk="${escapeHtml(it.risk)}"${st === 'na' ? ' data-na="1"' : ''} disabled style="margin-top:3px">
+    return `<label class="card pv-item-card" style="display:flex;gap:10px;align-items:flex-start;border-left:3px solid ${m.col};padding:12px 14px;opacity:${st === 'na' ? 0.55 : 1};transition:background .12s,box-shadow .12s">
+      <input type="checkbox" class="pv-item" value="${escapeHtml(it.id)}" data-risk="${escapeHtml(it.risk)}"${st === 'na' ? ' data-na="1"' : ''} style="margin-top:3px;accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">
       <div style="flex:1;min-width:0">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-          <span style="font-weight:600">${escapeHtml(it.label)}</span>${m.pill}
+          <span style="font-weight:600">${escapeHtml(it.label)}</span>
+          <span style="display:flex;align-items:center;gap:6px">
+            <span class="pv-sel-badge badge" style="display:none;background:var(--accent);color:var(--text-inverse)">✓ selected</span>
+            ${m.pill}
+          </span>
         </div>
         ${it.description ? `<div class="text-xs text-muted" style="margin-top:3px">${escapeHtml(it.description)}</div>` : ''}
         ${it.risk === 'high' ? '<div class="text-xs" style="color:var(--danger);margin-top:3px">⚠ risky — can lock you out if misconfigured</div>' : ''}
@@ -123,9 +127,17 @@ function renderProvisionForm(serverId, catalog, scan, container) {
       const na = cb.dataset.na === '1';
       if (custom) { cb.disabled = na; }
       else { cb.checked = !na && presetIds.includes(cb.value); cb.disabled = true; }
-      // Ring the selected items so the preset's selection is visible at a glance.
+      const sel = cb.checked;
       const card = cb.closest('.pv-item-card');
-      if (card) card.style.boxShadow = cb.checked ? 'inset 0 0 0 1.5px var(--accent)' : 'none';
+      const badge = card && card.querySelector('.pv-sel-badge');
+      // Native checkbox is the control in Custom; under a preset it's read-only → hide it and make the
+      // selection unmistakable with an accent ring + tint + a "✓ selected" badge.
+      cb.style.display = custom ? '' : 'none';
+      if (badge) badge.style.display = (!custom && sel) ? '' : 'none';
+      if (card) {
+        card.style.boxShadow = sel ? 'inset 0 0 0 1.5px var(--accent)' : 'none';
+        card.style.background = sel ? 'var(--accent-dim)' : '';
+      }
     });
     const hint = container.querySelector('#pv-custom-hint');
     if (hint) hint.textContent = custom

@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.124] - 2026-06-13
+
+### Improved — clearer selection in Setup (✓ badge instead of a faint checkbox)
+- Selected items were marked only by a disabled native checkbox, which renders greyed/faint — you couldn't tell what was selected. Selected items now show an **accent ring + tinted background + a "✓ selected" badge** (under a preset, where selection is read-only); in **Custom** the checkbox is shown with an accent colour and stays interactive. The selection is now unmistakable
+
+---
+
 ## [2.0.123] - 2026-06-13
 
 ### Improved — Setup presets show which items they install
