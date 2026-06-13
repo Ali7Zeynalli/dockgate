@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.117] - 2026-06-13
+
+### Changed — nicer tabs everywhere (segmented control)
+- The tab component (used by the consolidated sections, the server console, Infrastructure, Settings, Builds, Swarm, container detail, terminal…) was a small, flat underline. Redesigned as a **segmented control**: a rounded track with the active tab raised as a pill (accent text + card background + soft shadow), larger text (13.5px / 600 weight) and a subtle hover background
+- `.tabs/.tab` and `.tab-bar/.tab-btn` now share a single definition, so every tab bar in the app looks consistent
+
+---
+
 ## [2.0.116] - 2026-06-13
 
 ### Changed — sidebar consolidated: 17 entries → 7 (tabbed sections)
