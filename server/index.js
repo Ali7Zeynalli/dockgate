@@ -9,7 +9,11 @@ const { logAction } = require('./audit');
 const app = express();
 const server = http.createServer(app);
 // maxHttpBufferSize: 10MB so large streamed messages (build logs, exec output) don't trip the 1MB default.
-const io = new Server(server, { cors: { origin: '*' }, maxHttpBufferSize: 10 * 1024 * 1024 });
+// Same-origin only by default; set ALLOWED_ORIGIN to permit a specific cross-origin panel (cookie auth needs credentials).
+const io = new Server(server, {
+  cors: process.env.ALLOWED_ORIGIN ? { origin: process.env.ALLOWED_ORIGIN, credentials: true } : { origin: false },
+  maxHttpBufferSize: 10 * 1024 * 1024, // large streamed messages (build logs, exec output)
+});
 
 const monitorManager = require('./notifications/monitor-manager');
 const { attachHostTerminal } = require('./host-terminal');
@@ -43,9 +47,10 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // valid session cookie. Static SPA assets stay public (they're the app shell, no data); the client
 // renders the login/setup screen when /api/auth/status reports unauthenticated. Registered BEFORE the
 // business routes so requireAuth runs first for them.
-app.use('/api/auth', require('./routes/auth'));
-const { requireAuth } = require('./auth/middleware');
-app.use('/api', requireAuth);
+const { requireAuth, checkOrigin } = require('./auth/middleware');
+app.use('/api', checkOrigin);                    // CSRF defense-in-depth: cross-origin state change → 403
+app.use('/api/auth', require('./routes/auth'));  // open: login / logout / status / setup
+app.use('/api', requireAuth);                    // everything else needs a session
 
 // REST Routes
 app.use('/api/containers', require('./routes/containers'));
@@ -539,7 +544,7 @@ function formatBytes(bytes, decimals = 2) {
 }
 
 // Start server
-server.listen(PORT, () => {
+server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   console.log(`\n  🐳 DockGate Control Panel`);
   console.log(`  ────────────────────────`);
   console.log(`  → http://localhost:${PORT}`);

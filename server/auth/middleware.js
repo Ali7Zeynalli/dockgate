@@ -9,4 +9,24 @@ function requireAuth(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth };
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+// CSRF defense-in-depth: reject a cross-origin browser request on state-changing methods.
+// (SameSite=Lax already blocks cross-site cookies; this is a second layer.)
+function checkOrigin(req, res, next) {
+  if (SAFE_METHODS.has(req.method)) return next();
+  const origin = req.headers.origin;
+  if (origin) {
+    try {
+      if (new URL(origin).host !== req.headers.host) {
+        return res.status(403).json({ error: 'cross-origin request blocked' });
+      }
+    } catch (e) {
+      return res.status(403).json({ error: 'bad origin' });
+    }
+  }
+  // No Origin header (non-browser client) — allowed; the session cookie + SameSite still gate it.
+  next();
+}
+
+module.exports = { requireAuth, checkOrigin };
