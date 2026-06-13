@@ -406,4 +406,29 @@ router.get('/:id/services/status', async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
+// POST /api/servers/:id/services/:itemId/action — body { action, confirm? }. Lifecycle control:
+// start/stop/restart/enable/disable. The concrete command is resolved from the catalog in the worker.
+router.post('/:id/services/:itemId/action', async (req, res) => {
+  const itemId = req.params.itemId;
+  const { action, confirm } = req.body || {};
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Service management targets a remote SSH server' });
+    const keyPath = resolveKeyPath(server);
+    // Confirm/risk/unknown-action gate (distro na is enforced inside the worker).
+    catalog.guardedServiceAction({ hasKey: !!keyPath, itemId, action, confirm });
+    const cfg = { ...server, keyPath, password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    const result = await serviceCtl.performServiceAction(cfg, itemId, action);
+    logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'service', resourceName: itemId, action: 'service-' + action, details: { itemId, after: result.after } });
+    res.json(result);
+  } catch (err) {
+    if (err.statusCode === 409) return res.status(409).json({ error: err.message, risks: err.risks || [] });
+    if (err.statusCode === 400) return res.status(400).json({ error: err.message });
+    // SSH/worker failure — audit the attempt as failed.
+    logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'service', resourceName: itemId, action: 'service-' + (action || '?'), details: { itemId, failed: true, error: String(err.message).slice(0, 200) } });
+    res.status(502).json({ error: err.message });
+  }
+});
+
 module.exports = router;

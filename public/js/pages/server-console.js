@@ -33,7 +33,8 @@ Router.register('server-console', async (content, params) => {
   function renderConTab(tab) {
     if (tab === 'overview') renderConsoleOverview(id, con, () => goTab('setup'));
     else if (tab === 'setup') renderProvisionPanel(id, con);
-    else con.innerHTML = ph('Service management', 'Start / stop / restart, enable at boot, and edit configs for installed services — coming next.');
+    else if (tab === 'manage') renderServiceManager(id, con);
+    else con.innerHTML = ph('Server console', 'Pick a tab.');
   }
   function goTab(tab) {
     active = tab;

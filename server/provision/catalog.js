@@ -324,13 +324,15 @@ function isConfigPathAllowed(itemId, osId, path) {
 // but not given, or 400 for an SSH-config write over a password login (lockout). Pure — no DB/SSH.
 function guardedServiceAction({ hasKey, itemId, osId, action, isConfigWrite, confirm }) {
   const item = byId[itemId];
-  if (!item || !SERVICE[itemId]) { const e = new Error(`Not a manageable service: ${itemId}`); e.statusCode = 400; throw e; }
-  const svc = serviceFor(itemId, osId); // throws 400 on unknown distro
-  if (svc.na) { const e = new Error(svc.reason); e.statusCode = 400; throw e; }
+  const def = SERVICE[itemId];
+  if (!item || !def) { const e = new Error(`Not a manageable service: ${itemId}`); e.statusCode = 400; throw e; }
+  // Distro-specific na check only when osId is known. The action endpoint resolves distro inside the
+  // worker (it cannot know it without an SSH probe), so na is enforced there.
+  if (osId) { const svc = serviceFor(itemId, osId); if (svc.na) { const e = new Error(svc.reason); e.statusCode = 400; throw e; } }
   if (!isConfigWrite && !SERVICE_ACTIONS.includes(action)) { const e = new Error(`Unknown action: ${action}`); e.statusCode = 400; throw e; }
-  const highRisk = svc.risk === 'high';
+  const highRisk = (def.risk || item.risk) === 'high';
   // SSH config edit over a password login would lock you out — refuse.
-  if (isConfigWrite && svc.requiresKeyForConfig && !hasKey) {
+  if (isConfigWrite && def.requiresKeyForConfig && !hasKey) {
     const e = new Error('Editing SSH config over a password login could lock you out — connect with an SSH key first');
     e.statusCode = 400; throw e;
   }
@@ -343,7 +345,7 @@ function guardedServiceAction({ hasKey, itemId, osId, action, isConfigWrite, con
     e.risks = [{ id: itemId, label: item.label, reason: isConfigWrite ? 'edits a config file on the server' : 'restart/stop disrupts the service' }];
     throw e;
   }
-  return { ok: true, svc, highRisk, destructive };
+  return { ok: true, highRisk, destructive };
 }
 
 module.exports = {

@@ -27,5 +27,6 @@ function runWorker(cfg, op, extra = {}) {
 
 const collectServiceStatus = (cfg) => runWorker(cfg, 'status');
 const readServiceConfig = (cfg, itemId, configPath) => runWorker(cfg, 'readconfig', { itemId, configPath });
+const performServiceAction = (cfg, itemId, action) => runWorker(cfg, 'action', { itemId, action });
 
-module.exports = { runWorker, collectServiceStatus, readServiceConfig };
+module.exports = { runWorker, collectServiceStatus, readServiceConfig, performServiceAction };

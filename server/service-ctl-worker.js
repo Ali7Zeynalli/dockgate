@@ -80,10 +80,34 @@ async function doReadConfig() {
   ok({ path: p, exists: true, content: c.out });
 }
 
+// op:'action' — run ONE lifecycle action (start/stop/restart/enable/disable). The command is resolved
+// from the catalog (serviceAction) — never from the request. Reports the post-action status.
+async function doAction() {
+  const distro = await detectDistro();
+  let cmd;
+  try { cmd = catalog.serviceAction(cfg.itemId, distro, cfg.action); }
+  catch (e) { return fail(e.message); }
+  const r = await run(cmd);
+  let after = null;
+  try {
+    const svc = catalog.serviceFor(cfg.itemId, distro);
+    if (svc && !svc.na) {
+      const a = await run(svc.verbs.status); const en = await run(svc.verbs.enabled);
+      after = { active: lastLine(a.out) === 'active', enabled: ['enabled', 'static', 'enabled-runtime'].includes(lastLine(en.out)) };
+    }
+  } catch (e) {}
+  if (r.code !== 0) {
+    const sudo = /password is required|a terminal is required|^sudo:/im.test(r.out);
+    return fail(sudo ? 'passwordless sudo is required for service control' : (r.out.trim().slice(-500) || `action exited ${r.code}`));
+  }
+  ok({ ok: true, action: cfg.action, after, out: r.out.trim().slice(-2000) });
+}
+
 conn.on('ready', async () => {
   try {
     if (cfg.op === 'status') return await doStatus();
     if (cfg.op === 'readconfig') return await doReadConfig();
+    if (cfg.op === 'action') return await doAction();
     fail('unknown op: ' + cfg.op);
   } catch (e) { fail(e && e.message ? e.message : String(e)); }
 }).on('error', e => fail(e.message)).connect(opts);

@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.103] - 2026-06-13
+
+### Added — Manage tab: service control (start / stop / restart / enable / disable)
+- The console's **Manage** tab now lists each manageable service as a card — live active / enabled-at-boot status, unit name, editable config paths — with action buttons
+- Start / stop / restart / enable / disable run over SSH via the isolated worker; the concrete command is resolved from the catalog (never free shell). **Destructive actions on a high-risk service (firewall / SSH) or on Docker require confirmation** — the backend returns 409 first (no change is made), then a confirm dialog resends with `confirm:true`. Every action (success and failure) is written to the activity audit log
+
+---
+
 ## [2.0.102] - 2026-06-13
 
 ### Added — service status backend (read-only, PHASE 5)
