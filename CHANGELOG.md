@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.110] - 2026-06-13
+
+### Added — fail2ban + firewall rich operations (Manage UI)
+- The Manage tab's **fail2ban** card now expands to show each jail and its banned IPs — click an IP to unban it — plus a "Ban IP" form (jail + IP)
+- The **firewall** card shows the live `ufw status numbered` (or `firewall-cmd --list-all`) output and gives Allow / Deny / Delete-rule forms
+- Lockout-capable operations (ban an IP, deny or delete a firewall rule) prompt for confirmation; all inputs go through the validated, injection-safe backend ops
+
+---
+
 ## [2.0.109] - 2026-06-13
 
 ### Added — fail2ban + firewall rich operations (backend, PHASE 5b)

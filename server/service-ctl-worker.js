@@ -157,12 +157,14 @@ async function doWriteConfig() {
 // op:'oplist' — list current state for a service's rich ops (fail2ban bans / ufw rules).
 async function doOpList() {
   const distro = await detectDistro();
-  let plan; try { plan = catalog.serviceOpListPlan(cfg.itemId, distro); } catch (e) { return fail(e.message); }
-  if (!plan) return ok({ kind: 'none' });
+  let plan, meta;
+  try { plan = catalog.serviceOpListPlan(cfg.itemId, distro); meta = catalog.serviceOpsMeta(cfg.itemId, distro); }
+  catch (e) { return fail(e.message); }
+  if (!plan) return ok({ kind: 'none', meta });
   if (plan.kind === 'text') {
     const r = await run(plan.cmd);
     const sudo = r.code !== 0 && /password is required|a terminal is required|^sudo:/im.test(r.out);
-    return ok({ kind: 'text', text: sudo ? 'passwordless sudo is required to list rules' : r.out.slice(-8000) });
+    return ok({ kind: 'text', text: sudo ? 'passwordless sudo is required to list rules' : r.out.slice(-8000), meta });
   }
   if (plan.kind === 'fail2ban') {
     const st = await run('sudo fail2ban-client status');
@@ -176,9 +178,9 @@ async function doOpList() {
       const banned = bm ? bm[1].split(/\s+/).map(s => s.trim()).filter(Boolean) : [];
       out.push({ jail: j, banned });
     }
-    return ok({ kind: 'fail2ban', jails: out });
+    return ok({ kind: 'fail2ban', jails: out, meta });
   }
-  ok({ kind: 'none' });
+  ok({ kind: 'none', meta });
 }
 
 // op:'op' — run a validated, parameterised op (ban/unban/allow/deny/delete). Confirm is gated at the

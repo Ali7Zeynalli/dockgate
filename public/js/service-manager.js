@@ -53,6 +53,13 @@ function renderServiceManager(serverId, container) {
           </div>
         </div>
       </details>` : '';
+    // Rich, service-specific operations (fail2ban bans, ufw/firewalld ports) — lazy-loaded on expand.
+    const hasOps = (s.itemId === 'fail2ban' || s.itemId === 'firewall');
+    const opsPanel = hasOps ? `
+      <details data-ops data-item="${il}" data-label="${lbl}" style="margin-top:8px">
+        <summary class="text-xs" style="cursor:pointer;color:var(--accent)">${s.itemId === 'fail2ban' ? 'Banned IPs &amp; jails' : 'Firewall rules &amp; ports'}</summary>
+        <div data-opsbody style="margin-top:8px"><div class="text-xs text-muted">open to load…</div></div>
+      </details>` : '';
     return `<div class="card" style="border-left:3px solid ${s.active ? 'var(--success)' : 'var(--text-muted)'}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div><div style="font-weight:700;font-size:15px">${lbl}${riskTag}</div><div style="margin-top:4px">${enabled}</div></div>
@@ -66,6 +73,7 @@ function renderServiceManager(serverId, container) {
         </div>
       </details>
       ${editor}
+      ${opsPanel}
     </div>`;
   }
 
@@ -89,6 +97,63 @@ function renderServiceManager(serverId, container) {
       });
       d.querySelector('button[data-cfgsave]')?.addEventListener('click', () => saveConfig(itemId, p, ta.value, d.dataset.label, d.dataset.high === '1'));
     });
+    // Rich-ops panels (fail2ban bans / firewall ports): lazy-load on first expand.
+    body.querySelectorAll('details[data-ops]').forEach(d => {
+      const itemId = d.dataset.item, label = d.dataset.label, el = d.querySelector('[data-opsbody]');
+      let loaded = false;
+      d.addEventListener('toggle', () => { if (d.open && !loaded) { loaded = true; loadOps(itemId, label, el); } });
+    });
+  }
+
+  async function loadOps(itemId, label, el) {
+    el.innerHTML = '<div class="text-xs text-muted">loading…</div>';
+    let data;
+    try { data = await API.get(`/servers/${serverId}/services/${itemId}/ops`); }
+    catch (e) { el.innerHTML = `<div class="text-xs" style="color:var(--danger)">${escapeHtml(e.message)}</div>`; return; }
+    el.innerHTML = opsBodyHtml(data);
+    wireOps(itemId, el);
+  }
+
+  function opsBodyHtml(data) {
+    let state = '';
+    if (data.kind === 'fail2ban') {
+      state = (data.jails && data.jails.length)
+        ? data.jails.map(j => `<div style="margin-bottom:6px"><span class="td-mono text-xs" style="font-weight:600">${escapeHtml(j.jail)}</span> ${j.banned.length ? j.banned.map(ip => `<span class="badge" data-unban-jail="${escapeHtml(j.jail)}" data-unban-ip="${escapeHtml(ip)}" style="background:var(--danger-bg);color:var(--danger);margin:2px;cursor:pointer" title="Unban ${escapeHtml(ip)}">${escapeHtml(ip)} ✕</span>`).join('') : '<span class="text-xs text-muted">no bans</span>'}</div>`).join('')
+        : '<div class="text-xs text-muted">No jails / banned IPs</div>';
+    } else if (data.kind === 'text') {
+      state = `<pre style="background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:11px;max-height:200px;overflow:auto;white-space:pre-wrap">${escapeHtml(data.text || '(no output)')}</pre>`;
+    }
+    const forms = ((data.meta && data.meta.ops) || []).map(op => `
+      <form data-opform data-op="${op.id}" data-label="${escapeHtml(op.label)}" class="flex gap-1 items-center" style="flex-wrap:wrap;margin-top:6px">
+        ${op.params.map(p => `<input class="input" data-param="${p.name}" placeholder="${escapeHtml(p.name)}${p.placeholder ? ' · ' + escapeHtml(p.placeholder) : ''}" style="width:auto;max-width:150px;font-size:12px">`).join('')}
+        <button class="btn btn-xs ${op.risk === 'high' ? 'btn-danger' : (op.id === 'unban' ? 'btn-secondary' : 'btn-primary')}" type="submit">${escapeHtml(op.label)}</button>
+      </form>`).join('');
+    return `<div style="margin-bottom:8px">${state}</div>${forms}`;
+  }
+
+  function wireOps(itemId, el) {
+    el.querySelectorAll('form[data-opform]').forEach(f => f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const params = {};
+      f.querySelectorAll('input[data-param]').forEach(i => { params[i.dataset.param] = i.value.trim(); });
+      runOp(itemId, f.dataset.op, params, f.dataset.label, el);
+    }));
+    el.querySelectorAll('[data-unban-ip]').forEach(chip => chip.addEventListener('click', () =>
+      runOp(itemId, 'unban', { jail: chip.dataset.unbanJail, ip: chip.dataset.unbanIp }, 'Unban ' + chip.dataset.unbanIp, el)));
+  }
+
+  function runOp(itemId, opId, params, label, el) {
+    const send = (confirm) => API.post(`/servers/${serverId}/services/${itemId}/op`, { opId, params, confirm });
+    const reload = () => { const d = el.closest('details[data-ops]'); if (d) loadOps(itemId, d.dataset.label, el); };
+    send(false)
+      .then(() => { showToast(`${label} ✓`, 'success'); setTimeout(reload, 600); })
+      .catch(e => {
+        if (/confirm/i.test(e.message || '')) {
+          showConfirm(`${label}?`, `${e.message}. Continue?`, () => {
+            send(true).then(() => { showToast(`${label} ✓`, 'success'); setTimeout(reload, 600); }).catch(e2 => showToast(e2.message, 'error', 8000));
+          }, true);
+        } else showToast(e.message, 'error', 8000);
+      });
   }
 
   function saveConfig(itemId, path, content, label, high) {
