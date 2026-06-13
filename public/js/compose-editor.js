@@ -97,7 +97,7 @@ async function openComposeEditor(existing, opts = {}) {
         await API.post('/swarm/stacks/deploy', { name: project, compose: yamlVal });
         showToast(`Stack "${project}" deployed`);
         m.close();
-        Router.navigate('swarm');
+        Router.navigate('deploy',{tab:'swarm'});
       } catch (err) {
         showToast(err.message, 'error', 10000);
         stkBtn.disabled = false; stkBtn.textContent = 'Deploy as Stack (Swarm)';
@@ -213,7 +213,7 @@ async function openComposeEditor(existing, opts = {}) {
       else await API.post('/compose/create', { project, yaml: yamlVal, up: true });
       showToast(`Compose project ${existing ? 'updated' : 'created'} & started`);
       m.close();
-      Router.navigate('compose'); // re-render the Compose page (works whether we came from Compose or Templates)
+      Router.navigate('deploy',{tab:'compose'}); // re-render the Compose page (works whether we came from Compose or Templates)
     } catch (err) {
       showToast(err.message, 'error', 9000);
       submitBtn.disabled = false; submitBtn.textContent = existing ? 'Save & Up' : 'Create & Up';

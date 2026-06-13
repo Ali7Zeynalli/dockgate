@@ -1,29 +1,21 @@
 // Navigation setup
+// Related Docker pages are consolidated into tabbed sections (resources/deploy/activity — see
+// tabbed-section.js); the individual pages stay registered as routes but are reached via those tabs.
 const navItems = {
   dashboard: { label: 'Dashboard', icon: Icons.dashboard },
-  containers: { label: 'Containers', icon: Icons.container },
-  images: { label: 'Images', icon: Icons.image },
-  templates: { label: 'App Templates', icon: Icons.template },
-  swarm: { label: 'Swarm', icon: Icons.swarm },
-  builds: { label: 'Builds', icon: Icons.layers },
-  volumes: { label: 'Volumes', icon: Icons.volume },
-  networks: { label: 'Networks', icon: Icons.network },
-  compose: { label: 'Compose', icon: Icons.compose },
-  files: { label: 'Files', icon: Icons.folder },
-  logs: { label: 'Logs', icon: Icons.logs },
-  terminal: { label: 'Terminal', icon: Icons.terminal },
-  events: { label: 'Events', icon: Icons.events },
-  audit: { label: 'Audit Log', icon: Icons.eye },
+  resources: { label: 'Resources', icon: Icons.layers },
+  deploy: { label: 'Deploy', icon: Icons.compose },
+  activity: { label: 'Activity', icon: Icons.events },
   infra: { label: 'Infrastructure', icon: Icons.system },
   'server-console': { label: 'Server Console', icon: Icons.terminal },
   settings: { label: 'Settings', icon: Icons.settings }
 };
 
-// Two clear domains: DOCKER management (the daemon's resources + tools) vs SERVER management (the host
-// itself — provisioning, monitoring, services), then app System. Keeps server-control out of the Docker area.
+// Two clear domains: DOCKER management (Resources / Deploy / Activity — each a tabbed section) vs
+// SERVER management (the host itself), then app System. 7 entries instead of 17.
 const navGroups = [
-  { label: 'Docker', items: ['dashboard', 'containers', 'images', 'volumes', 'networks', 'builds', 'compose', 'templates', 'swarm'] },
-  { label: 'Activity', items: ['logs', 'terminal', 'events', 'files', 'audit'] },
+  { label: 'Overview', items: ['dashboard'] },
+  { label: 'Docker', items: ['resources', 'deploy', 'activity'] },
   { label: 'Server', items: ['infra', 'server-console'] },
   { label: 'System', items: ['settings'] }
 ];
@@ -90,7 +82,7 @@ function initGlobalSearch() {
   
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && input.value.trim() !== '') {
-      Router.navigate('containers');
+      Router.navigate('resources',{tab:'containers'});
       setTimeout(() => {
         const pageSearch = document.getElementById('container-search');
         if (pageSearch) {
@@ -199,6 +191,9 @@ async function boot() {
       startPage = localStorage.getItem('dcc_last_page') || 'dashboard';
       try { startParams = JSON.parse(localStorage.getItem('dcc_last_params')) || {}; } catch(e){ startParams = {}; }
     }
+    // Remap a legacy/bookmarked sub-route (e.g. #/containers) onto its consolidated section tab.
+    const SECTION_OF = { containers: 'resources', images: 'resources', builds: 'resources', volumes: 'resources', networks: 'resources', compose: 'deploy', templates: 'deploy', swarm: 'deploy', logs: 'activity', terminal: 'activity', events: 'activity', files: 'activity', audit: 'activity' };
+    if (SECTION_OF[startPage]) { startParams = { tab: startPage }; startPage = SECTION_OF[startPage]; }
     // replace:true → set the initial hash without adding a spurious history entry
     await Router.navigate(startPage, startParams, { replace: true });
 

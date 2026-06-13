@@ -43,6 +43,9 @@ const Router = {
     // Update header title
     const titles = {
       dashboard: 'Dashboard',
+      resources: 'Resources',
+      deploy: 'Deploy',
+      activity: 'Activity',
       containers: 'Containers',
       'container-detail': 'Container Details',
       images: 'Images',

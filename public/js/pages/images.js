@@ -207,7 +207,7 @@ Router.register('images', async (content) => {
 
       // Deploy as Swarm service — buttons stay hidden unless the active daemon is a swarm manager
       content.querySelectorAll('[data-swarmsvc]').forEach(btn => btn.addEventListener('click', () => {
-        openSwarmServiceCreate({ image: btn.dataset.swarmsvc }, () => Router.navigate('swarm'));
+        openSwarmServiceCreate({ image: btn.dataset.swarmsvc }, () => Router.navigate('deploy',{tab:'swarm'}));
       }));
       API.get('/swarm').then(s => {
         if (s && s.active && s.isManager) content.querySelectorAll('.sw-only').forEach(b => { b.style.display = ''; });
@@ -216,7 +216,7 @@ Router.register('images', async (content) => {
       // Build from this image (I3) → hand off to the Builds page with an inline Dockerfile prefilled
       content.querySelectorAll('[data-buildfrom]').forEach(btn => btn.addEventListener('click', () => {
         sessionStorage.setItem('dgt_build_from', btn.dataset.buildfrom);
-        Router.navigate('builds');
+        Router.navigate('resources',{tab:'builds'});
       }));
 
       // Save image → download tar (I2)

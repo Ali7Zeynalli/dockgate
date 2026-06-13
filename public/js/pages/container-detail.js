@@ -60,7 +60,7 @@ Router.register('container-detail', async (content, params) => {
 
       // Back button
       document.getElementById('back-btn').style.transform = 'rotate(180deg)';
-      document.getElementById('back-btn').addEventListener('click', () => Router.navigate('containers'));
+      document.getElementById('back-btn').addEventListener('click', () => Router.navigate('resources',{tab:'containers'}));
 
       // Export filesystem → tar download (C5)
       document.getElementById('export-btn')?.addEventListener('click', () => {
@@ -147,7 +147,7 @@ Router.register('container-detail', async (content, params) => {
           const action = btn.dataset.action;
           if (action === 'remove') {
             showConfirm('Remove Container', `Remove <strong>${escapeHtml(name)}</strong>?`, async () => {
-              try { await API.post(`/containers/${id}/remove`, { force: true }); showToast(`Removed ${name}`); Router.navigate('containers'); }
+              try { await API.post(`/containers/${id}/remove`, { force: true }); showToast(`Removed ${name}`); Router.navigate('resources',{tab:'containers'}); }
               catch (err) { showToast(err.message, 'error'); }
             }, true);
             return;
@@ -159,7 +159,7 @@ Router.register('container-detail', async (content, params) => {
 
       renderTab(info);
     } catch (err) {
-      content.innerHTML = `<div class="empty-state"><h3>Container not found</h3><p>${escapeHtml(err.message)}</p><button class="btn btn-primary mt-2" onclick="Router.navigate('containers')">Back</button></div>`;
+      content.innerHTML = `<div class="empty-state"><h3>Container not found</h3><p>${escapeHtml(err.message)}</p><button class="btn btn-primary mt-2" onclick="Router.navigate('resources',{tab:'containers'})">Back</button></div>`;
     }
   }
 

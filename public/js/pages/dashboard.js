@@ -34,7 +34,7 @@ Router.register('dashboard', async (content) => {
 
         <!-- Summary Cards / Xülasə Kartları -->
         <div class="summary-grid">
-          <div class="summary-card" onclick="Router.navigate('containers')">
+          <div class="summary-card" onclick="Router.navigate('resources',{tab:'containers'})">
             <div class="summary-card-icon teal"><span class="nav-item-icon">${Icons.container}</span></div>
             <div class="summary-card-content">
               <div class="summary-card-value">${s.totalContainers}</div>
@@ -55,21 +55,21 @@ Router.register('dashboard', async (content) => {
               <div class="summary-card-label">Stopped</div>
             </div>
           </div>
-          <div class="summary-card" onclick="Router.navigate('images')">
+          <div class="summary-card" onclick="Router.navigate('resources',{tab:'images'})">
             <div class="summary-card-icon blue"><span class="nav-item-icon">${Icons.image}</span></div>
             <div class="summary-card-content">
               <div class="summary-card-value">${s.totalImages}</div>
               <div class="summary-card-label">Images</div>
             </div>
           </div>
-          <div class="summary-card" onclick="Router.navigate('volumes')">
+          <div class="summary-card" onclick="Router.navigate('resources',{tab:'volumes'})">
             <div class="summary-card-icon purple"><span class="nav-item-icon">${Icons.volume}</span></div>
             <div class="summary-card-content">
               <div class="summary-card-value">${s.totalVolumes}</div>
               <div class="summary-card-label">Volumes</div>
             </div>
           </div>
-          <div class="summary-card" onclick="Router.navigate('networks')">
+          <div class="summary-card" onclick="Router.navigate('resources',{tab:'networks'})">
             <div class="summary-card-icon yellow"><span class="nav-item-icon">${Icons.network}</span></div>
             <div class="summary-card-content">
               <div class="summary-card-value">${s.totalNetworks}</div>
@@ -85,7 +85,7 @@ Router.register('dashboard', async (content) => {
             </div>
           </div>` : ''}
           ${s.composeProjects > 0 ? `
-          <div class="summary-card" onclick="Router.navigate('compose')">
+          <div class="summary-card" onclick="Router.navigate('deploy',{tab:'compose'})">
             <div class="summary-card-icon teal"><span class="nav-item-icon">${Icons.compose}</span></div>
             <div class="summary-card-content">
               <div class="summary-card-value">${s.composeProjects}</div>

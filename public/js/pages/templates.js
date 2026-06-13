@@ -90,7 +90,7 @@ Router.register('templates', async (content) => {
         btn.disabled = true; btn.textContent = 'Deploying…';
         try {
           await API.post('/swarm/stacks/deploy', { name, compose: yaml });
-          showToast(`Stack "${name}" deployed`); m.close(); Router.navigate('swarm');
+          showToast(`Stack "${name}" deployed`); m.close(); Router.navigate('deploy',{tab:'swarm'});
         } catch (e) { showToast(e.message, 'error', 10000); btn.disabled = false; btn.textContent = 'Deploy Stack'; }
       });
     } catch (err) {

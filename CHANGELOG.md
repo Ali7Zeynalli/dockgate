@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.116] - 2026-06-13
+
+### Changed — sidebar consolidated: 17 entries → 7 (tabbed sections)
+- The nine separate Docker sidebar items are now three **tabbed sections**: **Resources** (Containers / Images / Builds / Volumes / Networks), **Deploy** (Compose / App Templates / Swarm), **Activity** (Logs / Terminal / Events / Files / Audit). Sidebar is now **Overview** (Dashboard) · **Docker** (Resources / Deploy / Activity) · **Server** (Infrastructure / Server Console) · **System** (Settings) — keeping server-management visually balanced against Docker instead of buried under a 9-item list
+- A generic `renderTabbedSection` wrapper hosts the existing page routes as tabs **without rewriting any page**: it invokes each route's handler into a sub-container, runs that handler's cleanup on tab switch, deep-links the sub-tab (`#/resources?tab=images`), and bumps the nav id on switch so the previous tab's pollers self-stop. Cross-section links and boot/restore remap onto the section + tab
+
+---
+
 ## [2.0.115] - 2026-06-13
 
 ### Added — Docker resource counts in the console Overview (PHASE 4)

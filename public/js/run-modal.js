@@ -120,7 +120,7 @@ async function openRunContainerModal(prefill = '') {
         }).filter(Boolean),
       };
       m.close();
-      openSwarmServiceCreate(prefill, () => Router.navigate('swarm'));
+      openSwarmServiceCreate(prefill, () => Router.navigate('deploy',{tab:'swarm'}));
     });
   }).catch(() => {});
 
@@ -252,7 +252,7 @@ async function openRunContainerModal(prefill = '') {
       await API.post('/containers/run', payload);
       showToast('Container started');
       m.close();
-      Router.navigate('containers');
+      Router.navigate('resources',{tab:'containers'});
     } catch (err) {
       showToast(err.message, 'error', 8000);
       btn.disabled = false; btn.innerHTML = `${Icons.play} Run Container`;
