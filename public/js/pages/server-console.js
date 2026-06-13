@@ -1,6 +1,6 @@
 // Per-server console — a full-page management view for one remote server.
-// Reached from Infrastructure → Servers → Manage (Router.navigate('server-console', { id })).
-// Tabs: Setup (provisioning) + Monitoring / Logs / Overview (placeholders until host monitoring, PHASE 3).
+// Reached from the sidebar (Manage → Server Console) or Infrastructure → Servers → Manage.
+// Tabs: Overview (readiness + live host metrics) · Setup (provisioning) · Manage (service control).
 Router.register('server-console', async (content, params) => {
   const id = params && params.id;
   if (!id) { content.innerHTML = '<div class="empty-state"><p>No server selected.</p><button class="btn btn-primary mt-2" onclick="Router.navigate(\'infra\',{tab:\'servers\'})">Back to Servers</button></div>'; return; }
@@ -9,7 +9,7 @@ Router.register('server-console', async (content, params) => {
   let server = { id };
   try { const data = await API.get('/servers'); server = (data.servers || []).find(s => s.id === id) || { id }; } catch (e) {}
 
-  const tabs = [['overview', 'Overview'], ['setup', 'Setup'], ['monitoring', 'Monitoring'], ['logs', 'Logs']];
+  const tabs = [['overview', 'Overview'], ['setup', 'Setup'], ['manage', 'Manage']];
   const validTabs = tabs.map(t => t[0]);
   let active = (params && validTabs.includes(params.tab)) ? params.tab : 'overview';
 
@@ -29,12 +29,11 @@ Router.register('server-console', async (content, params) => {
   const con = content.querySelector('#con-content');
   content.querySelector('#con-back').addEventListener('click', () => Router.navigate('infra', { tab: 'servers' }));
 
-  const ph = (title, desc) => `<div class="empty-state" style="padding:48px 24px;text-align:center"><h3>${title}</h3><p class="text-muted">${desc}</p><p class="text-xs text-muted" style="margin-top:8px">Bu tab host monitoring (PHASE 3) ilə gələcək.</p></div>`;
+  const ph = (title, desc) => `<div class="empty-state" style="padding:48px 24px;text-align:center"><h3>${title}</h3><p class="text-muted">${desc}</p></div>`;
   function renderConTab(tab) {
-    if (tab === 'overview') renderProvisionOverview(id, con, () => goTab('setup'));
+    if (tab === 'overview') renderConsoleOverview(id, con, () => goTab('setup'));
     else if (tab === 'setup') renderProvisionPanel(id, con);
-    else if (tab === 'monitoring') renderHostMonitoring(id, con);
-    else con.innerHTML = ph('Logs', 'Host logları (journald / auth / dmesg).');
+    else con.innerHTML = ph('Service management', 'Start / stop / restart, enable at boot, and edit configs for installed services — coming next.');
   }
   function goTab(tab) {
     active = tab;

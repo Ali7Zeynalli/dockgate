@@ -1,6 +1,6 @@
 // Provisioning panel + overview — render INTO a container (the per-server console's tabs), not a modal.
 // On open they LIVE-SCAN the server (read-only detect) so you see what's installed before acting.
-// Globals: renderProvisionPanel(serverId, container) · renderProvisionOverview(serverId, container, onSetup).
+// Globals: renderProvisionPanel(serverId, container) · renderConsoleOverview(serverId, container, onSetup).
 const PV_ICON = { verified: '✓', installed: '✓', present: '✓', failed: '✗', skipped: '⊘', unknown: '○' };
 const PV_STATE = (scanItems) => {
   const present = {};
@@ -129,8 +129,10 @@ function renderProvisionForm(serverId, catalog, scan, container) {
   });
 }
 
-// ---------- Overview tab — card-based "where does this server stand" ----------
-async function renderProvisionOverview(serverId, container, onSetup) {
+// ---------- Overview tab — merged readiness + live host metrics (Dashboard-grade) ----------
+// One scan feeds the readiness banner + component cards; renderHostMonitoring owns the live
+// metrics subtree (its own self-terminating 5s poll). One scan + one host poll — no double work.
+async function renderConsoleOverview(serverId, container, onSetup) {
   container.innerHTML = `
     <div class="text-sm text-muted">🔍 Scanning <b>${escapeHtml(serverId)}</b> over SSH…</div>
     <div class="skeleton" style="height:18px;width:55%;margin-top:10px"></div>
@@ -140,7 +142,7 @@ async function renderProvisionOverview(serverId, container, onSetup) {
     [catalog, scan] = await Promise.all([API.get('/servers/provision/catalog'), API.get(`/servers/${serverId}/provision/scan`)]);
   } catch (e) {
     container.innerHTML = `<div class="card" style="border-left:3px solid var(--danger)"><div class="text-danger" style="font-weight:600">Scan failed</div><div class="text-sm text-muted" style="margin-top:4px">${escapeHtml(e.message)}</div><button class="btn btn-secondary btn-sm" id="ov-retry" style="margin-top:10px">Retry scan</button></div>`;
-    container.querySelector('#ov-retry')?.addEventListener('click', () => renderProvisionOverview(serverId, container, onSetup));
+    container.querySelector('#ov-retry')?.addEventListener('click', () => renderConsoleOverview(serverId, container, onSetup));
     return;
   }
 
@@ -169,19 +171,8 @@ async function renderProvisionOverview(serverId, container, onSetup) {
   };
   const groups = [['base', 'Base'], ['security', 'Security'], ['system', 'System']];
 
-  // KPI tiles — same summary-card markup as the main Dashboard.
-  const ovKpi = (icon, color, value, label) => `
-    <div class="summary-card"><div class="summary-card-icon ${color}"><span class="nav-item-icon">${icon}</span></div>
-      <div class="summary-card-content"><div class="summary-card-value">${value}</div><div class="summary-card-label">${label}</div></div></div>`;
-
   container.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:16px">
-      <div class="summary-grid" style="margin-bottom:0">
-        ${ovKpi(Icons.success, 'green', installed, 'Installed')}
-        ${ovKpi(Icons.warning, missing ? 'yellow' : 'green', missing, 'Missing')}
-        ${naCount ? ovKpi(Icons.info, 'blue', naCount, 'N/A on this OS') : ''}
-        ${ovKpi(Icons.container, ready ? 'green' : 'red', ready ? 'Ready' : 'No', 'Docker Engine')}
-      </div>
       <div class="card" style="border-left:4px solid ${ready ? 'var(--success)' : 'var(--warning, #f59e0b)'}">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
           <div>
@@ -191,15 +182,24 @@ async function renderProvisionOverview(serverId, container, onSetup) {
           ${missing ? `<button class="btn btn-primary btn-sm" id="ov-setup">Set up ${missing} missing →</button>` : ''}
         </div>
       </div>
+
+      <!-- Live host metrics — renderHostMonitoring owns this subtree + its own self-terminating 5s poll -->
+      <div id="ov-host"></div>
+
+      <div style="font-size:15px;font-weight:700">Components</div>
       ${groups.map(([g, glabel]) => {
         const gItems = items.filter(it => it.group === g);
         if (!gItems.length) return '';
         return `<div><div style="font-weight:600;margin-bottom:8px">${glabel}</div>
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${gItems.map(cardFor).join('')}</div></div>`;
       }).join('')}
-      <div class="text-xs text-muted">Scanned live over SSH (read-only). Use the <b>Setup</b> tab to install the missing items.</div>
+      <div class="text-xs text-muted">Scanned live over SSH (read-only). Use the <b>Setup</b> tab to install missing items.</div>
     </div>`;
   container.querySelector('#ov-setup')?.addEventListener('click', () => { if (typeof onSetup === 'function') onSetup(); });
+
+  // Embed the live host-metrics dashboard; it self-terminates its 5s poll when this view is swapped out.
+  const hostEl = container.querySelector('#ov-host');
+  if (hostEl && typeof renderHostMonitoring === 'function') renderHostMonitoring(serverId, hostEl);
 }
 
 // ---------- Run progress — step cards (primary) + collapsible log (secondary, not a raw terminal) ----------
