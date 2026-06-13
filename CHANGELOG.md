@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.120] - 2026-06-13
+
+### Fixed — "System update" no longer shows as "missing"
+- The **System update** step always read "missing" in the Setup / Overview scan because it has no detectable installed state — its `detect` is intentionally `false` so it always runs (you cannot idempotently detect a fully-upgraded system, new upgrades appear constantly). It is now marked as an **action** (`alwaysRun`) and shown as **"runs every time"** (neutral info badge), and excluded from the missing count. Provisioning still always runs it
+
+---
+
 ## [2.0.119] - 2026-06-13
 
 ### Fixed — host metrics refresh in place (no full page rebuild every 5s)

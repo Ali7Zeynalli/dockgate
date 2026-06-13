@@ -29,7 +29,7 @@ async function renderProvisionPanel(serverId, container) {
 function renderProvisionForm(serverId, catalog, scan, container) {
   const stateOf = PV_STATE(scan.items);
   const items = catalog.items || [];
-  const missingCount = items.filter(it => stateOf(it.id) === 'missing').length;
+  const missingCount = items.filter(it => !it.alwaysRun && stateOf(it.id) === 'missing').length;
 
   const presets = [
     ['just-docker', 'Just Docker', '🐳', 'Docker Engine + compose plugin'],
@@ -48,11 +48,12 @@ function renderProvisionForm(serverId, catalog, scan, container) {
   const pvState = {
     present: { col: 'var(--success)', pill: '<span class="badge badge-healthy">installed</span>' },
     missing: { col: 'var(--warning, #f59e0b)', pill: '<span class="badge" style="background:var(--bg-primary);color:var(--text-muted)">missing</span>' },
+    action:  { col: 'var(--info)', pill: '<span class="badge" style="background:var(--info-bg);color:var(--info)">runs every time</span>' },
     na:      { col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.55">n/a</span>' },
     unknown: { col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.55">unknown</span>' },
   };
   const itemCard = (it) => {
-    const st = stateOf(it.id), m = pvState[st] || pvState.unknown;
+    const st = it.alwaysRun ? 'action' : stateOf(it.id), m = pvState[st] || pvState.unknown;
     return `<label class="card pv-item-card" style="display:flex;gap:10px;align-items:flex-start;border-left:3px solid ${m.col};padding:12px 14px;opacity:${st === 'na' ? 0.55 : 1}">
       <input type="checkbox" class="pv-item" value="${escapeHtml(it.id)}" data-risk="${escapeHtml(it.risk)}"${st === 'na' ? ' data-na="1"' : ''} disabled style="margin-top:3px">
       <div style="flex:1;min-width:0">
@@ -166,18 +167,19 @@ async function renderConsoleOverview(serverId, container, onSetup) {
   const stateOf = PV_STATE(scan.items);
   const items = catalog.items || [];
   const installed = items.filter(it => stateOf(it.id) === 'present').length;
-  const missing = items.filter(it => stateOf(it.id) === 'missing').length;
+  const missing = items.filter(it => !it.alwaysRun && stateOf(it.id) === 'missing').length;
   const naCount = items.filter(it => stateOf(it.id) === 'na').length;
   const ready = stateOf('docker') === 'present';
 
   const meta = {
     present: { ic: '✓', col: 'var(--success)', txt: 'installed' },
     missing: { ic: '○', col: 'var(--text-muted)', txt: 'missing' },
+    action:  { ic: '↻', col: 'var(--info)', txt: 'runs every time' },
     na:      { ic: '⊘', col: 'var(--text-muted)', txt: 'n/a on this OS' },
     unknown: { ic: '?', col: 'var(--text-muted)', txt: 'unknown' },
   };
   const cardFor = (it) => {
-    const st = stateOf(it.id), c = meta[st];
+    const st = it.alwaysRun ? 'action' : stateOf(it.id), c = meta[st] || meta.unknown;
     return `<div class="card" style="border-left:3px solid ${c.col};opacity:${st === 'na' ? 0.55 : 1}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <div style="font-weight:600">${escapeHtml(it.label)}</div>

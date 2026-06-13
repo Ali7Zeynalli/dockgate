@@ -11,6 +11,9 @@
 const ITEMS = [
   {
     id: 'update', seq: 10, label: 'System update', group: 'base', risk: 'low', needsSudo: true,
+    // An ACTION, not a detectable component: you can't idempotently "detect" a fully-upgraded system,
+    // so detect is `false` (always runs). The UI shows it as "runs every time", not "missing".
+    alwaysRun: true,
     description: 'Refresh the package index and apply available upgrades — closes known CVEs before anything else is installed.',
     distro: {
       debian: { detect: 'false', install: 'sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y upgrade', verify: 'true' },
