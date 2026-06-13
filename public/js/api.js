@@ -2,48 +2,40 @@
 const API = {
   base: '/api',
 
-  async get(path) {
-    const res = await fetch(this.base + path);
+  // Shared response handling: a 401 on a non-auth call means the session expired → bounce to login.
+  async _res(res, path) {
+    if (res.status === 401 && !String(path).startsWith('/auth') && typeof window.__authExpired === 'function') {
+      window.__authExpired();
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(err.error || res.statusText);
     }
     return res.json();
+  },
+
+  async get(path) {
+    return this._res(await fetch(this.base + path, { credentials: 'same-origin' }), path);
   },
 
   async post(path, body = {}) {
-    const res = await fetch(this.base + path, {
-      method: 'POST',
+    return this._res(await fetch(this.base + path, {
+      method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
-    }
-    return res.json();
+    }), path);
   },
 
   async put(path, body = {}) {
-    const res = await fetch(this.base + path, {
-      method: 'PUT',
+    return this._res(await fetch(this.base + path, {
+      method: 'PUT', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
-    }
-    return res.json();
+    }), path);
   },
 
   async del(path) {
-    const res = await fetch(this.base + path, { method: 'DELETE' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
-    }
-    return res.json();
+    return this._res(await fetch(this.base + path, { method: 'DELETE', credentials: 'same-origin' }), path);
   },
 
   async delete(path) { return this.del(path); },

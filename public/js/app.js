@@ -98,12 +98,78 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme || 'dark');
 }
 
+// ============ AUTH GATE ============
+// Show the setup/login screen before the app boots. Returns true if already signed in.
+async function ensureAuthenticated() {
+  let status;
+  try { status = await API.get('/auth/status'); }
+  catch (e) { status = { authenticated: false, setupDone: true }; }
+  if (status.authenticated) return true;
+  renderAuthScreen(status.setupDone ? 'login' : 'setup');
+  return false;
+}
+
+function renderAuthScreen(mode) {
+  const root = document.getElementById('auth-root');
+  if (!root) return;
+  const isSetup = mode === 'setup';
+  const appEl = document.getElementById('app');
+  if (appEl) appEl.style.display = 'none';
+  const title = isSetup ? 'Welcome to DockGate' : 'DockGate';
+  const sub = isSetup ? 'Set an admin password to secure the panel' : 'Sign in to continue';
+  const btnLabel = isSetup ? 'Create & sign in' : 'Log in';
+  root.innerHTML = `
+    <div style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--bg-primary,#0d1117);">
+      <form id="auth-form" style="width:340px;max-width:90vw;background:var(--bg-secondary,#161b22);border:1px solid var(--border,#30363d);border-radius:12px;padding:28px 24px;box-shadow:0 8px 40px rgba(0,0,0,.45);text-align:center;">
+        <div style="font-size:40px;margin-bottom:8px;">🐳</div>
+        <div style="font-size:18px;font-weight:600;">${title}</div>
+        <div style="color:var(--text-muted,#8b949e);font-size:13px;margin:4px 0 18px;">${sub}</div>
+        <input class="input" id="auth-pw" type="password" placeholder="Password" autocomplete="${isSetup ? 'new-password' : 'current-password'}" style="width:100%;">
+        ${isSetup ? '<input class="input" id="auth-pw2" type="password" placeholder="Confirm password" autocomplete="new-password" style="width:100%;margin-top:8px;">' : ''}
+        <button class="btn btn-primary" type="submit" style="width:100%;margin-top:14px;">${btnLabel}</button>
+        <div id="auth-error" style="color:var(--danger,#f85149);font-size:12px;margin-top:10px;min-height:14px;"></div>
+        ${isSetup ? '<div style="color:var(--text-muted,#8b949e);font-size:11px;margin-top:6px;">Minimum 8 characters · stored as a scrypt hash.</div>' : ''}
+      </form>
+    </div>`;
+  const err = root.querySelector('#auth-error');
+  root.querySelector('#auth-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    err.textContent = '';
+    const pw = root.querySelector('#auth-pw').value;
+    try {
+      if (isSetup) {
+        const pw2 = root.querySelector('#auth-pw2').value;
+        if (pw.length < 8) { err.textContent = 'Password must be at least 8 characters'; return; }
+        if (pw !== pw2) { err.textContent = 'Passwords do not match'; return; }
+        await API.post('/auth/setup', { password: pw });
+      } else {
+        if (!pw) { err.textContent = 'Enter your password'; return; }
+        await API.post('/auth/login', { password: pw });
+      }
+      location.reload();
+    } catch (ex) { err.textContent = ex.message || 'Failed'; }
+  });
+  setTimeout(() => { const i = root.querySelector('#auth-pw'); if (i) i.focus(); }, 50);
+}
+
+// Sidebar logout button (global — called from index.html).
+async function logout() {
+  try { await API.post('/auth/logout'); } catch (e) {}
+  location.reload();
+}
+
+// A 401 on any data call (expired session) bounces back to the login screen.
+window.__authExpired = () => { try { location.reload(); } catch (e) {} };
+
 // Boot application
 async function boot() {
   try {
     // Apply saved theme immediately / Saxlanmış temanı dərhal tətbiq et
     const savedTheme = localStorage.getItem('dcc_theme') || 'dark';
     applyTheme(savedTheme);
+
+    // Auth gate — show setup/login first; stop boot here if not signed in.
+    if (!(await ensureAuthenticated())) return;
 
     initMacSidebar();
     initGlobalSearch();
