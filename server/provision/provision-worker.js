@@ -50,6 +50,17 @@ function run(conn, cmd) {
 
       emit({ type: 'meta', distro, total: plan.length });
 
+      // Scan mode — read-only: run each item's detect command only (no install/verify), report present/missing.
+      if (cfg.mode === 'scan') {
+        for (const step of plan) {
+          if (step.na) { emit({ type: 'scan-item', id: step.id, label: step.label, present: false, na: true, reason: step.reason }); continue; }
+          const det = await run(conn, step.detect);
+          emit({ type: 'scan-item', id: step.id, label: step.label, present: det.code === 0, na: false });
+        }
+        emit({ type: 'scan-done', distro });
+        clearTimeout(watchdog); conn.end(); return process.exit(0);
+      }
+
       let ok = 0, failed = 0;
       for (const step of plan) {
         const t0 = Date.now();

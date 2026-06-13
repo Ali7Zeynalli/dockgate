@@ -1,17 +1,39 @@
 // Provisioning modal — set up a remote server (Docker, firewall, fail2ban, ...) over SSH.
-// Opened from the Setup button on a server row (Infrastructure → Servers). Global: openProvisionModal(id).
+// On open it LIVE-SCANS the server (read-only detect of every catalog item) so you see what's already
+// installed before choosing what to run. Opened from the Setup button on a server row. Global: openProvisionModal(id).
 const PV_ICON = { verified: '✓', installed: '✓', present: '✓', failed: '✗', skipped: '⏭', unknown: '○' };
 
 async function openProvisionModal(serverId) {
-  let catalog, matrix;
-  try {
-    [catalog, matrix] = await Promise.all([
-      API.get('/servers/provision/catalog'),
-      API.get(`/servers/${serverId}/provision/matrix`),
-    ]);
-  } catch (e) { showToast('Failed to load provisioning info: ' + e.message, 'error', 8000); return; }
+  const m = showModal(`Provision: ${escapeHtml(serverId)}`,
+    `<div id="pv-body" style="display:flex;flex-direction:column;gap:10px;max-height:65vh;overflow:auto">
+       <div class="text-sm text-muted">🔍 Scanning <b>${escapeHtml(serverId)}</b> over SSH — checking what's already installed…</div>
+       <div class="skeleton" style="height:16px;width:60%"></div>
+       <div class="skeleton" style="height:16px;width:45%"></div>
+     </div>`, []);
+  const root = m.overlay;
 
-  const matrixById = Object.fromEntries((matrix.matrix || []).map(m => [m.id, m]));
+  let catalog, scan;
+  try {
+    [catalog, scan] = await Promise.all([
+      API.get('/servers/provision/catalog'),
+      API.get(`/servers/${serverId}/provision/scan`),
+    ]);
+  } catch (e) {
+    root.querySelector('#pv-body').innerHTML =
+      `<div class="text-danger text-sm">Scan failed: ${escapeHtml(e.message)}</div>
+       <div class="text-xs text-muted" style="margin-top:6px">The server may be unreachable, or it's using password auth that the scan couldn't use. Fix the connection (Test) and reopen Setup.</div>`;
+    return;
+  }
+  renderProvisionForm(serverId, catalog, scan, root, m);
+}
+
+function renderProvisionForm(serverId, catalog, scan, root, modal) {
+  const present = {}; // id -> {present, na}
+  for (const it of (scan.items || [])) present[it.id] = it;
+  const stateOf = (id) => { const s = present[id]; return s ? (s.na ? 'na' : (s.present ? 'present' : 'missing')) : 'unknown'; };
+  const icon = (st) => ({ present: '✓', missing: '○', na: '⊘', unknown: '○' }[st] || '○');
+  const missingCount = (catalog.items || []).filter(it => stateOf(it.id) === 'missing').length;
+
   const presets = [
     ['just-docker', 'Just Docker', 'Docker Engine + compose plugin only'],
     ['secure-baseline', 'Secure baseline', 'update + firewall + SSH hardening + fail2ban + Docker'],
@@ -25,11 +47,13 @@ async function openProvisionModal(serverId) {
     </label>`).join('');
 
   const itemHtml = (catalog.items || []).map(it => {
-    const st = (matrixById[it.id] || {}).state || 'unknown';
+    const st = stateOf(it.id);
     const risk = it.risk === 'high' ? ' <span class="text-xs" style="color:var(--danger)">⚠ risky</span>' : '';
-    return `<label style="display:flex;gap:8px;align-items:center;padding:3px 0">
-      <input type="checkbox" class="pv-item" value="${escapeHtml(it.id)}" data-risk="${escapeHtml(it.risk)}">
-      <span>${PV_ICON[st] || '○'} ${escapeHtml(it.label)}${risk}</span></label>`;
+    const dis = st === 'na' ? ' disabled' : '';
+    return `<label style="display:flex;gap:8px;align-items:center;padding:3px 0;${st === 'na' ? 'opacity:.5' : ''}">
+      <input type="checkbox" class="pv-item" value="${escapeHtml(it.id)}" data-risk="${escapeHtml(it.risk)}"${dis}>
+      <span>${icon(st)} ${escapeHtml(it.label)}${risk} <span class="text-xs text-muted">${st === 'present' ? 'installed' : st === 'na' ? 'n/a on this OS' : st === 'missing' ? 'missing' : ''}</span></span>
+    </label>`;
   }).join('');
 
   const explainer = (catalog.items || []).map(it => `
@@ -38,22 +62,17 @@ async function openProvisionModal(serverId) {
       ${it.commands ? `<pre style="white-space:pre-wrap;padding:6px 12px;background:var(--bg-primary);border-radius:6px;margin-top:4px;font-size:11px">detect:  ${escapeHtml(it.commands.detect)}\ninstall: ${escapeHtml(it.commands.install)}\nverify:  ${escapeHtml(it.commands.verify)}</pre>` : ''}
     </details>`).join('');
 
-  const body = `
-    <div id="pv-body" style="display:flex;flex-direction:column;gap:10px;max-height:65vh;overflow:auto">
-      <div class="text-xs text-muted">Target <b>${escapeHtml(serverId)}</b>. detect → install → verify runs over SSH; already-present items are skipped.</div>
-      <div><div style="font-weight:600;margin-bottom:6px">Preset</div>${presetHtml}</div>
-      <div id="pv-custom" style="display:none"><div style="font-weight:600;margin-bottom:4px">Items</div>${itemHtml}</div>
-      <label id="pv-confirm-wrap" style="display:none;gap:8px;align-items:center;color:var(--danger)">
-        <input type="checkbox" id="pv-confirm"> I understand the risky steps (firewall / SSH hardening) and want to proceed
-      </label>
-      <details><summary style="font-weight:600">Current status</summary>
-        <div style="padding-top:6px">${(matrix.matrix || []).map(m => `<div class="text-sm">${PV_ICON[m.state] || '○'} ${escapeHtml(m.label)} <span class="text-xs text-muted">${escapeHtml(m.state)}</span></div>`).join('')}</div>
-      </details>
-      <details><summary style="font-weight:600">How it works</summary><div style="padding-top:6px">${explainer}</div></details>
-    </div>`;
-
-  const m = showModal(`Provision: ${escapeHtml(serverId)}`, body, []);
-  const root = m.overlay;
+  root.querySelector('#pv-body').innerHTML = `
+    <div class="text-sm">Scanned <b>${escapeHtml(serverId)}</b>${scan.distro ? ` · OS: <b>${escapeHtml(scan.distro)}</b>` : ''} — <b>${missingCount}</b> item(s) missing. detect → install → verify runs over SSH; already-present items are skipped.</div>
+    <div><div style="font-weight:600;margin-bottom:6px">Preset</div>${presetHtml}</div>
+    <div id="pv-custom" style="display:none"><div style="font-weight:600;margin-bottom:4px">Items <span class="text-xs text-muted">(✓ installed · ○ missing · ⊘ n/a)</span></div>${itemHtml}</div>
+    <label id="pv-confirm-wrap" style="display:none;gap:8px;align-items:center;color:var(--danger)">
+      <input type="checkbox" id="pv-confirm"> I understand the risky steps (firewall / SSH hardening) and want to proceed
+    </label>
+    <details><summary style="font-weight:600">Server status (live)</summary>
+      <div style="padding-top:6px">${(catalog.items || []).map(it => { const st = stateOf(it.id); return `<div class="text-sm">${icon(st)} ${escapeHtml(it.label)} <span class="text-xs text-muted">${st}</span></div>`; }).join('')}</div>
+    </details>
+    <details><summary style="font-weight:600">How it works</summary><div style="padding-top:6px">${explainer}</div></details>`;
 
   function update() {
     const preset = root.querySelector('input[name="pv-preset"]:checked')?.value;
@@ -68,6 +87,7 @@ async function openProvisionModal(serverId) {
   update();
 
   const footer = root.querySelector('#modal-footer');
+  footer.innerHTML = '';
   const runBtn = document.createElement('button');
   runBtn.className = 'btn btn-primary';
   runBtn.textContent = 'Run provisioning';

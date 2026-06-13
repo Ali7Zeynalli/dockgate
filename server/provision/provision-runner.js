@@ -97,4 +97,35 @@ function finalize(job) {
 
 function getJob(id) { return provisionJobs.get(id); }
 
-module.exports = { startProvision, planItems, getJob };
+// Read-only live scan — runs every catalog item's detect over SSH (isolated worker, no install, no DB).
+// Resolves { distro, items:[{id,label,present,na,reason}] }. Used when the Setup UI opens.
+function scanServer(server) {
+  return new Promise((resolve, reject) => {
+    const cfg = {
+      host: server.host, port: server.port, username: server.username,
+      keyPath: server.keyPath || null, password: server.password || null, passphrase: server.passphrase || null,
+      mode: 'scan', itemIds: catalog.ITEMS.map(i => i.id),
+    };
+    const child = execFile(process.execPath, [path.join(__dirname, 'provision-worker.js'), JSON.stringify(cfg)], { maxBuffer: 8 * 1024 * 1024 });
+    const to = setTimeout(() => { try { child.kill(); } catch (e) {} reject(new Error('scan timed out')); }, 60000);
+    let buf = '', distro = null, error = null;
+    const items = [];
+    child.stdout.on('data', (chunk) => {
+      buf += chunk.toString();
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+        if (!line.trim()) continue;
+        let e; try { e = JSON.parse(line); } catch (_) { continue; }
+        if (e.type === 'meta') distro = e.distro;
+        else if (e.type === 'scan-item') items.push({ id: e.id, label: e.label, present: !!e.present, na: !!e.na, reason: e.reason || null });
+        else if (e.type === 'scan-done') distro = e.distro || distro;
+        else if (e.type === 'fatal') error = e.error;
+      }
+    });
+    child.on('close', () => { clearTimeout(to); if (error && !items.length) return reject(new Error(error)); resolve({ distro, items, error }); });
+    child.on('error', (err) => { clearTimeout(to); reject(err); });
+  });
+}
+
+module.exports = { startProvision, planItems, getJob, scanServer };

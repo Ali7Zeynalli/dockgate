@@ -318,6 +318,18 @@ router.get('/provision/runs/:runId', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/servers/:id/provision/scan — LIVE read-only probe: run each item's detect over SSH and
+// report what's already installed (vs the matrix, which is DB history). Used when the Setup UI opens.
+router.get('/:id/provision/scan', async (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Provisioning targets a remote SSH server' });
+    const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    res.json(await provisionRunner.scanServer(cfg));
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
 // GET /api/servers/:id/provision/matrix — every catalog item → its latest recorded state for this server.
 router.get('/:id/provision/matrix', (req, res) => {
   try {
