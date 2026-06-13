@@ -96,7 +96,15 @@ function renderHostMonitoring(serverId, container) {
     const load = s.load || { load1: 0, load5: 0, load15: 0, procsRunning: 0, procsTotal: 0 };
     const memCls = memPct >= 90 ? 'red' : memPct >= 70 ? 'yellow' : 'blue';
 
+    // Insight bridges — turn a high reading into an action elsewhere in the app.
+    const sid = String(serverId).replace(/'/g, '');
+    const insights = [];
+    if (rootDisk.usePct >= 85) insights.push(`<div class="insight-card warning" onclick="Router.navigate('infra',{tab:'cleanup'})" style="cursor:pointer" title="Open Docker Cleanup"><span class="nav-item-icon">${Icons.alert}</span><span>Disk ${rootDisk.usePct}% full on / — free space with Docker Cleanup →</span></div>`);
+    if (memPct >= 90 && !s.mem.swapTotal) insights.push(`<div class="insight-card warning" onclick="Router.navigate('server-console',{id:'${sid}',tab:'setup'})" style="cursor:pointer" title="Open Setup"><span class="nav-item-icon">${Icons.alert}</span><span>Memory ${memPct}% and no swap — add a swap file in Setup →</span></div>`);
+    if (s.cpu != null && s.cpu >= 90) insights.push(`<div class="insight-card warning"><span class="nav-item-icon">${Icons.alert}</span><span>CPU ${s.cpu}% — see Top Processes below</span></div>`);
+
     body.innerHTML = `
+      ${insights.length ? `<div class="mb-2">${insights.join('')}</div>` : ''}
       <!-- KPI tiles -->
       <div class="summary-grid">
         ${kpi(Icons.system, iconClass(s.cpu), `${s.cpu != null ? s.cpu : '—'}%`, 'CPU')}

@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.114] - 2026-06-13
+
+### Added — monitoring insight bridges (PHASE 4)
+- The host monitor now surfaces actionable insight cards from the live readings: **disk ≥ 85%** → click to open Docker Cleanup; **memory ≥ 90% with no swap** → click to open Setup (add a swap file); **CPU ≥ 90%** → points to the Top Processes table. Each turns a high reading into the next step
+
+---
+
 ## [2.0.113] - 2026-06-13
 
 ### Added — Servers list enrichment + batched overview (PHASE 4)
