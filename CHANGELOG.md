@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.137] - 2026-06-13
+
+### Added — central rule/channel changes now auto-propagate to installed agents
+- Agents bake their rules + channel into env at deploy time, so a central edit didn't reach them until you manually re-pushed each one. Now **saving Alert Rules / SMTP / Telegram automatically re-pushes the new settings to every installed agent** (`POST /api/agent/sync` → reconfigures only the hosts that actually have an agent running) with a live progress modal. No per-agent clicks
+- Silent when no agents are installed. So e.g. disabling **Container Unhealthy** centrally now takes effect on the agents too, not just the central SSH monitor
+
+---
+
 ## [2.0.136] - 2026-06-13
 
 ### Fixed — notifier deploy modal now has a Close button + a clear finished state

@@ -87,6 +87,19 @@ router.post('/power', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/agent/sync — re-push the CURRENT settings (rules + channel) to every installed agent.
+// Called automatically when notification rules / channels change so central edits propagate.
+router.post('/sync', async (req, res) => {
+  try {
+    const status = await deployer.statusAll();
+    const ids = Object.keys(status).filter(id => status[id] && status[id].installed);
+    if (!ids.length) return res.json({ jobId: null, count: 0 });
+    const jobId = deployer.runJob('reconfigure', ids, sourceIp(req));
+    logAction({ req, resourceType: 'agent', resourceName: 'all', action: 'agent_sync', details: { count: ids.length } });
+    res.json({ jobId, count: ids.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/agent/job/:id — re-openable progress (survives a closed modal/browser)
 router.get('/job/:id', (req, res) => {
   try {

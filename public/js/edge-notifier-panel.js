@@ -253,4 +253,15 @@
 
     load();
   };
+
+  // Push the current rules + channel settings to every installed agent (called after the user
+  // changes notification rules / channels, so central edits propagate without per-agent clicks).
+  // silentIfNone: don't toast when there are no installed agents (used by the auto-hook).
+  window.edgeNotifierSync = async function (silentIfNone) {
+    try {
+      const r = await API.post('/agent/sync', {});
+      if (r && r.jobId) { showToast(`Pushing settings to ${r.count} agent(s)…`, 'info'); openJobModal(r.jobId); }
+      else if (!silentIfNone) showToast('No installed agents to update', 'info');
+    } catch (e) { showToast('Agent sync failed: ' + e.message, 'error'); }
+  };
 })();

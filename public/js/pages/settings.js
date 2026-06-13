@@ -668,6 +668,7 @@ Router.register('settings', async (content, params) => {
                 smtp_to: document.getElementById('smtp-to').value,
               });
               showToast('SMTP settings saved');
+              if (typeof edgeNotifierSync === 'function') edgeNotifierSync(true); // push new channel to installed agents
               renderNotifications(); // refresh so masked values / configured-state show immediately
             } catch(e) { showToast(e.message, 'error'); }
           });
@@ -690,6 +691,7 @@ Router.register('settings', async (content, params) => {
                 tg_chat_id: document.getElementById('tg-chat-id').value,
               });
               showToast('Telegram settings saved');
+              if (typeof edgeNotifierSync === 'function') edgeNotifierSync(true); // push new channel to installed agents
               renderNotifications(); // refresh so masked token / configured-state show immediately
             } catch(e) { showToast(e.message, 'error'); }
           });
@@ -716,6 +718,7 @@ Router.register('settings', async (content, params) => {
               });
               await Promise.all(updates);
               showToast('Notification rules saved');
+              if (typeof edgeNotifierSync === 'function') edgeNotifierSync(true); // push new rules to installed agents
             } catch(e) { showToast(e.message, 'error'); }
           });
 
