@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.125] - 2026-06-13
+
+### Added — console Logs: view ANY log on the host (discovered)
+- The Logs tab dropdown is no longer a fixed list of four. It now **discovers** and offers every **systemd service unit** (`journalctl -u`, e.g. fail2ban / docker / ssh) and every **file under `/var/log`** (`tail`, e.g. fail2ban.log / ufw.log / nginx), grouped under Services / Files — plus the curated System quick-picks (journald / kernel / auth / syslog / boot)
+- `GET /:id/host/log-sources` discovers them; the read endpoint accepts `source` / `unit` / `file`. Unit names are validated to a no-metacharacter charset and file paths to a `/var/log`-only, no-traversal pattern before being used (injection-safe)
+
+---
+
 ## [2.0.124] - 2026-06-13
 
 ### Improved — clearer selection in Setup (✓ badge instead of a faint checkbox)

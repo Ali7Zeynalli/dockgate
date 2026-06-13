@@ -443,17 +443,31 @@ router.get('/:id/host/metrics', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/servers/:id/host/logs?source=journald|auth|syslog|dmesg&lines= — last N lines of a host log.
+// GET /api/servers/:id/host/log-sources — discover the units + /var/log files available on the host.
+router.get('/:id/host/log-sources', async (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Host logs target a remote SSH server' });
+    const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    res.json(await hostLogs.discoverLogSources(cfg));
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// GET /api/servers/:id/host/logs?source=|unit=|file=&lines= — last N lines of a host log.
+// source = curated quick-pick · unit = a systemd unit (journalctl -u) · file = a path under /var/log.
 router.get('/:id/host/logs', async (req, res) => {
   try {
     const server = stmts.getServer.get(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
     if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Host logs target a remote SSH server' });
-    const source = String(req.query.source || 'journald');
-    if (!hostLogs.SOURCES[source]) return res.status(400).json({ error: 'Unknown log source' });
+    const opts = req.query.unit ? { unit: String(req.query.unit) }
+      : req.query.file ? { file: String(req.query.file) }
+      : { source: String(req.query.source || 'journald') };
+    if (opts.source && !hostLogs.SOURCES[opts.source]) return res.status(400).json({ error: 'Unknown log source' });
     const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
-    res.json(await hostLogs.collectHostLogs(cfg, source, req.query.lines));
-  } catch (err) { res.status(502).json({ error: err.message }); }
+    res.json(await hostLogs.collectHostLogs(cfg, opts, req.query.lines));
+  } catch (err) { res.status(err.message && /invalid|under \/var\/log/.test(err.message) ? 400 : 502).json({ error: err.message }); }
 });
 
 // ============ SERVICE MANAGEMENT (PHASE 5) ============
