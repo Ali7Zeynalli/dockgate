@@ -469,4 +469,43 @@ router.post('/:id/services/:itemId/config', async (req, res) => {
   }
 });
 
+// GET /api/servers/:id/services/:itemId/ops — list current state for a service's rich ops
+// (fail2ban jails + banned IPs / ufw rules). Read-only.
+router.get('/:id/services/:itemId/ops', async (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Service management targets a remote SSH server' });
+    const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    res.json(await serviceCtl.listServiceOps(cfg, req.params.itemId));
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// POST /api/servers/:id/services/:itemId/op — body { opId, params, confirm }. Parameterised op
+// (fail2ban ban/unban, ufw/firewalld allow/deny/delete). Params are validated here AND in the worker.
+router.post('/:id/services/:itemId/op', async (req, res) => {
+  const itemId = req.params.itemId;
+  const { opId, params, confirm } = req.body || {};
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Service management targets a remote SSH server' });
+    const schema = catalog.opParamSchema(itemId, opId);
+    if (!schema) return res.status(400).json({ error: 'Unknown operation' });
+    for (const pp of schema) {
+      if (catalog.validateParam(pp.type, (params || {})[pp.name]) == null) return res.status(400).json({ error: `Invalid ${pp.name} (expected ${pp.type})` });
+    }
+    if (catalog.opRequiresConfirm(itemId, opId) && !confirm) {
+      return res.status(409).json({ error: 'Confirmation required for this operation', risks: [{ id: itemId, label: opId }] });
+    }
+    const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    const result = await serviceCtl.runServiceOp(cfg, itemId, opId, params || {});
+    logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'service', resourceName: itemId, action: 'service-op-' + opId, details: { itemId, opId, params } });
+    res.json(result);
+  } catch (err) {
+    logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'service', resourceName: itemId, action: 'service-op-' + (opId || '?'), details: { itemId, opId, failed: true, error: String(err.message).slice(0, 200) } });
+    res.status(502).json({ error: err.message });
+  }
+});
+
 module.exports = router;

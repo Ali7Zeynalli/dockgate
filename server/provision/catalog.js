@@ -354,8 +354,134 @@ function guardedServiceAction({ hasKey, itemId, osId, action, isConfigWrite, con
   return { ok: true, highRisk, destructive };
 }
 
+// ============================================================================
+// PHASE 5b — service-specific RICH operations (parameterised): fail2ban ban/unban,
+// ufw/firewalld add/remove port. The UI passes an opId + named params; the params are
+// strictly validated to a charset that CANNOT contain shell metacharacters before being
+// interpolated into the catalog command. The command itself is a catalog constant.
+// ============================================================================
+
+// Validate a single param. Returns the safe string, or null if invalid. The accepted charset for every
+// type excludes shell metacharacters, so a validated value is injection-safe to interpolate.
+function isIpOrCidr(s) {
+  const m4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/.exec(s);
+  if (m4) {
+    if ([m4[1], m4[2], m4[3], m4[4]].some(o => Number(o) > 255)) return false;
+    if (m4[5] !== undefined && Number(m4[5]) > 32) return false;
+    return true;
+  }
+  // IPv6 [/CIDR] — hex + colon only (no shell metachars possible); CIDR ≤128. Light semantic check.
+  const m6 = /^([0-9a-fA-F:]{2,45})(?:\/(\d{1,3}))?$/.exec(s);
+  if (m6 && s.includes(':')) {
+    if (m6[2] !== undefined && Number(m6[2]) > 128) return false;
+    return true;
+  }
+  return false;
+}
+function validateParam(type, val) {
+  const s = String(val == null ? '' : val).trim();
+  if (!s) return null;
+  switch (type) {
+    case 'ip': return isIpOrCidr(s) ? s : null;
+    case 'jail': return /^[a-zA-Z0-9_.-]{1,64}$/.test(s) ? s : null;
+    case 'port': { const n = Number(s); return (Number.isInteger(n) && n >= 1 && n <= 65535) ? String(n) : null; }
+    case 'proto': return (s === 'tcp' || s === 'udp') ? s : null;
+    case 'rulenum': { const n = Number(s); return (Number.isInteger(n) && n >= 1 && n <= 9999) ? String(n) : null; }
+    default: return null;
+  }
+}
+
+const SERVICE_OPS = {
+  fail2ban: {
+    distroAgnostic: true,
+    listLabel: 'Jails & banned IPs',
+    ops: [
+      { id: 'ban',   label: 'Ban IP',   risk: 'medium', confirm: true,  params: [{ name: 'jail', type: 'jail', placeholder: 'sshd' }, { name: 'ip', type: 'ip', placeholder: '203.0.113.4' }], cmd: (p) => `sudo fail2ban-client set ${p.jail} banip ${p.ip}` },
+      { id: 'unban', label: 'Unban IP', risk: 'low',    confirm: false, params: [{ name: 'jail', type: 'jail', placeholder: 'sshd' }, { name: 'ip', type: 'ip', placeholder: '203.0.113.4' }], cmd: (p) => `sudo fail2ban-client set ${p.jail} unbanip ${p.ip}` },
+    ],
+  },
+  firewall: {
+    family: {
+      debian: {
+        listLabel: 'UFW rules',
+        ops: [
+          { id: 'allow',  label: 'Allow port',   risk: 'low',  confirm: false, params: [{ name: 'port', type: 'port', placeholder: '8080' }, { name: 'proto', type: 'proto', placeholder: 'tcp' }], cmd: (p) => `sudo ufw allow ${p.port}/${p.proto}` },
+          { id: 'deny',   label: 'Deny port',    risk: 'high', confirm: true,  params: [{ name: 'port', type: 'port', placeholder: '8080' }, { name: 'proto', type: 'proto', placeholder: 'tcp' }], cmd: (p) => `sudo ufw deny ${p.port}/${p.proto}` },
+          { id: 'delete', label: 'Delete rule #', risk: 'high', confirm: true, params: [{ name: 'num', type: 'rulenum', placeholder: '2' }], cmd: (p) => `sudo ufw --force delete ${p.num}` },
+        ],
+      },
+      rhel: {
+        listLabel: 'firewalld ports',
+        ops: [
+          { id: 'allow', label: 'Add port',    risk: 'low',  confirm: false, params: [{ name: 'port', type: 'port', placeholder: '8080' }, { name: 'proto', type: 'proto', placeholder: 'tcp' }], cmd: (p) => `sudo firewall-cmd --permanent --add-port=${p.port}/${p.proto} && sudo firewall-cmd --reload` },
+          { id: 'deny',  label: 'Remove port', risk: 'high', confirm: true,  params: [{ name: 'port', type: 'port', placeholder: '8080' }, { name: 'proto', type: 'proto', placeholder: 'tcp' }], cmd: (p) => `sudo firewall-cmd --permanent --remove-port=${p.port}/${p.proto} && sudo firewall-cmd --reload` },
+        ],
+      },
+    },
+  },
+};
+
+// Resolve the ops definition for an item on a distro. null = no rich ops; throws 400 on unknown distro.
+function opsDefFor(itemId, osId) {
+  const def = SERVICE_OPS[itemId];
+  if (!def) return null;
+  if (def.distroAgnostic) return def;
+  const family = distroFamily(osId);
+  if (!family) { const e = new Error(`Unsupported distro: ${osId || '(unknown)'}`); e.statusCode = 400; throw e; }
+  return def.family[family] || null;
+}
+
+// All ops for an item across families (distro-agnostic lookups for the route gate).
+function allOpsFor(itemId) {
+  const def = SERVICE_OPS[itemId];
+  if (!def) return [];
+  return def.distroAgnostic ? def.ops : Object.values(def.family || {}).flatMap(f => f.ops || []);
+}
+function opParamSchema(itemId, opId) { const o = allOpsFor(itemId).find(o => o.id === opId); return o ? o.params : null; }
+function opRequiresConfirm(itemId, opId) { return allOpsFor(itemId).some(o => o.id === opId && o.confirm); }
+
+// UI metadata for an item's rich ops (no command functions exposed).
+function serviceOpsMeta(itemId, osId) {
+  const def = opsDefFor(itemId, osId);
+  if (!def) return null;
+  return {
+    itemId, listLabel: def.listLabel || null,
+    ops: (def.ops || []).map(o => ({ id: o.id, label: o.label, risk: o.risk, confirm: !!o.confirm, params: o.params.map(p => ({ name: p.name, type: p.type, placeholder: p.placeholder || '' })) })),
+  };
+}
+
+// Build the concrete command for a rich op, validating every param. Throws 400 (bad param / unknown op)
+// or 409 (confirm required). Pure.
+function buildServiceOp(itemId, osId, opId, rawParams, { confirm } = {}) {
+  const def = opsDefFor(itemId, osId);
+  if (!def) { const e = new Error('This service has no operations on this distro'); e.statusCode = 400; throw e; }
+  const op = (def.ops || []).find(o => o.id === opId);
+  if (!op) { const e = new Error(`Unknown operation: ${opId}`); e.statusCode = 400; throw e; }
+  const params = {};
+  for (const p of op.params) {
+    const v = validateParam(p.type, (rawParams || {})[p.name]);
+    if (v == null) { const e = new Error(`Invalid ${p.name} (expected ${p.type})`); e.statusCode = 400; throw e; }
+    params[p.name] = v;
+  }
+  if (op.confirm && !confirm) { const e = new Error('Confirmation required for this operation'); e.statusCode = 409; e.risks = [{ id: itemId, label: op.label, reason: 'changes firewall/ban state' }]; throw e; }
+  return { cmd: op.cmd(params), op };
+}
+
+// What to run to LIST current state for an item's ops (the worker interprets `kind`).
+function serviceOpListPlan(itemId, osId) {
+  if (itemId === 'fail2ban') return { kind: 'fail2ban' };
+  if (itemId === 'firewall') {
+    const family = distroFamily(osId);
+    if (family === 'debian') return { kind: 'text', cmd: 'sudo ufw status numbered' };
+    if (family === 'rhel') return { kind: 'text', cmd: 'sudo firewall-cmd --list-all' };
+  }
+  return null;
+}
+
 module.exports = {
   ITEMS, PRESETS, byId, distroFamily, resolveItems, buildPlanForDistro, guardedResolve,
   // PHASE 5 service control
   SERVICE, SERVICE_ACTIONS, serviceVerbs, manageableItems, serviceFor, serviceAction, isConfigPathAllowed, guardedServiceAction,
+  // PHASE 5b rich ops
+  SERVICE_OPS, isIpOrCidr, validateParam, opsDefFor, allOpsFor, opParamSchema, opRequiresConfirm, serviceOpsMeta, buildServiceOp, serviceOpListPlan,
 };

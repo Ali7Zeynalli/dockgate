@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.109] - 2026-06-13
+
+### Added — fail2ban + firewall rich operations (backend, PHASE 5b)
+- New parameterised service operations: **fail2ban** — list jails + banned IPs, ban an IP, unban an IP (per jail); **firewall** — list current rules, allow a port, deny a port, and (ufw) delete a rule by number (firewalld add/remove port on RHEL)
+- `GET /api/servers/:id/services/:itemId/ops` lists current state; `POST /api/servers/:id/services/:itemId/op {opId,params,confirm}` runs an operation
+- Every param (IP/CIDR, port, protocol, jail, rule number) is validated to a charset that **cannot contain shell metacharacters** — both at the route and again in the worker — before it is interpolated into the catalog command. Lockout-capable ops (ban an IP, deny/delete a firewall rule) require confirmation; every op is audited. +2 unit tests (33 total). The Manage-tab UI for these lands next
+
+---
+
 ## [2.0.108] - 2026-06-13
 
 ### Security — PHASE 5 service-management hardening (adversarial-review follow-up)

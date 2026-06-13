@@ -154,12 +154,53 @@ async function doWriteConfig() {
   ok({ ok: true, backup: existed ? bak : null, validated: !!svc.validate, validatorOut });
 }
 
+// op:'oplist' — list current state for a service's rich ops (fail2ban bans / ufw rules).
+async function doOpList() {
+  const distro = await detectDistro();
+  let plan; try { plan = catalog.serviceOpListPlan(cfg.itemId, distro); } catch (e) { return fail(e.message); }
+  if (!plan) return ok({ kind: 'none' });
+  if (plan.kind === 'text') {
+    const r = await run(plan.cmd);
+    const sudo = r.code !== 0 && /password is required|a terminal is required|^sudo:/im.test(r.out);
+    return ok({ kind: 'text', text: sudo ? 'passwordless sudo is required to list rules' : r.out.slice(-8000) });
+  }
+  if (plan.kind === 'fail2ban') {
+    const st = await run('sudo fail2ban-client status');
+    if (st.code !== 0) { const sudo = /password is required|a terminal is required|^sudo:/im.test(st.out); return fail(sudo ? 'passwordless sudo is required for fail2ban' : 'fail2ban not reachable'); }
+    const m = /Jail list:\s*(.*)/i.exec(st.out);
+    const jails = m ? m[1].split(',').map(s => s.trim()).filter(s => /^[a-zA-Z0-9_.-]{1,64}$/.test(s)) : [];
+    const out = [];
+    for (const j of jails.slice(0, 20)) {
+      const js = await run(`sudo fail2ban-client status ${j}`); // j is charset-validated above
+      const bm = /Banned IP list:\s*(.*)/i.exec(js.out);
+      const banned = bm ? bm[1].split(/\s+/).map(s => s.trim()).filter(Boolean) : [];
+      out.push({ jail: j, banned });
+    }
+    return ok({ kind: 'fail2ban', jails: out });
+  }
+  ok({ kind: 'none' });
+}
+
+// op:'op' — run a validated, parameterised op (ban/unban/allow/deny/delete). Confirm is gated at the
+// route; the worker re-validates the params and resolves the command from the catalog.
+async function doOp() {
+  const distro = await detectDistro();
+  let built;
+  try { built = catalog.buildServiceOp(cfg.itemId, distro, cfg.opId, cfg.params || {}, { confirm: true }); }
+  catch (e) { return fail(e.message); }
+  const r = await run(built.cmd);
+  if (r.code !== 0) { const sudo = /password is required|a terminal is required|^sudo:/im.test(r.out); return fail(sudo ? 'passwordless sudo is required' : (r.out.trim().slice(-500) || 'operation failed')); }
+  ok({ ok: true, out: r.out.trim().slice(-2000) });
+}
+
 conn.on('ready', async () => {
   try {
     if (cfg.op === 'status') return await doStatus();
     if (cfg.op === 'readconfig') return await doReadConfig();
     if (cfg.op === 'action') return await doAction();
     if (cfg.op === 'writeconfig') return await doWriteConfig();
+    if (cfg.op === 'oplist') return await doOpList();
+    if (cfg.op === 'op') return await doOp();
     fail('unknown op: ' + cfg.op);
   } catch (e) { fail(e && e.message ? e.message : String(e)); }
 }).on('error', e => fail(e.message)).connect(opts);

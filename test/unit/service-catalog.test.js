@@ -77,6 +77,48 @@ test('service.guardedServiceAction: stopping/disabling SSH over a password login
   assert.doesNotThrow(() => cat.guardedServiceAction({ hasKey: true, itemId: 'ssh-hardening', action: 'disable', confirm: true }));
 });
 
+test('service.validateParam: accepts valid, rejects shell-metachar / out-of-range', () => {
+  // ip
+  assert.equal(cat.validateParam('ip', '203.0.113.4'), '203.0.113.4');
+  assert.equal(cat.validateParam('ip', '10.0.0.0/8'), '10.0.0.0/8');
+  assert.equal(cat.validateParam('ip', '2001:db8::1'), '2001:db8::1');
+  assert.equal(cat.validateParam('ip', '999.1.1.1'), null);
+  assert.equal(cat.validateParam('ip', '1.2.3.4; rm -rf /'), null, 'injection rejected');
+  assert.equal(cat.validateParam('ip', '$(reboot)'), null);
+  // port
+  assert.equal(cat.validateParam('port', '8080'), '8080');
+  assert.equal(cat.validateParam('port', '70000'), null);
+  assert.equal(cat.validateParam('port', '80; ls'), null);
+  // proto
+  assert.equal(cat.validateParam('proto', 'tcp'), 'tcp');
+  assert.equal(cat.validateParam('proto', 'icmp'), null);
+  // jail
+  assert.equal(cat.validateParam('jail', 'sshd'), 'sshd');
+  assert.equal(cat.validateParam('jail', 'a b'), null);
+  assert.equal(cat.validateParam('jail', '`id`'), null);
+  // rulenum
+  assert.equal(cat.validateParam('rulenum', '3'), '3');
+  assert.equal(cat.validateParam('rulenum', '0'), null);
+});
+
+test('service.buildServiceOp: builds validated command; rejects bad params (400) + confirm gate (409)', () => {
+  // fail2ban unban (no confirm) — valid
+  const un = cat.buildServiceOp('fail2ban', 'ubuntu', 'unban', { jail: 'sshd', ip: '203.0.113.4' }, {});
+  assert.equal(un.cmd, 'sudo fail2ban-client set sshd unbanip 203.0.113.4');
+  // fail2ban ban requires confirm
+  assert.throws(() => cat.buildServiceOp('fail2ban', 'ubuntu', 'ban', { jail: 'sshd', ip: '203.0.113.4' }, {}), (e) => e.statusCode === 409);
+  assert.doesNotThrow(() => cat.buildServiceOp('fail2ban', 'ubuntu', 'ban', { jail: 'sshd', ip: '203.0.113.4' }, { confirm: true }));
+  // bad ip rejected (400) — never reaches the shell
+  assert.throws(() => cat.buildServiceOp('fail2ban', 'ubuntu', 'ban', { jail: 'sshd', ip: '1;rm -rf /' }, { confirm: true }), (e) => e.statusCode === 400);
+  // ufw allow (debian) valid; firewalld add (rhel) valid
+  assert.equal(cat.buildServiceOp('firewall', 'ubuntu', 'allow', { port: '8080', proto: 'tcp' }, {}).cmd, 'sudo ufw allow 8080/tcp');
+  assert.ok(cat.buildServiceOp('firewall', 'rocky', 'allow', { port: '8080', proto: 'tcp' }, {}).cmd.includes('firewall-cmd --permanent --add-port=8080/tcp'));
+  // ufw delete requires confirm
+  assert.throws(() => cat.buildServiceOp('firewall', 'ubuntu', 'delete', { num: '2' }, {}), (e) => e.statusCode === 409);
+  // unknown op
+  assert.throws(() => cat.buildServiceOp('fail2ban', 'ubuntu', 'nuke', {}, { confirm: true }), (e) => e.statusCode === 400);
+});
+
 test('service.guardedServiceAction: destructive on high-risk/docker needs confirm; harmless restart does not', () => {
   // high-risk firewall stop → confirm
   assert.throws(() => cat.guardedServiceAction({ hasKey: true, itemId: 'firewall', osId: 'ubuntu', action: 'stop', confirm: false }), (e) => e.statusCode === 409);
