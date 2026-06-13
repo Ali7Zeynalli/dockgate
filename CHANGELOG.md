@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.121] - 2026-06-13
+
+### Changed — header server count + Infrastructure Servers/Add split into tabs
+- The header server switcher now shows a **count badge** (total registered servers, with a remote breakdown in the tooltip) next to a wider, cleaner dropdown
+- **Infrastructure → Servers** is now two tabs — **Servers (N)** (the list) and **+ Add SSH server** (the form) — so the add form no longer sits permanently open beneath the table. Both views stay in the DOM (visibility toggle), so the existing handlers keep working
+
+---
+
 ## [2.0.120] - 2026-06-13
 
 ### Fixed — "System update" no longer shows as "missing"

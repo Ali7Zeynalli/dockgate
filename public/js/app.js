@@ -304,6 +304,14 @@ async function initServerSwitcher() {
       select.appendChild(opt);
     }
 
+    // Header count badge — total registered servers (with a remote breakdown in the tooltip).
+    const countEl = document.getElementById('server-count');
+    if (countEl) {
+      const remotes = data.servers.filter(s => s.id !== 'local' && s.type !== 'local').length;
+      countEl.textContent = String(data.servers.length);
+      countEl.title = `${data.servers.length} server(s) · ${remotes} remote`;
+    }
+
     select.addEventListener('change', async (e) => {
       const id = e.target.value;
       try {

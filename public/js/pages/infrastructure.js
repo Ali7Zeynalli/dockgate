@@ -99,19 +99,26 @@ Router.register('infra', async (content, params) => {
         </tr>`;
     }).join('');
 
+    const total = data.servers.length;
     const html = `
-      <div class="settings-section">
-        <div class="settings-section-title">Docker Servers</div>
-        <div class="text-muted text-sm" style="margin-bottom:12px;">
-          Local Docker socket + uzaq SSH server-lər. Header-dəki SRV dropdown ilə dəyişir.
-        </div>
-        <div class="table-wrapper"><table>
-          <thead><tr><th>ID</th><th>Type</th><th>Host</th><th>Auth</th><th>Status</th><th>Readiness</th><th>Health</th><th>Actions</th></tr></thead>
-          <tbody>${rowsHtml}</tbody>
-        </table></div>
+      <div class="tab-bar" id="iv-tabs" style="margin-bottom:16px">
+        <button class="tab-btn active" data-iv="list" type="button">Servers (${total})</button>
+        <button class="tab-btn" data-iv="add" type="button">+ Add SSH server</button>
       </div>
-      <div class="settings-section" style="margin-top:20px;">
-        <div class="settings-section-title">Add SSH Server</div>
+      <div id="iv-list">
+        <div class="settings-section">
+          <div class="text-muted text-sm" style="margin-bottom:12px;">
+            Local Docker socket + remote SSH servers. Switch with the SRV dropdown in the header.
+          </div>
+          <div class="table-wrapper"><table>
+            <thead><tr><th>ID</th><th>Type</th><th>Host</th><th>Auth</th><th>Status</th><th>Readiness</th><th>Health</th><th>Actions</th></tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table></div>
+        </div>
+      </div>
+      <div id="iv-add" style="display:none">
+        <div class="settings-section">
+          <div class="settings-section-title">Add SSH Server</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
           <input class="input" id="srv-id" placeholder="ID (e.g. prod-1)" />
           <input class="input" id="srv-host" placeholder="Host (e.g. 1.2.3.4 or server.example.com)" />
@@ -155,10 +162,21 @@ Router.register('infra', async (content, params) => {
           <button class="btn btn-primary btn-sm" id="srv-add">Add Server</button>
           <div id="srv-test-result" style="align-self:center;"></div>
         </div>
+        </div>
       </div>
     `;
     Object.assign(tabContent, { innerHTML: html });
     attachServerHandlers(data.servers);
+    // Nested tabs: Servers list vs Add form. Both stay in the DOM (visibility toggle) so the existing
+    // attachServerHandlers bindings remain valid.
+    const ivTabs = tabContent.querySelector('#iv-tabs');
+    ivTabs?.addEventListener('click', (e) => {
+      const b = e.target.closest('.tab-btn'); if (!b) return;
+      const v = b.dataset.iv;
+      ivTabs.querySelectorAll('.tab-btn').forEach(x => x.classList.toggle('active', x.dataset.iv === v));
+      tabContent.querySelector('#iv-list').style.display = v === 'list' ? '' : 'none';
+      tabContent.querySelector('#iv-add').style.display = v === 'add' ? '' : 'none';
+    });
   }
 
   // Stage-1 SSH auth failures get an actionable hint (usermod fixes stage 2, not this).
