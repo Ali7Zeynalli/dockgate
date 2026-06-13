@@ -123,6 +123,55 @@
     if (footer) { footer.appendChild(clearBtn); footer.appendChild(saveBtn); }
   }
 
+  // Server picker — choose which servers to install the agent on (the "Install on servers…" button).
+  async function openInstallPicker(onDone) {
+    let servers = [], status = {};
+    try {
+      const [sr, st] = await Promise.all([API.get('/servers'), API.get('/agent/status')]);
+      servers = (sr.servers || sr || []).filter(s => s.id !== 'local' && s.type !== 'local');
+      status = st || {};
+    } catch (e) { showToast(e.message, 'error'); return; }
+    if (!servers.length) { showToast('No remote servers — add one under Infrastructure first', 'warning'); return; }
+
+    const rows = servers.map(s => {
+      const st = status[s.id] || {};
+      const installed = st.state === 'running' || st.state === 'stopped';
+      return `<label style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;">
+        <input type="checkbox" class="edge-pick" value="${escapeHtml(s.id)}" ${installed ? '' : 'checked'}>
+        <span style="flex:1;min-width:0;">
+          <span class="settings-row-label" style="margin:0;">${escapeHtml(s.id)}</span>
+          <span class="text-xs text-muted"> · ${escapeHtml(s.host || '')} · ${pill(st)}</span>
+        </span>
+      </label>`;
+    }).join('');
+
+    const body = `
+      <div class="text-xs text-muted" style="margin-bottom:10px;">Pick the servers to install the notifier agent on. Already-installed servers start unchecked — re-checking one reinstalls (recreates) it.</div>
+      <label style="display:flex;align-items:center;gap:10px;padding:4px 0 10px;font-weight:600;cursor:pointer;border-bottom:1px solid var(--border);">
+        <input type="checkbox" id="edge-pick-all"> <span>Select all</span>
+      </label>
+      <div style="max-height:320px;overflow:auto;">${rows}</div>`;
+    const m = showModal('Install notifier agent — choose servers', body, []);
+    const allCb = m.overlay.querySelector('#edge-pick-all');
+    allCb?.addEventListener('change', () => {
+      m.overlay.querySelectorAll('.edge-pick').forEach(cb => { cb.checked = allCb.checked; });
+    });
+    const go = document.createElement('button');
+    go.className = 'btn btn-primary';
+    go.textContent = 'Install selected';
+    go.addEventListener('click', async () => {
+      const ids = [...m.overlay.querySelectorAll('.edge-pick:checked')].map(cb => cb.value);
+      if (!ids.length) { showToast('Select at least one server', 'warning'); return; }
+      try {
+        const { jobId } = await API.post('/agent/install-all', { serverIds: ids });
+        m.close();
+        openJobModal(jobId, onDone);
+      } catch (e) { showToast(e.message, 'error'); }
+    });
+    const footer = m.overlay.querySelector('#modal-footer');
+    if (footer) footer.appendChild(go);
+  }
+
   // ---- public entry points used by settings.js renderNotifications ----
 
   window.edgeNotifierSectionHtml = function (channelConfigured) {
@@ -137,7 +186,7 @@
         <div class="settings-section-title" style="margin:0;">Edge Notifier (agent)</div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-ghost btn-sm" id="edge-refresh">↻ Refresh</button>
-          <button class="btn btn-primary btn-sm" id="edge-install-all">Install on all servers</button>
+          <button class="btn btn-primary btn-sm" id="edge-install-all">Install on servers…</button>
         </div>
       </div>
       <div class="settings-row-desc" style="margin-bottom:10px;">A tiny <strong>outbound-only</strong> container on each server watches its Docker events and sends alerts through the channel above — no inbound ports, works behind NAT, keeps alerting if DockGate is offline. Installing it stops DockGate's central monitor for that host (no duplicate alerts); removing it resumes the monitor.</div>
@@ -185,11 +234,7 @@
     }
 
     document.getElementById('edge-refresh')?.addEventListener('click', load);
-    document.getElementById('edge-install-all')?.addEventListener('click', async () => {
-      if (!confirm('Install the notifier agent on all remote servers?')) return;
-      try { const { jobId } = await API.post('/agent/install-all', {}); openJobModal(jobId, load); }
-      catch (e) { showToast(e.message, 'error'); }
-    });
+    document.getElementById('edge-install-all')?.addEventListener('click', () => openInstallPicker(load));
 
     load();
   };

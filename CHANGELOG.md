@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.133] - 2026-06-13
+
+### Changed — Edge Notifier: "Install on servers…" now lets you pick which servers
+- The single **Install on servers…** button opens a server picker (checkbox list, with each server's current agent status + a "Select all"), so you choose exactly which servers to deploy to — instead of an all-or-per-row-only flow. Already-installed servers start unchecked. Installs the selected set via the existing `serverIds` fan-out
+
+---
+
 ## [2.0.132] - 2026-06-13
 
 ### Added — Edge Notifier agent (outbound-only per-server notifications)
