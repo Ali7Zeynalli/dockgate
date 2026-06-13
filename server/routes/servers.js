@@ -14,6 +14,7 @@ const { encrypt, decrypt } = require('../auth/secrets');
 const catalog = require('../provision/catalog');
 const provisionRunner = require('../provision/provision-runner');
 const hostStats = require('../host-stats');
+const serviceCtl = require('../service-ctl');
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
 if (!fs.existsSync(SSH_KEYS_DIR)) {
@@ -297,11 +298,17 @@ function resolveKeyPath(server) {
 router.get('/provision/catalog', (req, res) => {
   res.json({
     presets: catalog.PRESETS,
-    items: catalog.ITEMS.map(i => ({
-      id: i.id, seq: i.seq, label: i.label, description: i.description, group: i.group,
-      risk: i.risk, requiresKey: !!i.requiresKey, dependsOn: i.dependsOn || [],
-      distros: Object.keys(i.distro), commands: i.distro.debian || null,
-    })),
+    manageable: catalog.manageableItems(),
+    items: catalog.ITEMS.map(i => {
+      const svc = catalog.SERVICE[i.id];
+      return {
+        id: i.id, seq: i.seq, label: i.label, description: i.description, group: i.group,
+        risk: i.risk, requiresKey: !!i.requiresKey, dependsOn: i.dependsOn || [],
+        distros: Object.keys(i.distro), commands: i.distro.debian || null,
+        // PHASE 5: whether this item is a manageable service (the live unit/configPaths come from /services/status).
+        service: svc ? { risk: svc.risk, requiresKeyForConfig: !!svc.requiresKeyForConfig, families: Object.keys(svc.family) } : null,
+      };
+    }),
   });
 });
 
@@ -384,6 +391,18 @@ router.get('/:id/host/stats', async (req, res) => {
     if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Host stats target a remote SSH server' });
     const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
     res.json(await hostStats.collectHostStats(cfg));
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// ============ SERVICE MANAGEMENT (PHASE 5) ============
+// GET /api/servers/:id/services/status — live status of the manageable services on this host.
+router.get('/:id/services/status', async (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Service management targets a remote SSH server' });
+    const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    res.json(await serviceCtl.collectServiceStatus(cfg));
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 

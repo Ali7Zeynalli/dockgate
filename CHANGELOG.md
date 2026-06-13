@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.102] - 2026-06-13
+
+### Added — service status backend (read-only, PHASE 5)
+- A new isolated `server/service-ctl-worker.js` (forked, like the host-stats worker, so SSH never contends with the live monitors) reads the **live status of the 6 manageable services** over SSH — for each it runs the catalog's `is-active` / `is-enabled` commands and reports active / enabled-at-boot / unit / editable config paths
+- `GET /api/servers/:id/services/status` returns it (auth-gated, remote-only); the provisioning catalog endpoint now also lists which items are manageable. Read-only — no mutation yet. Every command is resolved from the catalog and any config path is re-checked against the allowlist inside the worker
+
+---
+
 ## [2.0.101] - 2026-06-13
 
 ### Added — service-control catalog matrix (PHASE 5 groundwork)
