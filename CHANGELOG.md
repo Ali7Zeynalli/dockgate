@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.119] - 2026-06-13
+
+### Fixed — host metrics refresh in place (no full page rebuild every 5s)
+- The live host monitor rebuilt its entire DOM subtree on every 5-second poll, which made the whole section flicker, jumped the scroll position and collapsed any expanded part on each refresh
+- It now builds the structure **once** and on each tick only **updates the values in place** — KPI tiles (value + threshold colour), usage bars (width + colour + label), the System grid, network footer and the trend chart. Only the genuinely variable lists (open ports / disks / top processes) re-render, and each in its own isolated container. The page no longer flickers when metrics refresh
+
+---
+
 ## [2.0.118] - 2026-06-13
 
 ### Changed — dashboard reflects the active server: host metrics + Docker (not just Docker)
