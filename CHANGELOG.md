@@ -2,6 +2,21 @@
 
 ---
 
+## [2.0.132] - 2026-06-13
+
+### Added — Edge Notifier agent (outbound-only per-server notifications)
+- **New `notifier-agent/` image** — a tiny, **outbound-only** container DockGate deploys onto each managed server. It mounts that host's `/var/run/docker.sock` **read-only**, watches the local Docker events, and sends alerts **directly** to Telegram/SMTP (the same channels you configured in DockGate). It's a faithful DB-free port of DockGate's own notification engine (`event-monitor`/`templates`/`telegram`/`mailer`), config injected as container ENV. **No inbound ports** (only a loopback healthcheck), works **behind NAT**, and keeps alerting even if DockGate is offline
+- **Settings → Notifications → Edge Notifier** — a per-server table: **Install / Start-Stop / Update / Remove**, plus **Install on all servers** (fan-out with a live, re-pollable deploy log). Shown only when a channel is configured
+- **Per-server channel override** — a different Telegram bot/chat or SMTP per host (or fall back to the global channel). Saving recreates that host's agent to apply the change. Stored encrypted at rest
+- **One watcher per host, never two** — installing the agent on a host stops DockGate's central `EventMonitor` for it (no duplicate alerts); removing/stopping it resumes the monitor
+- Backend: `/api/agent/*` (status/install/update/reconfigure/install-all/remove/power/job/channel), a per-host deployer (`createSshClient` → pull or airgapped save→load → recreate with the read-only-socket spec), and re-openable jobs (`agent_jobs`)
+
+### Security
+- **`smtp_config` secrets are now encrypted at rest** — the Telegram bot token and SMTP password join SSH/registry passwords under AES-256-GCM (`auth/secrets`). Decrypt-on-read, encrypt-on-write; idempotent and plaintext-safe, so existing configs keep working. Per-server channel overrides are encrypted too
+- The agent runs non-root with `no-new-privileges`, a read-only Docker socket, memory/CPU caps and **no published ports**
+
+---
+
 ## [2.0.131] - 2026-06-13
 
 ### Fixed — template logo proxy: fewer 400/502 console errors
