@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.113] - 2026-06-13
+
+### Added — Servers list enrichment + batched overview (PHASE 4)
+- New `GET /api/servers/overview` — a **DB-only** batched snapshot (no SSH): each server's provisioning readiness (from the latest matrix) + its most recent stored host metric
+- The Servers list (Infrastructure → Servers) now shows, per remote server, a **Readiness** badge (ready / needs setup / not scanned) and a **Health** mini-bar (CPU / MEM / DSK from the last sample) — fetched in one batched call alongside the list, so N servers cost one extra request
+
+---
+
 ## [2.0.112] - 2026-06-13
 
 ### Added — host metrics history + trend chart (PHASE 3)

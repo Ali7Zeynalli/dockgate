@@ -47,8 +47,12 @@ Router.register('infra', async (content, params) => {
     loading.textContent = 'Loading servers...';
     tabContent.replaceChildren(loading);
     try {
-      const data = await API.get('/servers');
-      renderServersList(data);
+      // Batched: the servers list + a DB-only overview (readiness + last metric) for per-row enrichment.
+      const [data, ov] = await Promise.all([
+        API.get('/servers'),
+        API.get('/servers/overview').catch(() => ({ servers: {} })),
+      ]);
+      renderServersList(data, ov.servers || {});
     } catch (e) {
       const err = document.createElement('div');
       err.className = 'text-xs text-danger';
@@ -57,7 +61,10 @@ Router.register('infra', async (content, params) => {
     }
   }
 
-  function renderServersList(data) {
+  function renderServersList(data, overview = {}) {
+    // Per-server readiness badge + mini health bars from the batched /overview (DB-only).
+    const miniBar = (label, pct) => pct == null ? '' :
+      `<div style="display:flex;align-items:center;gap:4px;font-size:10px;line-height:1.4"><span class="text-muted" style="width:26px">${label}</span><div class="disk-bar" style="flex:1;height:5px;margin:0"><div class="disk-bar-fill ${pct >= 90 ? 'red' : pct >= 70 ? 'yellow' : 'green'}" style="width:${Math.min(100, pct)}%"></div></div><span style="width:30px;text-align:right">${Math.round(pct)}%</span></div>`;
     const rowsHtml = data.servers.map(s => {
       const isLocal = s.id === 'local';
       const activeBadge = s.isActive ? '<span class="badge badge-running">active</span>' : '';
@@ -66,12 +73,21 @@ Router.register('infra', async (content, params) => {
       if (s.hasKey) authBadge = '<span class="text-xs text-muted">🔑 key</span>';
       else if (s.hasPassword) authBadge = '<span class="text-xs text-muted">🔒 password</span>';
       else if (!isLocal) authBadge = '<span class="text-xs text-muted">📡 agent</span>';
+      const ov = overview[s.id] || {}, rd = ov.readiness || {}, ls = ov.lastStat;
+      let readyBadge = '<span class="text-xs text-muted">—</span>';
+      if (!isLocal) readyBadge = !rd.scanned ? '<span class="text-xs text-muted">not scanned</span>'
+        : rd.dockerReady ? '<span class="badge badge-running">ready</span>'
+        : '<span class="badge badge-restarting">needs setup</span>';
+      const health = (isLocal || !ls) ? '<span class="text-xs text-muted">—</span>'
+        : `<div style="min-width:130px">${miniBar('CPU', ls.cpu)}${miniBar('MEM', ls.mem)}${miniBar('DSK', ls.disk)}</div>`;
       return `<tr>
           <td class="td-mono">${isLocal ? '🖥' : '🔐'} ${escapeHtml(s.id)}</td>
           <td class="text-xs">${escapeHtml(s.type)}</td>
           <td class="td-mono text-xs">${hostStr}</td>
           <td>${authBadge}</td>
           <td>${activeBadge}</td>
+          <td>${readyBadge}</td>
+          <td>${health}</td>
           <td>
             ${!s.isActive ? `<button class="btn btn-xs btn-secondary" data-action="activate" data-id="${escapeHtml(s.id)}">Use</button>` : ''}
             <button class="btn btn-xs btn-secondary" data-action="test" data-id="${escapeHtml(s.id)}">Test</button>
@@ -90,7 +106,7 @@ Router.register('infra', async (content, params) => {
           Local Docker socket + uzaq SSH server-lər. Header-dəki SRV dropdown ilə dəyişir.
         </div>
         <div class="table-wrapper"><table>
-          <thead><tr><th>ID</th><th>Type</th><th>Host</th><th>Auth</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>ID</th><th>Type</th><th>Host</th><th>Auth</th><th>Status</th><th>Readiness</th><th>Health</th><th>Actions</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table></div>
       </div>

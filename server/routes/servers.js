@@ -79,6 +79,25 @@ router.get('/', (req, res) => {
   }
 });
 
+// GET /api/servers/overview — batched per-server snapshot for the Servers list (DB-only, no SSH):
+// provisioning readiness (latest matrix) + the most recent stored host_metrics sample. Cheap + fast.
+router.get('/overview', (req, res) => {
+  try {
+    const out = {};
+    for (const srv of stmts.getServers.all()) {
+      const items = stmts.getLatestItemsPerServer.all(srv.id);
+      const present = items.filter(i => i.state === 'present' || i.state === 'verified').length;
+      const dockerRow = items.find(i => i.item_id === 'docker');
+      const last = stmts.getHostMetrics.all(srv.id, 1)[0] || null;
+      out[srv.id] = {
+        readiness: { scanned: items.length > 0, present, total: items.length, dockerReady: !!(dockerRow && (dockerRow.state === 'present' || dockerRow.state === 'verified')) },
+        lastStat: last ? { cpu: last.cpu, mem: last.mem_pct, disk: last.disk_pct, ts: last.ts } : null,
+      };
+    }
+    res.json({ servers: out });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/servers — yeni SSH server əlavə et
 // body: { id, host, port, username, privateKey?, passphrase?, password?, description? }
 // Auth iyerarxiyası: privateKey > password > SSH agent
