@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.122] - 2026-06-13
+
+### Fixed — server dropdown unreadable in dark mode
+- The header server switcher's open dropdown showed its options on the OS-default (white) background — unreadable in dark mode, made worse by the select being transparent. The options now use the theme's card background + primary text colour, so the server list reads correctly in both dark and light themes
+
+---
+
 ## [2.0.121] - 2026-06-13
 
 ### Changed — header server count + Infrastructure Servers/Add split into tabs

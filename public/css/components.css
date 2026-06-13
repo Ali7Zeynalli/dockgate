@@ -373,6 +373,16 @@ tbody td {
 .select:hover { border-color: var(--border-hover); }
 .select:focus { border-color: var(--accent); }
 
+/* The native dropdown list: options inherit the OS palette (white bg) which is unreadable in dark mode,
+   especially when the select itself is transparent (header switcher). Force readable theme colours. */
+.select option,
+#server-select option {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+/* The header switcher select is transparent to blend into its pill — keep its (closed) text readable. */
+#server-select { color: var(--text-primary); }
+
 /* ============ MODAL ============ */
 .modal-overlay {
   position: fixed;
