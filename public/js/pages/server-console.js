@@ -33,7 +33,7 @@ Router.register('server-console', async (content, params) => {
   function renderConTab(tab) {
     if (tab === 'overview') renderProvisionOverview(id, con, () => goTab('setup'));
     else if (tab === 'setup') renderProvisionPanel(id, con);
-    else if (tab === 'monitoring') con.innerHTML = ph('Monitoring', 'CPU / RAM / disk / load / uptime — canlı göstəricilər.');
+    else if (tab === 'monitoring') renderHostMonitoring(id, con);
     else con.innerHTML = ph('Logs', 'Host logları (journald / auth / dmesg).');
   }
   function goTab(tab) {
