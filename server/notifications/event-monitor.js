@@ -114,8 +114,11 @@ class EventMonitor {
     const rule = stmts.getRule.get(eventType);
     if (!rule) return false;
 
-    const cooldownMs = (rule.cooldown_minutes || 5) * 60 * 1000;
-    return (Date.now() - lastSent) < cooldownMs;
+    // cooldown_minutes === 0 means "no throttle — send every occurrence". (`|| 5` used to turn 0 back
+    // into 5, so consecutive events of the same type were silently dropped.)
+    const cd = rule.cooldown_minutes == null ? 5 : Number(rule.cooldown_minutes);
+    if (!(cd > 0)) return false;
+    return (Date.now() - lastSent) < cd * 60 * 1000;
   }
 
   _markSent(eventType, resourceKey = '') {

@@ -650,8 +650,8 @@ Router.register('settings', async (content, params) => {
                   </div>
                   <div style="display:flex;align-items:center;gap:12px;">
                     <span class="text-xs text-muted">Cooldown:</span>
-                    <input class="input" style="width:60px;padding:4px 6px;font-size:12px;" type="number" min="1" max="1440" value="${r.cooldown_minutes}" data-rule="${r.event_type}" data-field="cooldown" />
-                    <span class="text-xs text-muted">min</span>
+                    <input class="input" style="width:60px;padding:4px 6px;font-size:12px;" type="number" min="0" max="1440" value="${r.cooldown_minutes}" data-rule="${r.event_type}" data-field="cooldown" title="0 = send every occurrence (no throttle)" />
+                    <span class="text-xs text-muted">min · 0 = every</span>
                     <div class="toggle ${r.enabled ? 'active' : ''}" data-rule="${r.event_type}" data-field="enabled"></div>
                   </div>
                 </div>
@@ -750,7 +750,8 @@ Router.register('settings', async (content, params) => {
                 updates.push(API.put(`/meta/notifications/rules/${toggle.dataset.rule}`, { enabled: toggle.classList.contains('active') }));
               });
               tabContent.querySelectorAll('input[data-rule][data-field="cooldown"]').forEach(input => {
-                updates.push(API.put(`/meta/notifications/rules/${input.dataset.rule}`, { cooldown_minutes: parseInt(input.value) || 5 }));
+                const cd = parseInt(input.value, 10);
+                updates.push(API.put(`/meta/notifications/rules/${input.dataset.rule}`, { cooldown_minutes: Number.isFinite(cd) && cd >= 0 ? cd : 5 }));
               });
               await Promise.all(updates);
               showToast('Notification rules saved');

@@ -294,7 +294,9 @@ router.put('/notifications/rules/:type', (req, res) => {
       stmts.setRuleEnabled.run(req.body.enabled ? 1 : 0, type);
     }
     if (req.body.cooldown_minutes !== undefined) {
-      const cd = Math.max(1, Math.min(1440, parseInt(req.body.cooldown_minutes) || 5));
+      // 0 = no throttle (send every occurrence); otherwise clamp to 1..1440.
+      const raw = parseInt(req.body.cooldown_minutes, 10);
+      const cd = Number.isFinite(raw) ? Math.max(0, Math.min(1440, raw)) : 5;
       stmts.setRuleCooldown.run(cd, type);
     }
     logAction({ req, server: 'local', resourceType: 'notification', resourceName: type, action: 'rule_update', details: req.body });

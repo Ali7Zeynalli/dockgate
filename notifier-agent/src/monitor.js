@@ -114,8 +114,10 @@ class Monitor {
     const rule = getRule(eventType);
     if (!rule) return false;
 
-    const cooldownMs = (rule.cooldown_minutes || 5) * 60 * 1000;
-    return (Date.now() - lastSent) < cooldownMs;
+    // cooldown_minutes === 0 means "no throttle — send every occurrence".
+    const cd = rule.cooldown_minutes == null ? 5 : Number(rule.cooldown_minutes);
+    if (!(cd > 0)) return false;
+    return (Date.now() - lastSent) < cd * 60 * 1000;
   }
 
   _markSent(eventType, resourceKey = '') {

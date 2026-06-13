@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.141] - 2026-06-13
+
+### Fixed — cooldown 0 now means "alert on every occurrence" (consecutive events were dropped)
+- Each alert rule has a per-event **cooldown** that suppresses repeats of the same event for the same container (anti-spam, so a crash-loop doesn't flood you). But **0 didn't actually disable it** — a chain of `|| 5` / `Math.max(1, …)` / `min="1"` turned 0 back into 5, so doing the same thing several times in a row sent only the first alert and silently dropped the rest
+- Now **cooldown = 0 → no throttle, every occurrence is sent.** Fixed end-to-end: the monitor's throttle check (central + agent), the rules API (accepts 0), and the Alert Rules input (`min=0`, with a "0 = every" hint). Non-zero cooldowns still throttle exactly as before (verified)
+
+---
+
 ## [2.0.140] - 2026-06-13
 
 ### Added — notifications for start / pause / unpause
