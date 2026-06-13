@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.139] - 2026-06-13
+
+### Added — change the admin password from the UI
+- New **Settings → Security → Change Password** (current + new + confirm). Until now the admin password could only be set once at first-run setup — there was no way to change it short of editing the database
+- Backend `POST /api/auth/change-password` verifies the active session and the current password (scrypt), enforces the 8-char minimum, re-issues the session cookie so you stay logged in, and is rate-limited + audit-logged. Single-admin model unchanged (still one password, no usernames yet)
+
+---
+
 ## [2.0.138] - 2026-06-13
 
 ### Fixed — a container restart is now ONE alert, not "Stopped" then "Restarted"

@@ -32,6 +32,7 @@ Router.register('settings', async (content, params) => {
           <button class="tab-btn" data-tab="log">Notification Log</button>
           <button class="tab-btn" data-tab="update">Software Update</button>
           <button class="tab-btn" data-tab="system">System</button>
+          <button class="tab-btn" data-tab="security">Security</button>
         </div>
 
         <div id="settings-tab-content" style="padding-top:20px;">
@@ -41,7 +42,7 @@ Router.register('settings', async (content, params) => {
 
       const tabContent = document.getElementById('settings-tab-content');
       // Restore the active tab from the URL params (deep-link / refresh / Back), default General.
-      const validTabs = ['general', 'notifications', 'log', 'update', 'system'];
+      const validTabs = ['general', 'notifications', 'log', 'update', 'system', 'security'];
       let activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'general';
 
       // Reflect the restored tab in the tab-bar highlight (default markup highlights General).
@@ -67,6 +68,38 @@ Router.register('settings', async (content, params) => {
         else if (tab === 'log') renderLog();
         else if (tab === 'update') renderUpdate();
         else if (tab === 'system') renderSystemInfo(tabContent); // System info now lives here (global from system.js)
+        else if (tab === 'security') renderSecurity();
+      }
+
+      // ==================== SECURITY TAB ====================
+      function renderSecurity() {
+        tabContent.innerHTML = `
+          <div class="settings-section" style="max-width:520px;">
+            <div class="settings-section-title">Change Password</div>
+            <div class="settings-row-desc" style="margin-bottom:14px;">Update the admin password used to sign in to DockGate. You stay logged in on this device after changing it.</div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <input class="input" id="sec-cur" type="password" placeholder="Current password" autocomplete="current-password">
+              <input class="input" id="sec-new" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password">
+              <input class="input" id="sec-new2" type="password" placeholder="Confirm new password" autocomplete="new-password">
+            </div>
+            <div style="margin-top:14px;">
+              <button class="btn btn-primary btn-sm" id="sec-save">Change Password</button>
+            </div>
+          </div>
+        `;
+        document.getElementById('sec-save')?.addEventListener('click', async () => {
+          const cur = document.getElementById('sec-cur').value;
+          const nw = document.getElementById('sec-new').value;
+          const nw2 = document.getElementById('sec-new2').value;
+          if (!cur || !nw) { showToast('Fill in all fields', 'warning'); return; }
+          if (nw !== nw2) { showToast('New passwords do not match', 'warning'); return; }
+          if (nw.length < 8) { showToast('New password must be at least 8 characters', 'warning'); return; }
+          try {
+            await API.post('/auth/change-password', { currentPassword: cur, newPassword: nw });
+            showToast('Password changed');
+            ['sec-cur', 'sec-new', 'sec-new2'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+          } catch (e) { showToast(e.message, 'error'); }
+        });
       }
 
       // ==================== GENERAL TAB ====================

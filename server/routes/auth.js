@@ -72,4 +72,28 @@ router.post('/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// POST /api/auth/change-password — requires a valid session; verify the current password, set a new one.
+// (This route lives in the open /api/auth router, so it checks the session itself.)
+router.post('/change-password', (req, res) => {
+  const uid = verifyToken(readSessionToken(req));
+  if (!uid) return res.status(401).json({ error: 'Not authenticated' });
+  if (rateLimited(req, res)) return;
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !verifyPassword(String(currentPassword), getSetting('auth_salt'), getSetting('auth_password_hash'))) {
+    logAction({ req, server: 'local', resourceType: 'system', resourceName: 'auth', action: 'password_change_failed' });
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+  if (!newPassword || String(newPassword).length < MIN_PASSWORD_LEN) {
+    return res.status(400).json({ error: `New password must be at least ${MIN_PASSWORD_LEN} characters` });
+  }
+  const { salt, hash } = hashPassword(String(newPassword));
+  stmts.setSetting.run('auth_salt', salt);
+  stmts.setSetting.run('auth_password_hash', hash);
+  clearRateLimit(req);
+  logAction({ req, server: 'local', resourceType: 'system', resourceName: 'auth', action: 'password_change' });
+  // Re-issue the session cookie so the current device stays logged in after the change.
+  res.setHeader('Set-Cookie', serializeSessionCookie(issueToken(uid)));
+  res.json({ success: true });
+});
+
 module.exports = router;
