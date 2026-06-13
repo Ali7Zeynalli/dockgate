@@ -179,6 +179,24 @@ function buildFailTemplate({ imageTag, buildId, error, duration }) {
     ${footer()}`;
 }
 
+// Generic lifecycle event (start / pause / unpause) — neutral informational style.
+function containerLifecycleTemplate({ title, message, containerName, containerId, image, time, server }) {
+  return `${header(title)}
+      <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#1e40af;">
+          ${message}
+        </div>
+        <table style="width:100%;border-collapse:collapse;">
+          ${serverRow(server)}
+          ${row('Container', containerName)}
+          ${row('ID', containerId)}
+          ${row('Image', image || '—')}
+          ${row('Time', time)}
+        </table>
+      </div>
+    ${footer()}`;
+}
+
 function testEmailTemplate() {
   return `${header('Test Email')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
@@ -199,5 +217,6 @@ module.exports = {
   containerUnhealthyTemplate,
   diskAlertTemplate,
   buildFailTemplate,
+  containerLifecycleTemplate,
   testEmailTemplate,
 };

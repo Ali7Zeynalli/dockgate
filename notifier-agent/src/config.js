@@ -11,6 +11,9 @@ const DEFAULT_RULES = {
   container_unhealthy: { enabled: true, cooldown_minutes: 10, description: 'Container health check failing' },
   disk_threshold:      { enabled: true, cooldown_minutes: 30, description: 'Disk usage exceeds threshold' },
   build_failed:        { enabled: true, cooldown_minutes: 5,  description: 'Image build failed' },
+  container_start:     { enabled: true, cooldown_minutes: 5,  description: 'Container started' },
+  container_pause:     { enabled: true, cooldown_minutes: 5,  description: 'Container paused' },
+  container_unpause:   { enabled: true, cooldown_minutes: 5,  description: 'Container unpaused' },
 };
 
 // RULES_JSON env: { event_type: { enabled, cooldown_minutes } } — merged over the defaults.

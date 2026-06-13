@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.140] - 2026-06-13
+
+### Added — notifications for start / pause / unpause
+- The monitor only watched die/restart/unhealthy, so **pause, unpause and start produced no alert**. Added three new rules — **Container Started**, **Container Paused**, **Container Resumed** — visible (and toggleable) under Settings → Notifications → Alert Rules
+- **Container Started is debounced** (~3s) and cancelled by a following `restart`, so a `docker restart` is still a single "Restarted" alert — not Started + Restarted. Verified on a real daemon: start → 1, pause+unpause → 2, restart → 1
+- Applied to both the central monitor and the agent. Note: *Container Started* fires on every container start (including each `docker run`/deploy), so it can be chatty — disable that one rule if you only want stop/crash/restart
+- New rules auto-propagate to installed agents via the existing Save Rules → sync (v2.0.137)
+
+---
+
 ## [2.0.139] - 2026-06-13
 
 ### Added — change the admin password from the UI

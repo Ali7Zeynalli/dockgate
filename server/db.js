@@ -228,6 +228,9 @@ const defaultRules = [
   ['container_unhealthy', 'Container health check failing', 10],
   ['disk_threshold', 'Disk usage exceeds threshold', 30],
   ['build_failed', 'Image build failed', 5],
+  ['container_start', 'Container started', 5],
+  ['container_pause', 'Container paused', 5],
+  ['container_unpause', 'Container unpaused', 5],
 ];
 const insertRule = db.prepare('INSERT OR IGNORE INTO notification_rules (event_type, description, cooldown_minutes) VALUES (?, ?, ?)');
 defaultRules.forEach(([type, desc, cd]) => insertRule.run(type, desc, cd));

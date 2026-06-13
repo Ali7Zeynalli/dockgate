@@ -22,6 +22,7 @@ class EventMonitor {
     this.stream = null;
     this.cooldowns = new Map(); // (event_type + resourceKey) → last_sent timestamp
     this.pendingDie = new Map(); // containerId → timer (debounced die alert, cancelled by a restart)
+    this.pendingStart = new Map(); // containerId → timer (debounced start alert, cancelled by a restart)
     this.reconnectTimer = null;
     this.diskCheckTimer = null;
     this.healthCheckTimer = null;
@@ -44,6 +45,8 @@ class EventMonitor {
     if (this.healthCheckTimer) { clearInterval(this.healthCheckTimer); this.healthCheckTimer = null; }
     for (const t of this.pendingDie.values()) { try { clearTimeout(t); } catch (e) {} }
     this.pendingDie.clear();
+    for (const t of this.pendingStart.values()) { try { clearTimeout(t); } catch (e) {} }
+    this.pendingStart.clear();
     console.log(`[EventMonitor:${this.serverId}] Stopped`);
   }
 
@@ -187,9 +190,11 @@ class EventMonitor {
 
     // Container restart
     if (event.Type === 'container' && event.Action === 'restart') {
-      // Cancel the pending "Stopped/Crashed" alert from the die event that preceded this restart.
+      // Cancel the pending "Stopped/Crashed" + "Started" alerts from the die/start events that
+      // preceded this restart (a `docker restart` fires die→…→start→restart).
       const rcid = event.Actor?.ID;
       if (rcid && this.pendingDie.has(rcid)) { clearTimeout(this.pendingDie.get(rcid)); this.pendingDie.delete(rcid); }
+      if (rcid && this.pendingStart.has(rcid)) { clearTimeout(this.pendingStart.get(rcid)); this.pendingStart.delete(rcid); }
       let restartCount = '—';
       try {
         const info = await this.docker.getContainer(event.Actor?.ID).inspect();
@@ -221,6 +226,41 @@ class EventMonitor {
         subject: `${prefix}Container Unhealthy: ${name}`,
         html: templates.containerUnhealthyTemplate({ containerName: name, containerId: id, image, time, failingStreak, lastOutput, server: this.serverId, logs }),
         telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: image, 'Failing Streak': failingStreak, Time: time }) + telegram.formatLogs(logs),
+      });
+    }
+
+    // Container started — debounced, because a `docker restart` also fires start (die→…→start→restart);
+    // the restart handler cancels it so a restart isn't reported as Started + Restarted.
+    if (event.Type === 'container' && event.Action === 'start') {
+      const scid = event.Actor?.ID;
+      const startPayload = {
+        subject: `${prefix}Container Started: ${name}`,
+        html: templates.containerLifecycleTemplate({ title: 'Container Started', message: `Container <strong>${name}</strong> has started.`, containerName: name, containerId: id, image, time, server: this.serverId }),
+        telegramText: telegram.formatAlert(`${prefix}Container Started`, { ...(serverDetail || {}), Container: name, Image: image, Time: time }),
+      };
+      if (scid) {
+        if (this.pendingStart.has(scid)) clearTimeout(this.pendingStart.get(scid));
+        this.pendingStart.set(scid, setTimeout(() => { this.pendingStart.delete(scid); this._sendNotification('container_start', name, startPayload); }, DIE_DEBOUNCE_MS));
+      } else {
+        await this._sendNotification('container_start', name, startPayload);
+      }
+    }
+
+    // Container paused
+    if (event.Type === 'container' && event.Action === 'pause') {
+      await this._sendNotification('container_pause', name, {
+        subject: `${prefix}Container Paused: ${name}`,
+        html: templates.containerLifecycleTemplate({ title: 'Container Paused', message: `Container <strong>${name}</strong> was paused.`, containerName: name, containerId: id, image, time, server: this.serverId }),
+        telegramText: telegram.formatAlert(`${prefix}Container Paused`, { ...(serverDetail || {}), Container: name, Image: image, Time: time }),
+      });
+    }
+
+    // Container unpaused (resumed)
+    if (event.Type === 'container' && event.Action === 'unpause') {
+      await this._sendNotification('container_unpause', name, {
+        subject: `${prefix}Container Resumed: ${name}`,
+        html: templates.containerLifecycleTemplate({ title: 'Container Resumed', message: `Container <strong>${name}</strong> was unpaused (resumed).`, containerName: name, containerId: id, image, time, server: this.serverId }),
+        telegramText: telegram.formatAlert(`${prefix}Container Resumed`, { ...(serverDetail || {}), Container: name, Image: image, Time: time }),
       });
     }
   }

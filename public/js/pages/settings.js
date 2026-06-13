@@ -545,6 +545,9 @@ Router.register('settings', async (content, params) => {
             container_unhealthy: 'Container Unhealthy',
             disk_threshold: 'Disk Usage Threshold',
             build_failed: 'Build Failed',
+            container_start: 'Container Started',
+            container_pause: 'Container Paused',
+            container_unpause: 'Container Resumed',
           };
 
           const emailConfigured = !!(smtpConfig.smtp_host);
