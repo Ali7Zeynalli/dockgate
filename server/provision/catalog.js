@@ -1,0 +1,171 @@
+// Provisioning check-matrix — the SINGLE source of truth for both the runner and the read-only
+// "how it works" explainer. Each item declares, per distro family, a detect / install / verify shell
+// command. Commands run over SSH as the connecting user; privileged steps use `sudo` (the runner gates
+// on sudo/root capability). detect exit 0 => already present => install is skipped (idempotent).
+//
+// SAFETY: commands here are the ONLY thing the runner may execute — the UI can never inject free shell
+// (it only toggles item ids). Lockout-risky items (firewall, ssh-hardening) carry risk:'high' and are
+// guarded by the runner (key-present check, SSH-allow bundle, explicit confirm).
+
+// Canonical order (lower seq runs first): base → identity → perimeter → service.
+const ITEMS = [
+  {
+    id: 'update', seq: 10, label: 'System update', group: 'base', risk: 'low', needsSudo: true,
+    description: 'Refresh the package index and apply available upgrades — closes known CVEs before anything else is installed.',
+    distro: {
+      debian: { detect: 'false', install: 'sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y upgrade', verify: 'true' },
+      rhel:   { detect: 'false', install: 'sudo dnf -y upgrade --refresh', verify: 'true' },
+      alpine: { detect: 'false', install: 'sudo apk update && sudo apk upgrade --available', verify: 'true' },
+    },
+  },
+  {
+    id: 'base-utils', seq: 20, label: 'Base utilities', group: 'base', risk: 'low', needsSudo: true,
+    description: 'curl, ca-certificates, gnupg, git — prerequisites for the Docker repo and most setup steps.',
+    distro: {
+      debian: { detect: 'command -v curl && command -v git && command -v gpg', install: 'sudo apt-get install -y curl ca-certificates gnupg git', verify: 'command -v curl && command -v git' },
+      rhel:   { detect: 'command -v curl && command -v git', install: 'sudo dnf -y install curl ca-certificates gnupg2 git', verify: 'command -v curl && command -v git' },
+      alpine: { detect: 'command -v curl && command -v git', install: 'sudo apk add curl ca-certificates gnupg git', verify: 'command -v curl && command -v git' },
+    },
+  },
+  {
+    id: 'timesync', seq: 30, label: 'Time sync (chrony)', group: 'system', risk: 'low', needsSudo: true,
+    description: 'Accurate clock — TLS, logs and 2FA all depend on it.',
+    distro: {
+      debian: { detect: 'command -v chronyd || timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -qx yes', install: 'sudo apt-get install -y chrony && sudo systemctl enable --now chrony 2>/dev/null || sudo systemctl enable --now chronyd', verify: 'timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -qx yes || systemctl is-active chronyd' },
+      rhel:   { detect: 'command -v chronyd', install: 'sudo dnf -y install chrony && sudo systemctl enable --now chronyd', verify: 'systemctl is-active chronyd' },
+      alpine: { detect: 'command -v chronyd', install: 'sudo apk add chrony && sudo rc-update add chronyd default && sudo rc-service chronyd start', verify: 'rc-service chronyd status' },
+    },
+  },
+  {
+    id: 'firewall', seq: 40, label: 'Firewall (UFW)', group: 'security', risk: 'high', needsSudo: true,
+    description: 'Default-deny incoming, allow only SSH + 80/443. The CURRENT SSH port is allowed BEFORE enabling, so you are not locked out.',
+    distro: {
+      // Allow the port we're actually connected on (SSH_CONNECTION server port) before enabling — lockout guard.
+      debian: {
+        detect: 'sudo ufw status 2>/dev/null | grep -qi "Status: active"',
+        install: 'sudo apt-get install -y ufw && P=$(echo "$SSH_CONNECTION" | awk "{print \\$4}") && sudo ufw allow "${P:-22}"/tcp && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw --force enable',
+        verify: 'sudo ufw status | grep -qi "Status: active"',
+      },
+      rhel: {
+        detect: 'sudo firewall-cmd --state 2>/dev/null | grep -qx running',
+        install: 'sudo dnf -y install firewalld && sudo systemctl enable --now firewalld && sudo firewall-cmd --permanent --add-service=ssh && sudo firewall-cmd --permanent --add-service=http && sudo firewall-cmd --permanent --add-service=https && sudo firewall-cmd --reload',
+        verify: 'sudo firewall-cmd --state | grep -qx running',
+      },
+    },
+  },
+  {
+    id: 'ssh-hardening', seq: 50, label: 'SSH hardening', group: 'security', risk: 'high', needsSudo: true,
+    description: 'Disable root login and password auth (key-only). ONLY offered when DockGate connects with a key — otherwise you would lock yourself out.',
+    requiresKey: true,
+    distro: {
+      debian: {
+        detect: 'sudo sshd -T 2>/dev/null | grep -qi "^passwordauthentication no"',
+        install: 'printf "PermitRootLogin prohibit-password\\nPasswordAuthentication no\\nKbdInteractiveAuthentication no\\n" | sudo tee /etc/ssh/sshd_config.d/99-dockgate.conf >/dev/null && sudo sshd -t && (sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd)',
+        verify: 'sudo sshd -T | grep -qi "^passwordauthentication no"',
+      },
+      rhel: {
+        detect: 'sudo sshd -T 2>/dev/null | grep -qi "^passwordauthentication no"',
+        install: 'printf "PermitRootLogin prohibit-password\\nPasswordAuthentication no\\n" | sudo tee /etc/ssh/sshd_config.d/99-dockgate.conf >/dev/null && sudo sshd -t && sudo systemctl reload sshd',
+        verify: 'sudo sshd -T | grep -qi "^passwordauthentication no"',
+      },
+    },
+  },
+  {
+    id: 'fail2ban', seq: 60, label: 'Fail2ban', group: 'security', risk: 'low', needsSudo: true,
+    description: 'Bans IPs after repeated failed SSH logins — reduces brute-force noise.',
+    distro: {
+      debian: { detect: 'command -v fail2ban-client', install: 'sudo apt-get install -y fail2ban && printf "[sshd]\\nenabled = true\\nbackend = systemd\\n" | sudo tee /etc/fail2ban/jail.local >/dev/null && sudo systemctl enable --now fail2ban', verify: 'systemctl is-active fail2ban' },
+      rhel:   { detect: 'command -v fail2ban-client', install: 'sudo dnf -y install epel-release && sudo dnf -y install fail2ban && printf "[sshd]\\nenabled = true\\nbackend = systemd\\n" | sudo tee /etc/fail2ban/jail.local >/dev/null && sudo systemctl enable --now fail2ban', verify: 'systemctl is-active fail2ban' },
+    },
+  },
+  {
+    id: 'unattended-upgrades', seq: 70, label: 'Automatic security updates', group: 'security', risk: 'low', needsSudo: true,
+    description: 'Applies security patches automatically going forward.',
+    distro: {
+      debian: { detect: 'dpkg -l unattended-upgrades 2>/dev/null | grep -q "^ii"', install: 'sudo apt-get install -y unattended-upgrades && printf "APT::Periodic::Update-Package-Lists \\"1\\";\\nAPT::Periodic::Unattended-Upgrade \\"1\\";\\n" | sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null', verify: 'dpkg -l unattended-upgrades | grep -q "^ii"' },
+      rhel:   { detect: 'rpm -q dnf-automatic', install: 'sudo dnf -y install dnf-automatic && sudo sed -i "s/^apply_updates =.*/apply_updates = yes/" /etc/dnf/automatic.conf && sudo systemctl enable --now dnf-automatic.timer', verify: 'systemctl is-enabled dnf-automatic.timer' },
+    },
+  },
+  {
+    id: 'swap', seq: 80, label: 'Swap file', group: 'system', risk: 'low', needsSudo: true,
+    description: 'A 2GB swap file + low swappiness — an OOM safety net for Docker build/run on small VPSes.',
+    distro: {
+      debian: { detect: 'swapon --show | grep -q .', install: 'sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && (grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null) && echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swappiness.conf >/dev/null && sudo sysctl --system >/dev/null', verify: 'swapon --show | grep -q .' },
+      rhel:   { detect: 'swapon --show | grep -q .', install: 'sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && (grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null)', verify: 'swapon --show | grep -q .' },
+    },
+  },
+  {
+    id: 'docker', seq: 90, label: 'Docker Engine + Compose', group: 'base', risk: 'medium', needsSudo: true,
+    description: 'Docker Engine, CLI, containerd, buildx and the compose v2 plugin from Docker\'s official repository.',
+    distro: {
+      // get.docker.com is fine for first install when detect-gated (we never re-run it); compose plugin comes with it.
+      debian: { detect: 'command -v docker && docker compose version', install: 'curl -fsSL https://get.docker.com | sudo sh && sudo systemctl enable --now docker', verify: 'sudo docker info >/dev/null 2>&1 && docker compose version' },
+      rhel:   { detect: 'command -v docker && docker compose version', install: 'curl -fsSL https://get.docker.com | sudo sh && sudo systemctl enable --now docker', verify: 'sudo docker info >/dev/null 2>&1 && docker compose version' },
+      alpine: { detect: 'command -v docker && docker compose version', install: 'sudo apk add docker docker-cli-compose && sudo rc-update add docker default && sudo rc-service docker start', verify: 'sudo docker info >/dev/null 2>&1' },
+    },
+  },
+  {
+    id: 'docker-group', seq: 100, label: 'Docker group (rootless CLI)', group: 'base', risk: 'medium', needsSudo: true,
+    description: 'Add the SSH user to the docker group so `docker` runs without sudo. NOTE: docker-group membership is root-equivalent.',
+    dependsOn: ['docker'],
+    distro: {
+      debian: { detect: 'id -nG | grep -qw docker', install: 'sudo usermod -aG docker "$(id -un)"', verify: 'getent group docker | grep -qw "$(id -un)"' },
+      rhel:   { detect: 'id -nG | grep -qw docker', install: 'sudo usermod -aG docker "$(id -un)"', verify: 'getent group docker | grep -qw "$(id -un)"' },
+      alpine: { detect: 'id -nG | grep -qw docker', install: 'sudo addgroup "$(id -un)" docker', verify: 'getent group docker | grep -qw "$(id -un)"' },
+    },
+  },
+];
+
+// Preset → ordered item ids. 'custom' is supplied by the UI via the `only` list.
+const PRESETS = {
+  'just-docker': ['update', 'docker', 'docker-group'],
+  'secure-baseline': ['update', 'base-utils', 'firewall', 'ssh-hardening', 'fail2ban', 'docker', 'docker-group'],
+  'full': ITEMS.map(i => i.id),
+};
+
+const byId = Object.fromEntries(ITEMS.map(i => [i.id, i]));
+
+// Map an /etc/os-release ID (or ID_LIKE) to a distro family key used in item.distro.
+function distroFamily(osId) {
+  const id = String(osId || '').toLowerCase();
+  if (/(debian|ubuntu|mint|pop|raspbian|kali)/.test(id)) return 'debian';
+  if (/(rhel|centos|fedora|rocky|almalinux|alma|amzn|ol)/.test(id)) return 'rhel';
+  if (/alpine/.test(id)) return 'alpine';
+  return null;
+}
+
+// Resolve a preset (or custom `only` list) to an ordered, dependency-closed list of item ids.
+function resolveItems(preset, only) {
+  let ids;
+  if (preset === 'custom') ids = Array.isArray(only) ? only.filter(id => byId[id]) : [];
+  else ids = (PRESETS[preset] || []).slice();
+  // pull in dependsOn
+  const set = new Set(ids);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const id of [...set]) {
+      for (const dep of (byId[id].dependsOn || [])) {
+        if (!set.has(dep)) { set.add(dep); changed = true; }
+      }
+    }
+  }
+  return [...set].sort((a, b) => byId[a].seq - byId[b].seq);
+}
+
+// Build a concrete execution plan for a distro. Throws (no fabricated commands) on an unknown/unsupported distro.
+function buildPlanForDistro(itemIds, osId) {
+  const family = distroFamily(osId);
+  if (!family) { const e = new Error(`Unsupported distro: ${osId || '(unknown)'}`); e.statusCode = 400; throw e; }
+  const plan = [];
+  for (const id of itemIds) {
+    const item = byId[id];
+    if (!item) continue;
+    const cmds = item.distro[family];
+    if (!cmds) { plan.push({ id, seq: item.seq, label: item.label, risk: item.risk, requiresKey: !!item.requiresKey, na: true, reason: `not available on ${family}` }); continue; }
+    plan.push({ id, seq: item.seq, label: item.label, risk: item.risk, requiresKey: !!item.requiresKey, detect: cmds.detect, install: cmds.install, verify: cmds.verify });
+  }
+  return plan;
+}
+
+module.exports = { ITEMS, PRESETS, byId, distroFamily, resolveItems, buildPlanForDistro };
