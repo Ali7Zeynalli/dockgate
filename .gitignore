@@ -24,3 +24,6 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# large walkthrough recordings (mp4 kept, webm sources ignored)
+*.webm
