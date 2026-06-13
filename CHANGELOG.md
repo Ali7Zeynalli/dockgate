@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.131] - 2026-06-13
+
+### Fixed — template logo proxy: fewer 400/502 console errors
+- **Backend** (`/api/templates/logo`): the server-side fetch now sends a real browser **`User-Agent`** (and a broader `Accept`). Hosts that `403` a bare server fetch — Twitter/X CDN (`pbs.twimg.com`) and a few app sites — now serve their logo, so those **502s are recovered**
+- **Frontend** (App Templates): `logoSrc()` now validates the logo URL with `new URL()` first and returns nothing for a **malformed entry** (e.g. a catalog logo like `https://].io/…`) — so DockGate no longer fires a doomed request that logged a **400**; the card falls back to the generic template icon instead
+- Remaining 502s are genuinely unreachable third-party logos (404 / DNS / >8s timeout) and are still hidden cleanly by the `<img onerror>` handler — these are external-host issues, not a DockGate fault
+
+---
+
 ## [2.0.130] - 2026-06-13
 
 ### Removed — Docker Swarm (entirely)

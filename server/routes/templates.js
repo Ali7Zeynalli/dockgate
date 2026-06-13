@@ -120,6 +120,9 @@ router.get('/hubstats', async (req, res) => {
 // at most once per cache window.
 const LOGO_TTL_S = 24 * 60 * 60;          // browser cache lifetime (1 day)
 const LOGO_MAX_BYTES = 2 * 1024 * 1024;   // logos are tiny — reject anything over 2MB
+// Some logo hosts (Twitter/X CDN, a few app sites) 403 a bare server-side fetch that has no
+// browser User-Agent. Sending a real one recovers those logos; it does not affect well-behaved hosts.
+const LOGO_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 // Basic SSRF guard for a self-hosted panel: reject obvious internal / non-public targets.
 // Note: only the literal hostname is checked — a public host that redirects/resolves to an
@@ -147,7 +150,7 @@ router.get('/logo', async (req, res) => {
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return res.status(400).send('only http(s)');
     if (isBlockedLogoHost(u.hostname)) return res.status(400).send('blocked host');
 
-    const r = await fetch(raw, { signal: AbortSignal.timeout(8000), redirect: 'follow', headers: { Accept: 'image/*' } });
+    const r = await fetch(raw, { signal: AbortSignal.timeout(8000), redirect: 'follow', headers: { Accept: 'image/*,*/*;q=0.8', 'User-Agent': LOGO_UA } });
     if (!r.ok) return res.status(502).send('upstream ' + r.status);
 
     const ct = (r.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
