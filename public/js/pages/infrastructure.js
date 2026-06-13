@@ -133,9 +133,7 @@ Router.register('infra', async (content, params) => {
         </div>
 
         <input class="input" id="srv-desc" placeholder="Description (optional)" style="margin:8px 0;width:100%;" />
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:4px 0 8px;cursor:pointer;color:var(--text-secondary)">
-          <input type="checkbox" id="srv-grant-docker"> Grant Docker access after adding (runs <code style="margin:0 3px">sudo usermod -aG docker</code> — needs passwordless sudo)
-        </label>
+        <div class="text-xs text-muted" style="margin:0 0 8px">Docker access (usermod -aG docker) is handled by <b>Manage → Setup</b> per server (idempotent).</div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-secondary btn-sm" id="srv-test-new">Test Connection</button>
           <button class="btn btn-primary btn-sm" id="srv-add">Add Server</button>
@@ -267,12 +265,6 @@ Router.register('infra', async (content, params) => {
       try {
         await API.post('/servers', { id, ...auth, description });
         showToast(`Server "${id}" (${authMode}) əlavə olundu`);
-        if (document.getElementById('srv-grant-docker')?.checked) {
-          try {
-            const g = await API.post(`/servers/${id}/grant-docker`, {});
-            showToast(g.message || 'Docker access granted', 'success', 7000);
-          } catch (ge) { showToast('Added, but granting Docker access failed: ' + sshErrorHint(ge.message), 'warning', 10000); }
-        }
         if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
         renderServers();
       } catch (e) { showToast(e.message, 'error'); }

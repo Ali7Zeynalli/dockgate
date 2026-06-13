@@ -40,7 +40,7 @@ function grantDockerAccess(server) {
   return new Promise((resolve, reject) => {
     execFile(process.execPath, [path.join(__dirname, '..', 'grant-docker-worker.js'), JSON.stringify(cfg)], { timeout: 30000 }, (err, stdout, stderr) => {
       if (err) return reject(new Error((stderr || err.message || 'grant failed').toString().trim()));
-      resolve({ success: true });
+      resolve({ success: true, already: /DG_ALREADY/.test(stdout || '') });
     });
   });
 }
@@ -130,9 +130,11 @@ router.post('/:id/grant-docker', async (req, res) => {
   try {
     const server = stmts.getServer.get(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server tapılmadı' });
-    await grantDockerAccess(server);
-    logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'server', resourceName: req.params.id, action: 'grant-docker', details: { user: server.username } });
-    res.json({ success: true, message: `"${server.username}" added to the docker group — re-test the connection.` });
+    const r = await grantDockerAccess(server);
+    logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'server', resourceName: req.params.id, action: 'grant-docker', details: { user: server.username, already: !!r.already } });
+    res.json({ success: true, already: !!r.already, message: r.already
+      ? `"${server.username}" is already in the docker group — nothing to do.`
+      : `"${server.username}" added to the docker group — re-test the connection.` });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

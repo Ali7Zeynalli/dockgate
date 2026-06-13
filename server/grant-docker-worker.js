@@ -27,14 +27,16 @@ const fail = (msg) => { if (done) return; done = true; process.stderr.write(Stri
 
 conn.on('ready', () => {
   const user = String(cfg.username).replace(/[^a-zA-Z0-9._-]/g, ''); // shell-safe (our own username)
-  conn.exec(`sudo -n usermod -aG docker ${user}`, (err, stream) => {
+  // Idempotent: if the user is already in the docker group, skip usermod and just report it (DG_ALREADY).
+  const cmd = `if id -nG ${user} 2>/dev/null | grep -qw docker; then echo DG_ALREADY; else sudo -n usermod -aG docker ${user} && echo DG_GRANTED; fi`;
+  conn.exec(cmd, (err, stream) => {
     if (err) return fail(err.message);
-    let se = '';
+    let se = '', so = '';
     stream
-      .on('data', () => {})                 // stdout-u boşalt — yoxsa 'close' event-i gəlmir (stream backpressure)
+      .on('data', d => { so += d.toString(); })
       .on('close', (code) => {
         conn.end();
-        if (code === 0) { done = true; process.exit(0); }
+        if (code === 0) { process.stdout.write(so); done = true; process.exit(0); } // stdout carries DG_ALREADY / DG_GRANTED
         else fail(se.trim() || `usermod exited ${code} — passwordless sudo is required for "${user}"`);
       })
       .stderr.on('data', d => { se += d.toString(); });
