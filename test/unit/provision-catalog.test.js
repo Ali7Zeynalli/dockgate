@@ -38,16 +38,16 @@ test('catalog: buildPlanForDistro returns concrete commands; throws on unknown d
   assert.throws(() => cat.buildPlanForDistro(['docker'], 'plan9'), /Unsupported distro/);
 });
 
-test('catalog: ssh-hardening requiresKey + firewall/ssh-hardening are high risk', () => {
-  assert.equal(cat.byId['ssh-hardening'].requiresKey, true);
-  assert.equal(cat.byId['ssh-hardening'].risk, 'high');
+test('catalog: ssh-hardening is now SAFE (no requiresKey, low risk); firewall stays high risk', () => {
+  assert.ok(!cat.byId['ssh-hardening'].requiresKey, 'no key requirement — safe hardening cannot lock you out');
+  assert.equal(cat.byId['ssh-hardening'].risk, 'low');
   assert.equal(cat.byId['firewall'].risk, 'high');
 });
 
-test('catalog.guardedResolve: ssh-hardening dropped without a key, kept with a key', () => {
+test('catalog.guardedResolve: safe ssh-hardening runs even without a key (no longer dropped)', () => {
   const noKey = cat.guardedResolve({ hasKey: false, preset: 'secure-baseline', confirm: true });
-  assert.ok(!noKey.itemIds.includes('ssh-hardening'), 'excluded for password auth');
-  assert.ok(noKey.skipped.some(s => s.id === 'ssh-hardening'), 'recorded as skipped');
+  assert.ok(noKey.itemIds.includes('ssh-hardening'), 'included even for a password login (it never disables passwords)');
+  assert.ok(!noKey.skipped.some(s => s.id === 'ssh-hardening'), 'not skipped anymore');
   const withKey = cat.guardedResolve({ hasKey: true, preset: 'secure-baseline', confirm: true });
   assert.ok(withKey.itemIds.includes('ssh-hardening'));
 });

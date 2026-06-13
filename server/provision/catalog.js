@@ -57,19 +57,22 @@ const ITEMS = [
     },
   },
   {
-    id: 'ssh-hardening', seq: 50, label: 'SSH hardening', group: 'security', risk: 'high', needsSudo: true,
-    description: 'Disable root login and password auth (key-only). ONLY offered when DockGate connects with a key — otherwise you would lock yourself out.',
-    requiresKey: true,
+    id: 'ssh-hardening', seq: 50, label: 'SSH hardening', group: 'security', risk: 'low', needsSudo: true,
+    // SAFE hardening only — deliberately does NOT disable password auth or root password login, because
+    // that locks out password-based servers (e.g. a default DigitalOcean root+password VPS). It limits
+    // auth attempts, disables empty passwords + X11 forwarding, and adds an idle timeout — none of which
+    // can cut your login. Brute-force is handled by fail2ban. The drop-in self-cleans if `sshd -t` rejects it.
+    description: 'Safe SSH hardening — limit auth attempts, disable empty passwords & X11 forwarding, add an idle timeout. Does NOT disable password login, so it can never lock you out (works on key OR password servers). Brute-force is handled by fail2ban.',
     distro: {
       debian: {
-        detect: 'sudo sshd -T 2>/dev/null | grep -qi "^passwordauthentication no"',
-        install: 'printf "PermitRootLogin prohibit-password\\nPasswordAuthentication no\\nKbdInteractiveAuthentication no\\n" | sudo tee /etc/ssh/sshd_config.d/99-dockgate.conf >/dev/null && sudo sshd -t && (sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd)',
-        verify: 'sudo sshd -T | grep -qi "^passwordauthentication no"',
+        detect: 'sudo sshd -T 2>/dev/null | grep -qi "^maxauthtries 3"',
+        install: 'printf "MaxAuthTries 3\\nLoginGraceTime 30\\nPermitEmptyPasswords no\\nX11Forwarding no\\nClientAliveInterval 300\\nClientAliveCountMax 2\\n" | sudo tee /etc/ssh/sshd_config.d/99-dockgate.conf >/dev/null && (sudo sshd -t && (sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd) || (sudo rm -f /etc/ssh/sshd_config.d/99-dockgate.conf; false))',
+        verify: 'sudo sshd -T | grep -qi "^maxauthtries 3"',
       },
       rhel: {
-        detect: 'sudo sshd -T 2>/dev/null | grep -qi "^passwordauthentication no"',
-        install: 'printf "PermitRootLogin prohibit-password\\nPasswordAuthentication no\\n" | sudo tee /etc/ssh/sshd_config.d/99-dockgate.conf >/dev/null && sudo sshd -t && sudo systemctl reload sshd',
-        verify: 'sudo sshd -T | grep -qi "^passwordauthentication no"',
+        detect: 'sudo sshd -T 2>/dev/null | grep -qi "^maxauthtries 3"',
+        install: 'printf "MaxAuthTries 3\\nLoginGraceTime 30\\nPermitEmptyPasswords no\\nX11Forwarding no\\nClientAliveInterval 300\\nClientAliveCountMax 2\\n" | sudo tee /etc/ssh/sshd_config.d/99-dockgate.conf >/dev/null && (sudo sshd -t && sudo systemctl reload sshd || (sudo rm -f /etc/ssh/sshd_config.d/99-dockgate.conf; false))',
+        verify: 'sudo sshd -T | grep -qi "^maxauthtries 3"',
       },
     },
   },

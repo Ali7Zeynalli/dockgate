@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.126] - 2026-06-13
+
+### Changed — SSH hardening is now lockout-proof (no password / root-login disable)
+- "SSH hardening" no longer disables password authentication or root login — those lock out password-based servers (e.g. a default DigitalOcean root+password VPS) and were the feature's main footgun (a full adversarial review confirmed the lockout vectors). It now applies only **non-lockout** hardenings: `MaxAuthTries 3`, `LoginGraceTime`, `PermitEmptyPasswords no`, `X11Forwarding no`, and an idle timeout (`ClientAliveInterval`/`ClientAliveCountMax`)
+- It runs on **key OR password** servers and can never cut your login; brute-force is covered by the fail2ban step. The drop-in **self-cleans** if `sshd -t` rejects it; detect/verify now key off our own directive (`MaxAuthTries 3`) so a partial/external state can't false-report; and RHEL gets the same directives as Debian. No longer `requiresKey`; risk downgraded to **low**. (Daemon start/stop/restart and the raw config editor in the Manage tab stay key-gated.)
+
+---
+
 ## [2.0.125] - 2026-06-13
 
 ### Added — console Logs: view ANY log on the host (discovered)
