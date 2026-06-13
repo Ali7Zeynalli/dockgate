@@ -2,6 +2,218 @@
 
 ---
 
+## [2.0.100] - 2026-06-13
+
+### Docs — backfilled the changelog for v2.0.72 → v2.0.99
+- Reconstructed a changelog entry for **every released version from v2.0.72 through v2.0.99** (auth + hardening, the Infrastructure refactor, the provisioning system, host monitoring, and the per-server console) — the changelog had stopped at v2.0.71. README version + changelog badges bumped to match. Going forward, every version gets a changelog entry as part of its commit
+
+---
+
+## [2.0.99] - 2026-06-13
+
+### Improved — Setup tab: component status cards + a clean "How it works"
+- The flat checkbox list is now **grouped component status cards** (Base / Security / System), each with an on-card **status pill** (installed / missing / n-a) and a colour-coded left border — always visible as a live preview of what's already on the server
+- Checkboxes are interactive **only in the Custom preset** (a hint line explains this); the other presets show the cards read-only
+- The raw `<pre>` detect/install/verify dump became a per-item **"How it works"** built from clean `detail-grid` rows (Detect / Install / Verify). Preset cards, the risky-steps confirm, Run and the live-run view are unchanged
+
+---
+
+## [2.0.98] - 2026-06-13
+
+### Improved — console: Overview + Monitoring merged into one Dashboard-grade view
+- The console drops from 4 tabs to **[Overview | Setup | Manage]**: Monitoring is folded into Overview, the Logs placeholder is removed, and a Manage stub is added (service control lands next)
+- Overview now shows a compact **readiness banner** (Ready / Needs setup + installed/missing counts + "Set up N missing →"), then the **full live host-metrics dashboard**, then the per-group component cards — one comfortable view
+- A single catalog+scan feeds the banner and cards; the embedded host monitor keeps its own self-terminating 5s poll (no double-scan, no leak). Old `?tab=monitoring` / `?tab=logs` deep-links fall back to Overview
+
+---
+
+## [2.0.97] - 2026-06-13
+
+### Improved — console UI now matches the app design system
+- The Monitoring view was rebuilt with the **same primitives as the main Dashboard**: summary-grid KPI tiles (CPU / Memory / Disk / Swap / Uptime / Load, colour-coded), a Resource Usage card with usage bars (used/total), a System detail grid, an Open Ports card, a per-mount Disks card, and a Dashboard-style Top Processes table, plus a live pulse badge
+- Overview leads with KPI tiles; the cramped `max-width` was removed so the console uses the full page width like every other screen
+
+---
+
+## [2.0.96] - 2026-06-13
+
+### Added — Server Console entry in the sidebar
+- A **Server Console** item under the Manage nav group, revealed once at least one remote SSH server is registered. It opens the active remote server's console (or routes to Infrastructure → Servers to pick one)
+
+---
+
+## [2.0.95] - 2026-06-13
+
+### Added — live host monitoring in the console
+- A Monitoring view polls the host every 5s and shows CPU / Memory / Disk / Swap, load average, network ↓/↑ rate, uptime, open ports, per-mount disks and the top processes. Polling stops when you leave the view
+
+---
+
+## [2.0.94] - 2026-06-13
+
+### Added — host stats backend (PHASE 3)
+- `server/host-stats.js` parses `/proc` (CPU% via two samples, RAM/swap, load, uptime), `df`, `/proc/net/dev` (rx/tx rate), `ps` (top processes) and `ss`/`netstat` (open listening ports). An isolated worker collects the snapshot over SSH; `GET /api/servers/:id/host/stats` returns it (auth-gated, remote-only). +8 parser unit tests
+- Note: live SSH collection needs ssh2 (not runtime-tested here); the parsing is unit-tested
+
+---
+
+## [2.0.93] - 2026-06-13
+
+### Improved — modern dashboard look for the Setup tab
+- Preset selection became cards with a clear selected highlight; items show installed / missing / n-a pills; the risky-steps confirm is a styled danger callout. The run view is now **step cards** (one per item — ✓ / ✗ / ⊘ / ⟳, colour-coded) with the raw output moved into a collapsible "Show full log"
+
+---
+
+## [2.0.92] - 2026-06-13
+
+### Added — console Overview: card-based server readiness
+- A new Overview builds a card dashboard from the live SSH scan: a Ready / Needs-setup banner (OS + counts + "Set up N missing →"), then per-group (Base / Security / System) cards showing each item ✓ installed / ○ missing / ⊘ n-a. The console defaults to Overview
+
+---
+
+## [2.0.91] - 2026-06-13
+
+### Improved — idempotent "Grant Docker"; removed the duplicate add-form checkbox
+- Grant Docker now checks group membership first and skips the change if the user is already in the `docker` group ("already in the docker group — nothing to do" vs "added"). Removed the redundant "Grant Docker access after adding" checkbox from the Add SSH Server form (the standalone Grant button and provisioning's docker-group step are both idempotent)
+
+---
+
+## [2.0.90] - 2026-06-13
+
+### Changed — full-page per-server console
+- The console is now a **top-level page** (`#/server-console?id=…&tab=…`, deep-linkable sub-tabs) instead of being nested in the Infrastructure tab. Infrastructure → Servers → **Manage** opens it; Back returns to Servers
+
+---
+
+## [2.0.89] - 2026-06-13
+
+### Changed — per-server console replaces the cramped provisioning modal
+- Per feedback the modal was confusing. A remote server's **Manage** button now opens a per-server **console** (tabs: Setup / Monitoring / Logs / Overview) with the provisioning panel rendered full-width instead of in a modal
+
+---
+
+## [2.0.88] - 2026-06-13
+
+### Added — live read-only scan when Setup opens
+- Setup now **live-scans** the server (detect-only, nothing is installed) and shows each item as ✓ installed / ○ missing / ⊘ n-a with the detected OS and a missing count, instead of only DB history. `GET /api/servers/:id/provision/scan`
+
+---
+
+## [2.0.87] - 2026-06-13
+
+### Added — provisioning UI (Setup) — completes PHASE 2
+- A Setup flow with a preset picker (just-docker / secure-baseline / full / custom), custom item checkboxes, a risk-confirm for lockout-class steps, a current-status matrix and a read-only "how it works" explainer. Run streams a **live log** that keeps running if you close the dialog
+- Note: provisioning runs install commands as root over SSH and is not yet runtime-tested — exercise it on a throwaway VPS first
+
+---
+
+## [2.0.86] - 2026-06-13
+
+### Added — provisioning API
+- Six auth-gated endpoints under `/api/servers`: catalog, per-server matrix, run history, run detail, live job poll, and start (`POST /:id/provision {preset,only,confirm}` — decrypts secrets, resolves the key path, returns 409 + the risk list on unconfirmed high-risk steps)
+
+---
+
+## [2.0.85] - 2026-06-13
+
+### Added — provisioning worker + job runner + lockout/risk guards
+- An isolated forked worker detects the distro, builds the plan from the catalog and runs detect → install → verify over one SSH connection (NDJSON progress). An in-memory job runner keeps the live log going if the browser closes and persists each item + outcome to SQLite. Guards: SSH-hardening is dropped when the server has no key (lockout), UFW allows the live SSH port before enabling, only catalog ids run (no free shell), and high-risk items require confirm
+
+---
+
+## [2.0.84] - 2026-06-13
+
+### Added — provisioning history tables
+- `provision_runs` + `provision_items` tables (kept ~200 runs, separate from the activity audit) with indexes for per-server lookups and the latest-state-per-item matrix; idempotent migration + retention
+
+---
+
+## [2.0.83] - 2026-06-13
+
+### Added — server-setup check-matrix catalog
+- `server/provision/catalog.js`: 10 items (update, base-utils, time sync, firewall, SSH hardening, fail2ban, unattended-upgrades, swap, Docker, docker-group) with detect/install/verify commands per distro family (debian / rhel / alpine) and presets (just-docker / secure-baseline / full / custom). The UI can only toggle known ids — no free-form shell; unknown distros throw rather than fabricate commands. +6 unit tests
+
+---
+
+## [2.0.82] - 2026-06-13
+
+### Changed — new Infrastructure section (Servers + Registries + Cleanup)
+- A new **Infrastructure** nav section hosts Servers, Registries and Cleanup as deep-linkable sub-tabs. Servers moved out of Settings; the old `#/registries` and `#/cleanup` routes redirect into Infrastructure
+- Note: not browser-tested yet (no runtime in this environment)
+
+---
+
+## [2.0.81] - 2026-06-13
+
+### Security — encrypt SSH & registry secrets at rest (AES-256-GCM)
+- SSH passwords/passphrases and registry passwords are now **encrypted at rest** with AES-256-GCM (master key from `DG_MASTER_KEY` or a generated `data/.master.key`, mode 0600) and decrypted at every consumer. encrypt/decrypt are idempotent so a half-migrated DB never breaks; a one-time boot migration encrypts any pre-existing plaintext. Completes the PHASE 0 hardening
+- Note: the full round-trip is not runtime-tested here — verify on a real instance
+
+---
+
+## [2.0.80] - 2026-06-13
+
+### Security — SSRF guard + shell-injection / path-traversal fixes
+- The stackfile proxy now rejects internal/metadata hosts and manual redirects (a public host can't bounce into the private network). Container/volume file-browse pass the path as a positional argument instead of interpolating it into a shell script, and the path sanitiser was rewritten segment-based to close a `....//` bypass
+
+---
+
+## [2.0.79] - 2026-06-13
+
+### Security — same-origin CORS, login rate-limit, CSRF origin-check, BIND_HOST
+- socket.io CORS is no longer `*` (same-origin by default; `ALLOWED_ORIGIN` opts in a cross-origin panel). Login/setup are rate-limited (10 attempts / 15 min per IP). A cross-origin state-changing request is rejected (403) as CSRF defence atop SameSite=Lax. `BIND_HOST` lets the server bind 127.0.0.1 behind a reverse proxy
+
+---
+
+## [2.0.78] - 2026-06-13
+
+### Security — require a session on the socket.io handshake
+- An unauthenticated client can no longer open any live stream (build / logs / stats / events / terminal / host shell) — the handshake verifies the same session cookie as the REST gate
+
+---
+
+## [2.0.77] - 2026-06-13
+
+### Added — login + first-run setup screens
+- On boot the app checks auth status and shows a first-run **setup** screen (create the admin), a **login** screen, or the panel. A 401 from any data call bounces to login; the sidebar has a Log out button. The static shell stays public, all data is gated
+
+---
+
+## [2.0.76] - 2026-06-13
+
+### Added — auth endpoints + gate every /api route behind a session
+- `/api/auth` (open): status, first-run setup (min-8 password + auto-login), login, logout. Every other `/api` route and the dashboard now require a valid session
+
+---
+
+## [2.0.75] - 2026-06-13
+
+### Added — auth foundation (password hashing + signed session tokens)
+- scrypt password hashing (salted, constant-time verify) and HMAC-signed session tokens with HttpOnly / SameSite=Lax cookies (secret from `DG_SESSION_SECRET` or generated). +5 unit tests
+
+---
+
+## [2.0.74] - 2026-06-13
+
+### Fixed — accessibility: associate modal form labels with their inputs
+- Added `for=` attributes linking labels to inputs in the Run, Swarm service, SSH server, Build, Network and Volume-clone forms — screen readers announce each field and clicking a label focuses its input
+
+---
+
+## [2.0.73] - 2026-06-12
+
+### Fixed — template logos load same-origin (kills the CORP console warning)
+- Template logos are re-served from our own origin via `GET /api/templates/logo?url=` (http(s) only, SSRF host block, image/* only, 2 MB cap, 8s timeout, browser-cacheable). Card logos are lazy-loaded so only visible cards fetch. Fixes Firefox blocking logos that upstream hosts send with `Cross-Origin-Resource-Policy: same-origin`
+
+---
+
+## [2.0.72] - 2026-06-12
+
+### Fixed — hash-based routing (browser Back/Forward + refresh restore)
+- Each navigation now syncs to `location.hash` (`#/<path>?<params>`), so the browser **Back/Forward** buttons work and a hard refresh on a Settings sub-tab restores that exact tab (previously Back exited the app and refresh reset to General)
+
+---
+
 ## [2.0.71] - 2026-06-12
 
 ### Added — App Templates: click an app for full details + Docker Hub popularity
