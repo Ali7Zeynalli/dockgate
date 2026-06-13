@@ -1,0 +1,19 @@
+{
+  "name": "dockgate-notifier-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Outbound-only per-server Docker event notifier for DockGate",
+  "author": "Ali Zeynalli",
+  "license": "MIT",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "dockerode": "^5.0.0",
+    "nodemailer": "^8.0.5"
+  }
+}
