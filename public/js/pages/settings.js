@@ -622,6 +622,8 @@ Router.register('settings', async (content, params) => {
               `).join('')}
               <button class="btn btn-primary btn-sm" id="save-rules" style="margin-top:8px;">Save Rules</button>
             </div>
+
+            ${typeof edgeNotifierSectionHtml === 'function' ? edgeNotifierSectionHtml(emailConfigured || tgConfigured) : ''}
           `;
 
           // Accordion
@@ -716,6 +718,9 @@ Router.register('settings', async (content, params) => {
               showToast('Notification rules saved');
             } catch(e) { showToast(e.message, 'error'); }
           });
+
+          // Edge Notifier (per-server agent) — renders only when a channel is configured.
+          if (typeof attachEdgeNotifierHandlers === 'function') attachEdgeNotifierHandlers(tabContent, emailConfigured || tgConfigured);
 
         } catch(e) {
           tabContent.innerHTML = '<div class="text-xs text-muted">Could not load notification settings.</div>';
