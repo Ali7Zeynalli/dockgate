@@ -257,6 +257,15 @@ app.use((err, req, res, next) => {
 });
 
 // ============ WEBSOCKET ============
+// Handshake auth — same session cookie as the REST gate. An unauthenticated client cannot open ANY
+// live stream (build / logs / stats / events / terminal / host shell).
+io.use((socket, next) => {
+  const { verifyToken, readSessionToken } = require('./auth/session');
+  const token = readSessionToken({ headers: socket.handshake.headers });
+  if (verifyToken(token)) return next();
+  next(new Error('unauthorized'));
+});
+
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 

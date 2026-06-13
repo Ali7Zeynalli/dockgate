@@ -67,7 +67,17 @@ function isRemoteActive() {
 }
 
 // Socket.IO connection
-const socket = io({ transports: ['websocket', 'polling'] });
+const socket = io({ transports: ['websocket', 'polling'], withCredentials: true });
+
+// Handshake rejected (no/expired session) → just reflect "disconnected"; the REST 401 path drives
+// the login screen. Deliberately NO reload here — api.js runs before the auth gate, so reloading on
+// the login screen would loop.
+socket.on('connect_error', () => {
+  const el = document.getElementById('connection-status');
+  const text = document.getElementById('connection-text');
+  if (el) el.classList.add('disconnected');
+  if (text) text.textContent = 'Disconnected';
+});
 
 socket.on('connect', () => {
   const el = document.getElementById('connection-status');
