@@ -6,6 +6,8 @@
 // (double-send guard); on remove/stop it is restarted.
 
 const crypto = require('crypto');
+const path = require('path');
+const { execFile } = require('child_process');
 const { stmts, db } = require('../db');
 const { createSshClient, createLocalClient } = require('../docker');
 const { decrypt } = require('../auth/secrets');
@@ -103,6 +105,20 @@ function pullOn(client, ref) {
   });
 }
 
+// Build the agent image on DockGate's LOCAL daemon from the bundled notifier-agent/ context.
+// Uses the host `docker` CLI (same assumption as compose/stack deploy). So the operator never has
+// to run `docker build` by hand — the first install builds it automatically.
+function buildAgentImage(log) {
+  return new Promise((resolve, reject) => {
+    const ctx = path.join(__dirname, '..', '..', 'notifier-agent');
+    execFile('docker', ['build', '-t', IMAGE_REF, ctx], { maxBuffer: 16 * 1024 * 1024, timeout: 300000 }, (err, stdout, stderr) => {
+      if (err) return reject(new Error('agent image build failed: ' + String(stderr || err.message).trim().slice(-400)));
+      log('built agent image locally\n');
+      resolve();
+    });
+  });
+}
+
 // Make sure IMAGE_REF exists on the target. Order: already present → pull → (airgapped) save from
 // DockGate's local daemon and load onto the target. forcePull skips the present-check (used by Update).
 async function ensureImage(client, log, forcePull) {
@@ -116,12 +132,14 @@ async function ensureImage(client, log, forcePull) {
     log('pull complete\n');
     return;
   } catch (pErr) {
-    log(`pull failed (${pErr.message}); trying local save -> remote load ...\n`);
+    log(`pull unavailable (${pErr.message}); shipping the locally-built image instead ...\n`);
     const local = createLocalClient();
     let localHas = false;
     try { await local.getImage(IMAGE_REF).inspect(); localHas = true; } catch (e) {}
     if (!localHas) {
-      throw new Error(`Agent image ${IMAGE_REF} is not on the target, could not be pulled, and is not on DockGate's local daemon. Build/publish it first: docker build -t ${IMAGE_REF} notifier-agent/`);
+      // Not on DockGate's daemon either → build it from the bundled context (automatic, one-time).
+      log(`agent image not built yet — building ${IMAGE_REF} on DockGate's host ...\n`);
+      await buildAgentImage(log);
     }
     const tar = await new Promise((res, rej) => local.getImage(IMAGE_REF).get((err, stream) => (err ? rej(err) : res(stream))));
     await new Promise((res, rej) => {

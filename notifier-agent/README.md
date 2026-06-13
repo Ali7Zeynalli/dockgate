@@ -62,12 +62,14 @@ No `-p` / published ports — outbound-only.
 
 ## Security posture
 
-- Non-root (`USER node`), `no-new-privileges`, memory/cpu caps.
-- Docker socket mounted **read-only** — the agent can read events/inspect/df but cannot
-  create/kill/exec containers via the API. (A read-only socket still exposes substantial host
-  information; it limits *write* actions, not *read* exposure. It is not a boundary against a
-  compromised image — pin the image by digest and use a dedicated alert bot / send-only SMTP
-  credential.)
+- Runs as **root** inside the container — required to read the host Docker socket (owned
+  `root:docker`, mode 660); a non-root user hits `EACCES` unless the host's docker GID is injected
+  (it varies per host). Hardened with `--security-opt no-new-privileges`, memory/cpu caps and
+  **no published ports**.
+- Docker socket mounted **read-only** as defense-in-depth. Honest caveat: a read-only socket mount
+  does **not** fully prevent Docker API write calls and still exposes substantial host info — it is
+  not a boundary against a compromised image. Pin the image by digest and use a dedicated alert bot /
+  send-only SMTP credential; a socket-proxy sidecar is the real hardening.
 - Channel secrets are passed as container env, so they are readable via `docker inspect` on
   that host. Use a separate alert-only Telegram bot (revocable via BotFather) and a send-only
   SMTP credential.

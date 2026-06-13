@@ -12,8 +12,10 @@ RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY src ./src
 
 ENV NODE_ENV=production AGENT_HEALTH_PORT=9000
-# Run as the built-in non-root user.
-USER node
+# Runs as root on purpose: the agent must read the host's Docker socket (owned root:docker, mode 660).
+# A non-root user hits EACCES on /var/run/docker.sock unless the host's docker GID is injected at
+# deploy time (it varies per host). The deployer mitigates with a read-only socket mount,
+# --security-opt no-new-privileges and memory/cpu caps.
 EXPOSE 9000
 
 # wget ships in alpine busybox. Health = event stream connected.

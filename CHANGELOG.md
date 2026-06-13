@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.135] - 2026-06-13
+
+### Fixed — notifier agent now installs with zero manual steps (runtime-tested)
+- **DockGate auto-builds the agent image on first install** — if `dockgate/notifier-agent:1.0.0` isn't on a registry or DockGate's local daemon, the deployer builds it from the bundled `notifier-agent/` context, then ships it to the target via save→load over SSH. No more "image does not exist / build it first" — you never run `docker build` by hand
+- **Agent runs as root** so it can read the host Docker socket. Runtime testing surfaced `EACCES /var/run/docker.sock` under the previous non-root `USER node` (the `node` user isn't in the host's `docker` group, which varies per host). The socket stays mounted read-only with `no-new-privileges` + memory/cpu caps and no published ports
+- **Verified end-to-end on a real daemon:** image builds (251 MB), container starts, connects the Docker event stream (`/healthz` → 200 `streamConnected:true`), and a real container crash is classified and dispatched to the channel (the only failure in the smoke test was the dummy Telegram token, as expected)
+
+---
+
 ## [2.0.134] - 2026-06-13
 
 ### Added — notifications now include the container's recent logs (the WHY)
