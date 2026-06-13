@@ -9,8 +9,10 @@ const path = require('path');
 const dockerService = require('../docker');
 const monitorManager = require('../notifications/monitor-manager');
 const { stmts } = require('../db');
-const { logAction } = require('../audit');
+const { logAction, ipFromReq } = require('../audit');
 const { encrypt, decrypt } = require('../auth/secrets');
+const catalog = require('../provision/catalog');
+const provisionRunner = require('../provision/provision-runner');
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
 if (!fs.existsSync(SSH_KEYS_DIR)) {
@@ -279,6 +281,83 @@ router.delete('/:id', (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ PROVISIONING ============
+function resolveKeyPath(server) {
+  if (!server.key_path) return null;
+  return path.isAbsolute(server.key_path) ? server.key_path : path.join(SSH_KEYS_DIR, server.key_path);
+}
+
+// GET /api/servers/provision/catalog — read-only reference (explainer + custom checklist).
+router.get('/provision/catalog', (req, res) => {
+  res.json({
+    presets: catalog.PRESETS,
+    items: catalog.ITEMS.map(i => ({
+      id: i.id, seq: i.seq, label: i.label, description: i.description, group: i.group,
+      risk: i.risk, requiresKey: !!i.requiresKey, dependsOn: i.dependsOn || [],
+      distros: Object.keys(i.distro), commands: i.distro.debian || null,
+    })),
+  });
+});
+
+// GET /api/servers/provision/job/:id — live job poll (in-memory; finished jobs fall out after TTL).
+router.get('/provision/job/:id', (req, res) => {
+  const job = provisionRunner.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found (it may have finished — see run history)' });
+  res.json({ id: job.id, serverId: job.serverId, status: job.status, phase: job.phase, distro: job.distro, log: job.log, items: job.items, error: job.error });
+});
+
+// GET /api/servers/provision/runs/:runId — one run + its items (re-openable after the job is gone).
+router.get('/provision/runs/:runId', (req, res) => {
+  try {
+    const run = stmts.getProvisionRun.get(req.params.runId);
+    if (!run) return res.status(404).json({ error: 'Run not found' });
+    res.json({ run, items: stmts.getProvisionItems.all(req.params.runId) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/servers/:id/provision/matrix — every catalog item → its latest recorded state for this server.
+router.get('/:id/provision/matrix', (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    const latest = {};
+    for (const row of stmts.getLatestItemsPerServer.all(req.params.id)) latest[row.item_id] = row;
+    const matrix = catalog.ITEMS.map(i => {
+      const r = latest[i.id];
+      return {
+        id: i.id, label: i.label, seq: i.seq, group: i.group, risk: i.risk,
+        state: r ? r.state : 'unknown', lastRunId: r ? r.run_id : null,
+        lastAt: r ? r.finished_at : null, error: r ? r.error : null, reason: r ? r.reason : null,
+      };
+    });
+    res.json({ serverId: req.params.id, matrix });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/servers/:id/provision/runs — run history for a server.
+router.get('/:id/provision/runs', (req, res) => {
+  try {
+    if (!stmts.getServer.get(req.params.id)) return res.status(404).json({ error: 'Server not found' });
+    res.json({ runs: stmts.getProvisionRuns.all(req.params.id, 50) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/servers/:id/provision — start a run. body: { preset, only?, confirm? }
+router.post('/:id/provision', (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Provisioning targets a remote SSH server' });
+    const { preset = 'secure-baseline', only, confirm } = req.body || {};
+    const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    const { jobId, runId } = provisionRunner.startProvision(cfg, { preset, only, confirm, sourceIp: ipFromReq(req) });
+    res.json({ jobId, runId });
+  } catch (err) {
+    if (err.statusCode === 409) return res.status(409).json({ error: err.message, risks: err.risks || [] });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
