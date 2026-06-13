@@ -43,3 +43,19 @@ test('catalog: ssh-hardening requiresKey + firewall/ssh-hardening are high risk'
   assert.equal(cat.byId['ssh-hardening'].risk, 'high');
   assert.equal(cat.byId['firewall'].risk, 'high');
 });
+
+test('catalog.guardedResolve: ssh-hardening dropped without a key, kept with a key', () => {
+  const noKey = cat.guardedResolve({ hasKey: false, preset: 'secure-baseline', confirm: true });
+  assert.ok(!noKey.itemIds.includes('ssh-hardening'), 'excluded for password auth');
+  assert.ok(noKey.skipped.some(s => s.id === 'ssh-hardening'), 'recorded as skipped');
+  const withKey = cat.guardedResolve({ hasKey: true, preset: 'secure-baseline', confirm: true });
+  assert.ok(withKey.itemIds.includes('ssh-hardening'));
+});
+
+test('catalog.guardedResolve: high-risk items require confirm (409); just-docker does not', () => {
+  assert.throws(
+    () => cat.guardedResolve({ hasKey: true, preset: 'secure-baseline', confirm: false }),
+    (e) => e.statusCode === 409 && Array.isArray(e.risks) && e.risks.some(r => r.id === 'firewall')
+  );
+  assert.doesNotThrow(() => cat.guardedResolve({ hasKey: true, preset: 'just-docker', confirm: false }));
+});

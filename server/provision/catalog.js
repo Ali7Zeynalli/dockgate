@@ -168,4 +168,27 @@ function buildPlanForDistro(itemIds, osId) {
   return plan;
 }
 
-module.exports = { ITEMS, PRESETS, byId, distroFamily, resolveItems, buildPlanForDistro };
+// Apply the lockout/risk guards on top of resolveItems. `hasKey` = the server uses key-based SSH.
+// Returns { itemIds, skipped }. Throws an error with statusCode 409 + .risks when high-risk items
+// (firewall, ssh-hardening) are requested without explicit confirmation. Pure — no DB/SSH.
+function guardedResolve({ hasKey, preset, only, confirm }) {
+  let ids = resolveItems(preset, only);
+  const skipped = [];
+  ids = ids.filter(id => {
+    if (byId[id].requiresKey && !hasKey) {
+      skipped.push({ id, label: byId[id].label, reason: 'requires key-based SSH (would lock out a password login)' });
+      return false;
+    }
+    return true;
+  });
+  const risks = ids.filter(id => byId[id].risk === 'high').map(id => ({ id, label: byId[id].label }));
+  if (risks.length && !confirm) {
+    const e = new Error('Confirmation required for risky steps');
+    e.statusCode = 409;
+    e.risks = risks;
+    throw e;
+  }
+  return { itemIds: ids, skipped };
+}
+
+module.exports = { ITEMS, PRESETS, byId, distroFamily, resolveItems, buildPlanForDistro, guardedResolve };
