@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.111] - 2026-06-13
+
+### Added — host logs in the console (PHASE 3)
+- The server console gains a **Logs** tab: the last N lines of **journald / auth / syslog / dmesg** over SSH, with a source selector, line count (200/500/1000), manual refresh and an auto-5s toggle
+- The log command is built from a server-side allowlist (the client only picks a source key + a clamped line count — no free shell) and runs read-only via an isolated worker. `GET /api/servers/:id/host/logs?source=&lines=`. auth/syslog/dmesg need passwordless sudo
+
+---
+
 ## [2.0.110] - 2026-06-13
 
 ### Added — fail2ban + firewall rich operations (Manage UI)

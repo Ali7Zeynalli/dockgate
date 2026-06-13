@@ -14,6 +14,7 @@ const { encrypt, decrypt } = require('../auth/secrets');
 const catalog = require('../provision/catalog');
 const provisionRunner = require('../provision/provision-runner');
 const hostStats = require('../host-stats');
+const hostLogs = require('../host-logs');
 const serviceCtl = require('../service-ctl');
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
@@ -391,6 +392,19 @@ router.get('/:id/host/stats', async (req, res) => {
     if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Host stats target a remote SSH server' });
     const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
     res.json(await hostStats.collectHostStats(cfg));
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// GET /api/servers/:id/host/logs?source=journald|auth|syslog|dmesg&lines= — last N lines of a host log.
+router.get('/:id/host/logs', async (req, res) => {
+  try {
+    const server = stmts.getServer.get(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Host logs target a remote SSH server' });
+    const source = String(req.query.source || 'journald');
+    if (!hostLogs.SOURCES[source]) return res.status(400).json({ error: 'Unknown log source' });
+    const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+    res.json(await hostLogs.collectHostLogs(cfg, source, req.query.lines));
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 

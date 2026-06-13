@@ -1,6 +1,6 @@
 // Per-server console — a full-page management view for one remote server.
 // Reached from the sidebar (Manage → Server Console) or Infrastructure → Servers → Manage.
-// Tabs: Overview (readiness + live host metrics) · Setup (provisioning) · Manage (service control).
+// Tabs: Overview (readiness + live host metrics) · Setup (provisioning) · Manage (service control) · Logs (host logs).
 Router.register('server-console', async (content, params) => {
   const id = params && params.id;
   if (!id) { content.innerHTML = '<div class="empty-state"><p>No server selected.</p><button class="btn btn-primary mt-2" onclick="Router.navigate(\'infra\',{tab:\'servers\'})">Back to Servers</button></div>'; return; }
@@ -9,7 +9,7 @@ Router.register('server-console', async (content, params) => {
   let server = { id };
   try { const data = await API.get('/servers'); server = (data.servers || []).find(s => s.id === id) || { id }; } catch (e) {}
 
-  const tabs = [['overview', 'Overview'], ['setup', 'Setup'], ['manage', 'Manage']];
+  const tabs = [['overview', 'Overview'], ['setup', 'Setup'], ['manage', 'Manage'], ['logs', 'Logs']];
   const validTabs = tabs.map(t => t[0]);
   let active = (params && validTabs.includes(params.tab)) ? params.tab : 'overview';
 
@@ -34,6 +34,7 @@ Router.register('server-console', async (content, params) => {
     if (tab === 'overview') renderConsoleOverview(id, con, () => goTab('setup'));
     else if (tab === 'setup') renderProvisionPanel(id, con);
     else if (tab === 'manage') renderServiceManager(id, con);
+    else if (tab === 'logs') renderHostLogs(id, con);
     else con.innerHTML = ph('Server console', 'Pick a tab.');
   }
   function goTab(tab) {
