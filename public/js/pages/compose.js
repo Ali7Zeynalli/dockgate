@@ -44,8 +44,8 @@ Router.register('compose', async (content) => {
                     <button class="btn-sm btn-primary" data-action="up" data-project="${p.name}" ${dis}>${Icons.play} Up</button>
                     <button class="btn-sm btn-secondary" data-action="down" data-project="${p.name}" ${dis}>${Icons.stop} Down</button>
                     <button class="btn-sm btn-secondary" data-action="restart" data-project="${p.name}" ${dis}>${Icons.restart}</button>
-                    <button class="btn-sm btn-secondary" data-action="rebuild" data-project="${p.name}" ${dis} title="Rebuild images from source + up (docker compose up -d --build)">${Icons.layers} Rebuild</button>
-                    ${p.deploySource === 'folder' ? `<button class="btn-sm btn-secondary" data-update="${p.name}" data-rpath="${escapeHtml(p.workingDir || '')}" title="Re-upload the (updated) folder & rebuild">${Icons.refresh} Update</button>` : ''}
+                    <button class="btn-sm btn-secondary" data-action="rebuild" data-project="${p.name}" data-services="${escapeHtml((p.services || []).join(','))}" ${dis} title="Rebuild images from source + up (pick which services)">${Icons.layers} Rebuild</button>
+                    ${p.deploySource === 'folder' ? `<button class="btn-sm btn-secondary" data-update="${p.name}" data-rpath="${escapeHtml(p.workingDir || '')}" data-services="${escapeHtml((p.services || []).join(','))}" title="Re-upload the (updated) folder & rebuild (pick which services)">${Icons.refresh} Update</button>` : ''}
                     <button class="btn-icon" title="Edit YAML" data-edit="${p.name}" ${dis}>${Icons.settings}</button>
                     <button class="btn-icon" title="Project files (Dockerfile, .env…)" data-files="${p.name}">${Icons.folder || Icons.compose}</button>
                     <button class="btn-icon" title="View Services" data-detail="${p.name}">${Icons.eye}</button>
@@ -66,7 +66,7 @@ Router.register('compose', async (content) => {
       document.getElementById('compose-git')?.addEventListener('click', openGitDeploy);
       content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
       content.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote); }));
-      content.querySelectorAll('[data-update]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openFolderDeploy({ update: btn.dataset.update, remotePath: btn.dataset.rpath }); }));
+      content.querySelectorAll('[data-update]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openFolderDeploy({ update: btn.dataset.update, remotePath: btn.dataset.rpath, services: (btn.dataset.services || '').split(',').filter(Boolean) }); }));
       content.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
       });
@@ -76,19 +76,24 @@ Router.register('compose', async (content) => {
           e.stopPropagation();
           const action = btn.dataset.action;
           const project = btn.dataset.project;
-          const run = async () => {
+          const run = async (qs = '') => {
             try {
               showToast(`${action}ing project ${project}...`, 'info');
-              await API.post(`/compose/${project}/${action}`);
+              await API.post(`/compose/${project}/${action}${qs}`);
               showToast('Success');
               render();
             } catch (err) { showToast(err.message, 'error'); }
           };
+          // rebuild → let the user pick which services to rebuild (all = whole project)
+          if (action === 'rebuild') {
+            const svc = await chooseServices((btn.dataset.services || '').split(',').filter(Boolean), project, 'Rebuild');
+            if (svc === null) return; // cancelled
+            run(svc.length ? `?services=${encodeURIComponent(svc.join(','))}` : '');
           // down/restart are disruptive — confirm first (down removes containers; restart interrupts)
-          if (action === 'down') {
-            showConfirm('Compose Down', `Stop and remove all containers in "${project}"?`, run, true);
+          } else if (action === 'down') {
+            showConfirm('Compose Down', `Stop and remove all containers in "${project}"?`, () => run(), true);
           } else if (action === 'restart') {
-            showConfirm('Compose Restart', `Restart all services in "${project}"? They will be briefly interrupted.`, run, true);
+            showConfirm('Compose Restart', `Restart all services in "${project}"? They will be briefly interrupted.`, () => run(), true);
           } else {
             run();
           }
@@ -342,6 +347,31 @@ Router.register('compose', async (content) => {
   // #2-A v2 — upload a project folder FILE BY FILE (staging session) with a live "uploaded n / total"
   // list, then finish → validate → compose up. opts.update = re-upload an existing remote project to
   // its stored folder + rebuild (project name & path locked; optional clean replace).
+  // Small picker: choose which services to (re)build. Returns chosen names, [] for "all", or null if cancelled.
+  function chooseServices(services, project, verb) {
+    return new Promise((resolve) => {
+      const list = (services || []).filter(Boolean);
+      if (!list.length) return resolve([]); // services unknown → act on the whole project
+      let settled = false;
+      const settle = (v) => { if (settled) return; settled = true; resolve(v); };
+      const rows = list.map(s => `<label style="display:block;margin:5px 0;font-size:13px"><input type="checkbox" class="cs-svc" value="${escapeHtml(s)}" checked> ${escapeHtml(s)}</label>`).join('');
+      const body = `<div class="text-xs text-muted" style="margin-bottom:8px">${verb || 'Rebuild'} which services of <b>${escapeHtml(project)}</b>? Unchecked services are left running, untouched (<code>--no-deps</code>).</div>${rows}`;
+      const m = showModal(`${verb || 'Rebuild'} services`, body, [{ label: 'Cancel', className: 'btn btn-secondary', onClick: () => settle(null) }]);
+      const r = m.overlay;
+      r.querySelector('.modal-close').onclick = () => { settle(null); m.close(); };
+      r.onclick = (e) => { if (e.target === r) { settle(null); m.close(); } };
+      const go = document.createElement('button');
+      go.className = 'btn btn-primary'; go.textContent = verb || 'Rebuild';
+      r.querySelector('#modal-footer').appendChild(go);
+      go.onclick = () => {
+        const chosen = [...r.querySelectorAll('.cs-svc')].filter(x => x.checked).map(x => x.value);
+        if (!chosen.length) return showToast('Select at least one service', 'warning');
+        settle(chosen.length === list.length ? [] : chosen); // all selected → [] (whole project, no --no-deps)
+        m.close();
+      };
+    });
+  }
+
   // A clickable "?" help badge (opens the folder-deploy guide). Wire its click after the modal mounts.
   function helpBadge(id, label) {
     return `<button type="button" id="${id}" title="How folder deploy works" style="display:inline-flex;align-items:center;justify-content:center;gap:5px;height:20px;padding:0 8px;border-radius:10px;border:1px solid var(--border);background:var(--bg-tertiary);color:var(--text-secondary);font-size:11px;font-weight:600;cursor:pointer;line-height:1">
@@ -403,8 +433,11 @@ Router.register('compose', async (content) => {
           : '<span class="text-muted text-xs">no services parsed — all will be deployed</span>';
         const nets = (f.externalNets || []).length ? `<div class="text-xs text-muted" style="margin-top:2px">external network: ${f.externalNets.map(escapeHtml).join(', ')}</div>` : '';
         const err = f.parseError ? `<div class="text-xs" style="color:var(--warning);margin-top:2px">⚠ ${escapeHtml(f.parseError)}</div>` : '';
-        return `<div class="card" style="padding:10px;margin-bottom:8px">
-          <label style="font-weight:600;display:flex;gap:8px;align-items:center"><input type="checkbox" class="fd-stack" data-i="${i}" checked> <code>${escapeHtml(f.path)}</code></label>
+        return `<div class="card fd-card" style="padding:10px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <label style="font-weight:600;display:flex;gap:8px;align-items:center"><input type="checkbox" class="fd-stack" data-i="${i}" checked> <code>${escapeHtml(f.path)}</code></label>
+            <span style="display:flex;gap:2px;flex:none"><button type="button" class="btn-icon fd-up" title="Move up (deploy earlier)">▲</button><button type="button" class="btn-icon fd-down" title="Move down (deploy later)">▼</button></span>
+          </div>
           ${err}${nets}
           <div style="margin:6px 0 6px">${svcRows}</div>
           <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px">
@@ -427,6 +460,15 @@ Router.register('compose', async (content) => {
       const m2 = showModal('Choose what to deploy', body, [{ label: 'Cancel', className: 'btn btn-secondary', onClick: () => settle(null) }]);
       const r2 = m2.overlay;
       r2.querySelector('#cdp-help').onclick = openDeployHelp;
+      // Reorder stacks (deploy order = top → bottom). Moving the card moves its checkbox in the DOM,
+      // and the Deploy handler reads .fd-stack in DOM order — so the plan order follows.
+      const reorder = (card, dir) => {
+        if (!card) return;
+        if (dir < 0 && card.previousElementSibling && card.previousElementSibling.classList.contains('fd-card')) card.parentNode.insertBefore(card, card.previousElementSibling);
+        if (dir > 0 && card.nextElementSibling && card.nextElementSibling.classList.contains('fd-card')) card.parentNode.insertBefore(card.nextElementSibling, card);
+      };
+      r2.querySelectorAll('.fd-up').forEach(b => b.onclick = () => reorder(b.closest('.fd-card'), -1));
+      r2.querySelectorAll('.fd-down').forEach(b => b.onclick = () => reorder(b.closest('.fd-card'), 1));
       r2.querySelector('.modal-close').onclick = () => { settle(null); m2.close(); };
       r2.onclick = (e) => { if (e.target === r2) { settle(null); m2.close(); } };
       const deploy = document.createElement('button');
@@ -565,24 +607,25 @@ Router.register('compose', async (content) => {
           remaining.textContent = i + 1 < picked.length ? `${picked.length - i - 1} remaining` : 'validating & starting…';
           bar.style.width = `${Math.round(((i + 1) / picked.length) * 100)}%`;
         }
-        // Upload done. For a FRESH deploy, scan the tree and let the user pick compose file(s)/services/build.
-        let plan = null;
+        // Upload done. Fresh deploy → scan + pick compose file(s)/services/build. Update → pick which services to rebuild.
+        let plan = null, updateServices;
+        const cancelDeploy = (resetLabel) => { if (uploadId) { API.post('/compose/deploy-folder-abort', { uploadId }).catch(() => {}); uploadId = null; } btn.disabled = false; btn.textContent = resetLabel; remaining.textContent = 'cancelled'; };
         if (!isUpdate) {
           btn.textContent = 'Scanning…'; remaining.textContent = 'scanning compose files…';
           let scan = { files: [] };
           try { scan = await API.post('/compose/deploy-folder-scan', { uploadId }); } catch (e) {}
           if ((scan.files || []).length) {
             plan = await chooseDeployPlan(scan.files, project);
-            if (!plan) { // cancelled → drop the staged upload, reset the modal
-              if (uploadId) { API.post('/compose/deploy-folder-abort', { uploadId }).catch(() => {}); uploadId = null; }
-              btn.disabled = false; btn.textContent = 'Deploy'; remaining.textContent = 'cancelled';
-              return;
-            }
+            if (!plan) { cancelDeploy('Deploy'); return; }
           }
+        } else if ((opts.services || []).length) {
+          const svc = await chooseServices(opts.services, project, 'Rebuild');
+          if (svc === null) { cancelDeploy('Update & Rebuild'); return; }
+          updateServices = svc; // [] = all
         }
         // Hand off to a background job that keeps running even if this modal closes.
         btn.textContent = isUpdate ? 'Rebuilding…' : 'Starting…';
-        const finished = await API.post('/compose/deploy-folder-finish', { uploadId, up: true, plan });
+        const finished = await API.post('/compose/deploy-folder-finish', { uploadId, up: true, plan, services: updateServices });
         uploadId = null; // the backend job owns the staging now — aborting on close no longer applies
         const joblog = root.querySelector('#fd-joblog');
         joblog.style.display = 'block';

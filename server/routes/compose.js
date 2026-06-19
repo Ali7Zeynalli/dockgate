@@ -251,8 +251,20 @@ router.post('/:project/restart', (req, res) => runComposeAction(req, res, ['rest
 router.post('/:project/pull', (req, res) => runComposeAction(req, res, ['pull'], 'pull'));
 // docker compose build — compose faylındakı `build:` bölməli servislərin image-lərini qurur
 router.post('/:project/build', (req, res) => runComposeAction(req, res, ['build'], 'build'));
-// Rebuild = rebuild images from source + force-recreate so the new image lands in the container
-router.post('/:project/rebuild', (req, res) => runComposeAction(req, res, ['up', '-d', '--build', '--force-recreate'], 'rebuild'));
+// Parse a list of service names (?services=a,b or body.services=[...]) — safe charset only.
+function parseServices(src) {
+  let raw = src || [];
+  if (typeof raw === 'string') raw = raw.split(',');
+  return (Array.isArray(raw) ? raw : []).map(s => String(s).trim()).filter(s => /^[a-zA-Z0-9._-]+$/.test(s));
+}
+// Rebuild = rebuild images from source + force-recreate so the new image lands in the container.
+// ?services=a,b → rebuild ONLY those services (+ --no-deps so their dependencies aren't recreated).
+router.post('/:project/rebuild', (req, res) => {
+  const svc = parseServices((req.body && req.body.services) || (req.query && req.query.services));
+  const action = ['up', '-d', '--build', '--force-recreate'];
+  if (svc.length) action.push('--no-deps', ...svc);
+  return runComposeAction(req, res, action, 'rebuild');
+});
 
 // Delete a whole project: stop+remove containers (compose down), optionally remove data volumes (-v),
 // optionally remove the project FILES (the remote folder, or the local managed dir), and drop DockGate's
@@ -669,7 +681,9 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
       writeDeployMeta(u.project, { mode: 'remote', serverId, remotePath, composeFile, source: 'folder' });
       if (up) {
         // On update: rebuild AND force-recreate so the new image/files actually land in the running container.
+        // u.rebuildServices (optional) → rebuild ONLY those services (+ --no-deps so deps aren't recreated).
         const upArgs = update ? ['up', '-d', '--build', '--force-recreate'] : ['up', '-d'];
+        if (update && u.rebuildServices && u.rebuildServices.length) upArgs.push('--no-deps', ...u.rebuildServices);
         current = 'deploy'; setStep(job, 'deploy', 'running'); job.phase = 'up'; jobLog(job, `$ docker compose ${upArgs.join(' ')}`);
         await remoteCompose.runComposeInRemoteDir(server, remotePath, u.project, upArgs, stream);
         setStep(job, 'deploy', 'done');
@@ -781,6 +795,8 @@ router.post('/deploy-folder-finish', async (req, res) => {
     const { uploadId, up = true, plan = null } = req.body || {};
     if (!u) return res.status(410).json({ error: 'Upload session expired — start over' });
     if (!u.files) return res.status(400).json({ error: 'No files uploaded' });
+    // On an update, an optional services list rebuilds ONLY those services (see runDeployJob).
+    if (u.deploy && u.deploy.update) u.rebuildServices = parseServices(req.body && req.body.services);
 
     let composeFile;
     if (plan && Array.isArray(plan.stacks) && plan.stacks.length) {

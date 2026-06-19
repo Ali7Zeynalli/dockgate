@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.148] - 2026-06-16
+
+### Added — per-service rebuild/update + reorder stacks in the deploy picker
+- **Rebuild one service, not the whole project.** The Compose row **Rebuild** button now asks *which* services to rebuild (checkboxes from the project's services, all ticked by default). Picking a subset runs `docker compose up -d --build --force-recreate --no-deps <svc>` — so only that service is rebuilt+recreated and the others are left running, untouched (verified: the chosen service gets a new container, the rest keep the same one)
+- **Same for Update-from-folder.** After re-uploading the folder, you choose which services to rebuild — re-upload everything, rebuild only what you picked
+- Backend: `POST /compose/:project/rebuild?services=a,b` and the folder-update flow accept a service list (validated, safe charset, `--no-deps`)
+- **Reorder stacks in "Choose what to deploy".** Each compose-file card now has ▲/▼ buttons — the deploy order (top → bottom) follows how you arrange them, so the "3 folders, deploy in my order" case is fully controllable
+
+---
+
 ## [2.0.147] - 2026-06-16
 
 ### Fixed — three issues with remote folder-deployed projects + the action buttons
