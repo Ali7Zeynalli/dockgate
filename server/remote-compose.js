@@ -142,7 +142,17 @@ async function removeRemoteDir(server, remoteDir) {
     const e = new Error(`Refusing to delete an unsafe path: ${p || '(empty)'}`); e.statusCode = 400; throw e;
   }
   const r = await execRemote(server, `rm -rf ${shq(p)}`);
-  if (r.code !== 0) { const e = new Error('Remote rm failed: ' + (r.stderr || r.stdout || '')); e.statusCode = 500; throw e; }
+  if (r.code === 0) return p;
+  // Some leftovers are root-owned: Docker bind-mount data dirs (postgres_data, caddy_data, …) created by
+  // containers running as root, which the SSH user can't remove. Fall back to a throwaway root container —
+  // the Docker daemon runs as root — to delete them. Mount the PARENT and remove the target inside it.
+  const parent = p.replace(/\/[^/]+$/, '') || '/';
+  const base = p.split('/').pop();
+  const dr = await execRemote(server, `docker run --rm -v ${shq(parent)}:/t alpine rm -rf ${shq('/t/' + base)} 2>&1`);
+  if (dr.code !== 0) {
+    const e = new Error('Remote rm failed (SSH user + root container both denied): ' + (dr.stdout || dr.stderr || r.stderr || r.stdout || '').trim());
+    e.statusCode = 500; throw e;
+  }
   return p;
 }
 

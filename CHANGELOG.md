@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.161] - 2026-06-19
+
+### Fixed — redeploy no longer wipes remote data, root-owned cleanup, DOM autocomplete warning
+- **Remote redeploy no longer deletes the project folder first.** It used to `rm -rf` the remote folder for a "fresh" clone — but that folder holds the project's **runtime bind-mount data** (`./docker/volumes/postgres_data`, `caddy_data`, `redis_data`, …) created by containers running as **root**, so the delete (a) would have **destroyed live data** and (b) failed with `Permission denied` because the SSH user doesn't own those root-created files. Redeploy now re-uploads the source over the existing folder → **code changes land, runtime data survives, no permission error**
+- **Explicit Delete / "Clean replace" now handle root-owned files.** When the SSH user can't `rm` a root-owned data dir, `removeRemoteDir` falls back to a throwaway **root Docker container** (`docker run --rm -v <parent>:/t alpine rm -rf …`) — the Docker daemon runs as root, so it removes what `sudo` would, without needing sudo
+- **DOM warning gone:** every input/textarea/select inside a modal form now gets `autocomplete="off"` (side-effect of the earlier password-in-form fix — Chrome then warned "inputs should have autocomplete attributes" on fields like `#gd-rpath`). One line in `showModal` sets it on all fields lacking it
+
+---
+
 ## [2.0.160] - 2026-06-16
 
 ### Changed — clearer deploy console (visual stepper) + honest webhook section

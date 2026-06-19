@@ -155,8 +155,10 @@ function showModal(title, bodyHtml, actions = []) {
 
   overlay.querySelector('.modal-close').onclick = closeModal;
   // Keep any password field inside a <form> (silences the "password field not in a form" DOM warning)
-  // without letting Enter/implicit-submit reload the page.
+  // without letting Enter/implicit-submit reload the page; give the other fields autocomplete="off" so
+  // Chrome doesn't warn "inputs should have autocomplete attributes".
   overlay.querySelector('.dg-mform')?.addEventListener('submit', (e) => e.preventDefault());
+  overlay.querySelectorAll('.dg-mform input:not([autocomplete]), .dg-mform textarea:not([autocomplete]), .dg-mform select:not([autocomplete])').forEach(el => el.setAttribute('autocomplete', 'off'));
   overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
 
   function closeModal() { overlay.remove(); }

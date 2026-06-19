@@ -1095,7 +1095,11 @@ function gitRedeployJob(project, reqIp) {
       cloneArgs.push(meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token), dir);
       job.phase = 'clone'; jobLog(job, `$ git clone ${redactToken(meta.repoUrl, meta.token)}\n`);
       await gitWithKey(meta.keyId, cloneArgs, { onData: (c) => jobStream(job, c) });
-      if (deploy.mode === 'remote') { try { await remoteCompose.removeRemoteDir(deploy.server, deploy.remotePath); } catch (e) {} } // fresh folder
+      // Do NOT wipe the remote folder on redeploy. It holds the project's runtime bind-mount data (e.g.
+      // ./docker/volumes/postgres_data, caddy_data) that the containers created as root — deleting it would
+      // (a) destroy live data and (b) fail "Permission denied" because the SSH user doesn't own those
+      // root-created files. runDeployJob re-uploads the source over the existing folder, so code changes
+      // land while runtime data survives.
       const u = { project, dir, files: 1, deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId, token: meta.token, secret: meta.secret }, plan: meta.plan || null };
       await runDeployJob(job, u, meta.composeFile, true, reqIp); // sets job done/error itself
     } catch (err) {
