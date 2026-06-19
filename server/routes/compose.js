@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const dockerService = require('../docker');
 const { logAction } = require('../audit');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const util = require('util');
 const crypto = require('crypto');
 const execFileAsync = util.promisify(execFile);
@@ -102,11 +102,23 @@ async function validateComposeFile(cwd, file = 'docker-compose.yml') {
 
 // Run docker compose command safely using execFile (no shell injection).
 // env: registry creds (private image pull) + DOCKER_HOST=ssh when the active server is remote.
-async function runCompose(project, action, cwd) {
+async function runCompose(project, action, cwd, onData) {
   const { env } = buildCliEnv(dockerService.getActiveServerId(), 'compose');
   const args = ['compose', '-p', project, ...action];
-  const { stdout, stderr } = await execFileAsync('docker', args, { cwd, env, maxBuffer: 4 * 1024 * 1024 });
-  return stdout || stderr;
+  if (!onData) {
+    const { stdout, stderr } = await execFileAsync('docker', args, { cwd, env, maxBuffer: 4 * 1024 * 1024 });
+    return stdout || stderr;
+  }
+  // Streaming variant — live output for the deploy console. Every other caller keeps the buffered path.
+  return await new Promise((resolve, reject) => {
+    const child = spawn('docker', args, { cwd, env });
+    let out = '';
+    const onChunk = (d) => { const s = d.toString(); out += s; onData(s); };
+    child.stdout.on('data', onChunk);
+    child.stderr.on('data', onChunk);
+    child.on('error', reject);
+    child.on('close', (code) => { if (code === 0) return resolve(out); const e = new Error('docker compose exited with code ' + code); e.statusCode = 400; reject(e); });
+  });
 }
 
 router.get('/', async (req, res) => {
@@ -140,7 +152,7 @@ router.get('/deploy-jobs', (req, res) => {
   gcDeployJobs();
   const jobs = [...deployJobs.values()]
     .sort((a, b) => b.startedAt - a.startedAt)
-    .map(j => ({ id: j.id, project: j.project, status: j.status, phase: j.phase, startedAt: j.startedAt, finishedAt: j.finishedAt }));
+    .map(j => ({ id: j.id, project: j.project, status: j.status, phase: j.phase, steps: j.steps || [], startedAt: j.startedAt, finishedAt: j.finishedAt }));
   res.json(jobs);
 });
 
@@ -491,39 +503,56 @@ function gcDeployJobs() {
   for (const [id, j] of deployJobs) { if (j.finishedAt && now - j.finishedAt > DEPLOY_JOB_TTL_MS) deployJobs.delete(id); }
 }
 function jobLog(job, line) { job.log += line + '\n'; }
+// Append streamed command output verbatim (control chars like \r preserved for the terminal viewer).
+function jobStream(job, chunk) { job.log += chunk; }
+// Update one step's status in the job's per-step list (drives the UI status indicators).
+function setStep(job, id, status) { const s = (job.steps || []).find(x => x.id === id); if (s) s.status = status; }
 
 // The async worker: upload to the remote (or promote locally) + docker compose up, all logged into the job.
 async function runDeployJob(job, u, composeFile, up, reqIp) {
+  const isRemote = !!(u.deploy && u.deploy.mode === 'remote');
+  const isUpdate = !!(u.deploy && u.deploy.update);
+  const wantClean = !!(u.deploy && u.deploy.clean);
+  // Per-step status list so the UI shows exactly WHERE the deploy is (mirrors the provisioning step view).
+  job.steps = [];
+  if (isRemote && isUpdate && wantClean) job.steps.push({ id: 'clean', label: 'Clean remote folder', status: 'pending' });
+  job.steps.push({ id: 'upload', label: isRemote ? 'Upload files to the server' : 'Stage project files', status: 'pending' });
+  if (up) job.steps.push({ id: 'deploy', label: isUpdate ? 'docker compose up --build --force-recreate' : 'docker compose up -d', status: 'pending' });
+  let current = null;
+  const stream = (chunk) => jobStream(job, chunk);
   try {
     const serverId = dockerService.getActiveServerId();
-    if (u.deploy && u.deploy.mode === 'remote') {
+    if (isRemote) {
       const { server, remotePath, update, clean } = u.deploy;
-      if (update && clean) { job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server…`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) {} }
-      job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server…`);
+      if (update && clean) { current = 'clean'; setStep(job, 'clean', 'running'); job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server…`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) {} setStep(job, 'clean', 'done'); }
+      current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server…`);
       const n = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath);
-      jobLog(job, `Uploaded ${n} file(s).`);
+      jobLog(job, `Uploaded ${n} file(s).`); setStep(job, 'upload', 'done');
       fs.rmSync(u.dir, { recursive: true, force: true });
       writeDeployMeta(u.project, { mode: 'remote', serverId, remotePath, composeFile, source: 'folder' });
       if (up) {
         // On update: rebuild AND force-recreate so the new image/files actually land in the running
         // container (a plain `up` skips recreate when compose thinks nothing changed).
         const upArgs = update ? ['up', '-d', '--build', '--force-recreate'] : ['up', '-d'];
-        job.phase = 'up'; jobLog(job, `Running docker compose ${upArgs.join(' ')}…`);
-        const out = await remoteCompose.runComposeInRemoteDir(server, remotePath, u.project, upArgs);
-        jobLog(job, (out || '').trim());
+        current = 'deploy'; setStep(job, 'deploy', 'running'); job.phase = 'up'; jobLog(job, `$ docker compose ${upArgs.join(' ')}`);
+        await remoteCompose.runComposeInRemoteDir(server, remotePath, u.project, upArgs, stream);
+        setStep(job, 'deploy', 'done');
       }
       job.result = { composeFile, remotePath, updated: !!update };
       logAction({ sourceIp: reqIp, server: serverId, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: update ? 'update-folder' : 'deploy-folder', details: { files: n, composeFile, remotePath, clean: !!clean } });
     } else {
       const dir = managedDir(u.project);
+      current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'promote'; jobLog(job, 'Staging project files…');
       fs.rmSync(dir, { recursive: true, force: true });
       fs.renameSync(u.dir, dir);
-      if (up) { job.phase = 'up'; jobLog(job, 'Running docker compose up…'); const out = await runCompose(u.project, ['up', '-d'], dir); jobLog(job, (out || '').trim()); }
+      setStep(job, 'upload', 'done');
+      if (up) { current = 'deploy'; setStep(job, 'deploy', 'running'); job.phase = 'up'; jobLog(job, '$ docker compose up -d'); await runCompose(u.project, ['up', '-d'], dir, stream); setStep(job, 'deploy', 'done'); }
       job.result = { composeFile };
       logAction({ sourceIp: reqIp, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder', details: { files: u.files, composeFile } });
     }
     job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
   } catch (err) {
+    if (current) setStep(job, current, 'failed');
     job.status = 'error'; job.phase = 'error'; job.error = (err.stderr || err.message || 'deploy failed').toString();
     jobLog(job, '✗ ' + job.error); job.finishedAt = Date.now();
     try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) {}
@@ -534,7 +563,7 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
 router.get('/deploy-job/:id', (req, res) => {
   const job = deployJobs.get(req.params.id);
   if (!job) return res.status(404).json({ error: 'Deploy job not found (it may have finished and expired)' });
-  res.json({ id: job.id, project: job.project, status: job.status, phase: job.phase, log: job.log, error: job.error, result: job.result });
+  res.json({ id: job.id, project: job.project, status: job.status, phase: job.phase, steps: job.steps || [], log: job.log, error: job.error, result: job.result });
 });
 
 router.post('/deploy-folder-start', async (req, res) => {

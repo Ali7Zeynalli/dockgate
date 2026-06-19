@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.142] - 2026-06-16
+
+### Fixed — deploy "view log" now streams live instead of freezing then dumping
+- A folder deploy/update ran `docker compose up` with a **buffered** call (`execFileAsync` / SSH exec collected-then-returned), so the deploy console showed `Running docker compose up…` and then **nothing for the whole build** (looked frozen), then dumped the entire output at once at the end
+- Compose output now **streams line-by-line into the job log as it arrives** (local via `spawn`, remote via the SSH exec `data` handler), so the existing log viewer shows build/pull progress live. The buffered path stays unchanged for every other caller (create/edit/git/up/down/restart)
+- Backend also now tracks **per-step status** on each deploy job (`steps[]` = clean / upload / deploy, each `pending → running → done/failed`) and returns it from `GET /compose/deploy-job(s)` — the UI status indicators land in the next release
+
+---
+
 ## [2.0.141] - 2026-06-13
 
 ### Fixed — cooldown 0 now means "alert on every occurrence" (consecutive events were dropped)

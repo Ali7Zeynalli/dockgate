@@ -46,13 +46,14 @@ function withConn(server, fn) {
 function shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
 
 // Run a shell command on the remote host. Returns { code, stdout, stderr }.
-function execRemote(server, cmd) {
+// onData (optional): called with each output chunk as it arrives, for live streaming to a job log.
+function execRemote(server, cmd, onData) {
   return withConn(server, conn => new Promise((resolve, reject) => {
     conn.exec(cmd, (err, stream) => {
       if (err) return reject(err);
       let out = '', errout = '';
-      stream.on('data', d => { out += d.toString(); });
-      stream.stderr.on('data', d => { errout += d.toString(); });
+      stream.on('data', d => { const s = d.toString(); out += s; if (onData) onData(s); });
+      stream.stderr.on('data', d => { const s = d.toString(); errout += s; if (onData) onData(s); });
       stream.on('close', (code) => resolve({ code: code || 0, stdout: out, stderr: errout }));
     });
   }));
@@ -116,12 +117,16 @@ async function uploadDirToRemote(server, localDir, remoteDir) {
 // Uses a DockGate-owned, WRITABLE DOCKER_CONFIG so `--build` doesn't fail when the user's ~/.docker is
 // root-owned (e.g. a host previously used by Coolify/root → "buildx/.lock: permission denied"). Any
 // existing registry auth (~/.docker/config.json) is copied in so private-image pulls still work.
-async function runComposeInRemoteDir(server, remoteDir, project, actionArgs) {
+async function runComposeInRemoteDir(server, remoteDir, project, actionArgs, onData) {
   const args = ['compose', '-p', project, ...actionArgs].map(shq).join(' ');
   const cfg = '"$HOME/.dockgate/.docker-config"';
   const prep = `mkdir -p ${cfg} && { cp -f "$HOME/.docker/config.json" ${cfg}/config.json 2>/dev/null; true; }`;
-  const r = await execRemote(server, `cd ${shq(remoteDir)} && ${prep} && DOCKER_CONFIG=${cfg} docker ${args} 2>&1`);
-  if (r.code !== 0) { const e = new Error((r.stdout || r.stderr || 'compose failed').trim()); e.statusCode = 400; throw e; }
+  const r = await execRemote(server, `cd ${shq(remoteDir)} && ${prep} && DOCKER_CONFIG=${cfg} docker ${args} 2>&1`, onData);
+  if (r.code !== 0) {
+    // When streaming, the full output already reached the job log — keep the thrown error short to avoid duplicating it.
+    const e = new Error(onData ? ('compose exited with code ' + r.code) : (r.stdout || r.stderr || 'compose failed').trim());
+    e.statusCode = 400; throw e;
+  }
   return r.stdout || r.stderr || '';
 }
 
