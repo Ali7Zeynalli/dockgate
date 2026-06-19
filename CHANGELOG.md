@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.150] - 2026-06-16
+
+### Added — SSH Keys management UI (Settings → SSH Keys)
+- New **Settings → SSH Keys** tab to manage the named key store from v2.0.149: **Generate** a keypair (ed25519 / RSA-4096), **Import** an existing private key, **view/copy the public key** (with guidance — add to a machine account for many repos, or a single repo's Deploy Keys), and **delete**
+- After generating/importing, the public key is shown immediately with a one-click Copy, so you can paste it into GitHub/GitLab/Gitea right away
+- The private key is never shown or downloadable — only the public key + fingerprint
+- Next: wire these keys into Git deploy (clone in DockGate → transfer to the server → deploy)
+
+---
+
 ## [2.0.149] - 2026-06-16
 
 ### Added — named SSH key store (backend, Coolify "Private Keys" model)
