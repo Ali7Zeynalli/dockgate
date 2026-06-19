@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.147] - 2026-06-16
+
+### Fixed — three issues with remote folder-deployed projects + the action buttons
+
+- **Edit Compose came back empty for remote projects.** `GET/PUT /compose/:project/file` only read DockGate's local managed dir — which for a remote folder-deploy holds just the `.dockgate-deploy.json` pointer, not the compose file (that lives on the server). Now both are **remote-aware**: the compose YAML is read/written **over SFTP on the server**, validated and (re)applied there — matching how the Files browser already worked
+- **Files browser failed with "permission denied".** `listTree` aborted the whole listing the moment any subdirectory couldn't be read (a root-owned bind-mount dir, `.ssh`, etc.). It now **skips an unreadable subdirectory and keeps listing the rest** — one restricted folder no longer kills the browser. (If a project was deployed into a home directory like `/home/ubuntu` rather than a dedicated subfolder, re-deploy it to its own folder so the browser isn't walking the whole home dir.)
+- **Action buttons overflowed/overlapped the status column.** The Compose row packs 9 actions (Up/Down/Restart/Rebuild/Update/Edit/Files/View/Delete) into `.td-actions`, which was `display:flex` with no wrap — so on narrower widths they spilled over and hid behind neighbouring cells. Added **`flex-wrap: wrap`** so they wrap cleanly instead
+
+---
+
 ## [2.0.146] - 2026-06-16
 
 ### Added — in-app "?" help for folder deploy

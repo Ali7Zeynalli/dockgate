@@ -237,6 +237,8 @@ tbody td {
 
 .td-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
   justify-content: flex-end;
 }

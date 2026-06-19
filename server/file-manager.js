@@ -155,7 +155,9 @@ function listTree(server, baseDir) {
           if (i >= list.length) return cb();
           const ent = list[i++];
           const r = rel ? rel + '/' + ent.filename : ent.filename;
-          if (ent.attrs.isDirectory()) { out.push({ path: r, type: 'dir', size: 0 }); walk(dir + '/' + ent.filename, r, (er) => er ? cb(er) : next()); }
+          // A subdir we can't read (EACCES — e.g. a root-owned bind-mount dir, or .ssh) must NOT kill the
+          // whole listing: list it, but skip its children and continue with the siblings.
+          if (ent.attrs.isDirectory()) { out.push({ path: r, type: 'dir', size: 0 }); walk(dir + '/' + ent.filename, r, () => next()); }
           else { out.push({ path: r, type: 'file', size: ent.attrs.size }); next(); }
         };
         next();

@@ -315,10 +315,20 @@ router.post('/create', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// Read a managed project's YAML (for the editor) — finds ANY standard compose filename (.yml/.yaml)
-router.get('/:project/file', (req, res) => {
+// Read a managed project's YAML (for the editor) — finds ANY standard compose filename (.yml/.yaml).
+// Remote folder-deployed project → the compose file lives on the SERVER, so read it over SFTP (otherwise
+// the editor came back empty, because the local managed dir only holds the .dockgate-deploy.json pointer).
+router.get('/:project/file', async (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const rc = remoteProjectCtx(req.params.project);
+    if (rc) {
+      const name = rc.composeFile || 'docker-compose.yml';
+      const abs = rc.remotePath.replace(/\/+$/, '') + '/' + name;
+      const r = await fileManager.readFileText(rc.server, abs);
+      if (r.isBinary || r.content == null) return res.status(404).json({ error: `Could not read ${name} on the server` });
+      return res.json({ project: req.params.project, yaml: r.content, managed: true, file: name, remote: true });
+    }
     const dir = managedDir(req.params.project);
     const name = findComposeFile(dir);
     if (!name) return res.status(404).json({ error: 'No DockGate-managed compose file for this project' });
@@ -334,6 +344,18 @@ router.put('/:project/file', async (req, res) => {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
     const { yaml, up = false } = req.body || {};
     if (!yaml || !yaml.trim()) return res.status(400).json({ error: 'Compose YAML is required' });
+    // Remote folder-deployed project → write the compose file on the SERVER over SFTP, validate + (re)up THERE.
+    const rc = remoteProjectCtx(req.params.project);
+    if (rc) {
+      const name = rc.composeFile || 'docker-compose.yml';
+      await fileManager.writeFileText(rc.server, rc.remotePath.replace(/\/+$/, '') + '/' + name, yaml);
+      try { await remoteCompose.runComposeInRemoteDir(rc.server, rc.remotePath, req.params.project, ['-f', name, 'config', '-q']); }
+      catch (e) { return res.status(400).json({ error: 'Invalid compose file: ' + (e.message || e) }); }
+      let output = '';
+      if (up) output = await remoteCompose.runComposeInRemoteDir(rc.server, rc.remotePath, req.params.project, ['-f', name, 'up', '-d']);
+      logAction({ req, server: dockerService.getActiveServerId(), resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'edit', details: { up, remote: true } });
+      return res.json({ success: true, output });
+    }
     const dir = managedDir(req.params.project);
     fs.mkdirSync(dir, { recursive: true });
     const name = findComposeFile(dir) || 'docker-compose.yml';
