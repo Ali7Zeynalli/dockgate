@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.163] - 2026-06-19
+
+### Fixed — "Password field is not contained in a form" on Settings → Security
+- The **Change Password** fields (current / new / confirm) were rendered loose on the page, so Chrome logged **"Password field is not contained in a form"** three times. They're now wrapped in a real `<form>` with a hidden `username` field (`autocomplete="username"`) so the browser's password manager can associate the change, and submit is handled in JS (`preventDefault`) so it never reloads. The earlier `showModal` form-wrap only covered modal fields; this was the one inline page form left
+
+---
+
 ## [2.0.162] - 2026-06-19
 
 ### Added — per-project terminal: open an interactive shell right in a project's folder

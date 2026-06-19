@@ -79,17 +79,23 @@ Router.register('settings', async (content, params) => {
           <div class="settings-section" style="max-width:520px;">
             <div class="settings-section-title">Change Password</div>
             <div class="settings-row-desc" style="margin-bottom:14px;">Update the admin password used to sign in to DockGate. You stay logged in on this device after changing it.</div>
-            <div style="display:flex;flex-direction:column;gap:10px;">
-              <input class="input" id="sec-cur" type="password" placeholder="Current password" autocomplete="current-password">
-              <input class="input" id="sec-new" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password">
-              <input class="input" id="sec-new2" type="password" placeholder="Confirm new password" autocomplete="new-password">
-            </div>
-            <div style="margin-top:14px;">
-              <button class="btn btn-primary btn-sm" id="sec-save">Change Password</button>
-            </div>
+            <form id="sec-form" autocomplete="on">
+              <input type="text" id="sec-user" name="username" autocomplete="username" value="admin" readonly aria-hidden="true" tabindex="-1" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+              <div style="display:flex;flex-direction:column;gap:10px;">
+                <input class="input" id="sec-cur" type="password" placeholder="Current password" autocomplete="current-password">
+                <input class="input" id="sec-new" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password">
+                <input class="input" id="sec-new2" type="password" placeholder="Confirm new password" autocomplete="new-password">
+              </div>
+              <div style="margin-top:14px;">
+                <button class="btn btn-primary btn-sm" id="sec-save" type="submit">Change Password</button>
+              </div>
+            </form>
           </div>
         `;
-        document.getElementById('sec-save')?.addEventListener('click', async () => {
+        // Password fields wrapped in a <form> (+ a hidden username field) so the browser/password-manager
+        // is happy ("password field not in a form" gone); submit is handled in JS, never reloads the page.
+        document.getElementById('sec-form')?.addEventListener('submit', async (e) => {
+          e.preventDefault();
           const cur = document.getElementById('sec-cur').value;
           const nw = document.getElementById('sec-new').value;
           const nw2 = document.getElementById('sec-new2').value;
