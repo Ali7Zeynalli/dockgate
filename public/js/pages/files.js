@@ -1,8 +1,11 @@
-// File Manager page (Phase 2) — browse/upload/download/mkdir/rename/delete on the ACTIVE remote SSH
-// server (SFTP). For Local, it shows a "switch to a remote server" notice (Phase 3 deferred).
+// File Manager page — browse / upload / download / edit / copy / move / delete on the ACTIVE remote SSH
+// server (SFTP for listing & transfer, SSH for copy/move/recursive-delete/archive). For Local it shows a
+// "switch to a remote server" notice (local browsing not enabled yet).
 Router.register('files', async (content) => {
   let ctx = { remote: false };
   let cwd = '/';
+  let clipboard = null;            // { mode:'copy'|'cut', items:[{path,name,isDir}] }
+  const selected = new Map();      // name -> { isDir } for rows ticked in the current dir
   const pageNavId = Router._navId;
 
   function parentOf(p) {
@@ -10,12 +13,22 @@ Router.register('files', async (content) => {
     const i = p.replace(/\/$/, '').lastIndexOf('/');
     return i <= 0 ? '/' : p.slice(0, i);
   }
+  function joinPath(name) { return (cwd === '/' ? '' : cwd) + '/' + name; }
 
   function header() {
     const sub = ctx.remote
       ? `Browse & manage files on <strong>${escapeHtml(ctx.host || ctx.serverId)}</strong> over SSH`
       : 'Server file manager';
     return `<div class="page-header mb-3"><div><div class="page-title">Files</div><div class="page-subtitle">${sub}</div></div></div>`;
+  }
+
+  // Clickable breadcrumb for the current path.
+  function breadcrumb() {
+    const segs = cwd.split('/').filter(Boolean);
+    let acc = '';
+    const crumbs = [`<a href="#" data-crumb="/" class="fm-crumb" style="text-decoration:none" title="Root">🖥</a>`];
+    segs.forEach((s) => { acc += '/' + s; crumbs.push(`<a href="#" data-crumb="${escapeHtml(acc)}" class="fm-crumb" style="text-decoration:none">${escapeHtml(s)}</a>`); });
+    return crumbs.join('<span style="opacity:.35;margin:0 2px">/</span>');
   }
 
   async function render() {
@@ -33,28 +46,50 @@ Router.register('files', async (content) => {
     }
 
     content.innerHTML = `${header()}
-      <div class="card mb-3" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px">
+      <div class="card mb-2" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px">
         <button class="btn btn-secondary btn-sm" id="f-up" title="Up one level">⬆</button>
-        <input class="input" id="f-path" value="${escapeHtml(cwd)}" style="flex:1;min-width:200px;font-family:var(--font-mono,monospace)">
-        <button class="btn btn-secondary btn-sm" id="f-go">Go</button>
+        <div id="f-crumbs" style="flex:1;min-width:200px;font-family:var(--font-mono,monospace);font-size:12.5px;overflow-x:auto;white-space:nowrap"></div>
         <button class="btn btn-secondary btn-sm" id="f-refresh" title="Refresh">${Icons.refresh}</button>
         <button class="btn btn-secondary btn-sm" id="f-mkdir">+ Folder</button>
+        <button class="btn btn-secondary btn-sm" id="f-newfile">+ File</button>
         <button class="btn btn-primary btn-sm" id="f-upload">⬆ Upload</button>
+        <button class="btn btn-secondary btn-sm" id="f-paste" style="display:none"></button>
         <input type="file" id="f-file" style="display:none">
       </div>
+      <div class="card mb-2" id="f-bulk" style="display:none;align-items:center;gap:8px;padding:8px 14px;background:var(--accent-dim)">
+        <span class="text-sm" id="f-bulk-count" style="font-weight:600"></span>
+        <div style="flex:1"></div>
+        <button class="btn btn-xs btn-secondary" id="f-bulk-copy">📋 Copy</button>
+        <button class="btn btn-xs btn-secondary" id="f-bulk-cut">✂ Cut</button>
+        <button class="btn btn-xs btn-ghost text-danger" id="f-bulk-del">${Icons.trash} Delete</button>
+        <button class="btn btn-xs btn-ghost" id="f-bulk-clear">Clear</button>
+      </div>
       <div class="table-wrapper"><table>
-        <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th style="text-align:right">Actions</th></tr></thead>
-        <tbody id="f-tbody"><tr><td colspan="4" class="text-muted" style="padding:14px">Loading…</td></tr></tbody>
+        <thead><tr>
+          <th style="width:28px"><input type="checkbox" id="f-all" title="Select all"></th>
+          <th>Name</th><th>Size</th><th>Modified</th><th style="text-align:right">Actions</th>
+        </tr></thead>
+        <tbody id="f-tbody"><tr><td colspan="5" class="text-muted" style="padding:14px">Loading…</td></tr></tbody>
       </table></div>`;
 
+    wireToolbar();
+    list();
+  }
+
+  function wireToolbar() {
     document.getElementById('f-up').addEventListener('click', () => { cwd = parentOf(cwd); list(); });
     document.getElementById('f-refresh').addEventListener('click', list);
-    document.getElementById('f-go').addEventListener('click', () => { cwd = document.getElementById('f-path').value.trim() || '/'; list(); });
-    document.getElementById('f-path').addEventListener('keydown', (e) => { if (e.key === 'Enter') { cwd = e.target.value.trim() || '/'; list(); } });
     document.getElementById('f-mkdir').addEventListener('click', async () => {
       const name = prompt('New folder name:');
       if (!name || !name.trim()) return;
       try { await API.post('/files/mkdir', { path: cwd, name: name.trim() }); showToast('Folder created'); list(); }
+      catch (e) { showToast(e.message, 'error', 9000); }
+    });
+    document.getElementById('f-newfile').addEventListener('click', async () => {
+      const name = prompt('New file name:');
+      if (!name || !name.trim()) return;
+      const clean = name.trim().replace(/[/\\]/g, '');
+      try { await API.post('/files/write', { path: joinPath(clean), content: '' }); showToast('File created'); list(); openEditor(clean); }
       catch (e) { showToast(e.message, 'error', 9000); }
     });
     const fileInput = document.getElementById('f-file');
@@ -74,49 +109,126 @@ Router.register('files', async (content) => {
       } catch (e) { showToast(e.message, 'error', 9000); }
       finally { btn.disabled = false; btn.innerHTML = '⬆ Upload'; fileInput.value = ''; }
     });
+    document.getElementById('f-paste').addEventListener('click', doPaste);
+    document.getElementById('f-all').addEventListener('change', (e) => {
+      const tbody = document.getElementById('f-tbody');
+      tbody.querySelectorAll('[data-sel]').forEach(cb => {
+        cb.checked = e.target.checked;
+        const name = cb.dataset.sel;
+        if (e.target.checked) selected.set(name, { isDir: cb.dataset.isdir === '1' }); else selected.delete(name);
+      });
+      updateBulk();
+    });
+    document.getElementById('f-bulk-clear').addEventListener('click', () => { selected.clear(); list(); });
+    document.getElementById('f-bulk-copy').addEventListener('click', () => setClipboard('copy'));
+    document.getElementById('f-bulk-cut').addEventListener('click', () => setClipboard('cut'));
+    document.getElementById('f-bulk-del').addEventListener('click', bulkDelete);
+  }
 
-    list();
+  function renderCrumbs() { const el = document.getElementById('f-crumbs'); if (!el) return; el.innerHTML = breadcrumb();
+    el.querySelectorAll('[data-crumb]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); cwd = a.dataset.crumb; list(); })); }
+
+  function updatePasteBtn() {
+    const btn = document.getElementById('f-paste'); if (!btn) return;
+    if (clipboard && clipboard.items.length) { btn.style.display = ''; btn.textContent = `📋 Paste ${clipboard.items.length} (${clipboard.mode})`; }
+    else btn.style.display = 'none';
+  }
+  function updateBulk() {
+    const bar = document.getElementById('f-bulk'); if (!bar) return;
+    if (selected.size) { bar.style.display = 'flex'; document.getElementById('f-bulk-count').textContent = `${selected.size} selected`; }
+    else bar.style.display = 'none';
+  }
+
+  function setClipboard(mode) {
+    const items = [...selected.entries()].map(([name, v]) => ({ path: joinPath(name), name, isDir: v.isDir }));
+    if (!items.length) return;
+    clipboard = { mode, items };
+    showToast(`${mode === 'copy' ? 'Copied' : 'Cut'} ${items.length} item(s) — go to a folder and Paste`, 'info', 4000);
+    selected.clear(); list(); updatePasteBtn();
+  }
+
+  async function doPaste() {
+    if (!clipboard || !clipboard.items.length) return;
+    const mode = clipboard.mode;
+    const btn = document.getElementById('f-paste'); if (btn) { btn.disabled = true; btn.textContent = 'Pasting…'; }
+    let ok = 0, fail = 0;
+    for (const it of clipboard.items) {
+      try {
+        if (mode === 'copy') await API.post('/files/copy', { src: it.path, destDir: cwd });
+        else await API.post('/files/move', { src: it.path, destDir: cwd });
+        ok++;
+      } catch (e) { fail++; showToast(`${it.name}: ${e.message}`, 'error', 9000); }
+    }
+    if (mode === 'cut') clipboard = null;   // a cut is consumed once pasted
+    showToast(`${mode === 'copy' ? 'Copied' : 'Moved'} ${ok}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success');
+    list(); updatePasteBtn();
+  }
+
+  function bulkDelete() {
+    const items = [...selected.entries()].map(([name, v]) => ({ name, isDir: v.isDir }));
+    if (!items.length) return;
+    const anyDir = items.some(i => i.isDir);
+    showConfirm('Delete selected', `Delete <strong>${items.length}</strong> item(s)?${anyDir ? ' Folders are removed with <strong>all their contents</strong>.' : ''} This cannot be undone.`, async () => {
+      let ok = 0, fail = 0;
+      for (const it of items) {
+        try { await API.del(`/files?path=${encodeURIComponent(joinPath(it.name))}&isDir=${it.isDir ? 1 : 0}&recursive=${it.isDir ? 1 : 0}`); ok++; }
+        catch (e) { fail++; showToast(`${it.name}: ${e.message}`, 'error', 9000); }
+      }
+      showToast(`Deleted ${ok}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success');
+      selected.clear(); list();
+    }, true);
   }
 
   async function list() {
     const tbody = document.getElementById('f-tbody');
     if (!tbody) return;
+    selected.clear(); updateBulk(); updatePasteBtn();
+    const allCb = document.getElementById('f-all'); if (allCb) allCb.checked = false;
     try {
       const d = await API.get(`/files?path=${encodeURIComponent(cwd)}`);
       cwd = d.path;
-      const pathInput = document.getElementById('f-path');
-      if (pathInput) pathInput.value = cwd;
+      renderCrumbs();
       tbody.innerHTML = d.entries.length ? d.entries.map(e => {
         const isDir = e.type === 'dir';
         const icon = isDir ? '📁' : (e.type === 'link' ? '🔗' : '📄');
+        const nm = escapeHtml(e.name);
         const nameCell = isDir
-          ? `<a href="#" data-cd="${escapeHtml(e.name)}" class="td-name">${icon} ${escapeHtml(e.name)}</a>`
-          : `<span class="td-name">${icon} ${escapeHtml(e.name)}</span>`;
+          ? `<a href="#" data-cd="${nm}" class="td-name">${icon} ${nm}</a>`
+          : `<a href="#" data-edit="${nm}" class="td-name" title="Open / edit">${icon} ${nm}</a>`;
         return `<tr>
+          <td><input type="checkbox" data-sel="${nm}" data-isdir="${isDir ? 1 : 0}"></td>
           <td>${nameCell}</td>
           <td class="text-xs text-muted">${isDir ? '' : formatBytes(e.size)}</td>
           <td class="text-xs text-muted">${e.mtime ? formatTime(e.mtime) : ''}</td>
           <td style="text-align:right"><div class="td-actions">
-            ${isDir ? '' : `<button class="btn btn-xs btn-secondary" data-dl="${escapeHtml(e.name)}" title="Download">${Icons.download || '↓'}</button>`}
-            <button class="btn btn-xs btn-secondary" data-rn="${escapeHtml(e.name)}">Rename</button>
-            <button class="btn btn-xs btn-ghost text-danger" data-rm="${escapeHtml(e.name)}" data-isdir="${isDir ? 1 : 0}">${Icons.trash}</button>
+            ${isDir
+              ? `<button class="btn btn-xs btn-secondary" data-dlf="${nm}" title="Download folder (.tar.gz)">${Icons.download || '↓'}</button>`
+              : `<button class="btn btn-xs btn-secondary" data-edit="${nm}" title="Edit">✎</button>
+                 <button class="btn btn-xs btn-secondary" data-dl="${nm}" title="Download">${Icons.download || '↓'}</button>`}
+            <button class="btn btn-xs btn-ghost" data-cp="${nm}" data-isdir="${isDir ? 1 : 0}" title="Copy">📋</button>
+            <button class="btn btn-xs btn-ghost" data-ct="${nm}" data-isdir="${isDir ? 1 : 0}" title="Cut">✂</button>
+            <button class="btn btn-xs btn-secondary" data-rn="${nm}">Rename</button>
+            <button class="btn btn-xs btn-ghost text-danger" data-rm="${nm}" data-isdir="${isDir ? 1 : 0}" title="Delete">${Icons.trash}</button>
           </div></td></tr>`;
-      }).join('') : '<tr><td colspan="4" class="text-muted" style="padding:14px">Empty directory.</td></tr>';
+      }).join('') : '<tr><td colspan="5" class="text-muted" style="padding:14px">Empty directory.</td></tr>';
       wireRows();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="4" class="text-danger" style="padding:14px">${escapeHtml(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="text-danger" style="padding:14px">${escapeHtml(e.message)}</td></tr>`;
     }
   }
-
-  function joinPath(name) { return (cwd === '/' ? '' : cwd) + '/' + name; }
 
   function wireRows() {
     const tbody = document.getElementById('f-tbody');
     tbody.querySelectorAll('[data-cd]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); cwd = joinPath(a.dataset.cd); list(); }));
-    tbody.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => {
-      const url = `/api/files/download?path=${encodeURIComponent(joinPath(b.dataset.dl))}`;
-      const a = document.createElement('a'); a.href = url; a.download = b.dataset.dl; document.body.appendChild(a); a.click(); a.remove();
+    tbody.querySelectorAll('[data-edit]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); openEditor(a.dataset.edit); }));
+    tbody.querySelectorAll('[data-sel]').forEach(cb => cb.addEventListener('change', () => {
+      if (cb.checked) selected.set(cb.dataset.sel, { isDir: cb.dataset.isdir === '1' }); else selected.delete(cb.dataset.sel);
+      updateBulk();
     }));
+    tbody.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => download(`/api/files/download?path=${encodeURIComponent(joinPath(b.dataset.dl))}`, b.dataset.dl)));
+    tbody.querySelectorAll('[data-dlf]').forEach(b => b.addEventListener('click', () => download(`/api/files/download-folder?path=${encodeURIComponent(joinPath(b.dataset.dlf))}`, b.dataset.dlf + '.tar.gz')));
+    tbody.querySelectorAll('[data-cp]').forEach(b => b.addEventListener('click', () => { clipboard = { mode: 'copy', items: [{ path: joinPath(b.dataset.cp), name: b.dataset.cp, isDir: b.dataset.isdir === '1' }] }; showToast(`Copied "${b.dataset.cp}" — go to a folder and Paste`, 'info', 4000); updatePasteBtn(); }));
+    tbody.querySelectorAll('[data-ct]').forEach(b => b.addEventListener('click', () => { clipboard = { mode: 'cut', items: [{ path: joinPath(b.dataset.ct), name: b.dataset.ct, isDir: b.dataset.isdir === '1' }] }; showToast(`Cut "${b.dataset.ct}" — go to a folder and Paste`, 'info', 4000); updatePasteBtn(); }));
     tbody.querySelectorAll('[data-rn]').forEach(b => b.addEventListener('click', async () => {
       const next = prompt('Rename to:', b.dataset.rn);
       if (!next || next.trim() === b.dataset.rn) return;
@@ -125,11 +237,43 @@ Router.register('files', async (content) => {
     }));
     tbody.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => {
       const isDir = b.dataset.isdir === '1';
-      showConfirm('Delete', `Delete ${isDir ? 'folder' : 'file'} "${escapeHtml(b.dataset.rm)}"?${isDir ? ' (must be empty)' : ''}`, async () => {
-        try { await API.del(`/files?path=${encodeURIComponent(joinPath(b.dataset.rm))}&isDir=${isDir ? 1 : 0}`); showToast('Deleted'); list(); }
+      const msg = isDir
+        ? `Delete folder "<strong>${escapeHtml(b.dataset.rm)}</strong>" and <strong>all its contents</strong>? This cannot be undone.`
+        : `Delete file "<strong>${escapeHtml(b.dataset.rm)}</strong>"?`;
+      showConfirm('Delete', msg, async () => {
+        try { await API.del(`/files?path=${encodeURIComponent(joinPath(b.dataset.rm))}&isDir=${isDir ? 1 : 0}&recursive=${isDir ? 1 : 0}`); showToast('Deleted'); list(); }
         catch (e) { showToast(e.message, 'error', 9000); }
       }, true);
     }));
+  }
+
+  function download(url, filename) {
+    const a = document.createElement('a'); a.href = url; if (filename) a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // In-browser text editor for a file in the current dir.
+  async function openEditor(name) {
+    const p = joinPath(name);
+    let data;
+    try { data = await API.get(`/files/read?path=${encodeURIComponent(p)}`); }
+    catch (e) { showToast(e.message, 'error', 9000); return; }
+    if (data.isBinary) { showToast(`"${name}" is binary or larger than 2 MB — can't edit here. Download it instead.`, 'warning', 8000); return; }
+    const m = showModal(`Edit — ${escapeHtml(name)}`, `
+      <div class="text-xs text-muted" style="margin-bottom:6px">${escapeHtml(p)} · ${formatBytes(data.size || 0)}</div>
+      <textarea id="fe-text" class="input" spellcheck="false" style="width:100%;height:55vh;font-family:var(--font-mono,monospace);font-size:12px;white-space:pre;overflow:auto"></textarea>
+      <div style="margin-top:10px;display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-secondary" id="fe-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="fe-save" type="button">Save</button>
+      </div>`, []);
+    const ta = m.overlay.querySelector('#fe-text');
+    ta.value = data.content || '';
+    m.overlay.querySelector('#fe-cancel').onclick = () => m.close();
+    m.overlay.querySelector('#fe-save').onclick = async (e) => {
+      const b = e.target; b.disabled = true; b.textContent = 'Saving…';
+      try { await API.post('/files/write', { path: p, content: ta.value }); showToast('Saved'); m.close(); list(); }
+      catch (err) { showToast(err.message, 'error', 9000); b.disabled = false; b.textContent = 'Save'; }
+    };
   }
 
   await render();

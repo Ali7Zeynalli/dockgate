@@ -2,6 +2,21 @@
 
 ---
 
+## [2.0.165] - 2026-06-19
+
+### Added — File Manager UI: edit, copy/cut/paste, move, folder download, recursive delete, multi-select
+- The **Files** page (Activity → Files) is now a real file manager on the remote SSH server:
+  - **Clickable breadcrumb** instead of a bare path box
+  - **Open / edit a file in place** — click a file (or ✎) → text editor modal → Save (binary/>2 MB → download instead)
+  - **Copy / Cut / Paste** — per-row 📋/✂ or via multi-select; Paste lands in the current folder (copy = `cp -a`, cut = `mv`); pasting into a file's own folder auto-names `-copy`
+  - **Move** — Cut a file/folder, navigate, Paste (cross-directory move)
+  - **Download a whole folder** as `.tar.gz` (↓ on a folder); files download as before
+  - **Recursive delete** — deleting a folder removes it **with all contents** (root-owned Docker data dirs handled via the root-container fallback), with a clear confirm
+  - **+ File** to create a new (then editable) file; **multi-select** checkboxes + a bulk bar (Copy / Cut / Delete selected)
+- Verified end-to-end against a real SSH server: backend ops (list/read/write/copy/move/recursive-delete/`.tar.gz`/`/`-guard — 8/8) and the browser UI (navigate, breadcrumb, open editor loads file content, copy→paste lands the item). Local-host file browsing is still the remaining gap (separate, needs a path jail)
+
+---
+
 ## [2.0.164] - 2026-06-19
 
 ### Added — File Manager backend: copy, move, recursive delete (root-aware), edit, folder download
