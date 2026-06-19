@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.159] - 2026-06-16
+
+### Added — "Stage (deploy later)" — upload/clone now, deploy when YOU click
+- The "Choose what to deploy" picker (folder **and** Git) now has two buttons: **Deploy now** and **Stage (deploy later)**. **Stage** places the files (uploads to the server / promotes locally) and creates the networks, but **starts nothing** — each selected stack shows up in the Compose list as **down**, and you start it with **Up** (live console) whenever you're ready
+- So nothing deploys "suddenly" — you control when each stack goes up, manually
+- Backend: each selected stack is now **tracked even when not run** (per-stack deploy pointer, local or remote), the Compose list **merges down/staged local projects too** (not just remote), and `execComposeAction` resolves a staged local stack's working dir from its pointer. Verified live: staging returns `done`/`staged`, writes the per-stack pointer, runs nothing
+
+---
+
 ## [2.0.158] - 2026-06-16
 
 ### Added — Git deploy is now the full folder-deploy experience (multi-stack picker)

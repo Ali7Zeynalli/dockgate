@@ -190,19 +190,23 @@ router.get('/', async (req, res) => {
   try {
     const list = await dockerService.listComposeProjects();
     const activeId = dockerService.getActiveServerId();
-    if (activeId !== 'local' && fs.existsSync(COMPOSE_DIR)) {
+    if (fs.existsSync(COMPOSE_DIR)) {
       // Annotate running remote folder-deployed projects so the UI can show Update/etc.
-      for (const p of list) {
+      if (activeId !== 'local') for (const p of list) {
         const meta = readDeployMeta(p.name);
         if (meta && meta.mode === 'remote' && meta.serverId === activeId) { p.remote = true; p.deploySource = meta.source || 'folder'; }
       }
-      // Merge in remote-deployed projects that are currently DOWN (no containers → not in the daemon list).
+      // Merge in DOWN deploy-pointer projects for the active server (no containers → not in the daemon list).
+      // Covers staged (deployed with up:false) and stopped projects, both remote AND local.
       const seen = new Set(list.map(p => p.name));
       for (const name of fs.readdirSync(COMPOSE_DIR)) {
         if (seen.has(name) || !validateProjectName(name)) continue;
         const meta = readDeployMeta(name);
-        if (meta && meta.mode === 'remote' && meta.serverId === activeId) {
+        if (!meta) continue;
+        if (meta.mode === 'remote' && meta.serverId === activeId) {
           list.push({ name, workingDir: meta.remotePath, configFiles: meta.composeFile || '', services: [], running: 0, stopped: 0, total: 0, remote: true, deploySource: meta.source || 'folder' });
+        } else if (meta.mode === 'local' && activeId === 'local') {
+          list.push({ name, workingDir: meta.workingDir || '', configFiles: meta.composeFile || '', services: [], running: 0, stopped: 0, total: 0, deploySource: meta.source || 'folder' });
         }
       }
     }
@@ -247,6 +251,7 @@ async function execComposeAction(projectName, action, onData) {
   }
   let cwd = proj.workingDir;
   if (!cwd && hasManaged) cwd = mDir;
+  if (!cwd) { const m = readDeployMeta(projectName); if (m && m.mode === 'local' && m.workingDir) cwd = m.workingDir; } // staged local stack
   if (!cwd) { const e = new Error('Working directory not found — this project has no running containers and is not DockGate-managed. Bring it up from its compose folder.'); e.statusCode = 400; throw e; }
   return await runCompose(projectName, action, cwd, onData);
 }
@@ -691,10 +696,19 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
         setStep(job, current, 'done');
       }
       const deployed = [];
-      if (up) for (const s of plan.stacks) {
-        current = 'stack:' + s.name; setStep(job, current, 'running'); job.phase = 'up';
+      const source = u.git ? 'git' : 'folder';
+      for (const s of plan.stacks) {
         const fileBase = path.posix.basename(s.composeFile);
         const subdir = path.posix.dirname(s.composeFile);
+        const cwd = isRemote
+          ? (subdir === '.' ? baseDir : baseDir.replace(/\/+$/, '') + '/' + subdir)
+          : (subdir === '.' ? baseDir : path.join(baseDir, subdir));
+        // Track EVERY selected stack (even when not run) so a STAGED deploy shows in the list and can be Up'd later.
+        writeDeployMeta(s.name, isRemote
+          ? { mode: 'remote', serverId, remotePath: cwd, composeFile: fileBase, source }
+          : { mode: 'local', serverId: 'local', workingDir: cwd, composeFile: fileBase, source });
+        if (!up) continue; // staged only — files are placed, nothing started
+        current = 'stack:' + s.name; setStep(job, current, 'running'); job.phase = 'up';
         const upArgs = ['-f', fileBase, 'up', '-d'];
         if (s.build && !s.noCache) upArgs.push('--build');
         if (s.pull) upArgs.push('--pull', 'always');
@@ -702,19 +716,18 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
         if (Array.isArray(s.services) && s.services.length) upArgs.push(...s.services);
         jobLog(job, `\n$ [${s.name}] docker compose ${upArgs.join(' ')}`);
         if (isRemote) {
-          const cwd = subdir === '.' ? baseDir : baseDir.replace(/\/+$/, '') + '/' + subdir;
           if (s.build && s.noCache) await remoteCompose.runComposeInRemoteDir(server, cwd, s.name, ['-f', fileBase, 'build', '--no-cache', ...(s.services || [])], stream);
           await remoteCompose.runComposeInRemoteDir(server, cwd, s.name, upArgs, stream);
-          writeDeployMeta(s.name, { mode: 'remote', serverId, remotePath: cwd, composeFile: fileBase, source: 'folder' });
         } else {
-          const cwd = subdir === '.' ? baseDir : path.join(baseDir, subdir);
           if (s.build && s.noCache) await runCompose(s.name, ['-f', fileBase, 'build', '--no-cache', ...(s.services || [])], cwd, stream);
           await runCompose(s.name, upArgs, cwd, stream);
         }
         setStep(job, current, 'done'); deployed.push(s.name);
       }
-      job.result = { plan: true, stacks: deployed, nets: plan.createNets || [] };
-      logAction({ sourceIp: reqIp, server: isRemote ? serverId : undefined, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder-plan', details: { stacks: deployed, nets: plan.createNets || [] } });
+      const allNames = plan.stacks.map(s => s.name);
+      job.result = { plan: true, staged: !up, stacks: up ? deployed : allNames, nets: plan.createNets || [] };
+      if (!up) jobLog(job, `\n✓ Staged ${allNames.length} stack(s) — not started. Deploy each from the Compose list (Up) when ready.`);
+      logAction({ sourceIp: reqIp, server: isRemote ? serverId : undefined, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: up ? 'deploy-folder-plan' : 'stage-folder-plan', details: { stacks: allNames, nets: plan.createNets || [], staged: !up } });
     } else if (isRemote) {
       const { remotePath, update } = u.deploy;
       writeDeployMeta(u.project, { mode: 'remote', serverId, remotePath, composeFile, source: 'folder' });

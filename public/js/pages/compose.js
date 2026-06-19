@@ -240,7 +240,7 @@ Router.register('compose', async (content) => {
         const plan = await chooseDeployPlan(files, project);
         if (!plan) { API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); reset(); return; } // cancelled → drop the clone
         // Step 2 — shared finish (multi-stack deploy + transfer + live console + git meta for redeploy).
-        const fin = await API.post('/compose/deploy-folder-finish', { uploadId: prep.uploadId, up: true, plan });
+        const fin = await API.post('/compose/deploy-folder-finish', { uploadId: prep.uploadId, up: plan.up, plan });
         m.close();
         openDeployLog(fin.jobId, project);
         showToast('Deploying — watch the live console. Auto-redeploy webhook ready (project ▸ details).', 'info', 7000);
@@ -510,10 +510,7 @@ Router.register('compose', async (content) => {
       r2.querySelectorAll('.fd-down').forEach(b => b.onclick = () => reorder(b.closest('.fd-card'), 1));
       r2.querySelector('.modal-close').onclick = () => { settle(null); m2.close(); };
       r2.onclick = (e) => { if (e.target === r2) { settle(null); m2.close(); } };
-      const deploy = document.createElement('button');
-      deploy.className = 'btn btn-primary'; deploy.textContent = 'Deploy';
-      r2.querySelector('#modal-footer').appendChild(deploy);
-      deploy.onclick = () => {
+      const buildPlan = () => {
         const stacks = [];
         r2.querySelectorAll('.fd-stack').forEach(cb => {
           if (!cb.checked) return;
@@ -530,12 +527,20 @@ Router.register('compose', async (content) => {
             noDeps: r2.querySelector(`.fd-nodeps[data-i="${i}"]`).checked,
           });
         });
-        if (!stacks.length) return showToast('Select at least one compose file', 'warning');
-        if (stacks.some(s => !s.name)) return showToast('Each stack needs a name', 'warning');
+        if (!stacks.length) { showToast('Select at least one compose file', 'warning'); return null; }
+        if (stacks.some(s => !s.name)) { showToast('Each stack needs a name', 'warning'); return null; }
         const createNets = [...r2.querySelectorAll('.fd-net')].filter(x => x.checked).map(x => x.value);
-        settle({ createNets, stacks });
-        m2.close();
+        return { createNets, stacks };
       };
+      // "Stage" = place the files but don't start anything; deploy each from the Compose list (Up) later.
+      const stage = document.createElement('button');
+      stage.className = 'btn btn-secondary'; stage.textContent = 'Stage (deploy later)'; stage.title = "Upload/clone the files but don't run — start each stack from the list when you're ready";
+      r2.querySelector('#modal-footer').appendChild(stage);
+      stage.onclick = () => { const p = buildPlan(); if (p) { settle({ ...p, up: false }); m2.close(); } };
+      const deploy = document.createElement('button');
+      deploy.className = 'btn btn-primary'; deploy.textContent = 'Deploy now';
+      r2.querySelector('#modal-footer').appendChild(deploy);
+      deploy.onclick = () => { const p = buildPlan(); if (p) { settle({ ...p, up: true }); m2.close(); } };
     });
   }
 
@@ -664,7 +669,7 @@ Router.register('compose', async (content) => {
         }
         // Hand off to a background job that keeps running even if this modal closes.
         btn.textContent = isUpdate ? 'Rebuilding…' : 'Starting…';
-        const finished = await API.post('/compose/deploy-folder-finish', { uploadId, up: true, plan, services: updateServices });
+        const finished = await API.post('/compose/deploy-folder-finish', { uploadId, up: plan ? plan.up : true, plan, services: updateServices });
         uploadId = null; // the backend job owns the staging now — aborting on close no longer applies
         const joblog = root.querySelector('#fd-joblog');
         joblog.style.display = 'block';
