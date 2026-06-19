@@ -78,10 +78,9 @@ Router.register('compose', async (content) => {
           const project = btn.dataset.project;
           const run = async (qs = '') => {
             try {
-              showToast(`${action}ing project ${project}...`, 'info');
-              await API.post(`/compose/${project}/${action}${qs}`);
-              showToast('Success');
-              render();
+              const r = await API.post(`/compose/${project}/${action}${qs}`);
+              if (r && r.jobId) { openDeployLog(r.jobId, project); render(); } // long op → live console
+              else { showToast('Success'); render(); } // fast op (down/restart) → toast
             } catch (err) { showToast(err.message, 'error'); }
           };
           // rebuild → let the user pick which services to rebuild (all = whole project)
@@ -137,7 +136,7 @@ Router.register('compose', async (content) => {
             dm.overlay.querySelector('#cd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
             dm.overlay.querySelector('#cd-redeploy')?.addEventListener('click', async (e) => {
               const b = e.target; b.disabled = true; b.textContent = 'Redeploying…';
-              try { await API.post(`/compose/${name}/redeploy`); showToast('Redeployed from Git'); dm.close(); render(); }
+              try { const r = await API.post(`/compose/${name}/redeploy`); dm.close(); if (r && r.jobId) openDeployLog(r.jobId, name); render(); }
               catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '↻ Redeploy (pull latest)'; }
             });
           } catch (e) { showToast(e.message, 'error'); }

@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.155] - 2026-06-16
+
+### Added — live console for compose lifecycle actions (no more silent freeze)
+- **Up · Pull · Build · Rebuild** (and **Git Redeploy**) on a compose project used to block on a spinner/toast with no feedback — a rebuild could churn for minutes silently. They now run as **background jobs with the same live console** as deploy: a step that goes `⏳ running → ✓/✗`, the real `docker compose` (and `git fetch`) output **streamed** into an xterm terminal, re-openable from **Deploys**, and survives closing the modal
+- **Down / Restart** stay instant (toast) since they're fast
+- Runtime-verified: the action endpoints return a job id, the job runs streamed and reports per-step status + errors. (Image pull on the Images page is a separate follow-up.)
+
+---
+
 ## [2.0.154] - 2026-06-16
 
 ### Changed — "New Compose Project" is now self-explanatory

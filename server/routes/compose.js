@@ -229,51 +229,66 @@ router.get('/:project', async (req, res) => {
 // Compose commands run the host `docker compose` CLI in a working dir on DockGate's filesystem.
 // Local → the local daemon. Remote SSH host → DOCKER_HOST=ssh:// (buildCliEnv) targets that daemon,
 // but the compose file must be local, so only DockGate-managed projects can be (re)deployed remotely.
+// Resolve where a compose project's command runs (remote-native folder, legacy remote-managed, or local
+// working/managed dir) and execute it — STREAMED when onData is given. Throws (with statusCode) on bad state.
+async function execComposeAction(projectName, action, onData) {
+  const isLocal = dockerService.isLocalActive();
+  const proj = await dockerService.getComposeProject(projectName);
+  const mDir = managedDir(projectName);
+  const hasManaged = !!findComposeFile(mDir);
+  if (!isLocal) {
+    const server = remoteCompose.getActiveRemoteServer();
+    const meta = readDeployMeta(projectName);
+    const remoteDir = proj.workingDir
+      || (meta && meta.mode === 'remote' && meta.serverId === dockerService.getActiveServerId() ? meta.remotePath : null);
+    if (server && remoteDir) return await remoteCompose.runComposeInRemoteDir(server, remoteDir, projectName, action, onData);
+    if (hasManaged) return await runCompose(projectName, action, mDir, onData);
+    const e = new Error('On a remote host, control only DockGate-deployed projects (deploy from a folder/Git to this server first).'); e.statusCode = 400; throw e;
+  }
+  let cwd = proj.workingDir;
+  if (!cwd && hasManaged) cwd = mDir;
+  if (!cwd) { const e = new Error('Working directory not found — this project has no running containers and is not DockGate-managed. Bring it up from its compose folder.'); e.statusCode = 400; throw e; }
+  return await runCompose(projectName, action, cwd, onData);
+}
+
+// Synchronous compose action (fast ops: down/restart) → run and return the output as JSON.
 async function runComposeAction(req, res, action, label) {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const isLocal = dockerService.isLocalActive();
-    const project = await dockerService.getComposeProject(req.params.project);
-    const mDir = managedDir(req.params.project);
-    const hasManaged = !!findComposeFile(mDir);
-
-    if (!isLocal) {
-      const server = remoteCompose.getActiveRemoteServer();
-      // Remote-native: the project's files live on the remote → run `docker compose` THERE over SSH.
-      // Prefer the live working_dir label; fall back to the stored deploy pointer when the project is down.
-      const meta = readDeployMeta(req.params.project);
-      const remoteDir = project.workingDir
-        || (meta && meta.mode === 'remote' && meta.serverId === dockerService.getActiveServerId() ? meta.remotePath : null);
-      if (server && remoteDir) {
-        const output = await remoteCompose.runComposeInRemoteDir(server, remoteDir, req.params.project, action);
-        logAction({ req, server: dockerService.getActiveServerId(), resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: label, details: output });
-        return res.json({ success: true, output });
-      }
-      // Legacy DockGate-managed on a remote daemon (files on DockGate, DOCKER_HOST=ssh).
-      if (hasManaged) {
-        const output = await runCompose(req.params.project, action, mDir);
-        logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: label, details: output });
-        return res.json({ success: true, output });
-      }
-      return res.status(400).json({ error: 'On a remote host, control only DockGate-deployed projects (deploy from a folder/Git to this server first).' });
-    }
-
-    // Local daemon.
-    let cwd = project.workingDir;
-    if (!cwd && hasManaged) cwd = mDir;
-    if (!cwd) return res.status(400).json({ error: 'Working directory not found — this project has no running containers and is not DockGate-managed. Bring it up from its compose folder.' });
-    const output = await runCompose(req.params.project, action, cwd);
-    logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: label, details: output });
+    const output = await execComposeAction(req.params.project, action, null);
+    logAction({ req, server: dockerService.isLocalActive() ? undefined : dockerService.getActiveServerId(), resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: label, details: output });
     res.json({ success: true, output });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 }
 
-router.post('/:project/up', (req, res) => runComposeAction(req, res, ['up', '-d'], 'up'));
+// Background compose action (long ops: up/pull/build/rebuild) → live per-step console (deployJobs), like deploy.
+function startComposeActionJob(req, res, action, label) {
+  if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+  gcDeployJobs();
+  const projectName = req.params.project, reqIp = req.ip;
+  const job = { id: crypto.randomBytes(8).toString('hex'), project: projectName, status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
+  deployJobs.set(job.id, job);
+  (async () => {
+    const stream = (c) => jobStream(job, c);
+    job.steps = [{ id: 'action', label, status: 'pending' }];
+    try {
+      setStep(job, 'action', 'running'); job.phase = label; jobLog(job, `$ docker compose ${action.join(' ')}`);
+      await execComposeAction(projectName, action, stream);
+      setStep(job, 'action', 'done'); job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
+      logAction({ sourceIp: reqIp, server: dockerService.isLocalActive() ? 'local' : dockerService.getActiveServerId(), resourceId: projectName, resourceType: 'compose', resourceName: projectName, action: label });
+    } catch (err) {
+      setStep(job, 'action', 'failed'); job.status = 'error'; job.phase = 'error'; job.error = (err.stderr || err.message || 'failed').toString(); jobLog(job, '✗ ' + job.error); job.finishedAt = Date.now();
+    }
+  })();
+  res.json({ jobId: job.id, project: projectName });
+}
+
+router.post('/:project/up', (req, res) => startComposeActionJob(req, res, ['up', '-d'], 'up'));
 router.post('/:project/down', (req, res) => runComposeAction(req, res, ['down'], 'down'));
 router.post('/:project/restart', (req, res) => runComposeAction(req, res, ['restart'], 'restart'));
-router.post('/:project/pull', (req, res) => runComposeAction(req, res, ['pull'], 'pull'));
+router.post('/:project/pull', (req, res) => startComposeActionJob(req, res, ['pull'], 'pull'));
 // docker compose build — compose faylındakı `build:` bölməli servislərin image-lərini qurur
-router.post('/:project/build', (req, res) => runComposeAction(req, res, ['build'], 'build'));
+router.post('/:project/build', (req, res) => startComposeActionJob(req, res, ['build'], 'build'));
 // Parse a list of service names (?services=a,b or body.services=[...]) — safe charset only.
 function parseServices(src) {
   let raw = src || [];
@@ -283,10 +298,11 @@ function parseServices(src) {
 // Rebuild = rebuild images from source + force-recreate so the new image lands in the container.
 // ?services=a,b → rebuild ONLY those services (+ --no-deps so their dependencies aren't recreated).
 router.post('/:project/rebuild', (req, res) => {
+  if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
   const svc = parseServices((req.body && req.body.services) || (req.query && req.query.services));
   const action = ['up', '-d', '--build', '--force-recreate'];
   if (svc.length) action.push('--no-deps', ...svc);
-  return runComposeAction(req, res, action, 'rebuild');
+  return startComposeActionJob(req, res, action, 'rebuild');
 });
 
 // Delete a whole project: stop+remove containers (compose down), optionally remove data volumes (-v),
@@ -938,23 +954,25 @@ router.post('/deploy-git', async (req, res) => {
 });
 
 // Re-deploy a git project: fetch latest → hard reset → up --build (rebuild from new source).
-async function gitRedeploy(project) {
+// onData (optional) streams the git/compose output for a live console.
+async function gitRedeploy(project, onData) {
   const meta = readGitMeta(project);
   if (!meta) { const e = new Error('Not a Git-managed project'); e.statusCode = 400; throw e; }
   const dir = managedDir(project);
   const projectDir = meta.subdir ? path.join(dir, meta.subdir) : dir;
-  await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', 'origin', meta.branch || 'HEAD']);
-  await gitWithKey(meta.keyId, ['-C', dir, 'reset', '--hard', 'FETCH_HEAD']);
+  await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', '--progress', 'origin', meta.branch || 'HEAD'], { onData });
+  await gitWithKey(meta.keyId, ['-C', dir, 'reset', '--hard', 'FETCH_HEAD'], { onData });
   const composeFile = meta.composeFile || findComposeFile(projectDir);
   // Remote git project (Model A) → re-transfer the updated tree + rebuild THERE.
   const dm = readDeployMeta(project);
   const server = remoteCompose.getActiveRemoteServer();
   if (dm && dm.mode === 'remote' && server && dm.serverId === dockerService.getActiveServerId()) {
+    if (onData) onData(`\nUploading to ${dm.remotePath}…\n`);
     await remoteCompose.uploadDirToRemote(server, projectDir, dm.remotePath);
-    const output = await remoteCompose.runComposeInRemoteDir(server, dm.remotePath, project, ['up', '-d', '--build', '--force-recreate']);
+    const output = await remoteCompose.runComposeInRemoteDir(server, dm.remotePath, project, ['up', '-d', '--build', '--force-recreate'], onData);
     return { output, composeFile };
   }
-  const output = await runCompose(project, ['up', '-d', '--build'], projectDir);
+  const output = await runCompose(project, ['up', '-d', '--build'], projectDir, onData);
   return { output, composeFile };
 }
 
@@ -966,14 +984,25 @@ router.get('/:project/git', (req, res) => {
   res.json({ gitManaged: true, repoUrl: meta.repoUrl, branch: meta.branch || 'default', subdir: meta.subdir || '', hasToken: !!meta.token, hasKey: !!meta.keyId, webhookSecret: meta.secret });
 });
 
-// Manual re-deploy (pull latest + up)
-router.post('/:project/redeploy', async (req, res) => {
-  try {
-    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const r = await gitRedeploy(req.params.project);
-    logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'redeploy' });
-    res.json({ success: true, ...r });
-  } catch (err) { res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || '').toString() }); }
+// Manual re-deploy (pull latest + up) → live per-step console.
+router.post('/:project/redeploy', (req, res) => {
+  if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+  gcDeployJobs();
+  const project = req.params.project, reqIp = req.ip;
+  const job = { id: crypto.randomBytes(8).toString('hex'), project, status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
+  deployJobs.set(job.id, job);
+  (async () => {
+    job.steps = [{ id: 'redeploy', label: 'git pull + rebuild', status: 'pending' }];
+    try {
+      setStep(job, 'redeploy', 'running'); job.phase = 'redeploy'; jobLog(job, '$ git fetch + reset + up --build');
+      await gitRedeploy(project, (c) => jobStream(job, c));
+      setStep(job, 'redeploy', 'done'); job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
+      logAction({ sourceIp: reqIp, resourceId: project, resourceType: 'compose', resourceName: project, action: 'redeploy' });
+    } catch (err) {
+      setStep(job, 'redeploy', 'failed'); job.status = 'error'; job.phase = 'error'; job.error = (err.stderr || err.message || 'redeploy failed').toString(); jobLog(job, '✗ ' + job.error); job.finishedAt = Date.now();
+    }
+  })();
+  res.json({ jobId: job.id, project });
 });
 
 // Webhook: push-triggered re-deploy. Secured by the per-project secret in ?key= (no session needed).
