@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.149] - 2026-06-16
+
+### Added — named SSH key store (backend, Coolify "Private Keys" model)
+- New reusable **SSH key store** so you create named keypairs once and reuse them (git deploy keys / machine-user keys for many repos) instead of pasting a token per project
+- New module `server/ssh-keys.js` + `ssh_keys` table + `/api/ssh-keys` routes: **generate** (ed25519 default, rsa-4096 fallback — via `ssh-keygen`, so the key is in the OpenSSH format git/ssh need), **import** an existing private key (derives the public key), list, rename, delete
+- **Security:** the private key is **AES-256-GCM encrypted at rest** (reuses `auth/secrets.js`), **never returned by the API** (only public key + fingerprint), and only ever written to a temp **0600** file during use, then **shredded** (overwrite + unlink). Verified end-to-end: ed25519 generates a usable key, stored as `enc:v1:…` (not plaintext), materialized at mode 600, shredded after
+- The management UI + git-deploy-via-key (clone in DockGate → transfer to the server) land in the next releases
+
+---
+
 ## [2.0.148] - 2026-06-16
 
 ### Added — per-service rebuild/update + reorder stacks in the deploy picker

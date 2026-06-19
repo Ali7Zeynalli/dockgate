@@ -120,6 +120,17 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS ssh_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    key_type TEXT NOT NULL,
+    private_key TEXT NOT NULL,
+    public_key TEXT NOT NULL,
+    fingerprint TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS provision_runs (
     id TEXT PRIMARY KEY,
     server_id TEXT NOT NULL,
@@ -363,6 +374,13 @@ const stmts = {
   insertRegistry: db.prepare('INSERT INTO registries (name, server_address, username, password) VALUES (?, ?, ?, ?)'),
   updateRegistry: db.prepare('UPDATE registries SET name = ?, server_address = ?, username = ?, password = ? WHERE id = ?'),
   deleteRegistry: db.prepare('DELETE FROM registries WHERE id = ?'),
+
+  // SSH keys (named, reusable — git deploy keys / machine-user keys). private_key is AES-encrypted.
+  getSshKeys: db.prepare('SELECT * FROM ssh_keys ORDER BY created_at DESC'),
+  getSshKey: db.prepare('SELECT * FROM ssh_keys WHERE id = ?'),
+  insertSshKey: db.prepare('INSERT INTO ssh_keys (name, description, key_type, private_key, public_key, fingerprint) VALUES (?, ?, ?, ?, ?, ?)'),
+  renameSshKey: db.prepare('UPDATE ssh_keys SET name = ?, description = ? WHERE id = ?'),
+  deleteSshKey: db.prepare('DELETE FROM ssh_keys WHERE id = ?'),
 
   // Provisioning runs + items (server-setup history)
   insertProvisionRun: db.prepare('INSERT INTO provision_runs (id, server_id, preset, distro, status, item_total, source_ip) VALUES (?, ?, ?, ?, ?, ?, ?)'),
