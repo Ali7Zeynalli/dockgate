@@ -511,30 +511,63 @@ Router.register('compose', async (content) => {
       <div class="table-wrapper"><table><tbody>${jobs.map(j => `<tr>
         <td style="width:24px">${icon(j.status)}</td>
         <td class="td-name">${escapeHtml(j.project)}</td>
-        <td class="text-xs text-muted">${escapeHtml(j.phase)}</td>
+        <td class="text-xs text-muted">${escapeHtml(j.phase)}${(j.steps && j.steps.length) ? ` <span style="opacity:.7">(${j.steps.filter(s => s.status === 'done').length}/${j.steps.length})</span>` : ''}</td>
         <td class="text-xs text-muted">${j.finishedAt ? timeAgo(j.finishedAt) : 'running…'}</td>
         <td style="text-align:right"><button class="btn btn-xs btn-secondary" data-joblog="${j.id}" data-jobproj="${escapeHtml(j.project)}">view log</button></td>
       </tr>`).join('')}</tbody></table></div>`;
     el.querySelectorAll('[data-joblog]').forEach(b => b.addEventListener('click', () => openDeployLog(b.dataset.joblog, b.dataset.jobproj)));
   }
 
-  // Re-openable live log for a deploy job — poll until done; closing just stops polling (job keeps running).
+  // Per-step status icon for the deploy console (mirrors the per-file upload rows).
+  function deployStepIcon(s) {
+    if (s === 'done') return '<span style="color:var(--success,#3fb950)">✓</span>';
+    if (s === 'failed') return '<span style="color:var(--danger,#f85149)">✗</span>';
+    if (s === 'running') return '<span style="color:var(--accent)">⏳</span>';
+    if (s === 'skipped') return '<span class="text-muted">∅</span>';
+    return '<span class="text-muted">·</span>';
+  }
+
+  // Re-openable live log for a deploy job — per-step status + a real terminal (xterm) so docker's
+  // \r progress bars and ANSI colors render correctly. Poll until done; closing just stops polling.
   function openDeployLog(jobId, project) {
-    const m = showModal(`Deploy — ${escapeHtml(project)}`, `<div class="text-xs text-muted mb-1" id="dl-phase">…</div><pre class="logs-viewer" id="dl-log" style="max-height:55vh;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-word">loading…</pre>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const m = showModal(`Deploy — ${escapeHtml(project)}`, `
+      <div class="text-xs text-muted" id="dl-phase" style="margin-bottom:6px">…</div>
+      <div id="dl-steps" style="display:flex;flex-direction:column;gap:2px;margin-bottom:8px;font-size:12px"></div>
+      <div id="dl-term" style="height:46vh;background:#000;border-radius:6px;overflow:hidden;padding:6px"></div>`,
+      [{ label: 'Close', className: 'btn btn-secondary' }]);
     const root = m.overlay;
+    // Real terminal so \r/ANSI render right; fall back to a <pre> if xterm isn't available.
+    let term = null, fit = null, pre = null, written = 0;
+    const host = root.querySelector('#dl-term');
+    try {
+      if (typeof Terminal === 'undefined') throw new Error('no xterm');
+      term = new Terminal({ convertEol: true, disableStdin: true, fontSize: 12, scrollback: 9000, fontFamily: 'var(--font-mono), monospace', theme: { background: '#000000', foreground: '#e8ecf4' } });
+      try { fit = new window.FitAddon.FitAddon(); term.loadAddon(fit); } catch (e) {}
+      term.open(host);
+      try { fit.fit(); } catch (e) {}
+    } catch (e) {
+      pre = document.createElement('pre');
+      pre.className = 'logs-viewer';
+      pre.style.cssText = 'margin:0;height:100%;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-word';
+      host.style.padding = '0';
+      host.appendChild(pre);
+    }
     (async () => {
       while (document.body.contains(root)) {
         let job;
         try { job = await API.get(`/compose/deploy-job/${jobId}`); }
         catch (e) { const p = root.querySelector('#dl-phase'); if (p) p.textContent = 'job expired'; break; }
-        const logEl = root.querySelector('#dl-log'); const phEl = root.querySelector('#dl-phase');
-        if (!logEl) return;
-        logEl.textContent = job.log || '';
-        logEl.scrollTop = logEl.scrollHeight;
-        phEl.textContent = `${job.status} · ${job.phase}`;
+        if (!document.body.contains(root)) break;
+        const phEl = root.querySelector('#dl-phase'), stepsEl = root.querySelector('#dl-steps');
+        if (phEl) phEl.textContent = `${job.status} · ${job.phase}`;
+        if (stepsEl) stepsEl.innerHTML = (job.steps || []).map(s => `<div>${deployStepIcon(s.status)} ${escapeHtml(s.label)}</div>`).join('');
+        const log = job.log || '';
+        if (term) { if (log.length > written) { term.write(log.slice(written)); written = log.length; } }
+        else if (pre) { pre.textContent = log; pre.scrollTop = pre.scrollHeight; }
         if (job.status !== 'running') { renderDeploys(); break; }
         await new Promise(r => setTimeout(r, 1000));
       }
+      try { if (term) term.dispose(); } catch (e) {}
     })();
   }
 

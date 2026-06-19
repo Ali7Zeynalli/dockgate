@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.143] - 2026-06-16
+
+### Added — deploy console shows per-step status + a real terminal
+- The re-openable **"view log"** (Deploys console) now renders the job's **per-step status** — `clean / upload / deploy`, each with a live `· pending → ⏳ running → ✓ done / ✗ failed` indicator — so you can see exactly **where** a deploy/update is, not just a phase word
+- The log itself now renders in a real **xterm.js terminal** (instead of a plain `<pre>`), so docker's `\r` progress bars and ANSI colors display correctly instead of piling up as garbled lines; falls back to a `<pre>` if xterm isn't loaded
+- The Deploys console row now shows a compact **step progress** count (e.g. `up (2/3)`)
+- Builds on v2.0.142's live streaming — together: live, terminal-accurate output **with** step indicators
+
+---
+
 ## [2.0.142] - 2026-06-16
 
 ### Fixed — deploy "view log" now streams live instead of freezing then dumping
