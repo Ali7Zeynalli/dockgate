@@ -78,10 +78,68 @@ router.delete('/', async (req, res) => {
   const a = activeRemote(res); if (!a) return;
   try {
     const isDir = req.query.isDir === '1' || req.query.isDir === 'true';
-    const r = await fm.remove(a.s, req.query.path || '', isDir);
-    logAction({ req, server: a.id, resourceType: 'file', resourceName: r.path, action: 'delete', details: { isDir } });
+    const recursive = req.query.recursive === '1' || req.query.recursive === 'true';
+    const r = (isDir && recursive) ? await fm.removeRecursive(a.s, req.query.path || '') : await fm.remove(a.s, req.query.path || '', isDir);
+    logAction({ req, server: a.id, resourceType: 'file', resourceName: r.path, action: 'delete', details: { isDir, recursive } });
     res.json({ success: true, path: r.path });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// Read a file as text for the in-browser editor (binary/oversized → metadata only).
+router.get('/read', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try { res.json(await fm.readFileText(a.s, req.query.path || '')); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Save edited text back to a file (create/overwrite).
+router.post('/write', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try {
+    const { path: p, content } = req.body || {};
+    if (!p) return res.status(400).json({ error: 'path is required' });
+    await fm.writeFileText(a.s, p, content == null ? '' : content);
+    logAction({ req, server: a.id, resourceType: 'file', resourceName: p, action: 'edit' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Copy a file/folder into destDir (auto-suffixes "-copy" when pasted into its own directory).
+router.post('/copy', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try {
+    const { src, destDir } = req.body || {};
+    if (!src || !destDir) return res.status(400).json({ error: 'src and destDir are required' });
+    const base = String(src).split('/').filter(Boolean).pop();
+    let dest = fm.joinRemote(destDir, base);
+    if (dest === fm.normRemote(src)) { const m = base.match(/^(.*?)(\.[^.]+)?$/); dest = fm.joinRemote(destDir, (m[1] || base) + '-copy' + (m[2] || '')); }
+    const r = await fm.copy(a.s, src, dest);
+    logAction({ req, server: a.id, resourceType: 'file', resourceName: r.to, action: 'copy', details: { from: r.from } });
+    res.json({ success: true, ...r });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// Move a file/folder into destDir.
+router.post('/move', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try {
+    const { src, destDir } = req.body || {};
+    if (!src || !destDir) return res.status(400).json({ error: 'src and destDir are required' });
+    const base = String(src).split('/').filter(Boolean).pop();
+    const dest = fm.joinRemote(destDir, base);
+    const r = await fm.move(a.s, src, dest);
+    logAction({ req, server: a.id, resourceType: 'file', resourceName: r.to, action: 'move', details: { from: r.from } });
+    res.json({ success: true, ...r });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// Download a whole folder as a streamed .tar.gz.
+router.get('/download-folder', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try {
+    logAction({ req, server: a.id, resourceType: 'file', resourceName: req.query.path || '', action: 'download' });
+    await fm.archiveDirTo(a.s, req.query.path || '', res);
+  } catch (err) { if (!res.headersSent) res.status(500).json({ error: err.message }); else res.end(); }
 });
 
 module.exports = router;

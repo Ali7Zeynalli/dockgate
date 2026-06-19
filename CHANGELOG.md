@@ -2,6 +2,19 @@
 
 ---
 
+## [2.0.164] - 2026-06-19
+
+### Added — File Manager backend: copy, move, recursive delete (root-aware), edit, folder download
+- Toward a **full** file manager, new SFTP/SSH backend operations + routes (`/api/files/*`):
+  - **Read / Write** — `GET /read` + `POST /write` expose the existing `readFileText`/`writeFileText` so a file can be **opened and edited in place** (binary/oversized → metadata only, 2 MB cap)
+  - **Copy** — `POST /copy` (`cp -a`, recursive + preserves attrs); pasting into a file's own folder auto-suffixes `-copy`
+  - **Move** — `POST /move` (`mv -f`, works across directories)
+  - **Recursive delete** — `DELETE ?recursive=1` removes non-empty folders; when **root-owned** Docker data dirs block the SSH user it falls back to a throwaway **root container** (`docker run --rm -v <parent>:/t alpine rm -rf`), guarded to ≥3-segment paths so a system/home root can never be wiped
+  - **Folder download** — `GET /download-folder` streams a whole directory as a `.tar.gz`
+- All shell ops reuse `remote-compose`'s `execRemote` + `shq` (single-quoted, injection-safe — verified). Frontend wiring (edit modal, copy/cut/paste, move, folder download, breadcrumb) lands next
+
+---
+
 ## [2.0.163] - 2026-06-19
 
 ### Fixed — "Password field is not contained in a form" on Settings → Security

@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('ssh2');
 const { decrypt } = require('./auth/secrets');
+const remoteExec = require('./remote-compose'); // execRemote + shq — reused so SSH-exec/quoting isn't duplicated
 
 const SSH_KEYS_DIR = path.join(__dirname, '..', 'data', 'ssh-keys');
 
@@ -198,4 +199,73 @@ function writeFileText(server, p, content) {
   }));
 }
 
-module.exports = { listDir, downloadTo, uploadFrom, mkdir, rename, remove, normRemote, homeDir, listTree, readFileText, writeFileText };
+// ---- Heavier ops that need a shell (SFTP has no copy / recursive-delete / archive) ----
+
+// Recursively delete a path. Tries the SSH user first; if root-owned leftovers block it (Docker bind-mount
+// data dirs created as root), falls back to a throwaway root container — same trick as removeRemoteDir.
+async function removeRecursive(server, p) {
+  const target = normRemote(p);
+  if (target === '/' || target.split('/').filter(Boolean).length < 1) {
+    throw Object.assign(new Error('Refusing to delete an unsafe path'), { statusCode: 400 });
+  }
+  const r = await remoteExec.execRemote(server, `rm -rf ${remoteExec.shq(target)} 2>&1`);
+  if (r.code === 0) return { path: target };
+  // Root-owned leftovers → escalate via a root container, but only for a deep path (≥3 segments) so a
+  // system/home root can never be mounted-and-wiped.
+  if (target.split('/').filter(Boolean).length < 3) {
+    throw Object.assign(new Error('Delete failed: ' + (r.stdout || r.stderr || '').trim()), { statusCode: 500 });
+  }
+  const parent = target.replace(/\/[^/]+$/, '') || '/';
+  const base = target.split('/').pop();
+  const dr = await remoteExec.execRemote(server, `docker run --rm -v ${remoteExec.shq(parent)}:/t alpine rm -rf ${remoteExec.shq('/t/' + base)} 2>&1`);
+  if (dr.code !== 0) throw Object.assign(new Error('Delete failed (SSH user + root container both denied): ' + (dr.stdout || dr.stderr || r.stdout || '').trim()), { statusCode: 500 });
+  return { path: target };
+}
+
+// Copy a file or directory (cp -a → recursive + preserves attrs/timestamps). dest is the full target path.
+async function copy(server, src, dest) {
+  const s = normRemote(src), d = normRemote(dest);
+  if (s === d) throw Object.assign(new Error('Source and destination are the same'), { statusCode: 400 });
+  const r = await remoteExec.execRemote(server, `cp -a ${remoteExec.shq(s)} ${remoteExec.shq(d)} 2>&1`);
+  if (r.code !== 0) throw Object.assign(new Error('Copy failed: ' + (r.stdout || r.stderr || '').trim()), { statusCode: 500 });
+  return { from: s, to: d };
+}
+
+// Move/rename a file or directory (mv -f → works across directories where SFTP rename may fail).
+async function move(server, src, dest) {
+  const s = normRemote(src), d = normRemote(dest);
+  if (s === d) throw Object.assign(new Error('Source and destination are the same'), { statusCode: 400 });
+  const r = await remoteExec.execRemote(server, `mv -f ${remoteExec.shq(s)} ${remoteExec.shq(d)} 2>&1`);
+  if (r.code !== 0) throw Object.assign(new Error('Move failed: ' + (r.stdout || r.stderr || '').trim()), { statusCode: 500 });
+  return { from: s, to: d };
+}
+
+// Stream a .tar.gz of a remote directory to an HTTP response so whole folders can be downloaded.
+function archiveDirTo(server, dir, res) {
+  const target = normRemote(dir);
+  const parent = target.replace(/\/[^/]+$/, '') || '/';
+  const base = target.split('/').pop() || 'archive';
+  return new Promise((resolve, reject) => {
+    const conn = new Client();
+    let settled = false;
+    const done = (err) => { if (settled) return; settled = true; try { conn.end(); } catch (e) {} err ? reject(err) : resolve(); };
+    conn.on('ready', () => {
+      conn.exec(`tar czf - -C ${remoteExec.shq(parent)} ${remoteExec.shq(base)}`, (err, stream) => {
+        if (err) return done(err);
+        res.setHeader('Content-Disposition', `attachment; filename="${base.replace(/"/g, '')}.tar.gz"`);
+        res.setHeader('Content-Type', 'application/gzip');
+        stream.on('error', done);
+        stream.on('end', () => done());
+        stream.stderr.on('data', () => {}); // ignore tar's "Removing leading /" notices
+        stream.pipe(res);
+      });
+    });
+    conn.on('error', done);
+    try { conn.connect(authFor(server)); } catch (e) { done(e); }
+  });
+}
+
+module.exports = {
+  listDir, downloadTo, uploadFrom, mkdir, rename, remove, normRemote, joinRemote, homeDir, listTree,
+  readFileText, writeFileText, removeRecursive, copy, move, archiveDirTo,
+};
