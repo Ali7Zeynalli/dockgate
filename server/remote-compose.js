@@ -80,7 +80,7 @@ async function checkComposeAvailable(server) {
 
 // Recursively upload a local directory's contents into a remote directory (SFTP). Dirs are pre-created
 // with one `mkdir -p`. Returns the number of files uploaded.
-async function uploadDirToRemote(server, localDir, remoteDir) {
+async function uploadDirToRemote(server, localDir, remoteDir, onProgress) {
   const files = [];
   const dirs = new Set();
   const walk = (cur, rel) => {
@@ -99,12 +99,15 @@ async function uploadDirToRemote(server, localDir, remoteDir) {
     conn.sftp((err, sftp) => {
       if (err) return reject(err);
       (async () => {
+        let done = 0;
         for (const f of files) {
           await new Promise((res, rej) => {
             const ws = sftp.createWriteStream(remoteDir + '/' + f.rel);
             ws.on('close', res); ws.on('error', rej);
             fs.createReadStream(f.full).on('error', rej).pipe(ws);
           });
+          done++;
+          if (onProgress && (done % 20 === 0 || done === files.length)) onProgress(done, files.length);
         }
         resolve();
       })().catch(reject);

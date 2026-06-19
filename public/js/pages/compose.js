@@ -171,6 +171,15 @@ Router.register('compose', async (content) => {
         <span class="text-xs text-muted" style="margin-left:6px">find the compose files in the repo and pick which folder to deploy</span>
         <div id="gd-scan-result" style="margin-top:6px"></div></div>
       <div class="input-group"><label>Project name *</label><input class="input" id="gd-name" placeholder="my-app"></div>
+      ${remote ? `<div class="card" style="padding:9px 12px;background:var(--accent-dim)">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px">Deploy target: remote server ⭐</div>
+        <label class="text-xs text-muted">Folder on the server (files live &amp; run here)</label>
+        <div style="display:flex;gap:6px;margin-top:2px">
+          <input class="input" id="gd-rpath" placeholder="~/.dockgate/projects/&lt;project&gt;" style="flex:1;font-family:var(--font-mono,monospace)">
+          <button type="button" class="btn btn-secondary btn-sm" id="gd-browse" style="white-space:nowrap">📁 Browse</button>
+        </div>
+        <span class="text-xs text-muted" style="margin-top:4px;display:block">Default <code>~/.dockgate/projects/&lt;project&gt;</code>. <strong>Browse</strong> to pick another parent — the project folder is created under it.</span>
+      </div>` : ''}
       <div class="input-group"><label>Auth (for private repos)</label>
         <select class="select" id="gd-auth"><option value="token">Public / access token</option><option value="sshkey">SSH key (from store)</option></select>
       </div>
@@ -184,6 +193,10 @@ Router.register('compose', async (content) => {
     </div>`;
     const m = showModal('Deploy from Git', body, []);
     const root = m.overlay;
+    root.querySelector('#gd-browse')?.addEventListener('click', () => {
+      const project = root.querySelector('#gd-name').value.trim() || 'project';
+      openRemoteFolderPicker((parentDir) => { root.querySelector('#gd-rpath').value = (parentDir === '/' ? '' : parentDir) + '/' + project; });
+    });
     const authSel = root.querySelector('#gd-auth');
     authSel.addEventListener('change', () => {
       const ssh = authSel.value === 'sshkey';
@@ -250,6 +263,7 @@ Router.register('compose', async (content) => {
           subdir: root.querySelector('#gd-subdir').value.trim(),
           token: useKey ? '' : root.querySelector('#gd-token').value,
           keyId,
+          remotePath: remote ? (root.querySelector('#gd-rpath')?.value || '').trim() : '',
           up: true,
         });
         m.close();

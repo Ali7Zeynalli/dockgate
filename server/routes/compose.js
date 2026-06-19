@@ -670,9 +670,9 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
     if (isRemote) {
       const { remotePath, update, clean } = u.deploy;
       if (update && clean) { current = 'clean'; setStep(job, 'clean', 'running'); job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server…`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) {} setStep(job, 'clean', 'done'); }
-      current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server…`);
-      uploaded = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath);
-      jobLog(job, `Uploaded ${uploaded} file(s).`); setStep(job, 'upload', 'done');
+      current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server…\n`);
+      uploaded = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath, (d, t) => jobStream(job, `\ruploaded ${d}/${t} files`));
+      jobLog(job, `\nUploaded ${uploaded} file(s).`); setStep(job, 'upload', 'done');
       fs.rmSync(u.dir, { recursive: true, force: true });
       baseDir = remotePath;
     } else {
@@ -772,10 +772,10 @@ async function runGitDeployJob(job, p) {
     const server = remoteCompose.getActiveRemoteServer();
     if (server) {
       const serverId = dockerService.getActiveServerId();
-      const remotePath = await remoteCompose.resolveRemotePath(server, `~/.dockgate/projects/${p.project}`);
-      current = 'transfer'; setStep(job, 'transfer', 'running'); job.phase = 'transfer'; jobLog(job, `\nUploading to ${remotePath} on the server…`);
-      const n = await remoteCompose.uploadDirToRemote(server, projectDir, remotePath);
-      jobLog(job, `Uploaded ${n} file(s).`); setStep(job, 'transfer', 'done');
+      const remotePath = await remoteCompose.resolveRemotePath(server, p.remotePath || `~/.dockgate/projects/${p.project}`);
+      current = 'transfer'; setStep(job, 'transfer', 'running'); job.phase = 'transfer'; jobLog(job, `\nUploading to ${remotePath} on the server…\n`);
+      const n = await remoteCompose.uploadDirToRemote(server, projectDir, remotePath, (d, t) => jobStream(job, `\ruploaded ${d}/${t} files`));
+      jobLog(job, `\nUploaded ${n} file(s).`); setStep(job, 'transfer', 'done');
       writeDeployMeta(p.project, { mode: 'remote', serverId, remotePath, composeFile, source: 'git' });
       if (p.up) { current = 'up'; setStep(job, 'up', 'running'); job.phase = 'up'; jobLog(job, '\n$ docker compose up -d'); await remoteCompose.runComposeInRemoteDir(server, remotePath, p.project, ['up', '-d'], stream); setStep(job, 'up', 'done'); }
     } else if (p.up) {
@@ -960,7 +960,7 @@ router.post('/deploy-git', async (req, res) => {
   const { token = '' } = req.body || {};
   try {
     gcDeployJobs();
-    const { project, repoUrl, branch = '', subdir = '', up = true, keyId = '' } = req.body || {};
+    const { project, repoUrl, branch = '', subdir = '', up = true, keyId = '', remotePath = '' } = req.body || {};
     if (!validateProjectName(project || '')) return res.status(400).json({ error: 'Invalid project name (a-z, 0-9, _, -)' });
     const isHttp = /^https?:\/\//i.test(repoUrl || '');
     const isSsh = /^(ssh:\/\/|[\w.-]+@[\w.-]+:)/.test(repoUrl || '');
@@ -973,7 +973,7 @@ router.post('/deploy-git', async (req, res) => {
     const secret = crypto.randomBytes(18).toString('hex');
     const job = { id: crypto.randomBytes(8).toString('hex'), project, status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
     deployJobs.set(job.id, job);
-    runGitDeployJob(job, { project, repoUrl, branch, subdir, up, keyId, token, secret, reqIp: req.ip });
+    runGitDeployJob(job, { project, repoUrl, branch, subdir, up, keyId, token, remotePath, secret, reqIp: req.ip });
     res.json({ jobId: job.id, project, webhookSecret: secret });
   } catch (err) { res.status(err.statusCode || 500).json({ error: redactToken(err.message, token) }); }
 });

@@ -2,6 +2,18 @@
 
 ---
 
+## [2.0.157] - 2026-06-16
+
+### Added / Fixed — Git deploy target folder, live transfer progress, DOM password warning
+- **Git deploy now lets you choose the server folder.** When a remote host is active, Deploy-from-Git shows a **Folder on the server** input + **📁 Browse** (just like Deploy-from-folder) instead of always using `~/.dockgate/projects/<project>` — so it deploys where you pick. `deploy-git` accepts `remotePath`
+- **The SFTP transfer step now streams progress** (`uploaded X/N files`) for both Git and folder remote deploys, so a big upload no longer looks frozen / "lost in between"
+- **Fixed the `[DOM] Password field is not contained in a form` warning** globally: every modal body is now wrapped in a (layout-neutral) `<form>` with submit suppressed, so password fields (Git token, registry, SSH passphrase, etc.) are in a form without Enter reloading the page
+
+### Note
+- Full **multi-stack Git deploy** (after scan, the "Choose what to deploy" picker with per-service/build selection and several stacks — exactly like folder deploy) is the next step; this release adds the target-folder + transfer visibility.
+
+---
+
 ## [2.0.156] - 2026-06-16
 
 ### Added — Git deploy: scan the repo and pick which folder/compose to deploy

@@ -139,7 +139,7 @@ function showModal(title, bodyHtml, actions = []) {
         <div class="modal-title">${title}</div>
         <button class="btn-icon modal-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
-      <div class="modal-body">${bodyHtml}</div>
+      <div class="modal-body"><form class="dg-mform" style="display:contents" autocomplete="off">${bodyHtml}</form></div>
       <div class="modal-footer" id="modal-footer"></div>
     </div>
   `;
@@ -154,6 +154,9 @@ function showModal(title, bodyHtml, actions = []) {
   });
 
   overlay.querySelector('.modal-close').onclick = closeModal;
+  // Keep any password field inside a <form> (silences the "password field not in a form" DOM warning)
+  // without letting Enter/implicit-submit reload the page.
+  overlay.querySelector('.dg-mform')?.addEventListener('submit', (e) => e.preventDefault());
   overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
 
   function closeModal() { overlay.remove(); }
