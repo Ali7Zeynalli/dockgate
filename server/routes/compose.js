@@ -69,6 +69,48 @@ function findComposeFile(dir) {
   return COMPOSE_FILENAMES.find(n => fs.existsSync(path.join(dir, n))) || null;
 }
 
+// Find ALL compose files in a staged tree (recursive, NAME-AGNOSTIC): any *.yml/*.yaml whose top level
+// declares `services:`. Catches docker-compose.app.yml, stack.yml, infra/*.yml, etc. — not just the 4
+// standard names. Returns POSIX-relative paths, shallowest first. Skips obvious junk dirs.
+function findComposeFiles(dir) {
+  const out = [];
+  const SKIP = new Set(['.git', 'node_modules', '.next', 'dist', 'build', '.dockgate']);
+  const walk = (cur, rel) => {
+    let entries; try { entries = fs.readdirSync(cur, { withFileTypes: true }); } catch (e) { return; }
+    for (const e of entries) {
+      const r = rel ? rel + '/' + e.name : e.name;
+      if (e.isDirectory()) { if (!SKIP.has(e.name)) walk(path.join(cur, e.name), r); continue; }
+      if (!/\.ya?ml$/i.test(e.name)) continue;
+      try { if (/^services:/m.test(fs.readFileSync(path.join(cur, e.name), 'utf8').slice(0, 65536))) out.push(r); } catch (e2) {}
+      if (out.length >= 50) return; // sanity cap
+    }
+  };
+  walk(dir, '');
+  out.sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b));
+  return out;
+}
+
+// Best-effort extraction of services / external networks / build-flag from one compose file, via
+// `docker compose config --format json`. Resilient: a parse failure (e.g. missing ${VAR}) is reported,
+// not thrown, so the user can still pick the file.
+async function scanComposeFile(baseDir, relPath) {
+  const cwd = path.join(baseDir, path.posix.dirname(relPath));
+  const file = path.posix.basename(relPath);
+  const info = { path: relPath, dir: path.posix.dirname(relPath), services: [], externalNets: [], hasBuild: false, parseError: null };
+  try {
+    const { stdout } = await execFileAsync('docker', ['compose', '-f', file, 'config', '--format', 'json'], { cwd, maxBuffer: 8 * 1024 * 1024 });
+    const cfg = JSON.parse(stdout);
+    const svc = cfg.services || {};
+    info.services = Object.keys(svc);
+    info.hasBuild = info.services.some(s => svc[s] && svc[s].build);
+    const nets = cfg.networks || {};
+    info.externalNets = Object.entries(nets).filter(([, v]) => v && v.external).map(([k, v]) => (v && v.name) || k);
+  } catch (e) {
+    info.parseError = (e.stderr || e.message || 'parse failed').toString().split('\n')[0].slice(0, 200);
+  }
+  return info;
+}
+
 // Local pointer for a REMOTE-deployed project: the files live on the remote, but DockGate remembers
 // which server + folder so it can drive up/down/rebuild even when the project is fully down (no labels).
 function deployMetaPath(project) { return path.join(managedDir(project), '.dockgate-deploy.json'); }
@@ -508,45 +550,112 @@ function jobStream(job, chunk) { job.log += chunk; }
 // Update one step's status in the job's per-step list (drives the UI status indicators).
 function setStep(job, id, status) { const s = (job.steps || []).find(x => x.id === id); if (s) s.status = status; }
 
-// The async worker: upload to the remote (or promote locally) + docker compose up, all logged into the job.
+// Ensure an external network exists on the deploy's target daemon (idempotent) — so stacks sharing an
+// `external: true` network don't fail with "network ... not found". Failure (already exists) is ignored.
+async function ensureNetwork(deploy, name, stream) {
+  if (deploy && deploy.mode === 'remote') {
+    const q = remoteCompose.shq(name);
+    await remoteCompose.execRemote(deploy.server, `docker network inspect ${q} >/dev/null 2>&1 || docker network create ${q}`, stream);
+    return;
+  }
+  // Local: create via the same CLI env/transport compose uses; swallow the "already exists" error.
+  const { env } = buildCliEnv(dockerService.getActiveServerId(), 'compose');
+  await new Promise((resolve) => {
+    const child = spawn('docker', ['network', 'create', name], { env });
+    let out = ''; const ch = d => { out += d.toString(); };
+    child.stdout.on('data', ch); child.stderr.on('data', ch);
+    child.on('error', () => { if (stream) stream(`network ${name}: create skipped\n`); resolve(); });
+    child.on('close', () => { if (stream) stream(/already exists/i.test(out) ? `network ${name} already exists\n` : `network ${name} ready\n`); resolve(); });
+  });
+}
+
+// The async worker: upload to the remote (or promote locally), then either run a multi-stack PLAN
+// (user-selected compose files + services + build flags, each its own project) or the classic single up.
 async function runDeployJob(job, u, composeFile, up, reqIp) {
   const isRemote = !!(u.deploy && u.deploy.mode === 'remote');
   const isUpdate = !!(u.deploy && u.deploy.update);
   const wantClean = !!(u.deploy && u.deploy.clean);
+  const plan = (u.plan && Array.isArray(u.plan.stacks) && u.plan.stacks.length) ? u.plan : null;
   // Per-step status list so the UI shows exactly WHERE the deploy is (mirrors the provisioning step view).
   job.steps = [];
   if (isRemote && isUpdate && wantClean) job.steps.push({ id: 'clean', label: 'Clean remote folder', status: 'pending' });
   job.steps.push({ id: 'upload', label: isRemote ? 'Upload files to the server' : 'Stage project files', status: 'pending' });
-  if (up) job.steps.push({ id: 'deploy', label: isUpdate ? 'docker compose up --build --force-recreate' : 'docker compose up -d', status: 'pending' });
+  if (plan) {
+    for (const n of (plan.createNets || [])) job.steps.push({ id: 'net:' + n, label: 'Ensure network ' + n, status: 'pending' });
+    if (up) for (const s of plan.stacks) job.steps.push({ id: 'stack:' + s.name, label: 'Deploy ' + s.name + (s.services && s.services.length ? ' (' + s.services.join(', ') + ')' : ''), status: 'pending' });
+  } else if (up) {
+    job.steps.push({ id: 'deploy', label: isUpdate ? 'docker compose up --build --force-recreate' : 'docker compose up -d', status: 'pending' });
+  }
   let current = null;
   const stream = (chunk) => jobStream(job, chunk);
   try {
     const serverId = dockerService.getActiveServerId();
+    const server = isRemote ? u.deploy.server : null;
+
+    // --- 1. Prepare files: upload to the remote, or promote into the local managed dir ---
+    let baseDir, uploaded = u.files;
     if (isRemote) {
-      const { server, remotePath, update, clean } = u.deploy;
+      const { remotePath, update, clean } = u.deploy;
       if (update && clean) { current = 'clean'; setStep(job, 'clean', 'running'); job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server…`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) {} setStep(job, 'clean', 'done'); }
       current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server…`);
-      const n = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath);
-      jobLog(job, `Uploaded ${n} file(s).`); setStep(job, 'upload', 'done');
+      uploaded = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath);
+      jobLog(job, `Uploaded ${uploaded} file(s).`); setStep(job, 'upload', 'done');
       fs.rmSync(u.dir, { recursive: true, force: true });
+      baseDir = remotePath;
+    } else {
+      const dir = managedDir(u.project);
+      current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'promote'; jobLog(job, 'Staging project files…');
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.renameSync(u.dir, dir);
+      setStep(job, 'upload', 'done'); baseDir = dir;
+    }
+
+    // --- 2/3. PLAN (multi-stack) OR the classic single-compose path ---
+    if (plan) {
+      for (const netName of (plan.createNets || [])) {
+        current = 'net:' + netName; setStep(job, current, 'running'); job.phase = 'network'; jobLog(job, `\n$ ensure network ${netName}`);
+        await ensureNetwork(u.deploy, netName, stream);
+        setStep(job, current, 'done');
+      }
+      const deployed = [];
+      if (up) for (const s of plan.stacks) {
+        current = 'stack:' + s.name; setStep(job, current, 'running'); job.phase = 'up';
+        const fileBase = path.posix.basename(s.composeFile);
+        const subdir = path.posix.dirname(s.composeFile);
+        const upArgs = ['-f', fileBase, 'up', '-d'];
+        if (s.build && !s.noCache) upArgs.push('--build');
+        if (s.pull) upArgs.push('--pull', 'always');
+        if (s.noDeps) upArgs.push('--no-deps');
+        if (Array.isArray(s.services) && s.services.length) upArgs.push(...s.services);
+        jobLog(job, `\n$ [${s.name}] docker compose ${upArgs.join(' ')}`);
+        if (isRemote) {
+          const cwd = subdir === '.' ? baseDir : baseDir.replace(/\/+$/, '') + '/' + subdir;
+          if (s.build && s.noCache) await remoteCompose.runComposeInRemoteDir(server, cwd, s.name, ['-f', fileBase, 'build', '--no-cache', ...(s.services || [])], stream);
+          await remoteCompose.runComposeInRemoteDir(server, cwd, s.name, upArgs, stream);
+          writeDeployMeta(s.name, { mode: 'remote', serverId, remotePath: cwd, composeFile: fileBase, source: 'folder' });
+        } else {
+          const cwd = subdir === '.' ? baseDir : path.join(baseDir, subdir);
+          if (s.build && s.noCache) await runCompose(s.name, ['-f', fileBase, 'build', '--no-cache', ...(s.services || [])], cwd, stream);
+          await runCompose(s.name, upArgs, cwd, stream);
+        }
+        setStep(job, current, 'done'); deployed.push(s.name);
+      }
+      job.result = { plan: true, stacks: deployed, nets: plan.createNets || [] };
+      logAction({ sourceIp: reqIp, server: isRemote ? serverId : undefined, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder-plan', details: { stacks: deployed, nets: plan.createNets || [] } });
+    } else if (isRemote) {
+      const { remotePath, update } = u.deploy;
       writeDeployMeta(u.project, { mode: 'remote', serverId, remotePath, composeFile, source: 'folder' });
       if (up) {
-        // On update: rebuild AND force-recreate so the new image/files actually land in the running
-        // container (a plain `up` skips recreate when compose thinks nothing changed).
+        // On update: rebuild AND force-recreate so the new image/files actually land in the running container.
         const upArgs = update ? ['up', '-d', '--build', '--force-recreate'] : ['up', '-d'];
         current = 'deploy'; setStep(job, 'deploy', 'running'); job.phase = 'up'; jobLog(job, `$ docker compose ${upArgs.join(' ')}`);
         await remoteCompose.runComposeInRemoteDir(server, remotePath, u.project, upArgs, stream);
         setStep(job, 'deploy', 'done');
       }
       job.result = { composeFile, remotePath, updated: !!update };
-      logAction({ sourceIp: reqIp, server: serverId, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: update ? 'update-folder' : 'deploy-folder', details: { files: n, composeFile, remotePath, clean: !!clean } });
+      logAction({ sourceIp: reqIp, server: serverId, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: update ? 'update-folder' : 'deploy-folder', details: { files: uploaded, composeFile, remotePath, clean: !!wantClean } });
     } else {
-      const dir = managedDir(u.project);
-      current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'promote'; jobLog(job, 'Staging project files…');
-      fs.rmSync(dir, { recursive: true, force: true });
-      fs.renameSync(u.dir, dir);
-      setStep(job, 'upload', 'done');
-      if (up) { current = 'deploy'; setStep(job, 'deploy', 'running'); job.phase = 'up'; jobLog(job, '$ docker compose up -d'); await runCompose(u.project, ['up', '-d'], dir, stream); setStep(job, 'deploy', 'done'); }
+      if (up) { current = 'deploy'; setStep(job, 'deploy', 'running'); job.phase = 'up'; jobLog(job, '$ docker compose up -d'); await runCompose(u.project, ['up', '-d'], baseDir, stream); setStep(job, 'deploy', 'done'); }
       job.result = { composeFile };
       logAction({ sourceIp: reqIp, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder', details: { files: u.files, composeFile } });
     }
@@ -629,18 +738,49 @@ router.post('/deploy-folder-file', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// After upload, scan the staged tree for ALL compose files + their services/networks so the UI can let the
+// user PICK which file(s), which services, and how to build — instead of auto-detecting a single root file.
+router.post('/deploy-folder-scan', async (req, res) => {
+  try {
+    const u = folderUploads.get((req.body || {}).uploadId);
+    if (!u) return res.status(410).json({ error: 'Upload session expired — start over' });
+    if (!u.files) return res.status(400).json({ error: 'No files uploaded yet' });
+    const files = findComposeFiles(u.dir);
+    const scanned = [];
+    for (const f of files) scanned.push(await scanComposeFile(u.dir, f));
+    res.json({ files: scanned });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.post('/deploy-folder-finish', async (req, res) => {
   const u = folderUploads.get((req.body || {}).uploadId);
   try {
     gcDeployJobs();
-    const { uploadId, up = true } = req.body || {};
+    const { uploadId, up = true, plan = null } = req.body || {};
     if (!u) return res.status(410).json({ error: 'Upload session expired — start over' });
     if (!u.files) return res.status(400).json({ error: 'No files uploaded' });
-    const composeFile = findComposeFile(u.dir);
-    if (!composeFile) { throw Object.assign(new Error('No docker-compose.yml (or compose.yaml) found in the folder'), { statusCode: 400 }); }
-    // Validate synchronously so a bad compose fails fast (before the background job starts).
-    try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: u.dir }); }
-    catch (e) { throw Object.assign(new Error('Invalid compose file: ' + (e.stderr || e.message)), { statusCode: 400 }); }
+
+    let composeFile;
+    if (plan && Array.isArray(plan.stacks) && plan.stacks.length) {
+      // Multi-stack PLAN: validate each selected stack's compose file (exists in staging + parses).
+      for (const s of plan.stacks) {
+        if (!validateProjectName(s.name || '')) throw Object.assign(new Error(`Invalid stack name "${s.name}" (a-z, 0-9, _, -)`), { statusCode: 400 });
+        const rel = safeRelPath(s.composeFile || '');
+        const abs = path.join(u.dir, rel);
+        if (!rel || !(abs === u.dir || abs.startsWith(u.dir + path.sep)) || !fs.existsSync(abs)) throw Object.assign(new Error(`Compose file not found in upload: ${s.composeFile}`), { statusCode: 400 });
+        s.composeFile = rel; // normalized POSIX-relative
+        try { await execFileAsync('docker', ['compose', '-f', path.posix.basename(rel), 'config', '-q'], { cwd: path.join(u.dir, path.posix.dirname(rel)) }); }
+        catch (e) { throw Object.assign(new Error(`Invalid compose (${rel}): ` + (e.stderr || e.message)), { statusCode: 400 }); }
+      }
+      u.plan = { createNets: Array.isArray(plan.createNets) ? plan.createNets.filter(n => typeof n === 'string' && n) : [], stacks: plan.stacks };
+      composeFile = plan.stacks[0].composeFile;
+    } else {
+      composeFile = findComposeFile(u.dir);
+      if (!composeFile) { throw Object.assign(new Error('No docker-compose.yml (or compose.yaml) found in the folder'), { statusCode: 400 }); }
+      // Validate synchronously so a bad compose fails fast (before the background job starts).
+      try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: u.dir }); }
+      catch (e) { throw Object.assign(new Error('Invalid compose file: ' + (e.stderr || e.message)), { statusCode: 400 }); }
+    }
 
     // Hand the staging session to a background job: the upload + `docker compose up` continue on the
     // backend even if the client/modal closes. Return the job id immediately so the UI can poll it.

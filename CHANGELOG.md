@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.144] - 2026-06-16
+
+### Added — folder deploy: scan for ALL compose files + a multi-stack deploy plan (backend)
+- New **`POST /compose/deploy-folder-scan`**: after an upload, scans the whole staged tree (recursive, **name-agnostic** — any `*.yml`/`*.yaml` with a `services:` key, so `docker-compose.app.yml`, `infra/stack.yml`, etc. are found, not just the 4 standard names) and returns each compose file's **services, external networks, and whether it builds** (via `docker compose config --format json`). Skips `node_modules`/`.next`/`dist`/`.git`
+- **`POST /compose/deploy-folder-finish`** now accepts an optional **`plan`**: `{ createNets[], stacks: [{ name, composeFile, services[], build, noCache, pull, noDeps }] }`. Each stack deploys as its **own compose project** from **its own directory** (so relative paths/build contexts resolve), with the chosen services + build flags, in order — answering "3 folders, each its own compose"
+- External networks in `createNets[]` are **ensured (idempotent) before** the stacks come up, so `external: true` networks no longer fail the deploy
+- Each plan step (`ensure network …`, `deploy <stack>`) is a tracked **status step** + streams live (builds on v2.0.142/143). Fully backward compatible — no `plan` → the existing single-compose auto-detect path is unchanged
+- The selection **UI lands in the next release** (this is the backend)
+
+---
+
 ## [2.0.143] - 2026-06-16
 
 ### Added — deploy console shows per-step status + a real terminal
