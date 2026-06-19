@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.146] - 2026-06-16
+
+### Added — in-app "?" help for folder deploy
+- Clickable **"?" help badges** in the **Deploy from folder** modal and the **Choose what to deploy** picker open a full step-by-step **guide**: how upload works (local vs remote, the ~50 MB limit), what each picker option does (include/exclude, services, build / no-cache / pull / no-deps, stack name, external networks), the multi-stack "3 folders each with its own compose" flow, and tips (unresolved `${VAR}`, re-deploy, secret-handling caveat)
+- No need to guess what a toggle does — click the badge and read it
+
+---
+
 ## [2.0.145] - 2026-06-16
 
 ### Added — folder deploy: "Choose what to deploy" selection UI

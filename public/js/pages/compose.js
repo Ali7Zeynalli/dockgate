@@ -342,6 +342,53 @@ Router.register('compose', async (content) => {
   // #2-A v2 — upload a project folder FILE BY FILE (staging session) with a live "uploaded n / total"
   // list, then finish → validate → compose up. opts.update = re-upload an existing remote project to
   // its stored folder + rebuild (project name & path locked; optional clean replace).
+  // A clickable "?" help badge (opens the folder-deploy guide). Wire its click after the modal mounts.
+  function helpBadge(id, label) {
+    return `<button type="button" id="${id}" title="How folder deploy works" style="display:inline-flex;align-items:center;justify-content:center;gap:5px;height:20px;padding:0 8px;border-radius:10px;border:1px solid var(--border);background:var(--bg-tertiary);color:var(--text-secondary);font-size:11px;font-weight:600;cursor:pointer;line-height:1">
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700">?</span>${label ? ' ' + label : ''}</button>`;
+  }
+
+  // The full "how to use folder deploy" guide — opened by the "?" badges.
+  function openDeployHelp() {
+    const body = `<div style="font-size:13px;line-height:1.6;max-height:62vh;overflow:auto;padding-right:4px">
+      <p style="margin-top:0;color:var(--text-secondary)">DockGate ships your project folder to the target (your local Docker, or a remote SSH host if one is active in the header) and runs <code>docker compose</code> on it — with a live, per-step terminal so you see exactly what happens.</p>
+
+      <h4 style="margin:14px 0 4px">1 · Pick the folder</h4>
+      <ul style="margin:0;padding-left:18px">
+        <li>Select your project's <b>root folder</b>. Files upload one by one (<code>.git</code> and <code>node_modules</code> are skipped).</li>
+        <li><b>~50 MB limit.</b> If you hit it, exclude build output (<code>.next</code>, <code>dist</code>, large assets) before deploying.</li>
+        <li><b>Local vs remote:</b> with a remote SSH server active in the header, files are uploaded to <i>that server</i> and run there (bind-mounts &amp; builds resolve on the remote). Otherwise they run on local Docker.</li>
+      </ul>
+
+      <h4 style="margin:14px 0 4px">2 · Choose what to deploy</h4>
+      <p style="margin:0 0 6px">After upload, DockGate scans for <b>every</b> compose file (any <code>*.yml</code>/<code>*.yaml</code> that defines <code>services:</code> — including subfolders and non-standard names like <code>docker-compose.app.yml</code>). Each file becomes a card:</p>
+      <ul style="margin:0;padding-left:18px">
+        <li><b>Include checkbox</b> — tick the compose file(s) to deploy. <b>Each file = its own stack</b> (its own compose project), deployed top → bottom.</li>
+        <li><b>Services</b> — tick which to start. All ticked = deploy everything; tick a subset to start only those.</li>
+        <li><b>build</b> — build images from the Dockerfile first (<code>--build</code>).</li>
+        <li><b>no-cache</b> — rebuild from scratch, ignoring the build cache.</li>
+        <li><b>pull</b> — pull the newest images first (<code>--pull always</code>).</li>
+        <li><b>no-deps</b> — start only the chosen services, don't auto-start their <code>depends_on</code>.</li>
+        <li><b>name</b> — the compose <b>project name</b> for this stack (how it shows in the Compose list). Editable.</li>
+      </ul>
+      <p style="margin:6px 0 0"><b>External networks</b> — if a selected compose uses an <code>external:</code> network, it's listed at the top. Leave it ticked and DockGate <b>creates it before</b> the stacks start, so the deploy won't fail with "network not found".</p>
+
+      <h4 style="margin:14px 0 4px">3 · Deploy</h4>
+      <p style="margin:0">Click <b>Deploy</b>. The <b>Deploys</b> console shows each step — ensure network, then each stack — going <code>· pending → ⏳ running → ✓ done / ✗ failed</code>, with the live <code>docker compose</code> output in a real terminal. You can close the modal; the deploy keeps running on the server. Re-open it anytime from <b>Deploys → view log</b>.</p>
+
+      <h4 style="margin:14px 0 4px">Three folders, each with its own compose?</h4>
+      <p style="margin:0">That's the multi-stack case: select all three in the picker, give each a name, tick a shared external network if they use one, and they deploy in order as three separate projects.</p>
+
+      <h4 style="margin:14px 0 4px">Tips</h4>
+      <ul style="margin:0 0 4px;padding-left:18px">
+        <li>"No services parsed" means the file's <code>${'${VAR}'}</code> couldn't resolve (e.g. a missing <code>.env</code>) — it still deploys, just with all services.</li>
+        <li>To re-deploy later, use the stack's <b>Rebuild</b> / <b>Update</b> in the Compose list.</li>
+        <li>Secrets you upload (<code>.env</code>, certs) pass through DockGate — only deploy folders you trust over a trusted network.</li>
+      </ul>
+    </div>`;
+    showModal('Deploy from folder — guide', body, [{ label: 'Got it', className: 'btn btn-primary' }]);
+  }
+
   // After an upload is scanned, let the user PICK which compose file(s) to deploy, which services, and how
   // to build. Each compose file = its own stack (own project). Resolves to a plan, or null if cancelled.
   function chooseDeployPlan(files, defaultProject) {
@@ -372,10 +419,14 @@ Router.register('compose', async (content) => {
       const allNets = [...new Set(files.flatMap(f => f.externalNets || []))];
       const netRows = allNets.length ? `<div class="card" style="padding:8px 10px;margin-bottom:8px"><div style="font-weight:600;font-size:13px;margin-bottom:4px">External networks (created before deploy)</div>${allNets.map(n => `<label style="margin-right:12px;font-size:12px"><input type="checkbox" class="fd-net" value="${escapeHtml(n)}" checked> ${escapeHtml(n)}</label>`).join('')}</div>` : '';
       const body = `<div style="display:flex;flex-direction:column">
-        <div class="text-xs text-muted" style="margin-bottom:8px">Pick which compose file(s) to deploy, which services, and how to build. Each file = its own stack (own project), deployed top → bottom.</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+          <div class="text-xs text-muted">Pick which compose file(s) to deploy, which services, and how to build. Each file = its own stack (own project), deployed top → bottom.</div>
+          ${helpBadge('cdp-help', 'Help')}
+        </div>
         ${netRows}${cards}</div>`;
       const m2 = showModal('Choose what to deploy', body, [{ label: 'Cancel', className: 'btn btn-secondary', onClick: () => settle(null) }]);
       const r2 = m2.overlay;
+      r2.querySelector('#cdp-help').onclick = openDeployHelp;
       r2.querySelector('.modal-close').onclick = () => { settle(null); m2.close(); };
       r2.onclick = (e) => { if (e.target === r2) { settle(null); m2.close(); } };
       const deploy = document.createElement('button');
@@ -411,6 +462,7 @@ Router.register('compose', async (content) => {
     const isUpdate = !!opts.update;
     const remote = isUpdate ? true : isRemoteActive();
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;justify-content:flex-end">${helpBadge('fd-help', 'How this works')}</div>
       <div class="input-group"><label>Project name *</label><input class="input" id="fd-name" placeholder="my-app" value="${isUpdate ? escapeHtml(opts.update) : ''}" ${isUpdate ? 'readonly' : ''}></div>
       ${isUpdate ? `
       <div class="card" style="padding:10px 12px;background:var(--accent-dim)">
@@ -447,6 +499,7 @@ Router.register('compose', async (content) => {
     </div>`;
     const m = showModal(isUpdate ? `Update “${opts.update}” from folder` : 'Deploy from folder', body, []);
     const root = m.overlay;
+    root.querySelector('#fd-help')?.addEventListener('click', openDeployHelp);
     let picked = [];
     let uploadId = null; // active staging session — aborted if the modal closes mid-upload
     root.querySelector('#fd-folder').addEventListener('change', (e) => {
