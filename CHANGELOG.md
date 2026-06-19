@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.153] - 2026-06-16
+
+### Added — Git deploy now has a live console (per-step status + terminal)
+- "Deploy from Git" used to just freeze on **"Cloning & deploying…"** with no feedback. Now it runs as a **background job** with the same **live console** as folder deploy: per-step status (**git clone → transfer to server → docker compose up**, each `· → ⏳ → ✓/✗`) and the real-time output in an **xterm.js terminal** — so you see the clone progress, the SFTP transfer, and the compose output as they happen, and can close the modal while it keeps running
+- `git clone --progress` is **streamed** live (verified); the deploy survives closing the modal and is re-openable from **Deploys → view log**
+- The auto-redeploy **webhook** is still created (copy it from the project ▸ details)
+
+---
+
 ## [2.0.152] - 2026-06-16
 
 ### Added — "Test key ↔ repo" before deploying

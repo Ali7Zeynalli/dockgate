@@ -227,16 +227,8 @@ Router.register('compose', async (content) => {
           up: true,
         });
         m.close();
-        const webhookUrl = `${location.origin}/api/compose/webhook/${encodeURIComponent(project)}?key=${r.webhookSecret}`;
-        const wm = showModal('Deployed from Git ✓', `
-          <div style="display:flex;flex-direction:column;gap:10px">
-            <div class="text-sm">Project <strong>${escapeHtml(project)}</strong> is up (<code>${escapeHtml(r.composeFile)}</code>).</div>
-            <div><div class="detail-label mb-1">Webhook URL (POST → auto re-deploy on push):</div>
-              <pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:11px;padding:10px">${escapeHtml(webhookUrl)}</pre>
-              <button class="btn btn-xs btn-secondary" id="gd-copy-hook">📋 Copy webhook URL</button></div>
-            <div class="text-xs text-muted">Add it as a GitHub webhook (Settings → Webhooks, content-type JSON). Keep the key secret. The webhook re-deploys onto the currently active host.</div>
-          </div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
-        wm.overlay.querySelector('#gd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
+        openDeployLog(r.jobId, project); // live per-step console: clone → transfer → up (with terminal)
+        showToast('Deploying — watch the live console. Auto-redeploy webhook is ready (copy it from the project ▸ details).', 'info', 7000);
         render();
       } catch (e) { showToast(e.message, 'error', 12000); btn.disabled = false; btn.textContent = 'Clone & Deploy'; }
     });
