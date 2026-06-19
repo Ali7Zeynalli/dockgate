@@ -167,6 +167,9 @@ Router.register('compose', async (content) => {
         <div class="input-group" style="flex:1;min-width:120px"><label>Branch</label><input class="input" id="gd-branch" placeholder="main"></div>
         <div class="input-group" style="flex:1;min-width:120px"><label>Subdir (monorepo, optional)</label><input class="input" id="gd-subdir" placeholder="e.g. apps/web"></div>
       </div>
+      <div><button type="button" class="btn btn-secondary btn-sm" id="gd-scan">🔍 Scan repo for compose files</button>
+        <span class="text-xs text-muted" style="margin-left:6px">find the compose files in the repo and pick which folder to deploy</span>
+        <div id="gd-scan-result" style="margin-top:6px"></div></div>
       <div class="input-group"><label>Project name *</label><input class="input" id="gd-name" placeholder="my-app"></div>
       <div class="input-group"><label>Auth (for private repos)</label>
         <select class="select" id="gd-auth"><option value="token">Public / access token</option><option value="sshkey">SSH key (from store)</option></select>
@@ -204,6 +207,30 @@ Router.register('compose', async (content) => {
         const repo = (e.target.value.split('/').pop() || '').replace(/\.git$/, '');
         if (repo) nameInput.value = repo.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
       }
+    });
+    // Scan the repo for compose files → let the user pick which folder to deploy (sets the subdir).
+    root.querySelector('#gd-scan').addEventListener('click', async (e) => {
+      const repoUrl = root.querySelector('#gd-url').value.trim();
+      if (!repoUrl) { showToast('Enter the repository URL first', 'warning'); return; }
+      const useKey = authSel.value === 'sshkey';
+      const keyId = useKey ? (root.querySelector('#gd-key')?.value || '') : '';
+      if (useKey && !keyId) { showToast('Pick an SSH key first', 'warning'); return; }
+      const sb = e.currentTarget; sb.disabled = true; sb.textContent = 'Scanning…';
+      const out = root.querySelector('#gd-scan-result');
+      try {
+        const r = await API.post('/compose/deploy-git-scan', { repoUrl, branch: root.querySelector('#gd-branch').value.trim(), keyId, token: useKey ? '' : root.querySelector('#gd-token').value });
+        const files = r.files || [];
+        if (!files.length) { out.innerHTML = '<span class="text-xs" style="color:var(--warning)">No docker-compose files found in this repo.</span>'; }
+        else {
+          out.innerHTML = `<label class="text-xs text-muted" style="display:block;margin-bottom:2px">Compose file to deploy (sets the subdir):</label>
+            <select class="select" id="gd-scan-pick">${files.map(f => `<option value="${escapeHtml(f.dir === '.' ? '' : f.dir)}">${escapeHtml(f.path)}${f.services && f.services.length ? ' — ' + escapeHtml(f.services.join(', ')) : ''}</option>`).join('')}</select>`;
+          const pick = out.querySelector('#gd-scan-pick');
+          const apply = () => { root.querySelector('#gd-subdir').value = pick.value; };
+          pick.addEventListener('change', apply); apply();
+          showToast(`Found ${files.length} compose file(s) — pick which folder`, 'success', 3000);
+        }
+      } catch (err) { out.innerHTML = `<span class="text-xs" style="color:var(--danger)">${escapeHtml(err.message)}</span>`; }
+      finally { sb.disabled = false; sb.textContent = '🔍 Scan repo for compose files'; }
     });
     const btn = document.createElement('button');
     btn.className = 'btn btn-primary'; btn.textContent = 'Clone & Deploy';

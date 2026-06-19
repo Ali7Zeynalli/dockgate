@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.156] - 2026-06-16
+
+### Added — Git deploy: scan the repo and pick which folder/compose to deploy
+- Deploy-from-Git no longer makes you guess the **Subdir**. A new **🔍 Scan repo for compose files** button does an ephemeral shallow clone and lists **every** compose file in the repo (with its services + whether it builds); pick one and it sets the subdir for you — so monorepos / repos with multiple compose files are obvious instead of blind
+- Backend `POST /compose/deploy-git-scan` (clones to a temp dir, scans with the same name-agnostic detector as folder deploy, then cleans up). Verified live: scanned a public repo and found all 4 compose files with their services
+- (Full multi-stack git deploy — deploy several of the detected compose files as separate stacks, like folder deploy's "Choose what to deploy" — is a follow-up; this ships single-stack pick first.)
+
+---
+
 ## [2.0.155] - 2026-06-16
 
 ### Added — live console for compose lifecycle actions (no more silent freeze)

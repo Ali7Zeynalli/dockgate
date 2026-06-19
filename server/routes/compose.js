@@ -931,6 +931,31 @@ router.post('/deploy-folder-abort', (req, res) => {
 
 // Deploy from a Git repo (#2-B): clone → managed project → up. Stores repo/branch/token + a webhook
 // secret for later re-deploys. Private repos: supply a token (embedded into the https URL; not logged).
+// Scan a git repo for compose files BEFORE deploying — ephemeral shallow clone → list every compose file
+// (with services), so the UI can let the user PICK which folder/compose instead of typing a subdir blind.
+router.post('/deploy-git-scan', async (req, res) => {
+  const { token = '', keyId = '', repoUrl, branch = '' } = req.body || {};
+  try {
+    const isSsh = /^(ssh:\/\/|[\w.-]+@[\w.-]+:)/.test(repoUrl || '');
+    const isHttp = /^https?:\/\//i.test(repoUrl || '');
+    if (!repoUrl || !(isHttp || isSsh)) return res.status(400).json({ error: 'A git URL is required' });
+    if (keyId && !isSsh) return res.status(400).json({ error: 'With an SSH key, use the SSH clone URL (git@host:owner/repo.git)' });
+    const tmp = path.join(STAGING_DIR, 'gitscan-' + crypto.randomBytes(10).toString('hex'));
+    fs.mkdirSync(tmp, { recursive: true });
+    try {
+      const cloneArgs = ['clone', '--depth', '1'];
+      if (branch) cloneArgs.push('--branch', branch);
+      cloneArgs.push(keyId ? repoUrl : gitUrlWithToken(repoUrl, token), tmp);
+      try { await gitWithKey(keyId, cloneArgs); }
+      catch (e) { return res.status(400).json({ error: 'git clone failed: ' + redactToken(e.stderr || e.message, token) }); }
+      const files = findComposeFiles(tmp);
+      const scanned = [];
+      for (const f of files) scanned.push(await scanComposeFile(tmp, f));
+      res.json({ files: scanned });
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  } catch (err) { res.status(500).json({ error: redactToken(err.message, token) }); }
+});
+
 router.post('/deploy-git', async (req, res) => {
   const { token = '' } = req.body || {};
   try {
