@@ -48,6 +48,7 @@ Router.register('compose', async (content) => {
                     ${p.deploySource === 'folder' ? `<button class="btn-sm btn-secondary" data-update="${p.name}" data-rpath="${escapeHtml(p.workingDir || '')}" data-services="${escapeHtml((p.services || []).join(','))}" title="Re-upload the (updated) folder & rebuild (pick which services)">${Icons.refresh} Update</button>` : ''}
                     <button class="btn-icon" title="Edit YAML" data-edit="${p.name}" ${dis}>${Icons.settings}</button>
                     <button class="btn-icon" title="Project files (Dockerfile, .env…)" data-files="${p.name}">${Icons.folder || Icons.compose}</button>
+                    <button class="btn-icon" title="Open a terminal in this project's folder" data-term="${p.name}" data-cwd="${escapeHtml(p.workingDir || '')}">🖥</button>
                     <button class="btn-icon" title="View Services" data-detail="${p.name}">${Icons.eye}</button>
                     <button class="btn-icon text-danger" title="Delete project (containers + files)" data-delproj="${p.name}" data-remote="${p.remote ? 1 : ''}">${Icons.trash}</button>
                   </div></td>
@@ -65,6 +66,7 @@ Router.register('compose', async (content) => {
       document.getElementById('compose-folder')?.addEventListener('click', openFolderDeploy);
       document.getElementById('compose-git')?.addEventListener('click', openGitDeploy);
       content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
+      content.querySelectorAll('[data-term]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectTerminal(btn.dataset.term, btn.dataset.cwd); }));
       content.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote); }));
       content.querySelectorAll('[data-update]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openFolderDeploy({ update: btn.dataset.update, remotePath: btn.dataset.rpath, services: (btn.dataset.services || '').split(',').filter(Boolean) }); }));
       content.querySelectorAll('[data-edit]').forEach(btn => {
@@ -129,7 +131,6 @@ Router.register('compose', async (content) => {
                 <div class="detail-item"><div class="detail-label">Working Directory</div><div class="detail-value mono">${escapeHtml(data.workingDir)}</div></div>
                 <div class="detail-item"><div class="detail-label">Config Files</div><div class="detail-value mono">${escapeHtml(data.configFiles)}</div></div>
               </div>
-              <div style="margin:0 0 12px"><button class="btn btn-sm btn-secondary" id="cd-terminal" title="Open an interactive shell directly in this project's folder on the active server">🖥 Terminal (in this folder)</button></div>
               <div class="table-wrapper">
                 <table>
                   <thead><tr><th>Service</th><th>Container</th><th>State</th></tr></thead>
@@ -147,7 +148,6 @@ Router.register('compose', async (content) => {
               try { const r = await API.post(`/compose/${name}/redeploy`); dm.close(); if (r && r.jobId) openDeployLog(r.jobId, name); render(); }
               catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '↻ Redeploy (pull latest)'; }
             });
-            dm.overlay.querySelector('#cd-terminal')?.addEventListener('click', () => openProjectTerminal(name, data.workingDir));
           } catch (e) { showToast(e.message, 'error'); }
         });
       });

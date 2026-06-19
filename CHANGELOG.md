@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.166] - 2026-06-19
+
+### Changed — per-project Terminal moved to the row action buttons
+- The **🖥 Terminal** (open a shell in the project's folder) is now a button **in the Compose list's action row** (next to Edit YAML / Files / View Services), not buried inside the detail modal — one click from the list. Same behaviour (interactive shell `cd`'d into the project's working dir on the active server); cwd comes from the row's `workingDir`
+
+---
+
 ## [2.0.165] - 2026-06-19
 
 ### Added — File Manager UI: edit, copy/cut/paste, move, folder download, recursive delete, multi-select
