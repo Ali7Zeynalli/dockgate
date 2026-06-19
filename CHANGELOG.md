@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.160] - 2026-06-16
+
+### Changed — clearer deploy console (visual stepper) + honest webhook section
+- **Deploy console is now a visual stepper:** each stage is a numbered/status circle (① pending → ● running, pulsing → ✓ done → ✗ failed) connected by a line, with the running step highlighted — so the sequence is obvious for both Git (`Clone → Transfer → Ensure network → Deploy stack(s)`) and folder (`Upload → Ensure network → Deploy stack(s)`), with the live terminal below
+- **Webhook section is now honest + optional:** collapsed under "Auto-deploy webhook — optional", with a clear note that **manual Redeploy is the alternative**, and a **warning when the URL is localhost/LAN** ("GitHub can't reach it — needs a public URL"). So you know it won't fire on localhost, and that nothing auto-deploys unless you opt in
+
+---
+
 ## [2.0.159] - 2026-06-16
 
 ### Added — "Stage (deploy later)" — upload/clone now, deploy when YOU click

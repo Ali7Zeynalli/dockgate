@@ -108,13 +108,20 @@ Router.register('compose', async (content) => {
               API.get(`/compose/${name}/git`).catch(() => ({ gitManaged: false })),
             ]);
             const webhookUrl = git.gitManaged ? `${location.origin}/api/compose/webhook/${encodeURIComponent(name)}?key=${git.webhookSecret}` : '';
+            const isLocalUrl = /^(localhost|127\.|0\.0\.0\.0|::1|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
             const gitSection = git.gitManaged ? `
               <div class="card mb-2" style="padding:12px;background:var(--accent-dim)">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
                   <div class="text-sm"><strong>Git</strong> — <code>${escapeHtml(git.repoUrl)}</code> @ <code>${escapeHtml(git.branch)}</code>${git.subdir ? ' /' + escapeHtml(git.subdir) : ''}</div>
                   <button class="btn btn-sm btn-primary" id="cd-redeploy">↻ Redeploy (pull latest)</button>
                 </div>
-                <div style="margin-top:8px"><div class="detail-label mb-1">Webhook URL (POST → re-deploy on push)</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:11px;padding:8px;margin:0">${escapeHtml(webhookUrl)}</pre><button class="btn btn-xs btn-secondary" id="cd-copy-hook" style="margin-top:6px">📋 Copy webhook URL</button></div>
+                <details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;font-weight:600">Auto-deploy webhook — optional</summary>
+                  <div class="text-xs text-muted" style="margin:6px 0">Optional. For <strong>automatic</strong> redeploy on every push. Prefer to control it yourself? Just use <strong>Redeploy</strong> above when you want — and ignore this.</div>
+                  ${isLocalUrl ? `<div class="text-xs" style="color:var(--warning);margin-bottom:6px">⚠ This URL points to <code>${escapeHtml(location.host)}</code> — <strong>GitHub can't reach it.</strong> The webhook only fires if DockGate has a <strong>public</strong> URL (a domain/VPS reachable from the internet). On localhost/LAN it will never trigger.</div>` : ''}
+                  <pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:11px;padding:8px;margin:0">${escapeHtml(webhookUrl)}</pre>
+                  <button class="btn btn-xs btn-secondary" id="cd-copy-hook" style="margin-top:6px">📋 Copy webhook URL</button>
+                  <div class="text-xs text-muted" style="margin-top:4px">Add it in the repo (GitHub: Settings → Webhooks, content-type <code>application/json</code>). On push it re-clones + re-applies your deploy plan.</div>
+                </details>
               </div>` : '';
             const dm = showModal(`Compose: ${data.name}`, `
               ${gitSection}
@@ -751,9 +758,10 @@ Router.register('compose', async (content) => {
   // \r progress bars and ANSI colors render correctly. Poll until done; closing just stops polling.
   function openDeployLog(jobId, project) {
     const m = showModal(`Deploy — ${escapeHtml(project)}`, `
-      <div class="text-xs text-muted" id="dl-phase" style="margin-bottom:6px">…</div>
-      <div id="dl-steps" style="display:flex;flex-direction:column;gap:2px;margin-bottom:8px;font-size:12px"></div>
-      <div id="dl-term" style="height:46vh;background:#000;border-radius:6px;overflow:hidden;padding:6px"></div>`,
+      <style>@keyframes dlpulse{0%,100%{opacity:1}50%{opacity:.45}}</style>
+      <div class="text-xs text-muted" id="dl-phase" style="margin-bottom:8px">…</div>
+      <div id="dl-steps" style="margin-bottom:10px"></div>
+      <div id="dl-term" style="height:44vh;background:#000;border-radius:6px;overflow:hidden;padding:6px"></div>`,
       [{ label: 'Close', className: 'btn btn-secondary' }]);
     const root = m.overlay;
     // Real terminal so \r/ANSI render right; fall back to a <pre> if xterm isn't available.
@@ -780,7 +788,16 @@ Router.register('compose', async (content) => {
         if (!document.body.contains(root)) break;
         const phEl = root.querySelector('#dl-phase'), stepsEl = root.querySelector('#dl-steps');
         if (phEl) phEl.textContent = `${job.status} · ${job.phase}`;
-        if (stepsEl) stepsEl.innerHTML = (job.steps || []).map(s => `<div>${deployStepIcon(s.status)} ${escapeHtml(s.label)}</div>`).join('');
+        if (stepsEl) stepsEl.innerHTML = (job.steps || []).map((s, i, arr) => {
+          const done = s.status === 'done', failed = s.status === 'failed', running = s.status === 'running';
+          const color = done ? 'var(--success,#3fb950)' : failed ? 'var(--danger,#f85149)' : running ? 'var(--accent)' : 'var(--border-hover,#888)';
+          const mark = done ? '✓' : failed ? '✗' : running ? '●' : (i + 1);
+          const line = i < arr.length - 1 ? `<div style="width:2px;height:10px;margin-left:10px;background:${done ? 'var(--success,#3fb950)' : 'var(--border)'}"></div>` : '';
+          return `<div style="display:flex;align-items:center;gap:9px">
+              <span style="flex:none;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;background:${color}${running ? ';animation:dlpulse 1s ease-in-out infinite' : ''}">${mark}</span>
+              <span style="font-size:12.5px;${running ? 'font-weight:600' : s.status === 'pending' ? 'opacity:.55' : ''}">${escapeHtml(s.label)}</span>
+            </div>${line}`;
+        }).join('');
         const log = job.log || '';
         if (term) { if (log.length > written) { term.write(log.slice(written)); written = log.length; } }
         else if (pre) { pre.textContent = log; pre.scrollTop = pre.scrollHeight; }
