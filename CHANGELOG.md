@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.158] - 2026-06-16
+
+### Added — Git deploy is now the full folder-deploy experience (multi-stack picker)
+- **Deploy from Git** no longer guesses a single compose file. It now: **clone → scan → "Choose what to deploy" picker** — exactly like Deploy from folder. You see every compose file in the repo and pick which one(s), which services, build/no-cache/pull/no-deps, reorder, and deploy **several as separate stacks** — all over the shared deploy pipeline (transfer to the chosen server folder + live console)
+- Backend: new `POST /deploy-git-prepare` (clone into a staging session + scan) → the existing `POST /deploy-folder-finish` with the plan. `runDeployJob` writes the git metadata (repo + the deployed plan) so **Redeploy / webhook re-clone and re-apply the same multi-stack plan** (`gitRedeployJob`), with a fresh remote folder each time
+- Verified live: prepare cloned a real multi-compose repo and scanned all 4 compose files; finish ran the plan through the pipeline with per-step status
+- The old single-shot `deploy-git` + `deploy-git-scan` endpoints remain for API/back-compat; the UI now uses the unified flow
+
+---
+
 ## [2.0.157] - 2026-06-16
 
 ### Added / Fixed — Git deploy target folder, live transfer progress, DOM password warning

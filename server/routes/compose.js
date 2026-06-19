@@ -734,6 +734,12 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
       job.result = { composeFile };
       logAction({ sourceIp: reqIp, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder', details: { files: u.files, composeFile } });
     }
+    // Git-sourced deploy → remember the repo + the deployed plan so Redeploy can re-clone + re-apply it.
+    if (u.git) {
+      fs.mkdirSync(managedDir(u.project), { recursive: true });
+      const gitComposeFile = plan ? ((plan.stacks[0] && plan.stacks[0].composeFile) || composeFile) : composeFile;
+      fs.writeFileSync(gitMetaPath(u.project), JSON.stringify({ ...u.git, plan: plan || null, deployMode: isRemote ? 'remote' : 'local', remotePath: isRemote ? u.deploy.remotePath : '', composeFile: gitComposeFile }, null, 2), { mode: 0o600 });
+    }
     job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
   } catch (err) {
     if (current) setStep(job, current, 'failed');
@@ -956,6 +962,47 @@ router.post('/deploy-git-scan', async (req, res) => {
   } catch (err) { res.status(500).json({ error: redactToken(err.message, token) }); }
 });
 
+// Step 1 of the unified Git deploy (same pipeline as folder deploy): clone the repo into a staging
+// session, scan it for ALL compose files, and return them so the UI can show the "Choose what to deploy"
+// picker (multi-stack). Step 2 is the shared POST /deploy-folder-finish with the chosen plan.
+router.post('/deploy-git-prepare', async (req, res) => {
+  const { token = '', keyId = '', repoUrl, branch = '', project, target } = req.body || {};
+  try {
+    gcFolderUploads();
+    if (!validateProjectName(project || '')) return res.status(400).json({ error: 'Invalid project name (a-z, 0-9, _, -)' });
+    const isHttp = /^https?:\/\//i.test(repoUrl || '');
+    const isSsh = /^(ssh:\/\/|[\w.-]+@[\w.-]+:)/.test(repoUrl || '');
+    if (!repoUrl || !(isHttp || isSsh)) return res.status(400).json({ error: 'A git URL is required (https://… or git@host:owner/repo.git for an SSH key)' });
+    if (keyId && !isSsh) return res.status(400).json({ error: 'With an SSH key, use the SSH clone URL (git@host:owner/repo.git)' });
+    if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
+      return res.status(409).json({ error: `A project named "${project}" already exists` });
+    }
+    // Resolve the deploy target (local or a chosen remote folder) — same shape as deploy-folder-start.
+    let deploy = { mode: 'local', source: 'git' };
+    if (target && target.mode === 'remote') {
+      const server = remoteCompose.getActiveRemoteServer();
+      if (!server) return res.status(400).json({ error: 'Remote deploy needs a remote SSH server active in the header.' });
+      if (!(await remoteCompose.checkComposeAvailable(server))) return res.status(400).json({ error: 'docker compose (v2) is not available on the remote host — install it there first.' });
+      const remotePath = await remoteCompose.resolveRemotePath(server, (target.remotePath || `~/.dockgate/projects/${project}`));
+      deploy = { mode: 'remote', server, remotePath, source: 'git' };
+    }
+    const uploadId = crypto.randomBytes(16).toString('hex');
+    const dir = path.join(STAGING_DIR, `${project}-${uploadId}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const cloneArgs = ['clone', '--depth', '1'];
+    if (branch) cloneArgs.push('--branch', branch);
+    cloneArgs.push(keyId ? repoUrl : gitUrlWithToken(repoUrl, token), dir);
+    try { await gitWithKey(keyId, cloneArgs); }
+    catch (e) { fs.rmSync(dir, { recursive: true, force: true }); return res.status(400).json({ error: 'git clone failed: ' + redactToken(e.stderr || e.message, token) }); }
+    const files = findComposeFiles(dir);
+    const scanned = [];
+    for (const f of files) scanned.push(await scanComposeFile(dir, f));
+    const secret = crypto.randomBytes(18).toString('hex');
+    folderUploads.set(uploadId, { project, dir, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl, branch, keyId, token, secret } });
+    res.json({ uploadId, files: scanned, target: deploy.mode, remotePath: deploy.remotePath, webhookSecret: secret });
+  } catch (err) { res.status(500).json({ error: redactToken(err.message, token) }); }
+});
+
 router.post('/deploy-git', async (req, res) => {
   const { token = '' } = req.body || {};
   try {
@@ -1009,37 +1056,62 @@ router.get('/:project/git', (req, res) => {
   res.json({ gitManaged: true, repoUrl: meta.repoUrl, branch: meta.branch || 'default', subdir: meta.subdir || '', hasToken: !!meta.token, hasKey: !!meta.keyId, webhookSecret: meta.secret });
 });
 
-// Manual re-deploy (pull latest + up) → live per-step console.
-router.post('/:project/redeploy', (req, res) => {
-  if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+// Re-deploy a Git project: re-clone fresh → re-apply the stored plan/compose (re-transfer for remote) via
+// the shared runDeployJob → live console. Works for single AND multi-stack git deploys.
+function gitRedeployJob(project, reqIp) {
+  const meta = readGitMeta(project);
+  if (!meta) { const e = new Error('Not a Git-managed project'); e.statusCode = 400; throw e; }
   gcDeployJobs();
-  const project = req.params.project, reqIp = req.ip;
+  const dir = path.join(STAGING_DIR, `${project}-${crypto.randomBytes(16).toString('hex')}`);
   const job = { id: crypto.randomBytes(8).toString('hex'), project, status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
   deployJobs.set(job.id, job);
   (async () => {
-    job.steps = [{ id: 'redeploy', label: 'git pull + rebuild', status: 'pending' }];
     try {
-      setStep(job, 'redeploy', 'running'); job.phase = 'redeploy'; jobLog(job, '$ git fetch + reset + up --build');
-      await gitRedeploy(project, (c) => jobStream(job, c));
-      setStep(job, 'redeploy', 'done'); job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
-      logAction({ sourceIp: reqIp, resourceId: project, resourceType: 'compose', resourceName: project, action: 'redeploy' });
+      fs.mkdirSync(dir, { recursive: true });
+      const dm = readDeployMeta(project);
+      const wantRemote = meta.deployMode === 'remote' || (dm && dm.mode === 'remote');
+      let deploy = { mode: 'local', source: 'git' };
+      if (wantRemote) {
+        const server = remoteCompose.getActiveRemoteServer();
+        if (!server) throw Object.assign(new Error('Switch to the server this project was deployed to, then redeploy.'), { statusCode: 400 });
+        const remotePath = await remoteCompose.resolveRemotePath(server, meta.remotePath || (dm && dm.remotePath) || `~/.dockgate/projects/${project}`);
+        deploy = { mode: 'remote', server, remotePath, source: 'git' };
+      }
+      const cloneArgs = ['clone', '--depth', '1', '--progress'];
+      if (meta.branch) cloneArgs.push('--branch', meta.branch);
+      cloneArgs.push(meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token), dir);
+      job.phase = 'clone'; jobLog(job, `$ git clone ${redactToken(meta.repoUrl, meta.token)}\n`);
+      await gitWithKey(meta.keyId, cloneArgs, { onData: (c) => jobStream(job, c) });
+      if (deploy.mode === 'remote') { try { await remoteCompose.removeRemoteDir(deploy.server, deploy.remotePath); } catch (e) {} } // fresh folder
+      const u = { project, dir, files: 1, deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId, token: meta.token, secret: meta.secret }, plan: meta.plan || null };
+      await runDeployJob(job, u, meta.composeFile, true, reqIp); // sets job done/error itself
     } catch (err) {
-      setStep(job, 'redeploy', 'failed'); job.status = 'error'; job.phase = 'error'; job.error = (err.stderr || err.message || 'redeploy failed').toString(); jobLog(job, '✗ ' + job.error); job.finishedAt = Date.now();
+      job.status = 'error'; job.phase = 'error'; job.error = redactToken((err.stderr || err.message || 'redeploy failed').toString(), meta.token); jobLog(job, '✗ ' + job.error); job.finishedAt = Date.now();
     }
   })();
-  res.json({ jobId: job.id, project });
+  return job;
+}
+
+// Manual re-deploy → live per-step console.
+router.post('/:project/redeploy', (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const job = gitRedeployJob(req.params.project, req.ip);
+    logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'redeploy' });
+    res.json({ jobId: job.id, project: req.params.project });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || '').toString() }); }
 });
 
 // Webhook: push-triggered re-deploy. Secured by the per-project secret in ?key= (no session needed).
 // Targets the CURRENTLY ACTIVE daemon (note: switch to the project's host before relying on it).
-router.post('/webhook/:project', async (req, res) => {
+router.post('/webhook/:project', (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(404).json({ error: 'not found' });
     const meta = readGitMeta(req.params.project);
     if (!meta || !meta.secret || req.query.key !== meta.secret) return res.status(403).json({ error: 'invalid webhook key' });
-    const r = await gitRedeploy(req.params.project);
+    const job = gitRedeployJob(req.params.project, req.ip);
     logAction({ req, server: 'local', resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'webhook-redeploy' });
-    res.json({ success: true, ...r });
+    res.json({ success: true, jobId: job.id });
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || '').toString() }); }
 });
 

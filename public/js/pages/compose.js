@@ -163,13 +163,7 @@ Router.register('compose', async (content) => {
     const keyOpts = keys.map(k => `<option value="${k.id}">${escapeHtml(k.name)} (${escapeHtml(k.key_type)})</option>`).join('');
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
       <div class="input-group"><label>Repository URL *</label><input class="input" id="gd-url" placeholder="https://github.com/user/repo"></div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div class="input-group" style="flex:1;min-width:120px"><label>Branch</label><input class="input" id="gd-branch" placeholder="main"></div>
-        <div class="input-group" style="flex:1;min-width:120px"><label>Subdir (monorepo, optional)</label><input class="input" id="gd-subdir" placeholder="e.g. apps/web"></div>
-      </div>
-      <div><button type="button" class="btn btn-secondary btn-sm" id="gd-scan">🔍 Scan repo for compose files</button>
-        <span class="text-xs text-muted" style="margin-left:6px">find the compose files in the repo and pick which folder to deploy</span>
-        <div id="gd-scan-result" style="margin-top:6px"></div></div>
+      <div class="input-group"><label>Branch (optional)</label><input class="input" id="gd-branch" placeholder="main"></div>
       <div class="input-group"><label>Project name *</label><input class="input" id="gd-name" placeholder="my-app"></div>
       ${remote ? `<div class="card" style="padding:9px 12px;background:var(--accent-dim)">
         <div style="font-weight:600;font-size:13px;margin-bottom:6px">Deploy target: remote server ⭐</div>
@@ -189,7 +183,7 @@ Router.register('compose', async (content) => {
         <span class="text-xs text-muted" style="margin-top:4px;display:block">Use the SSH URL <code>git@github.com:owner/repo.git</code>, and add this key's public part to your Git host.</span>
         ${keys.length ? `<button type="button" class="btn btn-secondary btn-sm" id="gd-test" style="margin-top:6px;align-self:flex-start">Test key ↔ repo</button>` : ''}
       </div>
-      <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (clone in DockGate → transfer to the server → up there). ' : ''}DockGate clones the repo and runs <code>docker compose up</code>. You'll get a <strong>webhook URL</strong> to auto-redeploy on push.</div>
+      <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (clone in DockGate → transfer to the server → up there). ' : ''}DockGate clones the repo, then lets you <strong>choose which compose file(s)/services to deploy</strong> (multi-stack, like Deploy from folder). You'll get a <strong>webhook URL</strong> to auto-redeploy on push.</div>
     </div>`;
     const m = showModal('Deploy from Git', body, []);
     const root = m.overlay;
@@ -221,32 +215,8 @@ Router.register('compose', async (content) => {
         if (repo) nameInput.value = repo.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
       }
     });
-    // Scan the repo for compose files → let the user pick which folder to deploy (sets the subdir).
-    root.querySelector('#gd-scan').addEventListener('click', async (e) => {
-      const repoUrl = root.querySelector('#gd-url').value.trim();
-      if (!repoUrl) { showToast('Enter the repository URL first', 'warning'); return; }
-      const useKey = authSel.value === 'sshkey';
-      const keyId = useKey ? (root.querySelector('#gd-key')?.value || '') : '';
-      if (useKey && !keyId) { showToast('Pick an SSH key first', 'warning'); return; }
-      const sb = e.currentTarget; sb.disabled = true; sb.textContent = 'Scanning…';
-      const out = root.querySelector('#gd-scan-result');
-      try {
-        const r = await API.post('/compose/deploy-git-scan', { repoUrl, branch: root.querySelector('#gd-branch').value.trim(), keyId, token: useKey ? '' : root.querySelector('#gd-token').value });
-        const files = r.files || [];
-        if (!files.length) { out.innerHTML = '<span class="text-xs" style="color:var(--warning)">No docker-compose files found in this repo.</span>'; }
-        else {
-          out.innerHTML = `<label class="text-xs text-muted" style="display:block;margin-bottom:2px">Compose file to deploy (sets the subdir):</label>
-            <select class="select" id="gd-scan-pick">${files.map(f => `<option value="${escapeHtml(f.dir === '.' ? '' : f.dir)}">${escapeHtml(f.path)}${f.services && f.services.length ? ' — ' + escapeHtml(f.services.join(', ')) : ''}</option>`).join('')}</select>`;
-          const pick = out.querySelector('#gd-scan-pick');
-          const apply = () => { root.querySelector('#gd-subdir').value = pick.value; };
-          pick.addEventListener('change', apply); apply();
-          showToast(`Found ${files.length} compose file(s) — pick which folder`, 'success', 3000);
-        }
-      } catch (err) { out.innerHTML = `<span class="text-xs" style="color:var(--danger)">${escapeHtml(err.message)}</span>`; }
-      finally { sb.disabled = false; sb.textContent = '🔍 Scan repo for compose files'; }
-    });
     const btn = document.createElement('button');
-    btn.className = 'btn btn-primary'; btn.textContent = 'Clone & Deploy';
+    btn.className = 'btn btn-primary'; btn.textContent = 'Clone & choose what to deploy';
     root.querySelector('#modal-footer').appendChild(btn);
     btn.addEventListener('click', async () => {
       const project = root.querySelector('#gd-name').value.trim();
@@ -255,22 +225,27 @@ Router.register('compose', async (content) => {
       const useKey = authSel.value === 'sshkey';
       const keyId = useKey ? (root.querySelector('#gd-key')?.value || '') : '';
       if (useKey && !keyId) { showToast('Select an SSH key (or create one in Settings → SSH Keys)', 'warning'); return; }
-      btn.disabled = true; btn.textContent = 'Cloning & deploying…';
+      const reset = () => { btn.disabled = false; btn.textContent = 'Clone & choose what to deploy'; };
+      btn.disabled = true; btn.textContent = 'Cloning…';
       try {
-        const r = await API.post('/compose/deploy-git', {
-          project, repoUrl,
-          branch: root.querySelector('#gd-branch').value.trim(),
-          subdir: root.querySelector('#gd-subdir').value.trim(),
-          token: useKey ? '' : root.querySelector('#gd-token').value,
-          keyId,
-          remotePath: remote ? (root.querySelector('#gd-rpath')?.value || '').trim() : '',
-          up: true,
+        // Step 1 — clone + scan (server-side), then the SAME "Choose what to deploy" picker as folder deploy.
+        const target = remote ? { mode: 'remote', remotePath: (root.querySelector('#gd-rpath')?.value || '').trim() } : undefined;
+        const prep = await API.post('/compose/deploy-git-prepare', {
+          project, repoUrl, branch: root.querySelector('#gd-branch').value.trim(),
+          token: useKey ? '' : root.querySelector('#gd-token').value, keyId, target,
         });
+        const files = prep.files || [];
+        if (!files.length) { showToast('No docker-compose files found in the repo', 'error', 9000); API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); reset(); return; }
+        btn.textContent = 'Choose…';
+        const plan = await chooseDeployPlan(files, project);
+        if (!plan) { API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); reset(); return; } // cancelled → drop the clone
+        // Step 2 — shared finish (multi-stack deploy + transfer + live console + git meta for redeploy).
+        const fin = await API.post('/compose/deploy-folder-finish', { uploadId: prep.uploadId, up: true, plan });
         m.close();
-        openDeployLog(r.jobId, project); // live per-step console: clone → transfer → up (with terminal)
-        showToast('Deploying — watch the live console. Auto-redeploy webhook is ready (copy it from the project ▸ details).', 'info', 7000);
+        openDeployLog(fin.jobId, project);
+        showToast('Deploying — watch the live console. Auto-redeploy webhook ready (project ▸ details).', 'info', 7000);
         render();
-      } catch (e) { showToast(e.message, 'error', 12000); btn.disabled = false; btn.textContent = 'Clone & Deploy'; }
+      } catch (e) { showToast(e.message, 'error', 12000); reset(); }
     });
   }
 
