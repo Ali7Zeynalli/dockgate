@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.145] - 2026-06-16
+
+### Added — folder deploy: "Choose what to deploy" selection UI
+- After you upload a folder, DockGate now **scans it and shows a picker** (instead of silently auto-running the first `docker-compose.yml`): every detected compose file is a card you can include/exclude, with **per-service checkboxes** (deploy all or just some), **build / no-cache / pull / no-deps** toggles, and an editable **stack name**
+- **Multiple compose files = multiple stacks** — exactly the "I upload 3 folders, each with its own compose" case: each file deploys as its own project from its own directory, top → bottom, with **external networks created first** (collected from the scan, each with a create checkbox)
+- The deploy runs through the live **per-step status + terminal** from v2.0.142–144, so you watch each network and each stack go green in order
+- Update-from-folder is unchanged (re-uploads the existing remote project); cancelling the picker drops the staged upload
+
+---
+
 ## [2.0.144] - 2026-06-16
 
 ### Added — folder deploy: scan for ALL compose files + a multi-stack deploy plan (backend)

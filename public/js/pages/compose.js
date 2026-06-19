@@ -342,6 +342,71 @@ Router.register('compose', async (content) => {
   // #2-A v2 — upload a project folder FILE BY FILE (staging session) with a live "uploaded n / total"
   // list, then finish → validate → compose up. opts.update = re-upload an existing remote project to
   // its stored folder + rebuild (project name & path locked; optional clean replace).
+  // After an upload is scanned, let the user PICK which compose file(s) to deploy, which services, and how
+  // to build. Each compose file = its own stack (own project). Resolves to a plan, or null if cancelled.
+  function chooseDeployPlan(files, defaultProject) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (v) => { if (settled) return; settled = true; resolve(v); };
+      const cards = files.map((f, i) => {
+        const seg = f.dir === '.' ? '' : (f.dir.split('/').pop() || '');
+        const stackName = (seg ? `${defaultProject}-${seg}` : defaultProject).toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        const svcRows = (f.services || []).length
+          ? f.services.map(s => `<label style="margin-right:12px;font-size:12px"><input type="checkbox" class="fd-svc" data-i="${i}" value="${escapeHtml(s)}" checked> ${escapeHtml(s)}</label>`).join('')
+          : '<span class="text-muted text-xs">no services parsed — all will be deployed</span>';
+        const nets = (f.externalNets || []).length ? `<div class="text-xs text-muted" style="margin-top:2px">external network: ${f.externalNets.map(escapeHtml).join(', ')}</div>` : '';
+        const err = f.parseError ? `<div class="text-xs" style="color:var(--warning);margin-top:2px">⚠ ${escapeHtml(f.parseError)}</div>` : '';
+        return `<div class="card" style="padding:10px;margin-bottom:8px">
+          <label style="font-weight:600;display:flex;gap:8px;align-items:center"><input type="checkbox" class="fd-stack" data-i="${i}" checked> <code>${escapeHtml(f.path)}</code></label>
+          ${err}${nets}
+          <div style="margin:6px 0 6px">${svcRows}</div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px">
+            <label><input type="checkbox" class="fd-build" data-i="${i}" ${f.hasBuild ? 'checked' : ''}> build</label>
+            <label><input type="checkbox" class="fd-nocache" data-i="${i}"> no-cache</label>
+            <label><input type="checkbox" class="fd-pull" data-i="${i}"> pull</label>
+            <label><input type="checkbox" class="fd-nodeps" data-i="${i}"> no-deps</label>
+            <span>name: <input class="input" id="fd-sname-${i}" style="width:170px;display:inline-block;padding:2px 6px" value="${escapeHtml(stackName)}"></span>
+          </div>
+        </div>`;
+      }).join('');
+      const allNets = [...new Set(files.flatMap(f => f.externalNets || []))];
+      const netRows = allNets.length ? `<div class="card" style="padding:8px 10px;margin-bottom:8px"><div style="font-weight:600;font-size:13px;margin-bottom:4px">External networks (created before deploy)</div>${allNets.map(n => `<label style="margin-right:12px;font-size:12px"><input type="checkbox" class="fd-net" value="${escapeHtml(n)}" checked> ${escapeHtml(n)}</label>`).join('')}</div>` : '';
+      const body = `<div style="display:flex;flex-direction:column">
+        <div class="text-xs text-muted" style="margin-bottom:8px">Pick which compose file(s) to deploy, which services, and how to build. Each file = its own stack (own project), deployed top → bottom.</div>
+        ${netRows}${cards}</div>`;
+      const m2 = showModal('Choose what to deploy', body, [{ label: 'Cancel', className: 'btn btn-secondary', onClick: () => settle(null) }]);
+      const r2 = m2.overlay;
+      r2.querySelector('.modal-close').onclick = () => { settle(null); m2.close(); };
+      r2.onclick = (e) => { if (e.target === r2) { settle(null); m2.close(); } };
+      const deploy = document.createElement('button');
+      deploy.className = 'btn btn-primary'; deploy.textContent = 'Deploy';
+      r2.querySelector('#modal-footer').appendChild(deploy);
+      deploy.onclick = () => {
+        const stacks = [];
+        r2.querySelectorAll('.fd-stack').forEach(cb => {
+          if (!cb.checked) return;
+          const i = cb.dataset.i, f = files[i];
+          const all = f.services || [];
+          const chosen = [...r2.querySelectorAll(`.fd-svc[data-i="${i}"]`)].filter(x => x.checked).map(x => x.value);
+          stacks.push({
+            name: (r2.querySelector(`#fd-sname-${i}`).value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+            composeFile: f.path,
+            services: (chosen.length && chosen.length < all.length) ? chosen : [], // [] = all services
+            build: r2.querySelector(`.fd-build[data-i="${i}"]`).checked,
+            noCache: r2.querySelector(`.fd-nocache[data-i="${i}"]`).checked,
+            pull: r2.querySelector(`.fd-pull[data-i="${i}"]`).checked,
+            noDeps: r2.querySelector(`.fd-nodeps[data-i="${i}"]`).checked,
+          });
+        });
+        if (!stacks.length) return showToast('Select at least one compose file', 'warning');
+        if (stacks.some(s => !s.name)) return showToast('Each stack needs a name', 'warning');
+        const createNets = [...r2.querySelectorAll('.fd-net')].filter(x => x.checked).map(x => x.value);
+        settle({ createNets, stacks });
+        m2.close();
+      };
+    });
+  }
+
   function openFolderDeploy(opts = {}) {
     const isUpdate = !!opts.update;
     const remote = isUpdate ? true : isRemoteActive();
@@ -447,9 +512,24 @@ Router.register('compose', async (content) => {
           remaining.textContent = i + 1 < picked.length ? `${picked.length - i - 1} remaining` : 'validating & starting…';
           bar.style.width = `${Math.round(((i + 1) / picked.length) * 100)}%`;
         }
-        // Upload done → hand off to a background job that keeps running even if this modal closes.
+        // Upload done. For a FRESH deploy, scan the tree and let the user pick compose file(s)/services/build.
+        let plan = null;
+        if (!isUpdate) {
+          btn.textContent = 'Scanning…'; remaining.textContent = 'scanning compose files…';
+          let scan = { files: [] };
+          try { scan = await API.post('/compose/deploy-folder-scan', { uploadId }); } catch (e) {}
+          if ((scan.files || []).length) {
+            plan = await chooseDeployPlan(scan.files, project);
+            if (!plan) { // cancelled → drop the staged upload, reset the modal
+              if (uploadId) { API.post('/compose/deploy-folder-abort', { uploadId }).catch(() => {}); uploadId = null; }
+              btn.disabled = false; btn.textContent = 'Deploy'; remaining.textContent = 'cancelled';
+              return;
+            }
+          }
+        }
+        // Hand off to a background job that keeps running even if this modal closes.
         btn.textContent = isUpdate ? 'Rebuilding…' : 'Starting…';
-        const finished = await API.post('/compose/deploy-folder-finish', { uploadId, up: true });
+        const finished = await API.post('/compose/deploy-folder-finish', { uploadId, up: true, plan });
         uploadId = null; // the backend job owns the staging now — aborting on close no longer applies
         const joblog = root.querySelector('#fd-joblog');
         joblog.style.display = 'block';
