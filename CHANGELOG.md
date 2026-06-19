@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.152] - 2026-06-16
+
+### Added — "Test key ↔ repo" before deploying
+- New **`POST /api/ssh-keys/:id/test`** + a **Test** button in the Git-deploy modal (SSH-key mode): runs `git ls-remote` with the selected key against the repo URL — no clone, no side effects — and tells you **"✓ repo reachable"** or **"key not authorized — add the public key"** so you confirm the key works *before* deploying
+- Verified live against real GitHub: an unauthorized key is cleanly classified as auth-failed (and this proves the whole SSH-key transport — materialize → `GIT_SSH_COMMAND` → git-over-SSH — reaches GitHub correctly; an authorized key would clone)
+
+---
+
 ## [2.0.151] - 2026-06-16
 
 ### Added — Git deploy via a stored SSH key + transfer-to-server (Model A)

@@ -176,6 +176,7 @@ Router.register('compose', async (content) => {
       <div class="input-group" id="gd-key-row" style="display:none"><label>SSH key</label>
         ${keys.length ? `<select class="select" id="gd-key">${keyOpts}</select>` : `<div class="text-xs" style="color:var(--warning)">No SSH keys yet — create one in <b>Settings → SSH Keys</b> first.</div>`}
         <span class="text-xs text-muted" style="margin-top:4px;display:block">Use the SSH URL <code>git@github.com:owner/repo.git</code>, and add this key's public part to your Git host.</span>
+        ${keys.length ? `<button type="button" class="btn btn-secondary btn-sm" id="gd-test" style="margin-top:6px;align-self:flex-start">Test key ↔ repo</button>` : ''}
       </div>
       <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (clone in DockGate → transfer to the server → up there). ' : ''}DockGate clones the repo and runs <code>docker compose up</code>. You'll get a <strong>webhook URL</strong> to auto-redeploy on push.</div>
     </div>`;
@@ -187,6 +188,16 @@ Router.register('compose', async (content) => {
       root.querySelector('#gd-token-row').style.display = ssh ? 'none' : '';
       root.querySelector('#gd-key-row').style.display = ssh ? '' : 'none';
       root.querySelector('#gd-url').placeholder = ssh ? 'git@github.com:owner/repo.git' : 'https://github.com/user/repo';
+    });
+    root.querySelector('#gd-test')?.addEventListener('click', async (e) => {
+      const tb = e.currentTarget;
+      const keyId = root.querySelector('#gd-key')?.value;
+      const repoUrl = root.querySelector('#gd-url').value.trim();
+      if (!keyId || !repoUrl) { showToast('Pick a key and enter the SSH repo URL', 'warning'); return; }
+      tb.disabled = true; tb.textContent = 'Testing…';
+      try { await API.post(`/ssh-keys/${keyId}/test`, { repoUrl }); showToast('✓ Key works — repo reachable', 'success', 4000); }
+      catch (err) { showToast(err.message, 'error', 9000); }
+      finally { tb.disabled = false; tb.textContent = 'Test key ↔ repo'; }
     });
     root.querySelector('#gd-url').addEventListener('input', (e) => {
       const nameInput = root.querySelector('#gd-name');

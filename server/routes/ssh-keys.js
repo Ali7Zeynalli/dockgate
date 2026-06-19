@@ -50,6 +50,15 @@ router.put('/:id', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /:id/test — verify the key can authenticate to a repo (git ls-remote).  body: { repoUrl }
+router.post('/:id/test', async (req, res) => {
+  try {
+    if (!stmts.getSshKey.get(req.params.id)) return res.status(404).json({ error: 'SSH key not found' });
+    const r = await sshKeys.testAgainstRepo(req.params.id, (req.body || {}).repoUrl);
+    res.json({ success: true, ...r });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 // DELETE /:id
 router.delete('/:id', (req, res) => {
   try {

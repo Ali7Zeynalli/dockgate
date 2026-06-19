@@ -78,4 +78,24 @@ function materializeToTemp(id) {
   return { path: file, cleanup: () => shred(file), row };
 }
 
-module.exports = { generate, importKey, materializeToTemp, mask };
+// Verify a key can authenticate to a repo over SSH (git ls-remote) — no clone, no side effects.
+async function testAgainstRepo(id, repoUrl) {
+  if (!repoUrl || !/^(ssh:\/\/|[\w.-]+@[\w.-]+:)/.test(repoUrl)) {
+    const e = new Error('Use an SSH URL, e.g. git@github.com:owner/repo.git'); e.statusCode = 400; throw e;
+  }
+  const k = materializeToTemp(id);
+  try {
+    const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: `ssh -i ${k.path} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new` };
+    await execFileAsync('git', ['ls-remote', repoUrl, 'HEAD'], { env, timeout: 20000 });
+    return { ok: true };
+  } catch (e) {
+    const msg = (e.stderr || e.message || '').toString();
+    const auth = /permission denied|publickey|authentication failed|access denied|could not read/i.test(msg);
+    const er = new Error(auth
+      ? 'Key not authorized for this repo — add the public key to the repo (Deploy keys) or a machine account'
+      : ('Could not reach the repo: ' + (msg.split('\n').find(Boolean) || 'unknown error')));
+    er.statusCode = auth ? 403 : 400; throw er;
+  } finally { k.cleanup(); }
+}
+
+module.exports = { generate, importKey, materializeToTemp, testAgainstRepo, mask };
