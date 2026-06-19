@@ -129,6 +129,7 @@ Router.register('compose', async (content) => {
                 <div class="detail-item"><div class="detail-label">Working Directory</div><div class="detail-value mono">${escapeHtml(data.workingDir)}</div></div>
                 <div class="detail-item"><div class="detail-label">Config Files</div><div class="detail-value mono">${escapeHtml(data.configFiles)}</div></div>
               </div>
+              <div style="margin:0 0 12px"><button class="btn btn-sm btn-secondary" id="cd-terminal" title="Open an interactive shell directly in this project's folder on the active server">🖥 Terminal (in this folder)</button></div>
               <div class="table-wrapper">
                 <table>
                   <thead><tr><th>Service</th><th>Container</th><th>State</th></tr></thead>
@@ -146,6 +147,7 @@ Router.register('compose', async (content) => {
               try { const r = await API.post(`/compose/${name}/redeploy`); dm.close(); if (r && r.jobId) openDeployLog(r.jobId, name); render(); }
               catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '↻ Redeploy (pull latest)'; }
             });
+            dm.overlay.querySelector('#cd-terminal')?.addEventListener('click', () => openProjectTerminal(name, data.workingDir));
           } catch (e) { showToast(e.message, 'error'); }
         });
       });
@@ -806,6 +808,50 @@ Router.register('compose', async (content) => {
       }
       try { if (term) term.dispose(); } catch (e) {}
     })();
+  }
+
+  // Interactive shell opened directly in a project's folder, on the active server (remote SSH host, or the
+  // local DockGate container). Reuses the hostterm:* socket channel; cwd is the project's working dir.
+  function openProjectTerminal(project, cwd) {
+    const modalRoot = document.getElementById('modal-root');
+    const m = showModal(`Terminal — ${escapeHtml(project)}`, `
+      <div class="text-xs text-muted" id="pt-status" style="margin-bottom:6px">Connecting…</div>
+      <div class="text-xs text-muted" style="margin-bottom:8px">Folder: <code>${escapeHtml(cwd || '(home)')}</code> · interactive shell on the active server</div>
+      <div id="pt-term" style="height:52vh;background:#000;border-radius:6px;overflow:hidden;padding:6px"></div>`,
+      [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    const host = root.querySelector('#pt-term');
+    const statusEl = root.querySelector('#pt-status');
+    if (typeof Terminal === 'undefined') { if (statusEl) statusEl.textContent = 'Terminal unavailable (xterm not loaded)'; return; }
+    const term = new Terminal({ cursorBlink: true, fontSize: 13, scrollback: 5000, fontFamily: 'var(--font-mono), monospace', theme: { background: '#000000', foreground: '#e8ecf4' } });
+    let fit = null;
+    try { fit = new window.FitAddon.FitAddon(); term.loadAddon(fit); } catch (e) {}
+    term.open(host);
+    try { fit && fit.fit(); } catch (e) {}
+
+    const onData = ({ data }) => term.write(data);
+    const onEnd = () => { term.write('\r\n\x1b[33m— session ended —\x1b[0m\r\n'); if (statusEl) statusEl.textContent = 'Session ended'; };
+    const onErr = ({ error }) => { term.write(`\r\n\x1b[31m— error: ${error || 'unknown'} —\x1b[0m\r\n`); if (statusEl) statusEl.textContent = 'Error: ' + (error || 'unknown'); };
+    const resize = () => { try { fit && fit.fit(); socket.emit('hostterm:resize', { cols: term.cols, rows: term.rows }); } catch (e) {} };
+    const onReady = ({ host: h }) => { if (statusEl) statusEl.textContent = 'Connected to ' + (h || 'host'); resize(); };
+
+    socket.on('hostterm:data', onData).on('hostterm:end', onEnd).on('hostterm:error', onErr).on('hostterm:ready', onReady);
+    term.onData(d => socket.emit('hostterm:input', d));
+    window.addEventListener('resize', resize);
+
+    socket.emit('hostterm:stop');
+    setTimeout(() => { socket.emit('hostterm:start', { cols: term.cols || 80, rows: term.rows || 24, cwd: cwd || '' }); setTimeout(resize, 120); }, 60);
+
+    // Clean up when the modal closes (X, backdrop, or Close button all remove the overlay from modal-root).
+    const obs = new MutationObserver(() => {
+      if (document.body.contains(root)) return;
+      obs.disconnect();
+      socket.emit('hostterm:stop');
+      socket.off('hostterm:data', onData).off('hostterm:end', onEnd).off('hostterm:error', onErr).off('hostterm:ready', onReady);
+      window.removeEventListener('resize', resize);
+      try { term.dispose(); } catch (e) {}
+    });
+    obs.observe(modalRoot, { childList: true });
   }
 
   await render();

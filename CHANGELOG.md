@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.162] - 2026-06-19
+
+### Added — per-project terminal: open an interactive shell right in a project's folder
+- **Compose project detail modal now has a "🖥 Terminal (in this folder)" button.** Click it → an interactive shell opens **in that project's working directory** on the active server: remote project → SSH shell `cd`'d into the remote folder; local project → a PTY in the DockGate container `cd`'d into the working dir. So you can run `docker compose`, `ls`, `git`, edit files, etc. right where the project lives, instead of navigating there by hand
+- Reuses the existing host-terminal socket channel (`hostterm:*`); `hostterm:start` now accepts an optional `cwd` — local validates it's a real dir (else falls back to home), remote `cd`'s into it on open with the path **single-quoted** so it can't break out of the command (injection-safe). Verified end-to-end through the real browser socket (pty starts in the target folder) + injection-safety of the remote `cd` quoting
+
+---
+
 ## [2.0.161] - 2026-06-19
 
 ### Fixed — redeploy no longer wipes remote data, root-owned cleanup, DOM autocomplete warning

@@ -30,7 +30,7 @@ function attachHostTerminal(socket, { dockerService, stmts, logAction }) {
     sshConn = sshStream = ptyProc = null;
   }
 
-  socket.on('hostterm:start', async ({ cols = 80, rows = 24 } = {}) => {
+  socket.on('hostterm:start', async ({ cols = 80, rows = 24, cwd = '' } = {}) => {
     cleanup();
     try {
       const serverId = dockerService.getActiveServerId();
@@ -39,9 +39,12 @@ function attachHostTerminal(socket, { dockerService, stmts, logAction }) {
         // ---- Local: a shell inside the DockGate container ----
         if (!pty) { socket.emit('hostterm:error', { error: 'node-pty is not available in this build' }); return; }
         const shell = fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
+        // Start in the project's folder when one is given and exists, else the home dir.
+        let startCwd = process.env.HOME || '/app';
+        if (cwd && typeof cwd === 'string') { try { if (fs.statSync(cwd).isDirectory()) startCwd = cwd; } catch (e) {} }
         ptyProc = pty.spawn(shell, [], {
           name: 'xterm-color', cols, rows,
-          cwd: process.env.HOME || '/app', env: process.env,
+          cwd: startCwd, env: process.env,
         });
         ptyProc.onData(d => socket.emit('hostterm:data', { data: d }));
         ptyProc.onExit(() => socket.emit('hostterm:end', {}));
@@ -77,6 +80,9 @@ function attachHostTerminal(socket, { dockerService, stmts, logAction }) {
           socket.on('hostterm:resize', ({ cols, rows }) => { try { stream.setWindow(rows || 24, cols || 80, 0, 0); } catch (e) {} });
           logAction({ socket, server: serverId, resourceType: 'server', resourceName: serverId, action: 'hostterm_open', details: { host: s.host } });
           socket.emit('hostterm:ready', { target: serverId, host: s.host });
+          // Open in the project's folder when one is given (ssh2 shell has no cwd option → cd on open;
+          // single-quoted so the path can't break out of the command).
+          if (cwd && typeof cwd === 'string') { const q = "'" + cwd.replace(/'/g, "'\\''") + "'"; try { stream.write('cd ' + q + '\n'); } catch (e) {} }
         });
       });
       conn.on('error', (err) => socket.emit('hostterm:error', { error: err.message }));
