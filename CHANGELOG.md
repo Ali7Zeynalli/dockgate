@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.154] - 2026-06-16
+
+### Changed — "New Compose Project" is now self-explanatory
+- The New Compose Project modal was unclear about what it actually does. It now opens with a one-line explainer: it **writes a docker-compose.yml from scratch and runs `docker compose up -d` on the active host** (named), the guided **+ Add a service** form **appends to the YAML**, and **the YAML box is what gets deployed** — with a pointer to use Deploy-from-folder / Git for existing projects
+- Small label hints (project = the stack name; the YAML = what gets deployed). Edit/template modes are unchanged
+
+---
+
 ## [2.0.153] - 2026-06-16
 
 ### Added — Git deploy now has a live console (per-step status + terminal)

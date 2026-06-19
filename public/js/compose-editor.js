@@ -22,6 +22,17 @@ async function openComposeEditor(existing, opts = {}) {
 
   const ph = 'services:\n  web:\n    image: nginx:alpine\n    restart: unless-stopped\n    ports:\n      - "8080:80"';
 
+  // What this modal does (shown only when authoring a brand-new project) + which host it deploys to.
+  const isNew = !existing && !opts.prefillName;
+  const _active = (typeof Store !== 'undefined') ? Store.get('activeServer') : null;
+  const hostLabel = (_active && _active.type && _active.type !== 'local') ? (_active.label || _active.name || 'the remote server') : 'Local Docker';
+  const intro = isNew ? `
+    <div class="card" style="padding:9px 12px;background:var(--accent-dim);font-size:12px;line-height:1.55">
+      Writes a <b>docker-compose.yml</b> from scratch and runs <code>docker compose up -d</code> on <b>${escapeHtml(hostLabel)}</b>.
+      Build it with the guided <b>+ Add a service</b> form below (it <b>appends to the YAML</b>) or type YAML directly — <b>the YAML box is what gets deployed.</b>
+      <span class="text-muted">Have an existing project? Use <b>Deploy from folder</b> or <b>Git</b> instead.</span>
+    </div>` : '';
+
   // Repeatable rows (mirror the Run modal's guided UX).
   const row = (cells) => `<div class="gs-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center">${cells}<button type="button" class="btn-icon gs-row-del" title="Remove" style="color:var(--danger)">${Icons.trash}</button></div>`;
   const portRow = () => row(`<input class="input gs-p-host" placeholder="host (e.g. 8080)" style="flex:1"><span>:</span><input class="input gs-p-cont" placeholder="container (e.g. 80)" style="flex:1">`);
@@ -30,7 +41,8 @@ async function openComposeEditor(existing, opts = {}) {
 
   const body = `
     <div style="display:flex;flex-direction:column;gap:10px">
-      <div class="input-group"><label>Project name *</label>
+      ${intro}
+      <div class="input-group"><label>Project name *${isNew ? ' <span class="text-muted" style="font-weight:400">(the compose project / stack name)</span>' : ''}</label>
         <input class="input" id="cmp-name" placeholder="my-stack" value="${escapeHtml(prefillName)}" ${existing ? 'readonly' : ''}>
         <span class="text-xs text-muted">Private images (e.g. <code>ghcr.io/...</code>) pull automatically if you've added the registry under <strong>Registries</strong> — no <code>docker login</code> needed.</span></div>
       <details class="card" style="padding:8px 12px">
@@ -64,7 +76,7 @@ async function openComposeEditor(existing, opts = {}) {
           <datalist id="gs-env-keys"></datalist>
         </div>
       </details>
-      <div class="input-group"><label>docker-compose.yml</label>
+      <div class="input-group"><label>docker-compose.yml${isNew ? ' <span class="text-muted" style="font-weight:400">— this is what gets deployed</span>' : ''}</label>
         <textarea id="cmp-yaml" class="input" spellcheck="false" style="font-family:var(--font-mono);min-height:260px;white-space:pre;overflow:auto" placeholder="${escapeHtml(ph)}">${escapeHtml(yaml)}</textarea></div>
     </div>`;
   const title = existing ? `Edit Compose: ${existing}` : (opts.prefillName ? `Deploy template: ${opts.prefillName}` : 'New Compose Project');
