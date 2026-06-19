@@ -11,6 +11,7 @@ const execFileAsync = util.promisify(execFile);
 const { buildCliEnv } = require('../remote-cli-env');
 const remoteCompose = require('../remote-compose');
 const fileManager = require('../file-manager');
+const sshKeys = require('../ssh-keys');
 
 // ---- Git deploy (#2-B) helpers ----
 // Non-interactive git (no credential/host prompts); a token (if any) is embedded into the https URL.
@@ -37,6 +38,17 @@ async function gitRun(args, opts) {
     }
     throw e;
   }
+}
+
+// Run a git command using a named SSH key from the store: materialize it to a temp 0600 file, point
+// GIT_SSH_COMMAND at it, run, then shred. No keyId → ordinary gitRun (token-in-URL / public repo).
+async function gitWithKey(keyId, args, opts) {
+  if (!keyId) return gitRun(args, opts);
+  const k = sshKeys.materializeToTemp(keyId);
+  try {
+    const env = { ...GIT_ENV, GIT_SSH_COMMAND: `ssh -i ${k.path} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new` };
+    return await gitRun(args, { ...opts, env });
+  } finally { k.cleanup(); }
 }
 
 // DockGate-managed compose projects live here (created/edited from the UI).
@@ -846,9 +858,12 @@ router.post('/deploy-folder-abort', (req, res) => {
 router.post('/deploy-git', async (req, res) => {
   const { token = '' } = req.body || {};
   try {
-    const { project, repoUrl, branch = '', subdir = '', up = true } = req.body || {};
+    const { project, repoUrl, branch = '', subdir = '', up = true, keyId = '' } = req.body || {};
     if (!validateProjectName(project || '')) return res.status(400).json({ error: 'Invalid project name (a-z, 0-9, _, -)' });
-    if (!repoUrl || !/^https?:\/\//i.test(repoUrl)) return res.status(400).json({ error: 'A http(s) git URL is required' });
+    const isHttp = /^https?:\/\//i.test(repoUrl || '');
+    const isSsh = /^(ssh:\/\/|[\w.-]+@[\w.-]+:)/.test(repoUrl || '');
+    if (!repoUrl || !(isHttp || isSsh)) return res.status(400).json({ error: 'A git URL is required (https://… or git@host:owner/repo.git for an SSH key)' });
+    if (keyId && !isSsh) return res.status(400).json({ error: 'With an SSH key, use the SSH clone URL (git@host:owner/repo.git)' });
     if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
       return res.status(409).json({ error: `A project named "${project}" already exists` });
     }
@@ -856,8 +871,8 @@ router.post('/deploy-git', async (req, res) => {
     fs.rmSync(dir, { recursive: true, force: true });
     const cloneArgs = ['clone', '--depth', '1'];
     if (branch) cloneArgs.push('--branch', branch);
-    cloneArgs.push(gitUrlWithToken(repoUrl, token), dir);
-    try { await gitRun(cloneArgs); }
+    cloneArgs.push(keyId ? repoUrl : gitUrlWithToken(repoUrl, token), dir);
+    try { await gitWithKey(keyId, cloneArgs); }
     catch (e) { return res.status(400).json({ error: 'git clone failed: ' + redactToken(e.stderr || e.message, token) }); }
 
     const relSub = safeRelPath(subdir);
@@ -866,13 +881,25 @@ router.post('/deploy-git', async (req, res) => {
     if (!composeFile) return res.status(400).json({ error: `No docker-compose.yml found in the repo${relSub ? ' subdir "' + relSub + '"' : ''}` });
 
     const secret = crypto.randomBytes(18).toString('hex');
-    fs.writeFileSync(gitMetaPath(project), JSON.stringify({ repoUrl, branch, token, subdir: relSub, composeFile, secret }, null, 2), { mode: 0o600 });
+    // Store keyId (NOT a token) when a key is used; redeploy/webhook reuse it.
+    fs.writeFileSync(gitMetaPath(project), JSON.stringify({ repoUrl, branch, token: keyId ? '' : token, keyId: keyId || '', subdir: relSub, composeFile, secret }, null, 2), { mode: 0o600 });
     try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: projectDir }); }
     catch (e) { return res.status(400).json({ error: 'Invalid compose file: ' + (e.stderr || e.message) }); }
 
+    // Model A — when a remote SSH server is active, TRANSFER the cloned tree to the server (SFTP) and run
+    // compose THERE (so bind-mounts/build resolve on the remote), instead of the old DOCKER_HOST=ssh path.
     let output = '';
-    if (up) output = await runCompose(project, ['up', '-d'], projectDir);
-    logAction({ req, resourceId: project, resourceType: 'compose', resourceName: project, action: 'deploy-git', details: { repoUrl, branch: branch || 'default' } });
+    const server = remoteCompose.getActiveRemoteServer();
+    if (server) {
+      const serverId = dockerService.getActiveServerId();
+      const remotePath = await remoteCompose.resolveRemotePath(server, `~/.dockgate/projects/${project}`);
+      await remoteCompose.uploadDirToRemote(server, projectDir, remotePath);
+      writeDeployMeta(project, { mode: 'remote', serverId, remotePath, composeFile, source: 'git' });
+      if (up) output = await remoteCompose.runComposeInRemoteDir(server, remotePath, project, ['up', '-d']);
+    } else if (up) {
+      output = await runCompose(project, ['up', '-d'], projectDir);
+    }
+    logAction({ req, server: server ? dockerService.getActiveServerId() : 'local', resourceId: project, resourceType: 'compose', resourceName: project, action: 'deploy-git', details: { repoUrl, branch: branch || 'default', auth: keyId ? 'ssh-key' : (token ? 'token' : 'public') } });
     res.json({ success: true, output, composeFile, webhookSecret: secret });
   } catch (err) { res.status(err.statusCode || 500).json({ error: redactToken(err.message, token) }); }
 });
@@ -883,9 +910,17 @@ async function gitRedeploy(project) {
   if (!meta) { const e = new Error('Not a Git-managed project'); e.statusCode = 400; throw e; }
   const dir = managedDir(project);
   const projectDir = meta.subdir ? path.join(dir, meta.subdir) : dir;
-  await gitRun(['-C', dir, 'fetch', '--depth', '1', 'origin', meta.branch || 'HEAD']);
-  await gitRun(['-C', dir, 'reset', '--hard', 'FETCH_HEAD']);
+  await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', 'origin', meta.branch || 'HEAD']);
+  await gitWithKey(meta.keyId, ['-C', dir, 'reset', '--hard', 'FETCH_HEAD']);
   const composeFile = meta.composeFile || findComposeFile(projectDir);
+  // Remote git project (Model A) → re-transfer the updated tree + rebuild THERE.
+  const dm = readDeployMeta(project);
+  const server = remoteCompose.getActiveRemoteServer();
+  if (dm && dm.mode === 'remote' && server && dm.serverId === dockerService.getActiveServerId()) {
+    await remoteCompose.uploadDirToRemote(server, projectDir, dm.remotePath);
+    const output = await remoteCompose.runComposeInRemoteDir(server, dm.remotePath, project, ['up', '-d', '--build', '--force-recreate']);
+    return { output, composeFile };
+  }
   const output = await runCompose(project, ['up', '-d', '--build'], projectDir);
   return { output, composeFile };
 }
@@ -895,7 +930,7 @@ router.get('/:project/git', (req, res) => {
   if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
   const meta = readGitMeta(req.params.project);
   if (!meta) return res.json({ gitManaged: false });
-  res.json({ gitManaged: true, repoUrl: meta.repoUrl, branch: meta.branch || 'default', subdir: meta.subdir || '', hasToken: !!meta.token, webhookSecret: meta.secret });
+  res.json({ gitManaged: true, repoUrl: meta.repoUrl, branch: meta.branch || 'default', subdir: meta.subdir || '', hasToken: !!meta.token, hasKey: !!meta.keyId, webhookSecret: meta.secret });
 });
 
 // Manual re-deploy (pull latest + up)

@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.151] - 2026-06-16
+
+### Added — Git deploy via a stored SSH key + transfer-to-server (Model A)
+- **Deploy from Git** now has an **Auth** selector: **SSH key (from the store)** or access token. Pick a named key (v2.0.149/150) and clone over SSH with `git@host:owner/repo.git` — no PAT pasted, no token in the URL. The key is materialized to a temp 0600 file only for the clone, then shredded; `keyId` (not a token) is stored in the project's git meta and reused for redeploy/webhook
+- **Remote git deploy now transfers the files to the server (Model A):** when a remote SSH host is active, DockGate clones in its own container, **SFTPs the tree to the host, and runs `docker compose up` there** — so bind-mounts and build contexts resolve on the remote, fixing the old `DOCKER_HOST=ssh` path where the cloned files stayed on DockGate. Redeploy re-transfers + rebuilds. Local deploys are unchanged
+- Backward compatible: token-based and public-repo deploys still work
+
+> **Note:** the SSH-key clone + remote transfer are verified for the key-store mechanics (encrypted-at-rest, 0600, shred), syntax, and the SSH command shape — but the **end-to-end private-repo clone + transfer must be tested live** against a real private repo + remote server.
+
+---
+
 ## [2.0.150] - 2026-06-16
 
 ### Added — SSH Keys management UI (Settings → SSH Keys)

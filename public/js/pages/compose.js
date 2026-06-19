@@ -157,8 +157,11 @@ Router.register('compose', async (content) => {
   }
 
   // #2-B — clone a Git repo → managed project → up. Shows the webhook URL for push-triggered re-deploys.
-  function openGitDeploy() {
+  async function openGitDeploy() {
     const remote = isRemoteActive();
+    let keys = [];
+    try { keys = await API.get('/ssh-keys'); } catch (e) {}
+    const keyOpts = keys.map(k => `<option value="${k.id}">${escapeHtml(k.name)} (${escapeHtml(k.key_type)})</option>`).join('');
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
       <div class="input-group"><label>Repository URL *</label><input class="input" id="gd-url" placeholder="https://github.com/user/repo"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -166,11 +169,25 @@ Router.register('compose', async (content) => {
         <div class="input-group" style="flex:1;min-width:120px"><label>Subdir (monorepo, optional)</label><input class="input" id="gd-subdir" placeholder="e.g. apps/web"></div>
       </div>
       <div class="input-group"><label>Project name *</label><input class="input" id="gd-name" placeholder="my-app"></div>
-      <div class="input-group"><label>Access token (private repos only)</label><input class="input" id="gd-token" type="password" placeholder="GitHub PAT with repo scope — not logged" autocomplete="new-password"></div>
-      <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host.</strong> ' : ''}DockGate clones the repo and runs <code>docker compose up</code> (must contain a docker-compose.yml). You'll get a <strong>webhook URL</strong> to auto-redeploy on push.</div>
+      <div class="input-group"><label>Auth (for private repos)</label>
+        <select class="select" id="gd-auth"><option value="token">Public / access token</option><option value="sshkey">SSH key (from store)</option></select>
+      </div>
+      <div class="input-group" id="gd-token-row"><label>Access token</label><input class="input" id="gd-token" type="password" placeholder="GitHub PAT with repo scope — not logged" autocomplete="new-password"></div>
+      <div class="input-group" id="gd-key-row" style="display:none"><label>SSH key</label>
+        ${keys.length ? `<select class="select" id="gd-key">${keyOpts}</select>` : `<div class="text-xs" style="color:var(--warning)">No SSH keys yet — create one in <b>Settings → SSH Keys</b> first.</div>`}
+        <span class="text-xs text-muted" style="margin-top:4px;display:block">Use the SSH URL <code>git@github.com:owner/repo.git</code>, and add this key's public part to your Git host.</span>
+      </div>
+      <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (clone in DockGate → transfer to the server → up there). ' : ''}DockGate clones the repo and runs <code>docker compose up</code>. You'll get a <strong>webhook URL</strong> to auto-redeploy on push.</div>
     </div>`;
     const m = showModal('Deploy from Git', body, []);
     const root = m.overlay;
+    const authSel = root.querySelector('#gd-auth');
+    authSel.addEventListener('change', () => {
+      const ssh = authSel.value === 'sshkey';
+      root.querySelector('#gd-token-row').style.display = ssh ? 'none' : '';
+      root.querySelector('#gd-key-row').style.display = ssh ? '' : 'none';
+      root.querySelector('#gd-url').placeholder = ssh ? 'git@github.com:owner/repo.git' : 'https://github.com/user/repo';
+    });
     root.querySelector('#gd-url').addEventListener('input', (e) => {
       const nameInput = root.querySelector('#gd-name');
       if (!nameInput.value) {
@@ -185,13 +202,17 @@ Router.register('compose', async (content) => {
       const project = root.querySelector('#gd-name').value.trim();
       const repoUrl = root.querySelector('#gd-url').value.trim();
       if (!project || !repoUrl) { showToast('Repo URL and project name are required', 'warning'); return; }
+      const useKey = authSel.value === 'sshkey';
+      const keyId = useKey ? (root.querySelector('#gd-key')?.value || '') : '';
+      if (useKey && !keyId) { showToast('Select an SSH key (or create one in Settings → SSH Keys)', 'warning'); return; }
       btn.disabled = true; btn.textContent = 'Cloning & deploying…';
       try {
         const r = await API.post('/compose/deploy-git', {
           project, repoUrl,
           branch: root.querySelector('#gd-branch').value.trim(),
           subdir: root.querySelector('#gd-subdir').value.trim(),
-          token: root.querySelector('#gd-token').value,
+          token: useKey ? '' : root.querySelector('#gd-token').value,
+          keyId,
           up: true,
         });
         m.close();
