@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.167] - 2026-06-19
+
+### Changed — update check runs every 5 minutes (was 24h)
+- The sidebar **UPDATE** badge check now runs every **5 minutes** instead of once per 24 hours — both the `setInterval` and the localStorage cache TTL (`dcc_update_last_check`) were 24h, so both moved to 5 min. This makes the badge **self-heal within 5 minutes** after a transient GitHub fetch failure (which previously cached "no update" and hid the badge for a full day), and surfaces a freshly published version much sooner. (The silent-on-fetch-error behaviour still writes a transient "false" but now expires in 5 min, not 24h)
+
+---
+
 ## [2.0.166] - 2026-06-19
 
 ### Changed — per-project Terminal moved to the row action buttons

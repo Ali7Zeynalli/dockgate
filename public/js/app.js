@@ -215,7 +215,7 @@ async function boot() {
 
     // Auto update check — on boot and every 24h / Avtomatik update yoxlama — başlanğıcda və hər 24 saatda bir
     checkForUpdates();
-    setInterval(checkForUpdates, 24 * 60 * 60 * 1000);
+    setInterval(checkForUpdates, 5 * 60 * 1000);
 
     // Server switcher (Local + SSH)
     initServerSwitcher();
@@ -233,10 +233,10 @@ async function boot() {
 // Check for updates and show badge in sidebar / Update yoxla və sidebar-da badge göstər
 async function checkForUpdates() {
   try {
-    // Has 24h passed since last check? / Son yoxlamadan 24 saat keçibmi?
+    // Has 5 min passed since last check? / Son yoxlamadan 5 dəqiqə keçibmi?
     const lastCheck = localStorage.getItem('dcc_update_last_check');
     const now = Date.now();
-    if (lastCheck && (now - parseInt(lastCheck)) < 24 * 60 * 60 * 1000) {
+    if (lastCheck && (now - parseInt(lastCheck)) < 5 * 60 * 1000) {
       // Read from cache / Cache-dən oxu
       const cached = localStorage.getItem('dcc_update_available');
       if (cached === 'true') showUpdateBadge();
