@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.176] - 2026-06-20
+
+### Added — git-branch icon on the project detail modal's Git card
+- The **Git** line in a compose project's detail modal (opened via the "View Services" eye) now shows a small **git-branch icon** before the `repo @ branch` text, so the Git source is visually clear at a glance
+
+---
+
 ## [2.0.175] - 2026-06-20
 
 ### Changed — light theme shifted toward soft sky-blue (less grey)

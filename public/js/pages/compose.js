@@ -114,7 +114,7 @@ Router.register('compose', async (content) => {
             const gitSection = git.gitManaged ? `
               <div class="card mb-2" style="padding:12px;background:var(--accent-dim)">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-                  <div class="text-sm"><strong>Git</strong> — <code>${escapeHtml(git.repoUrl)}</code> @ <code>${escapeHtml(git.branch)}</code>${git.subdir ? ' /' + escapeHtml(git.subdir) : ''}</div>
+                  <div class="text-sm" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:.85"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><strong>Git</strong> — <code>${escapeHtml(git.repoUrl)}</code> @ <code>${escapeHtml(git.branch)}</code>${git.subdir ? ' /' + escapeHtml(git.subdir) : ''}</div>
                   <button class="btn btn-sm btn-primary" id="cd-redeploy">↻ Redeploy (pull latest)</button>
                 </div>
                 <details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;font-weight:600">Auto-deploy webhook — optional</summary>
