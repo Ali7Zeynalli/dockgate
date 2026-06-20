@@ -480,6 +480,17 @@ Router.register('compose', async (content) => {
   }
 
   // The full "how to use folder deploy" guide — opened by the "?" badges.
+  // Explains the per-stack build flags (build / no-cache / pull / no-deps) — opened from the "?" in the picker.
+  function openFlagHelp() {
+    showModal('Build flags — what they mean', `
+      <div style="display:flex;flex-direction:column;gap:11px;font-size:13px;line-height:1.5">
+        <div><strong>build</strong> — Rebuild the image from the <code>Dockerfile</code> before starting (instead of reusing the existing image). <strong>Tick when the code changed.</strong></div>
+        <div><strong>no-cache</strong> — Build <strong>without Docker's cache</strong>, every layer from scratch. A clean but <strong>slow</strong> rebuild — only if the cache is stale. Usually leave off.</div>
+        <div><strong>pull</strong> — Pull the latest <strong>base images</strong> (<code>FROM node:20</code> …) before building/starting. Only for a fresh base image. Usually leave off.</div>
+        <div><strong>no-deps</strong> — Touch <strong>only the selected service(s)</strong> — don't start/recreate their dependencies (database, backend…). <strong>Protects data</strong> — tick it to update one service without restarting the rest.</div>
+      </div>`, [{ label: 'Got it', className: 'btn btn-primary' }]);
+  }
+
   function openDeployHelp() {
     const body = `<div style="font-size:13px;line-height:1.6;max-height:62vh;overflow:auto;padding-right:4px">
       <p style="margin-top:0;color:var(--text-secondary)">DockGate ships your project folder to the target (your local Docker, or a remote SSH host if one is active in the header) and runs <code>docker compose</code> on it — with a live, per-step terminal so you see exactly what happens.</p>
@@ -546,10 +557,11 @@ Router.register('compose', async (content) => {
           ${err}${nets}
           <div style="margin:6px 0 6px">${svcRows}</div>
           <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px">
-            <label><input type="checkbox" class="fd-build" data-i="${i}" ${f.hasBuild ? 'checked' : ''}> build</label>
-            <label><input type="checkbox" class="fd-nocache" data-i="${i}"> no-cache</label>
-            <label><input type="checkbox" class="fd-pull" data-i="${i}"> pull</label>
-            <label><input type="checkbox" class="fd-nodeps" data-i="${i}"> no-deps</label>
+            <label title="Rebuild the image from the Dockerfile before starting — tick when the code changed"><input type="checkbox" class="fd-build" data-i="${i}" ${f.hasBuild ? 'checked' : ''}> build</label>
+            <label title="Build without Docker's cache — a full clean rebuild (slower; rarely needed)"><input type="checkbox" class="fd-nocache" data-i="${i}"> no-cache</label>
+            <label title="Pull the latest base images (FROM …) before building/starting"><input type="checkbox" class="fd-pull" data-i="${i}"> pull</label>
+            <label title="Touch only the selected service(s) — don't restart their dependencies (DB, etc.); protects data"><input type="checkbox" class="fd-nodeps" data-i="${i}"> no-deps</label>
+            <button type="button" class="btn-icon fd-flaghelp" title="What do build / no-cache / pull / no-deps mean?" style="width:20px;height:20px;font-size:12px;flex:none">?</button>
             <span>name: <input class="input" id="fd-sname-${i}" style="width:170px;display:inline-block;padding:2px 6px" value="${escapeHtml(stackName)}"></span>
           </div>
         </div>`;
@@ -570,6 +582,7 @@ Router.register('compose', async (content) => {
       const m2 = showModal('Choose what to deploy', body, [{ label: 'Cancel', className: 'btn btn-secondary', onClick: () => settle(null) }]);
       const r2 = m2.overlay;
       r2.querySelector('#cdp-help').onclick = openDeployHelp;
+      r2.querySelectorAll('.fd-flaghelp').forEach(b => b.onclick = openFlagHelp);
       // Reorder stacks (deploy order = top → bottom). Moving the card moves its checkbox in the DOM,
       // and the Deploy handler reads .fd-stack in DOM order — so the plan order follows.
       const reorder = (card, dir) => {

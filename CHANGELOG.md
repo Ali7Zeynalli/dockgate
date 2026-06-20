@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.179] - 2026-06-20
+
+### Added — "?" help for the build flags in the deploy picker
+- Each stack's flag row in the **"Choose what to deploy"** picker now has a **"?" icon** that opens a short explainer for **build / no-cache / pull / no-deps** (what each does + when to tick it — e.g. *no-deps* = touch only the selected service, don't restart its dependencies, protects data). Each flag also got a **hover tooltip**. Verified in a real browser: the "?" renders per stack and opens the "Build flags — what they mean" modal
+
+---
+
 ## [2.0.178] - 2026-06-20
 
 ### Added — a dedicated "⤓ Pull" button + a git badge in the compose list
