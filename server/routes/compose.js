@@ -1144,6 +1144,56 @@ function gitRedeployJob(project, reqIp) {
   return job;
 }
 
+// Redeploy step 1 (change-aware): clone the latest with the project's STORED git creds, scan its compose
+// files, and diff against the commit we last deployed → which stacks changed. The UI then shows the SAME
+// "Choose what to deploy" picker (only changed stacks pre-selected) and finishes via /deploy-folder-finish.
+router.post('/:project/redeploy-prepare', async (req, res) => {
+  const project = req.params.project;
+  try {
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const meta = readGitMeta(project);
+    if (!meta) return res.status(400).json({ error: 'Not a Git-managed project' });
+    gcFolderUploads();
+    const dm = readDeployMeta(project);
+    const wantRemote = meta.deployMode === 'remote' || (dm && dm.mode === 'remote');
+    let deploy = { mode: 'local', source: 'git' };
+    if (wantRemote) {
+      const server = remoteCompose.getActiveRemoteServer();
+      if (!server) return res.status(400).json({ error: 'Switch to the server this project was deployed to, then redeploy.' });
+      const remotePath = await remoteCompose.resolveRemotePath(server, meta.remotePath || (dm && dm.remotePath) || `~/.dockgate/projects/${project}`);
+      deploy = { mode: 'remote', server, remotePath, source: 'git' };
+    }
+    const uploadId = crypto.randomBytes(16).toString('hex');
+    const dir = path.join(STAGING_DIR, `${project}-${uploadId}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const url = meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token);
+    const cloneArgs = ['clone', '--depth', '1'];
+    if (meta.branch) cloneArgs.push('--branch', meta.branch);
+    cloneArgs.push(url, dir);
+    try { await gitWithKey(meta.keyId, cloneArgs); }
+    catch (e) { fs.rmSync(dir, { recursive: true, force: true }); return res.status(400).json({ error: 'git clone failed: ' + redactToken(e.stderr || e.message, meta.token) }); }
+    const files = findComposeFiles(dir);
+    const scanned = [];
+    for (const f of files) scanned.push(await scanComposeFile(dir, f));
+    // Diff vs the last-deployed commit → changed files → affected stacks (a compose whose folder has a change).
+    const fromSHA = (meta.deployedCommit || '').trim();
+    let toSHA = '', changedFiles = [];
+    try { toSHA = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) {}
+    if (fromSHA && toSHA && fromSHA !== toSHA) {
+      try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', url, fromSHA]); } catch (e) {}
+      try { const o = (await gitRun(['-C', dir, 'diff', '--name-only', fromSHA, toSHA])).stdout.trim(); changedFiles = o ? o.split('\n').map(s => s.trim()).filter(Boolean) : []; } catch (e) {}
+    }
+    const affectedStacks = scanned.filter(s => {
+      const d = s.dir === '.' ? '' : s.dir.replace(/\/+$/, '') + '/';
+      return d === '' ? changedFiles.length > 0 : changedFiles.some(cf => cf.startsWith(d));
+    }).map(s => s.path);
+    const secret = meta.secret || crypto.randomBytes(18).toString('hex');
+    folderUploads.set(uploadId, { project, dir, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId || '', token: meta.keyId ? '' : (meta.token || ''), secret }, redeploy: true });
+    res.json({ uploadId, files: scanned, target: deploy.mode, remotePath: deploy.remotePath,
+      diff: { fromSHA, toSHA, changedFiles, affectedStacks, hasBaseline: !!fromSHA, upToDate: !!(fromSHA && toSHA && fromSHA === toSHA) } });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: (err.message || 'redeploy prepare failed').toString() }); }
+});
+
 // Manual re-deploy → live per-step console.
 router.post('/:project/redeploy', (req, res) => {
   try {

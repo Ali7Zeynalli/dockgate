@@ -144,9 +144,25 @@ Router.register('compose', async (content) => {
             `, [{ label: 'Close', className: 'btn btn-secondary' }]);
             dm.overlay.querySelector('#cd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
             dm.overlay.querySelector('#cd-redeploy')?.addEventListener('click', async (e) => {
-              const b = e.target; b.disabled = true; b.textContent = 'Redeploying…';
-              try { const r = await API.post(`/compose/${name}/redeploy`); dm.close(); if (r && r.jobId) openDeployLog(r.jobId, name); render(); }
-              catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '↻ Redeploy (pull latest)'; }
+              // Change-aware redeploy: pull latest → show what changed → SAME picker (only changed stacks
+              // pre-selected) → deploy the chosen stacks/services. "Stage" = pull only, don't run.
+              const b = e.target; b.disabled = true; b.textContent = 'Pulling…';
+              let prep;
+              try { prep = await API.post(`/compose/${name}/redeploy-prepare`, {}); }
+              catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '↻ Redeploy (pull latest)'; return; }
+              const files = prep.files || [];
+              if (!files.length) { showToast('No docker-compose files found in the repo', 'error', 9000); API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); b.disabled = false; b.textContent = '↻ Redeploy (pull latest)'; return; }
+              dm.close();
+              const d = prep.diff || {};
+              const preselect = d.hasBaseline ? (d.affectedStacks || []) : null; // null → all selected (no baseline yet)
+              const plan = await chooseDeployPlan(files, name, { diff: d, affectedStacks: preselect });
+              if (!plan) { API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); render(); return; }
+              try {
+                const fin = await API.post('/compose/deploy-folder-finish', { uploadId: prep.uploadId, up: plan.up, plan });
+                if (fin && fin.jobId) openDeployLog(fin.jobId, name);
+                showToast(plan.up ? 'Redeploying selected — watch the console.' : 'Pulled & staged. Up each stack when ready.', 'info', 6000);
+                render();
+              } catch (err) { showToast(err.message, 'error', 12000); }
             });
           } catch (e) { showToast(e.message, 'error'); }
         });
@@ -469,21 +485,25 @@ Router.register('compose', async (content) => {
 
   // After an upload is scanned, let the user PICK which compose file(s) to deploy, which services, and how
   // to build. Each compose file = its own stack (own project). Resolves to a plan, or null if cancelled.
-  function chooseDeployPlan(files, defaultProject) {
+  function chooseDeployPlan(files, defaultProject, opts = {}) {
     return new Promise((resolve) => {
       let settled = false;
       const settle = (v) => { if (settled) return; settled = true; resolve(v); };
+      const aware = Array.isArray(opts.affectedStacks);   // change-aware redeploy: only changed stacks pre-checked
+      const affected = new Set(opts.affectedStacks || []);
+      const isOn = (f) => !aware || affected.has(f.path);
       const cards = files.map((f, i) => {
+        const on = isOn(f);
         const seg = f.dir === '.' ? '' : (f.dir.split('/').pop() || '');
         const stackName = (seg ? `${defaultProject}-${seg}` : defaultProject).toLowerCase().replace(/[^a-z0-9_-]/g, '-');
         const svcRows = (f.services || []).length
-          ? f.services.map(s => `<label style="margin-right:12px;font-size:12px"><input type="checkbox" class="fd-svc" data-i="${i}" value="${escapeHtml(s)}" checked> ${escapeHtml(s)}</label>`).join('')
+          ? f.services.map(s => `<label style="margin-right:12px;font-size:12px"><input type="checkbox" class="fd-svc" data-i="${i}" value="${escapeHtml(s)}" ${on ? 'checked' : ''}> ${escapeHtml(s)}</label>`).join('')
           : '<span class="text-muted text-xs">no services parsed — all will be deployed</span>';
         const nets = (f.externalNets || []).length ? `<div class="text-xs text-muted" style="margin-top:2px">external network: ${f.externalNets.map(escapeHtml).join(', ')}</div>` : '';
         const err = f.parseError ? `<div class="text-xs" style="color:var(--warning);margin-top:2px">⚠ ${escapeHtml(f.parseError)}</div>` : '';
         return `<div class="card fd-card" style="padding:10px;margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-            <label style="font-weight:600;display:flex;gap:8px;align-items:center"><input type="checkbox" class="fd-stack" data-i="${i}" checked> <code>${escapeHtml(f.path)}</code></label>
+            <label style="font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" class="fd-stack" data-i="${i}" ${on ? 'checked' : ''}> <code>${escapeHtml(f.path)}</code>${aware ? (affected.has(f.path) ? ' <span style="font-size:11px;color:var(--accent);font-weight:600">● changed</span>' : ' <span style="font-size:11px;color:var(--text-muted);font-weight:400">no change · untouched</span>') : ''}</label>
             <span style="display:flex;gap:2px;flex:none"><button type="button" class="btn-icon fd-up" title="Move up (deploy earlier)">▲</button><button type="button" class="btn-icon fd-down" title="Move down (deploy later)">▼</button></span>
           </div>
           ${err}${nets}
@@ -499,12 +519,17 @@ Router.register('compose', async (content) => {
       }).join('');
       const allNets = [...new Set(files.flatMap(f => f.externalNets || []))];
       const netRows = allNets.length ? `<div class="card" style="padding:8px 10px;margin-bottom:8px"><div style="font-weight:600;font-size:13px;margin-bottom:4px">External networks (created before deploy)</div>${allNets.map(n => `<label style="margin-right:12px;font-size:12px"><input type="checkbox" class="fd-net" value="${escapeHtml(n)}" checked> ${escapeHtml(n)}</label>`).join('')}</div>` : '';
+      // Change-aware redeploy: show what changed since the last deploy + a note that unticked stacks stay untouched.
+      const sh = s => (s || '').slice(0, 7);
+      const diffBox = (opts.diff && (opts.diff.changedFiles || []).length)
+        ? `<div class="card" style="padding:8px 10px;margin-bottom:8px;background:var(--accent-dim)"><div style="font-weight:600;font-size:13px;margin-bottom:4px">📦 Changed since last deploy (${sh(opts.diff.fromSHA)} → ${sh(opts.diff.toSHA)})</div><div style="font-family:var(--font-mono,monospace);font-size:11px;max-height:120px;overflow:auto;opacity:.9">${opts.diff.changedFiles.slice(0, 60).map(escapeHtml).join('<br>')}${opts.diff.changedFiles.length > 60 ? '<br>…' : ''}</div><div class="text-xs text-muted" style="margin-top:4px">Only the changed stack(s) are pre-selected — unticked stacks keep running, untouched (data preserved).</div></div>`
+        : (aware && opts.diff && opts.diff.upToDate ? `<div class="card" style="padding:8px 10px;margin-bottom:8px"><span class="text-sm">✓ Already at the latest commit — nothing new pulled. Tick a stack below to re-deploy it anyway.</span></div>` : '');
       const body = `<div style="display:flex;flex-direction:column">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
           <div class="text-xs text-muted">Pick which compose file(s) to deploy, which services, and how to build. Each file = its own stack (own project), deployed top → bottom.</div>
           ${helpBadge('cdp-help', 'Help')}
         </div>
-        ${netRows}${cards}</div>`;
+        ${diffBox}${netRows}${cards}</div>`;
       const m2 = showModal('Choose what to deploy', body, [{ label: 'Cancel', className: 'btn btn-secondary', onClick: () => settle(null) }]);
       const r2 = m2.overlay;
       r2.querySelector('#cdp-help').onclick = openDeployHelp;

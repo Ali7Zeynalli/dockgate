@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.177] - 2026-06-20
+
+### Added — change-aware Redeploy: pull → pick → deploy only what changed (no more rebuilding everything)
+- **Redeploy no longer auto-rebuilds the whole project.** Clicking **Redeploy** now: pulls the latest → shows **what changed** → opens the **same "Choose what to deploy" picker** as the first deploy, but **pre-selects only the stack(s) whose files changed**. Unchanged stacks (e.g. a backend with its database) start **unticked → "no change · untouched"**, so their containers + data are never recreated. Tick/untick freely; the final call is yours
+- **Pull-only is built in:** in that picker, **"Stage (deploy later)"** = pull the new files but **don't run anything** — then `Up` each stack from the list when you're ready. **"Deploy now"** = deploy just the selected stacks (`--no-deps`-friendly)
+- Works the **same for Git and Folder** projects (reuses the shared picker + `deploy-folder-finish`); new `POST /:project/redeploy-prepare` clones with the project's stored creds, scans all compose files, and diffs against the last-deployed commit to map changed files → affected stacks
+- Verified end-to-end against a real git repo (backend/ + frontend/ each its own compose): a frontend-only change → `redeploy-prepare` returns `affectedStacks: [frontend]` only; the browser picker opens with **frontend ☑ "● changed"** and **backend ☐ "no change · untouched"**. First redeploy after upgrading has no baseline yet → all stacks selected (baseline recorded for next time)
+
+---
+
 ## [2.0.176] - 2026-06-20
 
 ### Added — git-branch icon on the project detail modal's Git card
