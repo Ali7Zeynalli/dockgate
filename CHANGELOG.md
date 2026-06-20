@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.185] - 2026-06-21
+
+### Reverted — Compose row actions are visible buttons again (the "⋯ More" menu felt more confusing)
+- Per feedback, the per-project action buttons are back **visible in the row** (Up · Down · Restart · Rebuild · Update · Edit · Files · Terminal · View · Delete) instead of tucked behind a "⋯ More" dropdown — having to open a menu to reach them was more confusing, not less. All handlers are unchanged. The git-branch / **UPDATE** badges, the tabbed Project hub, the "+ Deploy ▾" dropdown, and the live-deploy banner all stay. Verified in a real browser: all nine row actions render and View still opens the hub
+
+---
+
 ## [2.0.184] - 2026-06-21
 
 ### Added — "UPDATE" badge on git projects that have newer commits
