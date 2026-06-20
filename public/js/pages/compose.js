@@ -155,21 +155,41 @@ Router.register('compose', async (content) => {
                   <div class="text-xs text-muted" style="margin-top:4px">Add it in the repo (GitHub: Settings → Webhooks, content-type <code>application/json</code>). On push it re-clones + re-applies your deploy plan.</div>
                 </details>
               </div>` : '';
-            const dm = showModal(`Compose: ${data.name}`, `
-              ${gitSection}
-              <div class="detail-grid mb-2">
-                <div class="detail-item"><div class="detail-label">Working Directory</div><div class="detail-value mono">${escapeHtml(data.workingDir)}</div></div>
-                <div class="detail-item"><div class="detail-label">Config Files</div><div class="detail-value mono">${escapeHtml(data.configFiles)}</div></div>
+            const svcCsv = escapeHtml((data.services || []).map(s => s.name).join(','));
+            const dm = showModal(`${escapeHtml(data.name)}`, `
+              <div class="hub-tabs">
+                <button class="hub-tab active" data-tab="overview">Overview</button>
+                ${git.gitManaged ? '<button class="hub-tab" data-tab="source">Source</button>' : ''}
+                <button class="hub-tab" data-tab="tools">Tools</button>
+                <button class="hub-tab" data-tab="danger">Danger</button>
               </div>
-              <div class="table-wrapper">
-                <table>
+              <div class="hub-panel" data-panel="overview">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+                  <button class="btn btn-sm btn-primary" data-hubaction="up">${Icons.play} Up</button>
+                  <button class="btn btn-sm btn-secondary" data-hubaction="down">${Icons.stop} Down</button>
+                  <button class="btn btn-sm btn-secondary" data-hubaction="restart">${Icons.restart} Restart</button>
+                  <button class="btn btn-sm btn-secondary" data-hubaction="rebuild" data-services="${svcCsv}">${Icons.layers} Rebuild</button>
+                </div>
+                <div class="detail-grid mb-2">
+                  <div class="detail-item"><div class="detail-label">Working Directory</div><div class="detail-value mono">${escapeHtml(data.workingDir)}</div></div>
+                  <div class="detail-item"><div class="detail-label">Config Files</div><div class="detail-value mono">${escapeHtml(data.configFiles)}</div></div>
+                </div>
+                <div class="table-wrapper"><table>
                   <thead><tr><th>Service</th><th>Container</th><th>State</th></tr></thead>
-                  <tbody>${data.services.map(s => `<tr>
-                    <td class="td-name">${escapeHtml(s.name)}</td>
-                    <td class="td-mono text-sm">${escapeHtml(s.containerName)}</td>
-                    <td><span class="badge badge-${s.state}">${s.status}</span></td>
-                  </tr>`).join('')}</tbody>
-                </table>
+                  <tbody>${data.services.map(s => `<tr><td class="td-name">${escapeHtml(s.name)}</td><td class="td-mono text-sm">${escapeHtml(s.containerName)}</td><td><span class="badge badge-${s.state}">${s.status}</span></td></tr>`).join('')}</tbody>
+                </table></div>
+              </div>
+              ${git.gitManaged ? `<div class="hub-panel" data-panel="source" style="display:none">${gitSection}</div>` : ''}
+              <div class="hub-panel" data-panel="tools" style="display:none">
+                <div style="display:flex;flex-direction:column;gap:8px;max-width:440px">
+                  <button class="btn btn-secondary" id="hub-edit" style="justify-content:flex-start;gap:8px">${Icons.settings} Edit YAML (the compose file)</button>
+                  <button class="btn btn-secondary" id="hub-files" style="justify-content:flex-start;gap:8px">${Icons.folder || Icons.compose} Project files (Dockerfile, .env, configs…)</button>
+                  <button class="btn btn-secondary" id="hub-term" style="justify-content:flex-start;gap:8px">🖥 Terminal (shell in this project's folder)</button>
+                </div>
+              </div>
+              <div class="hub-panel" data-panel="danger" style="display:none">
+                <div class="text-sm text-muted" style="margin-bottom:10px">Permanently remove this project — stop &amp; remove its containers and (optionally) its files/volumes.</div>
+                <button class="btn btn-danger" id="hub-delete">${Icons.trash} Delete project…</button>
               </div>
             `, [{ label: 'Close', className: 'btn btn-secondary' }]);
             dm.overlay.querySelector('#cd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
@@ -228,6 +248,24 @@ Router.register('compose', async (content) => {
               const obs = new MutationObserver(() => { if (!document.body.contains(pm.overlay)) { obs.disconnect(); if (!consumed) API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); } });
               obs.observe(document.getElementById('modal-root'), { childList: true });
             });
+            // Hub: tab switching + Overview quick-actions + Tools launchers + Danger delete.
+            // All tools reuse the existing (proven) functions — nothing removed, just one organized place.
+            dm.overlay.querySelectorAll('.hub-tab').forEach(t => t.addEventListener('click', () => {
+              dm.overlay.querySelectorAll('.hub-tab').forEach(x => x.classList.toggle('active', x === t));
+              dm.overlay.querySelectorAll('.hub-panel').forEach(p => p.style.display = (p.dataset.panel === t.dataset.tab) ? '' : 'none');
+            }));
+            dm.overlay.querySelectorAll('[data-hubaction]').forEach(b => b.addEventListener('click', async () => {
+              const action = b.dataset.hubaction;
+              const run = async (qs = '') => { try { const r = await API.post(`/compose/${name}/${action}${qs}`); if (r && r.jobId) { dm.close(); openDeployLog(r.jobId, name); render(); } else { showToast('Success'); render(); } } catch (e) { showToast(e.message, 'error'); } };
+              if (action === 'rebuild') { const svc = await chooseServices((b.dataset.services || '').split(',').filter(Boolean), name, 'Rebuild'); if (svc === null) return; run(svc.length ? `?services=${encodeURIComponent(svc.join(','))}` : ''); }
+              else if (action === 'down') showConfirm('Compose Down', `Stop and remove all containers in "${name}"?`, () => run(), true);
+              else if (action === 'restart') showConfirm('Compose Restart', `Restart "${name}"? Services will be briefly interrupted.`, () => run(), true);
+              else run();
+            }));
+            dm.overlay.querySelector('#hub-edit')?.addEventListener('click', () => { dm.close(); openComposeEditor(name); });
+            dm.overlay.querySelector('#hub-files')?.addEventListener('click', () => { dm.close(); openProjectFiles(name); });
+            dm.overlay.querySelector('#hub-term')?.addEventListener('click', () => { dm.close(); openProjectTerminal(name, data.workingDir); });
+            dm.overlay.querySelector('#hub-delete')?.addEventListener('click', () => { dm.close(); openDeleteProject(name, !!data.remote); });
           } catch (e) { showToast(e.message, 'error'); }
         });
       });

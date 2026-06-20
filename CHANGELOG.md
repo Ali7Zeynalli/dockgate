@@ -2,6 +2,18 @@
 
 ---
 
+## [2.0.181] - 2026-06-21
+
+### Changed — one tabbed "Project hub" modal instead of scattered modals (Phase 2 of the cleanup)
+- Opening a Compose project (View services) now shows **one organized modal with tabs** — **Overview · Source · Tools · Danger** — so it's clear what a project can do, all in one place (no more "which modal has what?"):
+  - **Overview:** status + services table + working dir/config files + quick **Up · Down · Restart · Rebuild**
+  - **Source** (git projects): the repo line, **⤓ Pull**, **↻ Redeploy…**, and the auto-deploy webhook
+  - **Tools:** **Edit YAML · Project files · Terminal** (these launch the existing, unchanged editors/browser/terminal — nothing was rewritten or removed)
+  - **Danger:** **Delete project**
+- All actions reuse the existing functions/handlers, so **no functionality was lost or changed** — just consolidated. Verified end-to-end in a real browser: all four tabs render, tab-switching works, the Source tab keeps Pull/Redeploy wired, and the Tools buttons launch their tools
+
+---
+
 ## [2.0.180] - 2026-06-20
 
 ### Changed — Compose list rows decluttered: Up · Down · "⋯ More" menu (Phase 1 of the cleanup)

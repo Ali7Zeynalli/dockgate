@@ -276,6 +276,22 @@ tbody td {
 .row-menu-pop .rmi.text-danger { color: var(--danger); }
 .row-menu-pop .rmi svg { width: 15px; height: 15px; flex: none; opacity: .85; }
 
+/* Project "hub" modal tabs (Overview / Source / Tools / Danger) */
+.hub-tabs { display: flex; gap: 2px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.hub-tab {
+  padding: 8px 15px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.hub-tab:hover { color: var(--text-primary); }
+.hub-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
 /* ============ CHECKBOX ============ */
 .checkbox {
   width: 16px;
