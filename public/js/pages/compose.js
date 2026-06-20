@@ -482,44 +482,65 @@ Router.register('compose', async (content) => {
     } catch (e) { showToast(e.message, 'error'); }
   }
   async function openProjectFiles(project) {
-    // Open the modal immediately with a loading state, then fetch ONCE (remote = SFTP, can take a couple seconds).
-    let data = { files: [], composeFile: null };
-    const m = showModal(`Files — ${escapeHtml(project)}`, `<div class="text-xs text-muted mb-2">Project files (Dockerfile, .dockerignore, .env, configs…). On a remote-deployed project these are the files on the server. The compose file is also editable from here.</div><div id="pf-list" style="max-height:58vh;overflow-y:auto"><div class="text-muted text-sm" style="padding:14px">Loading…</div></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    // Lazy, ONE-folder-at-a-time browser (like the File Manager page) — fast even for projects with
+    // node_modules / data-volume dirs, because it never recursively walks the whole tree over SFTP.
+    let cwd = '';          // project-relative folder we're viewing
+    let composeFile = null;
+    const m = showModal(`Files — ${escapeHtml(project)}`, `
+      <div class="text-xs text-muted mb-2">Project files (Dockerfile, .env, configs…). Click a folder to open it. The compose file is editable here.</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <button class="btn btn-xs btn-secondary" id="pf-up" title="Up one level">⬆</button>
+        <div id="pf-crumb" style="flex:1;font-family:var(--font-mono,monospace);font-size:12px;overflow-x:auto;white-space:nowrap">/</div>
+        <button class="btn btn-xs btn-secondary" id="pf-refresh" title="Refresh">${Icons.refresh}</button>
+      </div>
+      <div id="pf-list" style="max-height:54vh;overflow-y:auto"><div class="text-muted text-sm" style="padding:14px">Loading…</div></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
     const root = m.overlay;
     const newBtn = document.createElement('button'); newBtn.className = 'btn btn-secondary btn-sm'; newBtn.textContent = '+ New file';
     root.querySelector('#modal-footer').prepend(newBtn);
     newBtn.addEventListener('click', () => {
-      const p = prompt('New file path (relative to the project), e.g. Dockerfile or conf/app.conf');
-      if (p && p.trim()) openFileEditor(project, p.trim(), '', refresh);
+      const name = prompt('New file name (in the current folder), e.g. Dockerfile or app.conf');
+      if (!name || !name.trim()) return;
+      const full = cwd ? cwd + '/' + name.trim().replace(/^\/+/, '') : name.trim().replace(/^\/+/, '');
+      openFileEditor(project, full, '', list);
     });
-    function rowHtml(f) {
-      const depth = f.path.split('/').length - 1;
-      const name = f.path.split('/').pop();
-      const isCompose = f.path === data.composeFile;
-      const acts = f.type === 'file' ? `
-        <button class="btn btn-xs btn-secondary" data-edit-file="${escapeHtml(f.path)}">Edit</button>
-        ${isCompose ? '' : `<button class="btn btn-xs btn-ghost text-danger" data-del-file="${escapeHtml(f.path)}">${Icons.trash}</button>`}` : '';
-      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;padding-left:${depth * 16}px">
-        <span>${fileIcon(f, data.composeFile)}</span>
-        <span class="td-mono text-sm" style="flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(name)}${isCompose ? ' <span class="badge badge-running" style="font-size:9px">compose</span>' : ''}</span>
-        <span class="text-xs text-muted">${f.type === 'file' ? formatBytes(f.size) : ''}</span>${acts}</div>`;
+    const parentOf = (p) => { if (!p) return ''; const i = p.lastIndexOf('/'); return i < 0 ? '' : p.slice(0, i); };
+    root.querySelector('#pf-up').addEventListener('click', () => { cwd = parentOf(cwd); list(); });
+    root.querySelector('#pf-refresh').addEventListener('click', list);
+    function rowHtml(e) {
+      const full = cwd ? cwd + '/' + e.name : e.name;
+      if (e.type === 'dir') {
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0"><span>📁</span><a href="#" data-cd="${escapeHtml(e.name)}" class="td-mono text-sm" style="flex:1;text-decoration:none;cursor:pointer">${escapeHtml(e.name)}/</a></div>`;
+      }
+      const isCompose = full === composeFile;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+        <span>${fileIcon({ type: 'file', path: full }, composeFile)}</span>
+        <span class="td-mono text-sm" style="flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(e.name)}${isCompose ? ' <span class="badge badge-running" style="font-size:9px">compose</span>' : ''}</span>
+        <span class="text-xs text-muted">${formatBytes(e.size)}</span>
+        <button class="btn btn-xs btn-secondary" data-edit-file="${escapeHtml(full)}">Edit</button>
+        ${isCompose ? '' : `<button class="btn btn-xs btn-ghost text-danger" data-del-file="${escapeHtml(full)}">${Icons.trash}</button>`}
+      </div>`;
     }
-    async function refresh() {
+    async function list() {
       const el = root.querySelector('#pf-list');
       if (!el) return;
-      try { data = await API.get(`/compose/${project}/tree`); }
+      el.innerHTML = '<div class="text-muted text-sm" style="padding:14px">Loading…</div>';
+      let d;
+      try { d = await API.get(`/compose/${project}/dir?sub=${encodeURIComponent(cwd)}`); }
       catch (e) { if (root.querySelector('#pf-list')) el.innerHTML = `<div class="text-danger text-sm" style="padding:14px">${escapeHtml(e.message)}</div>`; return; }
       if (!root.querySelector('#pf-list')) return; // modal closed during the fetch
-      el.innerHTML = data.files.length ? data.files.map(rowHtml).join('') : '<div class="text-muted text-sm" style="padding:14px">No files.</div>';
-      el.querySelectorAll('[data-edit-file]').forEach(b => b.addEventListener('click', () => editFileFromTree(project, b.dataset.editFile, refresh)));
+      composeFile = d.composeFile;
+      const crumb = root.querySelector('#pf-crumb'); if (crumb) crumb.textContent = '/' + cwd;
+      el.innerHTML = (d.entries || []).length ? d.entries.map(rowHtml).join('') : '<div class="text-muted text-sm" style="padding:14px">Empty folder.</div>';
+      el.querySelectorAll('[data-cd]').forEach(a => a.addEventListener('click', (ev) => { ev.preventDefault(); cwd = cwd ? cwd + '/' + a.dataset.cd : a.dataset.cd; list(); }));
+      el.querySelectorAll('[data-edit-file]').forEach(b => b.addEventListener('click', () => editFileFromTree(project, b.dataset.editFile, list)));
       el.querySelectorAll('[data-del-file]').forEach(b => b.addEventListener('click', () => {
         showConfirm('Delete file', `Delete "${escapeHtml(b.dataset.delFile)}"?`, async () => {
-          try { await API.del(`/compose/${project}/filecontent?path=${encodeURIComponent(b.dataset.delFile)}`); showToast('Deleted'); refresh(); }
+          try { await API.del(`/compose/${project}/filecontent?path=${encodeURIComponent(b.dataset.delFile)}`); showToast('Deleted'); list(); }
           catch (e) { showToast(e.message, 'error'); }
         }, true);
       }));
     }
-    refresh();
+    list();
   }
 
   // #2-A v2 — upload a project folder FILE BY FILE (staging session) with a live "uploaded n / total"

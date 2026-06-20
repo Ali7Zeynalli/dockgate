@@ -430,7 +430,7 @@ router.put('/:project/file', async (req, res) => {
 
 // Files that must never be read/written/deleted via the file API (token leak / git internals).
 function isProtectedProjectFile(rel) {
-  return rel === '.dockgate-git.json' || rel === '.git' || rel.startsWith('.git/');
+  return rel === '.dockgate-git.json' || rel === '.dockgate-deploy.json' || rel === '.git' || rel.startsWith('.git/');
 }
 
 // Resolve a project-relative path to an absolute path INSIDE the managed dir, or null if it escapes
@@ -486,6 +486,37 @@ router.get('/:project/tree', async (req, res) => {
     };
     walk(dir, '');
     res.json({ project: req.params.project, files: out, composeFile: findComposeFile(dir) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Lazy, ONE-folder listing for the project Files browser (fast: a single readdir, no recursive walk).
+// `sub` is a project-relative folder path (jailed). Mirrors the standalone File Manager's listDir speed.
+router.get('/:project/dir', async (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const sub = (req.query.sub || '').toString();
+    const relSub = sub ? safeRelPath(sub) : '';
+    if (sub && !relSub) return res.status(400).json({ error: 'Invalid path' });
+    const rc = remoteProjectCtx(req.params.project);
+    if (rc) {
+      const abs = rc.remotePath.replace(/\/+$/, '') + (relSub ? '/' + relSub : '');
+      const { entries } = await fileManager.listDir(rc.server, abs);
+      const out = entries.filter(e => !isProtectedProjectFile(relSub ? relSub + '/' + e.name : e.name))
+        .map(e => ({ name: e.name, type: e.type, size: e.size }));
+      return res.json({ project: req.params.project, sub: relSub, entries: out, composeFile: rc.composeFile, remote: true });
+    }
+    const base = managedDir(req.params.project);
+    if (!fs.existsSync(base)) return res.status(404).json({ error: 'No DockGate-managed files for this project' });
+    const dir = relSub ? path.join(base, relSub) : base;
+    if (dir !== base && !dir.startsWith(base + path.sep)) return res.status(400).json({ error: 'Invalid path' });
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return res.status(404).json({ error: 'Not a folder' });
+    const out = fs.readdirSync(dir).map(name => {
+      const rel = relSub ? relSub + '/' + name : name;
+      if (isProtectedProjectFile(rel)) return null;
+      let st; try { st = fs.statSync(path.join(dir, name)); } catch (e) { return null; }
+      return { name, type: st.isDirectory() ? 'dir' : 'file', size: st.isDirectory() ? 0 : st.size };
+    }).filter(Boolean).sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : (a.type === 'dir' ? -1 : 1));
+    res.json({ project: req.params.project, sub: relSub, entries: out, composeFile: findComposeFile(base) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

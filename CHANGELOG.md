@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.1] - 2026-06-21
+
+### Fixed — project Files browser is fast now (lazy, one folder at a time)
+- The per-project **Files** modal was slow because it **recursively walked the whole project tree** over SFTP in one shot (a separate SSH round-trip per subfolder), happily descending into `node_modules`, `.git`, and runtime data-volume dirs (`postgres_data`, …) — thousands of round-trips. The standalone File Manager (Activity → Files) was fast because it lists **one folder at a time** (`listDir`); the project browser used the recursive `listTree`. Now the project Files modal uses the **same lazy, one-folder approach**: it lists only the current folder (a single `readdir`), you click into folders to go deeper, and an **⬆ Up** button + breadcrumb navigate — so it's fast even with a huge `node_modules` or data dir
+- New `GET /compose/:project/dir?sub=<relpath>` (jailed to the project folder, traversal-guarded) backs it; Edit / Delete / + New file still work (now scoped to the current folder). DockGate's own `.dockgate-deploy.json` / `.dockgate-git.json` meta files are hidden from the browser. Verified end-to-end: top level lists folders without walking `node_modules` (800 files untouched), clicking `backend/` shows its `Dockerfile`, Up returns to root, and `../../etc` traversal is rejected
+
+---
+
 ## [2.1.0] - 2026-06-21
 
 ### Versioning — moving to 2.1.x
