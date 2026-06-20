@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.172] - 2026-06-20
+
+### Changed — light theme is now a soft blue-grey (Slate) too, no harsh white/black
+- Reworked the **light theme** to match the new Slate family: **no pure white** anywhere and **no near-black text**, so it's far easier on the eyes. The page is a soft cool off-white (`#e9eef5`), card/modal surfaces are slate-50 (`#f8fafc`) — slightly lighter than the page for gentle depth — the sidebar a touch deeper (`#e3e9f1`), inputs stay white for clarity, text moves to slate tones (`#1e293b` / `#475569` / `#64748b`), and borders/glass pick up a slate tint. The blue accent (`#2563eb`) is unchanged. Light and dark now share one cohesive blue-grey look
+- Verified in a real browser (forced `data-theme="light"`): page `#e9eef5`, text slate-800, soft and readable
+
+---
+
 ## [2.0.171] - 2026-06-20
 
 ### Changed — dark theme is now a softer blue-grey (Slate), easier on the eyes

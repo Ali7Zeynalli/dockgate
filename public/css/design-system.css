@@ -104,21 +104,21 @@
 
 /* ============ LIGHT THEME ============ */
 [data-theme="light"] {
-  /* Background Colors */
-  --bg-primary: #f5f5f7;
-  --bg-secondary: #ffffff;
-  --bg-card: #ffffff;
-  --bg-card-hover: #f0f0f2;
-  --bg-elevated: #ffffff;
-  --bg-modal: #ffffff;
-  --bg-input: #f5f5f7;
-  --bg-sidebar: #f5f5f7;
-  --bg-header: rgba(245, 245, 247, 0.75);
+  /* Background Colors — Slate (blue-grey) light palette: soft cool off-whites, no pure white, easier on the eyes */
+  --bg-primary: #e9eef5;            /* page — soft cool off-white (not pure white) */
+  --bg-secondary: #f8fafc;
+  --bg-card: #f8fafc;               /* card surfaces (slate-50, not #fff) */
+  --bg-card-hover: #eef2f7;
+  --bg-elevated: #f8fafc;
+  --bg-modal: #f8fafc;
+  --bg-input: #ffffff;              /* small surface — white for clarity */
+  --bg-sidebar: #e3e9f1;            /* a touch darker than the page for subtle depth */
+  --bg-header: rgba(233, 238, 245, 0.8);
 
   /* Text Colors */
-  --text-primary: #1a1a1a;
-  --text-secondary: #52525b;
-  --text-muted: #a1a1aa;
+  --text-primary: #1e293b;          /* slate-800 — softer than near-black */
+  --text-secondary: #475569;        /* slate-600 */
+  --text-muted: #64748b;            /* slate-500 */
   --text-inverse: #ffffff;
 
   /* Accent */
@@ -127,9 +127,9 @@
   --accent-dim: rgba(37, 99, 235, 0.1);
   --accent-glow: rgba(37, 99, 235, 0.2);
 
-  /* Borders */
-  --border: rgba(0, 0, 0, 0.1);
-  --border-hover: rgba(0, 0, 0, 0.2);
+  /* Borders — slate-tinted */
+  --border: rgba(15, 23, 42, 0.1);
+  --border-hover: rgba(15, 23, 42, 0.18);
   --border-active: rgba(37, 99, 235, 0.4);
 
   /* Shadows */
@@ -139,7 +139,7 @@
   --shadow-glow: 0 0 24px rgba(37, 99, 235, 0.15);
 
   /* Glass */
-  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-bg: rgba(248, 250, 252, 0.85);
   --glass-blur: blur(24px);
   --glass-border: rgba(0, 0, 0, 0.06);
 
