@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.173] - 2026-06-20
+
+### Changed — light theme: soften the still-too-white sidebar, header & cards
+- The light **sidebar and header were still near-white** — they use `--glass-bg` (not `--bg-sidebar`), which was `rgba(248,250,252,0.85)`. Toned it to a soft slate `rgba(223,230,240,0.88)` so the sidebar/header read as gentle blue-grey panels, not bright white
+- **Card surfaces toned down** too (the stat cards, etc.): `--bg-card`/`--bg-secondary` `#f8fafc → #eef2f8`, hover `#e5ebf3`, elevated/modal `#f2f5fa` (kept a touch lighter to pop above cards). Sidebar var `#dfe6f0`, header `rgba(223,230,240,0.85)`. Inputs stay white for clarity
+- Net: nothing in light mode is bright white anymore — a calm, cohesive blue-grey with subtle depth (sidebar/header < page < cards). Verified in a real browser: sidebar/header `rgba(223,230,240,0.88)`, cards `#eef2f8`
+
+---
+
 ## [2.0.172] - 2026-06-20
 
 ### Changed — light theme is now a soft blue-grey (Slate) too, no harsh white/black
