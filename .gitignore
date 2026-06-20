@@ -27,3 +27,6 @@ Thumbs.db
 
 # large walkthrough recordings (mp4 kept, webm sources ignored)
 *.webm
+
+# Playwright MCP test artifacts
+.playwright-mcp/
