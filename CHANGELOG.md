@@ -2,6 +2,17 @@
 
 ---
 
+## [2.0.169] - 2026-06-20
+
+### Fixed/Changed — deploy log console: no more black screen on re-open, bigger + readable
+- **Fixed the black screen.** Re-opening a *finished* deploy's "view log" used to show the log for a split second then go blank — the poll loop wrote the log, broke, and **immediately disposed the terminal**. Now the terminal is disposed **only when the modal is actually closed** (X / backdrop / Close), so a finished job's log stays on screen
+- **Bigger, more readable console.** The modal is now wide (`min(1080px, 95vw)`) with a **58vh** terminal (was a narrow ~600px box with 44vh), slightly larger font, and 50k-line scrollback
+- **New toolbar:** **⛶ Fullscreen** toggle (fills the viewport + refits), **⬇ Download** the whole log as `<project>-deploy.log`, and **📋 Copy** the log — so long logs are read/searched/saved instead of squinting
+- Verified end-to-end in a real browser: re-opened a finished job → terminal stays alive (`#dl-term .xterm` present), log visible, modal 1080px, all three toolbar buttons present
+- Note: logs still live in memory (30-min TTL, cleared on restart). **Persisting deploy logs to SQLite** (survive restart/TTL + a deploys history) is a separate follow-up
+
+---
+
 ## [2.0.168] - 2026-06-20
 
 ### Added — redeploy now auto-shows what changed (which files were pulled)

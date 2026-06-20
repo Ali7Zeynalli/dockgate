@@ -759,34 +759,63 @@ Router.register('compose', async (content) => {
   // Re-openable live log for a deploy job — per-step status + a real terminal (xterm) so docker's
   // \r progress bars and ANSI colors render correctly. Poll until done; closing just stops polling.
   function openDeployLog(jobId, project) {
+    const modalRoot = document.getElementById('modal-root');
     const m = showModal(`Deploy — ${escapeHtml(project)}`, `
       <style>@keyframes dlpulse{0%,100%{opacity:1}50%{opacity:.45}}</style>
-      <div class="text-xs text-muted" id="dl-phase" style="margin-bottom:8px">…</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <div class="text-xs text-muted" id="dl-phase" style="flex:1;min-width:120px">…</div>
+        <button class="btn btn-xs btn-secondary" id="dl-copy" type="button" title="Copy the whole log">📋 Copy</button>
+        <button class="btn btn-xs btn-secondary" id="dl-dl" type="button" title="Download the log as a .txt file">⬇ Download</button>
+        <button class="btn btn-xs btn-secondary" id="dl-full" type="button" title="Fullscreen">⛶</button>
+      </div>
       <div id="dl-steps" style="margin-bottom:10px"></div>
-      <div id="dl-term" style="height:44vh;background:#000;border-radius:6px;overflow:hidden;padding:6px"></div>`,
+      <div id="dl-term" style="height:58vh;background:#000;border-radius:6px;overflow:hidden;padding:6px"></div>`,
       [{ label: 'Close', className: 'btn btn-secondary' }]);
     const root = m.overlay;
+    const modalEl = root.querySelector('.modal');
+    if (modalEl) { modalEl.style.width = 'min(1080px, 95vw)'; modalEl.style.maxWidth = '95vw'; }
     // Real terminal so \r/ANSI render right; fall back to a <pre> if xterm isn't available.
-    let term = null, fit = null, pre = null, written = 0;
+    let term = null, fit = null, pre = null, written = 0, fullLog = '';
     const host = root.querySelector('#dl-term');
+    const refit = () => { try { fit && fit.fit(); } catch (e) {} };
     try {
       if (typeof Terminal === 'undefined') throw new Error('no xterm');
-      term = new Terminal({ convertEol: true, disableStdin: true, fontSize: 12, scrollback: 9000, fontFamily: 'var(--font-mono), monospace', theme: { background: '#000000', foreground: '#e8ecf4' } });
+      term = new Terminal({ convertEol: true, disableStdin: true, fontSize: 12.5, scrollback: 50000, fontFamily: 'var(--font-mono), monospace', theme: { background: '#000000', foreground: '#e8ecf4' } });
       try { fit = new window.FitAddon.FitAddon(); term.loadAddon(fit); } catch (e) {}
-      term.open(host);
-      try { fit.fit(); } catch (e) {}
+      term.open(host); refit();
     } catch (e) {
       pre = document.createElement('pre');
       pre.className = 'logs-viewer';
-      pre.style.cssText = 'margin:0;height:100%;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-word';
+      pre.style.cssText = 'margin:0;height:100%;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word';
       host.style.padding = '0';
       host.appendChild(pre);
     }
+    window.addEventListener('resize', refit);
+
+    // Toolbar: copy / download the full log, and a fullscreen toggle.
+    root.querySelector('#dl-copy')?.addEventListener('click', () => { navigator.clipboard?.writeText(fullLog).then(() => showToast('Log copied', 'success', 2000)); });
+    root.querySelector('#dl-dl')?.addEventListener('click', () => {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([fullLog], { type: 'text/plain' }));
+      a.download = `${project}-deploy.log`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+    let full = false;
+    root.querySelector('#dl-full')?.addEventListener('click', () => {
+      full = !full;
+      if (modalEl) {
+        if (full) { Object.assign(modalEl.style, { position: 'fixed', inset: '10px', width: 'auto', maxWidth: 'none', height: 'auto', maxHeight: 'none', margin: '0' }); host.style.height = 'calc(100vh - 200px)'; }
+        else { Object.assign(modalEl.style, { position: '', inset: '', width: 'min(1080px, 95vw)', maxWidth: '95vw', height: '', maxHeight: '', margin: '' }); host.style.height = '58vh'; }
+      }
+      setTimeout(refit, 60);
+    });
+
+    // Poll: stream the log live; STOP polling when the job finishes but KEEP the terminal alive so the log
+    // stays readable. (Previously the terminal was disposed the moment polling stopped → black screen on re-open.)
+    let polling = true;
     (async () => {
-      while (document.body.contains(root)) {
+      while (polling && document.body.contains(root)) {
         let job;
         try { job = await API.get(`/compose/deploy-job/${jobId}`); }
-        catch (e) { const p = root.querySelector('#dl-phase'); if (p) p.textContent = 'job expired'; break; }
+        catch (e) { const p = root.querySelector('#dl-phase'); if (p) p.textContent = 'job expired (log no longer available)'; break; }
         if (!document.body.contains(root)) break;
         const phEl = root.querySelector('#dl-phase'), stepsEl = root.querySelector('#dl-steps');
         if (phEl) phEl.textContent = `${job.status} · ${job.phase}`;
@@ -800,14 +829,22 @@ Router.register('compose', async (content) => {
               <span style="font-size:12.5px;${running ? 'font-weight:600' : s.status === 'pending' ? 'opacity:.55' : ''}">${escapeHtml(s.label)}</span>
             </div>${line}`;
         }).join('');
-        const log = job.log || '';
+        const log = job.log || ''; fullLog = log;
         if (term) { if (log.length > written) { term.write(log.slice(written)); written = log.length; } }
         else if (pre) { pre.textContent = log; pre.scrollTop = pre.scrollHeight; }
         if (job.status !== 'running') { renderDeploys(); break; }
         await new Promise(r => setTimeout(r, 1000));
       }
-      try { if (term) term.dispose(); } catch (e) {}
     })();
+
+    // Dispose ONLY when the modal actually closes (X / backdrop / Close) — never on a finished-job break.
+    const obs = new MutationObserver(() => {
+      if (document.body.contains(root)) return;
+      obs.disconnect(); polling = false;
+      window.removeEventListener('resize', refit);
+      try { if (term) term.dispose(); } catch (e) {}
+    });
+    obs.observe(modalRoot, { childList: true });
   }
 
   // Interactive shell opened directly in a project's folder, on the active server (remote SSH host, or the
