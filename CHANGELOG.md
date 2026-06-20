@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.170] - 2026-06-20
+
+### Changed — softer main content background (less eye strain)
+- The main content area was near-black (`--bg-primary: #09090b`), which is harsh against light text. Lifted it **~3%** to `#101013` (rgb 9,9,11 → 16,16,19) so it's easier on the eyes. The **sidebar stays darker** (its own `--bg-sidebar` is unchanged) for a subtle, pleasant contrast; the light theme and other surfaces are untouched
+
+---
+
 ## [2.0.169] - 2026-06-20
 
 ### Fixed/Changed — deploy log console: no more black screen on re-open, bigger + readable

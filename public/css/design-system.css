@@ -7,7 +7,7 @@
 
 :root {
   /* Background Colors */
-  --bg-primary: #09090b;
+  --bg-primary: #101013; /* main content area — lifted ~3% off near-black (#09090b) to ease eye strain; sidebar stays darker via --bg-sidebar */
   --bg-secondary: #121214;
   --bg-card: #18191c;
   --bg-card-hover: #212226;
