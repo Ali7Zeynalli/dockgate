@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.0] - 2026-06-21
+
+### Versioning — moving to 2.1.x
+- Jumped to **v2.1.0** to mark the milestone after the Compose-section redesign (tabbed Project hub, visible row actions, live-deploy banner, "+ Deploy ▾", git **UPDATE** badge) and the **change-aware Git redeploy** (pull → diff → deploy only what changed) + dedicated **⤓ Pull**, plus the **full remote File Manager**, **per-project Terminal**, and the **Slate blue-grey theme** for light & dark
+- **New version scheme:** the patch number runs **0 → 99**, then rolls into the next minor — e.g. `2.1.0 → 2.1.1 → … → 2.1.99 → 2.2.0`
+
+---
+
 ## [2.0.185] - 2026-06-21
 
 ### Reverted — Compose row actions are visible buttons again (the "⋯ More" menu felt more confusing)
