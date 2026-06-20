@@ -2,6 +2,13 @@
 
 ---
 
+## [2.1.2] - 2026-06-21
+
+### Reverted — View modal is plain again (no tabs)
+- The "View services" modal dropped the **Overview / Source / Tools / Danger tab bar** — it's back to just showing the project: the **Git card** (repo · ⤓ Pull · ↻ Redeploy · webhook, for git projects) + **Working Directory / Config Files** + the **services table**. The Tools/Danger tabs were redundant now that Edit / Files / Terminal / Delete are visible buttons in the row again. Verified in a real browser: no tabs, services table + working dir/config show, git card's Pull/Redeploy still wired
+
+---
+
 ## [2.1.1] - 2026-06-21
 
 ### Fixed — project Files browser is fast now (lazy, one folder at a time)
