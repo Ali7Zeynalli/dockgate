@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.175] - 2026-06-20
+
+### Changed — light theme shifted toward soft sky-blue (less grey)
+- Pushed the light surfaces from neutral grey-blue toward a clearer **sky-blue tint** (more blue, less grey): page `#e2e8f1 → #e0e9f6`, card/secondary `#e8edf5 → #e8eff9`, hover `#d9e4f4`, elevated/modal `#eff4fc`, sidebar/header glass `rgba(214,222,234,.9) → rgba(206,220,240,.92)`, sidebar var `#ccdcf0`. The blue channel now leads the red by ~22–34, so it reads blue rather than grey. Verified in a real browser: page `#e0e9f6`, sidebar `rgba(206,220,240,.92)`
+
+---
+
 ## [2.0.174] - 2026-06-20
 
 ### Changed — light theme a touch deeper (calmer)
