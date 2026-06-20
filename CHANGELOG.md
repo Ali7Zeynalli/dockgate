@@ -2,6 +2,13 @@
 
 ---
 
+## [2.1.3] - 2026-06-21
+
+### Added — "How SSH keys work" explainer in Settings → SSH Keys
+- The SSH Keys section now has a collapsible **"ⓘ How SSH keys work — generate / import / export / use"** guide explaining the whole flow: **① create** (Generate ed25519/RSA, or Import an existing private key — public key + fingerprint derived automatically), **② add the public key** to your Git host (one repo → Deploy keys, many repos → a machine-user account), **③ use it** in Deploy-from-Git (Auth = SSH key, SSH URL, Test key↔repo), and **export/security** (only the public key is copyable; the private key is never shown/downloadable — AES-256-GCM at rest, only a temp 0600 file during a deploy, then shredded, never leaves the server). Verified in a real browser
+
+---
+
 ## [2.1.2] - 2026-06-21
 
 ### Reverted — View modal is plain again (no tabs)
