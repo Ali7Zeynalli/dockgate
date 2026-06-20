@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.168] - 2026-06-20
+
+### Added — redeploy now auto-shows what changed (which files were pulled)
+- When you **Redeploy** a Git-managed compose project, the live console now **automatically prints what was pulled** — a `📦 Changes pulled (oldSHA → newSHA)` block listing the changed files (`✚ added · ✎ modified · 🗑 deleted`) plus a `N files changed, +X −Y` stat — **before** the deploy steps run. No extra button; it's part of the redeploy.
+- How: each Git deploy now records the **deployed commit SHA** in the project's git metadata (`.dockgate-git.json` → `deployedCommit`). On the next redeploy DockGate clones the new HEAD, fetches the previously-deployed commit's tree, and runs `git diff --name-status` / `--shortstat` between them — streamed into the deploy log. Works for local **and** remote deploys (the diff is computed in DockGate's staging clone, independent of the deploy target), over both SSH-key and token auth.
+- Graceful: the **first** redeploy after upgrading just records the baseline ("changed files will show from the next redeploy"); already-latest shows "nothing new pulled"; a force-push/rebase that removes the old commit falls back to a clear note. Best-effort — never blocks the deploy. This SHA tracking is also the foundation for a future **Rollback**.
+
+---
+
 ## [2.0.167] - 2026-06-19
 
 ### Changed — update check runs every 5 minutes (was 24h)

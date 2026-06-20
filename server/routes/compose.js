@@ -751,7 +751,10 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
     if (u.git) {
       fs.mkdirSync(managedDir(u.project), { recursive: true });
       const gitComposeFile = plan ? ((plan.stacks[0] && plan.stacks[0].composeFile) || composeFile) : composeFile;
-      fs.writeFileSync(gitMetaPath(u.project), JSON.stringify({ ...u.git, plan: plan || null, deployMode: isRemote ? 'remote' : 'local', remotePath: isRemote ? u.deploy.remotePath : '', composeFile: gitComposeFile }, null, 2), { mode: 0o600 });
+      // Record the commit we just deployed → the baseline a future redeploy diffs against ("what changed").
+      let deployedCommit = u.git.deployedCommit || '';
+      try { if (u.dir) deployedCommit = (await gitRun(['-C', u.dir, 'rev-parse', 'HEAD'])).stdout.trim() || deployedCommit; } catch (e) {}
+      fs.writeFileSync(gitMetaPath(u.project), JSON.stringify({ ...u.git, deployedCommit, plan: plan || null, deployMode: isRemote ? 'remote' : 'local', remotePath: isRemote ? u.deploy.remotePath : '', composeFile: gitComposeFile }, null, 2), { mode: 0o600 });
     }
     job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
   } catch (err) {
@@ -784,7 +787,9 @@ async function runGitDeployJob(job, p) {
     const projectDir = relSub ? path.join(dir, relSub) : dir;
     const composeFile = findComposeFile(projectDir);
     if (!composeFile) throw Object.assign(new Error(`No docker-compose.yml in the repo${relSub ? ' subdir "' + relSub + '"' : ''}`), { statusCode: 400 });
-    fs.writeFileSync(gitMetaPath(p.project), JSON.stringify({ repoUrl: p.repoUrl, branch: p.branch, token: p.keyId ? '' : p.token, keyId: p.keyId || '', subdir: relSub, composeFile, secret: p.secret }, null, 2), { mode: 0o600 });
+    let deployedCommit = '';
+    try { deployedCommit = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) {}
+    fs.writeFileSync(gitMetaPath(p.project), JSON.stringify({ repoUrl: p.repoUrl, branch: p.branch, token: p.keyId ? '' : p.token, keyId: p.keyId || '', subdir: relSub, composeFile, secret: p.secret, deployedCommit }, null, 2), { mode: 0o600 });
     try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: projectDir }); }
     catch (e) { throw Object.assign(new Error('Invalid compose file: ' + (e.stderr || e.message)), { statusCode: 400 }); }
 
@@ -1070,6 +1075,34 @@ router.get('/:project/git', (req, res) => {
 });
 
 // Re-deploy a Git project: re-clone fresh → re-apply the stored plan/compose (re-transfer for remote) via
+// Stream "what changed since the last deploy" into a job's console: the file list (added/modified/deleted)
+// + line stat, computed from the freshly-cloned repo (`dir`) vs the commit we last deployed (meta.deployedCommit).
+// Best-effort — never throws (the deploy must proceed regardless).
+async function streamGitChanges(job, dir, meta) {
+  let newSHA = '';
+  try { newSHA = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) { return; }
+  const oldSHA = (meta.deployedCommit || '').trim();
+  if (!oldSHA) { jobLog(job, `\nℹ️  First tracked deploy — baseline ${newSHA.slice(0, 7)} recorded; changed files will show from the next redeploy.`); return; }
+  if (oldSHA === newSHA) { jobLog(job, `\n✓ Already at the latest commit ${newSHA.slice(0, 7)} — nothing new pulled.`); return; }
+  // The shallow clone only has HEAD; bring in the old commit's tree so we can diff against it.
+  const url = meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token);
+  try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', url, oldSHA]); } catch (e) {}
+  let names = '', stat = '';
+  try { names = (await gitRun(['-C', dir, 'diff', '--name-status', oldSHA, newSHA])).stdout.trim(); } catch (e) {}
+  try { stat = (await gitRun(['-C', dir, 'diff', '--shortstat', oldSHA, newSHA])).stdout.trim(); } catch (e) {}
+  jobLog(job, `\n📦 Changes pulled (${oldSHA.slice(0, 7)} → ${newSHA.slice(0, 7)}):`);
+  if (names) {
+    const icon = s => s.startsWith('A') ? '✚' : s.startsWith('D') ? '🗑' : s.startsWith('R') ? '➟' : '✎';
+    for (const line of names.split('\n')) {
+      const parts = line.split('\t');
+      jobLog(job, `   ${icon(parts[0])} ${parts.slice(1).join(' → ')}`);
+    }
+    if (stat) jobLog(job, `  ${stat}`);
+  } else {
+    jobLog(job, `   (couldn't compute a file diff — the old commit may be gone after a force-push/rebase)`);
+  }
+}
+
 // the shared runDeployJob → live console. Works for single AND multi-stack git deploys.
 function gitRedeployJob(project, reqIp) {
   const meta = readGitMeta(project);
@@ -1095,6 +1128,8 @@ function gitRedeployJob(project, reqIp) {
       cloneArgs.push(meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token), dir);
       job.phase = 'clone'; jobLog(job, `$ git clone ${redactToken(meta.repoUrl, meta.token)}\n`);
       await gitWithKey(meta.keyId, cloneArgs, { onData: (c) => jobStream(job, c) });
+      // Auto-show what was pulled (changed files since the last deploy) right in the redeploy console.
+      await streamGitChanges(job, dir, meta).catch(() => {});
       // Do NOT wipe the remote folder on redeploy. It holds the project's runtime bind-mount data (e.g.
       // ./docker/volumes/postgres_data, caddy_data) that the containers created as root — deleting it would
       // (a) destroy live data and (b) fail "Permission denied" because the SSH user doesn't own those
