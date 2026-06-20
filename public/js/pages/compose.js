@@ -43,14 +43,19 @@ Router.register('compose', async (content) => {
                   <td><div class="td-actions">
                     <button class="btn-sm btn-primary" data-action="up" data-project="${p.name}" ${dis}>${Icons.play} Up</button>
                     <button class="btn-sm btn-secondary" data-action="down" data-project="${p.name}" ${dis}>${Icons.stop} Down</button>
-                    <button class="btn-sm btn-secondary" data-action="restart" data-project="${p.name}" ${dis}>${Icons.restart}</button>
-                    <button class="btn-sm btn-secondary" data-action="rebuild" data-project="${p.name}" data-services="${escapeHtml((p.services || []).join(','))}" ${dis} title="Rebuild images from source + up (pick which services)">${Icons.layers} Rebuild</button>
-                    ${p.deploySource === 'folder' ? `<button class="btn-sm btn-secondary" data-update="${p.name}" data-rpath="${escapeHtml(p.workingDir || '')}" data-services="${escapeHtml((p.services || []).join(','))}" title="Re-upload the (updated) folder & rebuild (pick which services)">${Icons.refresh} Update</button>` : ''}
-                    <button class="btn-icon" title="Edit YAML" data-edit="${p.name}" ${dis}>${Icons.settings}</button>
-                    <button class="btn-icon" title="Project files (Dockerfile, .env…)" data-files="${p.name}">${Icons.folder || Icons.compose}</button>
-                    <button class="btn-icon" title="Open a terminal in this project's folder" data-term="${p.name}" data-cwd="${escapeHtml(p.workingDir || '')}">🖥</button>
-                    <button class="btn-icon" title="View Services" data-detail="${p.name}">${Icons.eye}</button>
-                    <button class="btn-icon text-danger" title="Delete project (containers + files)" data-delproj="${p.name}" data-remote="${p.remote ? 1 : ''}">${Icons.trash}</button>
+                    <div class="row-menu" style="position:relative">
+                      <button class="btn-icon row-menu-toggle" title="More actions" aria-label="More actions" style="font-size:16px;line-height:1">⋯</button>
+                      <div class="row-menu-pop">
+                        <button class="rmi" data-action="restart" data-project="${p.name}" ${dis}>${Icons.restart} Restart</button>
+                        <button class="rmi" data-action="rebuild" data-project="${p.name}" data-services="${escapeHtml((p.services || []).join(','))}" ${dis}>${Icons.layers} Rebuild (pick services)</button>
+                        ${p.deploySource === 'folder' ? `<button class="rmi" data-update="${p.name}" data-rpath="${escapeHtml(p.workingDir || '')}" data-services="${escapeHtml((p.services || []).join(','))}">${Icons.refresh} Update from folder</button>` : ''}
+                        <button class="rmi" data-edit="${p.name}" ${dis}>${Icons.settings} Edit YAML</button>
+                        <button class="rmi" data-files="${p.name}">${Icons.folder || Icons.compose} Project files</button>
+                        <button class="rmi" data-term="${p.name}" data-cwd="${escapeHtml(p.workingDir || '')}">🖥 Terminal (in folder)</button>
+                        <button class="rmi" data-detail="${p.name}">${Icons.eye} View services</button>
+                        <button class="rmi text-danger" data-delproj="${p.name}" data-remote="${p.remote ? 1 : ''}">${Icons.trash} Delete project</button>
+                      </div>
+                    </div>
                   </div></td>
                 </tr>`).join('')}
               </tbody>
@@ -72,6 +77,28 @@ Router.register('compose', async (content) => {
       content.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
       });
+      // "⋯ More" row menus — position:fixed so the table's overflow can't clip them. Items keep their
+      // data-* attrs, so every action handler (wired above + the data-action block below) still fires;
+      // here we only open/close the menu and place it under its toggle.
+      content.querySelectorAll('.row-menu-toggle').forEach(t => t.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const pop = t.parentElement.querySelector('.row-menu-pop');
+        const isOpen = pop.style.display === 'flex';
+        content.querySelectorAll('.row-menu-pop').forEach(p => p.style.display = 'none');
+        if (!isOpen) {
+          pop.style.display = 'flex';
+          const r = t.getBoundingClientRect();
+          const w = pop.offsetWidth || 190;
+          pop.style.top = (r.bottom + 4) + 'px';
+          pop.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+        }
+      }));
+      content.querySelectorAll('.row-menu-pop .rmi').forEach(b => b.addEventListener('click', () => { const p = b.closest('.row-menu-pop'); if (p) p.style.display = 'none'; }));
+      if (!window._cmRowMenu) {
+        window._cmRowMenu = true;
+        document.addEventListener('click', (e) => { if (!e.target.closest('.row-menu')) document.querySelectorAll('.row-menu-pop').forEach(p => p.style.display = 'none'); });
+        window.addEventListener('resize', () => document.querySelectorAll('.row-menu-pop').forEach(p => p.style.display = 'none'));
+      }
 
       content.querySelectorAll('[data-action]').forEach(btn => {
         btn.addEventListener('click', async (e) => {

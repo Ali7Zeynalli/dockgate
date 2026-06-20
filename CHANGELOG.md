@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.180] - 2026-06-20
+
+### Changed — Compose list rows decluttered: Up · Down · "⋯ More" menu (Phase 1 of the cleanup)
+- Each Compose project row had **~10 buttons** crammed in. Now it's just **▶ Up · ⏹ Down · ⋯** — the rest (Restart, Rebuild, Update-from-folder, Edit YAML, Project files, Terminal, View services, Delete) moved into a tidy **"⋯ More" dropdown**. **Nothing was removed** — every action is still one click away, the row is just clean
+- The menu is `position: fixed` so the table's horizontal scroll can't clip it; items keep their `data-*` attributes so **all the existing handlers fire unchanged** (verified: View opens the detail modal, Edit opens the editor, menu closes on item-click and on outside-click). Verified end-to-end in a real browser — no functionality lost
+
+---
+
 ## [2.0.179] - 2026-06-20
 
 ### Added — "?" help for the build flags in the deploy picker

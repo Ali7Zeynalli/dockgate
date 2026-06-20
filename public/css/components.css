@@ -243,6 +243,39 @@ tbody td {
   justify-content: flex-end;
 }
 
+/* Row "⋯ More" overflow menu — position:fixed so the table-wrapper's overflow never clips it.
+   Items keep their data-* attributes, so the existing row-action handlers still fire. */
+.row-menu-pop {
+  position: fixed;
+  display: none;
+  flex-direction: column;
+  min-width: 188px;
+  padding: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+}
+.row-menu-pop .rmi {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.row-menu-pop .rmi:hover { background: var(--hover-bg); }
+.row-menu-pop .rmi:disabled { opacity: .4; cursor: not-allowed; }
+.row-menu-pop .rmi.text-danger { color: var(--danger); }
+.row-menu-pop .rmi svg { width: 15px; height: 15px; flex: none; opacity: .85; }
+
 /* ============ CHECKBOX ============ */
 .checkbox {
   width: 16px;
