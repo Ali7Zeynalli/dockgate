@@ -217,6 +217,10 @@ async function boot() {
     checkForUpdates();
     setInterval(checkForUpdates, 5 * 60 * 1000);
 
+    // Global "deploy running" indicator on the Deploy nav item — so a running deploy is visible from any page.
+    checkRunningDeploys();
+    setInterval(checkRunningDeploys, 4000);
+
     // Server switcher (Local + SSH)
     initServerSwitcher();
 
@@ -270,6 +274,19 @@ function hideUpdateBadge() {
   const badge = document.getElementById('badge-settings');
   if (badge) badge.style.display = 'none';
   localStorage.setItem('dcc_update_available', 'false');
+}
+
+// Show a "▶ N" badge on the Deploy nav item while any compose deploy job is running, so it's visible
+// from any page. Clicking the Deploy nav (existing handler) lands on Compose, where the live banner shows.
+async function checkRunningDeploys() {
+  const badge = document.getElementById('badge-deploy');
+  if (!badge) return;
+  try {
+    const jobs = await API.get('/compose/deploy-jobs');
+    const running = (jobs || []).filter(j => j.status === 'running').length;
+    if (running) { badge.textContent = '▶ ' + running; badge.style.display = 'inline-flex'; }
+    else badge.style.display = 'none';
+  } catch (e) { /* not logged in / no access — leave the badge hidden */ }
 }
 
 // ============ SERVER SWITCHER (Local + SSH) ============

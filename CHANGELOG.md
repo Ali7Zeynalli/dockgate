@@ -2,6 +2,16 @@
 
 ---
 
+## [2.0.182] - 2026-06-21
+
+### Added — live deploy process is now front-and-center (Phase 2.5 of the cleanup)
+- **Prominent "Deploying…" banner** at the top of the Compose page whenever a deploy is in progress: a spinner, the **current step** ("docker compose up -d (2/3)"), a **live progress bar**, and a **👁 Watch** button that opens the live console. A running deploy is now impossible to miss — and it auto-surfaces deploys started anywhere (e.g. by a webhook), not just ones you click
+- **Global "▶ N" indicator** on the **Deploy** nav item (sidebar), so a running deploy is visible **from any page**; clicking it lands on Compose where the banner + console are
+- The bottom **Deploys** history table now shows an **inline progress bar** on running rows too
+- All additive (polls the existing `/compose/deploy-jobs`); nothing else changed. Verified end-to-end in a real browser (mocked a running job): banner shows the step + progress + Watch, and the nav badge reads "▶ 1"
+
+---
+
 ## [2.0.181] - 2026-06-21
 
 ### Changed — one tabbed "Project hub" modal instead of scattered modals (Phase 2 of the cleanup)

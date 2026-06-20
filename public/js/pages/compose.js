@@ -29,6 +29,7 @@ Router.register('compose', async (content) => {
             <button class="btn btn-secondary" id="compose-refresh">${Icons.refresh}</button>
           </div>
         </div>
+        <div id="deploy-banner"></div>
         ${remote ? '<div class="card mb-3" style="border-left:3px solid var(--accent);padding:10px 14px;font-size:13px;color:var(--text-secondary)">Remote host active — only <strong>DockGate-managed</strong> projects can be deployed (the compose file lives on DockGate). Needs a key-based SSH server without a passphrase; bind-mount paths resolve on the remote host.</div>' : ''}
         ${projects.length === 0 ? '<div class="empty-state"><h3>No Compose Projects</h3></div>' : `
           <div class="table-wrapper">
@@ -867,23 +868,49 @@ Router.register('compose', async (content) => {
   // ① Deploys console — running/recent background deploy jobs, re-openable live log (modal can be closed).
   async function renderDeploys() {
     const el = document.getElementById('deploy-console');
-    if (!el) return;
+    const banner = document.getElementById('deploy-banner');
+    if (!el && !banner) return;
     let jobs = [];
     try { jobs = await API.get('/compose/deploy-jobs'); } catch (e) { return; }
-    if (!document.getElementById('deploy-console')) return;
+    if (!document.getElementById('deploy-console') && !document.getElementById('deploy-banner')) return;
+    const running = jobs.filter(j => j.status === 'running');
+    // Prominent TOP banner for any deploy in progress — live step + progress bar + one-click Watch, so a
+    // running process is impossible to miss (auto-surfaces webhook-triggered deploys too).
+    if (banner) {
+      banner.innerHTML = running.length ? (`<style>@keyframes spin{to{transform:rotate(360deg)}}</style>` + running.map(j => {
+        const steps = j.steps || [];
+        const done = steps.filter(s => s.status === 'done').length;
+        const cur = steps.find(s => s.status === 'running');
+        const pct = steps.length ? Math.max(8, Math.round(done / steps.length * 100)) : 35;
+        return `<div class="card mb-2" style="border-left:3px solid var(--accent);padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;flex:none"></span>
+          <div style="flex:1;min-width:200px">
+            <div style="font-weight:600;font-size:13px">Deploying <strong>${escapeHtml(j.project)}</strong> — ${escapeHtml(cur ? cur.label : j.phase)}${steps.length ? ` <span class="text-muted">(${done}/${steps.length})</span>` : ''}</div>
+            <div style="height:5px;background:var(--border);border-radius:3px;margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent);transition:width .4s"></div></div>
+          </div>
+          <button class="btn btn-sm btn-primary" data-joblog="${j.id}" data-jobproj="${escapeHtml(j.project)}">${Icons.eye || '👁'} Watch</button>
+        </div>`;
+      }).join('')) : '';
+      banner.querySelectorAll('[data-joblog]').forEach(b => b.addEventListener('click', () => openDeployLog(b.dataset.joblog, b.dataset.jobproj)));
+    }
+    // History table (recent jobs) at the bottom — now with an inline progress bar on running rows.
+    if (!el) return;
     if (!jobs.length) { el.innerHTML = ''; return; }
-    const active = jobs.filter(j => j.status === 'running').length;
+    const active = running.length;
     const icon = (s) => s === 'running' ? '<span class="spinner" style="display:inline-block;width:10px;height:10px;border:2px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite"></span>' : (s === 'done' ? '<span style="color:var(--success,#3fb950)">✓</span>' : '<span style="color:var(--danger,#f85149)">✗</span>');
     el.innerHTML = `
       <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
       <div style="font-weight:600;font-size:13px;margin-bottom:6px">Deploys${active ? ` <span class="badge badge-running" style="font-size:10px">${active} active</span>` : ''}</div>
-      <div class="table-wrapper"><table><tbody>${jobs.map(j => `<tr>
+      <div class="table-wrapper"><table><tbody>${jobs.map(j => {
+        const steps = j.steps || []; const done = steps.filter(s => s.status === 'done').length;
+        const pct = steps.length ? Math.max(8, Math.round(done / steps.length * 100)) : 35;
+        return `<tr>
         <td style="width:24px">${icon(j.status)}</td>
         <td class="td-name">${escapeHtml(j.project)}</td>
-        <td class="text-xs text-muted">${escapeHtml(j.phase)}${(j.steps && j.steps.length) ? ` <span style="opacity:.7">(${j.steps.filter(s => s.status === 'done').length}/${j.steps.length})</span>` : ''}</td>
+        <td class="text-xs text-muted" style="min-width:160px">${escapeHtml(j.phase)}${steps.length ? ` <span style="opacity:.7">(${done}/${steps.length})</span>` : ''}${j.status === 'running' ? `<div style="height:4px;background:var(--border);border-radius:2px;margin-top:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div>` : ''}</td>
         <td class="text-xs text-muted">${j.finishedAt ? timeAgo(j.finishedAt) : 'running…'}</td>
         <td style="text-align:right"><button class="btn btn-xs btn-secondary" data-joblog="${j.id}" data-jobproj="${escapeHtml(j.project)}">view log</button></td>
-      </tr>`).join('')}</tbody></table></div>`;
+      </tr>`; }).join('')}</tbody></table></div>`;
     el.querySelectorAll('[data-joblog]').forEach(b => b.addEventListener('click', () => openDeployLog(b.dataset.joblog, b.dataset.jobproj)));
   }
 
