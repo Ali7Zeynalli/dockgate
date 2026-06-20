@@ -36,7 +36,7 @@ Router.register('compose', async (content) => {
               <thead><tr><th>Project Name</th><th>Status</th><th>Services</th><th>Path</th><th style="text-align:right">Actions</th></tr></thead>
               <tbody>
                 ${projects.map(p => `<tr>
-                  <td class="td-name">${escapeHtml(p.name)}</td>
+                  <td class="td-name">${p.deploySource === 'git' ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:.7"><title>Git-managed</title><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>' : ''}${escapeHtml(p.name)}</td>
                   <td><span class="badge ${p.running === p.total ? 'badge-running' : p.running > 0 ? 'badge-restarting' : 'badge-stopped'}">${p.running}/${p.total} Running</span></td>
                   <td class="text-sm">${p.services.join(', ') || '—'}</td>
                   <td class="td-mono text-xs" title="${escapeHtml(p.workingDir)}">${escapeHtml(p.workingDir) || '—'}</td>
@@ -115,7 +115,10 @@ Router.register('compose', async (content) => {
               <div class="card mb-2" style="padding:12px;background:var(--accent-dim)">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
                   <div class="text-sm" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:.85"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><strong>Git</strong> — <code>${escapeHtml(git.repoUrl)}</code> @ <code>${escapeHtml(git.branch)}</code>${git.subdir ? ' /' + escapeHtml(git.subdir) : ''}</div>
-                  <button class="btn btn-sm btn-primary" id="cd-redeploy">↻ Redeploy (pull latest)</button>
+                  <div style="display:flex;gap:6px;flex:none">
+                    <button class="btn btn-sm btn-secondary" id="cd-pull" title="Pull the latest from git and see what changed — without deploying anything">⤓ Pull</button>
+                    <button class="btn btn-sm btn-primary" id="cd-redeploy" title="Pull, then choose which changed stacks/services to deploy">↻ Redeploy…</button>
+                  </div>
                 </div>
                 <details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;font-weight:600">Auto-deploy webhook — optional</summary>
                   <div class="text-xs text-muted" style="margin:6px 0">Optional. For <strong>automatic</strong> redeploy on every push. Prefer to control it yourself? Just use <strong>Redeploy</strong> above when you want — and ignore this.</div>
@@ -149,9 +152,9 @@ Router.register('compose', async (content) => {
               const b = e.target; b.disabled = true; b.textContent = 'Pulling…';
               let prep;
               try { prep = await API.post(`/compose/${name}/redeploy-prepare`, {}); }
-              catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '↻ Redeploy (pull latest)'; return; }
+              catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '↻ Redeploy…'; return; }
               const files = prep.files || [];
-              if (!files.length) { showToast('No docker-compose files found in the repo', 'error', 9000); API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); b.disabled = false; b.textContent = '↻ Redeploy (pull latest)'; return; }
+              if (!files.length) { showToast('No docker-compose files found in the repo', 'error', 9000); API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); b.disabled = false; b.textContent = '↻ Redeploy…'; return; }
               dm.close();
               const d = prep.diff || {};
               const preselect = d.hasBaseline ? (d.affectedStacks || []) : null; // null → all selected (no baseline yet)
@@ -163,6 +166,40 @@ Router.register('compose', async (content) => {
                 showToast(plan.up ? 'Redeploying selected — watch the console.' : 'Pulled & staged. Up each stack when ready.', 'info', 6000);
                 render();
               } catch (err) { showToast(err.message, 'error', 12000); }
+            });
+            dm.overlay.querySelector('#cd-pull')?.addEventListener('click', async (e) => {
+              // Pull only: fetch the latest + show what changed since the last deploy. Does NOT deploy or
+              // touch running containers. Offers an optional "Deploy these…" path (the same change-aware picker).
+              const b = e.target; b.disabled = true; b.textContent = 'Pulling…';
+              let prep;
+              try { prep = await API.post(`/compose/${name}/redeploy-prepare`, {}); }
+              catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '⤓ Pull'; return; }
+              dm.close();
+              const d = prep.diff || {};
+              const lines = d.changedFiles || [];
+              const sh = s => (s || '').slice(0, 7);
+              const body = lines.length
+                ? `<div class="text-sm" style="margin-bottom:6px">📦 <strong>${lines.length}</strong> file(s) changed since your last deploy (${sh(d.fromSHA)} → ${sh(d.toSHA)}):</div><pre class="logs-viewer" style="max-height:320px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:0">${lines.map(escapeHtml).join('\n')}</pre><div class="text-xs text-muted" style="margin-top:6px">Pulled — but nothing was deployed. Your running containers are untouched.</div>`
+                : (d.upToDate ? `<div class="text-sm">✓ Already at the latest commit — nothing new to pull.</div>`
+                  : `<div class="text-sm">First pull — baseline recorded. Changed files will show from the next pull.</div>`);
+              const pm = showModal(`Pull — ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+              let consumed = false;
+              if (lines.length || !d.hasBaseline) {
+                const go = document.createElement('button');
+                go.className = 'btn btn-primary'; go.textContent = '↻ Deploy these…';
+                pm.overlay.querySelector('#modal-footer').appendChild(go);
+                go.onclick = async () => {
+                  consumed = true; pm.close();
+                  const preselect = d.hasBaseline ? (d.affectedStacks || []) : null;
+                  const plan = await chooseDeployPlan(prep.files || [], name, { diff: d, affectedStacks: preselect });
+                  if (!plan) { API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); render(); return; }
+                  try { const fin = await API.post('/compose/deploy-folder-finish', { uploadId: prep.uploadId, up: plan.up, plan }); if (fin && fin.jobId) openDeployLog(fin.jobId, name); render(); }
+                  catch (err) { showToast(err.message, 'error', 12000); }
+                };
+              }
+              // Closing without deploying → drop the staged clone (don't leave it for the TTL GC).
+              const obs = new MutationObserver(() => { if (!document.body.contains(pm.overlay)) { obs.disconnect(); if (!consumed) API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); } });
+              obs.observe(document.getElementById('modal-root'), { childList: true });
             });
           } catch (e) { showToast(e.message, 'error'); }
         });

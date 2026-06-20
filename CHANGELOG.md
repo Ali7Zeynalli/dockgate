@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.178] - 2026-06-20
+
+### Added — a dedicated "⤓ Pull" button + a git badge in the compose list
+- **"⤓ Pull" button** in a Git project's detail modal (next to Redeploy): pulls the latest and **shows exactly what changed** since your last deploy (the changed file list) **without deploying anything** — your running containers stay untouched. If there are changes, a **"↻ Deploy these…"** button takes you straight into the change-aware picker (reusing the same pull, no second clone). Closing the modal drops the staged clone
+- **Git badge in the list:** git-managed compose projects now show a small **git-branch icon next to their name** (tooltip "Git-managed"), so you can tell at a glance which projects come from a repo. The "view" (eye) action is unchanged — it's for all projects
+- Verified end-to-end against a real repo: the git badge renders next to the git project, **⤓ Pull** opens a modal listing `frontend/app.js` changed with "nothing was deployed — containers untouched" + a "Deploy these…" path
+
+---
+
 ## [2.0.177] - 2026-06-20
 
 ### Added — change-aware Redeploy: pull → pick → deploy only what changed (no more rebuilding everything)
