@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.174] - 2026-06-20
+
+### Changed — light theme a touch deeper (calmer)
+- Nudged the whole light palette ~3% deeper for a calmer feel: page `#e9eef5 → #e2e8f1`, card/secondary `#eef2f8 → #e8edf5`, hover `#dde4ee`, elevated/modal `#edf1f8`, sidebar/header glass `rgba(223,230,240,.88) → rgba(214,222,234,.9)`. Depth hierarchy kept (sidebar/header darkest → page → cards lightest); text and inputs unchanged. Verified in a real browser: page `#e2e8f1`, sidebar `rgba(214,222,234,.9)`
+
+---
+
 ## [2.0.173] - 2026-06-20
 
 ### Changed — light theme: soften the still-too-white sidebar, header & cards

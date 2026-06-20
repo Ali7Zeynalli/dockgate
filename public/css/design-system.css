@@ -105,15 +105,15 @@
 /* ============ LIGHT THEME ============ */
 [data-theme="light"] {
   /* Background Colors — Slate (blue-grey) light palette: soft cool off-whites, no pure white, easier on the eyes */
-  --bg-primary: #e9eef5;            /* page — soft cool off-white (not pure white) */
-  --bg-secondary: #eef2f8;
-  --bg-card: #eef2f8;               /* card surfaces — toned, not near-white */
-  --bg-card-hover: #e5ebf3;
-  --bg-elevated: #f2f5fa;           /* dropdowns/popovers — slightly lighter to pop above cards */
-  --bg-modal: #f2f5fa;
+  --bg-primary: #e2e8f1;            /* page — soft cool grey-blue (a touch deeper) */
+  --bg-secondary: #e8edf5;
+  --bg-card: #e8edf5;               /* card surfaces — toned */
+  --bg-card-hover: #dde4ee;
+  --bg-elevated: #edf1f8;           /* dropdowns/popovers — slightly lighter to pop above cards */
+  --bg-modal: #edf1f8;
   --bg-input: #ffffff;              /* small surface — white for clarity */
-  --bg-sidebar: #dfe6f0;            /* a touch darker than the page for subtle depth */
-  --bg-header: rgba(223, 230, 240, 0.85);
+  --bg-sidebar: #d6deea;            /* a touch darker than the page for subtle depth */
+  --bg-header: rgba(214, 222, 234, 0.88);
 
   /* Text Colors */
   --text-primary: #1e293b;          /* slate-800 — softer than near-black */
@@ -139,7 +139,7 @@
   --shadow-glow: 0 0 24px rgba(37, 99, 235, 0.15);
 
   /* Glass */
-  --glass-bg: rgba(223, 230, 240, 0.88); /* sidebar + header use this — soft slate, no longer near-white */
+  --glass-bg: rgba(214, 222, 234, 0.9); /* sidebar + header use this — deeper soft slate */
   --glass-blur: blur(24px);
   --glass-border: rgba(0, 0, 0, 0.06);
 
