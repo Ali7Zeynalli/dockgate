@@ -2,6 +2,15 @@
 
 ---
 
+## [2.0.183] - 2026-06-21
+
+### Changed — "+ Deploy ▾" dropdown + collapsible Deploys (Phase 3 — Compose cleanup done)
+- The three top buttons (New Project / Deploy from Git / Deploy from folder) are grouped into one **"+ Deploy ▾"** dropdown (New compose project · Deploy from Git · Deploy from folder), with **Refresh** alongside. The handlers are unchanged — same IDs, just tidier
+- The bottom **Deploys** console is now **collapsible** (click the header to fold/unfold; state remembered in localStorage), with a count next to the title
+- Verified end-to-end in a real browser: the dropdown opens with all three items and launches them (folder modal opens), and the Deploys header collapses/expands. This completes the Compose section cleanup (rows → Up/Down/⋯, tabbed Project hub, live deploy banner + global badge, deploy dropdown + collapsible) — **all without removing any functionality**
+
+---
+
 ## [2.0.182] - 2026-06-21
 
 ### Added — live deploy process is now front-and-center (Phase 2.5 of the cleanup)

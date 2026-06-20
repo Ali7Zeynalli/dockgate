@@ -23,9 +23,14 @@ Router.register('compose', async (content) => {
         <div class="page-header">
           <div><div class="page-title">Compose Projects</div><div class="page-subtitle">${projects.length} project(s)</div></div>
           <div class="page-actions">
-            <button class="btn btn-primary" id="compose-new" ${dis}>${Icons.compose} New Project</button>
-            <button class="btn btn-secondary" id="compose-git">${Icons.registry || Icons.compose} Deploy from Git</button>
-            <button class="btn btn-secondary" id="compose-folder">${Icons.arrowUp || Icons.compose} Deploy from folder</button>
+            <div class="row-menu" style="position:relative;display:inline-block">
+              <button class="btn btn-primary row-menu-toggle" id="compose-deploy-toggle">${Icons.compose} + Deploy ▾</button>
+              <div class="row-menu-pop">
+                <button class="rmi" id="compose-new" ${dis}>${Icons.compose} New compose project</button>
+                <button class="rmi" id="compose-git">${Icons.registry || Icons.compose} Deploy from Git</button>
+                <button class="rmi" id="compose-folder">${Icons.arrowUp || Icons.compose} Deploy from folder</button>
+              </div>
+            </div>
             <button class="btn btn-secondary" id="compose-refresh">${Icons.refresh}</button>
           </div>
         </div>
@@ -898,10 +903,11 @@ Router.register('compose', async (content) => {
     if (!jobs.length) { el.innerHTML = ''; return; }
     const active = running.length;
     const icon = (s) => s === 'running' ? '<span class="spinner" style="display:inline-block;width:10px;height:10px;border:2px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite"></span>' : (s === 'done' ? '<span style="color:var(--success,#3fb950)">✓</span>' : '<span style="color:var(--danger,#f85149)">✗</span>');
+    const collapsed = localStorage.getItem('dcc_deploys_collapsed') === '1';
     el.innerHTML = `
       <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
-      <div style="font-weight:600;font-size:13px;margin-bottom:6px">Deploys${active ? ` <span class="badge badge-running" style="font-size:10px">${active} active</span>` : ''}</div>
-      <div class="table-wrapper"><table><tbody>${jobs.map(j => {
+      <div id="deploys-head" style="font-weight:600;font-size:13px;margin-bottom:6px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px"><span id="deploys-arrow">${collapsed ? '▸' : '▾'}</span> Deploys${active ? ` <span class="badge badge-running" style="font-size:10px">${active} active</span>` : ''} <span class="text-muted text-xs" style="font-weight:400">(${jobs.length})</span></div>
+      <div id="deploys-body" style="${collapsed ? 'display:none' : ''}"><div class="table-wrapper"><table><tbody>${jobs.map(j => {
         const steps = j.steps || []; const done = steps.filter(s => s.status === 'done').length;
         const pct = steps.length ? Math.max(8, Math.round(done / steps.length * 100)) : 35;
         return `<tr>
@@ -910,7 +916,14 @@ Router.register('compose', async (content) => {
         <td class="text-xs text-muted" style="min-width:160px">${escapeHtml(j.phase)}${steps.length ? ` <span style="opacity:.7">(${done}/${steps.length})</span>` : ''}${j.status === 'running' ? `<div style="height:4px;background:var(--border);border-radius:2px;margin-top:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div>` : ''}</td>
         <td class="text-xs text-muted">${j.finishedAt ? timeAgo(j.finishedAt) : 'running…'}</td>
         <td style="text-align:right"><button class="btn btn-xs btn-secondary" data-joblog="${j.id}" data-jobproj="${escapeHtml(j.project)}">view log</button></td>
-      </tr>`; }).join('')}</tbody></table></div>`;
+      </tr>`; }).join('')}</tbody></table></div></div>`;
+    el.querySelector('#deploys-head')?.addEventListener('click', () => {
+      const body = el.querySelector('#deploys-body'), arrow = el.querySelector('#deploys-arrow');
+      const willCollapse = body.style.display !== 'none';
+      body.style.display = willCollapse ? 'none' : '';
+      if (arrow) arrow.textContent = willCollapse ? '▸' : '▾';
+      localStorage.setItem('dcc_deploys_collapsed', willCollapse ? '1' : '0');
+    });
     el.querySelectorAll('[data-joblog]').forEach(b => b.addEventListener('click', () => openDeployLog(b.dataset.joblog, b.dataset.jobproj)));
   }
 
