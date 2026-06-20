@@ -2,6 +2,13 @@
 
 ---
 
+## [2.0.171] - 2026-06-20
+
+### Changed — dark theme is now a softer blue-grey (Slate), easier on the eyes
+- Replaced the near-black, neutral dark palette with a balanced **blue-grey (Tailwind Slate)** one — a proper dark mode that isn't pure black, so it strains the eyes less. Main content is **slate-900 `#0f172a`**, the sidebar a touch darker (`#0b1120`) for subtle depth, card/modal/input surfaces **slate-800 `#1e293b`** family, and text shifts to slate tones (`#e2e8f0` / `#94a3b8` / `#64748b`). The blue **accent** (`#3b82f6`) is unchanged — Slate + Blue is a natural pair. Light theme untouched. Tunable lighter/darker/cooler on request
+
+---
+
 ## [2.0.170] - 2026-06-20
 
 ### Changed — softer main content background (less eye strain)

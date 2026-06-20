@@ -6,22 +6,22 @@
 @import url('/vendor/fonts/fonts.css');
 
 :root {
-  /* Background Colors */
-  --bg-primary: #101013; /* main content area — lifted ~3% off near-black (#09090b) to ease eye strain; sidebar stays darker via --bg-sidebar */
-  --bg-secondary: #121214;
-  --bg-card: #18191c;
-  --bg-card-hover: #212226;
-  --bg-elevated: #1e1f24;
-  --bg-modal: #121214;
-  --bg-input: #121214;
-  --bg-sidebar: #09090b;
-  --bg-header: rgba(9, 9, 11, 0.65);
+  /* Background Colors — Slate (blue-grey) dark palette: softer than near-black, easy on the eyes, pairs with the blue accent */
+  --bg-primary: #0f172a;            /* main content (slate-900) */
+  --bg-secondary: #131c30;
+  --bg-card: #1e293b;               /* card surfaces (slate-800) */
+  --bg-card-hover: #28344a;
+  --bg-elevated: #243044;           /* dropdowns / popovers */
+  --bg-modal: #16203a;
+  --bg-input: #131c30;
+  --bg-sidebar: #0b1120;            /* a touch darker than main for subtle depth */
+  --bg-header: rgba(15, 23, 42, 0.7);
 
   /* Text Colors */
-  --text-primary: #ededed;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --text-inverse: #09090b;
+  --text-primary: #e2e8f0;          /* slate-200 */
+  --text-secondary: #94a3b8;        /* slate-400 */
+  --text-muted: #64748b;            /* slate-500 */
+  --text-inverse: #0f172a;
 
   /* Accent / Primary (Modern Slate Blue) */
   --accent: #3b82f6;
@@ -68,7 +68,7 @@
   --shadow-glow: 0 0 24px rgba(59, 130, 246, 0.2);
 
   /* Glass */
-  --glass-bg: rgba(24, 25, 28, 0.7);
+  --glass-bg: rgba(30, 41, 59, 0.7);
   --glass-blur: blur(24px);
   --glass-border: rgba(255, 255, 255, 0.06);
 
