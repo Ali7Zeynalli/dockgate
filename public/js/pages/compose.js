@@ -41,7 +41,7 @@ Router.register('compose', async (content) => {
             <table>
               <thead><tr><th>Project Name</th><th>Status</th><th>Services</th><th>Path</th><th style="text-align:right">Actions</th></tr></thead>
               <tbody>
-                ${projects.map(p => `<tr>
+                ${projects.map(p => `<tr${p.deploySource === 'git' ? ` data-gitproj="${escapeHtml(p.name)}"` : ''}>
                   <td class="td-name">${p.deploySource === 'git' ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:.7"><title>Git-managed</title><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>' : ''}${escapeHtml(p.name)}</td>
                   <td><span class="badge ${p.running === p.total ? 'badge-running' : p.running > 0 ? 'badge-restarting' : 'badge-stopped'}">${p.running}/${p.total} Running</span></td>
                   <td class="text-sm">${p.services.join(', ') || '—'}</td>
@@ -105,6 +105,17 @@ Router.register('compose', async (content) => {
         document.addEventListener('click', (e) => { if (!e.target.closest('.row-menu')) document.querySelectorAll('.row-menu-pop').forEach(p => p.style.display = 'none'); });
         window.addEventListener('resize', () => document.querySelectorAll('.row-menu-pop').forEach(p => p.style.display = 'none'));
       }
+
+      // For git projects, check (server-cached) whether the repo has newer commits → show an "update" badge.
+      content.querySelectorAll('tr[data-gitproj]').forEach(async (tr) => {
+        const proj = tr.dataset.gitproj;
+        try {
+          const st = await API.get(`/compose/${proj}/git-status`);
+          if (!st || !st.behind) return;
+          const cell = tr.querySelector('.td-name');
+          if (cell && !cell.querySelector('.upd-badge')) cell.insertAdjacentHTML('beforeend', ' <span class="upd-badge" title="The repo has newer commits since your last deploy — Redeploy to pull them" style="background:var(--accent);color:#fff;font-size:9px;font-weight:700;padding:1px 6px;border-radius:9px;letter-spacing:.4px;vertical-align:middle">UPDATE</span>');
+        } catch (e) { /* unreachable repo / not git — no badge */ }
+      });
 
       content.querySelectorAll('[data-action]').forEach(btn => {
         btn.addEventListener('click', async (e) => {

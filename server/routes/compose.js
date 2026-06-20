@@ -1074,6 +1074,32 @@ router.get('/:project/git', (req, res) => {
   res.json({ gitManaged: true, repoUrl: meta.repoUrl, branch: meta.branch || 'default', subdir: meta.subdir || '', hasToken: !!meta.token, hasKey: !!meta.keyId, webhookSecret: meta.secret });
 });
 
+// Cheap "is the repo ahead of what we deployed?" check via `git ls-remote` (no clone). Cached 5 min/project
+// so the list can poll it without hammering the remote. Powers the "update" badge on git projects.
+const gitStatusCache = new Map();
+const GIT_STATUS_TTL = 5 * 60 * 1000;
+router.get('/:project/git-status', async (req, res) => {
+  const project = req.params.project;
+  try {
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const meta = readGitMeta(project);
+    if (!meta) return res.json({ gitManaged: false });
+    const cached = gitStatusCache.get(project);
+    if (cached && Date.now() - cached.at < GIT_STATUS_TTL && req.query.fresh !== '1') return res.json(cached.result);
+    const deployedSHA = (meta.deployedCommit || '').trim();
+    const url = meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token);
+    const ref = meta.branch || 'HEAD';
+    let remoteSHA = '';
+    try {
+      const out = (await gitWithKey(meta.keyId, ['ls-remote', url, ref])).stdout || '';
+      remoteSHA = ((out.split('\n').find(Boolean) || '').split(/\s+/)[0] || '').trim();
+    } catch (e) { /* unreachable / auth — report unknown, not behind */ }
+    const result = { gitManaged: true, deployedSHA, remoteSHA, hasBaseline: !!deployedSHA, behind: !!(deployedSHA && remoteSHA && deployedSHA !== remoteSHA) };
+    gitStatusCache.set(project, { at: Date.now(), result });
+    res.json(result);
+  } catch (err) { res.json({ gitManaged: false, error: (err.message || '').toString() }); }
+});
+
 // Re-deploy a Git project: re-clone fresh → re-apply the stored plan/compose (re-transfer for remote) via
 // Stream "what changed since the last deploy" into a job's console: the file list (added/modified/deleted)
 // + line stat, computed from the freshly-cloned repo (`dir`) vs the commit we last deployed (meta.deployedCommit).

@@ -2,6 +2,14 @@
 
 ---
 
+## [2.0.184] - 2026-06-21
+
+### Added — "UPDATE" badge on git projects that have newer commits
+- A git-managed Compose project now shows a small **UPDATE** badge next to its name in the list when its **repo has commits newer than what you last deployed** — so at a glance you know which projects are out of date and worth a Redeploy/Pull
+- Backed by a cheap new `GET /compose/:project/git-status` — a `git ls-remote` (no clone) comparing the branch's remote HEAD to the recorded `deployedCommit`, **cached 5 minutes per project** so the list can poll it without hammering the remote (`?fresh=1` to force). The list checks each git row asynchronously after render. Verified end-to-end against a real repo: with the repo one commit ahead, `git-status` returns `behind:true` and the **UPDATE** badge appears on the row
+
+---
+
 ## [2.0.183] - 2026-06-21
 
 ### Changed — "+ Deploy ▾" dropdown + collapsible Deploys (Phase 3 — Compose cleanup done)
