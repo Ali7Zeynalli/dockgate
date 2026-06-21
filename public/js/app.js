@@ -7,7 +7,7 @@ const navItems = {
   deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose'], ['templates', 'App Templates']], default: 'compose' },
   activity: { label: 'Activity', icon: Icons.events, tabs: [['logs', 'Logs'], ['terminal', 'Terminal'], ['events', 'Events'], ['files', 'Files'], ['audit', 'Audit Log'], ['cleanup', 'Cleanup']], default: 'logs' },
   infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH Keys'], ['registries', 'Registries']], default: 'servers' },
-  'server-console': { label: 'Server Console', icon: Icons.terminal },
+  'server-console': { label: 'Server Console', icon: Icons.terminal, tabs: [['overview', 'Overview'], ['setup', 'Setup'], ['manage', 'Manage'], ['logs', 'Logs']], default: 'overview' },
   settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification Log'], ['update', 'Software Update'], ['system', 'System'], ['security', 'Security']], default: 'general' }
 };
 
@@ -69,26 +69,32 @@ function initMacSidebar() {
   // "Server Console" is always shown as a standard nav item. Clicking it opens the active remote
   // server's console; with none active it sends the user to Servers to add/pick one (handler below).
 
+  // Open the active remote server's console at `tab` (Server Console's tabs need a server id, so its
+  // sidebar items inject the active server here). With no remote server yet, hint + go pick one.
+  const goConsole = (tab) => {
+    const active = Store.get('activeServer');
+    if (active && active.id !== 'local' && active.type !== 'local') Router.navigate('server-console', { id: active.id, tab });
+    else {
+      if (typeof showToast === 'function') showToast('Add a remote server first — a console needs one', 'info', 5000);
+      Router.navigate('infra', { tab: 'servers' });
+    }
+  };
+
   sidebarNav.addEventListener('click', (e) => {
     // A sidebar sub-item (a section's tab) → navigate straight to that tab.
     const subitem = e.target.closest('.nav-subitem');
-    if (subitem) { Router.navigate(subitem.dataset.page, { tab: subitem.dataset.tab }); return; }
+    if (subitem) {
+      if (subitem.dataset.page === 'server-console') { goConsole(subitem.dataset.tab); return; }
+      Router.navigate(subitem.dataset.page, { tab: subitem.dataset.tab });
+      return;
+    }
     const item = e.target.closest('.nav-item');
     if (!item) return;
     const page = item.dataset.page;
+    // Server Console header → its default tab on the active server (id injected by goConsole).
+    if (page === 'server-console') { goConsole(item.dataset.default || 'overview'); return; }
     // A section header → open its default tab (syncSidebarTabs then expands it).
     if (item.classList.contains('nav-parent')) { Router.navigate(page, { tab: item.dataset.default }); return; }
-    if (page === 'server-console') {
-      // Open the active remote server's console; with no remote server yet, send the user to Servers
-      // to add one (a console needs a server) — with a hint so the redirect isn't surprising.
-      const active = Store.get('activeServer');
-      if (active && active.id !== 'local' && active.type !== 'local') Router.navigate('server-console', { id: active.id });
-      else {
-        if (typeof showToast === 'function') showToast('Add a remote server first — a console needs one', 'info', 5000);
-        Router.navigate('infra', { tab: 'servers' });
-      }
-      return;
-    }
     if (page) Router.navigate(page);
   });
 

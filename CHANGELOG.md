@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.7] - 2026-06-21
+
+### Added — Server Console shows its sub-tabs in the sidebar
+- **Server Console** is now a collapsible sidebar section like the others: when you open a remote server's console, the sidebar shows its tabs as sub-items — **Overview · Setup · Manage · Logs** — and the active one is highlighted (two-way synced with the in-page tab bar). Clicking a sub-item jumps straight to that tab on the active server.
+- Because the console needs a server, each sidebar item injects the **active remote server's id** automatically. With no remote server active yet, clicking Server Console (header or a sub-item) shows the hint "Add a remote server first — a console needs one" and takes you to **Servers**.
+- Verified e2e: 4 sub-items render; with no active server → hint + redirect to Servers; with an active server → `server-console?id=…&tab=…`, section auto-expands and highlights the right sub-item; header click opens Overview.
+
+---
+
 ## [2.1.6] - 2026-06-21
 
 ### Changed — Nav reshuffle: one "Servers" hub (Servers + SSH Keys + Registries); Cleanup → Activity
