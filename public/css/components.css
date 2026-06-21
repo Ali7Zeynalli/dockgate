@@ -292,6 +292,23 @@ tbody td {
 .hub-tab:hover { color: var(--text-primary); }
 .hub-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
+/* Sidebar collapsible sections (Resources/Deploy/Activity/Infrastructure → their tabs as sub-items) */
+.nav-parent { cursor: pointer; }
+.nav-parent .nav-caret { margin-left: auto; transition: transform .2s; font-size: 10px; opacity: .6; }
+.nav-subitems { display: none; margin: 1px 0 3px 0; }
+.nav-subitems.open { display: block; }
+.nav-subitem {
+  display: block;
+  padding: 6px 12px 6px 42px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 8px;
+  text-decoration: none;
+}
+.nav-subitem:hover { color: var(--text-primary); background: var(--hover-bg); }
+.nav-subitem.active { color: var(--accent); background: var(--accent-dim); font-weight: 600; }
+
 /* ============ CHECKBOX ============ */
 .checkbox {
   width: 16px;

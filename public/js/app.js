@@ -3,12 +3,12 @@
 // tabbed-section.js); the individual pages stay registered as routes but are reached via those tabs.
 const navItems = {
   dashboard: { label: 'Dashboard', icon: Icons.dashboard },
-  resources: { label: 'Resources', icon: Icons.layers },
-  deploy: { label: 'Deploy', icon: Icons.compose },
-  activity: { label: 'Activity', icon: Icons.events },
-  infra: { label: 'Infrastructure', icon: Icons.system },
+  resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['builds', 'Builds'], ['volumes', 'Volumes'], ['networks', 'Networks']], default: 'containers' },
+  deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose'], ['templates', 'App Templates']], default: 'compose' },
+  activity: { label: 'Activity', icon: Icons.events, tabs: [['logs', 'Logs'], ['terminal', 'Terminal'], ['events', 'Events'], ['files', 'Files'], ['audit', 'Audit Log']], default: 'logs' },
+  infra: { label: 'Infrastructure', icon: Icons.system, tabs: [['servers', 'Servers'], ['registries', 'Registries'], ['cleanup', 'Cleanup']], default: 'servers' },
   'server-console': { label: 'Server Console', icon: Icons.terminal },
-  settings: { label: 'Settings', icon: Icons.settings }
+  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification Log'], ['update', 'Software Update'], ['system', 'System'], ['security', 'Security'], ['sshkeys', 'SSH Keys']], default: 'general' }
 };
 
 // Two clear domains: DOCKER management (Resources / Deploy / Activity — each a tabbed section) vs
@@ -23,16 +23,30 @@ const navGroups = [
 function initMacSidebar() {
   const sidebarNav = document.getElementById('sidebar-nav');
   if (!sidebarNav) return;
-  
+
   let html = '';
-  
-  navGroups.forEach((group, index) => {
+
+  navGroups.forEach((group) => {
     let itemsHtml = '';
-    
+
     group.items.forEach(key => {
       const item = navItems[key];
+      if (item.tabs) {
+        // A section with sub-tabs → a collapsible parent + its tabs as sidebar sub-items (auto-expands
+        // when active, so the sidebar stays compact). The in-page tab bar still works too.
+        itemsHtml += `
+          <a class="nav-item nav-parent" data-page="${key}" data-default="${item.default}">
+            <span class="nav-item-icon">${item.icon}</span>
+            <span style="flex:1">${item.label}</span>
+            <span class="nav-caret">▸</span>
+          </a>
+          <div class="nav-subitems" id="nav-sub-${key}">
+            ${item.tabs.map(([tab, label]) => `<a class="nav-subitem" data-page="${key}" data-tab="${tab}">${label}</a>`).join('')}
+          </div>
+        `;
+        return;
+      }
       const active = (key === 'dashboard') ? 'active' : '';
-      
       itemsHtml += `
         <a class="nav-item ${active}" data-page="${key}">
           <span class="nav-item-icon">${item.icon}</span>
@@ -41,37 +55,69 @@ function initMacSidebar() {
         </a>
       `;
     });
-    
+
     html += `
       <div class="nav-group">
-        <div class="nav-group-header">
-          ${group.label}
-        </div>
-        <div class="nav-group-items">
-          ${itemsHtml}
-        </div>
+        <div class="nav-group-header">${group.label}</div>
+        <div class="nav-group-items">${itemsHtml}</div>
       </div>
     `;
   });
-  
+
   sidebarNav.innerHTML = html;
 
-  // "Server Console" is hidden until a remote server exists (initServerSwitcher unhides it).
-  const consoleNav = sidebarNav.querySelector('.nav-item[data-page="server-console"]');
-  if (consoleNav) consoleNav.style.display = 'none';
+  // "Server Console" is always shown as a standard nav item. Clicking it opens the active remote
+  // server's console; with none active it sends the user to Servers to add/pick one (handler below).
 
   sidebarNav.addEventListener('click', (e) => {
+    // A sidebar sub-item (a section's tab) → navigate straight to that tab.
+    const subitem = e.target.closest('.nav-subitem');
+    if (subitem) { Router.navigate(subitem.dataset.page, { tab: subitem.dataset.tab }); return; }
     const item = e.target.closest('.nav-item');
     if (!item) return;
     const page = item.dataset.page;
+    // A section header → open its default tab (syncSidebarTabs then expands it).
+    if (item.classList.contains('nav-parent')) { Router.navigate(page, { tab: item.dataset.default }); return; }
     if (page === 'server-console') {
-      // Open the active remote server's console; if none active, send the user to pick one.
+      // Open the active remote server's console; with no remote server yet, send the user to Servers
+      // to add one (a console needs a server) — with a hint so the redirect isn't surprising.
       const active = Store.get('activeServer');
       if (active && active.id !== 'local' && active.type !== 'local') Router.navigate('server-console', { id: active.id });
-      else Router.navigate('infra', { tab: 'servers' });
+      else {
+        if (typeof showToast === 'function') showToast('Add a remote server first — a console needs one', 'info', 5000);
+        Router.navigate('infra', { tab: 'servers' });
+      }
       return;
     }
     if (page) Router.navigate(page);
+  });
+
+  // Keep the sidebar in sync with the route: expand the active section, highlight its active sub-item,
+  // collapse the rest. Fires when Router toggles a section's .active class, and on Back/Forward.
+  sidebarNav.querySelectorAll('.nav-parent').forEach(p => new MutationObserver(syncSidebarTabs).observe(p, { attributes: true, attributeFilter: ['class'] }));
+  window.addEventListener('hashchange', syncSidebarTabs);
+  syncSidebarTabs();
+}
+
+// Mirror the active in-page tab into the sidebar: expand the active section, highlight its active
+// sub-item, collapse the others. (Router already toggles the parent's .active class on navigation.)
+function syncSidebarTabs() {
+  const nav = document.getElementById('sidebar-nav');
+  if (!nav) return;
+  const tab = new URLSearchParams((location.hash.split('?')[1] || '')).get('tab') || '';
+  nav.querySelectorAll('.nav-parent').forEach(parent => {
+    const on = parent.classList.contains('active');
+    const sub = document.getElementById('nav-sub-' + parent.dataset.page);
+    if (sub) sub.classList.toggle('open', on);
+    const caret = parent.querySelector('.nav-caret');
+    if (caret) caret.style.transform = on ? 'rotate(90deg)' : '';
+  });
+  nav.querySelectorAll('.nav-subitem').forEach(s => {
+    const parent = nav.querySelector(`.nav-parent[data-page="${s.dataset.page}"]`);
+    const parentOn = parent?.classList.contains('active');
+    // On a bare section URL (no ?tab), the page shows the default tab — highlight it to match.
+    const effTab = tab || parent?.dataset.default;
+    s.classList.toggle('active', !!parentOn && s.dataset.tab === effTab);
   });
 }
 
@@ -304,9 +350,8 @@ async function initServerSwitcher() {
       localStorage.setItem('dcc_active_host', activeServer.host || '');
     }
 
-    // Reveal the "Server Console" nav item once at least one remote SSH server is registered.
-    const consoleNav = document.querySelector('.nav-item[data-page="server-console"]');
-    if (consoleNav) consoleNav.style.display = data.servers.some(s => s.id !== 'local' && s.type !== 'local') ? '' : 'none';
+    // "Server Console" is always visible now (a standard nav item); no longer hidden until a
+    // remote SSH server exists. The header server switcher below still tracks the active server.
 
     // DOM API ilə qur — XSS qoruması (host/id user input-dur)
     select.replaceChildren();

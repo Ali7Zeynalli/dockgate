@@ -2,6 +2,17 @@
 
 ---
 
+## [2.1.4] - 2026-06-21
+
+### Added — Collapsible sidebar sections (tabs as sub-items) + Server Console always visible
+- **Sidebar sections are now collapsible.** Each tabbed section — **Resources** (Containers/Images/Builds/Volumes/Networks), **Deploy** (Compose/App Templates), **Activity** (Logs/Terminal/Events/Files/Audit Log), **Infrastructure** (Servers/Registries/Cleanup) and now **Settings** (General/Notifications/Notification Log/Software Update/System/Security/SSH Keys) — shows its tabs as **sub-items directly in the sidebar**. Clicking a section header opens its default tab and expands it; clicking a sub-item jumps straight to that tab. The active section auto-expands and its active sub-item is highlighted; the others collapse. A small caret (▸ → ▾) marks the expanded one.
+- **In-page tab bars stay** — each section's page still has its own tab bar, and clicking an in-page tab now also moves the sidebar highlight (two-way sync via the hash). Bare section deep-links (e.g. `#/settings`) highlight the section's default sub-item to match what the page shows. Back/Forward and refresh stay in sync.
+- **Settings is now a section too** — its 7 tabs appear as sidebar sub-items, consistent with the Docker/Server sections (previously Settings was a plain item whose tabs only showed inside the page).
+- **Server Console is always visible** in the sidebar (Server group) — it was previously hidden until a remote SSH server was registered. Clicking it opens the active remote server's console; with no remote server yet it shows a hint ("Add a remote server first — a console needs one") and takes you to **Infrastructure → Servers** to add one.
+- Verified end-to-end in a real browser: section expand/collapse, header→default-tab, sub-item→tab, in-page-tab→sidebar sync, bare-URL default highlight, Settings 7 sub-items, Server Console visibility + no-remote hint/redirect. No existing functionality removed.
+
+---
+
 ## [2.1.3] - 2026-06-21
 
 ### Added — "How SSH keys work" explainer in Settings → SSH Keys
