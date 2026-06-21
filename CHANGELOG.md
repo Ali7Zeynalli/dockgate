@@ -2,6 +2,17 @@
 
 ---
 
+## [2.1.9] - 2026-06-21
+
+### Added — Push: which-registry hint + post-push result card (Registries plan, Phase A+B)
+- The **Push image to registry** modal now shows, live as you type the target reference, **which stored credential will be used**: "✓ Will authenticate as `<name>` (`<host>`)" when a registry matches the host, or "⚠ No stored credential for `<host>` — push is anonymous" otherwise (Docker Hub aliases handled). No more guessing which registry a push lands in.
+- After a successful push, a **result card** shows the pushed **tag**, the **digest** (`sha256:…` with a Copy button), the **compressed size**, the **registry**, and a **"View in registry"** deep-link to the provider's web UI (GHCR → `github.com/<owner>/<repo>/pkgs/container/…`, Docker Hub → `hub.docker.com/r/…`, GitLab → `…/container_registry`, Quay → `quay.io/repository/…`).
+- Backend: `image:push:done` now carries the daemon's final `aux` (Tag/Digest/Size); the UI also parses the `…: digest: sha256:… size: …` status line as a fallback for daemons that don't emit `aux`.
+- Verified e2e against a real registry: pushing `ghcr.io/…/dockgate:latest` streamed the push and rendered the card with the real digest, `2.2 KB` compressed size, and a working GHCR link; the host hint resolved `ghcr.io` vs `docker.io` correctly.
+- This is **Phase A+B** of the [Registries full-plan](docs/) — next up (not yet built): richer Registries table (type/status/counts), per-registry **Browse** (tracked repos + auto-track-on-push), Dashboard registries card.
+
+---
+
 ## [2.1.8] - 2026-06-21
 
 ### Added — Push images to a registry from the UI (live console)

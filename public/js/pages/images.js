@@ -306,38 +306,120 @@ function splitImageRef(ref) {
   return { repo: ref, tag: 'latest' };
 }
 
-// Push an image to a registry with a live progress console. Global so the Images page AND the Builds
-// page can both call it. The backend streams progress over Socket.io (image:push:*); the credential is
-// auto-matched by registry host (add it under Servers → Registries, with write/push access).
-function openPushModal(repoTag, imageId) {
+// Resolve an image ref into { host, repoPath, tag } using Docker's host rule (first slash-segment is a
+// registry host only if it has a '.'/':' or is 'localhost'; otherwise the registry is Docker Hub).
+function parseImageRef(ref) {
+  const slash = ref.indexOf('/');
+  const first = slash >= 0 ? ref.slice(0, slash) : '';
+  let host, rest;
+  if (first && (first.includes('.') || first.includes(':') || first === 'localhost')) { host = first; rest = ref.slice(slash + 1); }
+  else { host = 'docker.io'; rest = ref; }
+  const lastSlash = rest.lastIndexOf('/');
+  const lastColon = rest.lastIndexOf(':');
+  let tag = 'latest', repoPath = rest;
+  if (lastColon > lastSlash) { tag = rest.slice(lastColon + 1); repoPath = rest.slice(0, lastColon); }
+  return { host, repoPath, tag };
+}
+
+// Best-effort web URL to view a pushed image in its registry's UI (null when the provider is unknown).
+function registryWebUrl(host, repoPath) {
+  if (!repoPath) return null;
+  const parts = repoPath.split('/');
+  if (host === 'ghcr.io') { const owner = parts[0]; const last = parts[parts.length - 1]; return owner && parts.length > 1 ? `https://github.com/${owner}/${last}/pkgs/container/${last}` : null; }
+  if (host === 'docker.io') return `https://hub.docker.com/${parts.length === 1 ? '_/' + parts[0] : 'r/' + repoPath}`;
+  if (host === 'registry.gitlab.com') return `https://gitlab.com/${repoPath}/container_registry`;
+  if (host === 'quay.io') return `https://quay.io/repository/${repoPath}`;
+  return null;
+}
+
+// Which stored registry (if any) authenticates a push to `host` (Docker Hub has several aliases).
+function matchRegistry(host, registries) {
+  const HUB = ['docker.io', 'index.docker.io', 'registry-1.docker.io', 'https://index.docker.io/v1/'];
+  const candidates = host === 'docker.io' ? HUB : [host];
+  return (registries || []).find(r => candidates.includes(r.server_address)) || null;
+}
+
+// Push an image to a registry with a live progress console + a post-push result card (digest/size/link).
+// Global so the Images page AND the Builds page can both call it. Backend streams over Socket.io.
+async function openPushModal(repoTag, imageId) {
   const m = showModal('Push image to registry', `
     <div style="display:flex;flex-direction:column;gap:10px">
       <div class="input-group">
         <label>Target reference</label>
         <input class="input" id="push-ref" value="${escapeHtml(repoTag)}" placeholder="ghcr.io/owner/app:tag" spellcheck="false">
       </div>
-      <div class="text-xs text-muted">The credential is matched automatically by registry host (e.g. <code>ghcr.io</code>) — add it under <strong>Servers → Registries</strong> first, with <strong>write/push</strong> access. To push a local image, change the reference to a full registry path: DockGate re-tags it for you, then pushes.</div>
-      <pre id="push-log" style="display:none;background:var(--bg-primary,#0d1117);border:1px solid var(--border);border-radius:8px;padding:10px;height:300px;overflow:auto;font-family:var(--font-mono,monospace);font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+      <div id="push-reg" class="text-xs" style="min-height:16px"></div>
+      <div class="text-xs text-muted">The credential is matched automatically by registry host — add it under <strong>Servers → Registries</strong> first, with <strong>write/push</strong> access. To push a local image, change the reference to a full registry path: DockGate re-tags it for you, then pushes.</div>
+      <pre id="push-log" style="display:none;background:var(--bg-primary,#0d1117);border:1px solid var(--border);border-radius:8px;padding:10px;height:280px;overflow:auto;font-family:var(--font-mono,monospace);font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+      <div id="push-result" style="display:none"></div>
     </div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
 
   const go = document.createElement('button');
   go.className = 'btn btn-primary'; go.textContent = 'Push';
   m.overlay.querySelector('#modal-footer').appendChild(go);
 
+  const refEl = m.overlay.querySelector('#push-ref');
+  const regEl = m.overlay.querySelector('#push-reg');
   const pre = m.overlay.querySelector('#push-log');
+  const resultEl = m.overlay.querySelector('#push-result');
+
+  // Phase B — live "which registry will be used" hint for the current target reference.
+  let registries = [];
+  const updateBadge = () => {
+    const ref = refEl.value.trim();
+    if (!ref) { regEl.innerHTML = ''; return; }
+    const { host } = parseImageRef(ref);
+    const reg = matchRegistry(host, registries);
+    regEl.innerHTML = reg
+      ? `<span style="color:var(--success,#22c55e)">✓ Will authenticate as <strong>${escapeHtml(reg.name || reg.server_address)}</strong> (${escapeHtml(host)})</span>`
+      : `<span style="color:var(--warning,#f59e0b)">⚠ No stored credential for <strong>${escapeHtml(host)}</strong> — push is anonymous (fails for private). Add it under Servers → Registries.</span>`;
+  };
+  refEl.addEventListener('input', updateBadge);
+  API.get('/registries').then(rows => { registries = rows || []; updateBadge(); }).catch(() => {});
+  updateBadge();
+
   const byId = {}, idOrder = [], plain = [];
+  let auxResult = null;
   const render = () => { pre.textContent = [...plain, ...idOrder.map(id => byId[id])].join('\n'); pre.scrollTop = pre.scrollHeight; };
   const addEvent = (ev) => {
     if (!ev) return;
     if (ev.error) { plain.push('✖ ' + ev.error); }
+    else if (ev.aux) { auxResult = ev.aux; }              // structured final event — not all daemons emit it
     else if (ev.id) { if (!(ev.id in byId)) idOrder.push(ev.id); byId[ev.id] = ev.id.slice(0, 12) + ': ' + (ev.status || '') + (ev.progress ? ' ' + ev.progress : ''); }
-    else if (ev.status) { plain.push(ev.status); }
+    else if (ev.status) {
+      plain.push(ev.status);
+      // Fallback when there's no aux event: the digest+size arrive as a status line "…: digest: sha256:… size: 1234".
+      const md = ev.status.match(/digest:\s*(sha256:[0-9a-f]+)\s+size:\s*(\d+)/i);
+      if (md) { auxResult = auxResult || {}; if (!auxResult.Digest) auxResult.Digest = md[1]; if (!auxResult.Size) auxResult.Size = parseInt(md[2], 10); }
+    }
     render();
+  };
+
+  // Phase A — post-push result card: tag · digest (+copy) · compressed size · registry · view link.
+  const showResult = (d) => {
+    const ref = refEl.value.trim();
+    const { host, repoPath } = parseImageRef(ref);
+    const digest = (d && d.digest) || (auxResult && auxResult.Digest) || '';
+    const size = (d && d.size) || (auxResult && auxResult.Size) || 0;
+    const url = registryWebUrl(host, repoPath);
+    resultEl.innerHTML = `
+      <div class="card" style="padding:12px;margin-top:10px;border-color:var(--success,#22c55e)">
+        <div style="font-weight:600;margin-bottom:8px;color:var(--success,#22c55e)">✔ Pushed ${escapeHtml(ref)}</div>
+        <div class="text-xs" style="display:flex;flex-direction:column;gap:4px">
+          ${digest ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="text-muted">Digest:</span> <span class="td-mono" style="word-break:break-all">${escapeHtml(digest)}</span> <button class="btn btn-xs btn-secondary" id="push-copy-digest">Copy</button></div>` : ''}
+          ${size ? `<div><span class="text-muted">Compressed size:</span> ${formatBytes(size)}</div>` : ''}
+          <div><span class="text-muted">Registry:</span> ${escapeHtml(host)}</div>
+          ${url ? `<div style="margin-top:2px"><a href="${url}" target="_blank" rel="noopener" class="btn btn-xs btn-secondary">${Icons.externalLink} View in registry</a></div>` : ''}
+        </div>
+      </div>`;
+    resultEl.style.display = 'block';
+    const cp = resultEl.querySelector('#push-copy-digest');
+    if (cp) cp.onclick = () => navigator.clipboard?.writeText(digest).then(() => showToast('Copied'));
   };
 
   const onStarted = (d) => { plain.push('Pushing ' + d.repoTag + ' …'); render(); };
   const onProgress = (ev) => addEvent(ev);
-  const onDone = (d) => { plain.push('✔ Pushed ' + d.repoTag); render(); go.disabled = false; go.textContent = 'Push again'; showToast('Pushed ' + d.repoTag, 'success'); cleanup(); };
+  const onDone = (d) => { plain.push('✔ Pushed ' + d.repoTag); render(); go.disabled = false; go.textContent = 'Push again'; showToast('Pushed ' + d.repoTag, 'success'); showResult(d); cleanup(); };
   const onErr = (d) => { plain.push('✖ ' + (d.error || 'Push failed')); render(); go.disabled = false; go.textContent = 'Retry'; showToast(d.error || 'Push failed', 'error', 8000); cleanup(); };
   const cleanup = () => {
     socket.off('image:push:started', onStarted);
@@ -351,7 +433,7 @@ function openPushModal(repoTag, imageId) {
   mo.observe(document.getElementById('modal-root'), { childList: true });
 
   go.onclick = async () => {
-    const targetRef = m.overlay.querySelector('#push-ref').value.trim();
+    const targetRef = refEl.value.trim();
     if (!targetRef) return showToast('Target reference required', 'warning');
     go.disabled = true; go.textContent = 'Pushing…';
     // Re-tag first if pushing to a different reference than the image currently carries.
@@ -362,6 +444,7 @@ function openPushModal(repoTag, imageId) {
       } catch (e) { showToast('Tag failed: ' + e.message, 'error'); go.disabled = false; go.textContent = 'Push'; return; }
     }
     pre.style.display = 'block';
+    resultEl.style.display = 'none'; auxResult = null;
     plain.length = 0; idOrder.length = 0; for (const k in byId) delete byId[k];
     cleanup(); // avoid double-binding if pushing again
     socket.on('image:push:started', onStarted);

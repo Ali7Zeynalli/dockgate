@@ -284,9 +284,11 @@ io.on('connection', (socket) => {
       if (!repoTag || typeof repoTag !== 'string') return socket.emit('image:push:error', { error: 'repoTag required' });
       const server = dockerService.getActiveServerId();
       socket.emit('image:push:started', { repoTag });
-      await dockerService.pushImageStream(repoTag, (event) => socket.emit('image:push:progress', event));
+      const output = await dockerService.pushImageStream(repoTag, (event) => socket.emit('image:push:progress', event));
+      // The daemon's final 'aux' event carries the pushed manifest's Tag/Digest/Size — surface it.
+      const aux = (output || []).map(o => o && o.aux).filter(Boolean).pop() || null;
       logAction({ socket, server, resourceType: 'image', resourceName: repoTag, action: 'push' });
-      socket.emit('image:push:done', { repoTag });
+      socket.emit('image:push:done', { repoTag, tag: aux && aux.Tag, digest: aux && aux.Digest, size: aux && aux.Size });
     } catch (e) {
       socket.emit('image:push:error', { error: e.message });
     }
