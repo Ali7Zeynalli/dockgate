@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.5] - 2026-06-21
+
+### Changed — Registries moved from Infrastructure to Settings (next to SSH Keys)
+- The **Registries** credential store now lives in **Settings → Registries** (the 8th tab, right after SSH Keys) instead of **Infrastructure → Registries**. Rationale: both Registries and SSH Keys are *credential vaults* you set once and DockGate uses automatically — grouping them together is more consistent than mixing Registries in with Servers/Cleanup. Infrastructure is now just **Servers + Cleanup**.
+- Fully backward-compatible: the old `#/registries` deep-link now redirects to `#/settings?tab=registries`. The Registries page itself (add/edit/delete/Test login, encrypted-at-rest passwords, audit logging) is unchanged — only its location moved.
+- Verified e2e: Infrastructure shows only Servers/Cleanup (sidebar + page tabs), Settings shows 8 tabs incl. Registries (sidebar sub-item highlights, table + "Add Registry" render inside Settings), and the legacy `#/registries` redirect lands on Settings.
+
+---
+
 ## [2.1.4] - 2026-06-21
 
 ### Added — Collapsible sidebar sections (tabs as sub-items) + Server Console always visible

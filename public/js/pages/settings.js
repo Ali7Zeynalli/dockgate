@@ -34,6 +34,7 @@ Router.register('settings', async (content, params) => {
           <button class="tab-btn" data-tab="system">System</button>
           <button class="tab-btn" data-tab="security">Security</button>
           <button class="tab-btn" data-tab="sshkeys">SSH Keys</button>
+          <button class="tab-btn" data-tab="registries">Registries</button>
         </div>
 
         <div id="settings-tab-content" style="padding-top:20px;">
@@ -43,7 +44,7 @@ Router.register('settings', async (content, params) => {
 
       const tabContent = document.getElementById('settings-tab-content');
       // Restore the active tab from the URL params (deep-link / refresh / Back), default General.
-      const validTabs = ['general', 'notifications', 'log', 'update', 'system', 'security', 'sshkeys'];
+      const validTabs = ['general', 'notifications', 'log', 'update', 'system', 'security', 'sshkeys', 'registries'];
       let activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'general';
 
       // Reflect the restored tab in the tab-bar highlight (default markup highlights General).
@@ -71,6 +72,7 @@ Router.register('settings', async (content, params) => {
         else if (tab === 'system') renderSystemInfo(tabContent); // System info now lives here (global from system.js)
         else if (tab === 'security') renderSecurity();
         else if (tab === 'sshkeys') renderSshKeys();
+        else if (tab === 'registries') renderRegistriesInto(tabContent, { embedded: true }); // moved here from Infrastructure (credential vault, like SSH Keys)
       }
 
       // ==================== SECURITY TAB ====================

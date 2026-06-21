@@ -6,9 +6,9 @@ const navItems = {
   resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['builds', 'Builds'], ['volumes', 'Volumes'], ['networks', 'Networks']], default: 'containers' },
   deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose'], ['templates', 'App Templates']], default: 'compose' },
   activity: { label: 'Activity', icon: Icons.events, tabs: [['logs', 'Logs'], ['terminal', 'Terminal'], ['events', 'Events'], ['files', 'Files'], ['audit', 'Audit Log']], default: 'logs' },
-  infra: { label: 'Infrastructure', icon: Icons.system, tabs: [['servers', 'Servers'], ['registries', 'Registries'], ['cleanup', 'Cleanup']], default: 'servers' },
+  infra: { label: 'Infrastructure', icon: Icons.system, tabs: [['servers', 'Servers'], ['cleanup', 'Cleanup']], default: 'servers' },
   'server-console': { label: 'Server Console', icon: Icons.terminal },
-  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification Log'], ['update', 'Software Update'], ['system', 'System'], ['security', 'Security'], ['sshkeys', 'SSH Keys']], default: 'general' }
+  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification Log'], ['update', 'Software Update'], ['system', 'System'], ['security', 'Security'], ['sshkeys', 'SSH Keys'], ['registries', 'Registries']], default: 'general' }
 };
 
 // Two clear domains: DOCKER management (Resources / Deploy / Activity — each a tabbed section) vs
