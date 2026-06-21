@@ -91,6 +91,7 @@ Router.register('images', async (content) => {
                       <button class="btn-icon" title="Layers / history" data-layers="${img.id}">${Icons.layers}</button>
                       <button class="btn-icon" title="Tags" data-tags="${img.id}">${Icons.tag}</button>
                       <button class="btn-icon" title="Save (download tar)" data-save="${img.id}">${Icons.download}</button>
+                      ${repo !== '<none>' ? `<button class="btn-icon" title="Push to registry" data-push="${escapeHtml(full)}" data-pushid="${img.id}">${Icons.arrowUp}</button>` : ''}
                       <button class="btn-icon" title="Build from this (FROM)" data-buildfrom="${escapeHtml(full)}">${Icons.compose}</button>
                       <button class="btn-icon" title="Inspect" data-inspect="${img.id}">${Icons.eye}</button>
                       <button class="btn-icon" title="Remove" data-remove="${img.id}" data-name="${escapeHtml(full)}" style="color:var(--danger)">${Icons.trash}</button>
@@ -159,6 +160,11 @@ Router.register('images', async (content) => {
       // Run a container from this image (opens the guided Run modal pre-filled)
       content.querySelectorAll('[data-run]').forEach(btn => {
         btn.addEventListener('click', () => openRunContainerModal(btn.dataset.run));
+      });
+
+      // Push this image to a registry (live console; credential auto-matched by host)
+      content.querySelectorAll('[data-push]').forEach(btn => {
+        btn.addEventListener('click', () => openPushModal(btn.dataset.push, btn.dataset.pushid));
       });
 
       // Single remove
@@ -291,3 +297,77 @@ Router.register('images', async (content) => {
   refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 15000);
   return () => { if (refreshTimer) clearInterval(refreshTimer); };
 });
+
+// Split a full image ref into { repo, tag } on the LAST colon after the last slash (registry ports survive).
+function splitImageRef(ref) {
+  const slash = ref.lastIndexOf('/');
+  const colon = ref.lastIndexOf(':');
+  if (colon > slash) return { repo: ref.slice(0, colon), tag: ref.slice(colon + 1) };
+  return { repo: ref, tag: 'latest' };
+}
+
+// Push an image to a registry with a live progress console. Global so the Images page AND the Builds
+// page can both call it. The backend streams progress over Socket.io (image:push:*); the credential is
+// auto-matched by registry host (add it under Servers → Registries, with write/push access).
+function openPushModal(repoTag, imageId) {
+  const m = showModal('Push image to registry', `
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="input-group">
+        <label>Target reference</label>
+        <input class="input" id="push-ref" value="${escapeHtml(repoTag)}" placeholder="ghcr.io/owner/app:tag" spellcheck="false">
+      </div>
+      <div class="text-xs text-muted">The credential is matched automatically by registry host (e.g. <code>ghcr.io</code>) — add it under <strong>Servers → Registries</strong> first, with <strong>write/push</strong> access. To push a local image, change the reference to a full registry path: DockGate re-tags it for you, then pushes.</div>
+      <pre id="push-log" style="display:none;background:var(--bg-primary,#0d1117);border:1px solid var(--border);border-radius:8px;padding:10px;height:300px;overflow:auto;font-family:var(--font-mono,monospace);font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+    </div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+
+  const go = document.createElement('button');
+  go.className = 'btn btn-primary'; go.textContent = 'Push';
+  m.overlay.querySelector('#modal-footer').appendChild(go);
+
+  const pre = m.overlay.querySelector('#push-log');
+  const byId = {}, idOrder = [], plain = [];
+  const render = () => { pre.textContent = [...plain, ...idOrder.map(id => byId[id])].join('\n'); pre.scrollTop = pre.scrollHeight; };
+  const addEvent = (ev) => {
+    if (!ev) return;
+    if (ev.error) { plain.push('✖ ' + ev.error); }
+    else if (ev.id) { if (!(ev.id in byId)) idOrder.push(ev.id); byId[ev.id] = ev.id.slice(0, 12) + ': ' + (ev.status || '') + (ev.progress ? ' ' + ev.progress : ''); }
+    else if (ev.status) { plain.push(ev.status); }
+    render();
+  };
+
+  const onStarted = (d) => { plain.push('Pushing ' + d.repoTag + ' …'); render(); };
+  const onProgress = (ev) => addEvent(ev);
+  const onDone = (d) => { plain.push('✔ Pushed ' + d.repoTag); render(); go.disabled = false; go.textContent = 'Push again'; showToast('Pushed ' + d.repoTag, 'success'); cleanup(); };
+  const onErr = (d) => { plain.push('✖ ' + (d.error || 'Push failed')); render(); go.disabled = false; go.textContent = 'Retry'; showToast(d.error || 'Push failed', 'error', 8000); cleanup(); };
+  const cleanup = () => {
+    socket.off('image:push:started', onStarted);
+    socket.off('image:push:progress', onProgress);
+    socket.off('image:push:done', onDone);
+    socket.off('image:push:error', onErr);
+  };
+
+  // Detach the socket listeners whenever the modal goes away (Close button, X, or backdrop click).
+  const mo = new MutationObserver(() => { if (!m.overlay.isConnected) { cleanup(); mo.disconnect(); } });
+  mo.observe(document.getElementById('modal-root'), { childList: true });
+
+  go.onclick = async () => {
+    const targetRef = m.overlay.querySelector('#push-ref').value.trim();
+    if (!targetRef) return showToast('Target reference required', 'warning');
+    go.disabled = true; go.textContent = 'Pushing…';
+    // Re-tag first if pushing to a different reference than the image currently carries.
+    if (targetRef !== repoTag) {
+      try {
+        const { repo, tag } = splitImageRef(targetRef);
+        await API.post(`/images/${encodeURIComponent(imageId || repoTag)}/tag`, { repo, tag });
+      } catch (e) { showToast('Tag failed: ' + e.message, 'error'); go.disabled = false; go.textContent = 'Push'; return; }
+    }
+    pre.style.display = 'block';
+    plain.length = 0; idOrder.length = 0; for (const k in byId) delete byId[k];
+    cleanup(); // avoid double-binding if pushing again
+    socket.on('image:push:started', onStarted);
+    socket.on('image:push:progress', onProgress);
+    socket.on('image:push:done', onDone);
+    socket.on('image:push:error', onErr);
+    socket.emit('image:push', { repoTag: targetRef });
+  };
+}

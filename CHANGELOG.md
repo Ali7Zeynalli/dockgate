@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.8] - 2026-06-21
+
+### Added — Push images to a registry from the UI (live console)
+- **Images** (Resources → Images) now has a **⤴ Push** action on every tagged image, and **Builds** has the same on each built image in history. It opens a "Push image to registry" modal: confirm/edit the **target reference** (to push a local image, change it to a full registry path — DockGate re-tags it for you first), then watch a **live progress console** stream the push layer-by-layer.
+- The backend already supported push; this wires it to a **streaming Socket.io channel** (`image:push` → `pushImageStream` → `image:push:progress/done/error`) so progress is live, like builds. The credential is still **auto-matched by registry host** (no picker) — add it under **Servers → Registries** with write/push access. Every push is audit-logged.
+- Verified e2e in a real browser: the Push button appears on tagged images, the modal pre-fills the image's ref, and clicking Push streams `Pushing… → The push refers to repository […] → digest: sha256:… → ✔ Pushed` into the console, with the button flipping to "Push again".
+
+---
+
 ## [2.1.7] - 2026-06-21
 
 ### Added — Server Console shows its sub-tabs in the sidebar

@@ -147,6 +147,7 @@ Router.register('builds', async (content) => {
               </div>
               <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
                 <span class="td-mono text-xs">${escapeHtml(img.shortId)}</span>
+                ${img.tag && !img.tag.startsWith('<none>') ? `<button class="btn-icon push-docker-build" data-push-tag="${escapeHtml(img.tag)}" data-push-id="${img.imageId}" title="Push to registry" onclick="event.stopPropagation()">${Icons.arrowUp}</button>` : ''}
                 <button class="btn-icon hide-docker-build" data-image-id="${img.imageId}" title="Remove from history" onclick="event.stopPropagation()">${Icons.trash}</button>
               </div>
             </div>
@@ -183,6 +184,12 @@ Router.register('builds', async (content) => {
             const id = img.imageId;
             if (selectedDockerIds.has(id)) selectedDockerIds.delete(id); else selectedDockerIds.add(id);
             render();
+          });
+
+          // Push to registry (same live-console modal as the Images page)
+          el.querySelector('.push-docker-build')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openPushModal(img.tag, img.imageId);
           });
 
           // Delete button

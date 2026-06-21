@@ -502,6 +502,32 @@ async function pushImage(repoTag, auth) {
 }
 
 /**
+ * Same as pushImage but streams each progress event to `onProgress` (for a live UI console).
+ * Resolves with the full output array on success; rejects on an in-band error event.
+ * @param {string} repoTag
+ * @param {(event:object)=>void} onProgress
+ * @param {object} [auth] explicit dockerode authconfig
+ */
+async function pushImageStream(repoTag, onProgress, auth) {
+  const authconfig = auth || lookupAuthConfig(repoTag);
+  const image = docker.getImage(repoTag);
+  return new Promise((resolve, reject) => {
+    image.push({ authconfig }, (err, stream) => {
+      if (err) return reject(err);
+      docker.modem.followProgress(stream,
+        (err, output) => {
+          if (err) return reject(err);
+          const failed = (output || []).find(o => o && o.error);
+          if (failed) return reject(new Error(failed.error));
+          resolve(output);
+        },
+        (event) => { try { onProgress && onProgress(event); } catch (e) { /* ignore UI push errors */ } }
+      );
+    });
+  });
+}
+
+/**
  * Verify registry credentials against the registry (Docker Engine POST /auth). Does not persist.
  * @param {{serveraddress:string, username:string, password:string}} creds
  * @returns {Promise<object>} the registry response (e.g. { Status: 'Login Succeeded' })
@@ -1097,7 +1123,7 @@ module.exports = {
   containerTop, containerExecOnce, containerExportStream, updateContainer, commitContainer, recreateContainer,
   containerListFiles, containerDownloadFile, containerUpload,
   getContainerLogs, createContainer, parseStats, demuxLogs,
-  listImages, inspectImage, imageHistory, imageSaveStream, loadImage, pullImage, pushImage, removeImage, tagImage, buildImage, makeDockerfileTar,
+  listImages, inspectImage, imageHistory, imageSaveStream, loadImage, pullImage, pushImage, pushImageStream, removeImage, tagImage, buildImage, makeDockerfileTar,
   registryHostOf, checkRegistryAuth,
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
   listVolumeFiles, downloadVolumeFile,

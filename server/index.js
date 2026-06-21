@@ -278,6 +278,20 @@ io.on('connection', (socket) => {
   // System (host) terminal — shell on the active server (remote SSH host or local container). See host-terminal.js.
   attachHostTerminal(socket, { dockerService, stmts, logAction });
 
+  // ---- Docker Image Push streaming (live console; credential auto-matched by registry host) ----
+  socket.on('image:push', async ({ repoTag } = {}) => {
+    try {
+      if (!repoTag || typeof repoTag !== 'string') return socket.emit('image:push:error', { error: 'repoTag required' });
+      const server = dockerService.getActiveServerId();
+      socket.emit('image:push:started', { repoTag });
+      await dockerService.pushImageStream(repoTag, (event) => socket.emit('image:push:progress', event));
+      logAction({ socket, server, resourceType: 'image', resourceName: repoTag, action: 'push' });
+      socket.emit('image:push:done', { repoTag });
+    } catch (e) {
+      socket.emit('image:push:error', { error: e.message });
+    }
+  });
+
   // ---- Docker Image Build streaming ----
   let buildStream = null;
   let activeBuildInfo = null; // {id, tag, server} — so build:cancel can write a meaningful audit entry
