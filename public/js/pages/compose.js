@@ -280,7 +280,7 @@ Router.register('compose', async (content) => {
       </div>
       <div class="input-group" id="gd-token-row"><label>Access token</label><input class="input" id="gd-token" type="password" placeholder="GitHub PAT with repo scope — not logged" autocomplete="new-password"></div>
       <div class="input-group" id="gd-key-row" style="display:none"><label>SSH key</label>
-        ${keys.length ? `<select class="select" id="gd-key">${keyOpts}</select>` : `<div class="text-xs" style="color:var(--warning)">No SSH keys yet — create one in <b>Settings → SSH Keys</b> first.</div>`}
+        ${keys.length ? `<select class="select" id="gd-key">${keyOpts}</select>` : `<div class="text-xs" style="color:var(--warning)">No SSH keys yet — create one in <b>Servers → SSH Keys</b> first.</div>`}
         <span class="text-xs text-muted" style="margin-top:4px;display:block">Use the SSH URL <code>git@github.com:owner/repo.git</code>, and add this key's public part to your Git host.</span>
         ${keys.length ? `<button type="button" class="btn btn-secondary btn-sm" id="gd-test" style="margin-top:6px;align-self:flex-start">Test key ↔ repo</button>` : ''}
       </div>
@@ -325,7 +325,7 @@ Router.register('compose', async (content) => {
       if (!project || !repoUrl) { showToast('Repo URL and project name are required', 'warning'); return; }
       const useKey = authSel.value === 'sshkey';
       const keyId = useKey ? (root.querySelector('#gd-key')?.value || '') : '';
-      if (useKey && !keyId) { showToast('Select an SSH key (or create one in Settings → SSH Keys)', 'warning'); return; }
+      if (useKey && !keyId) { showToast('Select an SSH key (or create one in Servers → SSH Keys)', 'warning'); return; }
       const reset = () => { btn.disabled = false; btn.textContent = 'Clone & choose what to deploy'; };
       btn.disabled = true; btn.textContent = 'Cloning…';
       try {

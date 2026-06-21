@@ -55,6 +55,6 @@ Router.register('deploy', (content, params) => renderTabbedSection(content, para
   default: 'compose',
 }));
 Router.register('activity', (content, params) => renderTabbedSection(content, params, {
-  tabs: [['logs', 'Logs'], ['terminal', 'Terminal'], ['events', 'Events'], ['files', 'Files'], ['audit', 'Audit Log']],
+  tabs: [['logs', 'Logs'], ['terminal', 'Terminal'], ['events', 'Events'], ['files', 'Files'], ['audit', 'Audit Log'], ['cleanup', 'Cleanup']],
   default: 'logs',
 }));

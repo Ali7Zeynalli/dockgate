@@ -172,7 +172,7 @@ function renderHostMonitoring(serverId, container) {
     // Insight bridges (scoped re-render — they appear/disappear)
     const sid = String(serverId).replace(/'/g, '');
     const ins = [];
-    if (rootDisk.usePct >= 85) ins.push(`<div class="insight-card warning" onclick="Router.navigate('infra',{tab:'cleanup'})" style="cursor:pointer" title="Open Docker Cleanup"><span class="nav-item-icon">${Icons.alert}</span><span>Disk ${rootDisk.usePct}% full on / — free space with Docker Cleanup →</span></div>`);
+    if (rootDisk.usePct >= 85) ins.push(`<div class="insight-card warning" onclick="Router.navigate('activity',{tab:'cleanup'})" style="cursor:pointer" title="Open Docker Cleanup"><span class="nav-item-icon">${Icons.alert}</span><span>Disk ${rootDisk.usePct}% full on / — free space with Docker Cleanup →</span></div>`);
     if (memPct >= 90 && !hasSwap) ins.push(`<div class="insight-card warning" onclick="Router.navigate('server-console',{id:'${sid}',tab:'setup'})" style="cursor:pointer" title="Open Setup"><span class="nav-item-icon">${Icons.alert}</span><span>Memory ${memPct}% and no swap — add a swap file in Setup →</span></div>`);
     if (s.cpu != null && s.cpu >= 90) ins.push(`<div class="insight-card warning"><span class="nav-item-icon">${Icons.alert}</span><span>CPU ${s.cpu}% — see Top Processes below</span></div>`);
     const insEl = $('#hm-insights'); if (insEl) insEl.innerHTML = ins.join('');

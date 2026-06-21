@@ -5,10 +5,10 @@ const navItems = {
   dashboard: { label: 'Dashboard', icon: Icons.dashboard },
   resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['builds', 'Builds'], ['volumes', 'Volumes'], ['networks', 'Networks']], default: 'containers' },
   deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose'], ['templates', 'App Templates']], default: 'compose' },
-  activity: { label: 'Activity', icon: Icons.events, tabs: [['logs', 'Logs'], ['terminal', 'Terminal'], ['events', 'Events'], ['files', 'Files'], ['audit', 'Audit Log']], default: 'logs' },
-  infra: { label: 'Infrastructure', icon: Icons.system, tabs: [['servers', 'Servers'], ['cleanup', 'Cleanup']], default: 'servers' },
+  activity: { label: 'Activity', icon: Icons.events, tabs: [['logs', 'Logs'], ['terminal', 'Terminal'], ['events', 'Events'], ['files', 'Files'], ['audit', 'Audit Log'], ['cleanup', 'Cleanup']], default: 'logs' },
+  infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH Keys'], ['registries', 'Registries']], default: 'servers' },
   'server-console': { label: 'Server Console', icon: Icons.terminal },
-  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification Log'], ['update', 'Software Update'], ['system', 'System'], ['security', 'Security'], ['sshkeys', 'SSH Keys'], ['registries', 'Registries']], default: 'general' }
+  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification Log'], ['update', 'Software Update'], ['system', 'System'], ['security', 'Security']], default: 'general' }
 };
 
 // Two clear domains: DOCKER management (Resources / Deploy / Activity — each a tabbed section) vs
@@ -238,7 +238,7 @@ async function boot() {
       try { startParams = JSON.parse(localStorage.getItem('dcc_last_params')) || {}; } catch(e){ startParams = {}; }
     }
     // Remap a legacy/bookmarked sub-route (e.g. #/containers) onto its consolidated section tab.
-    const SECTION_OF = { containers: 'resources', images: 'resources', builds: 'resources', volumes: 'resources', networks: 'resources', compose: 'deploy', templates: 'deploy', logs: 'activity', terminal: 'activity', events: 'activity', files: 'activity', audit: 'activity' };
+    const SECTION_OF = { containers: 'resources', images: 'resources', builds: 'resources', volumes: 'resources', networks: 'resources', compose: 'deploy', templates: 'deploy', logs: 'activity', terminal: 'activity', events: 'activity', files: 'activity', audit: 'activity', cleanup: 'activity' };
     if (SECTION_OF[startPage]) { startParams = { tab: startPage }; startPage = SECTION_OF[startPage]; }
     // replace:true → set the initial hash without adding a spurious history entry
     await Router.navigate(startPage, startParams, { replace: true });

@@ -1,22 +1,25 @@
-// Infrastructure Page — top-level section hosting Servers + Registries + Cleanup as sub-tabs.
-// The Servers block was moved here from settings.js (Settings stays for app config only).
+// Servers Page (route key 'infra') — top-level section hosting Servers + SSH Keys + Registries as
+// sub-tabs: everything to connect to remote hosts & registries / store credentials, in one place.
+// SSH Keys + Registries render via the global renderSshKeysInto / renderRegistriesInto. Settings is
+// app-config only; Cleanup moved to the Activity section.
 Router.register('infra', async (content, params) => {
   const pageNavId = Router._navId;
 
   content.innerHTML = `
     <div class="page-header">
-      <div><div class="page-title">Infrastructure</div><div class="page-subtitle">Servers & cleanup</div></div>
+      <div><div class="page-title">Servers</div><div class="page-subtitle">Remote SSH hosts, SSH keys & image registries</div></div>
     </div>
     <div class="tab-bar" id="infra-tabs">
       <button class="tab-btn active" data-tab="servers">Servers</button>
-      <button class="tab-btn" data-tab="cleanup">Cleanup</button>
+      <button class="tab-btn" data-tab="sshkeys">SSH Keys</button>
+      <button class="tab-btn" data-tab="registries">Registries</button>
     </div>
     <div id="infra-tab-content" style="padding-top:20px;"></div>
   `;
 
   const tabContent = document.getElementById('infra-tab-content');
   // Restore the active sub-tab from the URL params (deep-link / refresh / Back), default Servers.
-  const validTabs = ['servers', 'cleanup'];
+  const validTabs = ['servers', 'sshkeys', 'registries'];
   let activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'servers';
   document.querySelectorAll('#infra-tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === activeTab));
 
@@ -33,7 +36,8 @@ Router.register('infra', async (content, params) => {
 
   function renderTab(tab) {
     if (tab === 'servers') renderServers();
-    else if (tab === 'cleanup') renderCleanupInto(tabContent, { embedded: true });
+    else if (tab === 'sshkeys') renderSshKeysInto(tabContent, { embedded: true });   // moved here from Settings
+    else if (tab === 'registries') renderRegistriesInto(tabContent, { embedded: true }); // moved here from Settings
   }
 
   // ==================== SERVERS SUB-TAB (SSH multi-host) ====================
@@ -401,7 +405,8 @@ Router.register('infra', async (content, params) => {
   renderTab(activeTab);
 });
 
-// Backward-compat: old top-level links redirect to their new homes — #/registries now lives in
-// Settings (next to SSH Keys, both credential vaults); #/cleanup stays in Infrastructure.
-Router.register('registries', async (content, params) => Router.navigate('settings', { tab: 'registries' }, { replace: true }));
-Router.register('cleanup', async (content, params) => Router.navigate('infra', { tab: 'cleanup' }, { replace: true }));
+// #/registries now lives in the Servers section (Servers / SSH Keys / Registries). Old deep-link redirects there.
+Router.register('registries', async (content, params) => Router.navigate('infra', { tab: 'registries' }, { replace: true }));
+// Cleanup moved into the Activity section. The route now RENDERS (so the Activity tabbed section can host
+// it); a bare #/cleanup deep-link is upgraded to #/activity?tab=cleanup via SECTION_OF on boot.
+Router.register('cleanup', async (content, params) => renderCleanupInto(content, { embedded: true }));

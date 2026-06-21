@@ -2,6 +2,18 @@
 
 ---
 
+## [2.1.6] - 2026-06-21
+
+### Changed — Nav reshuffle: one "Servers" hub (Servers + SSH Keys + Registries); Cleanup → Activity
+- **Infrastructure is now "Servers"** and hosts everything for connecting to hosts & registries in one place: **Servers · SSH Keys · Registries**. SSH Keys and Registries both moved out of Settings to sit next to Servers (they're all set-once connection/credential setup). This supersedes v2.1.5's "Registries → Settings".
+- **SSH Keys** rendering was extracted from `settings.js` into a global `renderSshKeysInto()` (new `public/js/pages/ssh-keys.js`) so it can be embedded in the Servers section. All of its behavior is unchanged — generate (ed25519/RSA), import, copy public key, delete, the "How SSH keys work" explainer, encrypted-at-rest private keys.
+- **Cleanup moved to the Activity section** (Logs · Terminal · Events · Files · Audit Log · **Cleanup**), out of Infrastructure. The Dashboard / host-monitor "Cleanup" links + the `#/cleanup` deep-link now point there.
+- **Settings is app-config only** again: General · Notifications · Notification Log · Software Update · System · Security.
+- Backward-compatible deep-links: `#/registries` → Servers ▸ Registries, `#/cleanup` → Activity ▸ Cleanup. Help text that said "Settings → SSH Keys" now says "Servers → SSH Keys".
+- Verified e2e: sidebar groups (Servers = servers/sshkeys/registries; Activity = …/cleanup; Settings = 6 app tabs), SSH Keys Generate modal + list load in the new home, Registries + Cleanup render in their new homes, dashboard Cleanup button lands on Activity ▸ Cleanup. No functionality removed.
+
+---
+
 ## [2.1.5] - 2026-06-21
 
 ### Changed — Registries moved from Infrastructure to Settings (next to SSH Keys)

@@ -58,7 +58,7 @@ const Router = {
       cleanup: 'Cleanup',
       builds: 'Builds',
       audit: 'Audit Log',
-      infra: 'Infrastructure',
+      infra: 'Servers',
       'server-console': 'Server Console',
       settings: 'Settings',
     };
