@@ -288,6 +288,21 @@ io.on('connection', (socket) => {
       // The daemon's final 'aux' event carries the pushed manifest's Tag/Digest/Size — surface it.
       const aux = (output || []).map(o => o && o.aux).filter(Boolean).pop() || null;
       logAction({ socket, server, resourceType: 'image', resourceName: repoTag, action: 'push' });
+      // Auto-track the pushed repo under its DockGate-managed registry (populates the Browse view —
+      // the cheap path that works for every provider, including those that block /v2/_catalog).
+      try {
+        const host = dockerService.registryHostOf(repoTag);
+        const HUB = ['docker.io', 'index.docker.io', 'registry-1.docker.io', 'https://index.docker.io/v1/'];
+        const cands = host === 'docker.io' ? HUB : [host];
+        let reg = null;
+        for (const c of cands) { reg = stmts.getRegistryByHost.get(c); if (reg) break; }
+        if (reg) {
+          let s = repoTag; const ls = s.lastIndexOf('/'), lc = s.lastIndexOf(':'); if (lc > ls) s = s.slice(0, lc);
+          const fi = s.indexOf('/'); const first = fi >= 0 ? s.slice(0, fi) : '';
+          const repo = (first && (first.includes('.') || first.includes(':') || first === 'localhost')) ? s.slice(fi + 1) : s;
+          if (repo) { const now = new Date().toISOString(); stmts.insertTrackedRepo.run(reg.id, repo, now); stmts.touchTrackedRepo.run(now, reg.id, repo); }
+        }
+      } catch (e) { /* tracking is best-effort */ }
       socket.emit('image:push:done', { repoTag, tag: aux && aux.Tag, digest: aux && aux.Digest, size: aux && aux.Size });
     } catch (e) {
       socket.emit('image:push:error', { error: e.message });

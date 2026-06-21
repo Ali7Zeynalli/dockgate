@@ -2,6 +2,17 @@
 
 ---
 
+## [2.1.10] - 2026-06-21
+
+### Added — Registries: richer table + Browse/Inventory + Dashboard card (Registries plan, Phase C+D+E)
+- **Phase C — richer Registries table.** Each registry now shows a **Type** badge (GitHub / GitLab / Docker Hub / Quay / Custom), a **Status** pill (Connected / Auth failed / Untested — cached from "Test login", persisted in `last_test_status`), and a **repo count** button. Password column dropped (it was always masked).
+- **Phase D — Browse / Inventory ("how many images").** A per-registry **Browse** modal lists the repositories tracked under it and, per repo, lists **tags** via the registry's v2 API with a generic **token-dance** auth client (`server/registry-browse.js`) that works on ghcr.io, registry.gitlab.com, quay.io and self-hosted `registry:2`; digest + size are fetched lazily per tag. Repos are populated **automatically on push** (`tracked_repos` table) — the portable path that works even where `/v2/_catalog` is unavailable (Docker Hub, GHCR) — and can be pinned/untracked manually. New endpoints: `GET/POST/DELETE /api/registries/:id/repos`, `GET /api/registries/:id/tags`, `GET /api/registries/:id/manifest`.
+- **Phase E — Dashboard card.** A "Registries" summary card shows the count (and "N connected") and links to Servers → Registries.
+- **Security hardening (from an adversarial review of the new code):** the browse client only sends the stored password/PAT to a token-auth realm that is **HTTPS and on the same domain** as the configured registry (so a malicious/compromised registry can't redirect the credential elsewhere, least of all over cleartext); and the global `escapeHtml()` now also escapes `"`/`'` so remote-registry tag names can't break out of quoted HTML attributes. Browse calls have 12s timeouts and capped pagination.
+- Verified e2e: enriched table (badges/status/count), Browse modal lists auto-tracked repos, the tag token-dance executes against real ghcr.io (and surfaces auth errors cleanly), track/untrack + test-status persistence via the API, and the Dashboard card. Schema migrates additively (`tracked_repos`, `last_test_status`, `last_test_at`).
+
+---
+
 ## [2.1.9] - 2026-06-21
 
 ### Added — Push: which-registry hint + post-push result card (Registries plan, Phase A+B)

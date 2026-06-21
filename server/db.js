@@ -120,6 +120,17 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  -- Repositories tracked per registry for the Browse/Inventory view. Populated automatically when an
+  -- image is pushed (auto-track) and manually when the user pins a repo. No secrets here — just names.
+  CREATE TABLE IF NOT EXISTS tracked_repos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registry_id INTEGER NOT NULL,
+    repo TEXT NOT NULL,
+    last_pushed_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(registry_id, repo)
+  );
+
   CREATE TABLE IF NOT EXISTS ssh_keys (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -230,6 +241,8 @@ migrate('ALTER TABLE servers ADD COLUMN password TEXT');
 migrate('ALTER TABLE servers ADD COLUMN passphrase TEXT'); // SSH key passphrase — support for encrypted private keys
 migrate('ALTER TABLE activity ADD COLUMN server TEXT');     // audit: which host the action was performed on (multi-host context)
 migrate('ALTER TABLE activity ADD COLUMN source_ip TEXT');  // audit: where from (the only "who" signal, since there's no auth)
+migrate('ALTER TABLE registries ADD COLUMN last_test_status TEXT');  // 'ok' | 'fail' — cached Test-login result for the status pill
+migrate('ALTER TABLE registries ADD COLUMN last_test_at DATETIME');  // when the cached test ran
 
 // Default notification rules / Defolt bildiriş qaydaları
 const defaultRules = [
@@ -374,6 +387,15 @@ const stmts = {
   insertRegistry: db.prepare('INSERT INTO registries (name, server_address, username, password) VALUES (?, ?, ?, ?)'),
   updateRegistry: db.prepare('UPDATE registries SET name = ?, server_address = ?, username = ?, password = ? WHERE id = ?'),
   deleteRegistry: db.prepare('DELETE FROM registries WHERE id = ?'),
+  updateRegistryTest: db.prepare('UPDATE registries SET last_test_status = ?, last_test_at = CURRENT_TIMESTAMP WHERE id = ?'),
+
+  // Tracked repositories per registry (Browse/Inventory — auto-tracked on push + user-pinned)
+  getTrackedRepos: db.prepare('SELECT * FROM tracked_repos WHERE registry_id = ? ORDER BY repo'),
+  countTrackedByRegistry: db.prepare('SELECT registry_id, COUNT(*) AS n FROM tracked_repos GROUP BY registry_id'),
+  insertTrackedRepo: db.prepare('INSERT OR IGNORE INTO tracked_repos (registry_id, repo, last_pushed_at) VALUES (?, ?, ?)'),
+  touchTrackedRepo: db.prepare('UPDATE tracked_repos SET last_pushed_at = ? WHERE registry_id = ? AND repo = ?'),
+  deleteTrackedRepo: db.prepare('DELETE FROM tracked_repos WHERE registry_id = ? AND repo = ?'),
+  deleteTrackedReposByRegistry: db.prepare('DELETE FROM tracked_repos WHERE registry_id = ?'),
 
   // SSH keys (named, reusable — git deploy keys / machine-user keys). private_key is AES-encrypted.
   getSshKeys: db.prepare('SELECT * FROM ssh_keys ORDER BY created_at DESC'),

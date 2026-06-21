@@ -87,6 +87,13 @@ Router.register('dashboard', async (content) => {
               <div class="summary-card-label">Networks</div>
             </div>
           </div>
+          <div class="summary-card" onclick="Router.navigate('infra',{tab:'registries'})">
+            <div class="summary-card-icon blue"><span class="nav-item-icon">${Icons.registry}</span></div>
+            <div class="summary-card-content">
+              <div class="summary-card-value" id="dash-reg-value">–</div>
+              <div class="summary-card-label" id="dash-reg-label">Registries</div>
+            </div>
+          </div>
           ${s.restarting > 0 ? `
           <div class="summary-card">
             <div class="summary-card-icon yellow"><span class="nav-item-icon">${Icons.restart}</span></div>
@@ -318,6 +325,16 @@ Router.register('dashboard', async (content) => {
 
       // Event listeners / Hadisə dinləyiciləri
       document.getElementById('dash-refresh')?.addEventListener('click', render);
+
+      // Fill the Registries summary card (count + how many are Connected) without blocking the dashboard.
+      API.get('/registries').then(regs => {
+        const v = document.getElementById('dash-reg-value');
+        const l = document.getElementById('dash-reg-label');
+        if (!v || !Router.isActiveNav(pageNavId)) return;
+        v.textContent = regs.length;
+        const ok = regs.filter(r => r.last_test_status === 'ok').length;
+        if (l) l.textContent = ok ? `Registries · ${ok} connected` : 'Registries';
+      }).catch(() => {});
 
       // Embed the active REMOTE server's host metrics (CPU/RAM/disk/trend/ports/procs) — reuses
       // renderHostMonitoring, which owns its own 5s poll and self-terminates when this content is

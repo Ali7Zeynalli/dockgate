@@ -5,18 +5,37 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
   // Well-known registries offered as autocomplete suggestions for the address field.
   const PRESETS = ['docker.io', 'ghcr.io', 'registry.gitlab.com', 'quay.io', 'registry-1.docker.io'];
 
+  // Provider label derived from the host (for the Type badge).
+  function regType(addr) {
+    const a = (addr || '').toLowerCase();
+    if (a.includes('ghcr.io')) return 'GitHub';
+    if (a.includes('gitlab')) return 'GitLab';
+    if (a.includes('quay.io')) return 'Quay';
+    if (a.includes('docker.io') || a.includes('index.docker')) return 'Docker Hub';
+    return 'Custom';
+  }
+  // Connection status pill from the cached Test-login result.
+  function statusPill(r) {
+    if (r.last_test_status === 'ok') return '<span class="badge badge-running">Connected</span>';
+    if (r.last_test_status === 'fail') return '<span class="badge badge-dead">Auth failed</span>';
+    return '<span class="badge badge-created">Untested</span>';
+  }
+
+  let regCache = [];
   async function load() {
     const tbody = document.getElementById('reg-tbody');
     const empty = document.getElementById('reg-empty');
     if (!tbody) return;
     try {
       const rows = await API.get('/registries');
+      regCache = rows;
       tbody.innerHTML = rows.map(r => `
         <tr>
-          <td class="td-name">${escapeHtml(r.name || r.server_address)}</td>
+          <td class="td-name">${escapeHtml(r.name || r.server_address)} <span class="badge badge-created" style="font-size:10px;margin-left:4px">${regType(r.server_address)}</span></td>
           <td class="td-mono text-sm">${escapeHtml(r.server_address)}</td>
           <td class="text-sm">${escapeHtml(r.username)}</td>
-          <td class="text-muted text-sm">••••••••</td>
+          <td>${statusPill(r)}</td>
+          <td><button class="btn btn-secondary btn-sm" data-browse="${r.id}" title="Browse repositories">${Icons.registry} ${r.trackedRepos || 0} repo${r.trackedRepos === 1 ? '' : 's'}</button></td>
           <td class="text-sm text-muted" style="white-space:nowrap">${formatTime(r.created_at)}</td>
           <td style="text-align:right;white-space:nowrap">
             <button class="btn btn-secondary btn-sm" data-test="${r.id}" title="Test login">${Icons.refresh} Test</button>
@@ -28,6 +47,84 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
     } catch (err) {
       showToast('Failed to load registries: ' + err.message, 'error');
     }
+  }
+
+  // Browse the repositories tracked under a registry (auto-tracked on push + user-pinned), and list a
+  // repo's tags via the registry v2 API (digest/size fetched lazily per tag on click).
+  function openBrowse(reg) {
+    const m = showModal(`Browse — ${escapeHtml(reg.name || reg.server_address)}`, `
+      <div style="display:flex;flex-direction:column;gap:10px;min-width:520px">
+        <div class="text-xs text-muted">Repositories pushed through DockGate are tracked automatically. ${escapeHtml(regType(reg.server_address))} doesn't always allow listing the whole catalog, so DockGate tracks repos by name — add others below.</div>
+        <div style="display:flex;gap:6px">
+          <input class="input" id="brw-repo" placeholder="owner/app" spellcheck="false" style="flex:1">
+          <button class="btn btn-secondary" id="brw-add">Track</button>
+        </div>
+        <div id="brw-list"><div class="text-muted text-sm">Loading…</div></div>
+      </div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const root = document.getElementById('modal-root');
+    const listEl = root.querySelector('#brw-list');
+
+    async function loadRepos() {
+      try {
+        const repos = await API.get(`/registries/${reg.id}/repos`);
+        if (!repos.length) { listEl.innerHTML = '<div class="text-muted text-sm" style="padding:10px 0">No tracked repositories yet. Push an image here, or add one above.</div>'; return; }
+        listEl.innerHTML = repos.map(rp => `
+          <div class="card" style="padding:10px;margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <div><span class="td-mono" style="font-weight:600">${escapeHtml(rp.repo)}</span>${rp.last_pushed_at ? `<span class="text-xs text-muted" style="margin-left:8px">pushed ${formatTime(rp.last_pushed_at)}</span>` : ''}</div>
+              <div style="display:flex;gap:6px;flex:none">
+                <button class="btn btn-xs btn-secondary" data-tags="${escapeHtml(rp.repo)}">${Icons.tag} Tags</button>
+                <button class="btn btn-xs btn-secondary text-danger" data-untrack="${escapeHtml(rp.repo)}">Untrack</button>
+              </div>
+            </div>
+            <div class="brw-tags" data-tagsfor="${escapeHtml(rp.repo)}" style="display:none;margin-top:8px"></div>
+          </div>`).join('');
+      } catch (e) { listEl.innerHTML = `<div class="text-danger text-sm">${escapeHtml(e.message)}</div>`; }
+    }
+
+    root.querySelector('#brw-add').addEventListener('click', async () => {
+      const repo = root.querySelector('#brw-repo').value.trim();
+      if (!repo) return;
+      try { await API.post(`/registries/${reg.id}/repos`, { repo }); root.querySelector('#brw-repo').value = ''; loadRepos(); }
+      catch (e) { showToast(e.message, 'error'); }
+    });
+
+    listEl.addEventListener('click', async (e) => {
+      const untrackBtn = e.target.closest('[data-untrack]');
+      if (untrackBtn) {
+        const repo = untrackBtn.dataset.untrack;
+        try { await API.del(`/registries/${reg.id}/repos?repo=${encodeURIComponent(repo)}`); loadRepos(); } catch (err) { showToast(err.message, 'error'); }
+        return;
+      }
+      const tagsBtn = e.target.closest('[data-tags]');
+      if (tagsBtn) {
+        const repo = tagsBtn.dataset.tags;
+        const box = listEl.querySelector(`.brw-tags[data-tagsfor="${CSS.escape(repo)}"]`);
+        if (!box) return;
+        if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+        box.style.display = 'block'; box.innerHTML = '<div class="text-muted text-xs">Loading tags…</div>';
+        try {
+          const data = await API.get(`/registries/${reg.id}/tags?repo=${encodeURIComponent(repo)}`);
+          const tags = data.tags || [];
+          box.innerHTML = tags.length
+            ? tags.map(t => `<div style="display:flex;align-items:center;gap:8px;padding:2px 0;flex-wrap:wrap"><button class="btn btn-xs btn-secondary" data-manifest="${escapeHtml(repo)}" data-ref="${escapeHtml(t)}">${escapeHtml(t)}</button><span class="text-xs text-muted" data-info="${escapeHtml(repo + '|' + t)}"></span></div>`).join('')
+            : '<div class="text-muted text-xs">No tags.</div>';
+        } catch (err) { box.innerHTML = `<div class="text-danger text-xs">${escapeHtml(err.message)}</div>`; }
+        return;
+      }
+      const mBtn = e.target.closest('[data-manifest]');
+      if (mBtn) {
+        const repo = mBtn.dataset.manifest, ref = mBtn.dataset.ref;
+        const info = listEl.querySelector(`[data-info="${CSS.escape(repo + '|' + ref)}"]`);
+        if (info) info.textContent = '…';
+        try {
+          const mi = await API.get(`/registries/${reg.id}/manifest?repo=${encodeURIComponent(repo)}&ref=${encodeURIComponent(ref)}`);
+          if (info) info.textContent = `${mi.size ? formatBytes(mi.size) : ''} ${mi.digest ? mi.digest.slice(0, 19) + '…' : ''}`.trim() || '—';
+        } catch (err) { if (info) info.textContent = '✗ ' + err.message; }
+      }
+    });
+
+    loadRepos();
   }
 
   // Add / edit form in a modal. `existing` (a registry row from the table) → edit mode.
@@ -132,7 +229,7 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
 
     <div class="table-wrapper">
       <table>
-        <thead><tr><th>Name</th><th>Address</th><th>Username</th><th>Password</th><th>Added</th><th style="text-align:right">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Address</th><th>Username</th><th>Status</th><th>Repos</th><th>Added</th><th style="text-align:right">Actions</th></tr></thead>
         <tbody id="reg-tbody"></tbody>
       </table>
       <div id="reg-empty" class="empty-state" style="padding:40px;display:none">
@@ -149,6 +246,13 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
     const testBtn = e.target.closest('[data-test]');
     const editBtn = e.target.closest('[data-edit]');
     const delBtn = e.target.closest('[data-del]');
+    const browseBtn = e.target.closest('[data-browse]');
+
+    if (browseBtn) {
+      const reg = regCache.find(r => String(r.id) === browseBtn.dataset.browse);
+      if (reg) openBrowse(reg);
+      return;
+    }
 
     if (testBtn) {
       const id = testBtn.dataset.test;
@@ -161,6 +265,7 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
         showToast('✗ ' + err.message, 'error', 8000);
       } finally {
         testBtn.disabled = false; testBtn.innerHTML = original;
+        load(); // refresh the status pill from the cached test result
       }
       return;
     }

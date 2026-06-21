@@ -223,10 +223,16 @@ function timeAgo(timestamp) {
   return d.toLocaleDateString([], (tz && tz !== 'auto') ? { timeZone: tz } : {});
 }
 
+// Escape for safe insertion into HTML — including " and ' so values placed inside quoted attributes
+// (e.g. data-* in template strings) can't break out. The DOM textContent trick escapes & < > but NOT
+// quotes, so we map all five explicitly.
 function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  return str == null ? '' : String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // Parse pasted .env text into [{key, val}] — skips blank lines and # comments, splits on the first '=',
