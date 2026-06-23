@@ -59,6 +59,7 @@ router.get('/', (req, res) => {
       { id: 'local', type: 'local', description: 'Local Docker socket', isActive: activeId === 'local' },
       ...sshServers.map(s => ({
         id: s.id,
+        name: s.name || null,
         type: s.type,
         host: s.host,
         port: s.port,
@@ -103,7 +104,7 @@ router.get('/overview', (req, res) => {
 // Auth iyerarxiyası: privateKey > password > SSH agent
 router.post('/', (req, res) => {
   try {
-    const { id, host, port = 22, username, privateKey, passphrase, password, description = '' } = req.body || {};
+    const { id, host, port = 22, username, privateKey, passphrase, password, description = '', name = '' } = req.body || {};
 
     if (!validateId(id)) return res.status(400).json({ error: 'id: yalnız hərf, rəqəm, _, - (max 64)' });
     if (id === 'local') return res.status(400).json({ error: '"local" rezerv edilmiş id-dir' });
@@ -128,7 +129,7 @@ router.post('/', (req, res) => {
     // passphrase only makes sense with key auth (to unlock an encrypted private key)
     const passphraseToStore = (privateKey && passphrase) ? String(passphrase) : null;
 
-    stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, encrypt(pwdToStore), encrypt(passphraseToStore), description);
+    stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, encrypt(pwdToStore), encrypt(passphraseToStore), description, (name && String(name).trim()) || null);
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'add', details: { host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent') } });
 
     // Start dedicated monitor so notifications from this host start flowing immediately
@@ -173,12 +174,13 @@ router.put('/:id', (req, res) => {
     const existing = stmts.getServer.get(id);
     if (!existing) return res.status(404).json({ error: 'Server not found' });
 
-    const { host, port, username, privateKey, passphrase, password, description } = req.body || {};
+    const { host, port, username, privateKey, passphrase, password, description, name } = req.body || {};
 
     const newHost = host !== undefined ? host : existing.host;
     const newPort = port !== undefined ? (parseInt(port) || 22) : existing.port;
     const newUsername = username !== undefined ? username : existing.username;
     const newDescription = description !== undefined ? description : existing.description;
+    const newName = name !== undefined ? ((name && String(name).trim()) || null) : existing.name; // editable friendly label
 
     // Key — if a new privateKey is provided, write it to file; otherwise keep the existing one
     let keyPath = existing.key_path;
@@ -192,7 +194,7 @@ router.put('/:id', (req, res) => {
     const newPassword = password !== undefined ? (password ? String(password) : null) : existing.password;
     const newPassphrase = passphrase !== undefined ? (passphrase ? String(passphrase) : null) : existing.passphrase;
 
-    stmts.updateServer.run(newHost, newPort, newUsername, keyPath, encrypt(newPassword), encrypt(newPassphrase), newDescription, id);
+    stmts.updateServer.run(newHost, newPort, newUsername, keyPath, encrypt(newPassword), encrypt(newPassphrase), newDescription, newName, id);
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'edit', details: { host: newHost, username: newUsername } });
 
     // If this is the active server, rebuild the client (config changed)

@@ -239,6 +239,7 @@ migrate('ALTER TABLE build_history ADD COLUMN pull INTEGER DEFAULT 0');
 migrate('ALTER TABLE notification_log ADD COLUMN channel TEXT DEFAULT "email"');
 migrate('ALTER TABLE servers ADD COLUMN password TEXT');
 migrate('ALTER TABLE servers ADD COLUMN passphrase TEXT'); // SSH key passphrase — support for encrypted private keys
+migrate('ALTER TABLE servers ADD COLUMN name TEXT');       // optional friendly display name (the id stays the immutable key)
 migrate('ALTER TABLE activity ADD COLUMN server TEXT');     // audit: which host the action was performed on (multi-host context)
 migrate('ALTER TABLE activity ADD COLUMN source_ip TEXT');  // audit: where from (the only "who" signal, since there's no auth)
 migrate('ALTER TABLE registries ADD COLUMN last_test_status TEXT');  // 'ok' | 'fail' — cached Test-login result for the status pill
@@ -376,8 +377,8 @@ const stmts = {
   // Servers (SSH multi-host)
   getServers: db.prepare('SELECT * FROM servers ORDER BY id'),
   getServer: db.prepare('SELECT * FROM servers WHERE id = ?'),
-  insertServer: db.prepare('INSERT INTO servers (id, type, host, port, username, key_path, password, passphrase, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
-  updateServer: db.prepare('UPDATE servers SET host = ?, port = ?, username = ?, key_path = ?, password = ?, passphrase = ?, description = ? WHERE id = ?'),
+  insertServer: db.prepare('INSERT INTO servers (id, type, host, port, username, key_path, password, passphrase, description, name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+  updateServer: db.prepare('UPDATE servers SET host = ?, port = ?, username = ?, key_path = ?, password = ?, passphrase = ?, description = ?, name = ? WHERE id = ?'),
   deleteServer: db.prepare('DELETE FROM servers WHERE id = ?'),
 
   // Registries (private image registry credentials — used to authenticate pull/push)

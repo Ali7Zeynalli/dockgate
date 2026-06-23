@@ -83,7 +83,7 @@ Router.register('infra', async (content, params) => {
       const health = (isLocal || !ls) ? '<span class="text-xs text-muted">—</span>'
         : `<div style="min-width:130px">${miniBar('CPU', ls.cpu)}${miniBar('MEM', ls.mem)}${miniBar('DSK', ls.disk)}</div>`;
       return `<tr>
-          <td class="td-mono">${isLocal ? '🖥' : '🔐'} ${escapeHtml(s.id)}</td>
+          <td>${isLocal ? '🖥' : '🔐'} ${s.name ? `<span style="font-weight:600">${escapeHtml(s.name)}</span> <span class="td-mono text-xs text-muted">${escapeHtml(s.id)}</span>` : `<span class="td-mono">${escapeHtml(s.id)}</span>`}</td>
           <td class="text-xs">${escapeHtml(s.type)}</td>
           <td class="td-mono text-xs">${hostStr}</td>
           <td>${authBadge}</td>
@@ -123,8 +123,9 @@ Router.register('infra', async (content, params) => {
       <div id="iv-add" style="display:none">
         <div class="settings-section">
           <div class="settings-section-title">Add SSH Server</div>
+        <input class="input" id="srv-name" placeholder="Display name (optional, e.g. Production) — the ID below stays fixed" style="margin-bottom:8px;" />
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
-          <input class="input" id="srv-id" placeholder="ID (e.g. prod-1)" />
+          <input class="input" id="srv-id" placeholder="ID (e.g. prod-1) — permanent" />
           <input class="input" id="srv-host" placeholder="Host (e.g. 1.2.3.4 or server.example.com)" />
           <input class="input" id="srv-user" placeholder="SSH user" value="root" />
           <input class="input" id="srv-port" type="number" placeholder="Port" value="22" />
@@ -299,6 +300,7 @@ Router.register('infra', async (content, params) => {
 
     document.getElementById('srv-add')?.addEventListener('click', async () => {
       const id = document.getElementById('srv-id').value.trim();
+      const name = document.getElementById('srv-name')?.value.trim() || '';
       const description = document.getElementById('srv-desc').value.trim();
       const auth = buildAuthBody();
       if (!id || !auth.host || !auth.username) {
@@ -306,7 +308,7 @@ Router.register('infra', async (content, params) => {
         return;
       }
       try {
-        await API.post('/servers', { id, ...auth, description });
+        await API.post('/servers', { id, name, ...auth, description });
         showToast(`Server "${id}" (${authMode}) əlavə olundu`);
         if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
         renderServers();
@@ -318,7 +320,8 @@ Router.register('infra', async (content, params) => {
   function openServerEditModal(s) {
     const body = `
       <div style="display:flex;flex-direction:column;gap:10px">
-        <div class="text-xs text-muted">Editing <b>${escapeHtml(s.id)}</b> — the ID cannot be changed.</div>
+        <div class="text-xs text-muted">Editing <b>${escapeHtml(s.id)}</b> — the ID is permanent, but you can set a display name.</div>
+        <input class="input" id="esrv-name" placeholder="Display name (optional)" value="${escapeHtml(s.name || '')}" />
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <input class="input" id="esrv-host" placeholder="Host" value="${escapeHtml(s.host || '')}" />
           <input class="input" id="esrv-port" type="number" placeholder="Port" value="${s.port || 22}" />
@@ -360,6 +363,7 @@ Router.register('infra', async (content, params) => {
 
     function buildEditBody() {
       const b = {
+        name: root.querySelector('#esrv-name')?.value.trim() || '',
         host: root.querySelector('#esrv-host').value.trim(),
         port: parseInt(root.querySelector('#esrv-port').value) || 22,
         username: root.querySelector('#esrv-user').value.trim(),

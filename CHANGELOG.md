@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.14] - 2026-06-23
+
+### Added — Servers can have an editable display name (the ID stays permanent)
+- A server's **ID** is its permanent internal key (it names the SSH-key file and is referenced by the active-server setting, provisioning history, audit log and per-server monitors — so it can't be renamed). Previously that meant there was **no way to rename a server** at all. Now servers have an optional **display name** you can set when adding and **change any time** in Edit — the list shows the name (with the ID as a small secondary label), and the header SRV dropdown uses it too. Clearing the name falls back to showing the ID.
+- Schema migrates additively (`servers.name`); add/edit/list all carry it. Verified e2e: add with a name → list shows it; rename via Edit → updates while the ID/host stay intact; clear → falls back to the ID.
+
+---
+
 ## [2.1.13] - 2026-06-23
 
 ### Fixed — Row action buttons no longer overflow off-screen (Servers + Registries)

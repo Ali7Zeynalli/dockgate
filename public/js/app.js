@@ -366,7 +366,7 @@ async function initServerSwitcher() {
       opt.value = s.id;
       const label = s.id === 'local'
         ? '🖥 Local'
-        : `🔐 ${s.id}${s.host ? ' (' + s.host + ')' : ''}`;
+        : `🔐 ${s.name || s.id}${s.host ? ' (' + s.host + ')' : ''}`;
       opt.textContent = label;
       if (s.isActive) opt.selected = true;
       select.appendChild(opt);
