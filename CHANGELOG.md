@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.13] - 2026-06-23
+
+### Fixed — Row action buttons no longer overflow off-screen (Servers + Registries)
+- The **Servers** table's action cell (Use · Test · Manage · Grant Docker · Edit · 🗑) was a plain `<td>` with no wrapping, so on a wide table its 6 buttons pushed the Actions column off the right edge (you had to scroll horizontally to reach them). The buttons now sit in a `flex-wrap` group (capped width) so they **wrap to multiple rows** and the column stays compact — verified: at desktop width the table no longer overflows; at laptop width the 6 buttons wrap to ~4 rows in a ~120px column.
+- Audited every other table for the same problem. **Registries** had the identical anti-pattern (a `white-space:nowrap` action cell with Test · Edit · Delete) and got the same wrap fix (table overflow at 1024px dropped 241→153px). Every other table (Images, Containers, Volumes, Networks, Compose, Files) already uses the shared `.td-actions` class, which has `flex-wrap` — so their actions already wrap; single-button cells can't overflow.
+- Note: very wide tables can still scroll horizontally at narrow laptop widths (intended `overflow-x:auto`), but that is now driven by the info columns, not the action buttons.
+
+---
+
 ## [2.1.12] - 2026-06-23
 
 ### Fixed — Server Setup now NAMES the missing component (not just a count)

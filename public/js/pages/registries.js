@@ -37,10 +37,12 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
           <td>${statusPill(r)}</td>
           <td><button class="btn btn-secondary btn-sm" data-browse="${r.id}" title="Browse repositories">${Icons.registry} ${r.trackedRepos || 0} repo${r.trackedRepos === 1 ? '' : 's'}</button></td>
           <td class="text-sm text-muted" style="white-space:nowrap">${formatTime(r.created_at)}</td>
-          <td style="text-align:right;white-space:nowrap">
+          <td>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
             <button class="btn btn-secondary btn-sm" data-test="${r.id}" title="Test login">${Icons.refresh} Test</button>
             <button class="btn btn-secondary btn-sm" data-edit="${r.id}" title="Edit">Edit</button>
             <button class="btn btn-danger btn-sm" data-del="${r.id}" data-addr="${escapeHtml(r.server_address)}" title="Delete">${Icons.trash}</button>
+            </div>
           </td>
         </tr>`).join('');
       if (empty) empty.style.display = rows.length ? 'none' : 'block';

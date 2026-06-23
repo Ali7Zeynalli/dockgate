@@ -91,12 +91,14 @@ Router.register('infra', async (content, params) => {
           <td>${readyBadge}</td>
           <td>${health}</td>
           <td>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;max-width:220px">
             ${!s.isActive ? `<button class="btn btn-xs btn-secondary" data-action="activate" data-id="${escapeHtml(s.id)}">Use</button>` : ''}
             <button class="btn btn-xs btn-secondary" data-action="test" data-id="${escapeHtml(s.id)}">Test</button>
             ${!isLocal ? `<button class="btn btn-xs btn-primary" data-action="console" data-id="${escapeHtml(s.id)}" title="Open server console — Setup, Monitoring, Logs">Manage</button>` : ''}
             ${!isLocal ? `<button class="btn btn-xs btn-secondary" data-action="grant" data-id="${escapeHtml(s.id)}" title="Run sudo usermod -aG docker on the server (needs passwordless sudo)">Grant Docker</button>` : ''}
             ${!isLocal ? `<button class="btn btn-xs btn-secondary" data-action="edit" data-id="${escapeHtml(s.id)}">Edit</button>` : ''}
             ${!isLocal ? `<button class="btn btn-xs btn-ghost text-danger" data-action="delete" data-id="${escapeHtml(s.id)}">${Icons.trash}</button>` : ''}
+            </div>
           </td>
         </tr>`;
     }).join('');
