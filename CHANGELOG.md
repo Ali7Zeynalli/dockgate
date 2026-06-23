@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.16] - 2026-06-24
+
+### Fixed — Compose Pull "first pull — baseline recorded" was a no-op (stuck forever)
+- For a Git project deployed **before** commit-tracking existed (no `deployedCommit` on record), every `⤓ Pull` showed *"First pull — baseline recorded"* and **nothing else — forever**, because `redeploy-prepare` never actually saved a baseline. So pulls could never show what changed. Now the first pull **persists the current commit as the baseline** (writes `deployedCommit` to the project's `.dockgate-git.json`, the same file the next pull reads), so the **next** pull correctly diffs against it and shows the new commits & changed files.
+- The first-pull message is clearer about why nothing shows yet (there was no earlier commit to compare against) and notes you can `↻ Redeploy` to sync if the server might be on an older commit.
+- Verified: `gitMetaPath` (write) and `readGitMeta` (read) resolve to the same `.dockgate-git.json`, and the write preserves the existing meta fields while setting `deployedCommit`. (Full live two-pull cycle needs a deployed git project + a push; the persist logic and the diff/log logic were each verified independently.)
+
+---
+
 ## [2.1.15] - 2026-06-23
 
 ### Improved — Compose "⤓ Pull" now shows what & how it pulled (commits), and errors clearly

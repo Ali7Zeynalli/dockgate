@@ -1246,6 +1246,13 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
         commits = lo ? lo.split('\n').map(l => { const p = l.split('\x1f'); return { hash: p[0], author: p[1], date: p[2], subject: p[3] }; }) : [];
       } catch (e) {}
     }
+    // No baseline yet (project deployed before commit-tracking, or externally) → PERSIST the current
+    // commit as the baseline so the NEXT pull can actually diff. (Pull never touches running containers;
+    // this only sets the reference point. Without this, every pull was stuck on "first pull".)
+    let baselineRecorded = false;
+    if (!fromSHA && toSHA) {
+      try { fs.writeFileSync(gitMetaPath(project), JSON.stringify({ ...meta, deployedCommit: toSHA }, null, 2), { mode: 0o600 }); baselineRecorded = true; } catch (e) {}
+    }
     const affectedStacks = scanned.filter(s => {
       const d = s.dir === '.' ? '' : s.dir.replace(/\/+$/, '') + '/';
       return d === '' ? changedFiles.length > 0 : changedFiles.some(cf => cf.startsWith(d));
@@ -1253,7 +1260,7 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
     const secret = meta.secret || crypto.randomBytes(18).toString('hex');
     folderUploads.set(uploadId, { project, dir, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId || '', token: meta.keyId ? '' : (meta.token || ''), secret }, redeploy: true });
     res.json({ uploadId, files: scanned, target: deploy.mode, remotePath: deploy.remotePath,
-      diff: { fromSHA, toSHA, changedFiles, commits, affectedStacks, hasBaseline: !!fromSHA, upToDate: !!(fromSHA && toSHA && fromSHA === toSHA) } });
+      diff: { fromSHA, toSHA, changedFiles, commits, affectedStacks, hasBaseline: !!fromSHA, baselineRecorded, upToDate: !!(fromSHA && toSHA && fromSHA === toSHA) } });
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.message || 'redeploy prepare failed').toString() }); }
 });
 
