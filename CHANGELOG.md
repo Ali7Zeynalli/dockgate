@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.12] - 2026-06-23
+
+### Fixed — Server Setup now NAMES the missing component (not just a count)
+- The server console's **Overview** said "⚠ Needs setup · 7 installed · 1 missing" but never told you **which** item was missing, and the component that was missing rendered in muted gray (○) — easy to miss among the green ✓ installed rows. Now the readiness banner adds a **"Missing: \<names\>"** line (e.g. *Missing: Fail2ban*) and the missing items render in **amber** (● in the Overview component list, amber pill in the Setup panel) so they stand out at a glance.
+- Verified e2e (mocked scan: 8 installed / fail2ban missing): the banner shows "Missing: Fail2ban" in amber, and the Fail2ban component row's icon is amber — both `#f59e0b`.
+
+---
+
 ## [2.1.11] - 2026-06-23
 
 ### Fixed — "Test Connection" now tests SSH first (not Docker), with clear messages

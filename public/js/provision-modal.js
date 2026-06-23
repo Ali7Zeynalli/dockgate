@@ -47,7 +47,7 @@ function renderProvisionForm(serverId, catalog, scan, container) {
   // On-card status: border colour + a pill, matching the Overview component cards.
   const pvState = {
     present: { col: 'var(--success)', pill: '<span class="badge badge-healthy">installed</span>' },
-    missing: { col: 'var(--warning, #f59e0b)', pill: '<span class="badge" style="background:var(--bg-primary);color:var(--text-muted)">missing</span>' },
+    missing: { col: 'var(--warning, #f59e0b)', pill: '<span class="badge" style="background:var(--warning,#f59e0b);color:#1f2937;font-weight:700">missing</span>' },
     action:  { col: 'var(--info)', pill: '<span class="badge" style="background:var(--info-bg);color:var(--info)">runs every time</span>' },
     optional:{ col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.6">optional</span>' },
     na:      { col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.55">n/a</span>' },
@@ -190,13 +190,15 @@ async function renderConsoleOverview(serverId, container, onSetup) {
   const stateOf = PV_STATE(scan.items);
   const items = catalog.items || [];
   const installed = items.filter(it => stateOf(it.id) === 'present').length;
-  const missing = items.filter(it => !it.alwaysRun && !it.optional && stateOf(it.id) === 'missing').length;
+  const missingItems = items.filter(it => !it.alwaysRun && !it.optional && stateOf(it.id) === 'missing');
+  const missing = missingItems.length;
+  const missingNames = missingItems.map(it => it.label).join(' · '); // name them, not just count them
   const naCount = items.filter(it => stateOf(it.id) === 'na').length;
   const ready = stateOf('docker') === 'present';
 
   const meta = {
     present: { ic: '✓', col: 'var(--success)', txt: 'installed' },
-    missing: { ic: '○', col: 'var(--text-muted)', txt: 'missing' },
+    missing: { ic: '●', col: 'var(--warning, #f59e0b)', txt: 'missing' },
     action:  { ic: '↻', col: 'var(--info)', txt: 'runs every time' },
     optional:{ ic: '◦', col: 'var(--text-muted)', txt: 'optional · not installed' },
     na:      { ic: '⊘', col: 'var(--text-muted)', txt: 'n/a on this OS' },
@@ -226,6 +228,7 @@ async function renderConsoleOverview(serverId, container, onSetup) {
           <div>
             <div style="font-size:17px;font-weight:700">${ready ? '✓ Ready' : '⚠ Needs setup'}</div>
             <div class="text-sm text-muted">${scan.distro ? 'OS: ' + escapeHtml(scan.distro) + ' · ' : ''}${installed} installed · ${missing} missing${naCount ? ` · ${naCount} n/a` : ''}</div>
+            ${missing ? `<div class="text-sm" style="color:var(--warning,#f59e0b);font-weight:600;margin-top:3px">Missing: ${escapeHtml(missingNames)}</div>` : ''}
           </div>
           ${missing ? `<button class="btn btn-primary btn-sm" id="ov-setup">Set up ${missing} missing →</button>` : ''}
         </div>
