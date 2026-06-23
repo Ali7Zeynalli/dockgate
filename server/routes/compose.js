@@ -1234,11 +1234,17 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
     for (const f of files) scanned.push(await scanComposeFile(dir, f));
     // Diff vs the last-deployed commit → changed files → affected stacks (a compose whose folder has a change).
     const fromSHA = (meta.deployedCommit || '').trim();
-    let toSHA = '', changedFiles = [];
+    let toSHA = '', changedFiles = [], commits = [];
     try { toSHA = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) {}
     if (fromSHA && toSHA && fromSHA !== toSHA) {
       try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', url, fromSHA]); } catch (e) {}
       try { const o = (await gitRun(['-C', dir, 'diff', '--name-only', fromSHA, toSHA])).stdout.trim(); changedFiles = o ? o.split('\n').map(s => s.trim()).filter(Boolean) : []; } catch (e) {}
+      // The actual commits pulled (the "what/how") — deepen the branch so fromSHA..toSHA is walkable, then log. Best-effort.
+      try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '200', url, meta.branch || toSHA]); } catch (e) {}
+      try {
+        const lo = (await gitRun(['-C', dir, 'log', '--pretty=format:%h\x1f%an\x1f%ad\x1f%s', '--date=short', `${fromSHA}..${toSHA}`])).stdout.trim();
+        commits = lo ? lo.split('\n').map(l => { const p = l.split('\x1f'); return { hash: p[0], author: p[1], date: p[2], subject: p[3] }; }) : [];
+      } catch (e) {}
     }
     const affectedStacks = scanned.filter(s => {
       const d = s.dir === '.' ? '' : s.dir.replace(/\/+$/, '') + '/';
@@ -1247,7 +1253,7 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
     const secret = meta.secret || crypto.randomBytes(18).toString('hex');
     folderUploads.set(uploadId, { project, dir, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId || '', token: meta.keyId ? '' : (meta.token || ''), secret }, redeploy: true });
     res.json({ uploadId, files: scanned, target: deploy.mode, remotePath: deploy.remotePath,
-      diff: { fromSHA, toSHA, changedFiles, affectedStacks, hasBaseline: !!fromSHA, upToDate: !!(fromSHA && toSHA && fromSHA === toSHA) } });
+      diff: { fromSHA, toSHA, changedFiles, commits, affectedStacks, hasBaseline: !!fromSHA, upToDate: !!(fromSHA && toSHA && fromSHA === toSHA) } });
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.message || 'redeploy prepare failed').toString() }); }
 });
 

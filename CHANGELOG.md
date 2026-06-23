@@ -2,6 +2,16 @@
 
 ---
 
+## [2.1.15] - 2026-06-23
+
+### Improved — Compose "⤓ Pull" now shows what & how it pulled (commits), and errors clearly
+- The Git **⤓ Pull** in a Compose project's detail modal used to only list the changed *files*. It now shows the **actual commits pulled** — `<short-sha>  <date>  <subject>  — <author>` for each commit between your last-deployed commit and the latest — plus the explicit **`from → to`** SHAs, then the changed files. So you can see *what* came in and *how far* it moved, not just which files differ.
+- Backend `redeploy-prepare` now returns a `commits` array (best-effort `git log fromSHA..toSHA`, after deepening the shallow clone so the range is walkable; wrapped in try/catch so it never breaks the pull).
+- **Pull failures are now shown in a modal** with the reason (e.g. clone/auth/network failure) instead of a brief toast that's easy to miss.
+- Verified: the `git log` format + parsing produce the right commit list on a real repo, and the result modal renders the commits, the from→to SHAs and the changed files.
+
+---
+
 ## [2.1.14] - 2026-06-23
 
 ### Added — Servers can have an editable display name (the ID stays permanent)

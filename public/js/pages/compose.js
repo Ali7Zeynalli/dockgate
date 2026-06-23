@@ -212,15 +212,24 @@ Router.register('compose', async (content) => {
               const b = e.target; b.disabled = true; b.textContent = 'Pulling…';
               let prep;
               try { prep = await API.post(`/compose/${name}/redeploy-prepare`, {}); }
-              catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '⤓ Pull'; return; }
+              catch (err) {
+                b.disabled = false; b.textContent = '⤓ Pull';
+                // Show the failure in a modal (not just a fleeting toast) so the reason is clear.
+                showModal(`Pull failed — ${escapeHtml(name)}`, `<div class="text-sm" style="color:var(--danger);white-space:pre-wrap;word-break:break-all">${escapeHtml(err.message)}</div><div class="text-xs text-muted" style="margin-top:8px">Could not fetch from Git — check the repo URL/branch and the SSH key or token (Servers → SSH Keys), and that the host is reachable.</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+                return;
+              }
               dm.close();
               const d = prep.diff || {};
               const lines = d.changedFiles || [];
+              const commits = d.commits || [];
               const sh = s => (s || '').slice(0, 7);
+              const commitsHtml = commits.length
+                ? `<div class="text-sm" style="margin:8px 0 4px">⬇ <strong>${commits.length}</strong> commit(s) pulled:</div><pre class="logs-viewer" style="max-height:170px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:0">${commits.map(c => `${escapeHtml(c.hash || '')}  ${escapeHtml(c.date || '')}  ${escapeHtml(c.subject || '')}${c.author ? '  — ' + escapeHtml(c.author) : ''}`).join('\n')}</pre>`
+                : '';
               const body = lines.length
-                ? `<div class="text-sm" style="margin-bottom:6px">📦 <strong>${lines.length}</strong> file(s) changed since your last deploy (${sh(d.fromSHA)} → ${sh(d.toSHA)}):</div><pre class="logs-viewer" style="max-height:320px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:0">${lines.map(escapeHtml).join('\n')}</pre><div class="text-xs text-muted" style="margin-top:6px">Pulled — but nothing was deployed. Your running containers are untouched.</div>`
-                : (d.upToDate ? `<div class="text-sm">✓ Already at the latest commit — nothing new to pull.</div>`
-                  : `<div class="text-sm">First pull — baseline recorded. Changed files will show from the next pull.</div>`);
+                ? `<div class="text-sm" style="margin-bottom:4px">⤓ Pulled <span class="td-mono">${sh(d.fromSHA)}</span> → <span class="td-mono">${sh(d.toSHA)}</span></div>${commitsHtml}<div class="text-sm" style="margin:8px 0 4px">📦 <strong>${lines.length}</strong> file(s) changed:</div><pre class="logs-viewer" style="max-height:200px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:0">${lines.map(escapeHtml).join('\n')}</pre><div class="text-xs text-muted" style="margin-top:6px">Pulled — but nothing was deployed. Your running containers are untouched.</div>`
+                : (d.upToDate ? `<div class="text-sm">✓ Already at the latest commit (<span class="td-mono">${sh(d.toSHA)}</span>) — nothing new to pull.</div>`
+                  : `<div class="text-sm">First pull — baseline recorded (<span class="td-mono">${sh(d.toSHA)}</span>). Changed files &amp; commits will show from the next pull.</div>`);
               const pm = showModal(`Pull — ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
               let consumed = false;
               if (lines.length || !d.hasBaseline) {
