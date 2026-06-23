@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.11] - 2026-06-23
+
+### Fixed — "Test Connection" now tests SSH first (not Docker), with clear messages
+- **Test Connection used to fail on a fresh server even when SSH worked.** It called the Docker API (`version()`/`info()`) over SSH, so a host where you could log in fine but hadn't installed Docker yet returned a cryptic **"socket hang up"** (that was the *Docker* socket, not SSH). `testServerConnection` now does it in two steps: **(1)** a real SSH connect + auth check on its own (raw ssh2, no Docker), then **(2)** a separate, non-fatal Docker probe. A fresh server now reports **"✓ SSH connection OK — Docker not installed/running yet. Add it, then install Docker from Setup"** (success, addable) instead of failing — fixing the chicken-and-egg where you couldn't add a server to *then* provision it.
+- **Friendlier connection errors** everywhere (Test buttons on the add form, edit modal, and per-row): raw ssh2/net errors are translated — `socket hang up` → "connection reset (wrong port/firewall, or IP temporarily blocked after failed logins)", `ECONNREFUSED` → "nothing listening on that port", `ETIMEDOUT` → "host unreachable", auth failures → "check the username and password/SSH key", and the first-login "password change required / no TTY" case → "log in once over SSH to set a password, or use an SSH key".
+- Verified e2e against a real SSH-only container (no Docker): SSH-OK/no-Docker → amber "SSH OK, Docker not installed"; bad host → "Host unreachable"; wrong password → "Authentication failed"; local → "✓ Docker <version>".
+
+---
+
 ## [2.1.10] - 2026-06-21
 
 ### Added — Registries: richer table + Browse/Inventory + Dashboard card (Registries plan, Phase C+D+E)

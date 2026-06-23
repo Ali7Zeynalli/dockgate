@@ -212,8 +212,10 @@ Router.register('infra', async (content, params) => {
             renderServers();
           } else if (action === 'test') {
             const r = await API.post('/servers/test', { id });
-            if (r.success) {
-              showToast(`✓ ${r.version} (${r.containers} containers, ${r.images} images)`, 'success', 6000);
+            if (r.success && r.docker === false) {
+              showToast(`⚠ ${r.message || 'SSH OK — Docker not detected'}`, 'warning', 10000);
+            } else if (r.success) {
+              showToast(`✓ SSH OK · Docker ${r.version} (${r.containers} containers, ${r.images} images)`, 'success', 6000);
             } else {
               showToast(`✗ ${sshErrorHint(r.error)}`, 'error', 12000);
             }
@@ -272,9 +274,12 @@ Router.register('infra', async (content, params) => {
         result.replaceChildren();
         const out = document.createElement('span');
         out.className = 'text-xs';
-        if (r.success) {
+        if (r.success && r.docker === false) {
+          out.style.color = 'var(--warning)';
+          out.textContent = `⚠ ${r.message || 'SSH OK — Docker not detected'}`;
+        } else if (r.success) {
           out.style.color = 'var(--success)';
-          out.textContent = `✓ ${r.version} — ${r.containers} containers`;
+          out.textContent = `✓ SSH OK · Docker ${r.version} — ${r.containers} containers`;
         } else {
           out.style.color = 'var(--danger)';
           out.textContent = `✗ ${sshErrorHint(r.error)}`;
@@ -375,9 +380,10 @@ Router.register('infra', async (content, params) => {
         const b = buildEditBody();
         const payload = (b.privateKey || b.password) ? b : { id: s.id };
         const res = await API.post('/servers/test', payload);
-        if (res.success) { r.textContent = `✓ ${res.version} — ${res.containers} containers`; r.style.color = 'var(--success)'; }
-        else { r.textContent = `✗ ${res.error}`; r.style.color = 'var(--danger)'; }
-      } catch (e) { r.textContent = '✗ ' + e.message; r.style.color = 'var(--danger)'; }
+        if (res.success && res.docker === false) { r.textContent = `⚠ ${res.message || 'SSH OK — Docker not detected'}`; r.style.color = 'var(--warning)'; }
+        else if (res.success) { r.textContent = `✓ SSH OK · Docker ${res.version} — ${res.containers} containers`; r.style.color = 'var(--success)'; }
+        else { r.textContent = `✗ ${sshErrorHint(res.error)}`; r.style.color = 'var(--danger)'; }
+      } catch (e) { r.textContent = '✗ ' + sshErrorHint(e.message); r.style.color = 'var(--danger)'; }
     });
 
     const footer = root.querySelector('#modal-footer');

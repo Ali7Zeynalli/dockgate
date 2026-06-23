@@ -1078,26 +1078,58 @@ async function setAutoStart(enabled) {
 }
 
 // Test connection — server config qəbul edir, dockerode ilə ping et
+// Translate a raw ssh2/net/dockerode error into a clear, human message (so "socket hang up" etc. don't
+// leak to the UI). The literal cause stays available, but this is what the user reads.
+function friendlySshError(err) {
+  const m = (err && err.message ? err.message : String(err)).toLowerCase();
+  if (/no tty|password change required/.test(m)) return 'The account requires a first-login password change — log in once over SSH to set a password, or use an SSH key.';
+  if (/all configured authentication|authentication method|permission denied|incorrect password|auth/.test(m)) return 'Authentication failed — check the username and the password / SSH key.';
+  if (/econnrefused/.test(m)) return 'Connection refused — nothing is listening on that port (is SSH running, and is the port correct?).';
+  if (/etimedout|timed out|timeout/.test(m)) return 'Connection timed out — the host is unreachable (check the IP/host and any firewall).';
+  if (/enotfound|getaddrinfo|eai_again/.test(m)) return 'Host not found — check the server address / IP.';
+  if (/ehostunreach|enetunreach/.test(m)) return 'Host unreachable — check the network/firewall.';
+  if (/socket hang up|econnreset/.test(m)) return 'The connection was reset by the server — likely a wrong port or firewall, or the IP is temporarily blocked after repeated failed logins.';
+  return (err && err.message) ? err.message : String(err);
+}
+
+// Test a server. This separates two things that used to be conflated: (1) can we SSH in (auth/network),
+// and (2) is Docker reachable. A fresh host where SSH works but Docker isn't installed yet now PASSES the
+// SSH test (success:true, docker:false) so it can be added and then provisioned — instead of failing with
+// a cryptic "socket hang up" (which was actually the Docker socket, not SSH).
 async function testServerConnection(serverConfig) {
-  let client;
-  try {
-    if (!serverConfig || serverConfig.type === 'local') {
-      client = createLocalClient();
-    } else {
-      client = createSshClient(serverConfig);
+  // Local — SSH doesn't apply; just confirm the Docker daemon is reachable.
+  if (!serverConfig || serverConfig.type === 'local') {
+    try {
+      const client = createLocalClient();
+      const version = await client.version();
+      const info = await client.info();
+      return { success: true, ssh: true, docker: true, version: version.Version, apiVersion: version.ApiVersion, os: info.OperatingSystem, containers: info.Containers, images: info.Images };
+    } catch (err) {
+      return { success: false, stage: 'docker', docker: false, error: friendlySshError(err) };
     }
+  }
+
+  // STEP 1 — verify the SSH connection + auth on its OWN (raw ssh2, no Docker). This is the real
+  // "can I log in?" check. Late require to avoid the circular dep (remote-compose requires this module).
+  const { execRemote } = require('./remote-compose');
+  try {
+    await execRemote(serverConfig, 'echo dockgate-ssh-ok');
+  } catch (err) {
+    return { success: false, stage: 'ssh', ssh: false, error: friendlySshError(err) };
+  }
+
+  // STEP 2 — SSH works; now see whether Docker is reachable over it (a separate, non-fatal signal).
+  try {
+    const client = createSshClient(serverConfig);
     const version = await client.version();
     const info = await client.info();
-    return {
-      success: true,
-      version: version.Version,
-      apiVersion: version.ApiVersion,
-      os: info.OperatingSystem,
-      containers: info.Containers,
-      images: info.Images,
-    };
+    return { success: true, ssh: true, docker: true, version: version.Version, apiVersion: version.ApiVersion, os: info.OperatingSystem, containers: info.Containers, images: info.Images };
   } catch (err) {
-    return { success: false, error: err.message };
+    return {
+      success: true, ssh: true, docker: false,
+      dockerError: (err && err.message) || String(err),
+      message: 'SSH connection OK — Docker is not installed/running on this server yet. Add it, then install Docker from Setup.',
+    };
   }
 }
 
