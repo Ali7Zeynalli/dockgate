@@ -142,4 +142,17 @@ router.get('/download-folder', async (req, res) => {
   } catch (err) { if (!res.headersSent) res.status(500).json({ error: err.message }); else res.end(); }
 });
 
+// Extract an archive (.zip/.tar/.tar.gz/.tar.bz2/.tar.xz/.gz) on the remote host.
+// body: { path, here?, overwrite?, deleteAfter? }  (default: into a new subfolder named after the archive)
+router.post('/extract', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try {
+    const { path: p, here, overwrite, deleteAfter } = req.body || {};
+    if (!p) return res.status(400).json({ error: 'path is required' });
+    const r = await fm.extract(a.s, p, { here: !!here, overwrite: !!overwrite, deleteAfter: !!deleteAfter });
+    logAction({ req, server: a.id, resourceType: 'file', resourceName: r.path, action: 'extract', details: { archive: p } });
+    res.json({ success: true, ...r });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 module.exports = router;

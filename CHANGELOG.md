@@ -2,6 +2,16 @@
 
 ---
 
+## [2.1.19] - 2026-06-24
+
+### Added — File Manager: extract uploaded archives (📦) safely
+- Upload a `.zip` / `.tar` / `.tar.gz` (`.tgz`) / `.tar.bz2` / `.tar.xz` / `.gz` and **extract it in place** with a new **📦** action on archive rows. The Extract dialog shows the **server-context banner** (which remote host it writes to), the **detected format**, and a destination choice — **into a new subfolder** named after the archive (default, safest) or **here** — plus optional *overwrite* and *delete-archive-after* toggles. On success the listing auto-refreshes to reveal the extracted files.
+- Extraction runs **on the server** over SSH (no bytes streamed through the panel), reusing the existing `execRemote`+`shq` pattern. New `fm.extract()` + `POST /api/files/extract`.
+- **Security (verified against a real busybox/Alpine remote):** extracts into a confined target dir; **tar's built-in `..`-rejection** stops path-traversal (a crafted `../escapee.txt` did not escape the parent); a **post-extract symlink-containment scan** blocks (and cleans up) any archive that drops a symlink pointing outside the target; format is checked by extension with a `file --mime-type` magic-byte fallback; a **10-minute `timeout`** wraps the extractor; zip uses only sanitizing extractors (`unzip` → `python3 -m zipfile` → `bsdtar`, never an unguarded 7z/jar) with a clear "install unzip / upload a .tar.gz" message when none exist; non-empty target subfolders are refused unless overwrite is chosen.
+- Verified e2e: 📦 appears on archive rows, the modal shows the remote banner + subfolder default, and extracting a `.tar.gz`/`.zip` produces the new folder; traversal and out-of-tree-symlink archives are blocked. (Remote-only — local-host File Manager is still the open gap. A symmetric "Compress" action is a possible follow-up.)
+
+---
+
 ## [2.1.18] - 2026-06-24
 
 ### Fixed — Compose "Delete project" now shows the server context too

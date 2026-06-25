@@ -265,7 +265,102 @@ function archiveDirTo(server, dir, res) {
   });
 }
 
+// ── Archive extraction (unzip / untar an uploaded archive on the remote host) ─────────────────────────
+// Safe by construction: extracts into a NEW subfolder (default) via shell tools over SSH, with a hard
+// timeout, tar's built-in '..'-rejection (no -P), and a post-extract symlink-containment scan. Zip uses
+// only sanitizing extractors (unzip / python3 -m zipfile / bsdtar) — never an unguarded 7z/jar.
+function classifyArchive(name) {
+  const n = (name || '').toLowerCase();
+  if (/\.(tar\.gz|tgz)$/.test(n)) return 'tgz';
+  if (/\.(tar\.bz2|tbz2)$/.test(n)) return 'tbz2';
+  if (/\.(tar\.xz|txz)$/.test(n)) return 'txz';
+  if (/\.tar$/.test(n)) return 'tar';
+  if (/\.zip$/.test(n)) return 'zip';
+  if (/\.gz$/.test(n)) return 'gz';
+  return null;
+}
+function mimeToKind(m) {
+  if (/application\/zip/.test(m)) return 'zip';
+  if (/application\/x-tar/.test(m)) return 'tar';
+  if (/application\/(gzip|x-gzip)/.test(m)) return 'tgz';   // assume tar.gz; a bare .gz keeps its 'gz' extension path
+  if (/application\/x-bzip2/.test(m)) return 'tbz2';
+  if (/application\/x-xz/.test(m)) return 'txz';
+  return null;
+}
+async function pickZipTool(server) {
+  // First available SANITIZING zip extractor (unzip refuses out-of-dir; python zipfile sanitizes; bsdtar rejects '..').
+  const r = await remoteExec.execRemote(server, `for t in unzip python3 bsdtar; do command -v "$t" >/dev/null 2>&1 && { echo "$t"; break; }; done`);
+  return (r.stdout || '').trim() || null;
+}
+
+/**
+ * Extract an archive on the remote host. opts: { here?, overwrite?, deleteAfter? }.
+ * Default destination = a new subfolder named after the archive (safest). Returns { path: destDir }.
+ */
+async function extract(server, archivePath, opts = {}) {
+  const src = normRemote(archivePath);
+  const cwd = src.replace(/\/[^/]+$/, '') || '/';
+  const base = src.split('/').pop() || 'archive';
+  const shq = remoteExec.shq;
+  const A = shq(src);
+
+  // Classify by extension; fall back to magic bytes for unknown names.
+  let kind = classifyArchive(base);
+  if (!kind) {
+    try { const m = await remoteExec.execRemote(server, `file -b --mime-type ${A} 2>/dev/null`); kind = mimeToKind((m.stdout || '').trim()); } catch (e) {}
+  }
+  if (!kind) throw Object.assign(new Error('Not a recognized archive (.zip, .tar, .tar.gz, .tar.bz2, .tar.xz, .gz)'), { statusCode: 400 });
+
+  // Destination: a fresh subfolder named after the archive (default) or the current folder ("here").
+  const stem = base.replace(/\.(tar\.(gz|bz2|xz)|tgz|tbz2|txz|tar|zip|gz)$/i, '') || 'extracted';
+  const dest = opts.here ? cwd : joinRemote(cwd, stem);
+  if (dest === '/' || dest.split('/').filter(Boolean).length < 1) throw Object.assign(new Error('Refusing to extract to the filesystem root'), { statusCode: 400 });
+  const D = shq(dest);
+
+  // Subfolder mode: refuse a non-empty existing target unless overwrite was chosen.
+  if (!opts.here && !opts.overwrite) {
+    const chk = await remoteExec.execRemote(server, `test -d ${D} && [ -n "$(ls -A ${D} 2>/dev/null)" ] && echo NONEMPTY || true`);
+    if ((chk.stdout || '').includes('NONEMPTY')) throw Object.assign(new Error(`"${stem}" already exists and isn't empty — pick "overwrite" or a different archive name`), { statusCode: 409 });
+  }
+
+  const T = 600; // hard 10-min timeout (execRemote itself has no per-command timeout)
+  let cmd;
+  if (kind === 'zip') {
+    const tool = await pickZipTool(server);
+    if (!tool) throw Object.assign(new Error("No safe zip extractor on this server — install 'unzip' or 'python3', or upload a .tar.gz instead"), { statusCode: 422 });
+    if (tool === 'unzip') cmd = `mkdir -p ${D} && timeout ${T} unzip ${opts.overwrite ? '-o' : '-n'} ${A} -d ${D} 2>&1`;
+    else if (tool === 'python3') cmd = `mkdir -p ${D} && timeout ${T} python3 -m zipfile -e ${A} ${D} 2>&1`;
+    else cmd = `mkdir -p ${D} && timeout ${T} bsdtar -x -C ${D} -f ${A} 2>&1`;
+  } else if (kind === 'gz') {
+    const out = shq(joinRemote(dest, base.replace(/\.gz$/i, '') || 'file'));
+    cmd = `mkdir -p ${D} && timeout ${T} sh -c ${shq(`gzip -dc ${A} > ${out}`)} 2>&1`;
+  } else {
+    // -k = don't overwrite existing files (both GNU & busybox tar). No --no-same-owner (busybox lacks the
+    // long option; it's a no-op for non-root anyway). tar rejects '..' members itself; -C confines output.
+    const flag = kind === 'tgz' ? 'xzf' : kind === 'tbz2' ? 'xjf' : kind === 'txz' ? 'xJf' : 'xf';
+    cmd = `mkdir -p ${D} && timeout ${T} tar ${opts.overwrite ? '' : '-k'} -C ${D} -${flag} ${A} 2>&1`;
+  }
+
+  const cleanup = async () => { if (!opts.here) await remoteExec.execRemote(server, `rm -rf ${D} 2>&1`).catch(() => {}); };
+  const r = await remoteExec.execRemote(server, cmd);
+  if (r.code !== 0) {
+    await cleanup();
+    throw Object.assign(new Error('Extract failed: ' + ((r.stdout || r.stderr || '').trim() || `exit ${r.code}`)), { statusCode: 500 });
+  }
+
+  // Containment scan: reject if the archive left any symlink pointing OUTSIDE the destination (tar/zip
+  // block writes through symlinks but can still materialize an attacker-chosen out-of-tree symlink).
+  const scan = await remoteExec.execRemote(server, `RD=$(readlink -f ${D}); find ${D} -type l 2>/dev/null | while IFS= read -r l; do t=$(readlink -f "$l" 2>/dev/null); case "$t" in "$RD"|"$RD"/*) ;; *) echo BAD ;; esac; done`);
+  if ((scan.stdout || '').includes('BAD')) {
+    await cleanup();
+    throw Object.assign(new Error('Extract blocked: the archive contains a symlink pointing outside the target folder (possible attack)'), { statusCode: 400 });
+  }
+
+  if (opts.deleteAfter) await remoteExec.execRemote(server, `rm -f ${A} 2>&1`).catch(() => {});
+  return { path: dest, kind };
+}
+
 module.exports = {
   listDir, downloadTo, uploadFrom, mkdir, rename, remove, normRemote, joinRemote, homeDir, listTree,
-  readFileText, writeFileText, removeRecursive, copy, move, archiveDirTo,
+  readFileText, writeFileText, removeRecursive, copy, move, archiveDirTo, extract, classifyArchive,
 };

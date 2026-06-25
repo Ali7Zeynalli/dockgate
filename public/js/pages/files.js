@@ -14,6 +14,17 @@ Router.register('files', async (content) => {
     return i <= 0 ? '/' : p.slice(0, i);
   }
   function joinPath(name) { return (cwd === '/' ? '' : cwd) + '/' + name; }
+  // Recognized archive formats → friendly label (drives the 📦 Extract row action).
+  function archiveKind(name) {
+    const n = (name || '').toLowerCase();
+    if (/\.(tar\.gz|tgz)$/.test(n)) return 'tar.gz';
+    if (/\.(tar\.bz2|tbz2)$/.test(n)) return 'tar.bz2';
+    if (/\.(tar\.xz|txz)$/.test(n)) return 'tar.xz';
+    if (/\.tar$/.test(n)) return 'tar';
+    if (/\.zip$/.test(n)) return 'zip';
+    if (/\.gz$/.test(n)) return 'gz';
+    return null;
+  }
 
   function header() {
     const sub = ctx.remote
@@ -204,7 +215,8 @@ Router.register('files', async (content) => {
             ${isDir
               ? `<button class="btn btn-xs btn-secondary" data-dlf="${nm}" title="Download folder (.tar.gz)">${Icons.download || '↓'}</button>`
               : `<button class="btn btn-xs btn-secondary" data-edit="${nm}" title="Edit">✎</button>
-                 <button class="btn btn-xs btn-secondary" data-dl="${nm}" title="Download">${Icons.download || '↓'}</button>`}
+                 <button class="btn btn-xs btn-secondary" data-dl="${nm}" title="Download">${Icons.download || '↓'}</button>
+                 ${archiveKind(e.name) ? `<button class="btn btn-xs btn-secondary" data-extract="${nm}" title="Extract archive">📦</button>` : ''}`}
             <button class="btn btn-xs btn-ghost" data-cp="${nm}" data-isdir="${isDir ? 1 : 0}" title="Copy">📋</button>
             <button class="btn btn-xs btn-ghost" data-ct="${nm}" data-isdir="${isDir ? 1 : 0}" title="Cut">✂</button>
             <button class="btn btn-xs btn-secondary" data-rn="${nm}">Rename</button>
@@ -227,6 +239,7 @@ Router.register('files', async (content) => {
     }));
     tbody.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => download(`/api/files/download?path=${encodeURIComponent(joinPath(b.dataset.dl))}`, b.dataset.dl)));
     tbody.querySelectorAll('[data-dlf]').forEach(b => b.addEventListener('click', () => download(`/api/files/download-folder?path=${encodeURIComponent(joinPath(b.dataset.dlf))}`, b.dataset.dlf + '.tar.gz')));
+    tbody.querySelectorAll('[data-extract]').forEach(b => b.addEventListener('click', () => openExtract(b.dataset.extract)));
     tbody.querySelectorAll('[data-cp]').forEach(b => b.addEventListener('click', () => { clipboard = { mode: 'copy', items: [{ path: joinPath(b.dataset.cp), name: b.dataset.cp, isDir: b.dataset.isdir === '1' }] }; showToast(`Copied "${b.dataset.cp}" — go to a folder and Paste`, 'info', 4000); updatePasteBtn(); }));
     tbody.querySelectorAll('[data-ct]').forEach(b => b.addEventListener('click', () => { clipboard = { mode: 'cut', items: [{ path: joinPath(b.dataset.ct), name: b.dataset.ct, isDir: b.dataset.isdir === '1' }] }; showToast(`Cut "${b.dataset.ct}" — go to a folder and Paste`, 'info', 4000); updatePasteBtn(); }));
     tbody.querySelectorAll('[data-rn]').forEach(b => b.addEventListener('click', async () => {
@@ -273,6 +286,37 @@ Router.register('files', async (content) => {
       const b = e.target; b.disabled = true; b.textContent = 'Saving…';
       try { await API.post('/files/write', { path: p, content: ta.value }); showToast('Saved'); m.close(); list(); }
       catch (err) { showToast(err.message, 'error', 9000); b.disabled = false; b.textContent = 'Save'; }
+    };
+  }
+
+  // Extract an archive on the remote host. Default → a new subfolder named after the archive (safest).
+  function openExtract(name) {
+    const fmt = archiveKind(name);
+    const stem = name.replace(/\.(tar\.(gz|bz2|xz)|tgz|tbz2|txz|tar|zip|gz)$/i, '') || 'extracted';
+    const m = showModal(`Extract — ${escapeHtml(name)}`, `
+      ${serverContextBanner()}
+      <div class="text-sm" style="margin-bottom:8px">Detected format: <strong>${escapeHtml(fmt || '?')}</strong></div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:8px">
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="radio" name="ex-dest" value="sub" checked> Into a new subfolder: <code>${escapeHtml(stem)}/</code></label>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="radio" name="ex-dest" value="here"> Here (current folder)</label>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:400;font-size:13px"><input type="checkbox" id="ex-overwrite"> Overwrite files that already exist</label>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:400;font-size:13px"><input type="checkbox" id="ex-del"> Delete the archive after a successful extract</label>
+      <div class="text-xs text-muted" style="margin-top:8px">Extracted on the server — path traversal and out-of-tree symlinks are blocked.</div>
+      <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-secondary" id="ex-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="ex-go" type="button">📦 Extract</button>
+      </div>`, []);
+    m.overlay.querySelector('#ex-cancel').onclick = () => m.close();
+    m.overlay.querySelector('#ex-go').onclick = async (e) => {
+      const b = e.target; b.disabled = true; b.textContent = 'Extracting…';
+      const here = m.overlay.querySelector('input[name="ex-dest"]:checked').value === 'here';
+      const overwrite = m.overlay.querySelector('#ex-overwrite').checked;
+      const deleteAfter = m.overlay.querySelector('#ex-del').checked;
+      try {
+        await API.post('/files/extract', { path: joinPath(name), here, overwrite, deleteAfter });
+        showToast(`Extracted "${name}"`, 'success'); m.close(); list();
+      } catch (err) { showToast(err.message, 'error', 10000); b.disabled = false; b.textContent = '📦 Extract'; }
     };
   }
 
