@@ -284,13 +284,17 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
 
     if (delBtn) {
       const id = delBtn.dataset.del;
-      showConfirm('Delete registry', `Remove the credential for "${delBtn.dataset.addr}"? Pulling private images from it will stop working.`, async () => {
-        try {
-          await API.del('/registries/' + id);
-          showToast('Registry deleted');
-          load();
-        } catch (err) { showToast(err.message, 'error'); }
-      }, true);
+      showDeleteConfirm('Delete registry', {
+        message: `Remove the credential for "${delBtn.dataset.addr}"? Pulling private images from it will stop working.`,
+        phrase: delBtn.dataset.addr,
+        onConfirm: async () => {
+          try {
+            await API.del('/registries/' + id);
+            showToast('Registry deleted');
+            load();
+          } catch (err) { showToast(err.message, 'error'); }
+        }
+      });
     }
   });
 

@@ -172,10 +172,10 @@ Router.register('images', async (content) => {
         btn.addEventListener('click', () => {
           const imgId = btn.dataset.remove;
           const name = btn.dataset.name;
-          showConfirm('Remove Image', `Remove <strong>${name}</strong>?`, async () => {
+          showDeleteConfirm('Remove Image', { message: `Remove <strong>${name}</strong>?`, phrase: name, onConfirm: async () => {
             try { await API.del(`/images/${encodeURIComponent(imgId)}`); showToast(`Removed ${name}`); render(); }
             catch (err) { showToast(err.message, 'error'); }
-          }, true);
+          } });
         });
       });
 
@@ -245,19 +245,19 @@ Router.register('images', async (content) => {
       document.getElementById('bulk-clear')?.addEventListener('click', () => { selectedIds.clear(); render(); });
 
       document.getElementById('bulk-remove')?.addEventListener('click', () => {
-        showConfirm('Remove Selected', `Remove ${selectedIds.size} image(s)?`, async () => {
+        showDeleteConfirm('Remove Selected', { message: `Remove ${selectedIds.size} image(s)?`, phrase: 'delete', onConfirm: async () => {
           await bulkRun([...selectedIds], (id) => API.del(`/images/${encodeURIComponent(id)}`), 'Removed');
           selectedIds.clear();
           render();
-        }, true);
+        } });
       });
 
       document.getElementById('bulk-force-remove')?.addEventListener('click', () => {
-        showConfirm('Force Remove Selected', `Force remove ${selectedIds.size} image(s)? This will also remove images currently in use.`, async () => {
+        showDeleteConfirm('Force Remove Selected', { message: `Force remove ${selectedIds.size} image(s)? This will also remove images currently in use.`, phrase: 'delete', onConfirm: async () => {
           await bulkRun([...selectedIds], (id) => API.del(`/images/${encodeURIComponent(id)}?force=true`), 'Force removed');
           selectedIds.clear();
           render();
-        }, true);
+        } });
       });
 
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }

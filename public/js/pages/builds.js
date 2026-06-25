@@ -195,13 +195,13 @@ Router.register('builds', async (content) => {
           // Delete button
           el.querySelector('.hide-docker-build')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            showConfirm('Remove from History', `Remove "${img.tag}" from build history? (Image will not be deleted)`, async () => {
+            showDeleteConfirm('Remove from History', { message: `Remove "${img.tag}" from build history? (Image will not be deleted)`, phrase: 'delete', onConfirm: async () => {
               try {
                 await API.post('/builds/docker-history/hide', { imageId: img.imageId });
                 showToast('Removed from history', 'success');
                 render();
               } catch (err) { showToast(err.message, 'error'); }
-            }, true);
+            } });
           });
         });
 
@@ -257,32 +257,32 @@ Router.register('builds', async (content) => {
 
         // Bulk delete panel builds
         document.getElementById('bulk-delete-panel')?.addEventListener('click', () => {
-          showConfirm('Delete Selected', `Delete ${selectedPanelIds.size} build record(s)?`, async () => {
+          showDeleteConfirm('Delete Selected', { message: `Delete ${selectedPanelIds.size} build record(s)?`, phrase: 'delete', onConfirm: async () => {
             await bulkRun([...selectedPanelIds], (id) => API.del(`/builds/detail/${id}`), 'Deleted');
             selectedPanelIds.clear();
             render();
-          }, true);
+          } });
         });
         document.getElementById('bulk-clear-panel')?.addEventListener('click', () => { selectedPanelIds.clear(); render(); });
 
         listEl.querySelectorAll('.delete-build').forEach(btn => {
           btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            showConfirm('Delete Build', 'Delete this build record?', async () => {
+            showDeleteConfirm('Delete Build', { message: 'Delete this build record?', phrase: 'delete', onConfirm: async () => {
               try {
                 await API.del(`/builds/detail/${btn.dataset.id}`);
                 showToast('Build deleted', 'success');
                 render();
               } catch (err) { showToast(err.message, 'error'); }
-            }, true);
+            } });
           });
         });
 
         document.getElementById('clear-history')?.addEventListener('click', () => {
-          showConfirm('Clear All', 'Delete all panel build history?', async () => {
+          showDeleteConfirm('Clear All', { message: 'Delete all panel build history?', phrase: 'delete', onConfirm: async () => {
             try { await API.del('/builds'); showToast('Cleared', 'success'); render(); }
             catch (err) { showToast(err.message, 'error'); }
-          }, true);
+          } });
         });
       }
 
@@ -338,13 +338,13 @@ Router.register('builds', async (content) => {
 
       document.getElementById('back-to-list')?.addEventListener('click', () => { selectedBuildId = null; render(); });
       document.getElementById('delete-this-build')?.addEventListener('click', () => {
-        showConfirm('Delete Build', 'Delete this build record?', async () => {
+        showDeleteConfirm('Delete Build', { message: 'Delete this build record?', phrase: 'delete', onConfirm: async () => {
           try {
             await API.del(`/builds/detail/${build.id}`);
             showToast('Build deleted', 'success');
             selectedBuildId = null; render();
           } catch (err) { showToast(err.message, 'error'); }
-        }, true);
+        } });
       });
 
       tabContent.querySelectorAll('.detail-tab').forEach(btn => {
@@ -716,7 +716,7 @@ Router.register('builds', async (content) => {
       });
 
       document.getElementById('prune-cache')?.addEventListener('click', () => {
-        showConfirm('Prune Build Cache', 'Remove all build cache? Next builds may take longer.', async () => {
+        showDeleteConfirm('Prune Build Cache', { message: 'Remove all build cache? Next builds may take longer.', phrase: 'delete', onConfirm: async () => {
           try {
             showToast('Pruning...', 'info');
             const res = await API.post('/builds/cache/prune');
@@ -724,7 +724,7 @@ Router.register('builds', async (content) => {
             showToast(`Cache pruned${space}`, 'success');
             renderCache();
           } catch (err) { showToast(err.message, 'error'); }
-        }, true);
+        } });
       });
     } catch (err) {
       tabContent.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`;

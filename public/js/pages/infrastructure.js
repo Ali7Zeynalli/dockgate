@@ -238,12 +238,12 @@ Router.register('infra', async (content, params) => {
             const s = servers.find(x => x.id === id);
             if (s) openServerEditModal(s);
           } else if (action === 'delete') {
-            showConfirm('Delete Server', `Server "${id}" silinsin? SSH key faylı da silinir.`, async () => {
+            showDeleteConfirm('Delete Server', { message: `Server "${id}" silinsin? SSH key faylı da silinir.`, phrase: id, onConfirm: async () => {
               await API.del(`/servers/${id}`);
               showToast('Silindi');
               if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
               renderServers();
-            }, true);
+            } });
           }
         } catch (e) { showToast(e.message, 'error'); }
       });

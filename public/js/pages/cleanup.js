@@ -105,7 +105,7 @@ async function renderCleanupInto(content, { embedded = false } = {}) {
       content.querySelectorAll('[data-prune]').forEach(btn => {
         btn.addEventListener('click', () => {
           const type = btn.dataset.prune;
-          showConfirm(`Prune ${type}`, `Are you sure you want to remove all unused ${type}?`, async () => {
+          showDeleteConfirm(`Prune ${type}`, { message: `Are you sure you want to remove all unused ${type}?`, phrase: 'delete', onConfirm: async () => {
             try {
               showToast(`Cleaning ${type}...`, 'info');
               const res = await API.post(`/cleanup/${type}`);
@@ -113,20 +113,20 @@ async function renderCleanupInto(content, { embedded = false } = {}) {
               showToast(`Cleanup successful${space}`);
               render();
             } catch (err) { showToast(err.message, 'error'); }
-          }, type === 'volumes' || type === 'images');
+          } });
         });
       });
 
       document.getElementById('full-prune-btn').addEventListener('click', () => {
         const includeVols = document.getElementById('prune-volumes').checked;
-        showConfirm(`Full System Prune`, `Are you absolutely sure? This will delete ALL unused data${includeVols ? ' INCLUDING VOLUMES.' : '.'}`, async () => {
+        showDeleteConfirm(`Full System Prune`, { message: `Are you absolutely sure? This will delete ALL unused data${includeVols ? ' INCLUDING VOLUMES.' : '.'}`, phrase: 'delete', onConfirm: async () => {
           try {
              showToast(`Starting full system prune...`, 'warn');
              const res = await API.post(`/cleanup/system?volumes=${includeVols}`);
              showToast(`System pruned successfully`);
              render();
           } catch(err) { showToast(err.message, 'error'); }
-        }, true);
+        } });
       });
 
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }

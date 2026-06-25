@@ -327,10 +327,10 @@ Router.register('containers', async (content) => {
         const name = containers.find(c => c.id === id)?.name || id.substring(0, 12);
 
         if (action === 'remove') {
-          showConfirm('Remove Container', `Are you sure you want to remove <strong>${escapeHtml(name)}</strong>?`, async () => {
+          showDeleteConfirm('Remove Container', { message: `Are you sure you want to remove <strong>${escapeHtml(name)}</strong>?`, phrase: name, onConfirm: async () => {
             try { await API.post(`/containers/${id}/remove`, { force: true }); showToast(`Removed ${name}`); render(); }
             catch (err) { showToast(err.message, 'error'); }
-          }, true);
+          } });
           return;
         }
         if (action === 'logs') { Router.navigate('container-detail', { id, tab: 'logs' }); return; }
@@ -388,12 +388,12 @@ Router.register('containers', async (content) => {
       });
     });
     document.getElementById('bulk-remove')?.addEventListener('click', () => {
-      showConfirm('Remove Selected', `Remove ${selectedIds.size} container(s)?`, async () => {
+      showDeleteConfirm('Remove Selected', { message: `Remove ${selectedIds.size} container(s)?`, phrase: 'delete', onConfirm: async () => {
         const ids = [...selectedIds];
         await bulkRun(ids, (id) => API.post(`/containers/${id}/remove`, { force: true }), 'Removed');
         selectedIds.clear();
         render();
-      }, true);
+      } });
     });
   }
 

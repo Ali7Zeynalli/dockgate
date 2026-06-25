@@ -123,10 +123,10 @@ Router.register('volumes', async (content) => {
       // Single remove
       content.querySelectorAll('[data-remove]').forEach(btn => {
         btn.addEventListener('click', () => {
-          showConfirm('Remove Volume', `Remove <strong>${escapeHtml(btn.dataset.remove)}</strong>? This will delete all data in this volume.`, async () => {
+          showDeleteConfirm('Remove Volume', { message: `Remove <strong>${escapeHtml(btn.dataset.remove)}</strong>? This will delete all data in this volume.`, phrase: btn.dataset.remove, onConfirm: async () => {
             try { await API.del(`/volumes/${btn.dataset.remove}`); showToast('Volume removed'); render(); }
             catch (err) { showToast(err.message, 'error'); }
-          }, true);
+          } });
         });
       });
 
@@ -169,11 +169,11 @@ Router.register('volumes', async (content) => {
       document.getElementById('bulk-clear')?.addEventListener('click', () => { selectedNames.clear(); render(); });
 
       document.getElementById('bulk-remove')?.addEventListener('click', () => {
-        showConfirm('Remove Selected Volumes', `Remove ${selectedNames.size} volume(s)? This will delete all data in these volumes.`, async () => {
+        showDeleteConfirm('Remove Selected Volumes', { message: `Remove ${selectedNames.size} volume(s)? This will delete all data in these volumes.`, phrase: 'delete', onConfirm: async () => {
           await bulkRun([...selectedNames], (name) => API.del(`/volumes/${name}`), 'Removed');
           selectedNames.clear();
           render();
-        }, true);
+        } });
       });
 
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }

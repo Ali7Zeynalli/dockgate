@@ -131,7 +131,7 @@ Router.register('compose', async (content) => {
             run(svc.length ? `?services=${encodeURIComponent(svc.join(','))}` : '');
           // down/restart are disruptive — confirm first (down removes containers; restart interrupts)
           } else if (action === 'down') {
-            showConfirm('Compose Down', `Stop and remove all containers in "${project}"?`, () => run(), true);
+            showDeleteConfirm('Compose Down', { message: `Stop and remove all containers in "${project}"?`, phrase: project, onConfirm: () => run() });
           } else if (action === 'restart') {
             showConfirm('Compose Restart', `Restart all services in "${project}"? They will be briefly interrupted.`, () => run(), true);
           } else {
@@ -402,12 +402,22 @@ Router.register('compose', async (content) => {
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="del-down" checked disabled> Stop &amp; remove containers (<code>docker compose down</code>)</label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="del-files" checked> Remove the project files ${isRemote ? '(the folder on the remote server)' : '(DockGate-managed files)'}</label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;color:var(--danger,#f85149)"><input type="checkbox" id="del-vols"> Also delete data volumes — <strong>irreversible data loss</strong></label>
+      <label class="text-xs text-muted" style="display:block;margin-top:4px">Type <code style="background:var(--bg-primary);padding:1px 6px;border-radius:4px;border:1px solid var(--border);font-weight:600">${escapeHtml(project)}</code> to confirm:</label>
+      <input class="input" id="del-confirm" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${escapeHtml(project)}" style="width:100%;margin-top:6px" />
     </div>`;
     const m = showModal('Delete project', body, [{ label: 'Cancel', className: 'btn btn-secondary' }]);
     const root = m.overlay;
     const btn = document.createElement('button'); btn.className = 'btn btn-danger'; btn.textContent = 'Delete';
+    btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed';
     root.querySelector('#modal-footer').appendChild(btn);
+    const delInput = root.querySelector('#del-confirm');
+    const delMatches = () => delInput.value.trim() === project;
+    const delSync = () => { const ok = delMatches(); btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; btn.style.cursor = ok ? 'pointer' : 'not-allowed'; };
+    delInput.addEventListener('input', delSync);
+    delInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && delMatches()) { e.preventDefault(); btn.click(); } });
+    setTimeout(() => delInput.focus(), 50);
     btn.addEventListener('click', async () => {
+      if (!delMatches()) return;
       btn.disabled = true; btn.textContent = 'Deleting…';
       const vols = root.querySelector('#del-vols').checked ? 1 : 0;
       const files = root.querySelector('#del-files').checked ? 1 : 0;
@@ -506,10 +516,10 @@ Router.register('compose', async (content) => {
       el.querySelectorAll('[data-cd]').forEach(a => a.addEventListener('click', (ev) => { ev.preventDefault(); cwd = cwd ? cwd + '/' + a.dataset.cd : a.dataset.cd; list(); }));
       el.querySelectorAll('[data-edit-file]').forEach(b => b.addEventListener('click', () => editFileFromTree(project, b.dataset.editFile, list)));
       el.querySelectorAll('[data-del-file]').forEach(b => b.addEventListener('click', () => {
-        showConfirm('Delete file', `Delete "${escapeHtml(b.dataset.delFile)}"?`, async () => {
+        showDeleteConfirm('Delete file', { message: `Delete "${escapeHtml(b.dataset.delFile)}"?`, phrase: b.dataset.delFile, onConfirm: async () => {
           try { await API.del(`/compose/${project}/filecontent?path=${encodeURIComponent(b.dataset.delFile)}`); showToast('Deleted'); list(); }
           catch (e) { showToast(e.message, 'error'); }
-        }, true);
+        } });
       }));
     }
     list();

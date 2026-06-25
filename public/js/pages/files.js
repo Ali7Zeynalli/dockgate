@@ -179,7 +179,7 @@ Router.register('files', async (content) => {
     const items = [...selected.entries()].map(([name, v]) => ({ name, isDir: v.isDir }));
     if (!items.length) return;
     const anyDir = items.some(i => i.isDir);
-    showConfirm('Delete selected', `Delete <strong>${items.length}</strong> item(s)?${anyDir ? ' Folders are removed with <strong>all their contents</strong>.' : ''} This cannot be undone.`, async () => {
+    showDeleteConfirm('Delete selected', { message: `Delete <strong>${items.length}</strong> item(s)?${anyDir ? ' Folders are removed with <strong>all their contents</strong>.' : ''} This cannot be undone.`, phrase: 'delete', onConfirm: async () => {
       let ok = 0, fail = 0;
       for (const it of items) {
         try { await API.del(`/files?path=${encodeURIComponent(joinPath(it.name))}&isDir=${it.isDir ? 1 : 0}&recursive=${it.isDir ? 1 : 0}`); ok++; }
@@ -187,7 +187,7 @@ Router.register('files', async (content) => {
       }
       showToast(`Deleted ${ok}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success');
       selected.clear(); list();
-    }, true);
+    } });
   }
 
   async function list() {
@@ -253,10 +253,10 @@ Router.register('files', async (content) => {
       const msg = isDir
         ? `Delete folder "<strong>${escapeHtml(b.dataset.rm)}</strong>" and <strong>all its contents</strong>? This cannot be undone.`
         : `Delete file "<strong>${escapeHtml(b.dataset.rm)}</strong>"?`;
-      showConfirm('Delete', msg, async () => {
+      showDeleteConfirm('Delete', { message: msg, phrase: b.dataset.rm, onConfirm: async () => {
         try { await API.del(`/files?path=${encodeURIComponent(joinPath(b.dataset.rm))}&isDir=${isDir ? 1 : 0}&recursive=${isDir ? 1 : 0}`); showToast('Deleted'); list(); }
         catch (e) { showToast(e.message, 'error', 9000); }
-      }, true);
+      } });
     }));
   }
 

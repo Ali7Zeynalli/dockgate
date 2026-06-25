@@ -349,12 +349,12 @@ Router.register('settings', async (content, params) => {
                 const s = servers.find(x => x.id === id);
                 if (s) openServerEditModal(s);
               } else if (action === 'delete') {
-                showConfirm('Delete Server', `Server "${id}" silinsin? SSH key faylı da silinir.`, async () => {
+                showDeleteConfirm('Delete Server', { message: `Server "${id}" silinsin? SSH key faylı da silinir.`, phrase: id, onConfirm: async () => {
                   await API.del(`/servers/${id}`);
                   showToast('Silindi');
                   if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
                   renderServers();
-                }, true);
+                } });
               }
             } catch (e) { showToast(e.message, 'error'); }
           });
@@ -720,9 +720,11 @@ Router.register('settings', async (content, params) => {
             catch(e) { showToast('Test failed: ' + e.message, 'error'); }
           });
 
-          document.getElementById('clear-smtp')?.addEventListener('click', async () => {
-            try { await API.delete('/meta/smtp'); showToast('SMTP cleared'); renderNotifications(); }
-            catch(e) { showToast(e.message, 'error'); }
+          document.getElementById('clear-smtp')?.addEventListener('click', () => {
+            showDeleteConfirm('Clear SMTP', { message: 'Delete the saved SMTP settings? Host, user and password will have to be re-entered.', phrase: 'delete', confirmLabel: 'Clear', onConfirm: async () => {
+              try { await API.delete('/meta/smtp'); showToast('SMTP cleared'); renderNotifications(); }
+              catch(e) { showToast(e.message, 'error'); }
+            }});
           });
 
           // Save Telegram
@@ -743,9 +745,11 @@ Router.register('settings', async (content, params) => {
             catch(e) { showToast('Test failed: ' + e.message, 'error'); }
           });
 
-          document.getElementById('clear-telegram')?.addEventListener('click', async () => {
-            try { await API.delete('/meta/telegram'); showToast('Telegram cleared'); renderNotifications(); }
-            catch(e) { showToast(e.message, 'error'); }
+          document.getElementById('clear-telegram')?.addEventListener('click', () => {
+            showDeleteConfirm('Clear Telegram', { message: 'Delete the saved Telegram settings? The bot token and chat ID will have to be re-entered.', phrase: 'delete', confirmLabel: 'Clear', onConfirm: async () => {
+              try { await API.delete('/meta/telegram'); showToast('Telegram cleared'); renderNotifications(); }
+              catch(e) { showToast(e.message, 'error'); }
+            }});
           });
 
           // Save Rules
@@ -816,9 +820,11 @@ Router.register('settings', async (content, params) => {
             </div>
           `;
 
-          document.getElementById('clear-notif-log')?.addEventListener('click', async () => {
-            try { await API.delete('/meta/notifications/log'); showToast('Log cleared'); renderLog(); }
-            catch(e) { showToast(e.message, 'error'); }
+          document.getElementById('clear-notif-log')?.addEventListener('click', () => {
+            showDeleteConfirm('Clear notification log', { message: 'Permanently clear the entire notification history log?', phrase: 'delete', confirmLabel: 'Clear', onConfirm: async () => {
+              try { await API.delete('/meta/notifications/log'); showToast('Log cleared'); renderLog(); }
+              catch(e) { showToast(e.message, 'error'); }
+            }});
           });
         } catch(e) {
           tabContent.innerHTML = '<div class="text-xs text-muted">Could not load notification log.</div>';

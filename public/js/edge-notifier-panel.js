@@ -231,9 +231,15 @@
                 const { jobId } = await API.post('/agent/' + act, { serverId: sid });
                 openJobModal(jobId, load);
               } else if (act === 'remove') {
-                if (!confirm(`Remove the notifier agent from ${sid}? DockGate's central monitor will resume watching it.`)) return;
-                await API.post('/agent/remove', { serverId: sid });
-                showToast('Agent removed'); load();
+                showDeleteConfirm('Remove notifier agent', {
+                  message: `Remove the notifier agent from <strong>${escapeHtml(sid)}</strong>? DockGate's central monitor will resume watching it.`,
+                  phrase: sid, confirmLabel: 'Remove',
+                  onConfirm: async () => {
+                    try { await API.post('/agent/remove', { serverId: sid }); showToast('Agent removed'); load(); }
+                    catch (e) { showToast(e.message, 'error'); }
+                  },
+                });
+                return;
               } else if (act === 'start' || act === 'stop') {
                 await API.post('/agent/power', { serverId: sid, action: act });
                 showToast('Agent ' + (act === 'stop' ? 'stopped' : 'started')); load();

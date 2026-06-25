@@ -2,6 +2,17 @@
 
 ---
 
+## [2.1.21] - 2026-06-25
+
+### Added — GitHub-style "type to confirm" on every delete
+- Every destructive action now requires you to **type a confirmation phrase** before the red button activates — the same safety pattern GitHub uses for deleting a repo. A misclick can no longer delete the wrong thing: the **Delete** button stays disabled until what you type matches.
+- **For a single named resource** (a container, image, volume, network, server, SSH key, registry, file, or compose project) you retype that resource's **own name/id** — so you literally confirm *which* one you're deleting. **For bulk / prune / clear-all** actions (no single name) you type the word **`delete`**.
+- New shared `showDeleteConfirm()` helper in the UI; all confirmation dialogs were swept to use it. Coverage: Remove Container (single + bulk), Remove/Force-Remove Image, Remove Volume(s), Remove Network(s), Delete Server (Servers list + Settings), Delete SSH key, Delete registry, Delete file(s), Compose **Down** and **Delete project** (the project-delete modal keeps its volumes/files options and the server banner, now gated on the project name), Build-record deletes / Clear-all / Prune build cache, Cleanup **Prune** and **Full System Prune**, Clear audit log, and the notifier-agent **Remove** (was a bare browser `confirm()` — now the typed gate, keyed on the server id). The notification-settings **Clear SMTP / Clear Telegram / Clear notification-log** buttons — which previously deleted saved config with *no* confirmation at all — are now gated too.
+- The existing **server-context banner** (🖥 Local / 🔐 remote host) still shows at the top of each dialog, so you also see *where* the delete will land. Non-destructive actions (Start/Stop/Restart, Grant Docker, Update, Save config, Hide-from-history) are intentionally left as one-click confirms.
+- Built and audited by a parallel sweep across all 14 page files plus a completeness pass; verified e2e in a container — the keystone gate (disabled → stays disabled on a wrong phrase → enables on exact match → fires → closes) and a real wired delete (Delete Server, keyed on the server id, actually removes the server) both pass.
+
+---
+
 ## [2.1.20] - 2026-06-25
 
 ### Added — Per-server access password (a 2nd gate to switch servers)

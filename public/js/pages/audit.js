@@ -135,13 +135,13 @@ Router.register('audit', async (content) => {
     });
 
     document.getElementById('audit-clear')?.addEventListener('click', () => {
-      showConfirm('Clear audit log', 'All audit records will be deleted. Continue?', async () => {
+      showDeleteConfirm('Clear audit log', { message: 'All audit records will be deleted. Continue?', phrase: 'delete', onConfirm: async () => {
         try {
           await API.del('/meta/activity');
           showToast('Audit log cleared');
           render();
         } catch (err) { showToast(err.message, 'error'); }
-      }, true);
+      } });
     });
 
     await load();

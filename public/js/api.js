@@ -186,6 +186,43 @@ function showConfirm(title, message, onConfirm, danger = false) {
   ]);
 }
 
+// GitHub-style delete confirmation: the destructive button stays DISABLED until the user types the exact
+// confirmation phrase. A misclick can't delete the wrong thing — you must read and retype what's at stake.
+//   opts.message      — HTML describing what will be deleted (shown under the server-context banner)
+//   opts.phrase       — the exact text the user must type. For a single named resource pass its name/id
+//                       (true GitHub feel); for bulk/prune/clear (no single name) pass the literal 'delete'.
+//   opts.confirmLabel — destructive button text (default 'Delete')
+//   opts.onConfirm    — runs once the typed phrase matches and the button (or Enter) is pressed
+function showDeleteConfirm(title, opts = {}) {
+  const { message = '', phrase = 'delete', confirmLabel = 'Delete', onConfirm = () => {} } = opts;
+  const phraseStr = String(phrase).trim() || 'delete';
+  const m = showModal(title, `
+    ${serverContextBanner()}
+    <p style="color: var(--text-secondary)">${message}</p>
+    <label class="text-xs text-muted" style="display:block;margin-top:4px">Type <code style="background:var(--bg-primary);padding:1px 6px;border-radius:4px;border:1px solid var(--border);font-weight:600">${escapeHtml(phraseStr)}</code> to confirm:</label>
+    <input class="input" id="dg-del-confirm" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${escapeHtml(phraseStr)}" style="width:100%;margin-top:6px" />
+  `, [{ label: 'Cancel', className: 'btn btn-secondary' }]);
+  // Scope queries to THIS overlay — modals can stack and ids repeat.
+  const scope = m.overlay;
+  const input = scope.querySelector('#dg-del-confirm');
+  const footer = scope.querySelector('#modal-footer');
+  const delBtn = document.createElement('button');
+  delBtn.className = 'btn btn-danger';
+  delBtn.textContent = confirmLabel;
+  delBtn.disabled = true;
+  delBtn.style.opacity = '0.5';
+  delBtn.style.cursor = 'not-allowed';
+  footer.appendChild(delBtn);
+  const matches = () => input.value.trim() === phraseStr;
+  const sync = () => { const ok = matches(); delBtn.disabled = !ok; delBtn.style.opacity = ok ? '1' : '0.5'; delBtn.style.cursor = ok ? 'pointer' : 'not-allowed'; };
+  const fire = () => { if (!matches()) return; m.close(); try { const r = onConfirm(); if (r && typeof r.catch === 'function') r.catch(e => showToast(e.message || String(e), 'error')); } catch (e) { showToast(e.message || String(e), 'error'); } };
+  input.addEventListener('input', sync);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); fire(); } });
+  delBtn.addEventListener('click', fire);
+  setTimeout(() => input.focus(), 50);
+  return m;
+}
+
 // Utility functions
 function formatBytes(bytes, decimals = 1) {
   if (bytes === 0) return '0 B';

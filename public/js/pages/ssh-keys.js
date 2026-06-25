@@ -132,9 +132,9 @@ async function renderSshKeysInto(content, { embedded = false } = {}) {
     </div>`).join('');
   el.querySelectorAll('[data-skpub]').forEach(b => b.onclick = () => skShowPublic(keys.find(x => String(x.id) === b.dataset.skpub)));
   el.querySelectorAll('[data-skdel]').forEach(b => b.onclick = () => {
-    showConfirm('Delete SSH key', `Delete "${b.dataset.skname}"? Any Git deploy using it will stop working.`, async () => {
+    showDeleteConfirm('Delete SSH key', { message: `Delete "${b.dataset.skname}"? Any Git deploy using it will stop working.`, phrase: b.dataset.skname, onConfirm: async () => {
       try { await API.delete(`/ssh-keys/${b.dataset.skdel}`); showToast('Deleted'); reload(); }
       catch (e) { showToast(e.message, 'error'); }
-    }, true);
+    } });
   });
 }

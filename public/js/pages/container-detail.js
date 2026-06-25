@@ -146,10 +146,10 @@ Router.register('container-detail', async (content, params) => {
         btn.addEventListener('click', async () => {
           const action = btn.dataset.action;
           if (action === 'remove') {
-            showConfirm('Remove Container', `Remove <strong>${escapeHtml(name)}</strong>?`, async () => {
+            showDeleteConfirm('Remove Container', { message: `Remove <strong>${escapeHtml(name)}</strong>?`, phrase: name, onConfirm: async () => {
               try { await API.post(`/containers/${id}/remove`, { force: true }); showToast(`Removed ${name}`); Router.navigate('resources',{tab:'containers'}); }
               catch (err) { showToast(err.message, 'error'); }
-            }, true);
+            } });
             return;
           }
           try { await API.post(`/containers/${id}/${action}`); showToast(`${action} → ${name}`); render(); }

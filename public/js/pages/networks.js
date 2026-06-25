@@ -84,10 +84,10 @@ Router.register('networks', async (content) => {
       // Single remove
       content.querySelectorAll('[data-remove]').forEach(btn => {
         btn.addEventListener('click', () => {
-          showConfirm('Remove Network', `Remove <strong>${btn.dataset.name}</strong>?`, async () => {
+          showDeleteConfirm('Remove Network', { message: `Remove <strong>${btn.dataset.name}</strong>?`, phrase: btn.dataset.name, onConfirm: async () => {
             try { await API.del(`/networks/${btn.dataset.remove}`); showToast('Network removed'); render(); }
             catch (err) { showToast(err.message, 'error'); }
-          }, true);
+          } });
         });
       });
 
@@ -116,11 +116,11 @@ Router.register('networks', async (content) => {
       document.getElementById('bulk-clear')?.addEventListener('click', () => { selectedIds.clear(); render(); });
 
       document.getElementById('bulk-remove')?.addEventListener('click', () => {
-        showConfirm('Remove Selected Networks', `Remove ${selectedIds.size} network(s)?`, async () => {
+        showDeleteConfirm('Remove Selected Networks', { message: `Remove ${selectedIds.size} network(s)?`, phrase: 'delete', onConfirm: async () => {
           await bulkRun([...selectedIds], (id) => API.del(`/networks/${id}`), 'Removed');
           selectedIds.clear();
           render();
-        }, true);
+        } });
       });
 
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
