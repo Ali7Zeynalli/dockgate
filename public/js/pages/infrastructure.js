@@ -83,7 +83,7 @@ Router.register('infra', async (content, params) => {
       const health = (isLocal || !ls) ? '<span class="text-xs text-muted">—</span>'
         : `<div style="min-width:130px">${miniBar('CPU', ls.cpu)}${miniBar('MEM', ls.mem)}${miniBar('DSK', ls.disk)}</div>`;
       return `<tr>
-          <td>${isLocal ? '🖥' : '🔐'} ${s.name ? `<span style="font-weight:600">${escapeHtml(s.name)}</span> <span class="td-mono text-xs text-muted">${escapeHtml(s.id)}</span>` : `<span class="td-mono">${escapeHtml(s.id)}</span>`}</td>
+          <td>${isLocal ? '🖥' : '🔐'} ${s.name ? `<span style="font-weight:600">${escapeHtml(s.name)}</span> <span class="td-mono text-xs text-muted">${escapeHtml(s.id)}</span>` : `<span class="td-mono">${escapeHtml(s.id)}</span>`}${s.hasAccessPassword ? ' <span title="Access password required to switch to this server">🔒</span>' : ''}</td>
           <td class="text-xs">${escapeHtml(s.type)}</td>
           <td class="td-mono text-xs">${hostStr}</td>
           <td>${authBadge}</td>
@@ -161,6 +161,7 @@ Router.register('infra', async (content, params) => {
         </div>
 
         <input class="input" id="srv-desc" placeholder="Description (optional)" style="margin:8px 0;width:100%;" />
+        <input class="input" id="srv-access" type="password" placeholder="🔒 Access password (optional) — a 2nd password required to switch to this server" autocomplete="new-password" style="margin:0 0 8px;width:100%;" />
         <div class="text-xs text-muted" style="margin:0 0 8px">Docker access (usermod -aG docker) is handled by <b>Manage → Setup</b> per server (idempotent).</div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-secondary btn-sm" id="srv-test-new">Test Connection</button>
@@ -209,7 +210,9 @@ Router.register('infra', async (content, params) => {
         const { action, id } = btn.dataset;
         try {
           if (action === 'activate') {
-            await API.post('/servers/active', { id });
+            const srv = servers.find(x => x.id === id);
+            const ok = await activateServer(id, srv ? (srv.name || srv.id) : id);
+            if (!ok) return; // cancelled or wrong access password
             showToast(`Activated: ${id}`);
             if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
             renderServers();
@@ -302,13 +305,14 @@ Router.register('infra', async (content, params) => {
       const id = document.getElementById('srv-id').value.trim();
       const name = document.getElementById('srv-name')?.value.trim() || '';
       const description = document.getElementById('srv-desc').value.trim();
+      const accessPassword = document.getElementById('srv-access')?.value || '';
       const auth = buildAuthBody();
       if (!id || !auth.host || !auth.username) {
         showToast('ID, host və username tələb olunur', 'warning');
         return;
       }
       try {
-        await API.post('/servers', { id, name, ...auth, description });
+        await API.post('/servers', { id, name, ...auth, description, accessPassword });
         showToast(`Server "${id}" (${authMode}) əlavə olundu`);
         if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
         renderServers();
@@ -339,6 +343,19 @@ Router.register('infra', async (content, params) => {
         <div id="esrv-pane-password" class="esrv-pane" style="display:${s.authMode === 'password' ? 'block' : 'none'}">
           <label class="text-xs text-muted">New password — leave blank to keep the current one:</label>
           <input class="input" id="esrv-pass" type="password" placeholder="••••••••" style="width:100%;margin-top:4px;" />
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+          <div class="text-xs" style="font-weight:600;margin-bottom:6px">🔒 Access password ${s.hasAccessPassword ? '<span style="color:var(--success)">· currently protected</span>' : '<span class="text-muted">· not set</span>'}</div>
+          ${s.hasAccessPassword ? `
+            <label class="text-xs text-muted">Current access password — required to change or remove the gate:</label>
+            <input class="input" id="esrv-access-cur" type="password" placeholder="current access password" autocomplete="off" style="width:100%;margin:4px 0 8px" />
+            <label class="text-xs text-muted">New access password — leave blank to <b>remove</b> the gate:</label>
+            <input class="input" id="esrv-access-new" type="password" placeholder="new access password (blank = remove)" autocomplete="off" style="width:100%;margin-top:4px" />
+            <div class="text-xs text-muted" style="margin-top:4px">Leave the current field blank to keep the password unchanged.</div>
+          ` : `
+            <label class="text-xs text-muted">Set an access password so switching to this server needs a 2nd password (leave blank for none):</label>
+            <input class="input" id="esrv-access-new" type="password" placeholder="access password (optional)" autocomplete="off" style="width:100%;margin-top:4px" />
+          `}
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button class="btn btn-secondary btn-sm" id="esrv-test" type="button">Test Connection</button>
@@ -376,6 +393,15 @@ Router.register('infra', async (content, params) => {
         const p = root.querySelector('#esrv-pass').value;
         if (p) b.password = p;
       }
+      // Access-password gate (2nd factor for switching to this server). Only send when the user intends a
+      // change, so an untouched edit never disturbs the existing gate.
+      const newAccess = root.querySelector('#esrv-access-new')?.value || '';
+      if (s.hasAccessPassword) {
+        const curAccess = root.querySelector('#esrv-access-cur')?.value || '';
+        if (curAccess) { b.currentAccessPassword = curAccess; b.accessPassword = newAccess; } // '' => remove the gate
+      } else if (newAccess.trim()) {
+        b.accessPassword = newAccess;
+      }
       return b;
     }
 
@@ -400,6 +426,11 @@ Router.register('infra', async (content, params) => {
     saveBtn.addEventListener('click', async () => {
       const b = buildEditBody();
       if (!b.host || !b.username) { showToast('Host and username are required', 'warning'); return; }
+      if (s.hasAccessPassword) {
+        const cur = root.querySelector('#esrv-access-cur')?.value || '';
+        const nw = root.querySelector('#esrv-access-new')?.value || '';
+        if (nw && !cur) { showToast('Enter the current access password to change it', 'warning'); return; }
+      }
       saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
       try {
         await API.put('/servers/' + s.id, b);

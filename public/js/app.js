@@ -342,6 +342,55 @@ async function checkRunningDeploys() {
 }
 
 // ============ SERVER SWITCHER (Local + SSH) ============
+
+// Per-server access gate: a protected server can't be switched to without its access password (a 2nd
+// factor on top of the DockGate login). Prompt for it, then resolve to the entered string — or null if
+// the user dismisses (X / backdrop / Cancel) so callers can abort cleanly.
+function promptAccessPassword(label) {
+  return new Promise((resolve) => {
+    const body = `
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="text-xs text-muted">🔒 <b>${escapeHtml(label || 'This server')}</b> is protected. Enter its access password to switch to it.</div>
+        <input class="input" id="gate-pw" type="password" placeholder="Access password" autocomplete="off" style="width:100%" />
+      </div>`;
+    const m = showModal('🔒 Access password required', body, [{ label: 'Cancel' }]);
+    const root = document.getElementById('modal-root');
+    const input = root.querySelector('#gate-pw');
+    const footer = root.querySelector('#modal-footer');
+    let done = false;
+    const finish = (val) => { if (done) return; done = true; obs.disconnect(); m.close(); resolve(val); };
+    const okBtn = document.createElement('button');
+    okBtn.className = 'btn btn-primary';
+    okBtn.textContent = 'Unlock';
+    okBtn.onclick = () => finish(input.value);
+    footer.insertBefore(okBtn, footer.firstChild);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(input.value); } });
+    // X / backdrop / Cancel all just remove the overlay — observe that to resolve as a cancel.
+    const obs = new MutationObserver(() => { if (!root.contains(m.overlay)) finish(null); });
+    obs.observe(root, { childList: true });
+    setTimeout(() => input.focus(), 50);
+  });
+}
+
+// Switch the active server, transparently handling the access-password gate (403 + needsAccessPassword).
+// Returns true on success, false if the user cancelled or the password was wrong; rethrows other errors.
+async function activateServer(id, label) {
+  try {
+    await API.post('/servers/active', { id });
+    return true;
+  } catch (err) {
+    if (/access password/i.test(err.message || '')) {
+      const pw = await promptAccessPassword(label);
+      if (pw == null) return false; // cancelled
+      try { await API.post('/servers/active', { id, accessPassword: pw }); return true; }
+      catch (e2) { showToast(e2.message || 'Access password incorrect', 'error', 7000); return false; }
+    }
+    throw err;
+  }
+}
+window.promptAccessPassword = promptAccessPassword;
+window.activateServer = activateServer;
+
 async function initServerSwitcher() {
   try {
     const data = await API.get('/servers');
@@ -366,7 +415,7 @@ async function initServerSwitcher() {
       opt.value = s.id;
       const label = s.id === 'local'
         ? '🖥 Local'
-        : `🔐 ${s.name || s.id}${s.host ? ' (' + s.host + ')' : ''}`;
+        : `🔐 ${s.name || s.id}${s.host ? ' (' + s.host + ')' : ''}${s.hasAccessPassword ? ' 🔒' : ''}`;
       opt.textContent = label;
       if (s.isActive) opt.selected = true;
       select.appendChild(opt);
@@ -382,12 +431,14 @@ async function initServerSwitcher() {
 
     select.addEventListener('change', async (e) => {
       const id = e.target.value;
+      const sel = data.servers.find(s => s.id === id);
+      const revert = () => { const active = data.servers.find(s => s.isActive); if (active) select.value = active.id; };
       try {
         showToast(`Switching to ${id}...`, 'info');
-        await API.post('/servers/active', { id });
+        const ok = await activateServer(id, sel ? (sel.name || sel.id) : id);
+        if (!ok) { revert(); return; } // cancelled or wrong access password
         showToast(`Connected to ${id}`, 'success');
         // Update the active server so port links point to the new host
-        const sel = data.servers.find(s => s.id === id);
         if (sel) {
           Store.set('activeServer', sel);
           localStorage.setItem('dcc_active_type', sel.type || 'local');
@@ -398,8 +449,7 @@ async function initServerSwitcher() {
         setTimeout(() => Router.navigate(currentPage, currentParams), 300);
       } catch (err) {
         showToast(`Switch failed: ${err.message}`, 'error', 8000);
-        const active = data.servers.find(s => s.isActive);
-        if (active) select.value = active.id;
+        revert();
       }
     });
   } catch (e) {

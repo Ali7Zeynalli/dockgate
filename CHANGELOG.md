@@ -2,6 +2,17 @@
 
 ---
 
+## [2.1.20] - 2026-06-25
+
+### Added — Per-server access password (a 2nd gate to switch servers)
+- A server can now carry an **access password** — a second factor *on top of* the DockGate login. Even when you're already signed in, switching the active server to a protected one prompts for that server's password first. Useful when several people share one DockGate but only some should reach a given production host.
+- **Settable when adding** an SSH server (new optional field) **and later in Edit**. In Edit you can **set**, **change**, or **remove (unlock)** the gate — but **changing or removing requires entering the current access password**, so nobody can simply edit the server to strip its protection.
+- A **🔒 badge** marks protected servers in the header server-switcher and in the Servers list.
+- **Enforced server-side**, not just in the UI: `POST /servers/active` rejects a switch to a gated server unless the correct password is supplied, returning **403** (deliberately *not* 401 — a 401 would be mistaken for session-expiry and bounce you to the login screen). The password is stored **hashed** (scrypt `salt:hash`, the same primitive as the login password) — it is a gate, never recoverable plaintext — and the hash is never sent to the browser (the list only exposes a `hasAccessPassword` boolean).
+- Verified e2e against a fresh container: add-with-password stores it (hash not leaked); switching with **no** / **wrong** password is refused (403, no logout) and the UI shows the unlock prompt; the **correct** password connects; Edit **change**/**remove** is refused without the current password and succeeds with it; the old password stops working after a change.
+
+---
+
 ## [2.1.19] - 2026-06-24
 
 ### Added — File Manager: extract uploaded archives (📦) safely

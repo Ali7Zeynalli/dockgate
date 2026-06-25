@@ -11,7 +11,17 @@ const monitorManager = require('../notifications/monitor-manager');
 const { stmts } = require('../db');
 const { logAction, ipFromReq } = require('../audit');
 const { encrypt, decrypt } = require('../auth/secrets');
+const { hashPassword, verifyPassword } = require('../auth/password');
 const catalog = require('../provision/catalog');
+
+// Per-server access password is stored as "salt:hash". Verify a plaintext attempt (true when no gate is set).
+function verifyServerAccessPass(server, plain) {
+  if (!server || !server.access_pass) return true; // no gate on this server
+  const i = String(server.access_pass).indexOf(':');
+  if (i < 0) return false;
+  return verifyPassword(plain == null ? '' : plain, server.access_pass.slice(0, i), server.access_pass.slice(i + 1));
+}
+function makeAccessPass(plain) { const { salt, hash } = hashPassword(plain); return `${salt}:${hash}`; }
 const provisionRunner = require('../provision/provision-runner');
 const hostStats = require('../host-stats');
 const hostLogs = require('../host-logs');
@@ -60,6 +70,7 @@ router.get('/', (req, res) => {
       ...sshServers.map(s => ({
         id: s.id,
         name: s.name || null,
+        hasAccessPassword: !!s.access_pass,
         type: s.type,
         host: s.host,
         port: s.port,
@@ -104,7 +115,7 @@ router.get('/overview', (req, res) => {
 // Auth iyerarxiyası: privateKey > password > SSH agent
 router.post('/', (req, res) => {
   try {
-    const { id, host, port = 22, username, privateKey, passphrase, password, description = '', name = '' } = req.body || {};
+    const { id, host, port = 22, username, privateKey, passphrase, password, description = '', name = '', accessPassword } = req.body || {};
 
     if (!validateId(id)) return res.status(400).json({ error: 'id: yalnız hərf, rəqəm, _, - (max 64)' });
     if (id === 'local') return res.status(400).json({ error: '"local" rezerv edilmiş id-dir' });
@@ -130,7 +141,8 @@ router.post('/', (req, res) => {
     const passphraseToStore = (privateKey && passphrase) ? String(passphrase) : null;
 
     stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, encrypt(pwdToStore), encrypt(passphraseToStore), description, (name && String(name).trim()) || null);
-    logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'add', details: { host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent') } });
+    if (accessPassword && String(accessPassword).trim()) stmts.setServerAccessPass.run(makeAccessPass(String(accessPassword)), id); // optional 2nd gate
+    logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'add', details: { host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent'), gated: !!(accessPassword && String(accessPassword).trim()) } });
 
     // Start dedicated monitor so notifications from this host start flowing immediately
     monitorManager.startMonitor(id);
@@ -174,7 +186,13 @@ router.put('/:id', (req, res) => {
     const existing = stmts.getServer.get(id);
     if (!existing) return res.status(404).json({ error: 'Server not found' });
 
-    const { host, port, username, privateKey, passphrase, password, description, name } = req.body || {};
+    const { host, port, username, privateKey, passphrase, password, description, name, accessPassword, currentAccessPassword } = req.body || {};
+
+    // Access password (the 2nd gate) — set / change / remove. Changing or removing an EXISTING one requires
+    // the current access password (so nobody can edit the server to strip its gate). Verify BEFORE any write.
+    if (accessPassword !== undefined && existing.access_pass && !verifyServerAccessPass(existing, currentAccessPassword)) {
+      return res.status(403).json({ error: 'Current access password is incorrect — cannot change or remove this server\'s access password.' });
+    }
 
     const newHost = host !== undefined ? host : existing.host;
     const newPort = port !== undefined ? (parseInt(port) || 22) : existing.port;
@@ -195,6 +213,11 @@ router.put('/:id', (req, res) => {
     const newPassphrase = passphrase !== undefined ? (passphrase ? String(passphrase) : null) : existing.passphrase;
 
     stmts.updateServer.run(newHost, newPort, newUsername, keyPath, encrypt(newPassword), encrypt(newPassphrase), newDescription, newName, id);
+    // Apply the access-password change (verified above): empty string removes the gate, non-empty sets/changes it.
+    if (accessPassword !== undefined) {
+      const ap = String(accessPassword || '').trim();
+      stmts.setServerAccessPass.run(ap ? makeAccessPass(ap) : null, id);
+    }
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'edit', details: { host: newHost, username: newUsername } });
 
     // If this is the active server, rebuild the client (config changed)
@@ -264,7 +287,20 @@ router.post('/test', async (req, res) => {
 // body: { id }
 router.post('/active', async (req, res) => {
   try {
-    const { id = 'local' } = req.body || {};
+    const { id = 'local', accessPassword } = req.body || {};
+    // 2nd-factor gate: a server with an access password can't be switched to without it (even when the
+    // DockGate session itself is already authenticated). Enforced here so the API itself is gated, not just UI.
+    if (id !== 'local') {
+      const server = stmts.getServer.get(id);
+      if (server && server.access_pass && !verifyServerAccessPass(server, accessPassword)) {
+        // 403 (not 401): the DockGate session is valid — this is a per-server gate, not session expiry.
+        // A 401 would trip the client's auth-expired handler and bounce the user to the login screen.
+        return res.status(403).json({
+          error: accessPassword ? 'Access password is incorrect' : 'This server requires an access password to switch to it',
+          needsAccessPassword: true,
+        });
+      }
+    }
     const newId = dockerService.setActiveServer(id);
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'switch' });
     res.json({ success: true, activeId: newId });
