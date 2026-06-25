@@ -397,6 +397,7 @@ Router.register('compose', async (content) => {
   // Delete a whole project: down (+volumes opt) + remove its files (remote folder / local managed dir).
   function openDeleteProject(project, isRemote) {
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
+      ${serverContextBanner()}
       <div class="text-sm">Delete project <strong>${escapeHtml(project)}</strong>?</div>
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="del-down" checked disabled> Stop &amp; remove containers (<code>docker compose down</code>)</label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="del-files" checked> Remove the project files ${isRemote ? '(the folder on the remote server)' : '(DockGate-managed files)'}</label>

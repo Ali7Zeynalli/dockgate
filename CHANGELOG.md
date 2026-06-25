@@ -2,6 +2,13 @@
 
 ---
 
+## [2.1.18] - 2026-06-24
+
+### Fixed — Compose "Delete project" now shows the server context too
+- The server-context banner from v2.1.17 covered every `showConfirm` dialog, but Compose **"Delete project"** uses its own custom modal, so it had no banner. The banner logic is now a reusable global `serverContextBanner()` helper, and the Delete-project modal shows it — so deleting a whole stack (containers + files + optionally volumes) clearly states **🖥 On Local Docker** or **🔐 On remote server: `<name>` · `<host>`** (amber) first. Verified the helper is global and renders both states.
+
+---
+
 ## [2.1.17] - 2026-06-24
 
 ### Added — Every confirm/delete dialog now shows WHICH server it targets

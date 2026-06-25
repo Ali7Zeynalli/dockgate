@@ -167,16 +167,20 @@ function showModal(title, bodyHtml, actions = []) {
 }
 
 // Confirm dialog
-function showConfirm(title, message, onConfirm, danger = false) {
-  // Always show WHICH server the action targets so local/remote can't be confused (you might think
-  // you're on Local but be on a remote prod host). Remote is amber to stand out; Local is neutral.
+// Banner showing WHICH server an action targets (Local = neutral, remote = amber to stand out) so you
+// can't confuse Local with a remote prod host before a destructive action. Reusable by showConfirm AND
+// any custom destructive showModal (e.g. Compose "Delete project").
+function serverContextBanner() {
   const active = (typeof Store !== 'undefined') ? Store.get('activeServer') : null;
   const isRemote = active && active.id !== 'local' && active.type !== 'local';
   const who = isRemote
     ? `🔐 On remote server: <strong>${escapeHtml(active.name || active.id)}</strong>${active.host ? ' · ' + escapeHtml(active.host) : ''}`
     : '🖥 On Local Docker';
-  const ctx = `<div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;margin-bottom:10px;padding:7px 10px;border-radius:8px;background:${isRemote ? 'rgba(245,158,11,.12)' : 'var(--bg-primary)'};color:${isRemote ? 'var(--warning,#f59e0b)' : 'var(--text-muted)'};border:1px solid ${isRemote ? 'var(--warning,#f59e0b)' : 'var(--border)'}">${who}</div>`;
-  return showModal(title, `${ctx}<p style="color: var(--text-secondary)">${message}</p>`, [
+  return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;margin-bottom:10px;padding:7px 10px;border-radius:8px;background:${isRemote ? 'rgba(245,158,11,.12)' : 'var(--bg-primary)'};color:${isRemote ? 'var(--warning,#f59e0b)' : 'var(--text-muted)'};border:1px solid ${isRemote ? 'var(--warning,#f59e0b)' : 'var(--border)'}">${who}</div>`;
+}
+
+function showConfirm(title, message, onConfirm, danger = false) {
+  return showModal(title, `${serverContextBanner()}<p style="color: var(--text-secondary)">${message}</p>`, [
     { label: 'Cancel', className: 'btn btn-secondary' },
     { label: 'Confirm', className: danger ? 'btn btn-danger' : 'btn btn-primary', onClick: onConfirm },
   ]);
