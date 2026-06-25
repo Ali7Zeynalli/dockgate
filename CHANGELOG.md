@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.17] - 2026-06-24
+
+### Added — Every confirm/delete dialog now shows WHICH server it targets
+- It was possible to think you were on Local but actually be on a remote host and delete the wrong thing. Now **every confirmation dialog** (`showConfirm` — used by ~35 delete/destructive actions across containers, images, volumes, networks, compose, servers, registries, …) shows a server-context banner at the top: **🖥 On Local Docker** (neutral) or **🔐 On remote server: `<name>` · `<host>`** in **amber** so a remote target stands out. One shared change covers them all.
+- Verified e2e: the banner reads "On Local Docker" (grey) for the local socket and "On remote server: Production · 10.0.0.5" (amber) for a remote server, using the server's display name.
+
+---
+
 ## [2.1.16] - 2026-06-24
 
 ### Fixed — Compose Pull "first pull — baseline recorded" was a no-op (stuck forever)
