@@ -185,6 +185,56 @@ Router.register('compose', async (content) => {
               </div>
             `, [{ label: 'Close', className: 'btn btn-secondary' }]);
             dm.overlay.querySelector('#cd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
+
+            // External git checkout? (DockGate didn't deploy this, but its folder is a git repo on the host.)
+            // Probe lazily; if it's an adoptable checkout, inject a "Git (detected)" card with ⤓ Pull / ↻ Redeploy.
+            if (!git.gitManaged) {
+              API.get(`/compose/${name}/git-detect`).then(d => {
+                if (!d || !d.isGit || d.managed) return;
+                const grid = dm.overlay.querySelector('.detail-grid');
+                if (!grid) return;
+                const sh = s => (s || '').slice(0, 7);
+                const where = d.remote ? 'on the active remote server' : 'on local Docker';
+                const card = document.createElement('div');
+                card.className = 'card mb-2';
+                card.style.cssText = 'padding:12px;background:var(--accent-dim)';
+                card.innerHTML = `
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+                    <div class="text-sm" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:.85"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><strong>Git (detected)</strong> — ${d.remoteUrl ? `<code>${escapeHtml(d.remoteUrl)}</code> @ ` : ''}<code>${escapeHtml(d.branch || 'HEAD')}</code></div>
+                    <div style="display:flex;gap:6px;flex:none">
+                      <button class="btn btn-sm btn-secondary" id="xg-pull" title="Fast-forward this checkout from its own git remote — does not deploy">⤓ Pull</button>
+                      <button class="btn btn-sm btn-primary" id="xg-redeploy" title="Pull (fast-forward), then docker compose up -d --build">↻ Redeploy…</button>
+                    </div>
+                  </div>
+                  <div class="text-xs text-muted" style="margin-top:6px">DockGate didn't deploy this — it's your own git checkout ${where} (<code>${escapeHtml(d.repoRoot)}</code>). Pull is <strong>fast-forward only</strong> and never resets your files.${d.canPull ? '' : ` <span style="color:var(--warning)">⚠ ${escapeHtml(d.reason || 'Pull unavailable')}.</span>`}</div>`;
+                grid.parentNode.insertBefore(card, grid);
+                const pullBtn = card.querySelector('#xg-pull');
+                const redBtn = card.querySelector('#xg-redeploy');
+                if (!d.canPull) { pullBtn.disabled = true; pullBtn.style.opacity = '0.5'; pullBtn.style.cursor = 'not-allowed'; }
+                pullBtn.addEventListener('click', async () => {
+                  pullBtn.disabled = true; pullBtn.textContent = 'Pulling…';
+                  try {
+                    const r = await API.post(`/compose/${name}/adopt-pull`, {});
+                    dm.close();
+                    const body = r.upToDate
+                      ? `<div class="text-sm">✓ Already up to date (<span class="td-mono">${sh(r.toSHA)}</span>) — nothing to pull.</div>`
+                      : `<div class="text-sm" style="margin-bottom:4px">⤓ Fast-forwarded <span class="td-mono">${sh(r.fromSHA)}</span> → <span class="td-mono">${sh(r.toSHA)}</span></div>${(r.commits && r.commits.length) ? `<pre class="logs-viewer" style="max-height:170px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:6px 0">${r.commits.map(c => `${escapeHtml(c.hash || '')}  ${escapeHtml(c.date || '')}  ${escapeHtml(c.subject || '')}`).join('\n')}</pre>` : ''}<div class="text-sm" style="margin:8px 0 4px">📦 <strong>${(r.changed || []).length}</strong> file(s) changed:</div><pre class="logs-viewer" style="max-height:200px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:0">${(r.changed || []).map(escapeHtml).join('\n')}</pre><div class="text-xs text-muted" style="margin-top:6px">Pulled — nothing was deployed. Use ↻ Redeploy to apply it to the containers.</div>`;
+                    showModal(`Pull — ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+                    render();
+                  } catch (err) {
+                    pullBtn.disabled = false; pullBtn.textContent = '⤓ Pull';
+                    showModal(`Pull failed — ${escapeHtml(name)}`, `<div class="text-sm" style="color:var(--danger);white-space:pre-wrap;word-break:break-all">${escapeHtml(err.message)}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+                  }
+                });
+                redBtn.addEventListener('click', () => {
+                  dm.close();
+                  showConfirm('Redeploy (external git)', `Pull (fast-forward) <strong>${escapeHtml(name)}</strong> then run:<br><code>docker compose -p ${escapeHtml(name)} -f ${escapeHtml(d.configFiles || '')} up -d --build</code><br>in <code>${escapeHtml(d.workingDir)}</code> ${where}.<br><span class="text-xs text-muted">One-shot/stateful services are not force-recreated.</span>`, async () => {
+                    try { const r = await API.post(`/compose/${name}/adopt-redeploy`, {}); if (r && r.jobId) openDeployLog(r.jobId, name); render(); }
+                    catch (err) { showToast(err.message, 'error', 12000); }
+                  });
+                });
+              }).catch(() => {});
+            }
             dm.overlay.querySelector('#cd-redeploy')?.addEventListener('click', async (e) => {
               // Change-aware redeploy: pull latest → show what changed → SAME picker (only changed stacks
               // pre-selected) → deploy the chosen stacks/services. "Stage" = pull only, don't run.

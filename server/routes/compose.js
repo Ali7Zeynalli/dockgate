@@ -1302,4 +1302,168 @@ router.post('/webhook/:project', (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || '').toString() }); }
 });
 
+// ============================================================================================
+// "Adopt" an EXTERNAL git project — a compose project DockGate did NOT deploy, but whose working_dir
+// is a git checkout the user manages on the host (local fs, or the active remote over SSH). Read-first
+// and strictly NON-destructive: we run PLAIN git in the user's own checkout (their configured remote +
+// creds), only ever FAST-FORWARD, and NEVER reset/clean. The managed git/folder paths above stay the
+// source of truth for projects DockGate deployed itself.
+// ============================================================================================
+
+// Docker labels (working_dir / config_files) are UNTRUSTED — anyone who can start a container can set
+// them. Validate hard before a value reaches a shell, on top of shq() quoting.
+function isSafeHostPath(p) {
+  return typeof p === 'string' && p.length > 1 && p.length < 4096
+    && p.startsWith('/') && !p.includes('..') && !/[\n\r\0]/.test(p) && /^[\w./@+ :=-]+$/.test(p);
+}
+
+// Run a git command in `cwd` on the project's host: local fs (server null) or the active remote (SSH).
+// `args` are constant git tokens; `cwd` is the only label-derived value — validated by the caller and
+// shq()-quoted here. Returns stdout; throws (statusCode 400) on non-zero exit.
+async function gitInDir(server, cwd, args, onData) {
+  if (!server) {
+    const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], { env: GIT_ENV, maxBuffer: 16 * 1024 * 1024 });
+    return stdout;
+  }
+  const cmd = 'GIT_TERMINAL_PROMPT=0 git -C ' + remoteCompose.shq(cwd) + ' ' + args.map(remoteCompose.shq).join(' ');
+  const r = await remoteCompose.execRemote(server, 'timeout 120 ' + cmd, onData);
+  if (r.code !== 0) { const e = new Error((r.stderr || r.stdout || 'git failed').trim()); e.statusCode = 400; throw e; }
+  return r.stdout;
+}
+
+// Strip embedded credentials from a remote URL before display (https://user:tok@host → //***@host).
+function redactRemoteUrl(u) { return String(u || '').replace(/\/\/[^@/]+@/, '//***@'); }
+
+// Probe whether `project` is an external (non-DockGate) git checkout we can adopt, with its current state.
+async function detectExternalGit(project) {
+  // Exclusion-first: if DockGate already manages this project, the external path is OFF (no double-handling).
+  if (readGitMeta(project) || readDeployMeta(project)) return { managed: true };
+  const proj = (await dockerService.listComposeProjects()).find(p => p.name === project);
+  const wd = proj && proj.workingDir;
+  if (!wd) return { isGit: false, reason: 'No working directory recorded for this project' };
+  if (!isSafeHostPath(wd)) return { isGit: false, reason: 'Working directory path is not safe to operate on' };
+  const server = remoteCompose.getActiveRemoteServer(); // null = local daemon
+  let root;
+  try { root = (await gitInDir(server, wd, ['rev-parse', '--show-toplevel'])).trim(); }
+  catch (e) { return { isGit: false, reason: 'Not a git checkout' }; }
+  if (!root || !isSafeHostPath(root)) return { isGit: false, reason: 'Could not resolve the repository root' };
+  const out = { isGit: true, managed: false, remote: !!server, repoRoot: root, workingDir: wd, configFiles: proj.configFiles || '' };
+  try { out.branch = (await gitInDir(server, root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim(); } catch (e) { out.branch = ''; }
+  out.detached = !out.branch || out.branch === 'HEAD';
+  try { await gitInDir(server, root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']); out.hasUpstream = true; } catch (e) { out.hasUpstream = false; }
+  let dirty = ''; try { dirty = (await gitInDir(server, root, ['status', '--porcelain'])).trim(); } catch (e) {}
+  out.dirty = !!dirty;
+  out.dirtyFiles = dirty ? dirty.split('\n').filter(Boolean).slice(0, 30) : [];
+  try { out.remoteUrl = redactRemoteUrl((await gitInDir(server, root, ['remote', 'get-url', 'origin'])).trim()); } catch (e) { out.remoteUrl = ''; }
+  out.canPull = !out.detached && out.hasUpstream && !out.dirty;
+  out.reason = out.detached ? 'Detached HEAD — pull unavailable'
+    : !out.hasUpstream ? 'No upstream/tracking branch — pull unavailable'
+    : out.dirty ? 'Uncommitted changes on the server — pull would not be safe (resolve them on the host first)'
+    : '';
+  return out;
+}
+
+// 90s cache keyed by active server + project — the LIST path does ZERO git work; we only probe lazily when
+// a single project's detail modal opens (mirrors gitStatusCache). Invalidated after a pull/redeploy.
+const externalGitCache = new Map();
+function invalidateExternalGit(project) { externalGitCache.delete(dockerService.getActiveServerId() + ':' + project); }
+
+router.get('/:project/git-detect', async (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const key = dockerService.getActiveServerId() + ':' + project;
+    const cached = externalGitCache.get(key);
+    if (cached && Date.now() - cached.at < 90000) return res.json(cached.result);
+    const result = await detectExternalGit(project);
+    externalGitCache.set(key, { at: Date.now(), result });
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/:project/adopt-pull', async (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const info = await detectExternalGit(project);
+    if (info.managed) return res.status(400).json({ error: 'This project is DockGate-managed — use its own Pull.' });
+    if (!info.isGit) return res.status(400).json({ error: info.reason || 'Not an external git checkout' });
+    if (!info.canPull) return res.status(409).json({ error: info.reason || 'Pull is not available for this checkout' });
+    const server = remoteCompose.getActiveRemoteServer();
+    const root = info.repoRoot;
+    const before = (await gitInDir(server, root, ['rev-parse', 'HEAD'])).trim();
+    await gitInDir(server, root, ['fetch', '--all', '--quiet']); // PLAIN git → the checkout's own remote + creds
+    try { await gitInDir(server, root, ['merge', '--ff-only', '@{u}']); }
+    catch (e) { return res.status(409).json({ error: 'Not a fast-forward — your server checkout has diverged from the remote. Resolve it on the host, then retry. (DockGate will not force-reset your files.)' }); }
+    const after = (await gitInDir(server, root, ['rev-parse', 'HEAD'])).trim();
+    invalidateExternalGit(project);
+    let changed = [], commits = [];
+    if (before !== after) {
+      try { changed = (await gitInDir(server, root, ['diff', '--name-status', before + '..' + after])).trim().split('\n').filter(Boolean).slice(0, 200); } catch (e) {}
+      try {
+        commits = (await gitInDir(server, root, ['log', '--pretty=%h%x09%ad%x09%s', '--date=short', before + '..' + after])).trim().split('\n').filter(Boolean).slice(0, 100)
+          .map(l => { const parts = l.split('\t'); return { hash: parts[0], date: parts[1], subject: parts.slice(2).join('\t') }; });
+      } catch (e) {}
+    }
+    logAction({ req, server: server ? dockerService.getActiveServerId() : 'local', resourceId: project, resourceType: 'compose', resourceName: project, action: 'adopt-pull', details: { fromSHA: before, toSHA: after, files: changed.length } });
+    res.json({ success: true, repoRoot: root, fromSHA: before, toSHA: after, upToDate: before === after, changed, commits });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+router.post('/:project/adopt-redeploy', async (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const force = !!(req.body && (req.body.force === true || req.body.force === '1'));
+    const info = await detectExternalGit(project);
+    if (info.managed) return res.status(400).json({ error: 'This project is DockGate-managed — use its own Redeploy.' });
+    if (!info.isGit) return res.status(400).json({ error: info.reason || 'Not an external git checkout' });
+    const configFiles = String(info.configFiles || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!configFiles.length || !configFiles.every(isSafeHostPath)) return res.status(400).json({ error: 'Could not resolve a safe compose file path for this project.' });
+    const server = remoteCompose.getActiveRemoteServer();
+    const job = {
+      id: crypto.randomBytes(8).toString('hex'), project, status: 'running', phase: 'pull', log: '', error: null, result: null,
+      startedAt: Date.now(), finishedAt: null,
+      steps: [{ id: 'pull', label: 'git pull --ff-only', status: 'pending' }, { id: 'up', label: 'docker compose up -d --build', status: 'pending' }],
+    };
+    deployJobs.set(job.id, job);
+    runAdoptRedeployJob(job, { server, serverId: dockerService.getActiveServerId(), project, info, configFiles, force, reqIp: req.ip });
+    res.json({ jobId: job.id, project });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+async function runAdoptRedeployJob(job, p) {
+  const stream = (c) => jobStream(job, c);
+  try {
+    setStep(job, 'pull', 'running'); job.phase = 'pull';
+    if (p.info.dirty) throw Object.assign(new Error('Uncommitted local changes on the server — aborting (DockGate will not overwrite your files).'), { statusCode: 409 });
+    if (p.info.canPull) {
+      jobLog(job, '$ git -C ' + p.info.repoRoot + ' fetch && git merge --ff-only');
+      await gitInDir(p.server, p.info.repoRoot, ['fetch', '--all', '--quiet'], stream);
+      try { await gitInDir(p.server, p.info.repoRoot, ['merge', '--ff-only', '@{u}'], stream); }
+      catch (e) { throw Object.assign(new Error('Not a fast-forward — the server checkout has diverged. Resolve it on the host first.'), { statusCode: 409 }); }
+    } else {
+      jobLog(job, '(skipping git pull: ' + (p.info.reason || 'not pullable') + ' — redeploying the current checkout)');
+    }
+    setStep(job, 'pull', 'done');
+
+    setStep(job, 'up', 'running'); job.phase = 'up';
+    const fileArgs = p.configFiles.flatMap(f => ['-f', f]);
+    const upArgs = [...fileArgs, 'up', '-d', '--build'];
+    if (p.force) upArgs.push('--force-recreate');
+    jobLog(job, '\n$ docker compose -p ' + p.project + ' ' + upArgs.join(' ') + '\n');
+    if (p.server) await remoteCompose.runComposeInRemoteDir(p.server, p.info.workingDir, p.project, upArgs, stream);
+    else await runCompose(p.project, upArgs, p.info.workingDir, stream);
+    setStep(job, 'up', 'done');
+
+    invalidateExternalGit(p.project);
+    job.phase = 'done'; job.status = 'done'; jobLog(job, '\n✓ Done'); job.finishedAt = Date.now();
+    logAction({ sourceIp: p.reqIp, server: p.server ? p.serverId : 'local', resourceId: p.project, resourceType: 'compose', resourceName: p.project, action: 'adopt-redeploy', details: { force: p.force } });
+  } catch (err) {
+    job.status = 'error'; job.phase = 'error'; job.error = (err.message || 'redeploy failed').toString();
+    const r = (job.steps || []).find(s => s.status === 'running'); if (r) r.status = 'failed';
+    jobLog(job, '\n✗ ' + job.error); job.finishedAt = Date.now();
+  }
+}
+
 module.exports = router;

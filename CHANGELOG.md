@@ -2,6 +2,17 @@
 
 ---
 
+## [2.1.25] - 2026-06-27
+
+### Added — Adopt EXTERNAL git projects: Pull / Redeploy a checkout DockGate didn't deploy
+- Until now the git badge + **⤓ Pull** / **↻ Redeploy** only appeared for projects deployed *through* DockGate. If you'd SSH'd into your server, `git clone`d a repo yourself, and run `docker compose up` by hand, DockGate listed the project but offered no git actions. Now it **detects** that case: when you open a project's detail and its working directory is a git checkout DockGate doesn't manage, a **"Git (detected)"** card appears with **⤓ Pull** and **↻ Redeploy**.
+- **Strictly non-destructive.** Pull runs **plain `git` in your own checkout** (your already-configured remote + credentials — DockGate injects no token, overrides no SSH key) and is **fast-forward only** (`fetch` + `merge --ff-only`). It **never** runs `reset --hard` or `clean`, so it can't overwrite your files. If the working tree has uncommitted changes, is on a detached HEAD, has no upstream, or isn't a clean fast-forward, it **refuses and changes nothing**, telling you why. Redeploy then runs `docker compose -p <project> -f <configFile> up -d --build` in the working dir (one-shot/stateful services are **not** force-recreated).
+- Works for the **active server** — local Docker **or** a remote SSH host (git + compose run over the same SSH channel). Detection is **lazy** (only when the detail modal opens, 90s-cached) so the project list does zero git/SSH work. DockGate-managed projects are excluded (no double-handling).
+- **Security:** Docker `working_dir`/`config_files` labels are treated as untrusted — every path is validated (absolute, no `..`, no newline/NUL, strict charset) and shq-quoted before reaching a shell; git runs via `git -C <dir>` resolved through `rev-parse --show-toplevel`.
+- Verified e2e (local) against a real external checkout with an upstream: detect → fast-forward pull (files updated in place) → redeploy (`up -d --build`, container recreated) → **dirty tree refused (409, files untouched)** → non-git and DockGate-managed projects correctly offer nothing. Remote SSH path's command construction + injection-rejection verified separately.
+
+---
+
 ## [2.1.24] - 2026-06-27
 
 ### Added — Project Terminal: resizable (Normal / Large / Full screen)
