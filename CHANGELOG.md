@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.24] - 2026-06-27
+
+### Added — Project Terminal: resizable (Normal / Large / Full screen)
+- The per-project **Terminal** modal (Compose → 🖥) now has a **Size** control with three presets — **Normal**, **Large**, and **⛶ Full screen** — so you can give an interactive shell as much room as you need. Switching size resizes both the terminal area and the modal, then re-fits xterm so the shell's columns/rows track the new size. The choice is remembered per browser.
+- Verified e2e: Normal (52vh / 520px modal) → Large (72vh / 1000px) → Full screen (82vh / 97vw), with the active size highlighted and the terminal reflowing on each change.
+
+---
+
 ## [2.1.23] - 2026-06-25
 
 ### Fixed — Git/folder Compose deploys: Pull/Redeploy now show, and Delete actually removes the folder

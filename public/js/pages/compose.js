@@ -1046,7 +1046,15 @@ Router.register('compose', async (content) => {
     const modalRoot = document.getElementById('modal-root');
     const m = showModal(`Terminal — ${escapeHtml(project)}`, `
       <div class="text-xs text-muted" id="pt-status" style="margin-bottom:6px">Connecting…</div>
-      <div class="text-xs text-muted" style="margin-bottom:8px">Folder: <code>${escapeHtml(cwd || '(home)')}</code> · interactive shell on the active server</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <div class="text-xs text-muted" style="flex:1;min-width:160px">Folder: <code>${escapeHtml(cwd || '(home)')}</code> · interactive shell on the active server</div>
+        <div style="display:flex;gap:4px;align-items:center">
+          <span class="text-xs text-muted">Size:</span>
+          <button class="btn btn-xs btn-secondary" data-tsize="normal" type="button" title="Normal size">Normal</button>
+          <button class="btn btn-xs btn-secondary" data-tsize="large" type="button" title="Larger">Large</button>
+          <button class="btn btn-xs btn-secondary" data-tsize="full" type="button" title="Full screen">⛶ Full screen</button>
+        </div>
+      </div>
       <div id="pt-term" style="height:52vh;background:#000;border-radius:6px;overflow:hidden;padding:6px"></div>`,
       [{ label: 'Close', className: 'btn btn-secondary' }]);
     const root = m.overlay;
@@ -1068,6 +1076,22 @@ Router.register('compose', async (content) => {
     socket.on('hostterm:data', onData).on('hostterm:end', onEnd).on('hostterm:error', onErr).on('hostterm:ready', onReady);
     term.onData(d => socket.emit('hostterm:input', d));
     window.addEventListener('resize', resize);
+
+    // Terminal size control: Adi (normal) / Böyük (large) / ⛶ Tam ekran (full screen). Resizes the terminal
+    // host AND the modal, then re-fits xterm so the shell's cols/rows track the new size. Remembered per browser.
+    const modalEl = root.querySelector('.modal');
+    const sizeBtns = root.querySelectorAll('[data-tsize]');
+    function setTermSize(mode) {
+      if (mode === 'full') { modalEl.style.maxWidth = '97vw'; modalEl.style.width = '97vw'; modalEl.style.maxHeight = '95vh'; host.style.height = '82vh'; }
+      else if (mode === 'large') { modalEl.style.maxWidth = '1000px'; modalEl.style.width = '92vw'; modalEl.style.maxHeight = '92vh'; host.style.height = '72vh'; }
+      else { mode = 'normal'; modalEl.style.maxWidth = ''; modalEl.style.width = ''; modalEl.style.maxHeight = ''; host.style.height = '52vh'; }
+      sizeBtns.forEach(b => { const on = b.dataset.tsize === mode; b.classList.toggle('btn-primary', on); b.classList.toggle('btn-secondary', !on); });
+      try { localStorage.setItem('dg_term_size', mode); } catch (e) {}
+      setTimeout(resize, 70);
+    }
+    sizeBtns.forEach(b => b.addEventListener('click', () => setTermSize(b.dataset.tsize)));
+    let savedSize = 'normal'; try { savedSize = localStorage.getItem('dg_term_size') || 'normal'; } catch (e) {}
+    setTermSize(savedSize);
 
     socket.emit('hostterm:stop');
     setTimeout(() => { socket.emit('hostterm:start', { cols: term.cols || 80, rows: term.rows || 24, cwd: cwd || '' }); setTimeout(resize, 120); }, 60);
