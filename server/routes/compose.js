@@ -242,25 +242,71 @@ router.get('/:project', async (req, res) => {
 // but the compose file must be local, so only DockGate-managed projects can be (re)deployed remotely.
 // Resolve where a compose project's command runs (remote-native folder, legacy remote-managed, or local
 // working/managed dir) and execute it — STREAMED when onData is given. Throws (with statusCode) on bad state.
-async function execComposeAction(projectName, action, onData) {
+// Resolve the compose file(s) + cwd to drive a per-project action — so every action passes `-f <file>` and
+// works regardless of the file's NAME (docker-compose.greennec.yaml) or LOCATION (a subdir). Without this,
+// `docker compose -p <project> <action>` auto-detects only the 4 standard names in the cwd and fails with
+// "no configuration file provided: not found" for everything else. Precedence (most authoritative first):
+//   1) deploy-meta .composeFile (survives a fully-down project)  2) git-meta .composeFile (+subdir)
+//   3) docker config_files label (CSV → multi -f; running only; UNTRUSTED → isSafeHostPath-validated)
+//   4) filesystem discovery (findComposeFile → recursive findComposeFiles; local only)  5) fail-closed.
+// Each file is reduced to (cwd = its dir, -f = basename) so relative build contexts / bind-mounts resolve
+// exactly as they did at deploy time.
+async function resolveComposeFiles(project) {
   const isLocal = dockerService.isLocalActive();
-  const proj = await dockerService.getComposeProject(projectName);
-  const mDir = managedDir(projectName);
-  const hasManaged = !!findComposeFile(mDir);
-  if (!isLocal) {
-    const server = remoteCompose.getActiveRemoteServer();
-    const meta = readDeployMeta(projectName);
-    const remoteDir = proj.workingDir
-      || (meta && meta.mode === 'remote' && meta.serverId === dockerService.getActiveServerId() ? meta.remotePath : null);
-    if (server && remoteDir) return await remoteCompose.runComposeInRemoteDir(server, remoteDir, projectName, action, onData);
-    if (hasManaged) return await runCompose(projectName, action, mDir, onData);
-    const e = new Error('On a remote host, control only DockGate-deployed projects (deploy from a folder/Git to this server first).'); e.statusCode = 400; throw e;
+  const server = remoteCompose.getActiveRemoteServer();
+  const activeId = dockerService.getActiveServerId();
+  const proj = await dockerService.getComposeProject(project).catch(() => ({}));
+  const meta = readDeployMeta(project);
+  const gitMeta = readGitMeta(project);
+  const mDir = managedDir(project);
+  const norm = (file, baseCwd) => {
+    const abs = path.posix.isAbsolute(file) ? file : path.posix.join(String(baseCwd || '').replace(/\/+$/, ''), file);
+    return { cwd: path.posix.dirname(abs), file: path.posix.basename(abs), abs };
+  };
+  // 1) deploy-meta
+  if (meta && meta.composeFile) {
+    if (meta.mode === 'remote' && server && meta.serverId === activeId) {
+      const n = norm(meta.composeFile, meta.remotePath || '');
+      return { files: [n.file], cwd: n.cwd || meta.remotePath, server, remote: true, source: 'deploy metadata' };
+    }
+    if (meta.mode === 'local' && isLocal) {
+      const n = norm(meta.composeFile, meta.workingDir || mDir);
+      return { files: [n.file], cwd: n.cwd, server: null, remote: false, source: 'deploy metadata' };
+    }
   }
-  let cwd = proj.workingDir;
-  if (!cwd && hasManaged) cwd = mDir;
-  if (!cwd) { const m = readDeployMeta(projectName); if (m && m.mode === 'local' && m.workingDir) cwd = m.workingDir; } // staged local stack
-  if (!cwd) { const e = new Error('Working directory not found — this project has no running containers and is not DockGate-managed. Bring it up from its compose folder.'); e.statusCode = 400; throw e; }
-  return await runCompose(projectName, action, cwd, onData);
+  // 2) git-meta (local managed git)
+  if (gitMeta && gitMeta.composeFile && isLocal) {
+    const n = norm(gitMeta.composeFile, gitMeta.subdir ? path.join(mDir, gitMeta.subdir) : mDir);
+    return { files: [n.file], cwd: n.cwd, server: null, remote: false, source: 'git metadata' };
+  }
+  // 3) docker config_files label (running project) — CSV; untrusted → validate
+  const cfg = String(proj.configFiles || '').split(',').map(s => s.trim()).filter(Boolean);
+  const wd = proj.workingDir;
+  if (cfg.length && wd) {
+    const normd = cfg.map(f => norm(f, wd));
+    if (!isSafeHostPath(wd) || !normd.every(n => isSafeHostPath(n.abs))) return { files: [], reason: 'The compose file path in the container labels is not safe to operate on.' };
+    return { files: normd.map(n => n.file), cwd: normd[0].cwd, server: server || null, remote: !isLocal, source: 'docker label' };
+  }
+  // 4) filesystem discovery (LOCAL only — can't fs-scan an unknown remote path here)
+  if (isLocal) {
+    const base = (wd && isSafeHostPath(wd)) ? wd : (findComposeFile(mDir) ? mDir : null);
+    if (base) {
+      const std = findComposeFile(base);
+      if (std) return { files: [std], cwd: base, server: null, remote: false, source: 'discovered on disk' };
+      const found = findComposeFiles(base);
+      if (found.length) { const n = norm(found[0], base); return { files: [n.file], cwd: n.cwd, server: null, remote: false, source: 'discovered on disk' }; }
+    }
+  }
+  // 5) fail-closed — never fall through to a bare `docker compose` (the old cryptic-error bug)
+  return { files: [], reason: `DockGate cannot determine which compose file to use for "${project}". It is down/external and there is no record — bring it up once from its folder, or adopt/redeploy it, so the compose file is recorded.` };
+}
+
+async function execComposeAction(projectName, action, onData) {
+  const r = await resolveComposeFiles(projectName);
+  if (!r.files.length) { const e = new Error(r.reason || 'Cannot determine the compose file for this project.'); e.statusCode = 400; throw e; }
+  const fullAction = [...r.files.flatMap(f => ['-f', f]), ...action];
+  if (r.remote) return await remoteCompose.runComposeInRemoteDir(r.server, r.cwd, projectName, fullAction, onData);
+  return await runCompose(projectName, fullAction, r.cwd, onData);
 }
 
 // Synchronous compose action (fast ops: down/restart) → run and return the output as JSON.
@@ -308,14 +354,99 @@ function parseServices(src) {
   return (Array.isArray(raw) ? raw : []).map(s => String(s).trim()).filter(s => /^[a-zA-Z0-9._-]+$/.test(s));
 }
 // Rebuild = rebuild images from source + force-recreate so the new image lands in the container.
-// ?services=a,b → rebuild ONLY those services (+ --no-deps so their dependencies aren't recreated).
+// A `plan` body { stacks:[{ file, services[], noCache, force }] } rebuilds the EXACT compose file(s) the
+// user picked (different name/location/services). Without a plan: ?services=a,b → rebuild only those via
+// the resolved file(s) (+ --no-deps); empty → the whole project. Both pass -f (via execComposeAction / plan).
 router.post('/:project/rebuild', (req, res) => {
   if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+  const plan = req.body && req.body.plan;
+  if (plan && Array.isArray(plan.stacks) && plan.stacks.length) return startRebuildPlanJob(req, res, plan);
   const svc = parseServices((req.body && req.body.services) || (req.query && req.query.services));
   const action = ['up', '-d', '--build', '--force-recreate'];
   if (svc.length) action.push('--no-deps', ...svc);
   return startComposeActionJob(req, res, action, 'rebuild');
 });
+
+// Scan the project's tree for ALL compose files (any *.yml/.yaml with a services: block — non-standard names
+// and subdirs included), each with its services, sorted shallowest-first, so the Rebuild picker can show
+// "which services in which file". Scan root = the git repo root (if a checkout) else the resolved cwd.
+// Local → fs walk (findComposeFiles); remote → one SSH grep + `docker compose config --services` per file.
+async function scanComposeFilesForRebuild(project) {
+  const r = await resolveComposeFiles(project);
+  const server = remoteCompose.getActiveRemoteServer();
+  const currentAbs = new Set();
+  if (r.files && r.cwd) r.files.forEach(f => currentAbs.add(path.posix.join(r.cwd, f)));
+  let scanRoot = r.cwd || null;
+  if (!scanRoot) return { ok: false, reason: r.reason || 'Could not locate this project on the host' };
+  try { const top = (await gitInDir(server, scanRoot, ['rev-parse', '--show-toplevel'])).trim(); if (top && isSafeHostPath(top)) scanRoot = top; } catch (e) {}
+  const entries = [];
+  if (!server) {
+    for (const rel of findComposeFiles(scanRoot).slice(0, 40)) {
+      let services = [];
+      try { const sc = await scanComposeFile(scanRoot, rel); services = sc.services || []; } catch (e) {}
+      entries.push({ path: rel, file: path.posix.join(scanRoot, rel), services });
+    }
+  } else {
+    // Portable (busybox + GNU): find candidate *.yml/.yaml (pruning junk dirs), keep those with a top-level
+    // services:, emit F:<path> + S:<service> lines. `< /dev/null` keeps `docker compose` from eating the loop's stdin.
+    const inner = `cd ${remoteCompose.shq(scanRoot)} 2>/dev/null && find . -type d \\( -name .git -o -name node_modules -o -name .next -o -name dist -o -name build -o -name .dockgate \\) -prune -o -type f \\( -name '*.yml' -o -name '*.yaml' \\) -print 2>/dev/null | head -60 | while read f; do if head -c 65536 "$f" 2>/dev/null | grep -qE '^services:'; then echo "F:$f"; docker compose -f "$f" config --services < /dev/null 2>/dev/null | sed 's/^/S:/'; fi; done`;
+    const out = await remoteCompose.execRemote(server, 'timeout 90 sh -c ' + remoteCompose.shq(inner));
+    let cur = null;
+    for (const line of String(out.stdout || '').split('\n')) {
+      if (line.startsWith('F:')) { const rel = line.slice(2).replace(/^\.\//, ''); cur = { path: rel, file: scanRoot.replace(/\/+$/, '') + '/' + rel, services: [] }; entries.push(cur); }
+      else if (line.startsWith('S:') && cur) { const s = line.slice(2).trim(); if (s) cur.services.push(s); }
+    }
+  }
+  entries.forEach(e => { e.current = currentAbs.has(e.file); });
+  entries.sort((a, b) => a.path.split('/').length - b.path.split('/').length || a.path.localeCompare(b.path));
+  return { ok: entries.length > 0, remote: !!server, scanRoot, source: r.source, files: entries, reason: entries.length ? '' : `No compose files (with a services: block) found under ${scanRoot}.` };
+}
+
+router.get('/:project/compose-files', async (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    res.json(await scanComposeFilesForRebuild(req.params.project));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Rebuild the EXACT files/services the user picked → docker compose -p <project> -f <file> up -d --build
+// [--force-recreate] [--no-deps svc…], optionally a `build --no-cache` first. Untrusted paths validated.
+function startRebuildPlanJob(req, res, plan) {
+  gcDeployJobs();
+  const project = req.params.project, reqIp = req.ip;
+  const stacks = (plan.stacks || []).filter(s => s && typeof s.file === 'string' && isSafeHostPath(s.file));
+  if (!stacks.length) return res.status(400).json({ error: 'No valid compose file selected.' });
+  const job = { id: crypto.randomBytes(8).toString('hex'), project, status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null, steps: stacks.map((s, i) => ({ id: 'stack:' + i, label: 'rebuild ' + path.posix.basename(s.file), status: 'pending' })) };
+  deployJobs.set(job.id, job);
+  runRebuildPlanJob(job, { project, stacks, reqIp });
+  res.json({ jobId: job.id, project });
+}
+
+async function runRebuildPlanJob(job, p) {
+  const stream = (c) => jobStream(job, c);
+  try {
+    const server = remoteCompose.getActiveRemoteServer();
+    for (let i = 0; i < p.stacks.length; i++) {
+      const st = p.stacks[i];
+      const cwd = path.posix.dirname(st.file), file = path.posix.basename(st.file);
+      const svc = (st.services || []).filter(s => /^[a-zA-Z0-9._-]+$/.test(s));
+      setStep(job, 'stack:' + i, 'running'); job.phase = 'rebuild';
+      const exec = async (args, echo) => { jobLog(job, '\n$ docker compose -p ' + p.project + ' ' + echo + '\n'); if (server) await remoteCompose.runComposeInRemoteDir(server, cwd, p.project, args, stream); else await runCompose(p.project, args, cwd, stream); };
+      if (st.noCache) await exec(['-f', file, 'build', '--no-cache', ...svc], '-f ' + file + ' build --no-cache ' + svc.join(' '));
+      const up = ['-f', file, 'up', '-d', '--build'];
+      if (st.force) up.push('--force-recreate');
+      if (svc.length) up.push('--no-deps', ...svc);
+      await exec(up, up.join(' '));
+      setStep(job, 'stack:' + i, 'done');
+    }
+    job.phase = 'done'; job.status = 'done'; jobLog(job, '\n✓ Done'); job.finishedAt = Date.now();
+    logAction({ sourceIp: p.reqIp, server: remoteCompose.getActiveRemoteServer() ? dockerService.getActiveServerId() : 'local', resourceId: p.project, resourceType: 'compose', resourceName: p.project, action: 'rebuild', details: { files: p.stacks.map(s => path.posix.basename(s.file)) } });
+  } catch (err) {
+    job.status = 'error'; job.phase = 'error'; job.error = (err.stderr || err.message || 'rebuild failed').toString();
+    const r = (job.steps || []).find(s => s.status === 'running'); if (r) r.status = 'failed';
+    jobLog(job, '\n✗ ' + job.error); job.finishedAt = Date.now();
+  }
+}
 
 // Delete a whole project: stop+remove containers (compose down), optionally remove data volumes (-v),
 // optionally remove the project FILES (the remote folder, or the local managed dir), and drop DockGate's

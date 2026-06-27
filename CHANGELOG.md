@@ -2,6 +2,16 @@
 
 ---
 
+## [2.1.26] - 2026-06-27
+
+### Fixed — Compose actions now pass `-f` (non-standard / subdir / multi compose files) + Rebuild "scan & pick"
+- **The bug:** every per-project Compose action (Rebuild, Up, Build, Pull, Down, Restart) ran `docker compose -p <project> <action>` in the working dir **without `-f`**, so docker only auto-found the 4 standard filenames. A project whose compose file has a non-standard name (`docker-compose.greennec.yaml`) or lives in a subdir (`deploy/…`) failed with **`no configuration file provided: not found`**.
+- **The fix:** a single `resolveComposeFiles()` resolver now drives every action — precedence: deploy metadata → git metadata → docker `config_files` label (CSV → multiple `-f`; validated, since labels are untrusted) → filesystem discovery → fail-closed. Each action is run with the resolved `-f <file>` (cwd normalized to the file's own dir so relative build contexts / bind-mounts resolve as at deploy time). Fixes Rebuild/Up/Build/Pull/Down/Restart + Delete for non-standard, sub-folder, and **multi-file (override)** projects, local and remote.
+- **Rebuild is now "scan & pick":** clicking **Rebuild** scans the project's tree (git repo root, or the working dir) for **all** compose files — *any* `*.yml`/`*.yaml` with a `services:` block, regardless of name or location — and shows a picker listing each file (sorted, the running one badged **current**) with its services, plus a **live command preview** (`docker compose -p … -f … up -d --build …`). You choose **which services in which file** to rebuild, with optional **force-recreate** and **no-cache** (clean build). If nothing can be resolved it blocks with a clear message instead of the cryptic docker error.
+- Works on the active server, **local or remote SSH** (remote scan uses a portable `find`-based probe that runs on busybox/Alpine too). Verified e2e against a repo with three compose files in different locations/names (`deploy/docker-compose.greennec.yaml`, `stacks/monitoring.yml`, `prod.yaml`): scan found all three with their services + the current badge; the picker preview and multi-file selection worked; plan-rebuild and the default (`-f`-injected) Rebuild/Build both succeeded where the old code failed.
+
+---
+
 ## [2.1.25] - 2026-06-27
 
 ### Added — Adopt EXTERNAL git projects: Pull / Redeploy a checkout DockGate didn't deploy

@@ -124,11 +124,15 @@ Router.register('compose', async (content) => {
               else { showToast('Success'); render(); } // fast op (down/restart) → toast
             } catch (err) { showToast(err.message, 'error'); }
           };
-          // rebuild → let the user pick which services to rebuild (all = whole project)
+          // rebuild → scan the project for ALL compose files (any name/location) + their services, let the
+          // user pick which file(s)/services to rebuild, then run with the exact -f.
           if (action === 'rebuild') {
-            const svc = await chooseServices((btn.dataset.services || '').split(',').filter(Boolean), project, 'Rebuild');
-            if (svc === null) return; // cancelled
-            run(svc.length ? `?services=${encodeURIComponent(svc.join(','))}` : '');
+            const plan = await chooseRebuildPlan(project);
+            if (!plan) return; // cancelled / nothing found
+            try {
+              const r = await API.post(`/compose/${project}/rebuild`, { plan });
+              if (r && r.jobId) { openDeployLog(r.jobId, project); render(); }
+            } catch (err) { showToast(err.message, 'error', 12000); }
           // down/restart are disruptive — confirm first (down removes containers; restart interrupts)
           } else if (action === 'down') {
             showDeleteConfirm('Compose Down', { message: `Stop and remove all containers in "${project}"?`, phrase: project, onConfirm: () => run() });
@@ -598,6 +602,67 @@ Router.register('compose', async (content) => {
         const chosen = [...r.querySelectorAll('.cs-svc')].filter(x => x.checked).map(x => x.value);
         if (!chosen.length) return showToast('Select at least one service', 'warning');
         settle(chosen.length === list.length ? [] : chosen); // all selected → [] (whole project, no --no-deps)
+        m.close();
+      };
+    });
+  }
+
+  // Rebuild picker: scan the project for ALL compose files (any name/location) + services, let the user pick
+  // which file(s)/services to rebuild + flags, with a live command preview. Returns a plan { stacks:[…] } or null.
+  async function chooseRebuildPlan(project) {
+    const loading = showModal(`Rebuild — ${escapeHtml(project)}`, `<div class="text-sm text-muted">Scanning the project for compose files…</div>`, [{ label: 'Cancel', className: 'btn btn-secondary' }]);
+    let scan;
+    try { scan = await API.get(`/compose/${encodeURIComponent(project)}/compose-files`); }
+    catch (e) { loading.close(); showModal('Rebuild', `<div class="text-sm" style="color:var(--danger);white-space:pre-wrap;word-break:break-all">${escapeHtml(e.message)}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]); return null; }
+    loading.close();
+    if (!scan || !scan.ok || !(scan.files || []).length) { showModal('Rebuild', `<div class="text-sm">${escapeHtml((scan && scan.reason) || 'No compose files found for this project.')}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]); return null; }
+    return new Promise((resolve) => {
+      const where = scan.remote ? ' <span class="text-xs text-muted">(on remote server)</span>' : '';
+      const fileRows = scan.files.map((f, i) => {
+        const svcChecks = (f.services || []).length
+          ? f.services.map(s => `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:12px"><input type="checkbox" class="rb-svc" data-fi="${i}" value="${escapeHtml(s)}" ${f.current ? 'checked' : ''}> ${escapeHtml(s)}</label>`).join('')
+          : '<span class="text-xs text-muted">no services parsed</span>';
+        return `<div class="card" style="padding:10px;margin-bottom:8px;background:var(--bg-primary)">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px"><code style="font-size:12px">${escapeHtml(f.path)}</code>${f.current ? '<span class="badge badge-running" style="font-size:10px">current</span>' : ''}</div>
+          <div>${svcChecks}</div></div>`;
+      }).join('');
+      const body = `
+        <div class="text-xs text-muted" style="margin-bottom:8px">Pick which services to rebuild, in which compose file${where}. Found <b>${scan.files.length}</b> file(s) (source: <b>${escapeHtml(scan.source || 'scan')}</b>). Unticked services stay untouched (<code>--no-deps</code>).</div>
+        ${fileRows}
+        <div style="display:flex;gap:16px;margin:6px 0 8px;flex-wrap:wrap">
+          <label style="font-size:12px"><input type="checkbox" id="rb-force"> force-recreate</label>
+          <label style="font-size:12px"><input type="checkbox" id="rb-nocache"> no-cache (clean build)</label>
+        </div>
+        <div class="text-xs text-muted" style="margin-bottom:2px">Command preview:</div>
+        <pre id="rb-preview" class="logs-viewer" style="font-size:11px;white-space:pre-wrap;word-break:break-all;margin:0;max-height:130px;overflow:auto"></pre>`;
+      const m = showModal(`Rebuild — ${escapeHtml(project)}`, body, [{ label: 'Cancel', className: 'btn btn-secondary', onClick: () => resolve(null) }]);
+      const root = m.overlay;
+      root.querySelector('.modal-close').onclick = () => { resolve(null); m.close(); };
+      root.onclick = (e) => { if (e.target === root) { resolve(null); m.close(); } };
+      const collect = () => {
+        const force = root.querySelector('#rb-force').checked, noCache = root.querySelector('#rb-nocache').checked;
+        return scan.files.map((f, i) => {
+          const services = [...root.querySelectorAll(`.rb-svc[data-fi="${i}"]`)].filter(x => x.checked).map(x => x.value);
+          if (!services.length) return null;
+          const all = (f.services || []).length === services.length;
+          return { file: f.file, base: f.path.split('/').pop(), services: all ? [] : services, noCache, force };
+        }).filter(Boolean);
+      };
+      const preview = () => {
+        const stacks = collect();
+        root.querySelector('#rb-preview').textContent = stacks.length
+          ? stacks.map(s => `docker compose -p ${project} -f ${s.base}${s.noCache ? '  (build --no-cache first)' : ''} up -d --build${s.force ? ' --force-recreate' : ''}${s.services.length ? ' --no-deps ' + s.services.join(' ') : ''}`).join('\n')
+          : '(tick at least one service)';
+      };
+      root.querySelectorAll('.rb-svc, #rb-force, #rb-nocache').forEach(el => el.addEventListener('change', preview));
+      preview();
+      const go = document.createElement('button');
+      go.className = 'btn btn-primary'; go.textContent = 'Rebuild';
+      root.querySelector('#modal-footer').appendChild(go);
+      go.onclick = () => {
+        const stacks = collect();
+        if (!stacks.length) return showToast('Tick at least one service to rebuild', 'warning');
+        resolve({ stacks: stacks.map(s => ({ file: s.file, services: s.services, noCache: s.noCache, force: s.force })) });
         m.close();
       };
     });
