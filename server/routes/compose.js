@@ -196,6 +196,13 @@ router.get('/', async (req, res) => {
         const meta = readDeployMeta(p.name);
         if (meta && meta.mode === 'remote' && meta.serverId === activeId) { p.remote = true; p.deploySource = meta.source || 'folder'; }
       }
+      // Annotate RUNNING LOCAL projects too, so a local git/folder deploy shows its git badge + ⤓ Pull / Update.
+      // (Without this a running local project — already in the daemon list — never gets deploySource and the
+      // git affordances stay hidden.)
+      if (activeId === 'local') for (const p of list) {
+        const meta = readDeployMeta(p.name);
+        if (meta && meta.mode === 'local') p.deploySource = meta.source || 'folder';
+      }
       // Merge in DOWN deploy-pointer projects for the active server (no containers → not in the daemon list).
       // Covers staged (deployed with up:false) and stopped projects, both remote AND local.
       const seen = new Set(list.map(p => p.name));
@@ -338,9 +345,12 @@ router.delete('/:project', async (req, res) => {
     }
 
     // Local daemon.
-    const cwd = proj.workingDir || (findComposeFile(mDir) ? mDir : null);
+    const cwd = proj.workingDir || (meta && meta.mode === 'local' && meta.workingDir) || (fs.existsSync(mDir) ? mDir : null);
     if (cwd) { try { await runCompose(project, downArgs, cwd); } catch (e) { /* may already be down */ } }
-    if (removeFiles && findComposeFile(mDir)) fs.rmSync(mDir, { recursive: true, force: true }); // only DockGate-managed files
+    // mDir is always managedDir(project) — i.e. under COMPOSE_DIR — so removing the whole managed folder is
+    // safe. The old `findComposeFile(mDir)` guard skipped subdir / non-standard-named compose layouts (e.g. a
+    // repo whose compose file is deploy/docker-compose.greennec.yaml), leaving the folder behind.
+    if (removeFiles && fs.existsSync(mDir)) fs.rmSync(mDir, { recursive: true, force: true });
     logAction({ req, resourceId: project, resourceType: 'compose', resourceName: project, action: 'delete', details: { removeVolumes, removeFiles } });
     res.json({ success: true });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
@@ -774,6 +784,8 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
       job.result = { composeFile, remotePath, updated: !!update };
       logAction({ sourceIp: reqIp, server: serverId, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: update ? 'update-folder' : 'deploy-folder', details: { files: uploaded, composeFile, remotePath, clean: !!wantClean } });
     } else {
+      // Local, single (non-plan) deploy → record the pointer so it shows as git/folder-managed (badge, Pull, delete-files).
+      writeDeployMeta(u.project, { mode: 'local', serverId: 'local', workingDir: baseDir, composeFile, source: u.git ? 'git' : 'folder' });
       if (up) { current = 'deploy'; setStep(job, 'deploy', 'running'); job.phase = 'up'; jobLog(job, '$ docker compose up -d'); await runCompose(u.project, ['up', '-d'], baseDir, stream); setStep(job, 'deploy', 'done'); }
       job.result = { composeFile };
       logAction({ sourceIp: reqIp, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder', details: { files: u.files, composeFile } });
@@ -816,8 +828,9 @@ async function runGitDeployJob(job, p) {
 
     const relSub = safeRelPath(p.subdir);
     const projectDir = relSub ? path.join(dir, relSub) : dir;
-    const composeFile = findComposeFile(projectDir);
-    if (!composeFile) throw Object.assign(new Error(`No docker-compose.yml in the repo${relSub ? ' subdir "' + relSub + '"' : ''}`), { statusCode: 400 });
+    let composeFile = findComposeFile(projectDir);
+    if (!composeFile) { const found = findComposeFiles(projectDir); if (found.length) composeFile = found[0]; } // fall back to any *.yml/.yaml with services: (non-standard name / nested, e.g. deploy/docker-compose.greennec.yaml)
+    if (!composeFile) throw Object.assign(new Error(`No compose file (docker-compose.yml or any *.yml with "services:") in the repo${relSub ? ' subdir "' + relSub + '"' : ''}`), { statusCode: 400 });
     let deployedCommit = '';
     try { deployedCommit = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) {}
     fs.writeFileSync(gitMetaPath(p.project), JSON.stringify({ repoUrl: p.repoUrl, branch: p.branch, token: p.keyId ? '' : p.token, keyId: p.keyId || '', subdir: relSub, composeFile, secret: p.secret, deployedCommit }, null, 2), { mode: 0o600 });
@@ -832,9 +845,11 @@ async function runGitDeployJob(job, p) {
       const n = await remoteCompose.uploadDirToRemote(server, projectDir, remotePath, (d, t) => jobStream(job, `\ruploaded ${d}/${t} files`));
       jobLog(job, `\nUploaded ${n} file(s).`); setStep(job, 'transfer', 'done');
       writeDeployMeta(p.project, { mode: 'remote', serverId, remotePath, composeFile, source: 'git' });
-      if (p.up) { current = 'up'; setStep(job, 'up', 'running'); job.phase = 'up'; jobLog(job, '\n$ docker compose up -d'); await remoteCompose.runComposeInRemoteDir(server, remotePath, p.project, ['up', '-d'], stream); setStep(job, 'up', 'done'); }
-    } else if (p.up) {
-      current = 'up'; setStep(job, 'up', 'running'); job.phase = 'up'; jobLog(job, '\n$ docker compose up -d'); await runCompose(p.project, ['up', '-d'], projectDir, stream); setStep(job, 'up', 'done');
+      if (p.up) { current = 'up'; setStep(job, 'up', 'running'); job.phase = 'up'; jobLog(job, '\n$ docker compose -f ' + composeFile + ' up -d'); await remoteCompose.runComposeInRemoteDir(server, remotePath, p.project, ['-f', composeFile, 'up', '-d'], stream); setStep(job, 'up', 'done'); }
+    } else {
+      // Local git deploy → record the pointer so the project shows as git-managed (badge, ⤓ Pull, delete-files).
+      writeDeployMeta(p.project, { mode: 'local', serverId: 'local', workingDir: projectDir, composeFile, source: 'git' });
+      if (p.up) { current = 'up'; setStep(job, 'up', 'running'); job.phase = 'up'; jobLog(job, '\n$ docker compose -f ' + composeFile + ' up -d'); await runCompose(p.project, ['-f', composeFile, 'up', '-d'], projectDir, stream); setStep(job, 'up', 'done'); }
     }
     job.result = { composeFile, webhookSecret: p.secret };
     job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();

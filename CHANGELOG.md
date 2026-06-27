@@ -2,6 +2,18 @@
 
 ---
 
+## [2.1.23] - 2026-06-25
+
+### Fixed — Git/folder Compose deploys: Pull/Redeploy now show, and Delete actually removes the folder
+A cluster of bugs meant a **locally** git-deployed project lost its Git affordances and left files behind. All were the same three gaps; fixed together:
+- **⤓ Pull / ↻ Redeploy / git-badge were missing on local deploys.** The project list never tagged a *running, local* project with its deploy source — the annotation loop was remote-only and the "down project" merge skipped anything already running. A running local git/folder project now gets its `deploySource` from the saved deploy-pointer, so the git badge, **⤓ Pull**, **↻ Redeploy**, and folder **Update** appear as they already did for remote deploys.
+- **Local git deploys didn't record a deploy-pointer at all.** `.dockgate-deploy.json` was written only on the *remote* branch of the git-deploy worker (and the single-file local finish), so a local git project was never recognized as Git-managed. Both local paths now write the pointer (`mode:local, source:git`).
+- **Delete project left the folder on disk.** The folder was removed only when a *standard-named* compose file sat directly in the managed dir — so a repo whose compose file is in a subfolder or has a non-standard name (e.g. `deploy/docker-compose.greennec.yaml`) kept its folder forever. The managed dir is always under DockGate's compose dir, so it's now removed whenever you ask to delete files, regardless of the compose file's name or location. `down` also resolves its working dir from the deploy-pointer so stopped projects tear down cleanly.
+- **Git deploys with non-standard / nested compose files now work.** The simple git-deploy path only matched the 4 standard compose names at the repo root; it now falls back to any `*.yml`/`*.yaml` declaring `services:` (the same name-agnostic scan the picker uses) and passes the resolved file with `-f` so it actually starts.
+- Verified e2e against a real (gartenmeister-shaped) repo whose compose file is `deploy/docker-compose.greennec.yaml`: clone → scan finds the nested file → deploy writes `source:git` → the running project shows `deploySource:git` (badge + Pull) → **Delete removes both the container and the folder**.
+
+---
+
 ## [2.1.22] - 2026-06-25
 
 ### Changed — Compose folder deploy: upload limit raised from 50 MB to 1 GB
