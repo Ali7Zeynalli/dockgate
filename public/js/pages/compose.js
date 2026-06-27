@@ -623,11 +623,12 @@ Router.register('compose', async (content) => {
           ? f.services.map(s => `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:12px"><input type="checkbox" class="rb-svc" data-fi="${i}" value="${escapeHtml(s)}" ${f.current ? 'checked' : ''}> ${escapeHtml(s)}</label>`).join('')
           : '<span class="text-xs text-muted">no services parsed</span>';
         return `<div class="card" style="padding:10px;margin-bottom:8px;background:var(--bg-primary)">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px"><code style="font-size:12px">${escapeHtml(f.path)}</code>${f.current ? '<span class="badge badge-running" style="font-size:10px">current</span>' : ''}</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px"><code style="font-size:12px">${escapeHtml(f.path)}</code>${f.current ? '<span class="badge badge-running" style="font-size:10px">current</span>' : ''}</div>
+          <div class="text-xs text-muted" style="margin-bottom:6px;word-break:break-all">📁 <code>${escapeHtml(f.file)}</code></div>
           <div>${svcChecks}</div></div>`;
       }).join('');
       const body = `
-        <div class="text-xs text-muted" style="margin-bottom:8px">Pick which services to rebuild, in which compose file${where}. Found <b>${scan.files.length}</b> file(s) (source: <b>${escapeHtml(scan.source || 'scan')}</b>). Unticked services stay untouched (<code>--no-deps</code>).</div>
+        <div class="text-xs text-muted" style="margin-bottom:8px">Pick which services to rebuild, in which compose file${where}. Found <b>${scan.files.length}</b> file(s) (source: <b>${escapeHtml(scan.source || 'scan')}</b>) under <code>${escapeHtml(scan.scanRoot || '')}</code>. Unticked services stay untouched (<code>--no-deps</code>).</div>
         ${fileRows}
         <div style="display:flex;gap:16px;margin:6px 0 8px;flex-wrap:wrap">
           <label style="font-size:12px"><input type="checkbox" id="rb-force"> force-recreate</label>

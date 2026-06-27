@@ -2,6 +2,13 @@
 
 ---
 
+## [2.1.27] - 2026-06-27
+
+### Changed — Rebuild picker shows the full compose-file path
+- The Rebuild "scan & pick" dialog now shows **where each compose file actually lives** — the full absolute path (e.g. `📁 /root/prod/docker-compose.yml`) under each file, and the **scan root** in the header (`…under /root/prod`) — so on a remote host you can see exactly which file in which directory will be rebuilt, not just its bare name.
+
+---
+
 ## [2.1.26] - 2026-06-27
 
 ### Fixed — Compose actions now pass `-f` (non-standard / subdir / multi compose files) + Rebuild "scan & pick"
