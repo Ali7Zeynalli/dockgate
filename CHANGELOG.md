@@ -2,6 +2,16 @@
 
 ---
 
+## [2.1.22] - 2026-06-25
+
+### Changed — Compose folder deploy: upload limit raised from 50 MB to 1 GB
+- The **Deploy from folder** upload was capped at **~50 MB**; a project folder is now accepted up to **~1 GB** (uploaded file-by-file with live progress). Raised everywhere the old limit lived so it's consistent: the per-file/total server checks (`UPLOAD_MAX_BYTES` + the single-shot guard), the Express body-parser for the `deploy-folder*` routes (`100 MB → 600 MB`), the 413 message, and the frontend's own pre-upload guard + the two help texts.
+- **Single-file ceiling ~384 MB:** files travel as base64 inside a JSON body, which `JSON.parse`/V8 caps near ~384 MB per file (a base64 string can't exceed V8's ~512 MB max). The total project can still reach 1 GB because the UI uploads one file at a time. The picker now catches an oversized single file up front with a clear message ("over ~380 MB — use a pre-built image or git deploy") instead of letting it fail with a cryptic server error.
+- Verified e2e in a container: a **60 MB** file (previously rejected at the 50 MB cap) and a **~120 MB** two-file total both upload successfully.
+- **Note:** if you run DockGate behind your own reverse proxy (nginx/Caddy/Traefik), that proxy has its own body-size cap — e.g. nginx defaults `client_max_body_size` to 1 MB — so raise it there too for large uploads to reach DockGate.
+
+---
+
 ## [2.1.21] - 2026-06-25
 
 ### Added — GitHub-style "type to confirm" on every delete

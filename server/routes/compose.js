@@ -608,7 +608,7 @@ router.post('/deploy-folder', async (req, res) => {
       if (dest !== dir && !dest.startsWith(dir + path.sep)) continue; // traversal guard
       const buf = Buffer.from(f.b64, 'base64');
       total += buf.length;
-      if (total > 50 * 1024 * 1024) return res.status(400).json({ error: 'Folder exceeds the 50MB upload limit — use pre-built images or git-based deploy for large projects' });
+      if (total > 1024 * 1024 * 1024) return res.status(400).json({ error: 'Folder exceeds the 1GB upload limit — use pre-built images or git-based deploy for large projects' });
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, buf);
     }
@@ -630,7 +630,7 @@ router.post('/deploy-folder', async (req, res) => {
 const STAGING_DIR = path.join(COMPOSE_DIR, '.staging');
 const folderUploads = new Map(); // uploadId → { project, dir, total, files, created }
 const UPLOAD_TTL_MS = 30 * 60 * 1000;
-const UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
+const UPLOAD_MAX_BYTES = 1024 * 1024 * 1024; // 1GB total project size (uploaded file-by-file). Single file is JSON/V8-capped near ~384MB.
 
 // Drop stale sessions (browser closed mid-upload) so staging dirs don't accumulate.
 function gcFolderUploads() {
@@ -908,7 +908,7 @@ router.post('/deploy-folder-file', (req, res) => {
     if (u.total > UPLOAD_MAX_BYTES) {
       fs.rmSync(u.dir, { recursive: true, force: true });
       folderUploads.delete(uploadId);
-      return res.status(400).json({ error: 'Folder exceeds the 50MB upload limit — use pre-built images or git-based deploy for large projects' });
+      return res.status(400).json({ error: 'Folder exceeds the 1GB upload limit — use pre-built images or git-based deploy for large projects' });
     }
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, buf);

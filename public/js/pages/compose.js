@@ -578,7 +578,7 @@ Router.register('compose', async (content) => {
       <h4 style="margin:14px 0 4px">1 · Pick the folder</h4>
       <ul style="margin:0;padding-left:18px">
         <li>Select your project's <b>root folder</b>. Files upload one by one (<code>.git</code> and <code>node_modules</code> are skipped).</li>
-        <li><b>~50 MB limit.</b> If you hit it, exclude build output (<code>.next</code>, <code>dist</code>, large assets) before deploying.</li>
+        <li><b>~1 GB limit</b> (single file up to ~384 MB). If you hit it, exclude build output (<code>.next</code>, <code>dist</code>, large assets) before deploying.</li>
         <li><b>Local vs remote:</b> with a remote SSH server active in the header, files are uploaded to <i>that server</i> and run there (bind-mounts &amp; builds resolve on the remote). Otherwise they run on local Docker.</li>
       </ul>
 
@@ -745,7 +745,7 @@ Router.register('compose', async (content) => {
         <pre id="fd-joblog" class="logs-viewer" style="display:none;margin-top:8px;max-height:200px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-word"></pre>
         <div id="fd-jobnote" class="text-xs text-muted" style="display:none;margin-top:6px">You can close this — the deploy keeps running on the server.</div>
       </div>
-      <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (over SSH). ' : ''}Files upload one by one, then <code>docker compose up</code> runs. <code>.git</code> / <code>node_modules</code> are skipped. Bind-mount paths resolve on the daemon's host. ~50MB max.</div>
+      <div class="text-xs text-muted">${remote ? '<strong>Deploys to the active remote host</strong> (over SSH). ' : ''}Files upload one by one, then <code>docker compose up</code> runs. <code>.git</code> / <code>node_modules</code> are skipped. Bind-mount paths resolve on the daemon's host. ~1GB max (single file up to ~384MB).</div>
     </div>`;
     const m = showModal(isUpdate ? `Update “${opts.update}” from folder` : 'Deploy from folder', body, []);
     const root = m.overlay;
@@ -779,7 +779,11 @@ Router.register('compose', async (content) => {
       if (!project) { showToast('Project name required', 'warning'); return; }
       if (!picked.length) { showToast('Select a project folder first', 'warning'); return; }
       const bytes = picked.reduce((a, f) => a + f.size, 0);
-      if (bytes > 50 * 1024 * 1024) { showToast('Folder exceeds the 50MB limit', 'error'); return; }
+      if (bytes > 1024 * 1024 * 1024) { showToast('Folder exceeds the 1GB limit', 'error'); return; }
+      // A single file is uploaded as base64 JSON, which JSON.parse/V8 caps near ~384MB. Catch it here
+      // with a clear message instead of a cryptic server error on the biggest file.
+      const tooBig = picked.find(f => f.size > 380 * 1024 * 1024);
+      if (tooBig) { showToast(`"${tooBig.name || tooBig.webkitRelativePath || 'a file'}" is over ~380MB — single files that large can't be uploaded this way. Use a pre-built image or git deploy.`, 'error', 11000); return; }
       btn.disabled = true; btn.textContent = 'Uploading…';
       const prog = root.querySelector('#fd-progress');
       const list = root.querySelector('#fd-list');

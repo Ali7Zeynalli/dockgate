@@ -25,10 +25,11 @@ app.set('trust proxy', true);
 
 // Middleware
 // Body parsing: 5MB protects every endpoint (SSH key uploads, normal API payloads). The folder-deploy
-// upload sends a whole project as base64 JSON (≈50MB of files → ≈67MB base64), so THAT one route gets
-// 100MB. A single global 5MB parser would otherwise reject it first ("Payload Too Large").
+// upload sends files as base64 JSON, so THAT route family gets 600MB. The UI uploads file-by-file, so
+// total project size can reach 1GB (UPLOAD_MAX_BYTES in compose.js); a single file is JSON/V8-capped
+// near ~384MB (base64 ≈ ×1.34 → ~512MB string max). A global 5MB parser would otherwise reject it first.
 const jsonSmall = express.json({ limit: '5mb' });
-const jsonLarge = express.json({ limit: '100mb' });
+const jsonLarge = express.json({ limit: '600mb' });
 // covers /deploy-folder (single-shot) and /deploy-folder-file (per-file upload — one big binary file can still be ~67MB as base64)
 app.use((req, res, next) => (req.path.startsWith('/api/compose/deploy-folder') ? jsonLarge : jsonSmall)(req, res, next));
 
@@ -256,7 +257,7 @@ app.get('*', (req, res) => {
 // instead of Express's default HTML stack. Must come after the routes.
 app.use((err, req, res, next) => {
   if (err && (err.status === 413 || err.type === 'entity.too.large')) {
-    return res.status(413).json({ error: 'Request body too large. Folder deploy accepts up to ~50MB of files; other endpoints up to 5MB. For bigger projects use pre-built images or Deploy from Git.' });
+    return res.status(413).json({ error: 'Request body too large. Folder deploy accepts a project up to ~1GB (single file up to ~384MB); other endpoints up to 5MB. For bigger projects use pre-built images or Deploy from Git.' });
   }
   if (err) return res.status(err.status || 500).json({ error: err.message || 'Server error' });
   next();
