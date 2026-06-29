@@ -75,6 +75,42 @@ docker compose pull && docker compose up -d
 
 > Source builds don't auto-update — `git pull` and rebuild.
 
+### ⚠️ Note — container restart-loops on SELinux-confined Docker
+
+On most systems (Ubuntu, Debian, Docker Desktop, **Fedora/RHEL with Docker CE**) DockGate runs with no extra steps. If instead the container **restart-loops on first start** with one of:
+
+```
+SqliteError: unable to open database file        (code: SQLITE_CANTOPEN)
+[EventMonitor:local] Failed to connect: connect EACCES /var/run/docker.sock
+```
+
+…then your **Docker daemon is configured to confine containers with SELinux** (as `container_t`), which blocks the bind-mounted Docker socket and the `data/` directory — even though the container runs as root (this is SELinux MAC, not file permissions). **This is a host Docker setting, not a DockGate bug** — the same Compose file works unchanged on standard Docker CE.
+
+**Confirm it:**
+
+```bash
+docker info --format '{{.SecurityOptions}}'   # if it lists "selinux", that's the cause
+```
+
+**Recommended fix** — make Docker behave like standard Docker CE (one line, host-wide, fixes *every* container, not just DockGate):
+
+```bash
+# Set "selinux-enabled": false in /etc/docker/daemon.json, then restart Docker
+sudo sed -i 's/"selinux-enabled": *true/"selinux-enabled": false/' /etc/docker/daemon.json
+sudo systemctl restart docker
+```
+
+> **openSUSE Leap 16** ships `/etc/docker/daemon.json` with `"selinux-enabled": true` by default, so you hit this out of the box there.
+
+**Alternative** — if you'd rather keep SELinux-confined Docker, leave the daemon alone and add this to the `dockgate` service in `docker-compose.yml` instead (it's a harmless no-op on non-SELinux hosts):
+
+```yaml
+    security_opt:
+      - label:disable
+```
+
+> ⚠️ Never add `:z`/`:Z` to the `/var/run/docker.sock` mount — relabeling the host's Docker socket can break Docker on the host.
+
 ---
 
 ## Screenshots
