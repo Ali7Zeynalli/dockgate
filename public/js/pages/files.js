@@ -420,8 +420,20 @@ Router.register('files', async (content) => {
       ov.remove(); openExplorer._ov = null; list();
     };
     const close = () => {
-      if (anyActive()) { showConfirm('Close Explorer', 'A transfer is still running. Abort it and close?', doClose, true); return; }
-      doClose();
+      if (!anyActive()) { doClose(); return; }
+      // The app's showConfirm modal is z-index:1000 — BELOW this overlay (1200) — so it would be hidden
+      // behind the Explorer and freeze the user. Use a dedicated confirm at z:1300 instead.
+      const c = document.createElement('div');
+      c.style.cssText = 'position:fixed;inset:0;z-index:1300;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px';
+      c.innerHTML = `<div class="card" style="max-width:400px;width:100%;padding:18px">
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">Close Explorer?</div>
+        <div class="text-sm" style="margin-bottom:14px">A transfer is still running. Abort it and close?</div>
+        <div style="display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-secondary" data-c="keep" type="button">Keep transferring</button>
+          <button class="btn btn-secondary" style="color:var(--danger)" data-c="abort" type="button">Abort &amp; close</button>
+        </div></div>`;
+      document.body.appendChild(c);
+      c.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { c.remove(); if (b.dataset.c === 'abort') doClose(); });
     };
     const onKey = (e) => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', onKey);

@@ -2,6 +2,13 @@
 
 ---
 
+## [2.1.34] - 2026-07-04
+
+### Fixed — Explorer close-confirmation dialog was hidden behind the overlay
+- The "abort transfer & close?" confirm added in v2.1.32 used the app's `showConfirm` modal (z-index 1000), which sits **below** the Explorer overlay (z-index 1200) — so it was invisible and the user got stuck when closing mid-transfer. Replaced it with a dedicated confirm at z-index 1300 (matching the upload-conflict dialog).
+
+---
+
 ## [2.1.33] - 2026-07-04
 
 ### Added — File Manager Explorer: upload conflict prompt (Overwrite / Keep both / Skip)
