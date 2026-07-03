@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.30] - 2026-07-03
+
+### Added — Cancel an in-progress transfer in the File Manager Explorer
+- Both the Explorer **upload** and the batch **download** can now be **cancelled mid-flight**: the `Upload →` / `← Download` button turns into **✕ Cancel** while a transfer runs.
+- **Upload** cancel truly aborts — the in-flight file's request is `AbortController`-aborted and the remaining queue stops; the toast reports how many completed.
+- **Download** cancel stops starting further files; downloads the browser has already begun keep going (a browser cannot recall them) — stated honestly in the toast.
+
+---
+
 ## [2.1.29] - 2026-07-03
 
 ### Changed — File Manager Explorer: full FileZilla-style browsable local tree + swapped panes

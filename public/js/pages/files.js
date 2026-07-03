@@ -334,6 +334,9 @@ Router.register('files', async (content) => {
     let rcwd = cwd;                    // remote cwd (RIGHT pane)
     let lprefix = '';                  // local virtual cwd (LEFT pane); '' = root, else ends with '/'
     let busy = false;                  // an upload is in flight
+    let dlBusy = false;                // a batch download is in flight
+    let cancelUpload = false, cancelDownload = false;
+    let uploadAbort = null;            // AbortController for the current in-flight upload fetch
     const staged = [];                 // { file, rel } picked/dropped items (rel = POSIX, from a picked root)
     const localSel = new Set();        // ticked LOCAL immediate-child full paths (lprefix + name)
     const remoteSel = new Map();       // ticked REMOTE child name -> isDir (batch download)
@@ -399,14 +402,19 @@ Router.register('files', async (content) => {
     ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
 
     function updateInfo() {
+      const up = $('fx-upload');
+      if (busy) { up.disabled = false; up.textContent = '✕ Cancel'; }
+      else { up.textContent = 'Upload →'; up.disabled = !staged.length; }
       if (!busy) {
         const sel = localSel.size;
         $('fx-info').textContent = sel ? `${sel} selected → ${rcwd}`
           : staged.length ? `Tick items to upload → ${rcwd}` : 'Pick or drop a folder / files to begin.';
       }
-      $('fx-upload').disabled = busy || !staged.length;
-      $('fx-rinfo').textContent = remoteSel.size ? `${remoteSel.size} selected → your Downloads` : '';
-      $('fx-download').disabled = busy || remoteSel.size === 0;
+      const dl = $('fx-download');
+      if (dlBusy) { dl.disabled = false; dl.textContent = '✕ Cancel'; }
+      else { dl.textContent = '← Download'; dl.disabled = remoteSel.size === 0; }
+      $('fx-rinfo').textContent = dlBusy ? '' : (remoteSel.size ? `${remoteSel.size} selected → your Downloads` : '');
+      $('fx-clear').disabled = busy;
     }
 
     // ---- LEFT: your computer — a browsable tree DERIVED from the flat staged[] list ----
@@ -541,13 +549,20 @@ Router.register('files', async (content) => {
     }
     $('fx-up').onclick = () => { rcwd = parentOf(rcwd); remoteSel.clear(); renderRemote(); };
     $('fx-download').onclick = async () => {
+      if (dlBusy) { cancelDownload = true; return; }
       const items = [...remoteSel.entries()];
       if (!items.length) return;
+      dlBusy = true; cancelDownload = false; updateInfo();
+      let n = 0;
       for (let i = 0; i < items.length; i++) {
-        downloadRemote(items[i][0], items[i][1]);
+        if (cancelDownload) break;
+        downloadRemote(items[i][0], items[i][1]); n++;
         if (i < items.length - 1) await new Promise(r => setTimeout(r, 400)); // dodge multi-download throttling
       }
-      showToast(`Downloading ${items.length} item(s) to your Downloads…`, 'info', 4000);
+      dlBusy = false; updateInfo();
+      showToast(cancelDownload
+        ? `Download cancelled — started ${n}/${items.length} (already-started ones keep going in the browser)`
+        : `Downloading ${n} item(s) to your Downloads…`, cancelDownload ? 'warning' : 'info', 5000);
     };
 
     // ---- Upload: structure-preserving into the remote cwd (what-you-see-uploads-here) ----
@@ -560,20 +575,21 @@ Router.register('files', async (content) => {
         cur = full;
       }
     }
-    async function uploadOneTo(base, file, rel) {
+    async function uploadOneTo(base, file, rel, signal) {
       const cut = rel.lastIndexOf('/');
       const relDir = cut > 0 ? rel.slice(0, cut) : '';
       const name = cut >= 0 ? rel.slice(cut + 1) : rel;
       await ensureRemoteDir(base, relDir);
       const destDir = relDir ? (base === '/' ? '' : base) + '/' + relDir : base;
       const r = await fetch(`/api/files/upload?path=${encodeURIComponent(destDir)}&name=${encodeURIComponent(name)}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file, signal,
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
     }
     $('fx-upload').onclick = async () => {
-      if (!staged.length || busy) return;
+      if (busy) { cancelUpload = true; if (uploadAbort) uploadAbort.abort(); return; }   // in-flight → Cancel
+      if (!staged.length) return;
       const R = rcwd, P = lprefix;
       // ticked immediate children at P; if none ticked, upload every child of the current view
       let names = [...localSel].filter(f => f.startsWith(P) && f.slice(P.length).indexOf('/') === -1).map(f => f.slice(P.length));
@@ -586,14 +602,19 @@ Router.register('files', async (content) => {
         for (const it of staged) if (it.rel.startsWith(fp)) jobs.push({ file: it.file, rel: it.rel.slice(P.length) });
       }
       if (!jobs.length) return;
-      busy = true; madeDirs.clear(); $('fx-clear').disabled = true; updateInfo();
+      busy = true; cancelUpload = false; madeDirs.clear(); updateInfo();
       const total = jobs.length; let done = 0, fail = 0;
       for (const j of jobs) {
+        if (cancelUpload) break;
         $('fx-info').textContent = `Uploading ${done + fail + 1}/${total}: ${j.rel}`;
-        try { await uploadOneTo(R, j.file, j.rel); done++; } catch (e) { fail++; showToast(`${j.rel}: ${e.message}`, 'error', 8000); }
+        uploadAbort = new AbortController();
+        try { await uploadOneTo(R, j.file, j.rel, uploadAbort.signal); done++; }
+        catch (e) { if (cancelUpload || e.name === 'AbortError') break; fail++; showToast(`${j.rel}: ${e.message}`, 'error', 8000); }
       }
-      busy = false; $('fx-clear').disabled = false;
-      showToast(`Uploaded ${done}/${total}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success');
+      uploadAbort = null; busy = false;
+      showToast(cancelUpload
+        ? `Upload cancelled — ${done}/${total} done`
+        : `Uploaded ${done}/${total}${fail ? `, ${fail} failed` : ''}`, (cancelUpload || fail) ? 'warning' : 'success');
       localSel.clear(); renderLocal();
       if (rcwd === R) renderRemote();
     };
