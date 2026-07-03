@@ -64,6 +64,7 @@ Router.register('files', async (content) => {
         <button class="btn btn-secondary btn-sm" id="f-mkdir">+ Folder</button>
         <button class="btn btn-secondary btn-sm" id="f-newfile">+ File</button>
         <button class="btn btn-primary btn-sm" id="f-upload">⬆ Upload</button>
+        <button class="btn btn-secondary btn-sm" id="f-explorer" title="Two-pane transfer between your computer and this server (Windows/macOS/Linux)">⇆ Explorer</button>
         <button class="btn btn-secondary btn-sm" id="f-paste" style="display:none"></button>
         <input type="file" id="f-file" style="display:none">
       </div>
@@ -134,6 +135,7 @@ Router.register('files', async (content) => {
     document.getElementById('f-bulk-copy').addEventListener('click', () => setClipboard('copy'));
     document.getElementById('f-bulk-cut').addEventListener('click', () => setClipboard('cut'));
     document.getElementById('f-bulk-del').addEventListener('click', bulkDelete);
+    document.getElementById('f-explorer').addEventListener('click', openExplorer);
   }
 
   function renderCrumbs() { const el = document.getElementById('f-crumbs'); if (!el) return; el.innerHTML = breadcrumb();
@@ -318,6 +320,196 @@ Router.register('files', async (content) => {
         showToast(`Extracted "${name}"`, 'success'); m.close(); list();
       } catch (err) { showToast(err.message, 'error', 10000); b.disabled = false; b.textContent = '📦 Extract'; }
     };
+  }
+
+  // ── Explorer / Transfer mode ──────────────────────────────────────────────────────────────────
+  // Opt-in two-pane view (opens on demand; the default page stays single-pane and unchanged).
+  // LEFT  = this remote server: browse + download files/folders TO your computer.
+  // RIGHT = your computer: drag-drop or pick files & FOLDERS → upload to the remote folder on the left.
+  // Cross-platform by design: uses only browser file APIs (identical on Windows/macOS/Linux) and POSIX
+  // ('/') remote paths — a Windows client's back-slashes are normalized so they never reach the host.
+  function openExplorer() {
+    let rcwd = cwd;                    // remote cwd inside the explorer (starts where you are)
+    const staged = [];                 // { file, rel } local items staged for upload (rel is POSIX)
+    const madeDirs = new Set();        // remote dirs already created during an upload (avoid re-mkdir)
+
+    const ov = document.createElement('div');
+    ov.className = 'fm-explorer-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:1200;background:var(--overlay-bg,rgba(0,0,0,.55));display:flex;padding:2vh 2vw';
+    ov.innerHTML = `
+      <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)">
+          <strong style="font-size:15px">⇆ Explorer — your computer ⇄ ${escapeHtml(ctx.host || ctx.serverId || 'server')}</strong>
+          <div style="flex:1"></div>
+          <button class="btn btn-secondary btn-sm" id="fx-close" type="button">✕ Close</button>
+        </div>
+        <div style="flex:1;display:flex;min-height:0">
+          <div style="flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border)">
+              <span class="text-xs text-muted" style="font-weight:700;letter-spacing:.5px">REMOTE</span>
+              <button class="btn btn-xs btn-secondary" id="fx-up" type="button" title="Up one level">⬆</button>
+              <div id="fx-crumbs" style="flex:1;min-width:0;font-family:var(--font-mono,monospace);font-size:12px;overflow-x:auto;white-space:nowrap"></div>
+            </div>
+            <div id="fx-remote" style="flex:1;overflow:auto;min-height:0"></div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border)">
+              <span class="text-xs text-muted" style="font-weight:700;letter-spacing:.5px">YOUR COMPUTER</span>
+              <div style="flex:1"></div>
+              <button class="btn btn-xs btn-secondary" id="fx-pick" type="button">Choose files</button>
+              <button class="btn btn-xs btn-secondary" id="fx-pickdir" type="button">Choose folder</button>
+            </div>
+            <div id="fx-drop" style="flex:1;overflow:auto;min-height:0;padding:10px"></div>
+            <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
+              <span class="text-xs text-muted" id="fx-info" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+              <button class="btn btn-xs btn-ghost" id="fx-clear" type="button">Clear</button>
+              <button class="btn btn-primary btn-sm" id="fx-upload" type="button" disabled>⬆ Upload → remote</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <input type="file" id="fx-file" multiple style="display:none">
+      <input type="file" id="fx-dir" webkitdirectory multiple style="display:none">`;
+    document.body.appendChild(ov);
+    const $ = (id) => ov.querySelector('#' + id);
+
+    const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); list(); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    $('fx-close').onclick = close;
+    ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
+
+    function updateInfo() {
+      $('fx-info').textContent = staged.length ? `${staged.length} item(s) → ${rcwd}` : 'Drag files/folders here, or use “Choose” above.';
+      $('fx-upload').disabled = !staged.length;
+    }
+
+    // ---- LEFT: remote browser (navigate + download to your computer) ----
+    async function renderRemote() {
+      const segs = rcwd.split('/').filter(Boolean); let acc = '';
+      const cr = ['<a href="#" data-fxcrumb="/" style="text-decoration:none" title="Root">🖥</a>'];
+      segs.forEach((s) => { acc += '/' + s; cr.push(`<a href="#" data-fxcrumb="${escapeHtml(acc)}" style="text-decoration:none">${escapeHtml(s)}</a>`); });
+      $('fx-crumbs').innerHTML = cr.join('<span style="opacity:.35;margin:0 2px">/</span>');
+      $('fx-crumbs').querySelectorAll('[data-fxcrumb]').forEach(a => a.onclick = (e) => { e.preventDefault(); rcwd = a.dataset.fxcrumb; renderRemote(); });
+      const body = $('fx-remote');
+      body.innerHTML = '<div class="text-muted" style="padding:14px">Loading…</div>';
+      try {
+        const d = await API.get(`/files?path=${encodeURIComponent(rcwd)}`);
+        rcwd = d.path;
+        body.innerHTML = d.entries.length ? d.entries.map((e) => {
+          const isDir = e.type === 'dir';
+          const icon = isDir ? '📁' : (e.type === 'link' ? '🔗' : '📄');
+          const nm = escapeHtml(e.name);
+          return `<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid var(--border)">
+            ${isDir ? `<a href="#" data-fxcd="${nm}" style="flex:1;min-width:0;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icon} ${nm}</a>`
+                    : `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icon} ${nm}</span>`}
+            <span class="text-xs text-muted">${isDir ? '' : formatBytes(e.size)}</span>
+            <button class="btn btn-xs btn-secondary" data-fxdl="${nm}" data-isdir="${isDir ? 1 : 0}" type="button" title="Download to your computer">↓</button>
+          </div>`;
+        }).join('') : '<div class="text-muted" style="padding:14px">Empty directory.</div>';
+        body.querySelectorAll('[data-fxcd]').forEach(a => a.onclick = (e) => { e.preventDefault(); rcwd = (rcwd === '/' ? '' : rcwd) + '/' + a.dataset.fxcd; renderRemote(); });
+        body.querySelectorAll('[data-fxdl]').forEach(b => b.onclick = () => {
+          const name = b.dataset.fxdl, isDir = b.dataset.isdir === '1';
+          const full = (rcwd === '/' ? '' : rcwd) + '/' + name;
+          if (isDir) download(`/api/files/download-folder?path=${encodeURIComponent(full)}`, name + '.tar.gz');
+          else download(`/api/files/download?path=${encodeURIComponent(full)}`, name);
+        });
+      } catch (e) { body.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; }
+      updateInfo();
+    }
+    $('fx-up').onclick = () => { rcwd = parentOf(rcwd); renderRemote(); };
+
+    // ---- RIGHT: your computer (stage files/folders, then upload) ----
+    function renderStaged() {
+      const el = $('fx-drop');
+      el.innerHTML = staged.length
+        ? staged.map((s, i) => `<div style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-bottom:1px solid var(--border);font-size:12.5px">
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(s.rel)}">${s.rel.includes('/') ? '📁' : '📄'} ${escapeHtml(s.rel)}</span>
+            <span class="text-xs text-muted">${formatBytes(s.file.size)}</span>
+            <button class="btn btn-xs btn-ghost" data-unstage="${i}" type="button" title="Remove">✕</button></div>`).join('')
+        : `<div class="text-muted" style="text-align:center;padding:36px 10px;font-size:13px;border:2px dashed var(--border);border-radius:8px">Drag files or folders here,<br>or use “Choose files / Choose folder”.</div>`;
+      el.querySelectorAll('[data-unstage]').forEach(b => b.onclick = () => { staged.splice(+b.dataset.unstage, 1); renderStaged(); });
+      updateInfo();
+    }
+    const fileInput = $('fx-file'), dirInput = $('fx-dir');
+    $('fx-pick').onclick = () => fileInput.click();
+    $('fx-pickdir').onclick = () => dirInput.click();
+    fileInput.onchange = () => { for (const f of fileInput.files) staged.push({ file: f, rel: f.name }); fileInput.value = ''; renderStaged(); };
+    dirInput.onchange = () => { for (const f of dirInput.files) staged.push({ file: f, rel: (f.webkitRelativePath || f.name).replace(/\\/g, '/') }); dirInput.value = ''; renderStaged(); };
+    $('fx-clear').onclick = () => { staged.length = 0; renderStaged(); };
+
+    const drop = $('fx-drop');
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); drop.style.background = 'var(--accent-dim)'; }));
+    ['dragleave', 'dragend'].forEach(ev => drop.addEventListener(ev, () => { drop.style.background = ''; }));
+    drop.addEventListener('drop', async (e) => {
+      e.preventDefault(); e.stopPropagation(); drop.style.background = '';
+      $('fx-info').textContent = 'Reading dropped items…';
+      const items = await collectDrop(e.dataTransfer);
+      staged.push(...items); renderStaged();
+    });
+
+    // Recursively read dropped files/folders (webkitGetAsEntry) → [{file, rel}] with POSIX rel paths.
+    function collectDrop(dt) {
+      const roots = [];
+      if (dt.items && dt.items.length && dt.items[0].webkitGetAsEntry) {
+        for (const it of dt.items) { const en = it.webkitGetAsEntry && it.webkitGetAsEntry(); if (en) roots.push(en); }
+      }
+      if (!roots.length) return Promise.resolve([...(dt.files || [])].map(f => ({ file: f, rel: f.name })));
+      const out = [];
+      return Promise.all(roots.map(en => readEntry(en, '', out))).then(() => out);
+    }
+    function readEntry(entry, prefix, out) {
+      return new Promise((resolve) => {
+        if (entry.isFile) {
+          entry.file(f => { out.push({ file: f, rel: (prefix ? prefix + '/' : '') + entry.name }); resolve(); }, () => resolve());
+        } else if (entry.isDirectory) {
+          const reader = entry.createReader(); const kids = [];
+          const step = () => reader.readEntries(ents => {
+            if (!ents.length) { Promise.all(kids.map(k => readEntry(k, (prefix ? prefix + '/' : '') + entry.name, out))).then(resolve); }
+            else { kids.push(...ents); step(); }
+          }, () => resolve());
+          step();
+        } else resolve();
+      });
+    }
+
+    // Ensure a POSIX relative dir exists under rcwd (walk + mkdir each segment; ignore "already exists").
+    async function ensureRemoteDir(relDir) {
+      if (!relDir) return;
+      let base = rcwd;
+      for (const s of relDir.split('/').filter(Boolean)) {
+        const full = (base === '/' ? '' : base) + '/' + s;
+        if (!madeDirs.has(full)) { try { await API.post('/files/mkdir', { path: base, name: s }); } catch (e) { /* exists / race — the upload will report a real error if the dir is truly missing */ } madeDirs.add(full); }
+        base = full;
+      }
+    }
+    async function uploadOne(file, rel) {
+      const cut = rel.lastIndexOf('/');
+      const relDir = cut > 0 ? rel.slice(0, cut) : '';
+      const name = cut >= 0 ? rel.slice(cut + 1) : rel;
+      await ensureRemoteDir(relDir);
+      const destDir = relDir ? (rcwd === '/' ? '' : rcwd) + '/' + relDir : rcwd;
+      const r = await fetch(`/api/files/upload?path=${encodeURIComponent(destDir)}&name=${encodeURIComponent(name)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
+    }
+    $('fx-upload').onclick = async () => {
+      if (!staged.length) return;
+      $('fx-upload').disabled = true; $('fx-clear').disabled = true;
+      madeDirs.clear();
+      const total = staged.length; let done = 0, fail = 0;
+      for (const s of staged.slice()) {
+        $('fx-info').textContent = `Uploading ${done + fail + 1}/${total}: ${s.rel}`;
+        try { await uploadOne(s.file, s.rel); done++; } catch (e) { fail++; showToast(`${s.rel}: ${e.message}`, 'error', 8000); }
+      }
+      showToast(`Uploaded ${done}/${total}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success');
+      staged.length = 0; $('fx-clear').disabled = false; renderStaged(); renderRemote();
+    };
+
+    renderRemote();
+    renderStaged();
   }
 
   await render();

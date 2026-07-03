@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.28] - 2026-07-03
+
+### Added — File Manager "Explorer" mode: two-pane transfer between your computer and the server
+- The File Manager gains an opt-in **⇆ Explorer** button. The default single-pane view is unchanged; clicking Explorer opens a **two-pane** overlay: **LEFT** = the remote server (browse folders, **download** files/folders to your computer), **RIGHT** = **your computer** (drag-drop or pick **files and whole folders** → **upload** into the remote folder shown on the left, with per-item progress).
+- **Cross-platform by design** — the "your computer" side uses only browser file APIs (identical on **Windows / macOS / Linux**), and every remote path is POSIX (`/`); a Windows client's back-slashes are normalized so they never reach the Linux host. Dropped folders keep their structure (each sub-directory is `mkdir`-ed on the remote before its files upload).
+- Reuses the existing file endpoints (`/files/upload`, `/files/download`, `/files/download-folder`, `/files/mkdir`) — no backend change. Closes on Esc / background click / ✕.
+
+---
+
 ## [2.1.27] - 2026-06-27
 
 ### Changed — Rebuild picker shows the full compose-file path
