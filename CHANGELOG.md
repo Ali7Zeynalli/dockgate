@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.31] - 2026-07-04
+
+### Added — File Manager Explorer: live transfer panel with per-file progress
+- The Explorer gains a **Transfers** panel at the bottom listing every upload/download with a **live per-file progress bar**, byte count, and status (active / ✓ done / ✗ failed / ✕ cancelled), plus a **Clear finished** button.
+- **Uploads** now report real progress via `XMLHttpRequest.upload.onprogress`. **Downloads** stream with progress (`ReadableStream`) before saving; payloads over 512 MB are handed to the browser's own downloader (never buffered in memory).
+- Cancel acts on the live transfer (upload XHR aborts; download fetch aborts). No backend change; the default single-pane File Manager is untouched.
+
+---
+
 ## [2.1.30] - 2026-07-03
 
 ### Added — Cancel an in-progress transfer in the File Manager Explorer

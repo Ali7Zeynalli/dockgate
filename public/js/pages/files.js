@@ -336,7 +336,10 @@ Router.register('files', async (content) => {
     let busy = false;                  // an upload is in flight
     let dlBusy = false;                // a batch download is in flight
     let cancelUpload = false, cancelDownload = false;
-    let uploadAbort = null;            // AbortController for the current in-flight upload fetch
+    let activeXhr = null;              // in-flight upload XHR (Cancel)
+    let activeDl = null;               // in-flight download AbortController (Cancel)
+    let tid = 0;                       // transfer-id counter
+    const transfers = [];              // { id, dir:'up'|'down', name, dest, status, loaded, total, error }
     const staged = [];                 // { file, rel } picked/dropped items (rel = POSIX, from a picked root)
     const localSel = new Set();        // ticked LOCAL immediate-child full paths (lprefix + name)
     const remoteSel = new Map();       // ticked REMOTE child name -> isDir (batch download)
@@ -389,6 +392,15 @@ Router.register('files', async (content) => {
             </div>
           </div>
         </div>
+        <div id="fx-tpanel" style="display:none;flex-direction:column;border-top:1px solid var(--border);max-height:30vh;min-height:0">
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border)">
+            <span class="text-xs text-muted" style="font-weight:700;letter-spacing:.5px">TRANSFERS</span>
+            <span class="text-xs text-muted" id="fx-tsummary"></span>
+            <div style="flex:1"></div>
+            <button class="btn btn-xs btn-ghost" id="fx-tclear" type="button">Clear finished</button>
+          </div>
+          <div id="fx-tlist" style="flex:1;overflow:auto;min-height:0"></div>
+        </div>
       </div>
       <input type="file" id="fx-file" multiple style="display:none">
       <input type="file" id="fx-dir" webkitdirectory multiple style="display:none">`;
@@ -400,6 +412,37 @@ Router.register('files', async (content) => {
     document.addEventListener('keydown', onKey);
     $('fx-close').onclick = close;
     ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
+
+    // ---- Transfers panel (live per-file upload/download progress) ----
+    function addTransfer(dir, name, dest) { const id = ++tid; transfers.push({ id, dir, name, dest, status: 'active', loaded: 0, total: 0, error: '' }); renderTransfers(); return id; }
+    function setTransfer(id, patch) { const t = transfers.find(x => x.id === id); if (t) { Object.assign(t, patch); renderTransfers(); } }
+    function renderTransfers() {
+      const panel = $('fx-tpanel'); if (!panel) return;
+      if (!transfers.length) { panel.style.display = 'none'; return; }
+      panel.style.display = 'flex';
+      const active = transfers.filter(t => t.status === 'active').length;
+      $('fx-tsummary').textContent = active ? `${active} in progress` : `${transfers.length} finished`;
+      $('fx-tlist').innerHTML = transfers.slice().reverse().map(t => {
+        const pct = t.total ? Math.min(100, Math.round(t.loaded / t.total * 100)) : (t.status === 'done' ? 100 : 0);
+        const col = t.status === 'error' ? 'var(--danger)' : t.status === 'cancelled' ? 'var(--warning)' : t.status === 'done' ? 'var(--success,#22c55e)' : 'var(--accent)';
+        const st = t.status === 'active' ? (t.total ? `${pct}% · ${formatBytes(t.loaded)}/${formatBytes(t.total)}` : formatBytes(t.loaded))
+                 : t.status === 'done' ? '✓' : t.status === 'error' ? ('✗ ' + (t.error || 'failed')) : '✕ cancelled';
+        return `<div style="padding:5px 12px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+            <span style="flex:none">${t.dir === 'up' ? '⬆' : '⬇'}</span>
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(t.name)} → ${escapeHtml(t.dest)}">${escapeHtml(t.name)}</span>
+            <span class="text-xs text-muted" style="flex:none">${escapeHtml(st)}</span>
+          </div>
+          <div style="height:4px;border-radius:3px;background:var(--border);margin-top:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col};transition:width .15s"></div></div>
+        </div>`;
+      }).join('');
+    }
+    function saveBlob(blob, filename) {
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(u), 10000);
+    }
+    $('fx-tclear').onclick = () => { for (let i = transfers.length - 1; i >= 0; i--) if (transfers[i].status !== 'active') transfers.splice(i, 1); renderTransfers(); };
 
     function updateInfo() {
       const up = $('fx-upload');
@@ -513,10 +556,26 @@ Router.register('files', async (content) => {
     }
 
     // ---- RIGHT: remote browser (navigate, tick → batch download, per-row download) ----
-    function downloadRemote(name, isDir) {
+    // Download with live progress (stream → blob → save). Very large payloads (>512 MB) are handed to the
+    // browser's own downloader (no JS progress) so they are never buffered in memory.
+    async function downloadTracked(name, isDir, txid) {
       const full = (rcwd === '/' ? '' : rcwd) + '/' + name;
-      if (isDir) download(`/api/files/download-folder?path=${encodeURIComponent(full)}`, name + '.tar.gz');
-      else download(`/api/files/download?path=${encodeURIComponent(full)}`, name);
+      const url = isDir ? `/api/files/download-folder?path=${encodeURIComponent(full)}` : `/api/files/download?path=${encodeURIComponent(full)}`;
+      const saveName = isDir ? name + '.tar.gz' : name;
+      const ctrl = new AbortController(); activeDl = ctrl;
+      try {
+        const res = await fetch(url, { signal: ctrl.signal });
+        if (!res.ok) throw new Error(`Download failed (${res.status})`);
+        const total = +(res.headers.get('Content-Length') || 0);
+        setTransfer(txid, { total });
+        if (total > 536870912 || !res.body || !res.body.getReader) { // >512 MB or no streaming → browser downloader
+          ctrl.abort(); download(url, saveName); setTransfer(txid, { loaded: total || 1, total: total || 1 }); return;
+        }
+        const reader = res.body.getReader(); const chunks = []; let loaded = 0;
+        for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); loaded += value.length; setTransfer(txid, { loaded, total }); }
+        saveBlob(new Blob(chunks), saveName);
+        setTransfer(txid, { loaded, total: total || loaded });
+      } finally { activeDl = null; }
     }
     async function renderRemote() {
       const segs = rcwd.split('/').filter(Boolean); let acc = '';
@@ -543,26 +602,30 @@ Router.register('files', async (content) => {
         }).join('') : '<div class="text-muted" style="padding:14px">Empty directory.</div>';
         body.querySelectorAll('[data-fxcd]').forEach(a => a.onclick = (e) => { e.preventDefault(); rcwd = (rcwd === '/' ? '' : rcwd) + '/' + a.dataset.fxcd; remoteSel.clear(); renderRemote(); });
         body.querySelectorAll('[data-rsel]').forEach(cb => cb.onchange = () => { if (cb.checked) remoteSel.set(cb.dataset.rsel, cb.dataset.isdir === '1'); else remoteSel.delete(cb.dataset.rsel); updateInfo(); });
-        body.querySelectorAll('[data-fxdl]').forEach(b => b.onclick = () => downloadRemote(b.dataset.fxdl, b.dataset.isdir === '1'));
+        body.querySelectorAll('[data-fxdl]').forEach(b => b.onclick = async () => {
+          const nm2 = b.dataset.fxdl, dir2 = b.dataset.isdir === '1';
+          const t = addTransfer('down', dir2 ? nm2 + '/' : nm2, 'your Downloads');
+          try { await downloadTracked(nm2, dir2, t); setTransfer(t, { status: 'done' }); }
+          catch (e) { setTransfer(t, { status: e.name === 'AbortError' ? 'cancelled' : 'error', error: e.message }); }
+        });
       } catch (e) { body.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; }
       updateInfo();
     }
     $('fx-up').onclick = () => { rcwd = parentOf(rcwd); remoteSel.clear(); renderRemote(); };
     $('fx-download').onclick = async () => {
-      if (dlBusy) { cancelDownload = true; return; }
+      if (dlBusy) { cancelDownload = true; if (activeDl) activeDl.abort(); return; }
       const items = [...remoteSel.entries()];
       if (!items.length) return;
       dlBusy = true; cancelDownload = false; updateInfo();
-      let n = 0;
-      for (let i = 0; i < items.length; i++) {
+      let done = 0, fail = 0;
+      for (const [name, isDir] of items) {
         if (cancelDownload) break;
-        downloadRemote(items[i][0], items[i][1]); n++;
-        if (i < items.length - 1) await new Promise(r => setTimeout(r, 400)); // dodge multi-download throttling
+        const t = addTransfer('down', isDir ? name + '/' : name, 'your Downloads');
+        try { await downloadTracked(name, isDir, t); setTransfer(t, { status: 'done' }); done++; }
+        catch (e) { if (cancelDownload || e.name === 'AbortError') { setTransfer(t, { status: 'cancelled' }); break; } setTransfer(t, { status: 'error', error: e.message }); fail++; }
       }
       dlBusy = false; updateInfo();
-      showToast(cancelDownload
-        ? `Download cancelled — started ${n}/${items.length} (already-started ones keep going in the browser)`
-        : `Downloading ${n} item(s) to your Downloads…`, cancelDownload ? 'warning' : 'info', 5000);
+      showToast(cancelDownload ? `Download cancelled — ${done} done` : `Downloaded ${done} item(s)${fail ? `, ${fail} failed` : ''}`, (cancelDownload || fail) ? 'warning' : 'success', 4000);
     };
 
     // ---- Upload: structure-preserving into the remote cwd (what-you-see-uploads-here) ----
@@ -575,20 +638,26 @@ Router.register('files', async (content) => {
         cur = full;
       }
     }
-    async function uploadOneTo(base, file, rel, signal) {
+    async function uploadOneTo(base, file, rel, txid) {
       const cut = rel.lastIndexOf('/');
       const relDir = cut > 0 ? rel.slice(0, cut) : '';
       const name = cut >= 0 ? rel.slice(cut + 1) : rel;
       await ensureRemoteDir(base, relDir);
       const destDir = relDir ? (base === '/' ? '' : base) + '/' + relDir : base;
-      const r = await fetch(`/api/files/upload?path=${encodeURIComponent(destDir)}&name=${encodeURIComponent(name)}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file, signal,
+      setTransfer(txid, { total: file.size });
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest(); activeXhr = xhr;
+        xhr.open('POST', `/api/files/upload?path=${encodeURIComponent(destDir)}&name=${encodeURIComponent(name)}`);
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setTransfer(txid, { loaded: e.loaded, total: e.total }); };
+        xhr.onload = () => { activeXhr = null; if (xhr.status >= 200 && xhr.status < 300) resolve(); else { let m; try { m = JSON.parse(xhr.responseText).error; } catch (e2) { /* non-JSON */ } reject(new Error(m || `Upload failed (${xhr.status})`)); } };
+        xhr.onerror = () => { activeXhr = null; reject(new Error('Network error')); };
+        xhr.onabort = () => { activeXhr = null; reject(Object.assign(new Error('aborted'), { name: 'AbortError' })); };
+        xhr.send(file);
       });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
     }
     $('fx-upload').onclick = async () => {
-      if (busy) { cancelUpload = true; if (uploadAbort) uploadAbort.abort(); return; }   // in-flight → Cancel
+      if (busy) { cancelUpload = true; if (activeXhr) activeXhr.abort(); return; }   // in-flight → Cancel
       if (!staged.length) return;
       const R = rcwd, P = lprefix;
       // ticked immediate children at P; if none ticked, upload every child of the current view
@@ -607,11 +676,11 @@ Router.register('files', async (content) => {
       for (const j of jobs) {
         if (cancelUpload) break;
         $('fx-info').textContent = `Uploading ${done + fail + 1}/${total}: ${j.rel}`;
-        uploadAbort = new AbortController();
-        try { await uploadOneTo(R, j.file, j.rel, uploadAbort.signal); done++; }
-        catch (e) { if (cancelUpload || e.name === 'AbortError') break; fail++; showToast(`${j.rel}: ${e.message}`, 'error', 8000); }
+        const t = addTransfer('up', j.rel, R);
+        try { await uploadOneTo(R, j.file, j.rel, t); setTransfer(t, { status: 'done' }); done++; }
+        catch (e) { if (cancelUpload || e.name === 'AbortError') { setTransfer(t, { status: 'cancelled' }); break; } setTransfer(t, { status: 'error', error: e.message }); fail++; showToast(`${j.rel}: ${e.message}`, 'error', 8000); }
       }
-      uploadAbort = null; busy = false;
+      busy = false;
       showToast(cancelUpload
         ? `Upload cancelled — ${done}/${total} done`
         : `Uploaded ${done}/${total}${fail ? `, ${fail} failed` : ''}`, (cancelUpload || fail) ? 'warning' : 'success');
