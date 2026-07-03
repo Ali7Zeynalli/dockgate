@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.29] - 2026-07-03
+
+### Changed — File Manager Explorer: full FileZilla-style browsable local tree + swapped panes
+- The **YOUR COMPUTER** pane is now a **browsable folder tree** (FileZilla-style), not a flat list: pick or drop a folder and navigate into it (breadcrumb + up) with per-item checkboxes. Panes are **swapped** — your computer on the **LEFT**, the remote server on the **RIGHT**.
+- **Upload is structure-preserving** ("what you see uploads here"): ticked files/folders upload into the remote current dir keeping their sub-tree; if nothing is ticked, the whole current folder uploads. The remote pane gains **checkboxes + a batch "← Download"** (to your browser's Downloads; folders as `.tar.gz`) alongside the per-row download.
+- Still cross-platform (Windows/macOS/Linux · Chrome/Edge/Firefox/Safari), POSIX remote paths, **no backend change**, and the default single-pane File Manager is untouched. The tree is derived from the picked items — a browser can only show what you pick, not the whole disk (File System Access API deferred: Chromium + secure-context only).
+
+---
+
 ## [2.1.28] - 2026-07-03
 
 ### Added — File Manager "Explorer" mode: two-pane transfer between your computer and the server

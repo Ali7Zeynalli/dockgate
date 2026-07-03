@@ -323,15 +323,27 @@ Router.register('files', async (content) => {
   }
 
   // ── Explorer / Transfer mode ──────────────────────────────────────────────────────────────────
-  // Opt-in two-pane view (opens on demand; the default page stays single-pane and unchanged).
-  // LEFT  = this remote server: browse + download files/folders TO your computer.
-  // RIGHT = your computer: drag-drop or pick files & FOLDERS → upload to the remote folder on the left.
-  // Cross-platform by design: uses only browser file APIs (identical on Windows/macOS/Linux) and POSIX
-  // ('/') remote paths — a Windows client's back-slashes are normalized so they never reach the host.
+  // Opt-in two-pane view (opens on demand; the default single-pane File Manager stays unchanged).
+  // LEFT  = YOUR COMPUTER: a browsable tree of the folder/files you pick or drop (navigate in & out);
+  //         tick items → upload into the remote folder on the right, structure preserved.
+  // RIGHT = the REMOTE server: browse + download files/folders back to your computer.
+  // Cross-platform by design: only browser file APIs (identical on Windows/macOS/Linux and on
+  // Chrome/Edge/Firefox/Safari) and POSIX ('/') paths — a Windows client's back-slashes are normalized
+  // so they never reach the host. A browser can only show what you pick — not the whole disk.
   function openExplorer() {
-    let rcwd = cwd;                    // remote cwd inside the explorer (starts where you are)
-    const staged = [];                 // { file, rel } local items staged for upload (rel is POSIX)
-    const madeDirs = new Set();        // remote dirs already created during an upload (avoid re-mkdir)
+    let rcwd = cwd;                    // remote cwd (RIGHT pane)
+    let lprefix = '';                  // local virtual cwd (LEFT pane); '' = root, else ends with '/'
+    let busy = false;                  // an upload is in flight
+    const staged = [];                 // { file, rel } picked/dropped items (rel = POSIX, from a picked root)
+    const localSel = new Set();        // ticked LOCAL immediate-child full paths (lprefix + name)
+    const remoteSel = new Map();       // ticked REMOTE child name -> isDir (batch download)
+    const madeDirs = new Set();        // remote dirs already mkdir-ed during an upload
+
+    // Normalize any path → safe POSIX relative ('\' → '/', drop '.'/empty, reject '..').
+    const toRel = (raw) => {
+      const segs = String(raw || '').replace(/\\/g, '/').split('/').filter(s => s && s !== '.');
+      return (!segs.length || segs.some(s => s === '..')) ? '' : segs.join('/');
+    };
 
     const ov = document.createElement('div');
     ov.className = 'fm-explorer-overlay';
@@ -344,26 +356,33 @@ Router.register('files', async (content) => {
           <button class="btn btn-secondary btn-sm" id="fx-close" type="button">✕ Close</button>
         </div>
         <div style="flex:1;display:flex;min-height:0">
+          <!-- LEFT: YOUR COMPUTER (browsable tree) -->
           <div style="flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+              <span class="text-xs text-muted" style="font-weight:700;letter-spacing:.5px">YOUR COMPUTER</span>
+              <button class="btn btn-xs btn-secondary" id="fx-lup" type="button" title="Up one level">⬆</button>
+              <div id="fx-lcrumbs" style="flex:1;min-width:70px;font-family:var(--font-mono,monospace);font-size:12px;overflow-x:auto;white-space:nowrap"></div>
+              <button class="btn btn-xs btn-secondary" id="fx-pick" type="button">Choose files</button>
+              <button class="btn btn-xs btn-secondary" id="fx-pickdir" type="button">Choose folder</button>
+            </div>
+            <div id="fx-local" style="flex:1;overflow:auto;min-height:0;padding:4px"></div>
+            <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
+              <span class="text-xs text-muted" id="fx-info" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+              <button class="btn btn-xs btn-ghost" id="fx-clear" type="button">Clear</button>
+              <button class="btn btn-primary btn-sm" id="fx-upload" type="button" disabled>Upload →</button>
+            </div>
+          </div>
+          <!-- RIGHT: REMOTE server -->
+          <div style="flex:1;display:flex;flex-direction:column;min-width:0">
             <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border)">
               <span class="text-xs text-muted" style="font-weight:700;letter-spacing:.5px">REMOTE</span>
               <button class="btn btn-xs btn-secondary" id="fx-up" type="button" title="Up one level">⬆</button>
               <div id="fx-crumbs" style="flex:1;min-width:0;font-family:var(--font-mono,monospace);font-size:12px;overflow-x:auto;white-space:nowrap"></div>
             </div>
             <div id="fx-remote" style="flex:1;overflow:auto;min-height:0"></div>
-          </div>
-          <div style="flex:1;display:flex;flex-direction:column;min-width:0">
-            <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border)">
-              <span class="text-xs text-muted" style="font-weight:700;letter-spacing:.5px">YOUR COMPUTER</span>
-              <div style="flex:1"></div>
-              <button class="btn btn-xs btn-secondary" id="fx-pick" type="button">Choose files</button>
-              <button class="btn btn-xs btn-secondary" id="fx-pickdir" type="button">Choose folder</button>
-            </div>
-            <div id="fx-drop" style="flex:1;overflow:auto;min-height:0;padding:10px"></div>
             <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
-              <span class="text-xs text-muted" id="fx-info" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-              <button class="btn btn-xs btn-ghost" id="fx-clear" type="button">Clear</button>
-              <button class="btn btn-primary btn-sm" id="fx-upload" type="button" disabled>⬆ Upload → remote</button>
+              <span class="text-xs text-muted" id="fx-rinfo" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+              <button class="btn btn-secondary btn-sm" id="fx-download" type="button" disabled>← Download</button>
             </div>
           </div>
         </div>
@@ -380,74 +399,87 @@ Router.register('files', async (content) => {
     ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
 
     function updateInfo() {
-      $('fx-info').textContent = staged.length ? `${staged.length} item(s) → ${rcwd}` : 'Drag files/folders here, or use “Choose” above.';
-      $('fx-upload').disabled = !staged.length;
+      if (!busy) {
+        const sel = localSel.size;
+        $('fx-info').textContent = sel ? `${sel} selected → ${rcwd}`
+          : staged.length ? `Tick items to upload → ${rcwd}` : 'Pick or drop a folder / files to begin.';
+      }
+      $('fx-upload').disabled = busy || !staged.length;
+      $('fx-rinfo').textContent = remoteSel.size ? `${remoteSel.size} selected → your Downloads` : '';
+      $('fx-download').disabled = busy || remoteSel.size === 0;
     }
 
-    // ---- LEFT: remote browser (navigate + download to your computer) ----
-    async function renderRemote() {
-      const segs = rcwd.split('/').filter(Boolean); let acc = '';
-      const cr = ['<a href="#" data-fxcrumb="/" style="text-decoration:none" title="Root">🖥</a>'];
-      segs.forEach((s) => { acc += '/' + s; cr.push(`<a href="#" data-fxcrumb="${escapeHtml(acc)}" style="text-decoration:none">${escapeHtml(s)}</a>`); });
-      $('fx-crumbs').innerHTML = cr.join('<span style="opacity:.35;margin:0 2px">/</span>');
-      $('fx-crumbs').querySelectorAll('[data-fxcrumb]').forEach(a => a.onclick = (e) => { e.preventDefault(); rcwd = a.dataset.fxcrumb; renderRemote(); });
-      const body = $('fx-remote');
-      body.innerHTML = '<div class="text-muted" style="padding:14px">Loading…</div>';
-      try {
-        const d = await API.get(`/files?path=${encodeURIComponent(rcwd)}`);
-        rcwd = d.path;
-        body.innerHTML = d.entries.length ? d.entries.map((e) => {
-          const isDir = e.type === 'dir';
-          const icon = isDir ? '📁' : (e.type === 'link' ? '🔗' : '📄');
-          const nm = escapeHtml(e.name);
-          return `<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid var(--border)">
-            ${isDir ? `<a href="#" data-fxcd="${nm}" style="flex:1;min-width:0;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icon} ${nm}</a>`
-                    : `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icon} ${nm}</span>`}
-            <span class="text-xs text-muted">${isDir ? '' : formatBytes(e.size)}</span>
-            <button class="btn btn-xs btn-secondary" data-fxdl="${nm}" data-isdir="${isDir ? 1 : 0}" type="button" title="Download to your computer">↓</button>
+    // ---- LEFT: your computer — a browsable tree DERIVED from the flat staged[] list ----
+    function localChildren(prefix) {
+      const dirs = new Map(); const files = [];
+      for (const it of staged) {
+        if (prefix && !it.rel.startsWith(prefix)) continue;
+        const rest = it.rel.slice(prefix.length);
+        const slash = rest.indexOf('/');
+        if (slash === -1) files.push({ name: rest, isDir: false, size: it.file.size });
+        else { const n = rest.slice(0, slash); const d = dirs.get(n) || { count: 0, size: 0 }; d.count++; d.size += it.file.size; dirs.set(n, d); }
+      }
+      const cmp = (a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+      return [...[...dirs].map(([name, d]) => ({ name, isDir: true, count: d.count, size: d.size })).sort(cmp), ...files.sort(cmp)];
+    }
+    function removeLocal(full, isDir) {
+      const keep = staged.filter(it => isDir ? !(it.rel === full || it.rel.startsWith(full + '/')) : it.rel !== full);
+      staged.splice(0, staged.length, ...keep);
+      for (const k of [...localSel]) if (k === full || k.startsWith(full + '/')) localSel.delete(k);
+      renderLocal();
+    }
+    function renderLocal() {
+      const segs = lprefix.split('/').filter(Boolean); let acc = '';
+      const cr = ['<a href="#" data-lcrumb="" style="text-decoration:none" title="Picked items">💻</a>'];
+      segs.forEach(s => { acc += s + '/'; cr.push(`<a href="#" data-lcrumb="${escapeHtml(acc)}" style="text-decoration:none">${escapeHtml(s)}</a>`); });
+      $('fx-lcrumbs').innerHTML = cr.join('<span style="opacity:.35;margin:0 2px">/</span>');
+      $('fx-lcrumbs').querySelectorAll('[data-lcrumb]').forEach(a => a.onclick = (e) => { e.preventDefault(); lprefix = a.dataset.lcrumb; localSel.clear(); renderLocal(); });
+      $('fx-lup').disabled = !lprefix;
+      const el = $('fx-local');
+      if (!staged.length) {
+        el.innerHTML = `<div class="text-muted" style="text-align:center;padding:34px 12px;font-size:13px;border:2px dashed var(--border);border-radius:8px;margin:6px">Drag a folder or files here, or use “Choose folder / Choose files”.<br><span style="font-size:11px;opacity:.8">A browser only shows what you pick — not your whole disk.</span></div>`;
+      } else {
+        el.innerHTML = localChildren(lprefix).map(c => {
+          const full = lprefix + c.name, fe = escapeHtml(full), nm = escapeHtml(c.name);
+          const meta = c.isDir ? `${c.count} item(s) · ${formatBytes(c.size)}` : formatBytes(c.size);
+          return `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--border)">
+            <input type="checkbox" data-lsel="${fe}" ${localSel.has(full) ? 'checked' : ''}>
+            ${c.isDir ? `<a href="#" data-lcd="${nm}" style="flex:1;min-width:0;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📁 ${nm}</a>`
+                      : `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 ${nm}</span>`}
+            <span class="text-xs text-muted">${meta}</span>
+            <button class="btn btn-xs btn-ghost" data-lrm="${fe}" data-isdir="${c.isDir ? 1 : 0}" type="button" title="Remove">✕</button>
           </div>`;
-        }).join('') : '<div class="text-muted" style="padding:14px">Empty directory.</div>';
-        body.querySelectorAll('[data-fxcd]').forEach(a => a.onclick = (e) => { e.preventDefault(); rcwd = (rcwd === '/' ? '' : rcwd) + '/' + a.dataset.fxcd; renderRemote(); });
-        body.querySelectorAll('[data-fxdl]').forEach(b => b.onclick = () => {
-          const name = b.dataset.fxdl, isDir = b.dataset.isdir === '1';
-          const full = (rcwd === '/' ? '' : rcwd) + '/' + name;
-          if (isDir) download(`/api/files/download-folder?path=${encodeURIComponent(full)}`, name + '.tar.gz');
-          else download(`/api/files/download?path=${encodeURIComponent(full)}`, name);
-        });
-      } catch (e) { body.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; }
+        }).join('');
+      }
+      el.querySelectorAll('[data-lcd]').forEach(a => a.onclick = (e) => { e.preventDefault(); lprefix = lprefix + a.dataset.lcd + '/'; localSel.clear(); renderLocal(); });
+      el.querySelectorAll('[data-lsel]').forEach(cb => cb.onchange = () => { if (cb.checked) localSel.add(cb.dataset.lsel); else localSel.delete(cb.dataset.lsel); updateInfo(); });
+      el.querySelectorAll('[data-lrm]').forEach(b => b.onclick = () => removeLocal(b.dataset.lrm, b.dataset.isdir === '1'));
       updateInfo();
     }
-    $('fx-up').onclick = () => { rcwd = parentOf(rcwd); renderRemote(); };
-
-    // ---- RIGHT: your computer (stage files/folders, then upload) ----
-    function renderStaged() {
-      const el = $('fx-drop');
-      el.innerHTML = staged.length
-        ? staged.map((s, i) => `<div style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-bottom:1px solid var(--border);font-size:12.5px">
-            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(s.rel)}">${s.rel.includes('/') ? '📁' : '📄'} ${escapeHtml(s.rel)}</span>
-            <span class="text-xs text-muted">${formatBytes(s.file.size)}</span>
-            <button class="btn btn-xs btn-ghost" data-unstage="${i}" type="button" title="Remove">✕</button></div>`).join('')
-        : `<div class="text-muted" style="text-align:center;padding:36px 10px;font-size:13px;border:2px dashed var(--border);border-radius:8px">Drag files or folders here,<br>or use “Choose files / Choose folder”.</div>`;
-      el.querySelectorAll('[data-unstage]').forEach(b => b.onclick = () => { staged.splice(+b.dataset.unstage, 1); renderStaged(); });
-      updateInfo();
+    function addLocal(items) {
+      for (const it of items) {
+        const rel = toRel(it.rel); if (!rel) continue;
+        const i = staged.findIndex(s => s.rel === rel);
+        if (i >= 0) staged[i] = { file: it.file, rel }; else staged.push({ file: it.file, rel });
+      }
+      lprefix = ''; localSel.clear(); renderLocal();
     }
     const fileInput = $('fx-file'), dirInput = $('fx-dir');
     $('fx-pick').onclick = () => fileInput.click();
     $('fx-pickdir').onclick = () => dirInput.click();
-    fileInput.onchange = () => { for (const f of fileInput.files) staged.push({ file: f, rel: f.name }); fileInput.value = ''; renderStaged(); };
-    dirInput.onchange = () => { for (const f of dirInput.files) staged.push({ file: f, rel: (f.webkitRelativePath || f.name).replace(/\\/g, '/') }); dirInput.value = ''; renderStaged(); };
-    $('fx-clear').onclick = () => { staged.length = 0; renderStaged(); };
+    fileInput.onchange = () => { addLocal([...fileInput.files].map(f => ({ file: f, rel: f.name }))); fileInput.value = ''; };
+    dirInput.onchange = () => { addLocal([...dirInput.files].map(f => ({ file: f, rel: f.webkitRelativePath || f.name }))); dirInput.value = ''; };
+    $('fx-lup').onclick = () => { if (!lprefix) return; const s = lprefix.split('/').filter(Boolean); s.pop(); lprefix = s.length ? s.join('/') + '/' : ''; localSel.clear(); renderLocal(); };
+    $('fx-clear').onclick = () => { staged.length = 0; localSel.clear(); lprefix = ''; renderLocal(); };
 
-    const drop = $('fx-drop');
-    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); drop.style.background = 'var(--accent-dim)'; }));
-    ['dragleave', 'dragend'].forEach(ev => drop.addEventListener(ev, () => { drop.style.background = ''; }));
-    drop.addEventListener('drop', async (e) => {
-      e.preventDefault(); e.stopPropagation(); drop.style.background = '';
+    const dz = $('fx-local');
+    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); dz.style.background = 'var(--accent-dim)'; }));
+    ['dragleave', 'dragend'].forEach(ev => dz.addEventListener(ev, () => { dz.style.background = ''; }));
+    dz.addEventListener('drop', async (e) => {
+      e.preventDefault(); e.stopPropagation(); dz.style.background = '';
       $('fx-info').textContent = 'Reading dropped items…';
-      const items = await collectDrop(e.dataTransfer);
-      staged.push(...items); renderStaged();
+      addLocal(await collectDrop(e.dataTransfer));
     });
-
     // Recursively read dropped files/folders (webkitGetAsEntry) → [{file, rel}] with POSIX rel paths.
     function collectDrop(dt) {
       const roots = [];
@@ -460,12 +492,11 @@ Router.register('files', async (content) => {
     }
     function readEntry(entry, prefix, out) {
       return new Promise((resolve) => {
-        if (entry.isFile) {
-          entry.file(f => { out.push({ file: f, rel: (prefix ? prefix + '/' : '') + entry.name }); resolve(); }, () => resolve());
-        } else if (entry.isDirectory) {
+        if (entry.isFile) entry.file(f => { out.push({ file: f, rel: (prefix ? prefix + '/' : '') + entry.name }); resolve(); }, () => resolve());
+        else if (entry.isDirectory) {
           const reader = entry.createReader(); const kids = [];
           const step = () => reader.readEntries(ents => {
-            if (!ents.length) { Promise.all(kids.map(k => readEntry(k, (prefix ? prefix + '/' : '') + entry.name, out))).then(resolve); }
+            if (!ents.length) Promise.all(kids.map(k => readEntry(k, (prefix ? prefix + '/' : '') + entry.name, out))).then(resolve);
             else { kids.push(...ents); step(); }
           }, () => resolve());
           step();
@@ -473,22 +504,68 @@ Router.register('files', async (content) => {
       });
     }
 
-    // Ensure a POSIX relative dir exists under rcwd (walk + mkdir each segment; ignore "already exists").
-    async function ensureRemoteDir(relDir) {
+    // ---- RIGHT: remote browser (navigate, tick → batch download, per-row download) ----
+    function downloadRemote(name, isDir) {
+      const full = (rcwd === '/' ? '' : rcwd) + '/' + name;
+      if (isDir) download(`/api/files/download-folder?path=${encodeURIComponent(full)}`, name + '.tar.gz');
+      else download(`/api/files/download?path=${encodeURIComponent(full)}`, name);
+    }
+    async function renderRemote() {
+      const segs = rcwd.split('/').filter(Boolean); let acc = '';
+      const cr = ['<a href="#" data-fxcrumb="/" style="text-decoration:none" title="Root">🖥</a>'];
+      segs.forEach((s) => { acc += '/' + s; cr.push(`<a href="#" data-fxcrumb="${escapeHtml(acc)}" style="text-decoration:none">${escapeHtml(s)}</a>`); });
+      $('fx-crumbs').innerHTML = cr.join('<span style="opacity:.35;margin:0 2px">/</span>');
+      $('fx-crumbs').querySelectorAll('[data-fxcrumb]').forEach(a => a.onclick = (e) => { e.preventDefault(); rcwd = a.dataset.fxcrumb; remoteSel.clear(); renderRemote(); });
+      const body = $('fx-remote');
+      body.innerHTML = '<div class="text-muted" style="padding:14px">Loading…</div>';
+      try {
+        const d = await API.get(`/files?path=${encodeURIComponent(rcwd)}`);
+        rcwd = d.path;
+        body.innerHTML = d.entries.length ? d.entries.map((e) => {
+          const isDir = e.type === 'dir';
+          const icon = isDir ? '📁' : (e.type === 'link' ? '🔗' : '📄');
+          const nm = escapeHtml(e.name);
+          return `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--border)">
+            <input type="checkbox" data-rsel="${nm}" data-isdir="${isDir ? 1 : 0}" ${remoteSel.has(e.name) ? 'checked' : ''}>
+            ${isDir ? `<a href="#" data-fxcd="${nm}" style="flex:1;min-width:0;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icon} ${nm}</a>`
+                    : `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icon} ${nm}</span>`}
+            <span class="text-xs text-muted">${isDir ? '' : formatBytes(e.size)}</span>
+            <button class="btn btn-xs btn-secondary" data-fxdl="${nm}" data-isdir="${isDir ? 1 : 0}" type="button" title="Download to your computer">↓</button>
+          </div>`;
+        }).join('') : '<div class="text-muted" style="padding:14px">Empty directory.</div>';
+        body.querySelectorAll('[data-fxcd]').forEach(a => a.onclick = (e) => { e.preventDefault(); rcwd = (rcwd === '/' ? '' : rcwd) + '/' + a.dataset.fxcd; remoteSel.clear(); renderRemote(); });
+        body.querySelectorAll('[data-rsel]').forEach(cb => cb.onchange = () => { if (cb.checked) remoteSel.set(cb.dataset.rsel, cb.dataset.isdir === '1'); else remoteSel.delete(cb.dataset.rsel); updateInfo(); });
+        body.querySelectorAll('[data-fxdl]').forEach(b => b.onclick = () => downloadRemote(b.dataset.fxdl, b.dataset.isdir === '1'));
+      } catch (e) { body.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; }
+      updateInfo();
+    }
+    $('fx-up').onclick = () => { rcwd = parentOf(rcwd); remoteSel.clear(); renderRemote(); };
+    $('fx-download').onclick = async () => {
+      const items = [...remoteSel.entries()];
+      if (!items.length) return;
+      for (let i = 0; i < items.length; i++) {
+        downloadRemote(items[i][0], items[i][1]);
+        if (i < items.length - 1) await new Promise(r => setTimeout(r, 400)); // dodge multi-download throttling
+      }
+      showToast(`Downloading ${items.length} item(s) to your Downloads…`, 'info', 4000);
+    };
+
+    // ---- Upload: structure-preserving into the remote cwd (what-you-see-uploads-here) ----
+    async function ensureRemoteDir(base, relDir) {
       if (!relDir) return;
-      let base = rcwd;
+      let cur = base;
       for (const s of relDir.split('/').filter(Boolean)) {
-        const full = (base === '/' ? '' : base) + '/' + s;
-        if (!madeDirs.has(full)) { try { await API.post('/files/mkdir', { path: base, name: s }); } catch (e) { /* exists / race — the upload will report a real error if the dir is truly missing */ } madeDirs.add(full); }
-        base = full;
+        const full = (cur === '/' ? '' : cur) + '/' + s;
+        if (!madeDirs.has(full)) { try { await API.post('/files/mkdir', { path: cur, name: s }); } catch (e) { /* exists / race */ } madeDirs.add(full); }
+        cur = full;
       }
     }
-    async function uploadOne(file, rel) {
+    async function uploadOneTo(base, file, rel) {
       const cut = rel.lastIndexOf('/');
       const relDir = cut > 0 ? rel.slice(0, cut) : '';
       const name = cut >= 0 ? rel.slice(cut + 1) : rel;
-      await ensureRemoteDir(relDir);
-      const destDir = relDir ? (rcwd === '/' ? '' : rcwd) + '/' + relDir : rcwd;
+      await ensureRemoteDir(base, relDir);
+      const destDir = relDir ? (base === '/' ? '' : base) + '/' + relDir : base;
       const r = await fetch(`/api/files/upload?path=${encodeURIComponent(destDir)}&name=${encodeURIComponent(name)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,
       });
@@ -496,20 +573,33 @@ Router.register('files', async (content) => {
       if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
     }
     $('fx-upload').onclick = async () => {
-      if (!staged.length) return;
-      $('fx-upload').disabled = true; $('fx-clear').disabled = true;
-      madeDirs.clear();
-      const total = staged.length; let done = 0, fail = 0;
-      for (const s of staged.slice()) {
-        $('fx-info').textContent = `Uploading ${done + fail + 1}/${total}: ${s.rel}`;
-        try { await uploadOne(s.file, s.rel); done++; } catch (e) { fail++; showToast(`${s.rel}: ${e.message}`, 'error', 8000); }
+      if (!staged.length || busy) return;
+      const R = rcwd, P = lprefix;
+      // ticked immediate children at P; if none ticked, upload every child of the current view
+      let names = [...localSel].filter(f => f.startsWith(P) && f.slice(P.length).indexOf('/') === -1).map(f => f.slice(P.length));
+      if (!names.length) names = localChildren(P).map(c => c.name);
+      const jobs = [];
+      for (const name of names) {
+        const asFile = staged.find(it => it.rel === P + name);
+        if (asFile) { jobs.push({ file: asFile.file, rel: name }); continue; }
+        const fp = P + name + '/';
+        for (const it of staged) if (it.rel.startsWith(fp)) jobs.push({ file: it.file, rel: it.rel.slice(P.length) });
       }
+      if (!jobs.length) return;
+      busy = true; madeDirs.clear(); $('fx-clear').disabled = true; updateInfo();
+      const total = jobs.length; let done = 0, fail = 0;
+      for (const j of jobs) {
+        $('fx-info').textContent = `Uploading ${done + fail + 1}/${total}: ${j.rel}`;
+        try { await uploadOneTo(R, j.file, j.rel); done++; } catch (e) { fail++; showToast(`${j.rel}: ${e.message}`, 'error', 8000); }
+      }
+      busy = false; $('fx-clear').disabled = false;
       showToast(`Uploaded ${done}/${total}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success');
-      staged.length = 0; $('fx-clear').disabled = false; renderStaged(); renderRemote();
+      localSel.clear(); renderLocal();
+      if (rcwd === R) renderRemote();
     };
 
+    renderLocal();
     renderRemote();
-    renderStaged();
   }
 
   await render();
