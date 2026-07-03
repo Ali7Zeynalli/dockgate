@@ -688,6 +688,58 @@ Router.register('files', async (content) => {
         xhr.send(file);
       });
     }
+    // Conflict handling — before an upload, find names that already exist in the destination and let the
+    // user choose Overwrite / Keep-both (rename) / Skip. Frontend-only (reuses the listing + upload).
+    async function detectConflicts(R, jobs) {
+      const byDir = new Map();
+      for (const j of jobs) {
+        const cut = j.rel.lastIndexOf('/');
+        const relDir = cut > 0 ? j.rel.slice(0, cut) : '';
+        const destDir = relDir ? (R === '/' ? '' : R) + '/' + relDir : R;
+        if (!byDir.has(destDir)) byDir.set(destDir, []);
+        byDir.get(destDir).push({ j, name: j.rel.slice(cut + 1) });
+      }
+      const existing = new Map();
+      for (const dir of byDir.keys()) {
+        try { const d = await API.get(`/files?path=${encodeURIComponent(dir)}`); existing.set(dir, new Set((d.entries || []).map(e => e.name))); }
+        catch (e) { /* dir not created yet → nothing to collide with */ }
+      }
+      const conflicts = new Set();
+      for (const [dir, arr] of byDir) { const set = existing.get(dir); if (!set) continue; for (const { j, name } of arr) if (set.has(name)) conflicts.add(j); }
+      return { conflicts, existing };
+    }
+    function uniqueName(dir, filename, existing) {
+      const set = existing.get(dir) || new Set();
+      if (!set.has(filename)) { set.add(filename); return filename; }
+      const dot = filename.lastIndexOf('.'), stem = dot > 0 ? filename.slice(0, dot) : filename, ext = dot > 0 ? filename.slice(dot) : '';
+      let i = 1, cand; do { cand = `${stem}-${i}${ext}`; i++; } while (set.has(cand));
+      set.add(cand); return cand;
+    }
+    function renameJob(R, j, existing) {
+      const cut = j.rel.lastIndexOf('/');
+      const relDir = cut > 0 ? j.rel.slice(0, cut) : '';
+      const destDir = relDir ? (R === '/' ? '' : R) + '/' + relDir : R;
+      const nn = uniqueName(destDir, j.rel.slice(cut + 1), existing);
+      return { file: j.file, rel: relDir ? relDir + '/' + nn : nn };
+    }
+    function askConflict(n) {
+      return new Promise((resolve) => {
+        const m = document.createElement('div');
+        m.style.cssText = 'position:fixed;inset:0;z-index:1300;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px';
+        m.innerHTML = `<div class="card" style="max-width:440px;width:100%;padding:18px">
+          <div style="font-size:15px;font-weight:700;margin-bottom:8px">Files already exist</div>
+          <div class="text-sm" style="margin-bottom:12px"><strong>${n}</strong> file(s) already exist in the destination. What should happen?</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn btn-secondary" data-cf="overwrite" type="button">Overwrite — replace the existing file(s)</button>
+            <button class="btn btn-secondary" data-cf="rename" type="button">Keep both — upload with a new name (e.g. name-1.ext)</button>
+            <button class="btn btn-secondary" data-cf="skip" type="button">Skip — keep the existing file(s), upload the rest</button>
+            <button class="btn btn-ghost" data-cf="cancel" type="button">Cancel the whole upload</button>
+          </div></div>`;
+        document.body.appendChild(m);
+        m.querySelectorAll('[data-cf]').forEach(b => b.onclick = () => { m.remove(); resolve(b.dataset.cf); });
+      });
+    }
+
     $('fx-upload').onclick = async () => {
       if (busy) { cancelUpload = true; if (activeXhr) activeXhr.abort(); return; }   // in-flight → Cancel
       if (!staged.length) return;
@@ -703,9 +755,19 @@ Router.register('files', async (content) => {
         for (const it of staged) if (it.rel.startsWith(fp)) jobs.push({ file: it.file, rel: it.rel.slice(P.length) });
       }
       if (!jobs.length) return;
+      const { conflicts, existing } = await detectConflicts(R, jobs);
+      let jobsToRun = jobs;
+      if (conflicts.size) {
+        const choice = await askConflict(conflicts.size);
+        if (choice === 'cancel') return;
+        if (choice === 'skip') jobsToRun = jobs.filter(j => !conflicts.has(j));
+        else if (choice === 'rename') jobsToRun = jobs.map(j => conflicts.has(j) ? renameJob(R, j, existing) : j);
+        // 'overwrite' → jobsToRun stays = jobs
+      }
+      if (!jobsToRun.length) return;
       busy = true; cancelUpload = false; madeDirs.clear(); updateInfo();
-      const total = jobs.length; let done = 0, fail = 0;
-      for (const j of jobs) {
+      const total = jobsToRun.length; let done = 0, fail = 0;
+      for (const j of jobsToRun) {
         if (cancelUpload) break;
         $('fx-info').textContent = `Uploading ${done + fail + 1}/${total}: ${j.rel}`;
         const t = addTransfer('up', j.rel, R);

@@ -2,6 +2,13 @@
 
 ---
 
+## [2.1.33] - 2026-07-04
+
+### Added — File Manager Explorer: upload conflict prompt (Overwrite / Keep both / Skip)
+- Uploading a file whose name already exists on the remote no longer **silently overwrites** it. Before the upload the Explorer lists each destination directory and, if any names collide, asks: **Overwrite** (replace), **Keep both** (upload as an auto-suffixed `name-1.ext`), **Skip** (keep the existing ones, upload the rest), or **Cancel** the whole upload. Applies across the batch, including files nested in sub-folders. Frontend-only — reuses the existing listing + upload endpoints.
+
+---
+
 ## [2.1.32] - 2026-07-04
 
 ### Fixed — File Manager Explorer: transfer safety & completion accuracy
