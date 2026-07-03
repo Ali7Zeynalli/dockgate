@@ -330,15 +330,19 @@ Router.register('files', async (content) => {
   // Cross-platform by design: only browser file APIs (identical on Windows/macOS/Linux and on
   // Chrome/Edge/Firefox/Safari) and POSIX ('/') paths — a Windows client's back-slashes are normalized
   // so they never reach the host. A browser can only show what you pick — not the whole disk.
+  let explorerDoClose = null;          // set while the Explorer is open so route-nav can tear it down (leak fix)
   function openExplorer() {
     if (openExplorer._ov) return;      // single instance — don't fork a second pipeline over a running one
     let rcwd = cwd;                    // remote cwd (RIGHT pane)
     let lprefix = '';                  // local virtual cwd (LEFT pane); '' = root, else ends with '/'
     let busy = false;                  // an upload is in flight
     let dlBusy = false;                // a batch download is in flight
+    let preparing = false;             // upload pre-flight (conflict check/prompt) — re-entrancy lock
     let cancelUpload = false, cancelDownload = false;
     let activeXhr = null;              // in-flight upload XHR (Cancel)
-    let activeDl = null;               // in-flight download AbortController (Cancel)
+    const activeDls = new Set();       // in-flight download AbortControllers (Cancel-all)
+    let pendingDialogCancel = null;    // resolves an open askConflict with 'cancel' on teardown
+    let closeConfirmOpen = false;      // guard against stacking close-confirm dialogs
     let tid = 0;                       // transfer-id counter
     const transfers = [];              // { id, dir:'up'|'down', name, dest, status, loaded, total, error }
     const staged = [];                 // { file, rel } picked/dropped items (rel = POSIX, from a picked root)
@@ -409,21 +413,27 @@ Router.register('files', async (content) => {
     openExplorer._ov = ov;
     const $ = (id) => ov.querySelector('#' + id);
 
-    const anyActive = () => busy || dlBusy || activeXhr != null || activeDl != null;
+    const anyActive = () => busy || dlBusy || preparing || activeXhr != null || activeDls.size > 0;
     const onBeforeUnload = (e) => { e.preventDefault(); e.returnValue = ''; };
     const doClose = () => {
       cancelUpload = true; cancelDownload = true;
       try { if (activeXhr) activeXhr.abort(); } catch (e) { /* best-effort */ }
-      try { if (activeDl) activeDl.abort(); } catch (e) { /* best-effort */ }
+      activeDls.forEach(c => { try { c.abort(); } catch (e) { /* best-effort */ } });
+      if (pendingDialogCancel) { try { pendingDialogCancel(); } catch (e) { /* best-effort */ } }
+      document.querySelectorAll('.fx-child-dialog').forEach(el => el.remove());
       window.removeEventListener('beforeunload', onBeforeUnload);
       document.removeEventListener('keydown', onKey);
-      ov.remove(); openExplorer._ov = null; list();
+      ov.remove(); openExplorer._ov = null; explorerDoClose = null; list();
     };
+    explorerDoClose = doClose;
     const close = () => {
       if (!anyActive()) { doClose(); return; }
+      if (closeConfirmOpen) return;   // don't stack confirms on repeated Esc/Close
+      closeConfirmOpen = true;
       // The app's showConfirm modal is z-index:1000 — BELOW this overlay (1200) — so it would be hidden
       // behind the Explorer and freeze the user. Use a dedicated confirm at z:1300 instead.
       const c = document.createElement('div');
+      c.className = 'fx-child-dialog';
       c.style.cssText = 'position:fixed;inset:0;z-index:1300;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px';
       c.innerHTML = `<div class="card" style="max-width:400px;width:100%;padding:18px">
         <div style="font-size:15px;font-weight:700;margin-bottom:8px">Close Explorer?</div>
@@ -433,7 +443,7 @@ Router.register('files', async (content) => {
           <button class="btn btn-secondary" style="color:var(--danger)" data-c="abort" type="button">Abort &amp; close</button>
         </div></div>`;
       document.body.appendChild(c);
-      c.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { c.remove(); if (b.dataset.c === 'abort') doClose(); });
+      c.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { closeConfirmOpen = false; c.remove(); if (b.dataset.c === 'abort') doClose(); });
     };
     const onKey = (e) => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', onKey);
@@ -476,11 +486,12 @@ Router.register('files', async (content) => {
     $('fx-tclear').onclick = () => { for (let i = transfers.length - 1; i >= 0; i--) if (transfers[i].status !== 'active') transfers.splice(i, 1); renderTransfers(); };
 
     function updateInfo() {
-      if (busy || dlBusy) window.addEventListener('beforeunload', onBeforeUnload); else window.removeEventListener('beforeunload', onBeforeUnload);
+      if (anyActive()) window.addEventListener('beforeunload', onBeforeUnload); else window.removeEventListener('beforeunload', onBeforeUnload);
       const up = $('fx-upload');
       if (busy) { up.disabled = false; up.textContent = '✕ Cancel'; }
+      else if (preparing) { up.disabled = true; up.textContent = 'Checking…'; }
       else { up.textContent = 'Upload →'; up.disabled = !staged.length; }
-      if (!busy) {
+      if (!busy && !preparing) {
         const sel = localSel.size;
         $('fx-info').textContent = sel ? `${sel} selected → ${rcwd}`
           : staged.length ? `Tick items to upload → ${rcwd}` : 'Pick or drop a folder / files to begin.';
@@ -489,7 +500,7 @@ Router.register('files', async (content) => {
       if (dlBusy) { dl.disabled = false; dl.textContent = '✕ Cancel'; }
       else { dl.textContent = '← Download'; dl.disabled = remoteSel.size === 0; }
       $('fx-rinfo').textContent = dlBusy ? '' : (remoteSel.size ? `${remoteSel.size} selected → your Downloads` : '');
-      $('fx-clear').disabled = busy;
+      $('fx-clear').disabled = busy || preparing;
     }
 
     // ---- LEFT: your computer — a browsable tree DERIVED from the flat staged[] list ----
@@ -597,8 +608,8 @@ Router.register('files', async (content) => {
       const saveName = isDir ? name + '.tar.gz' : name;
       // Folders (tar stream carries no Content-Length → can't size-guard) go straight to the browser
       // downloader, so a multi-GB tarball is never buffered into a Blob in memory.
-      if (isDir) { download(url, saveName); setTransfer(txid, { status: 'handed', loaded: 1, total: 1 }); return; }
-      const ctrl = new AbortController(); activeDl = ctrl;
+      if (isDir) { download(url, saveName); setTransfer(txid, { status: 'handed', loaded: 1, total: 1 }); return 'handed'; }
+      const ctrl = new AbortController(); activeDls.add(ctrl); updateInfo();
       try {
         const res = await fetch(url, { signal: ctrl.signal });
         if (res.status === 401 || res.status === 403 || res.redirected) { cancelDownload = true; if (window.__authExpired) window.__authExpired(); throw Object.assign(new Error('Session expired — sign in again'), { name: 'AuthError' }); }
@@ -606,13 +617,14 @@ Router.register('files', async (content) => {
         const total = +(res.headers.get('Content-Length') || 0);
         setTransfer(txid, { total });
         if (!total || total > 536870912 || !res.body || !res.body.getReader) { // unknown size / >512 MB / no streaming → browser
-          ctrl.abort(); download(url, saveName); setTransfer(txid, { status: 'handed', loaded: total || 1, total: total || 1 }); return;
+          ctrl.abort(); download(url, saveName); setTransfer(txid, { status: 'handed', loaded: total || 1, total: total || 1 }); return 'handed';
         }
         const reader = res.body.getReader(); const chunks = []; let loaded = 0;
         for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); loaded += value.length; setTransfer(txid, { loaded, total }); }
         saveBlob(new Blob(chunks), saveName);
         setTransfer(txid, { status: 'done', loaded, total: total || loaded });
-      } finally { activeDl = null; }
+        return 'done';
+      } finally { activeDls.delete(ctrl); updateInfo(); }
     }
     async function renderRemote() {
       const segs = rcwd.split('/').filter(Boolean); let acc = '';
@@ -650,20 +662,23 @@ Router.register('files', async (content) => {
     }
     $('fx-up').onclick = () => { rcwd = parentOf(rcwd); remoteSel.clear(); renderRemote(); };
     $('fx-download').onclick = async () => {
-      if (dlBusy) { cancelDownload = true; if (activeDl) activeDl.abort(); return; }
+      if (dlBusy) { cancelDownload = true; activeDls.forEach(c => { try { c.abort(); } catch (e) { /* best-effort */ } }); return; }
       const items = [...remoteSel.entries()];
       if (!items.length) return;
       dlBusy = true; cancelDownload = false; updateInfo();
       const base = rcwd; // snapshot so mid-batch remote navigation doesn't repoint later items
-      let done = 0, fail = 0;
+      let done = 0, handed = 0, fail = 0;
       for (const [name, isDir] of items) {
         if (cancelDownload) break;
         const t = addTransfer('down', isDir ? name + '/' : name, 'your Downloads');
-        try { await downloadTracked(name, isDir, t, base); done++; }
+        try { const st = await downloadTracked(name, isDir, t, base); if (st === 'handed') handed++; else done++; }
         catch (e) { if (cancelDownload || e.name === 'AbortError' || e.name === 'AuthError') { setTransfer(t, { status: 'cancelled' }); break; } setTransfer(t, { status: 'error', error: e.message }); fail++; }
       }
-      dlBusy = false; updateInfo();
-      showToast(cancelDownload ? `Download cancelled — ${done} done` : `Downloaded ${done} item(s)${fail ? `, ${fail} failed` : ''}`, (cancelDownload || fail) ? 'warning' : 'success', 4000);
+      dlBusy = false; remoteSel.clear(); renderRemote();
+      showToast(cancelDownload
+        ? `Download cancelled — ${done + handed} started`
+        : `Downloaded ${done}${handed ? `, ${handed} handed to browser` : ''}${fail ? `, ${fail} failed` : ''}`,
+        (cancelDownload || fail) ? 'warning' : 'success', 4000);
     };
 
     // ---- Upload: structure-preserving into the remote cwd (what-you-see-uploads-here) ----
@@ -748,13 +763,15 @@ Router.register('files', async (content) => {
             <button class="btn btn-ghost" data-cf="cancel" type="button">Cancel the whole upload</button>
           </div></div>`;
         document.body.appendChild(m);
-        m.querySelectorAll('[data-cf]').forEach(b => b.onclick = () => { m.remove(); resolve(b.dataset.cf); });
+        const finish = (v) => { pendingDialogCancel = null; m.remove(); resolve(v); };
+        pendingDialogCancel = () => finish('cancel');   // doClose() calls this so a closed modal can't drive a ghost upload
+        m.querySelectorAll('[data-cf]').forEach(b => b.onclick = () => finish(b.dataset.cf));
       });
     }
 
     $('fx-upload').onclick = async () => {
       if (busy) { cancelUpload = true; if (activeXhr) activeXhr.abort(); return; }   // in-flight → Cancel
-      if (!staged.length) return;
+      if (preparing || !staged.length) return;   // no double-submit while the pre-flight is running
       const R = rcwd, P = lprefix;
       // ticked immediate children at P; if none ticked, upload every child of the current view
       let names = [...localSel].filter(f => f.startsWith(P) && f.slice(P.length).indexOf('/') === -1).map(f => f.slice(P.length));
@@ -767,16 +784,31 @@ Router.register('files', async (content) => {
         for (const it of staged) if (it.rel.startsWith(fp)) jobs.push({ file: it.file, rel: it.rel.slice(P.length) });
       }
       if (!jobs.length) return;
-      const { conflicts, existing } = await detectConflicts(R, jobs);
+      preparing = true; updateInfo();             // synchronous lock — blocks re-entry during the awaits below
       let jobsToRun = jobs;
-      if (conflicts.size) {
-        const choice = await askConflict(conflicts.size);
-        if (choice === 'cancel') return;
-        if (choice === 'skip') jobsToRun = jobs.filter(j => !conflicts.has(j));
-        else if (choice === 'rename') jobsToRun = jobs.map(j => conflicts.has(j) ? renameJob(R, j, existing) : j);
-        // 'overwrite' → jobsToRun stays = jobs
-      }
-      if (!jobsToRun.length) return;
+      try {
+        const { conflicts, existing } = await detectConflicts(R, jobs);
+        if (!openExplorer._ov) return;            // modal closed during the await → bail (no ghost upload)
+        if (conflicts.size) {
+          const choice = await askConflict(conflicts.size);
+          if (!openExplorer._ov) return;          // closed during the dialog → bail
+          if (choice === 'cancel') jobsToRun = [];
+          else if (choice === 'skip') jobsToRun = jobs.filter(j => !conflicts.has(j));
+          else if (choice === 'rename') {
+            // reserve every job's OWN basename in its dest dir too, so a generated name-N can't overwrite a batch sibling
+            for (const j of jobs) {
+              const cut = j.rel.lastIndexOf('/');
+              const relDir = cut > 0 ? j.rel.slice(0, cut) : '';
+              const destDir = relDir ? (R === '/' ? '' : R) + '/' + relDir : R;
+              if (!existing.has(destDir)) existing.set(destDir, new Set());
+              existing.get(destDir).add(j.rel.slice(cut + 1));
+            }
+            jobsToRun = jobs.map(j => conflicts.has(j) ? renameJob(R, j, existing) : j);
+          }
+          // 'overwrite' → jobsToRun stays = jobs
+        }
+      } finally { preparing = false; }
+      if (!jobsToRun.length) { updateInfo(); return; }
       busy = true; cancelUpload = false; madeDirs.clear(); updateInfo();
       const total = jobsToRun.length; let done = 0, fail = 0;
       for (const j of jobsToRun) {
@@ -802,4 +834,5 @@ Router.register('files', async (content) => {
   }
 
   await render();
+  return () => { if (explorerDoClose) explorerDoClose(); };   // tear down a still-open Explorer on route-nav (leak fix)
 });

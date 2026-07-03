@@ -2,6 +2,19 @@
 
 ---
 
+## [2.1.35] - 2026-07-04
+
+### Fixed — Explorer transfer hardening (static code-review findings)
+- **Ghost upload / double-submit eliminated.** The upload pre-flight (conflict check + prompt) now takes a synchronous `preparing` lock (counts as "active", disables the button) and bails after each `await` if the modal was closed — so closing mid-prompt no longer resumes a hidden upload against a detached overlay, and a second click can't fork a parallel pipeline over a shared XHR.
+- **"Keep both" no longer overwrites a batch sibling.** The rename reservation now also reserves every job's own basename in its destination, so a generated `name-1.ext` can't silently collide with an unchanged sibling (was data loss).
+- **Child dialogs tear down with the Explorer.** The z-1300 conflict / close-confirm dialogs are removed — and a pending conflict prompt is resolved as "cancel" — on close, instead of being orphaned on screen.
+- **Downloads track all in-flight controllers** (a Set), so Cancel/close aborts every one; per-row and batch downloads no longer clobber a single slot.
+- **`beforeunload` now arms for a per-row download too** (gated on any active transfer, not just the batch flags).
+- **The Explorer tears down on route navigation** (via a returned cleanup) instead of leaking a fixed overlay + document listeners onto the next page.
+- Repeated Esc no longer **stacks** close-confirm dialogs; browser-handed downloads are **counted/worded honestly** ("N handed to browser"); a finished batch download now **clears the remote selection**.
+
+---
+
 ## [2.1.34] - 2026-07-04
 
 ### Fixed — Explorer close-confirmation dialog was hidden behind the overlay
