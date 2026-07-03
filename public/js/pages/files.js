@@ -331,6 +331,7 @@ Router.register('files', async (content) => {
   // Chrome/Edge/Firefox/Safari) and POSIX ('/') paths — a Windows client's back-slashes are normalized
   // so they never reach the host. A browser can only show what you pick — not the whole disk.
   function openExplorer() {
+    if (openExplorer._ov) return;      // single instance — don't fork a second pipeline over a running one
     let rcwd = cwd;                    // remote cwd (RIGHT pane)
     let lprefix = '';                  // local virtual cwd (LEFT pane); '' = root, else ends with '/'
     let busy = false;                  // an upload is in flight
@@ -405,13 +406,31 @@ Router.register('files', async (content) => {
       <input type="file" id="fx-file" multiple style="display:none">
       <input type="file" id="fx-dir" webkitdirectory multiple style="display:none">`;
     document.body.appendChild(ov);
+    openExplorer._ov = ov;
     const $ = (id) => ov.querySelector('#' + id);
 
-    const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); list(); };
+    const anyActive = () => busy || dlBusy || activeXhr != null || activeDl != null;
+    const onBeforeUnload = (e) => { e.preventDefault(); e.returnValue = ''; };
+    const doClose = () => {
+      cancelUpload = true; cancelDownload = true;
+      try { if (activeXhr) activeXhr.abort(); } catch (e) { /* best-effort */ }
+      try { if (activeDl) activeDl.abort(); } catch (e) { /* best-effort */ }
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.removeEventListener('keydown', onKey);
+      ov.remove(); openExplorer._ov = null; list();
+    };
+    const close = () => {
+      if (anyActive()) { showConfirm('Close Explorer', 'A transfer is still running. Abort it and close?', doClose, true); return; }
+      doClose();
+    };
     const onKey = (e) => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', onKey);
     $('fx-close').onclick = close;
-    ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
+    // Backdrop close: require press AND release on the overlay itself (not an accidental drag-out), and
+    // never close from the backdrop while a transfer is running.
+    let backdropDown = false;
+    ov.addEventListener('mousedown', (e) => { backdropDown = (e.target === ov); });
+    ov.addEventListener('mouseup', (e) => { const ok = backdropDown && e.target === ov; backdropDown = false; if (ok && !anyActive()) close(); });
 
     // ---- Transfers panel (live per-file upload/download progress) ----
     function addTransfer(dir, name, dest) { const id = ++tid; transfers.push({ id, dir, name, dest, status: 'active', loaded: 0, total: 0, error: '' }); renderTransfers(); return id; }
@@ -424,9 +443,9 @@ Router.register('files', async (content) => {
       $('fx-tsummary').textContent = active ? `${active} in progress` : `${transfers.length} finished`;
       $('fx-tlist').innerHTML = transfers.slice().reverse().map(t => {
         const pct = t.total ? Math.min(100, Math.round(t.loaded / t.total * 100)) : (t.status === 'done' ? 100 : 0);
-        const col = t.status === 'error' ? 'var(--danger)' : t.status === 'cancelled' ? 'var(--warning)' : t.status === 'done' ? 'var(--success,#22c55e)' : 'var(--accent)';
+        const col = t.status === 'error' ? 'var(--danger)' : t.status === 'cancelled' ? 'var(--warning)' : (t.status === 'done' || t.status === 'handed') ? 'var(--success,#22c55e)' : 'var(--accent)';
         const st = t.status === 'active' ? (t.total ? `${pct}% · ${formatBytes(t.loaded)}/${formatBytes(t.total)}` : formatBytes(t.loaded))
-                 : t.status === 'done' ? '✓' : t.status === 'error' ? ('✗ ' + (t.error || 'failed')) : '✕ cancelled';
+                 : t.status === 'done' ? '✓' : t.status === 'handed' ? '→ browser' : t.status === 'error' ? ('✗ ' + (t.error || 'failed')) : '✕ cancelled';
         return `<div style="padding:5px 12px;border-bottom:1px solid var(--border)">
           <div style="display:flex;align-items:center;gap:8px;font-size:12px">
             <span style="flex:none">${t.dir === 'up' ? '⬆' : '⬇'}</span>
@@ -445,6 +464,7 @@ Router.register('files', async (content) => {
     $('fx-tclear').onclick = () => { for (let i = transfers.length - 1; i >= 0; i--) if (transfers[i].status !== 'active') transfers.splice(i, 1); renderTransfers(); };
 
     function updateInfo() {
+      if (busy || dlBusy) window.addEventListener('beforeunload', onBeforeUnload); else window.removeEventListener('beforeunload', onBeforeUnload);
       const up = $('fx-upload');
       if (busy) { up.disabled = false; up.textContent = '✕ Cancel'; }
       else { up.textContent = 'Upload →'; up.disabled = !staged.length; }
@@ -558,23 +578,28 @@ Router.register('files', async (content) => {
     // ---- RIGHT: remote browser (navigate, tick → batch download, per-row download) ----
     // Download with live progress (stream → blob → save). Very large payloads (>512 MB) are handed to the
     // browser's own downloader (no JS progress) so they are never buffered in memory.
-    async function downloadTracked(name, isDir, txid) {
-      const full = (rcwd === '/' ? '' : rcwd) + '/' + name;
+    async function downloadTracked(name, isDir, txid, base) {
+      const dir = base != null ? base : rcwd;
+      const full = (dir === '/' ? '' : dir) + '/' + name;
       const url = isDir ? `/api/files/download-folder?path=${encodeURIComponent(full)}` : `/api/files/download?path=${encodeURIComponent(full)}`;
       const saveName = isDir ? name + '.tar.gz' : name;
+      // Folders (tar stream carries no Content-Length → can't size-guard) go straight to the browser
+      // downloader, so a multi-GB tarball is never buffered into a Blob in memory.
+      if (isDir) { download(url, saveName); setTransfer(txid, { status: 'handed', loaded: 1, total: 1 }); return; }
       const ctrl = new AbortController(); activeDl = ctrl;
       try {
         const res = await fetch(url, { signal: ctrl.signal });
+        if (res.status === 401 || res.status === 403 || res.redirected) { cancelDownload = true; if (window.__authExpired) window.__authExpired(); throw Object.assign(new Error('Session expired — sign in again'), { name: 'AuthError' }); }
         if (!res.ok) throw new Error(`Download failed (${res.status})`);
         const total = +(res.headers.get('Content-Length') || 0);
         setTransfer(txid, { total });
-        if (total > 536870912 || !res.body || !res.body.getReader) { // >512 MB or no streaming → browser downloader
-          ctrl.abort(); download(url, saveName); setTransfer(txid, { loaded: total || 1, total: total || 1 }); return;
+        if (!total || total > 536870912 || !res.body || !res.body.getReader) { // unknown size / >512 MB / no streaming → browser
+          ctrl.abort(); download(url, saveName); setTransfer(txid, { status: 'handed', loaded: total || 1, total: total || 1 }); return;
         }
         const reader = res.body.getReader(); const chunks = []; let loaded = 0;
         for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); loaded += value.length; setTransfer(txid, { loaded, total }); }
         saveBlob(new Blob(chunks), saveName);
-        setTransfer(txid, { loaded, total: total || loaded });
+        setTransfer(txid, { status: 'done', loaded, total: total || loaded });
       } finally { activeDl = null; }
     }
     async function renderRemote() {
@@ -605,8 +630,8 @@ Router.register('files', async (content) => {
         body.querySelectorAll('[data-fxdl]').forEach(b => b.onclick = async () => {
           const nm2 = b.dataset.fxdl, dir2 = b.dataset.isdir === '1';
           const t = addTransfer('down', dir2 ? nm2 + '/' : nm2, 'your Downloads');
-          try { await downloadTracked(nm2, dir2, t); setTransfer(t, { status: 'done' }); }
-          catch (e) { setTransfer(t, { status: e.name === 'AbortError' ? 'cancelled' : 'error', error: e.message }); }
+          try { await downloadTracked(nm2, dir2, t); }
+          catch (e) { setTransfer(t, { status: (e.name === 'AbortError' || e.name === 'AuthError') ? 'cancelled' : 'error', error: e.message }); }
         });
       } catch (e) { body.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; }
       updateInfo();
@@ -617,12 +642,13 @@ Router.register('files', async (content) => {
       const items = [...remoteSel.entries()];
       if (!items.length) return;
       dlBusy = true; cancelDownload = false; updateInfo();
+      const base = rcwd; // snapshot so mid-batch remote navigation doesn't repoint later items
       let done = 0, fail = 0;
       for (const [name, isDir] of items) {
         if (cancelDownload) break;
         const t = addTransfer('down', isDir ? name + '/' : name, 'your Downloads');
-        try { await downloadTracked(name, isDir, t); setTransfer(t, { status: 'done' }); done++; }
-        catch (e) { if (cancelDownload || e.name === 'AbortError') { setTransfer(t, { status: 'cancelled' }); break; } setTransfer(t, { status: 'error', error: e.message }); fail++; }
+        try { await downloadTracked(name, isDir, t, base); done++; }
+        catch (e) { if (cancelDownload || e.name === 'AbortError' || e.name === 'AuthError') { setTransfer(t, { status: 'cancelled' }); break; } setTransfer(t, { status: 'error', error: e.message }); fail++; }
       }
       dlBusy = false; updateInfo();
       showToast(cancelDownload ? `Download cancelled — ${done} done` : `Downloaded ${done} item(s)${fail ? `, ${fail} failed` : ''}`, (cancelDownload || fail) ? 'warning' : 'success', 4000);
@@ -650,7 +676,13 @@ Router.register('files', async (content) => {
         xhr.open('POST', `/api/files/upload?path=${encodeURIComponent(destDir)}&name=${encodeURIComponent(name)}`);
         xhr.setRequestHeader('Content-Type', 'application/octet-stream');
         xhr.upload.onprogress = (e) => { if (e.lengthComputable) setTransfer(txid, { loaded: e.loaded, total: e.total }); };
-        xhr.onload = () => { activeXhr = null; if (xhr.status >= 200 && xhr.status < 300) resolve(); else { let m; try { m = JSON.parse(xhr.responseText).error; } catch (e2) { /* non-JSON */ } reject(new Error(m || `Upload failed (${xhr.status})`)); } };
+        xhr.onload = () => {
+          activeXhr = null;
+          if (xhr.status >= 200 && xhr.status < 300) return resolve();
+          if (xhr.status === 401 || xhr.status === 403) { cancelUpload = true; if (window.__authExpired) window.__authExpired(); return reject(Object.assign(new Error('Session expired — sign in again'), { name: 'AuthError' })); }
+          let m; try { m = JSON.parse(xhr.responseText).error; } catch (e2) { /* non-JSON */ }
+          reject(new Error(m || `Upload failed (${xhr.status})`));
+        };
         xhr.onerror = () => { activeXhr = null; reject(new Error('Network error')); };
         xhr.onabort = () => { activeXhr = null; reject(Object.assign(new Error('aborted'), { name: 'AbortError' })); };
         xhr.send(file);
@@ -678,7 +710,10 @@ Router.register('files', async (content) => {
         $('fx-info').textContent = `Uploading ${done + fail + 1}/${total}: ${j.rel}`;
         const t = addTransfer('up', j.rel, R);
         try { await uploadOneTo(R, j.file, j.rel, t); setTransfer(t, { status: 'done' }); done++; }
-        catch (e) { if (cancelUpload || e.name === 'AbortError') { setTransfer(t, { status: 'cancelled' }); break; } setTransfer(t, { status: 'error', error: e.message }); fail++; showToast(`${j.rel}: ${e.message}`, 'error', 8000); }
+        catch (e) {
+          if (cancelUpload || e.name === 'AbortError' || e.name === 'AuthError') { setTransfer(t, { status: 'cancelled' }); showToast(`⚠ "${j.rel}" may be left partially written on the server`, 'warning', 9000); break; }
+          setTransfer(t, { status: 'error', error: e.message }); fail++; showToast(`${j.rel}: ${e.message}`, 'error', 8000);
+        }
       }
       busy = false;
       showToast(cancelUpload

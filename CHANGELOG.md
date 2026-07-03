@@ -2,6 +2,17 @@
 
 ---
 
+## [2.1.32] - 2026-07-04
+
+### Fixed — File Manager Explorer: transfer safety & completion accuracy
+- **Accidental close no longer loses a transfer.** While an upload/download runs, closing the Explorer (✕ / Esc / backdrop) asks to confirm and aborts cleanly; the backdrop now needs a real click and is disabled mid-transfer; a `beforeunload` prompt guards a tab close/reload; and re-opening focuses the running instance instead of forking a second (duplicate-upload) pipeline.
+- **Folder / unknown-size downloads no longer buffer into memory.** They carry no `Content-Length`, so they bypassed the 512 MB guard and could OOM the tab — they now go straight to the browser downloader.
+- **Browser-handed downloads are reported honestly** as "→ browser" (check your Downloads) instead of a false green ✓.
+- **Session expiry (401/403) mid-transfer is detected**: uploads/downloads stop immediately with a "session expired" prompt instead of flooding doomed requests or silently saving the login page as your file.
+- A cancelled/failed upload now **warns that the remote file may be partially written** (an atomic temp-file-then-rename upload is a planned backend follow-up).
+
+---
+
 ## [2.1.31] - 2026-07-04
 
 ### Added — File Manager Explorer: live transfer panel with per-file progress
