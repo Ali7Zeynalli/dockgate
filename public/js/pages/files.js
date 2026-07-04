@@ -728,20 +728,19 @@ Router.register('files', async (content) => {
       }
       // Only list directories that ACTUALLY EXIST — walk top-down from R and descend into a sub-dir only
       // when its parent listing already contains it. A brand-new folder is never listed (no SFTP 500 spam),
-      // and its files can't conflict anyway (nothing there to overwrite).
-      const listing = new Map();   // dir -> Set(names) | null (null = doesn't exist / unreadable)
-      const listDir = async (dir) => {
-        if (listing.has(dir)) return listing.get(dir);
-        let names = null;
-        try { const d = await API.get(`/files?path=${encodeURIComponent(dir)}`); names = new Set((d.entries || []).map(e => e.name)); }
-        catch (e) { names = null; }
-        listing.set(dir, names);
-        return names;
+      // and its files can't conflict anyway. Listings are cached as PROMISES so the per-dir walks run in
+      // PARALLEL and a shared ancestor is fetched once (this is what makes "Checking…" fast — the backend
+      // opens a fresh SSH connection per request, so serial listings stacked up).
+      const listing = new Map();   // dir -> Promise<Set(names) | null>
+      const listDir = (dir) => {
+        if (!listing.has(dir)) listing.set(dir, API.get(`/files?path=${encodeURIComponent(dir)}`)
+          .then(d => new Set((d.entries || []).map(e => e.name))).catch(() => null));
+        return listing.get(dir);
       };
       const existingListing = async (dir) => {
         if (dir === R) return await listDir(R);
         const relPath = R === '/' ? dir.slice(1) : dir.slice(R.length + 1);
-        let cur = R, curNames = await listDir(R);
+        let curNames = await listDir(R), cur = R;
         for (const seg of relPath.split('/').filter(Boolean)) {
           if (!curNames || !curNames.has(seg)) return null;   // an ancestor is missing → this dir is new
           cur = (cur === '/' ? '' : cur) + '/' + seg;
@@ -751,12 +750,12 @@ Router.register('files', async (content) => {
       };
       const existing = new Map();
       const conflicts = new Set();
-      for (const [dir, arr] of byDir) {
+      await Promise.all([...byDir].map(async ([dir, arr]) => {
         const names = await existingListing(dir);
-        if (!names) continue;   // dir doesn't exist → nothing to collide with
+        if (!names) return;   // dir doesn't exist → nothing to collide with
         existing.set(dir, names);
         for (const { j, name } of arr) if (names.has(name)) conflicts.add(j);
-      }
+      }));
       return { conflicts, existing };
     }
     function uniqueName(dir, filename, existing) {

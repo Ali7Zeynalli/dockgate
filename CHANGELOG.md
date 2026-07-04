@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.37] - 2026-07-04
+
+### Changed — Explorer "Checking…" (pre-upload conflict check) now runs in parallel
+- The conflict check walked the destination directories **serially**, and the backend opens a **fresh SSH connection per `/api/files` request**, so each listing paid a full SSH handshake and they stacked up — "Checking…" could take several seconds. Listings are now cached as promises and the per-directory walks run in **parallel** (`Promise.all`): a shared ancestor is fetched once and independent directories list concurrently. Combined with v2.1.36 (only existing directories are listed), the check is typically **one round-trip** for a new folder.
+- Note: the underlying per-request SSH handshake (no connection pooling) still makes general remote browsing slower than needed — a backend SSH connection pool is the larger, separate win.
+
+---
+
 ## [2.1.36] - 2026-07-04
 
 ### Fixed — Explorer upload conflict check no longer spams 500s for a new folder
