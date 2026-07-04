@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.36] - 2026-07-04
+
+### Fixed — Explorer upload conflict check no longer spams 500s for a new folder
+- Uploading a brand-new folder made the pre-upload conflict check `GET /api/files` for every destination sub-directory — none of which exist yet — so each returned a 500 (`listDir` throws on a missing path), flooding the console and adding latency, even though a new folder can't have conflicts.
+- `detectConflicts` now lists **only directories that actually exist**: it walks top-down from the current remote folder and descends into a sub-directory only when the parent listing already contains it. A new folder is never listed (zero 500s, faster), while a merge into an existing tree still detects real conflicts. The folders themselves are still created on upload via `mkdir`.
+
+---
+
 ## [2.1.35] - 2026-07-04
 
 ### Fixed — Explorer transfer hardening (static code-review findings)
