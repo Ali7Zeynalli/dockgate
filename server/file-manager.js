@@ -123,10 +123,23 @@ function uploadFrom(server, dir, name, req) {
   });
 }
 
-async function mkdir(server, dir, name) {
+async function mkdir(server, dir, name, opts = {}) {
   const target = joinRemote(dir, name);
-  await withSftp(server, sftp => new Promise((resolve, reject) => sftp.mkdir(target, (e) => e ? reject(e) : resolve())));
-  return { path: target };
+  // Idempotent when opts.ensure (used by folder upload): treat an already-existing DIRECTORY as success.
+  // SFTP v3 (OpenSSH) returns a generic SSH_FX_FAILURE for "already exists" — indistinguishable by code from
+  // other errors — so we confirm with stat() (OpenSSH's own try-mkdir-then-stat pattern).
+  const existed = await withSftp(server, sftp => new Promise((resolve, reject) => {
+    sftp.mkdir(target, (e) => {
+      if (!e) return resolve(false);              // freshly created
+      if (!opts.ensure) return reject(e);         // strict (manual "+ Folder"): surface the error as before
+      sftp.stat(target, (e2, st) => {
+        if (!e2 && st.isDirectory()) return resolve(true);   // already a directory → success
+        if (!e2) return reject(Object.assign(new Error('A file with that name already exists'), { statusCode: 409 }));
+        reject(e);                                            // truly missing / other → the original mkdir error
+      });
+    });
+  }));
+  return { path: target, existed };
 }
 async function rename(server, oldPath, newPath) {
   const o = normRemote(oldPath), n = normRemote(newPath);

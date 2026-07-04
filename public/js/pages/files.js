@@ -687,7 +687,8 @@ Router.register('files', async (content) => {
       let cur = base;
       for (const s of relDir.split('/').filter(Boolean)) {
         const full = (cur === '/' ? '' : cur) + '/' + s;
-        if (!madeDirs.has(full)) { try { await API.post('/files/mkdir', { path: cur, name: s }); } catch (e) { /* exists / race */ } madeDirs.add(full); }
+        // ensure:true → the backend treats an already-existing directory as success (no 500 spam on re-upload).
+        if (!madeDirs.has(full)) { try { await API.post('/files/mkdir', { path: cur, name: s, ensure: true }); } catch (e) { /* real error (e.g. name exists as a file) — the file upload will surface it */ } madeDirs.add(full); }
         cur = full;
       }
     }

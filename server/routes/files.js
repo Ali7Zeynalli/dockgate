@@ -56,10 +56,10 @@ router.post('/upload', async (req, res) => {
 router.post('/mkdir', async (req, res) => {
   const a = activeRemote(res); if (!a) return;
   try {
-    const { path: dir, name } = req.body || {};
-    const r = await fm.mkdir(a.s, dir, name);
-    logAction({ req, server: a.id, resourceType: 'file', resourceName: r.path, action: 'mkdir' });
-    res.json({ success: true, path: r.path });
+    const { path: dir, name, ensure } = req.body || {};
+    const r = await fm.mkdir(a.s, dir, name, { ensure: !!ensure });
+    if (!r.existed) logAction({ req, server: a.id, resourceType: 'file', resourceName: r.path, action: 'mkdir' });
+    res.json({ success: true, path: r.path, existed: !!r.existed });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 

@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.38] - 2026-07-04
+
+### Fixed — Folder upload no longer 500-spams mkdir for directories that already exist
+- Re-uploading a folder printed dozens of `POST /api/files/mkdir 500` errors: the upload blindly created every ancestor directory, and `sftp.mkdir` on an existing directory fails (SFTP v3 returns a generic `FAILURE`, indistinguishable by code), so each existing directory became a 500. The frontend swallowed them so the upload still worked, but the console filled with red errors.
+- `mkdir` is now **idempotent for the upload path**, matching how FileZilla / OpenSSH / WinSCP / lftp / ssh2-sftp-client all work: when the folder-upload flow passes `ensure: true`, a failed `mkdir` is confirmed with `stat()` — an existing **directory** is treated as success (HTTP 200), an existing **file** of the same name returns a clear **409**, and a genuine failure returns the real error. The manual **+ Folder** button stays strict (creating an already-existing folder still errors), and the audit log no longer records a mkdir for a directory that already existed.
+
+---
+
 ## [2.1.37] - 2026-07-04
 
 ### Changed — Explorer "Checking…" (pre-upload conflict check) now runs in parallel
