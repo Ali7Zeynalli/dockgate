@@ -339,7 +339,11 @@ Router.register('files', async (content) => {
     let dlBusy = false;                // a batch download is in flight
     let preparing = false;             // upload pre-flight (conflict check/prompt) — re-entrancy lock
     let cancelUpload = false, cancelDownload = false;
-    let activeXhr = null;              // in-flight upload XHR (Cancel)
+    const UPLOAD_CONCURRENCY = 7;      // parallel upload workers. Each opens its OWN SSH connection (no pooling
+                                       // yet), so keep this well under the remote sshd's MaxStartups (~10) minus
+                                       // the app's other live sessions (EventMonitor, host-terminal). Lower to 5
+                                       // if you see intermittent connection refusals; a connection pool makes it safe to raise.
+    const activeXhrs = new Set();      // in-flight upload XHRs (Cancel-all)
     const activeDls = new Set();       // in-flight download AbortControllers (Cancel-all)
     let pendingDialogCancel = null;    // resolves an open askConflict with 'cancel' on teardown
     let closeConfirmOpen = false;      // guard against stacking close-confirm dialogs
@@ -348,7 +352,7 @@ Router.register('files', async (content) => {
     const staged = [];                 // { file, rel } picked/dropped items (rel = POSIX, from a picked root)
     const localSel = new Set();        // ticked LOCAL immediate-child full paths (lprefix + name)
     const remoteSel = new Map();       // ticked REMOTE child name -> isDir (batch download)
-    const madeDirs = new Set();        // remote dirs already mkdir-ed during an upload
+    const madeDirs = new Map();        // remote dir -> mkdir promise (dedupe concurrent ensure-dir across workers)
 
     // Normalize any path → safe POSIX relative ('\' → '/', drop '.'/empty, reject '..').
     const toRel = (raw) => {
@@ -413,11 +417,11 @@ Router.register('files', async (content) => {
     openExplorer._ov = ov;
     const $ = (id) => ov.querySelector('#' + id);
 
-    const anyActive = () => busy || dlBusy || preparing || activeXhr != null || activeDls.size > 0;
+    const anyActive = () => busy || dlBusy || preparing || activeXhrs.size > 0 || activeDls.size > 0;
     const onBeforeUnload = (e) => { e.preventDefault(); e.returnValue = ''; };
     const doClose = () => {
       cancelUpload = true; cancelDownload = true;
-      try { if (activeXhr) activeXhr.abort(); } catch (e) { /* best-effort */ }
+      activeXhrs.forEach(x => { try { x.abort(); } catch (e) { /* best-effort */ } });
       activeDls.forEach(c => { try { c.abort(); } catch (e) { /* best-effort */ } });
       if (pendingDialogCancel) { try { pendingDialogCancel(); } catch (e) { /* best-effort */ } }
       document.querySelectorAll('.fx-child-dialog').forEach(el => el.remove());
@@ -687,8 +691,10 @@ Router.register('files', async (content) => {
       let cur = base;
       for (const s of relDir.split('/').filter(Boolean)) {
         const full = (cur === '/' ? '' : cur) + '/' + s;
+        // Cache the mkdir PROMISE per dir so concurrent workers dedupe it and parent-before-child holds.
         // ensure:true → the backend treats an already-existing directory as success (no 500 spam on re-upload).
-        if (!madeDirs.has(full)) { try { await API.post('/files/mkdir', { path: cur, name: s, ensure: true }); } catch (e) { /* real error (e.g. name exists as a file) — the file upload will surface it */ } madeDirs.add(full); }
+        if (!madeDirs.has(full)) madeDirs.set(full, API.post('/files/mkdir', { path: cur, name: s, ensure: true }).catch(() => { /* real error (e.g. name exists as a file) — the file upload will surface it */ }));
+        await madeDirs.get(full);
         cur = full;
       }
     }
@@ -700,19 +706,20 @@ Router.register('files', async (content) => {
       const destDir = relDir ? (base === '/' ? '' : base) + '/' + relDir : base;
       setTransfer(txid, { total: file.size });
       await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest(); activeXhr = xhr;
+        const xhr = new XMLHttpRequest(); activeXhrs.add(xhr);
+        const doneXhr = () => activeXhrs.delete(xhr);
         xhr.open('POST', `/api/files/upload?path=${encodeURIComponent(destDir)}&name=${encodeURIComponent(name)}`);
         xhr.setRequestHeader('Content-Type', 'application/octet-stream');
         xhr.upload.onprogress = (e) => { if (e.lengthComputable) setTransfer(txid, { loaded: e.loaded, total: e.total }); };
         xhr.onload = () => {
-          activeXhr = null;
+          doneXhr();
           if (xhr.status >= 200 && xhr.status < 300) return resolve();
           if (xhr.status === 401 || xhr.status === 403) { cancelUpload = true; if (window.__authExpired) window.__authExpired(); return reject(Object.assign(new Error('Session expired — sign in again'), { name: 'AuthError' })); }
           let m; try { m = JSON.parse(xhr.responseText).error; } catch (e2) { /* non-JSON */ }
           reject(new Error(m || `Upload failed (${xhr.status})`));
         };
-        xhr.onerror = () => { activeXhr = null; reject(new Error('Network error')); };
-        xhr.onabort = () => { activeXhr = null; reject(Object.assign(new Error('aborted'), { name: 'AbortError' })); };
+        xhr.onerror = () => { doneXhr(); reject(new Error('Network error')); };
+        xhr.onabort = () => { doneXhr(); reject(Object.assign(new Error('aborted'), { name: 'AbortError' })); };
         xhr.send(file);
       });
     }
@@ -794,7 +801,7 @@ Router.register('files', async (content) => {
     }
 
     $('fx-upload').onclick = async () => {
-      if (busy) { cancelUpload = true; if (activeXhr) activeXhr.abort(); return; }   // in-flight → Cancel
+      if (busy) { cancelUpload = true; activeXhrs.forEach(x => { try { x.abort(); } catch (e) { /* best-effort */ } }); return; }   // in-flight → Cancel all
       if (preparing || !staged.length) return;   // no double-submit while the pre-flight is running
       const R = rcwd, P = lprefix;
       // ticked immediate children at P; if none ticked, upload every child of the current view
@@ -834,17 +841,22 @@ Router.register('files', async (content) => {
       } finally { preparing = false; }
       if (!jobsToRun.length) { updateInfo(); return; }
       busy = true; cancelUpload = false; madeDirs.clear(); updateInfo();
-      const total = jobsToRun.length; let done = 0, fail = 0;
-      for (const j of jobsToRun) {
-        if (cancelUpload) break;
-        $('fx-info').textContent = `Uploading ${done + fail + 1}/${total}: ${j.rel}`;
-        const t = addTransfer('up', j.rel, R);
-        try { await uploadOneTo(R, j.file, j.rel, t); setTransfer(t, { status: 'done' }); done++; }
-        catch (e) {
-          if (cancelUpload || e.name === 'AbortError' || e.name === 'AuthError') { setTransfer(t, { status: 'cancelled' }); showToast(`⚠ "${j.rel}" may be left partially written on the server`, 'warning', 9000); break; }
-          setTransfer(t, { status: 'error', error: e.message }); fail++; showToast(`${j.rel}: ${e.message}`, 'error', 8000);
+      const total = jobsToRun.length; let idx = 0, done = 0, fail = 0, warnedPartial = false;
+      // Bounded concurrency: K workers pull from the shared queue. jobsToRun[idx++] is atomic between awaits
+      // (JS is single-threaded), so no two workers ever grab the same job.
+      const worker = async () => {
+        while (!cancelUpload) {
+          const j = jobsToRun[idx++]; if (!j) break;
+          const t = addTransfer('up', j.rel, R);
+          try { await uploadOneTo(R, j.file, j.rel, t); setTransfer(t, { status: 'done' }); done++; }
+          catch (e) {
+            if (cancelUpload || e.name === 'AbortError' || e.name === 'AuthError') { setTransfer(t, { status: 'cancelled' }); if (!warnedPartial) { warnedPartial = true; showToast('⚠ Cancelled — some files may be left partially written on the server', 'warning', 9000); } break; }
+            setTransfer(t, { status: 'error', error: e.message }); fail++; showToast(`${j.rel}: ${e.message}`, 'error', 8000);
+          }
+          $('fx-info').textContent = `Uploading ${done + fail}/${total}…`;
         }
-      }
+      };
+      await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, total) }, () => worker()));
       busy = false;
       showToast(cancelUpload
         ? `Upload cancelled — ${done}/${total} done`

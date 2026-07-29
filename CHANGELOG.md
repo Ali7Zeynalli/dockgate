@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.39] - 2026-07-04
+
+### Changed — Explorer uploads now run in parallel (7 concurrent), not one file at a time
+- The upload loop was strictly sequential (upload one file, wait, next), so a folder of many files was slow. It now runs a **bounded pool of 7 concurrent workers** pulling from the queue — roughly proportional wall-clock savings for many files.
+- Supporting changes: Cancel / close now aborts **all** in-flight upload XHRs (a Set, not a single slot); `ensureRemoteDir` caches the `mkdir` as a **promise per directory**, so concurrent workers dedupe it and parent-before-child ordering holds (safe on top of the v2.1.38 idempotent mkdir).
+- Concurrency is one tunable constant (`UPLOAD_CONCURRENCY = 7`). Note: without SSH connection pooling each worker opens its own connection, so keep it clear of a typical sshd's `MaxStartups` (~10); lower it if a server refuses connections under load. A connection pool (reuse one connection for many ops) is the larger, separate follow-up.
+
+---
+
 ## [2.1.38] - 2026-07-04
 
 ### Fixed — Folder upload no longer 500-spams mkdir for directories that already exist
