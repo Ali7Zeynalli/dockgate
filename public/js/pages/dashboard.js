@@ -2,6 +2,8 @@
 Router.register('dashboard', async (content) => {
   let refreshTimer = null;
   let healthChart = null;
+  let hostNode = null;       // the live <div id="dash-host"> + its running 5s monitor, kept across 30s refreshes
+  let hostForServer = null;  // which server hostNode monitors — only remount fresh when this actually changes
 
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
@@ -336,11 +338,24 @@ Router.register('dashboard', async (content) => {
         if (l) l.textContent = ok ? `Registries · ${ok} connected` : 'Registries';
       }).catch(() => {});
 
-      // Embed the active REMOTE server's host metrics (CPU/RAM/disk/trend/ports/procs) — reuses
-      // renderHostMonitoring, which owns its own 5s poll and self-terminates when this content is
-      // re-rendered or navigated away. Local host metrics need the /proc mount (deferred), so skipped.
+      // Embed the active REMOTE server's host metrics (CPU/RAM/disk/trend/ports/procs). renderHostMonitoring
+      // owns its own 5s in-place poll, so we mount it ONCE and PRESERVE the live node across the 30s dashboard
+      // refresh instead of tearing it down + re-mounting (which flashed the whole section back to skeletons /
+      // "connecting…" and rebuilt the chart every 30s). We only mount fresh when there's no live node yet or
+      // the active server changed; otherwise we reattach the still-polling node. Local host metrics need the
+      // /proc mount (deferred), so skipped.
       const dashHost = document.getElementById('dash-host');
-      if (isRemote && dashHost && typeof renderHostMonitoring === 'function') renderHostMonitoring(activeId, dashHost);
+      if (isRemote && dashHost && typeof renderHostMonitoring === 'function') {
+        if (hostNode && hostForServer === activeId) {
+          dashHost.replaceWith(hostNode);            // reattach the live monitor — no teardown, no skeleton flash
+        } else {
+          renderHostMonitoring(activeId, dashHost);  // first mount, or active server changed → fresh monitor
+          hostNode = dashHost;
+          hostForServer = activeId;
+        }
+      } else {
+        hostNode = null; hostForServer = null;       // no remote host section → drop the ref; old monitor self-terminates
+      }
 
       // Quick Actions / Sürətli əməliyyatlar
       document.getElementById('qa-start-all')?.addEventListener('click', () => {

@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.43] - 2026-07-30
+
+### Fixed — Dashboard: Host Metrics no longer fully re-renders (skeleton flash) on the 30s refresh
+- The dashboard auto-refreshes every 30s by rebuilding its whole `innerHTML`, which **destroyed and re-mounted** the embedded Host Metrics section every time — so the live section flashed back to skeletons / "connecting…", rebuilt its trend chart, and lost scroll position every 30s, even though it already updates itself in place every 5s.
+- The Host Metrics node is now **mounted once and preserved across refreshes**: the dashboard reattaches the still-polling node instead of tearing it down, and only mounts a fresh monitor when there is none yet or the **active server changed**. The 5s in-place metric updates continue uninterrupted; no more full re-render.
+
+---
+
 ## [2.1.42] - 2026-07-30
 
 ### Docs — README: document the File Manager Explorer and fix the alert-rule count
