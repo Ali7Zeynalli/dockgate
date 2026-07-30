@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.41] - 2026-07-04
+
+### Added — File Manager Explorer: FileZilla-style transfer summary + Retry failed
+- The Transfers panel header now shows a **live breakdown** — `N active · ✓ done · →browser handed · ✗ N failed · ✕ cancelled / total` — instead of a single "in progress / finished" line.
+- A **↻ Retry failed** button appears whenever a transfer failed; it re-runs the failed uploads/downloads with bounded concurrency (re-ensuring remote directories first). Each transfer now remembers its operation (`op`) so it can be replayed without re-picking the files.
+
+---
+
 ## [2.1.40] - 2026-07-04
 
 ### Changed — SSH connection pooling (the FileZilla model): connect once, reuse for many operations

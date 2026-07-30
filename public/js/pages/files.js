@@ -406,6 +406,7 @@ Router.register('files', async (content) => {
             <span class="text-xs text-muted" style="font-weight:700;letter-spacing:.5px">TRANSFERS</span>
             <span class="text-xs text-muted" id="fx-tsummary"></span>
             <div style="flex:1"></div>
+            <button class="btn btn-xs btn-secondary" id="fx-tretry" type="button" style="display:none"></button>
             <button class="btn btn-xs btn-ghost" id="fx-tclear" type="button">Clear finished</button>
           </div>
           <div id="fx-tlist" style="flex:1;overflow:auto;min-height:0"></div>
@@ -459,14 +460,23 @@ Router.register('files', async (content) => {
     ov.addEventListener('mouseup', (e) => { const ok = backdropDown && e.target === ov; backdropDown = false; if (ok && !anyActive()) close(); });
 
     // ---- Transfers panel (live per-file upload/download progress) ----
-    function addTransfer(dir, name, dest) { const id = ++tid; transfers.push({ id, dir, name, dest, status: 'active', loaded: 0, total: 0, error: '' }); renderTransfers(); return id; }
+    function addTransfer(dir, name, dest, op) { const id = ++tid; transfers.push({ id, dir, name, dest, op, status: 'active', loaded: 0, total: 0, error: '' }); renderTransfers(); return id; }
     function setTransfer(id, patch) { const t = transfers.find(x => x.id === id); if (t) { Object.assign(t, patch); renderTransfers(); } }
     function renderTransfers() {
       const panel = $('fx-tpanel'); if (!panel) return;
       if (!transfers.length) { panel.style.display = 'none'; return; }
       panel.style.display = 'flex';
-      const active = transfers.filter(t => t.status === 'active').length;
-      $('fx-tsummary').textContent = active ? `${active} in progress` : `${transfers.length} finished`;
+      const c = { active: 0, done: 0, handed: 0, error: 0, cancelled: 0 };
+      transfers.forEach(t => { c[t.status] = (c[t.status] || 0) + 1; });
+      const parts = [];
+      if (c.active) parts.push(`${c.active} active`);
+      if (c.done) parts.push(`✓ ${c.done}`);
+      if (c.handed) parts.push(`→browser ${c.handed}`);
+      if (c.error) parts.push(`✗ ${c.error} failed`);
+      if (c.cancelled) parts.push(`✕ ${c.cancelled}`);
+      $('fx-tsummary').textContent = `${parts.join('  ·  ')}   /   ${transfers.length} total`;
+      const rb = $('fx-tretry');
+      if (rb) { rb.style.display = c.error ? '' : 'none'; rb.textContent = `↻ Retry ${c.error} failed`; rb.disabled = anyActive(); }
       $('fx-tlist').innerHTML = transfers.slice().reverse().map(t => {
         const pct = t.total ? Math.min(100, Math.round(t.loaded / t.total * 100)) : (t.status === 'done' ? 100 : 0);
         const col = t.status === 'error' ? 'var(--danger)' : t.status === 'cancelled' ? 'var(--warning)' : (t.status === 'done' || t.status === 'handed') ? 'var(--success,#22c55e)' : 'var(--accent)';
@@ -488,6 +498,23 @@ Router.register('files', async (content) => {
       setTimeout(() => URL.revokeObjectURL(u), 10000);
     }
     $('fx-tclear').onclick = () => { for (let i = transfers.length - 1; i >= 0; i--) if (transfers[i].status !== 'active') transfers.splice(i, 1); renderTransfers(); };
+    // Re-run a transfer from its stored op (Retry failed). downloadTracked sets its own status; upload doesn't.
+    async function runOp(t) {
+      try {
+        if (t.op && t.op.kind === 'up') { await uploadOneTo(t.op.R, t.op.file, t.op.rel, t.id); setTransfer(t.id, { status: 'done' }); }
+        else if (t.op) { await downloadTracked(t.op.name, t.op.isDir, t.id, t.op.base); }
+      } catch (e) { setTransfer(t.id, { status: (e.name === 'AbortError' || e.name === 'AuthError') ? 'cancelled' : 'error', error: e.message }); }
+    }
+    async function retryFailed() {
+      const failed = transfers.filter(t => t.status === 'error' && t.op);
+      if (!failed.length) return;
+      failed.forEach(t => setTransfer(t.id, { status: 'active', loaded: 0, error: '' }));
+      madeDirs.clear();   // re-ensure remote dirs on retry (don't trust a prior failed mkdir promise)
+      let i = 0;
+      const w = async () => { while (true) { const t = failed[i++]; if (!t) break; await runOp(t); } };
+      await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, failed.length) }, w));
+    }
+    $('fx-tretry').onclick = () => retryFailed();
 
     function updateInfo() {
       if (anyActive()) window.addEventListener('beforeunload', onBeforeUnload); else window.removeEventListener('beforeunload', onBeforeUnload);
@@ -656,9 +683,9 @@ Router.register('files', async (content) => {
         body.querySelectorAll('[data-fxcd]').forEach(a => a.onclick = (e) => { e.preventDefault(); rcwd = (rcwd === '/' ? '' : rcwd) + '/' + a.dataset.fxcd; remoteSel.clear(); renderRemote(); });
         body.querySelectorAll('[data-rsel]').forEach(cb => cb.onchange = () => { if (cb.checked) remoteSel.set(cb.dataset.rsel, cb.dataset.isdir === '1'); else remoteSel.delete(cb.dataset.rsel); updateInfo(); });
         body.querySelectorAll('[data-fxdl]').forEach(b => b.onclick = async () => {
-          const nm2 = b.dataset.fxdl, dir2 = b.dataset.isdir === '1';
-          const t = addTransfer('down', dir2 ? nm2 + '/' : nm2, 'your Downloads');
-          try { await downloadTracked(nm2, dir2, t); }
+          const nm2 = b.dataset.fxdl, dir2 = b.dataset.isdir === '1', dbase = rcwd;
+          const t = addTransfer('down', dir2 ? nm2 + '/' : nm2, 'your Downloads', { kind: 'down', name: nm2, isDir: dir2, base: dbase });
+          try { await downloadTracked(nm2, dir2, t, dbase); }
           catch (e) { setTransfer(t, { status: (e.name === 'AbortError' || e.name === 'AuthError') ? 'cancelled' : 'error', error: e.message }); }
         });
       } catch (e) { body.innerHTML = `<div class="text-danger" style="padding:14px">${escapeHtml(e.message)}</div>`; }
@@ -674,7 +701,7 @@ Router.register('files', async (content) => {
       let done = 0, handed = 0, fail = 0;
       for (const [name, isDir] of items) {
         if (cancelDownload) break;
-        const t = addTransfer('down', isDir ? name + '/' : name, 'your Downloads');
+        const t = addTransfer('down', isDir ? name + '/' : name, 'your Downloads', { kind: 'down', name, isDir, base });
         try { const st = await downloadTracked(name, isDir, t, base); if (st === 'handed') handed++; else done++; }
         catch (e) { if (cancelDownload || e.name === 'AbortError' || e.name === 'AuthError') { setTransfer(t, { status: 'cancelled' }); break; } setTransfer(t, { status: 'error', error: e.message }); fail++; }
       }
@@ -847,7 +874,7 @@ Router.register('files', async (content) => {
       const worker = async () => {
         while (!cancelUpload) {
           const j = jobsToRun[idx++]; if (!j) break;
-          const t = addTransfer('up', j.rel, R);
+          const t = addTransfer('up', j.rel, R, { kind: 'up', R, file: j.file, rel: j.rel });
           try { await uploadOneTo(R, j.file, j.rel, t); setTransfer(t, { status: 'done' }); done++; }
           catch (e) {
             if (cancelUpload || e.name === 'AbortError' || e.name === 'AuthError') { setTransfer(t, { status: 'cancelled' }); if (!warnedPartial) { warnedPartial = true; showToast('⚠ Cancelled — some files may be left partially written on the server', 'warning', 9000); } break; }
