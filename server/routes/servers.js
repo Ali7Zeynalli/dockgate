@@ -213,6 +213,7 @@ router.put('/:id', (req, res) => {
     const newPassphrase = passphrase !== undefined ? (passphrase ? String(passphrase) : null) : existing.passphrase;
 
     stmts.updateServer.run(newHost, newPort, newUsername, keyPath, encrypt(newPassword), encrypt(newPassphrase), newDescription, newName, id);
+    require('../ssh-pool').invalidate(id); // drop pooled SSH connections so the new host/credentials take effect
     // Apply the access-password change (verified above): empty string removes the gate, non-empty sets/changes it.
     if (accessPassword !== undefined) {
       const ap = String(accessPassword || '').trim();
@@ -335,6 +336,7 @@ router.delete('/:id', (req, res) => {
     }
 
     stmts.deleteServer.run(id);
+    require('../ssh-pool').invalidate(id); // close any pooled SSH connection to the removed server
     try { stmts.deleteHostMetrics.run(id); } catch (e) { console.warn('[host-metrics] cleanup failed:', e.message); }
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'delete' });
 

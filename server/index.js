@@ -588,6 +588,11 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   monitorManager.startAll();
 });
 
+// Close pooled SSH connections on shutdown so DockGate leaves no zombie sessions on remote hosts.
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => { try { require('./ssh-pool').drainAll(); } catch (e) {} process.exit(0); });
+}
+
 // Periodic DB retention — trim old records every 6 hours
 // Dövri DB saxlama — hər 6 saatda köhnə qeydləri sil
 setInterval(() => {

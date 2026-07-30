@@ -1,44 +1,13 @@
-// Remote file manager (Phase 2) — browse/upload/download/mkdir/rename/delete on a remote SSH host via
-// SFTP. DockGate already stores the key/password (same auth as host-terminal.js / docker.js). One SFTP
-// session is opened per operation and closed after (no pooling yet). Local host is not handled here
+// Remote file manager (Phase 2) — browse/upload/download/mkdir/rename/delete on a remote SSH host via SFTP.
+// Connections are POOLED per server (ssh-pool.js): DockGate connects once and reuses the session for many
+// operations — the FileZilla model — instead of a fresh SSH handshake per op. Local host is not handled here
 // (Phase 3, deferred) — the route returns a "switch to a remote server" message for local.
 const fs = require('fs');
 const path = require('path');
-const { Client } = require('ssh2');
-const { decrypt } = require('./auth/secrets');
-const remoteExec = require('./remote-compose'); // execRemote + shq — reused so SSH-exec/quoting isn't duplicated
-
-const SSH_KEYS_DIR = path.join(__dirname, '..', 'data', 'ssh-keys');
-
-function authFor(s) {
-  const opts = { host: s.host, port: s.port || 22, username: s.username, readyTimeout: 20000 };
-  if (s.key_path) {
-    const keyPath = path.isAbsolute(s.key_path) ? s.key_path : path.join(SSH_KEYS_DIR, s.key_path);
-    if (!fs.existsSync(keyPath)) throw new Error(`SSH key not found: ${keyPath}`);
-    opts.privateKey = fs.readFileSync(keyPath);
-    if (s.passphrase) opts.passphrase = decrypt(s.passphrase);
-  } else if (s.password) {
-    opts.password = decrypt(s.password);
-  }
-  return opts;
-}
-
-// Open an SFTP session, run fn(sftp) → Promise, then always close the connection.
-function withSftp(server, fn) {
-  return new Promise((resolve, reject) => {
-    const conn = new Client();
-    let settled = false;
-    const finish = (err, val) => { if (settled) return; settled = true; try { conn.end(); } catch (e) {} err ? reject(err) : resolve(val); };
-    conn.on('ready', () => {
-      conn.sftp((err, sftp) => {
-        if (err) return finish(err);
-        Promise.resolve(fn(sftp)).then(v => finish(null, v)).catch(e => finish(e));
-      });
-    });
-    conn.on('error', (e) => finish(e));
-    try { conn.connect(authFor(server)); } catch (e) { finish(e); }
-  });
-}
+const { Client } = require('ssh2');              // still used by archiveDirTo's own exec (tar) connection
+const remoteExec = require('./remote-compose');  // execRemote + shq — reused so SSH-exec/quoting isn't duplicated
+const pool = require('./ssh-pool');
+const { withSftp, authFor } = pool;              // metadata ops go through the pooled connection
 
 // Normalize a remote absolute path, resolving '.'/'..' segments (can't escape '/').
 function normRemote(p) {
@@ -75,51 +44,51 @@ async function listDir(server, p) {
 }
 
 // Stream a remote file to an HTTP response. Connection stays open until the stream ends.
-function downloadTo(server, p, res) {
+async function downloadTo(server, p, res) {
   const file = normRemote(p);
-  return new Promise((resolve, reject) => {
-    const conn = new Client();
+  const lease = await pool.acquire(server);
+  return await new Promise((resolve, reject) => {
     let settled = false;
-    const done = (err) => { if (settled) return; settled = true; try { conn.end(); } catch (e) {} err ? reject(err) : resolve(); };
-    conn.on('ready', () => {
-      conn.sftp((err, sftp) => {
-        if (err) return done(err);
-        sftp.stat(file, (e2, st) => {
-          if (e2) return done(e2);
-          res.setHeader('Content-Disposition', `attachment; filename="${path.basename(file).replace(/"/g, '')}"`);
-          res.setHeader('Content-Type', 'application/octet-stream');
-          if (st && st.size) res.setHeader('Content-Length', st.size);
-          const rs = sftp.createReadStream(file);
-          rs.on('error', done);
-          rs.on('end', () => done());
-          rs.pipe(res);
-        });
-      });
+    // transport=true → the connection is suspect (stream broke / client aborted) → destroy the lease;
+    // an app error (stat ENOENT) leaves the connection healthy → just release it.
+    const done = (err, transport) => {
+      if (settled) return; settled = true;
+      if (err) { transport ? pool.destroyLease(lease) : pool.release(lease); reject(err); }
+      else { pool.release(lease); resolve(); }
+    };
+    lease.sftp.stat(file, (e2, st) => {
+      if (e2) return done(e2, false);
+      res.setHeader('Content-Disposition', `attachment; filename="${path.basename(file).replace(/"/g, '')}"`);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      if (st && st.size) res.setHeader('Content-Length', st.size);
+      const rs = lease.sftp.createReadStream(file);
+      rs.on('error', (e) => done(e, true));
+      rs.on('end', () => done());
+      res.on('close', () => { if (!settled) done(new Error('client closed the connection'), true); }); // aborted mid-stream
+      rs.pipe(res);
     });
-    conn.on('error', done);
-    try { conn.connect(authFor(server)); } catch (e) { done(e); }
   });
 }
 
 // Stream an incoming request body INTO a remote file (dir + filename).
-function uploadFrom(server, dir, name, req) {
+async function uploadFrom(server, dir, name, req) {
   const dest = joinRemote(dir, name);
-  return new Promise((resolve, reject) => {
-    const conn = new Client();
+  const lease = await pool.acquire(server);
+  return await new Promise((resolve, reject) => {
     let settled = false;
-    const done = (err) => { if (settled) return; settled = true; try { conn.end(); } catch (e) {} err ? reject(err) : resolve({ path: dest }); };
-    conn.on('ready', () => {
-      conn.sftp((err, sftp) => {
-        if (err) return done(err);
-        const ws = sftp.createWriteStream(dest);
-        ws.on('error', done);
-        ws.on('close', () => done());
-        req.on('error', done);
-        req.pipe(ws);
-      });
-    });
-    conn.on('error', done);
-    try { conn.connect(authFor(server)); } catch (e) { done(e); }
+    // Any failure/abort DESTROYS the lease: the write stream leaves a dangling/partial file handle on the
+    // channel, so the connection must not go back to the pool. No retry — the request body is already consumed.
+    const done = (err) => {
+      if (settled) return; settled = true;
+      if (err) { pool.destroyLease(lease); reject(err); }
+      else { pool.release(lease); resolve({ path: dest }); }
+    };
+    const ws = lease.sftp.createWriteStream(dest);
+    ws.on('error', done);
+    ws.on('close', () => done());
+    req.on('error', done);
+    req.on('aborted', () => done(new Error('upload aborted')));
+    req.pipe(ws);
   });
 }
 

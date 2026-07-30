@@ -2,6 +2,16 @@
 
 ---
 
+## [2.1.40] - 2026-07-04
+
+### Changed — SSH connection pooling (the FileZilla model): connect once, reuse for many operations
+- The File Manager opened a **fresh SSH connection for every operation** — each list/mkdir/upload/download paid a full TCP + key-exchange + auth handshake, then closed it. Now a per-server **connection pool** (`server/ssh-pool.js`) keeps a bounded set of warm connections and reuses them, exactly how FileZilla / WinSCP / OpenSSH work.
+- Pool: up to `POOL_MAX` (8) live connections per server, keyed by server id + auth material; SSH keepalive (15 s) detects dead links; idle connections evicted after 60 s; a borrow that finds a dead connection reconnects; metadata ops retry once on a transport error; streaming upload/download **release** the connection on a clean end and **destroy** it on error/abort (a half-streamed channel is never returned to the pool).
+- `withSftp` keeps its signature so every metadata caller is unchanged; `uploadFrom`/`downloadTo` borrow pooled leases; `archiveDirTo` keeps its own exec connection. Pooled connections are **invalidated on server edit/delete** (changed credentials take effect; a removed server keeps no live session) and **drained on shutdown** (no zombie sessions).
+- Verified against a throwaway sshd: 10 sequential ops ran over **one** reused connection (~4 ms/op), and the server accepted only **8** connections for ~21 operations (vs 21 without pooling).
+
+---
+
 ## [2.1.39] - 2026-07-04
 
 ### Changed — Explorer uploads now run in parallel (7 concurrent), not one file at a time
