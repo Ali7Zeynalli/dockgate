@@ -2,6 +2,14 @@
 
 ---
 
+## [2.1.42] - 2026-07-30
+
+### Docs — README: document the File Manager Explorer and fix the alert-rule count
+- The README described the file feature only as an "SFTP file manager" and never mentioned the **Explorer** built across v2.1.31–2.1.41. The Files entry now documents the opt-in **⇆ Explorer** mode: two-pane FileZilla-style transfer between your computer and the server (any Windows/macOS/Linux browser), whole-folder upload, parallel transfers (7 concurrent), pre-upload conflict detection (Overwrite/Keep-both/Skip), a live transfer panel (`active · done · failed · cancelled / total`) with Retry-failed, and cancel of in-flight uploads/downloads.
+- Fixed the **"Alert rules (9)"** miscount — eight rule types are listed (`container_die` surfaces as Stopped/Crashed/OOM), so the heading now reads **(8)**.
+
+---
+
 ## [2.1.41] - 2026-07-04
 
 ### Added — File Manager Explorer: FileZilla-style transfer summary + Retry failed

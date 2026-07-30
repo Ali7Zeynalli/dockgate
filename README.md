@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.1.41-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.1.42-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.1.41-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.1.42-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -168,7 +168,7 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 - **Logs** — live-tail any running container's stdout/stderr (tail 200, follow), pause/resume, clear, in-browser search, timestamps.
 - **Terminal** — interactive **container exec** (sh/bash/zsh, full xterm.js PTY) **and** a **host shell** — a PTY inside the local container, or a real **SSH login shell** on a remote host.
 - **Events** — live Docker daemon event feed with history range (15 m / 1 h / 24 h / live), color-coded, pause/clear.
-- **Files** — **SFTP file manager** for the active **remote** server: browse, mkdir, upload/download (streamed), rename, delete; path-traversal guarded. (Local file browsing is intentionally not offered.)
+- **Files** — an **SFTP file manager** for the active **remote** server: browse, mkdir, upload/download (streamed), rename, delete, **copy/move**, in-browser **edit**; path-traversal guarded. An opt-in **⇆ Explorer** mode adds a **two-pane, FileZilla-style transfer** between *your computer* and the server, from any **Windows / macOS / Linux** browser: **whole-folder upload** (directory structure preserved), **parallel transfers** (7 concurrent), **pre-upload conflict detection** (**Overwrite / Keep-both / Skip**), a **live transfer panel** — `active · done · failed · cancelled / total` — with **Retry-failed**, and **cancel** of in-flight uploads/downloads. The single-pane manager stays the default; Explorer opens only on demand.
 - **Audit** — searchable history of **every mutation** (what / which host / from which IP / when): filter by server/type/action, full-text search, **CSV export**, clear. Single-admin, so it's a "what + from where", not "who".
 </details>
 
@@ -200,7 +200,7 @@ Tabbed: **General** (theme, default view, **timezone**, shell, log timestamps, a
 
 **Channels** — **Telegram bot** and **SMTP email**. Configure/test/clear each; secrets are **encrypted at rest**. Both fire for every enabled rule.
 
-**Alert rules (9)** — `container_die` (split into **Stopped / Crashed / OOM**), `container_restart`, `container_unhealthy`, `container_start`, `container_pause`, `container_unpause`, `disk_threshold`, `build_failed`. Each has an **enable** toggle and a **cooldown** (minutes) — **`0` = alert on every occurrence**. A `docker restart` is debounced to a **single "Restarted"** alert (not Stopped-then-Restarted), and crash/OOM/unhealthy alerts attach the container's **recent logs** so you see *why*.
+**Alert rules (8)** — `container_die` (split into **Stopped / Crashed / OOM**), `container_restart`, `container_unhealthy`, `container_start`, `container_pause`, `container_unpause`, `disk_threshold`, `build_failed`. Each has an **enable** toggle and a **cooldown** (minutes) — **`0` = alert on every occurrence**. A `docker restart` is debounced to a **single "Restarted"** alert (not Stopped-then-Restarted), and crash/OOM/unhealthy alerts attach the container's **recent logs** so you see *why*.
 
 **How it watches** — a central `EventMonitor` runs **per registered host** (local + every SSH server), so alerts arrive from **every** server, not just the active one.
 
