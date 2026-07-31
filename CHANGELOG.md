@@ -2,6 +2,18 @@
 
 ---
 
+## [2.1.44] - 2026-07-31
+
+### Added — Compose: "Adopt from server" — register existing on-server compose folders in place (multi-select)
+- New **Adopt from server (existing folder)** entry in Compose ▸ **+ Deploy** (shown when a remote SSH server is active). Browse the server's filesystem, **Scan** a folder, and DockGate finds every existing `docker-compose` file under it (name-agnostic, subfolders included). **Multi-select** the ones you want and add them all as managed projects at once.
+- **In place, not copied.** Each adopted stack is registered with a pointer at its OWN folder (`source: 'adopt'`); `docker compose` runs there over SSH, so bind-mounts and relative `.env` resolve exactly as a manual `docker compose up` in that folder would — no upload, no duplicate data, no drift from a git checkout. Reuses the same scan/pick picker, SSH connection pool, and live deploy-log as folder/git deploy.
+- Two finish actions: **Add (track only)** — the default — registers without touching containers (ideal when the folder is already running), and **Add & Deploy** runs `up -d`. The scan reuses a project already running in a folder as its exact `-p` name (so Up/Down hit the same containers) and auto-suffixes name collisions. Adopted projects then support Up/Down/Rebuild/Edit-YAML/Files like any other, and external networks a stack declares are offered for pre-creation.
+
+### Security
+- **Adopted folders are never deleted.** Because an adopted pointer targets the user's OWN folder, Delete is forced to keep the files (`down` + untrack only), and the "Update from folder" clean-replace path refuses adopted projects — closing every code path that could `rm -rf` a user-owned folder. All browsed paths and compose-file paths are `isSafeHostPath`-validated and shell-quoted; the folder scan is one bounded remote command (depth/count-limited, `timeout`).
+
+---
+
 ## [2.1.43] - 2026-07-30
 
 ### Fixed — Dashboard: Host Metrics no longer fully re-renders (skeleton flash) on the 30s refresh

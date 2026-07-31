@@ -29,6 +29,7 @@ Router.register('compose', async (content) => {
                 <button class="rmi" id="compose-new" ${dis}>${Icons.compose} New compose project</button>
                 <button class="rmi" id="compose-git">${Icons.registry || Icons.compose} Deploy from Git</button>
                 <button class="rmi" id="compose-folder">${Icons.arrowUp || Icons.compose} Deploy from folder</button>
+                ${remote ? `<button class="rmi" id="compose-adopt">${Icons.folder || Icons.compose} Adopt from server (existing folder)</button>` : ''}
               </div>
             </div>
             <button class="btn btn-secondary" id="compose-refresh">${Icons.refresh}</button>
@@ -42,7 +43,7 @@ Router.register('compose', async (content) => {
               <thead><tr><th>Project Name</th><th>Status</th><th>Services</th><th>Path</th><th style="text-align:right">Actions</th></tr></thead>
               <tbody>
                 ${projects.map(p => `<tr${p.deploySource === 'git' ? ` data-gitproj="${escapeHtml(p.name)}"` : ''}>
-                  <td class="td-name">${p.deploySource === 'git' ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:.7"><title>Git-managed</title><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>' : ''}${escapeHtml(p.name)}</td>
+                  <td class="td-name">${p.deploySource === 'git' ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:.7"><title>Git-managed</title><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>' : ''}${escapeHtml(p.name)}${p.deploySource === 'adopt' ? ' <span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px;vertical-align:1px" title="Adopted in place — the compose file lives on the server; DockGate stops &amp; untracks it on delete but never removes your folder">adopted</span>' : ''}</td>
                   <td><span class="badge ${p.running === p.total ? 'badge-running' : p.running > 0 ? 'badge-restarting' : 'badge-stopped'}">${p.running}/${p.total} Running</span></td>
                   <td class="text-sm">${p.services.join(', ') || '—'}</td>
                   <td class="td-mono text-xs" title="${escapeHtml(p.workingDir)}">${escapeHtml(p.workingDir) || '—'}</td>
@@ -56,7 +57,7 @@ Router.register('compose', async (content) => {
                     <button class="btn-icon" title="Project files (Dockerfile, .env…)" data-files="${p.name}">${Icons.folder || Icons.compose}</button>
                     <button class="btn-icon" title="Open a terminal in this project's folder" data-term="${p.name}" data-cwd="${escapeHtml(p.workingDir || '')}">🖥</button>
                     <button class="btn-icon" title="View Services" data-detail="${p.name}">${Icons.eye}</button>
-                    <button class="btn-icon text-danger" title="Delete project (containers + files)" data-delproj="${p.name}" data-remote="${p.remote ? 1 : ''}">${Icons.trash}</button>
+                    <button class="btn-icon text-danger" title="Delete project (containers + files)" data-delproj="${p.name}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}">${Icons.trash}</button>
                   </div></td>
                 </tr>`).join('')}
               </tbody>
@@ -70,10 +71,11 @@ Router.register('compose', async (content) => {
       document.getElementById('compose-refresh')?.addEventListener('click', render);
       document.getElementById('compose-new')?.addEventListener('click', () => openComposeEditor(null));
       document.getElementById('compose-folder')?.addEventListener('click', openFolderDeploy);
+      document.getElementById('compose-adopt')?.addEventListener('click', openAdoptFromServer);
       document.getElementById('compose-git')?.addEventListener('click', openGitDeploy);
       content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
       content.querySelectorAll('[data-term]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectTerminal(btn.dataset.term, btn.dataset.cwd); }));
-      content.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote); }));
+      content.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote, !!btn.dataset.adopted); }));
       content.querySelectorAll('[data-update]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openFolderDeploy({ update: btn.dataset.update, remotePath: btn.dataset.rpath, services: (btn.dataset.services || '').split(',').filter(Boolean) }); }));
       content.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
@@ -448,13 +450,74 @@ Router.register('compose', async (content) => {
     load();
   }
 
+  // Adopt from server — register compose file(s) that ALREADY live on the active remote host, IN PLACE (a
+  // pointer at their own folder; no upload, no copy). Browse → Scan a folder (recursive, bounded) → reuse the
+  // multi-select chooseDeployPlan picker → POST /adopt-finish → live deploy log. Adopted projects are
+  // delete-safe (the server-side guard never removes the user's folder).
+  async function openAdoptFromServer() {
+    if (!isRemoteActive()) { showToast('Switch to a remote SSH server first — adopt reads compose files that live on the server.', 'warning', 6000); return; }
+    let cwd = '/', host = 'the server';
+    try { const ctx = await API.get('/files/context'); cwd = ctx.home || '/'; host = ctx.host || ctx.serverId || 'the server'; } catch (e) {}
+    const m = showModal('Adopt from server — pick a folder to scan', `
+      <div class="text-xs text-muted mb-2">Browse to a folder on <strong>${escapeHtml(host)}</strong>, then <strong>Scan</strong> it — DockGate finds every existing <code>docker-compose</code> file under it (subfolders included) so you can adopt several at once. The files stay exactly where they are.</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+        <button class="btn btn-xs btn-secondary" id="ap-up">⬆ Up</button>
+        <code id="ap-path" class="text-xs" style="flex:1;word-break:break-all"></code>
+      </div>
+      <div id="ap-list" style="max-height:44vh;overflow-y:auto;border:1px solid var(--border);border-radius:6px"></div>
+      <div id="ap-note" class="text-xs text-muted" style="margin-top:6px"></div>`,
+      [{ label: 'Cancel', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    const scanBtn = document.createElement('button');
+    scanBtn.className = 'btn btn-primary'; scanBtn.textContent = '🔍 Scan this folder';
+    root.querySelector('#modal-footer').appendChild(scanBtn);
+    const parentOf = (p) => { if (!p || p === '/') return '/'; const i = p.replace(/\/$/, '').lastIndexOf('/'); return i <= 0 ? '/' : p.slice(0, i); };
+    root.querySelector('#ap-up').addEventListener('click', () => { cwd = parentOf(cwd); loadDirs(); });
+    async function loadDirs() {
+      const list = root.querySelector('#ap-list');
+      list.innerHTML = '<div class="text-muted text-sm" style="padding:10px">Loading…</div>';
+      try {
+        const d = await API.get(`/files?path=${encodeURIComponent(cwd)}`);
+        cwd = d.path; root.querySelector('#ap-path').textContent = cwd;
+        const dirs = (d.entries || []).filter(e => e.type === 'dir');
+        list.innerHTML = dirs.length
+          ? dirs.map(e => `<div class="ap-dir" data-d="${escapeHtml(e.name)}" style="padding:6px 10px;cursor:pointer">📁 ${escapeHtml(e.name)}</div>`).join('')
+          : '<div class="text-muted text-sm" style="padding:10px">No sub-folders here — Scan to search this folder.</div>';
+        list.querySelectorAll('.ap-dir').forEach(el => el.addEventListener('click', () => { cwd = (cwd === '/' ? '' : cwd) + '/' + el.dataset.d; loadDirs(); }));
+      } catch (e) { list.innerHTML = `<div class="text-danger" style="padding:10px">${escapeHtml(e.message)}</div>`; }
+    }
+    loadDirs();
+    scanBtn.addEventListener('click', async () => {
+      scanBtn.disabled = true; scanBtn.textContent = 'Scanning…';
+      root.querySelector('#ap-note').textContent = 'Searching for compose files… (bounded scan, may take a few seconds)';
+      let scan;
+      try { scan = await API.post('/compose/adopt-scan', { root: cwd }); }
+      catch (e) { showToast(e.message, 'error', 9000); scanBtn.disabled = false; scanBtn.textContent = '🔍 Scan this folder'; root.querySelector('#ap-note').textContent = ''; return; }
+      const files = scan.files || [];
+      if (!files.length) { root.querySelector('#ap-note').innerHTML = `<span style="color:var(--warning)">No compose files found under <code>${escapeHtml(scan.root || cwd)}</code>. Browse elsewhere and scan again.</span>`; scanBtn.disabled = false; scanBtn.textContent = '🔍 Scan this folder'; return; }
+      if (scan.truncated) showToast('Many compose files found — results were capped. Scan a narrower folder if some are missing.', 'warning', 7000);
+      m.close();
+      const plan = await chooseDeployPlan(files, null, { adopt: true });
+      if (!plan) return; // cancelled — nothing was registered
+      try {
+        const fin = await API.post('/compose/adopt-finish', { up: plan.up, createNets: plan.createNets, stacks: plan.stacks });
+        openDeployLog(fin.jobId, plan.up ? 'Adopt & deploy' : 'Adopt (track)');
+        showToast(plan.up ? 'Adopting & deploying — watch the live log.' : 'Adopting (tracking) — watch the live log.', 'info', 5000);
+        render();
+      } catch (e) { showToast(e.message, 'error', 12000); }
+    });
+  }
+
   // Delete a whole project: down (+volumes opt) + remove its files (remote folder / local managed dir).
-  function openDeleteProject(project, isRemote) {
+  function openDeleteProject(project, isRemote, isAdopted) {
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
       ${serverContextBanner()}
       <div class="text-sm">Delete project <strong>${escapeHtml(project)}</strong>?</div>
+      ${isAdopted ? `<div class="card" style="padding:8px 10px;background:var(--accent-dim);font-size:12px">📌 <strong>Adopted in place.</strong> DockGate will stop the containers (<code>down</code>) and untrack the project, but <strong>never deletes your folder on the server</strong> — the files are yours.</div>` : ''}
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="del-down" checked disabled> Stop &amp; remove containers (<code>docker compose down</code>)</label>
-      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="del-files" checked> Remove the project files ${isRemote ? '(the folder on the remote server)' : '(DockGate-managed files)'}</label>
+      ${isAdopted
+        ? `<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;opacity:.55"><input type="checkbox" id="del-files" disabled> Remove the project files — <strong>disabled for adopted projects</strong> (your folder is never deleted)</label>`
+        : `<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="del-files" checked> Remove the project files ${isRemote ? '(the folder on the remote server)' : '(DockGate-managed files)'}</label>`}
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;color:var(--danger,#f85149)"><input type="checkbox" id="del-vols"> Also delete data volumes — <strong>irreversible data loss</strong></label>
       <label class="text-xs text-muted" style="display:block;margin-top:4px">Type <code style="background:var(--bg-primary);padding:1px 6px;border-radius:4px;border:1px solid var(--border);font-weight:600">${escapeHtml(project)}</code> to confirm:</label>
       <input class="input" id="del-confirm" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${escapeHtml(project)}" style="width:100%;margin-top:6px" />
@@ -735,11 +798,11 @@ Router.register('compose', async (content) => {
       const settle = (v) => { if (settled) return; settled = true; resolve(v); };
       const aware = Array.isArray(opts.affectedStacks);   // change-aware redeploy: only changed stacks pre-checked
       const affected = new Set(opts.affectedStacks || []);
-      const isOn = (f) => !aware || affected.has(f.path);
+      const isOn = (f) => opts.adopt ? !f.alreadyManaged : (!aware || affected.has(f.path));
       const cards = files.map((f, i) => {
         const on = isOn(f);
         const seg = f.dir === '.' ? '' : (f.dir.split('/').pop() || '');
-        const stackName = (seg ? `${defaultProject}-${seg}` : defaultProject).toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        const stackName = (f.suggestedName || (seg ? `${defaultProject}-${seg}` : defaultProject) || 'project').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
         const svcRows = (f.services || []).length
           ? f.services.map(s => `<label style="margin-right:12px;font-size:12px"><input type="checkbox" class="fd-svc" data-i="${i}" value="${escapeHtml(s)}" ${on ? 'checked' : ''}> ${escapeHtml(s)}</label>`).join('')
           : '<span class="text-muted text-xs">no services parsed — all will be deployed</span>';
@@ -747,7 +810,7 @@ Router.register('compose', async (content) => {
         const err = f.parseError ? `<div class="text-xs" style="color:var(--warning);margin-top:2px">⚠ ${escapeHtml(f.parseError)}</div>` : '';
         return `<div class="card fd-card" style="padding:10px;margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-            <label style="font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" class="fd-stack" data-i="${i}" ${on ? 'checked' : ''}> <code>${escapeHtml(f.path)}</code>${aware ? (affected.has(f.path) ? ' <span style="font-size:11px;color:var(--accent);font-weight:600">● changed</span>' : ' <span style="font-size:11px;color:var(--text-muted);font-weight:400">no change · untouched</span>') : ''}</label>
+            <label style="font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" class="fd-stack" data-i="${i}" ${on ? 'checked' : ''}> <code>${escapeHtml(f.path)}</code>${opts.adopt ? (f.alreadyManaged ? ` <span class="badge" style="font-size:10px;background:var(--bg-tertiary)">already adopted: ${escapeHtml(f.alreadyManaged)}</span>` : (f.runningProject ? ` <span class="badge badge-running" style="font-size:10px">running: ${escapeHtml(f.runningProject)}</span>` : '')) : ''}${aware ? (affected.has(f.path) ? ' <span style="font-size:11px;color:var(--accent);font-weight:600">● changed</span>' : ' <span style="font-size:11px;color:var(--text-muted);font-weight:400">no change · untouched</span>') : ''}</label>
             <span style="display:flex;gap:2px;flex:none"><button type="button" class="btn-icon fd-up" title="Move up (deploy earlier)">▲</button><button type="button" class="btn-icon fd-down" title="Move down (deploy later)">▼</button></span>
           </div>
           ${err}${nets}
@@ -759,6 +822,7 @@ Router.register('compose', async (content) => {
             <label title="Touch only the selected service(s) — don't restart their dependencies (DB, etc.); protects data"><input type="checkbox" class="fd-nodeps" data-i="${i}"> no-deps</label>
             <button type="button" class="btn-icon fd-flaghelp" title="What do build / no-cache / pull / no-deps mean?" style="width:20px;height:20px;font-size:12px;flex:none">?</button>
             <span>name: <input class="input" id="fd-sname-${i}" style="width:170px;display:inline-block;padding:2px 6px" value="${escapeHtml(stackName)}"></span>
+            ${opts.adopt && f.runningProject ? `<span class="text-xs" style="color:var(--warning)" title="A project is already running in this folder as '${escapeHtml(f.runningProject)}'. Keep this exact name so Up/Down control those containers — a different name just tracks an empty separate entry.">⚠ keep name to control the running stack</span>` : ''}
           </div>
         </div>`;
       }).join('');
@@ -775,7 +839,7 @@ Router.register('compose', async (content) => {
           ${helpBadge('cdp-help', 'Help')}
         </div>
         ${diffBox}${netRows}${cards}</div>`;
-      const m2 = showModal('Choose what to deploy', body, [{ label: 'Cancel', className: 'btn btn-secondary', onClick: () => settle(null) }]);
+      const m2 = showModal(opts.adopt ? 'Choose what to adopt' : 'Choose what to deploy', body, [{ label: 'Cancel', className: 'btn btn-secondary', onClick: () => settle(null) }]);
       const r2 = m2.overlay;
       r2.querySelector('#cdp-help').onclick = openDeployHelp;
       r2.querySelectorAll('.fd-flaghelp').forEach(b => b.onclick = openFlagHelp);
@@ -799,7 +863,7 @@ Router.register('compose', async (content) => {
           const chosen = [...r2.querySelectorAll(`.fd-svc[data-i="${i}"]`)].filter(x => x.checked).map(x => x.value);
           stacks.push({
             name: (r2.querySelector(`#fd-sname-${i}`).value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
-            composeFile: f.path,
+            composeFile: f.absFile || f.path,
             services: (chosen.length && chosen.length < all.length) ? chosen : [], // [] = all services
             build: r2.querySelector(`.fd-build[data-i="${i}"]`).checked,
             noCache: r2.querySelector(`.fd-nocache[data-i="${i}"]`).checked,
@@ -813,12 +877,18 @@ Router.register('compose', async (content) => {
         return { createNets, stacks };
       };
       // "Stage" = place the files but don't start anything; deploy each from the Compose list (Up) later.
+      // Adopt: "Add (track only)" is the primary action (target folders are usually already running, so a
+      // fresh `up` would needlessly recreate containers); "Add & Deploy" is the secondary. Folder/git deploy
+      // keeps its original "Stage" (secondary) / "Deploy now" (primary) emphasis.
       const stage = document.createElement('button');
-      stage.className = 'btn btn-secondary'; stage.textContent = 'Stage (deploy later)'; stage.title = "Upload/clone the files but don't run — start each stack from the list when you're ready";
+      stage.className = opts.adopt ? 'btn btn-primary' : 'btn btn-secondary';
+      stage.textContent = opts.adopt ? 'Add (track only)' : 'Stage (deploy later)';
+      stage.title = opts.adopt ? 'Register the selected project(s) without touching containers — ideal when the folder is already running' : "Upload/clone the files but don't run — start each stack from the list when you're ready";
       r2.querySelector('#modal-footer').appendChild(stage);
       stage.onclick = () => { const p = buildPlan(); if (p) { settle({ ...p, up: false }); m2.close(); } };
       const deploy = document.createElement('button');
-      deploy.className = 'btn btn-primary'; deploy.textContent = 'Deploy now';
+      deploy.className = opts.adopt ? 'btn btn-secondary' : 'btn btn-primary';
+      deploy.textContent = opts.adopt ? 'Add & Deploy' : 'Deploy now';
       r2.querySelector('#modal-footer').appendChild(deploy);
       deploy.onclick = () => { const p = buildPlan(); if (p) { settle({ ...p, up: true }); m2.close(); } };
     });
