@@ -121,6 +121,8 @@ sudo systemctl restart docker
 | <img src="screenshots/01-login.png" width="100%" alt="Login"> | <img src="screenshots/02-dashboard.png" width="100%" alt="Dashboard"> |
 | **Containers** — filters, bulk actions, compose grouping | **Images** — pull/push, layers, tags, run |
 | <img src="screenshots/03-containers.png" width="100%" alt="Containers"> | <img src="screenshots/04-images.png" width="100%" alt="Images"> |
+| **Containers · Topology** — read-only live graph of the running stack | |
+| <img src="screenshots/23.png" width="100%" alt="Containers Topology"> | |
 | **Networks** — drivers, subnets, attach/detach | **Compose** — discover, create & edit projects |
 | <img src="screenshots/07-networks.png" width="100%" alt="Networks"> | <img src="screenshots/08-compose.png" width="100%" alt="Compose"> |
 | **App Templates** — deploy-ready marketplace | **Terminal** — container exec + host SSH shell |
