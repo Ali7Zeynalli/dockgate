@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.45] - 2026-08-05
+
+### Added — Containers: read-only **Topology** view (visualize the running stack)
+- New third view on the **Containers** page (next to Table/Card): a **📐 Topology** button that draws a **read-only graph of the running containers** — so you can see how a stack is wired without opening a single compose file. Nodes are grouped by **Compose project**; each card shows the service/name, image, live state dot, and its custom networks.
+- **Edges are derived, not guessed at deploy-time.** Connections come from the Compose `depends_on` label (directed, data-flow arrows); when a stack has none, it falls back to linking app→datastore containers that share a custom network. Containers with a **published host port** are flagged **public** (green `🌐 :port` marker + left accent). Columns read left→right as **edge · app · data**.
+- **Nothing new is fetched or changed.** It reuses the container list the page already loads (`GET /api/containers`, which carries ports/networks/labels/compose metadata) — no backend change, no container is touched. Clicking any node opens that container's existing **detail** page. Theme-aware (light/dark) via the design tokens.
+
+---
+
 ## [2.1.44] - 2026-07-31
 
 ### Added — Compose: "Adopt from server" — register existing on-server compose folders in place (multi-select)
