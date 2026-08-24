@@ -66,8 +66,19 @@ router.delete('/:id', (req, res) => {
     if (!row) return res.status(404).json({ error: 'SSH key not found' });
     stmts.deleteSshKey.run(req.params.id);
     logAction({ req, server: 'local', resourceType: 'ssh-key', resourceName: row.name, action: 'remove' });
+    
+    // Background cleanup of remote key files on all registered remote servers
+    try {
+      const remoteCompose = require('../remote-compose');
+      const servers = stmts.getServers.all();
+      for (const s of servers) {
+        remoteCompose.removeRemoteKey(s, req.params.id).catch(() => {});
+      }
+    } catch (e) {}
+
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;
+

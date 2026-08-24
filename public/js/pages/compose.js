@@ -381,38 +381,91 @@ Router.register('compose', async (content) => {
         if (repo) nameInput.value = repo.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
       }
     });
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-primary'; btn.textContent = 'Clone & choose what to deploy';
-    root.querySelector('#modal-footer').appendChild(btn);
-    btn.addEventListener('click', async () => {
+    const footer = root.querySelector('#modal-footer');
+    
+    const btnCloneOnly = document.createElement('button');
+    btnCloneOnly.className = 'btn btn-secondary';
+    btnCloneOnly.innerHTML = '📦 Clone only (Stage)';
+    btnCloneOnly.title = 'Clone the repository and register it without starting containers — start later from the list';
+    
+    const btnDeploy = document.createElement('button');
+    btnDeploy.className = 'btn btn-primary';
+    btnDeploy.innerHTML = '🚀 Clone &amp; Deploy…';
+    btnDeploy.title = 'Clone and choose what to deploy immediately';
+    
+    footer.appendChild(btnCloneOnly);
+    footer.appendChild(btnDeploy);
+
+    const runGitFlow = async (autoUp) => {
       const project = root.querySelector('#gd-name').value.trim();
       const repoUrl = root.querySelector('#gd-url').value.trim();
       if (!project || !repoUrl) { showToast('Repo URL and project name are required', 'warning'); return; }
       const useKey = authSel.value === 'sshkey';
       const keyId = useKey ? (root.querySelector('#gd-key')?.value || '') : '';
       if (useKey && !keyId) { showToast('Select an SSH key (or create one in Servers → SSH Keys)', 'warning'); return; }
-      const reset = () => { btn.disabled = false; btn.textContent = 'Clone & choose what to deploy'; };
-      btn.disabled = true; btn.textContent = 'Cloning…';
+      
+      btnCloneOnly.disabled = true;
+      btnDeploy.disabled = true;
+      if (autoUp) btnDeploy.textContent = 'Cloning…';
+      else btnCloneOnly.textContent = 'Cloning…';
+
+      const reset = () => {
+        btnCloneOnly.disabled = false;
+        btnDeploy.disabled = false;
+        btnCloneOnly.innerHTML = '📦 Clone only (Stage)';
+        btnDeploy.innerHTML = '🚀 Clone &amp; Deploy…';
+      };
+
       try {
-        // Step 1 — clone + scan (server-side), then the SAME "Choose what to deploy" picker as folder deploy.
         const target = remote ? { mode: 'remote', remotePath: (root.querySelector('#gd-rpath')?.value || '').trim() } : undefined;
         const prep = await API.post('/compose/deploy-git-prepare', {
           project, repoUrl, branch: root.querySelector('#gd-branch').value.trim(),
           token: useKey ? '' : root.querySelector('#gd-token').value, keyId, target,
         });
         const files = prep.files || [];
-        if (!files.length) { showToast('No docker-compose files found in the repo', 'error', 9000); API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); reset(); return; }
-        btn.textContent = 'Choose…';
+        if (!files.length) {
+          showToast('No docker-compose files found in the repo', 'error', 9000);
+          API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {});
+          reset();
+          return;
+        }
+
+        if (!autoUp && files.length === 1) {
+          // Single-stack Clone Only: stage directly without requiring another modal popup!
+          const f = files[0];
+          const plan = { createNets: f.externalNets || [], stacks: [{ name: project, composeFile: f.absFile || f.path, services: [], build: f.hasBuild, noCache: false, pull: false, noDeps: false }] };
+          const fin = await API.post('/compose/deploy-folder-finish', { uploadId: prep.uploadId, up: false, plan });
+          m.close();
+          if (fin && fin.jobId) openDeployLog(fin.jobId, project);
+          showToast(`✓ Cloned & registered "${project}". You can start it anytime with "Up".`, 'success', 7000);
+          render();
+          return;
+        }
+
+        // Multi-stack or Deploy mode: open plan picker
+        if (autoUp) btnDeploy.textContent = 'Choose…';
+        else btnCloneOnly.textContent = 'Choose…';
+
         const plan = await chooseDeployPlan(files, project);
-        if (!plan) { API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); reset(); return; } // cancelled → drop the clone
-        // Step 2 — shared finish (multi-stack deploy + transfer + live console + git meta for redeploy).
+        if (!plan) {
+          API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {});
+          reset();
+          return;
+        }
+
         const fin = await API.post('/compose/deploy-folder-finish', { uploadId: prep.uploadId, up: plan.up, plan });
         m.close();
-        openDeployLog(fin.jobId, project);
-        showToast('Deploying — watch the live console. Auto-redeploy webhook ready (project ▸ details).', 'info', 7000);
+        if (fin && fin.jobId) openDeployLog(fin.jobId, project);
+        showToast(plan.up ? 'Deploying — watch the live console. Auto-redeploy webhook ready.' : `✓ Cloned & staged "${project}". Start stacks from list when ready.`, 'info', 7000);
         render();
-      } catch (e) { showToast(e.message, 'error', 12000); reset(); }
-    });
+      } catch (e) {
+        showToast(e.message, 'error', 12000);
+        reset();
+      }
+    };
+
+    btnCloneOnly.addEventListener('click', () => runGitFlow(false));
+    btnDeploy.addEventListener('click', () => runGitFlow(true));
   }
 
   // Remote folder picker — navigate the active server's directory tree and pick a parent folder.

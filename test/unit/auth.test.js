@@ -46,6 +46,7 @@ test('secrets: encrypt/decrypt round-trips; plaintext + null + already-encrypted
   assert.ok(enc.startsWith('enc:v1:'));
   assert.notEqual(enc, 's3cret-value');
   assert.equal(secrets.decrypt(enc), 's3cret-value');           // round-trips
+  assert.equal(secrets.decryptStrict(enc), 's3cret-value');     // strict round-trips
   assert.equal(secrets.decrypt('plain-legacy'), 'plain-legacy'); // not enc: -> passthrough (pre-migration safe)
   assert.equal(secrets.encrypt(enc), enc);                       // already encrypted -> unchanged
   assert.equal(secrets.encrypt(''), '');                          // empty passthrough
@@ -54,6 +55,13 @@ test('secrets: encrypt/decrypt round-trips; plaintext + null + already-encrypted
   assert.equal(secrets.isEncrypted('plain'), false);
   // a second encrypt of the same plaintext uses a fresh IV -> different ciphertext, same decrypt
   assert.notEqual(secrets.encrypt('dup'), secrets.encrypt('dup'));
+});
+
+test('secrets: decryptStrict throws on invalid/corrupted ciphertext, decrypt returns ciphertext', () => {
+  const badEnc = 'enc:v1:000000000000000000000000:00000000000000000000000000000000:0000000000000000';
+  assert.throws(() => secrets.decryptStrict(badEnc), /Failed to decrypt secret/);
+  // non-strict decrypt logs warning and returns badEnc
+  assert.equal(secrets.decrypt(badEnc), badEnc);
 });
 
 test('session: cookie is HttpOnly+SameSite=Lax and round-trips through readSessionToken', () => {

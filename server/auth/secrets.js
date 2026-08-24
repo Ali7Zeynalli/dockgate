@@ -49,18 +49,31 @@ function encrypt(plain) {
 }
 
 /** Decrypt a value. Non-encrypted (plaintext / null) values pass through unchanged (idempotent). */
-function decrypt(value) {
+function decrypt(value, { strict = false } = {}) {
   if (!isEncrypted(value)) return value;
   try {
     const [ivHex, tagHex, dataHex] = value.slice(PREFIX.length).split(':');
-    if (!ivHex || !tagHex || !dataHex) return value;
+    if (!ivHex || !tagHex || !dataHex) {
+      if (strict) throw new Error('Malformed encrypted secret format');
+      return value;
+    }
     const decipher = crypto.createDecipheriv('aes-256-gcm', getKey(), Buffer.from(ivHex, 'hex'));
     decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
     return Buffer.concat([decipher.update(Buffer.from(dataHex, 'hex')), decipher.final()]).toString('utf8');
   } catch (e) {
-    // Wrong key / corrupt value — return as-is rather than crash the auth path.
+    console.error('[secrets] Decryption failed (master key mismatch or corrupt secret):', e.message);
+    if (strict) {
+      const err = new Error('Failed to decrypt secret: master key mismatch or corrupt data. Ensure data/.master.key persists or DG_MASTER_KEY is configured.');
+      err.statusCode = 500;
+      throw err;
+    }
     return value;
   }
 }
 
-module.exports = { encrypt, decrypt, isEncrypted };
+function decryptStrict(value) {
+  return decrypt(value, { strict: true });
+}
+
+module.exports = { encrypt, decrypt, decryptStrict, isEncrypted };
+

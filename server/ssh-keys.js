@@ -11,7 +11,7 @@ const util = require('util');
 const { execFile } = require('child_process');
 const execFileAsync = util.promisify(execFile);
 const { stmts } = require('./db');
-const { encrypt, decrypt } = require('./auth/secrets');
+const { encrypt, decrypt, decryptStrict } = require('./auth/secrets');
 
 const TMP = os.tmpdir();
 
@@ -67,14 +67,20 @@ async function importKey({ name, description, privateKey }) {
   } finally { shred(base); shred(base + '.pub'); }
 }
 
-// Decrypt + write the private key to a temp 0600 file for a single SSH/git operation. Caller MUST cleanup().
-function materializeToTemp(id) {
+// Decrypt and return the private key string in memory.
+function getDecryptedPrivateKey(id) {
   const row = stmts.getSshKey.get(id);
   if (!row) { const e = new Error('SSH key not found'); e.statusCode = 404; throw e; }
-  const file = tmpName();
-  let priv = decrypt(row.private_key);
+  let priv = decryptStrict(row.private_key);
   if (!priv.endsWith('\n')) priv += '\n';
-  fs.writeFileSync(file, priv, { mode: 0o600 });
+  return { privateKey: priv, row };
+}
+
+// Decrypt + write the private key to a temp 0600 file for a single SSH/git operation. Caller MUST cleanup().
+function materializeToTemp(id) {
+  const { privateKey, row } = getDecryptedPrivateKey(id);
+  const file = tmpName();
+  fs.writeFileSync(file, privateKey, { mode: 0o600 });
   return { path: file, cleanup: () => shred(file), row };
 }
 
@@ -98,4 +104,5 @@ async function testAgainstRepo(id, repoUrl) {
   } finally { k.cleanup(); }
 }
 
-module.exports = { generate, importKey, materializeToTemp, testAgainstRepo, mask };
+module.exports = { generate, importKey, materializeToTemp, getDecryptedPrivateKey, testAgainstRepo, mask };
+

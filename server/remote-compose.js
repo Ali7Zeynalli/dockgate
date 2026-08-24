@@ -78,6 +78,67 @@ async function checkComposeAvailable(server) {
   return r.code === 0 && !!(r.stdout || '').trim();
 }
 
+// Is `git` available on the remote host?
+async function checkGitAvailable(server) {
+  const r = await execRemote(server, 'command -v git 2>/dev/null');
+  return r.code === 0 && !!(r.stdout || '').trim();
+}
+
+// Provision an SSH private key from Dockgate store to the remote server at ~/.dockgate/keys/dg_key_<id> (mode 0600)
+async function ensureRemoteKey(server, keyId) {
+  if (!keyId) return null;
+  const { getDecryptedPrivateKey } = require('./ssh-keys');
+  const { privateKey } = getDecryptedPrivateKey(keyId);
+  const b64 = Buffer.from(privateKey, 'utf8').toString('base64');
+  const remoteDir = '$HOME/.dockgate/keys';
+  const remoteFile = `${remoteDir}/dg_key_${keyId}`;
+  const cmd = `mkdir -p ${remoteDir} && chmod 700 ${remoteDir} && echo ${shq(b64)} | base64 -d > ${remoteFile} && chmod 600 ${remoteFile}`;
+  const r = await execRemote(server, cmd);
+  if (r.code !== 0) throw new Error('Failed to install SSH key on remote server: ' + (r.stderr || r.stdout || ''));
+  return remoteFile;
+}
+
+// Remove an SSH key from the remote server
+async function removeRemoteKey(server, keyId) {
+  if (!keyId) return;
+  try {
+    await execRemote(server, `rm -f "$HOME/.dockgate/keys/dg_key_${keyId}"`);
+  } catch (e) {}
+}
+
+// Run a git command natively on the remote host with the specified SSH deploy key (if any)
+async function runGitOnRemote(server, keyId, cwd, gitArgs, onData) {
+  const hasGit = await checkGitAvailable(server);
+  if (!hasGit) {
+    const e = new Error(`git is not installed on the remote server ("${server.host || 'remote'}"). Please install git (e.g. apt-get install -y git / dnf install -y git) on the server.`);
+    e.statusCode = 400;
+    throw e;
+  }
+  let env = 'GIT_TERMINAL_PROMPT=0';
+  if (keyId) {
+    const remoteKey = await ensureRemoteKey(server, keyId);
+    const sshCmd = `ssh -i ${remoteKey} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new`;
+    env += ` GIT_SSH_COMMAND=${shq(sshCmd)}`;
+  } else {
+    const sshCmd = 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new';
+    env += ` GIT_SSH_COMMAND=${shq(sshCmd)}`;
+  }
+  const argsStr = gitArgs.map(shq).join(' ');
+  let cmd = `${env} git ${argsStr}`;
+  if (cwd) {
+    cmd = `cd ${shq(cwd)} && ${env} git ${argsStr}`;
+  }
+  const r = await execRemote(server, cmd, onData);
+  if (r.code !== 0) {
+    const msg = (r.stderr || r.stdout || ('git exited ' + r.code)).trim();
+    const er = new Error(onData ? msg : ('git failed: ' + msg));
+    er.code = r.code;
+    er.statusCode = 400;
+    throw er;
+  }
+  return r.stdout || '';
+}
+
 // Recursively upload a local directory's contents into a remote directory (SFTP). Dirs are pre-created
 // with one `mkdir -p`. Returns the number of files uploaded.
 async function uploadDirToRemote(server, localDir, remoteDir, onProgress) {
@@ -157,6 +218,8 @@ async function removeRemoteDir(server, remoteDir) {
 }
 
 module.exports = {
-  getActiveRemoteServer, execRemote, resolveRemotePath, checkComposeAvailable,
+  getActiveRemoteServer, execRemote, resolveRemotePath, checkComposeAvailable, checkGitAvailable,
+  ensureRemoteKey, removeRemoteKey, runGitOnRemote,
   uploadDirToRemote, runComposeInRemoteDir, removeRemoteDir, shq,
 };
+

@@ -2,6 +2,31 @@
 
 ---
 
+## [2.1.46] - 2026-08-24
+
+### Added — Compose: Server-Native Git Deploy & Multi-Server Redeploy Routing (100% SFTP-Free)
+- **Native Remote Git Operations (`remoteCompose.runGitOnRemote`)**:
+  - `POST /compose/deploy-git-prepare` now executes `git clone`, `git fetch`, `git reset`, `git diff`, and `git rev-parse` directly on the target remote server instead of cloning to master and slowly uploading via SFTP.
+  - Remote compose files are scanned directly on the target host using `remoteScanComposeFiles`.
+  - Deployment completes in ~1–2 seconds utilizing the remote server's high-speed network.
+- **Secure Remote Deploy Key Provisioning (`remoteCompose.ensureRemoteKey` & `removeRemoteKey`)**:
+  - Automatically provisions decrypted SSH deploy keys to `$HOME/.dockgate/keys/dg_key_<keyId>` with strict `0600` permissions on demand.
+  - Keys remain securely centralized in Dockgate's encrypted database (AES-256-GCM) and are removed from target servers when deleted from **Servers → SSH Keys**.
+- **Multi-Server Project Routing (`serverId` tracking)**:
+  - Both `.dockgate-git.json` and `.dockgate-deploy.json` now record the project's target `serverId`.
+  - `gitRedeployJob` and `webhook/:project` automatically route redeploys and Git pulls to the project's specific host without relying on the browser's active UI header session.
+- **Custom Remote Folder Support**:
+  - Custom target folders selected in the UI are preserved across redeploys, webhook triggers, and Git diff comparisons.
+- **UI Enhancements — Dedicated "Clone only" vs "Clone & Deploy"**:
+  - Added **`📦 Clone only (Stage)`** action: clones the repository and registers the project without starting containers (ideal for configuring `.env` or manual inspection).
+  - Added **`🚀 Clone & Deploy…`** action: clones and immediately brings up the containers via `docker compose up -d`.
+
+### Security & Reliability
+- Added `secrets.decryptStrict()` to fail fast on corrupted or mismatched master key secrets instead of passing unauthenticated ciphertexts.
+- Added comprehensive unit tests in `test/unit/remote-compose.test.js` and updated `test/unit/auth.test.js` (46 unit tests passing).
+
+---
+
 ## [2.1.45] - 2026-08-05
 
 ### Added — Containers: read-only **Topology** view (visualize the running stack)

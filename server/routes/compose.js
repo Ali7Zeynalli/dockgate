@@ -834,7 +834,7 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
   // Per-step status list so the UI shows exactly WHERE the deploy is (mirrors the provisioning step view).
   job.steps = [];
   if (isRemote && isUpdate && wantClean) job.steps.push({ id: 'clean', label: 'Clean remote folder', status: 'pending' });
-  job.steps.push({ id: 'upload', label: isRemote ? 'Upload files to the server' : 'Stage project files', status: 'pending' });
+  job.steps.push({ id: 'upload', label: (isRemote && u.remoteReady) ? 'Verify project on server' : (isRemote ? 'Upload files to the server' : 'Stage project files'), status: 'pending' });
   if (plan) {
     for (const n of (plan.createNets || [])) job.steps.push({ id: 'net:' + n, label: 'Ensure network ' + n, status: 'pending' });
     if (up) for (const s of plan.stacks) job.steps.push({ id: 'stack:' + s.name, label: 'Deploy ' + s.name + (s.services && s.services.length ? ' (' + s.services.join(', ') + ')' : ''), status: 'pending' });
@@ -851,12 +851,20 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
     let baseDir, uploaded = u.files;
     if (isRemote) {
       const { remotePath, update, clean } = u.deploy;
-      if (update && clean) { current = 'clean'; setStep(job, 'clean', 'running'); job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server…`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) {} setStep(job, 'clean', 'done'); }
-      current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server…\n`);
-      uploaded = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath, (d, t) => jobStream(job, `\ruploaded ${d}/${t} files`));
-      jobLog(job, `\nUploaded ${uploaded} file(s).`); setStep(job, 'upload', 'done');
-      fs.rmSync(u.dir, { recursive: true, force: true });
-      baseDir = remotePath;
+      if (u.remoteReady) {
+        // Remote-native Git: repository was already cloned directly on the remote server -> NO SFTP upload needed!
+        current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'upload';
+        jobLog(job, `✓ Code ready on server (${server.host || 'remote'} at ${remotePath})\n`);
+        setStep(job, 'upload', 'done');
+        baseDir = remotePath;
+      } else {
+        if (update && clean) { current = 'clean'; setStep(job, 'clean', 'running'); job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server…`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) {} setStep(job, 'clean', 'done'); }
+        current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server…\n`);
+        uploaded = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath, (d, t) => jobStream(job, `\ruploaded ${d}/${t} files`));
+        jobLog(job, `\nUploaded ${uploaded} file(s).`); setStep(job, 'upload', 'done');
+        if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) {}
+        baseDir = remotePath;
+      }
     } else {
       const dir = managedDir(u.project);
       current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'promote'; jobLog(job, 'Staging project files…');
@@ -907,7 +915,7 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
       logAction({ sourceIp: reqIp, server: isRemote ? serverId : undefined, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: up ? 'deploy-folder-plan' : 'stage-folder-plan', details: { stacks: allNames, nets: plan.createNets || [], staged: !up } });
     } else if (isRemote) {
       const { remotePath, update } = u.deploy;
-      writeDeployMeta(u.project, { mode: 'remote', serverId, remotePath, composeFile, source: 'folder' });
+      writeDeployMeta(u.project, { mode: 'remote', serverId, remotePath, composeFile, source: u.git ? 'git' : 'folder' });
       if (up) {
         // On update: rebuild AND force-recreate so the new image/files actually land in the running container.
         // u.rebuildServices (optional) → rebuild ONLY those services (+ --no-deps so deps aren't recreated).
@@ -933,7 +941,7 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
       // Record the commit we just deployed → the baseline a future redeploy diffs against ("what changed").
       let deployedCommit = u.git.deployedCommit || '';
       try { if (u.dir) deployedCommit = (await gitRun(['-C', u.dir, 'rev-parse', 'HEAD'])).stdout.trim() || deployedCommit; } catch (e) {}
-      fs.writeFileSync(gitMetaPath(u.project), JSON.stringify({ ...u.git, deployedCommit, plan: plan || null, deployMode: isRemote ? 'remote' : 'local', remotePath: isRemote ? u.deploy.remotePath : '', composeFile: gitComposeFile }, null, 2), { mode: 0o600 });
+      fs.writeFileSync(gitMetaPath(u.project), JSON.stringify({ ...u.git, serverId: isRemote ? serverId : 'local', deployedCommit, plan: plan || null, deployMode: isRemote ? 'remote' : 'local', remotePath: isRemote ? u.deploy.remotePath : '', composeFile: gitComposeFile }, null, 2), { mode: 0o600 });
     }
     job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
   } catch (err) {
@@ -944,52 +952,92 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
   }
 }
 
-// Background worker for Git deploy — clone (streamed) → [transfer to the remote] → up, with per-step status.
+// Background worker for Git deploy — native git clone on host/remote → docker compose up, with live status.
 async function runGitDeployJob(job, p) {
   const stream = (c) => jobStream(job, c);
   let current = null;
-  job.steps = [{ id: 'clone', label: 'git clone', status: 'pending' }];
-  if (remoteCompose.getActiveRemoteServer()) job.steps.push({ id: 'transfer', label: 'Transfer to the server', status: 'pending' });
+  const server = remoteCompose.getActiveRemoteServer();
+  const isRemote = !!server;
+  const serverId = isRemote ? dockerService.getActiveServerId() : 'local';
+
+  job.steps = [{ id: 'clone', label: isRemote ? 'git clone (on server)' : 'git clone', status: 'pending' }];
   if (p.up) job.steps.push({ id: 'up', label: 'docker compose up -d', status: 'pending' });
+
   try {
-    const dir = managedDir(p.project);
-    fs.rmSync(dir, { recursive: true, force: true });
-    current = 'clone'; setStep(job, 'clone', 'running'); job.phase = 'clone';
-    jobLog(job, `$ git clone ${p.branch ? '-b ' + p.branch + ' ' : ''}${redactToken(p.repoUrl, p.token)}`);
-    const cloneArgs = ['clone', '--depth', '1', '--progress'];
-    if (p.branch) cloneArgs.push('--branch', p.branch);
-    cloneArgs.push(p.keyId ? p.repoUrl : gitUrlWithToken(p.repoUrl, p.token), dir);
-    await gitWithKey(p.keyId, cloneArgs, { onData: stream });
-    setStep(job, 'clone', 'done'); current = null; // clone succeeded; a post-clone validation error isn't a clone failure
-
     const relSub = safeRelPath(p.subdir);
-    const projectDir = relSub ? path.join(dir, relSub) : dir;
-    let composeFile = findComposeFile(projectDir);
-    if (!composeFile) { const found = findComposeFiles(projectDir); if (found.length) composeFile = found[0]; } // fall back to any *.yml/.yaml with services: (non-standard name / nested, e.g. deploy/docker-compose.greennec.yaml)
-    if (!composeFile) throw Object.assign(new Error(`No compose file (docker-compose.yml or any *.yml with "services:") in the repo${relSub ? ' subdir "' + relSub + '"' : ''}`), { statusCode: 400 });
+    let composeFile = '';
     let deployedCommit = '';
-    try { deployedCommit = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) {}
-    fs.writeFileSync(gitMetaPath(p.project), JSON.stringify({ repoUrl: p.repoUrl, branch: p.branch, token: p.keyId ? '' : p.token, keyId: p.keyId || '', subdir: relSub, composeFile, secret: p.secret, deployedCommit }, null, 2), { mode: 0o600 });
-    try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: projectDir }); }
-    catch (e) { throw Object.assign(new Error('Invalid compose file: ' + (e.stderr || e.message)), { statusCode: 400 }); }
+    let remotePath = '';
 
-    const server = remoteCompose.getActiveRemoteServer();
-    if (server) {
-      const serverId = dockerService.getActiveServerId();
-      const remotePath = await remoteCompose.resolveRemotePath(server, p.remotePath || `~/.dockgate/projects/${p.project}`);
-      current = 'transfer'; setStep(job, 'transfer', 'running'); job.phase = 'transfer'; jobLog(job, `\nUploading to ${remotePath} on the server…\n`);
-      const n = await remoteCompose.uploadDirToRemote(server, projectDir, remotePath, (d, t) => jobStream(job, `\ruploaded ${d}/${t} files`));
-      jobLog(job, `\nUploaded ${n} file(s).`); setStep(job, 'transfer', 'done');
+    if (isRemote) {
+      remotePath = await remoteCompose.resolveRemotePath(server, p.remotePath || `~/.dockgate/projects/${p.project}`);
+      current = 'clone'; setStep(job, 'clone', 'running'); job.phase = 'clone';
+      jobLog(job, `[${server.host}] $ git clone ${p.branch ? '-b ' + p.branch + ' ' : ''}${redactToken(p.repoUrl, p.token)} ${remotePath}\n`);
+
+      // Ensure directory is clean and ready on remote server
+      await remoteCompose.execRemote(server, `mkdir -p ${remoteCompose.shq(path.posix.dirname(remotePath))}`);
+      await remoteCompose.execRemote(server, `rm -rf ${remoteCompose.shq(remotePath)}`);
+
+      const cloneArgs = ['clone', '--depth', '1', '--progress'];
+      if (p.branch) cloneArgs.push('--branch', p.branch);
+      cloneArgs.push(p.keyId ? p.repoUrl : gitUrlWithToken(p.repoUrl, p.token), remotePath);
+
+      await remoteCompose.runGitOnRemote(server, p.keyId, null, cloneArgs, stream);
+      setStep(job, 'clone', 'done'); current = null;
+
+      const projectDir = relSub ? path.posix.join(remotePath, relSub) : remotePath;
+      const { files } = await remoteScanComposeFiles(server, projectDir, { maxdepth: 4 });
+      const foundCompose = files.find(f => COMPOSE_FILENAMES.includes(f.path)) || files[0];
+      if (!foundCompose) throw Object.assign(new Error(`No compose file (docker-compose.yml or *.yml with "services:") in the repo${relSub ? ' subdir "' + relSub + '"' : ''}`), { statusCode: 400 });
+      composeFile = foundCompose.path;
+
+      try {
+        deployedCommit = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'HEAD'])).trim();
+      } catch (e) {}
+
+      fs.mkdirSync(managedDir(p.project), { recursive: true });
+      fs.writeFileSync(gitMetaPath(p.project), JSON.stringify({ repoUrl: p.repoUrl, branch: p.branch, token: p.keyId ? '' : p.token, keyId: p.keyId || '', subdir: relSub, composeFile, secret: p.secret, deployedCommit, serverId, deployMode: 'remote', remotePath }, null, 2), { mode: 0o600 });
       writeDeployMeta(p.project, { mode: 'remote', serverId, remotePath, composeFile, source: 'git' });
-      if (p.up) { current = 'up'; setStep(job, 'up', 'running'); job.phase = 'up'; jobLog(job, '\n$ docker compose -f ' + composeFile + ' up -d'); await remoteCompose.runComposeInRemoteDir(server, remotePath, p.project, ['-f', composeFile, 'up', '-d'], stream); setStep(job, 'up', 'done'); }
+
+      if (p.up) {
+        current = 'up'; setStep(job, 'up', 'running'); job.phase = 'up';
+        jobLog(job, `\n[${server.host}] $ docker compose -f ${composeFile} up -d\n`);
+        await remoteCompose.runComposeInRemoteDir(server, projectDir, p.project, ['-f', path.posix.basename(composeFile), 'up', '-d'], stream);
+        setStep(job, 'up', 'done');
+      }
     } else {
-      // Local git deploy → record the pointer so the project shows as git-managed (badge, ⤓ Pull, delete-files).
+      const dir = managedDir(p.project);
+      fs.rmSync(dir, { recursive: true, force: true });
+      current = 'clone'; setStep(job, 'clone', 'running'); job.phase = 'clone';
+      jobLog(job, `$ git clone ${p.branch ? '-b ' + p.branch + ' ' : ''}${redactToken(p.repoUrl, p.token)}\n`);
+      const cloneArgs = ['clone', '--depth', '1', '--progress'];
+      if (p.branch) cloneArgs.push('--branch', p.branch);
+      cloneArgs.push(p.keyId ? p.repoUrl : gitUrlWithToken(p.repoUrl, p.token), dir);
+      await gitWithKey(p.keyId, cloneArgs, { onData: stream });
+      setStep(job, 'clone', 'done'); current = null;
+
+      const projectDir = relSub ? path.join(dir, relSub) : dir;
+      composeFile = findComposeFile(projectDir);
+      if (!composeFile) { const found = findComposeFiles(projectDir); if (found.length) composeFile = found[0]; }
+      if (!composeFile) throw Object.assign(new Error(`No compose file (docker-compose.yml or any *.yml with "services:") in the repo${relSub ? ' subdir "' + relSub + '"' : ''}`), { statusCode: 400 });
+
+      try { deployedCommit = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) {}
+      fs.writeFileSync(gitMetaPath(p.project), JSON.stringify({ repoUrl: p.repoUrl, branch: p.branch, token: p.keyId ? '' : p.token, keyId: p.keyId || '', subdir: relSub, composeFile, secret: p.secret, deployedCommit, serverId: 'local', deployMode: 'local' }, null, 2), { mode: 0o600 });
+      try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: projectDir }); }
+      catch (e) { throw Object.assign(new Error('Invalid compose file: ' + (e.stderr || e.message)), { statusCode: 400 }); }
+
       writeDeployMeta(p.project, { mode: 'local', serverId: 'local', workingDir: projectDir, composeFile, source: 'git' });
-      if (p.up) { current = 'up'; setStep(job, 'up', 'running'); job.phase = 'up'; jobLog(job, '\n$ docker compose -f ' + composeFile + ' up -d'); await runCompose(p.project, ['-f', composeFile, 'up', '-d'], projectDir, stream); setStep(job, 'up', 'done'); }
+      if (p.up) {
+        current = 'up'; setStep(job, 'up', 'running'); job.phase = 'up';
+        jobLog(job, '\n$ docker compose -f ' + composeFile + ' up -d\n');
+        await runCompose(p.project, ['-f', composeFile, 'up', '-d'], projectDir, stream);
+        setStep(job, 'up', 'done');
+      }
     }
+
     job.result = { composeFile, webhookSecret: p.secret };
     job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
-    logAction({ sourceIp: p.reqIp, server: server ? dockerService.getActiveServerId() : 'local', resourceId: p.project, resourceType: 'compose', resourceName: p.project, action: 'deploy-git', details: { repoUrl: p.repoUrl, branch: p.branch || 'default', auth: p.keyId ? 'ssh-key' : (p.token ? 'token' : 'public') } });
+    logAction({ sourceIp: p.reqIp, server: serverId, resourceId: p.project, resourceType: 'compose', resourceName: p.project, action: 'deploy-git', details: { repoUrl: p.repoUrl, branch: p.branch || 'default', auth: p.keyId ? 'ssh-key' : (p.token ? 'token' : 'public') } });
   } catch (err) {
     if (current) setStep(job, current, 'failed');
     job.status = 'error'; job.phase = 'error';
@@ -1102,14 +1150,20 @@ router.post('/deploy-folder-finish', async (req, res) => {
       for (const s of plan.stacks) {
         if (!validateProjectName(s.name || '')) throw Object.assign(new Error(`Invalid stack name "${s.name}" (a-z, 0-9, _, -)`), { statusCode: 400 });
         const rel = safeRelPath(s.composeFile || '');
-        const abs = path.join(u.dir, rel);
-        if (!rel || !(abs === u.dir || abs.startsWith(u.dir + path.sep)) || !fs.existsSync(abs)) throw Object.assign(new Error(`Compose file not found in upload: ${s.composeFile}`), { statusCode: 400 });
-        s.composeFile = rel; // normalized POSIX-relative
-        try { await execFileAsync('docker', ['compose', '-f', path.posix.basename(rel), 'config', '-q'], { cwd: path.join(u.dir, path.posix.dirname(rel)) }); }
-        catch (e) { throw Object.assign(new Error(`Invalid compose (${rel}): ` + (e.stderr || e.message)), { statusCode: 400 }); }
+        if (u.remoteReady) {
+          s.composeFile = rel || path.posix.basename(s.composeFile || 'docker-compose.yml');
+        } else {
+          const abs = path.join(u.dir, rel);
+          if (!rel || !(abs === u.dir || abs.startsWith(u.dir + path.sep)) || !fs.existsSync(abs)) throw Object.assign(new Error(`Compose file not found in upload: ${s.composeFile}`), { statusCode: 400 });
+          s.composeFile = rel; // normalized POSIX-relative
+          try { await execFileAsync('docker', ['compose', '-f', path.posix.basename(rel), 'config', '-q'], { cwd: path.join(u.dir, path.posix.dirname(rel)) }); }
+          catch (e) { throw Object.assign(new Error(`Invalid compose (${rel}): ` + (e.stderr || e.message)), { statusCode: 400 }); }
+        }
       }
       u.plan = { createNets: Array.isArray(plan.createNets) ? plan.createNets.filter(n => typeof n === 'string' && n) : [], stacks: plan.stacks };
       composeFile = plan.stacks[0].composeFile;
+    } else if (u.remoteReady) {
+      composeFile = u.composeFile || 'docker-compose.yml';
     } else {
       composeFile = findComposeFile(u.dir);
       if (!composeFile) { throw Object.assign(new Error('No docker-compose.yml (or compose.yaml) found in the folder'), { statusCode: 400 }); }
@@ -1127,15 +1181,27 @@ router.post('/deploy-folder-finish', async (req, res) => {
     res.json({ jobId: job.id, project: u.project });
   } catch (err) {
     // Validation/setup failure → clean the staging dir so a retry starts fresh.
-    if (u) { fs.rmSync(u.dir, { recursive: true, force: true }); folderUploads.delete((req.body || {}).uploadId); }
+    if (u) {
+      if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) {}
+      if (u.remoteReady && u.deploy && u.deploy.server && u.deploy.remotePath) {
+        remoteCompose.removeRemoteDir(u.deploy.server, u.deploy.remotePath).catch(() => {});
+      }
+      folderUploads.delete((req.body || {}).uploadId);
+    }
     res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || '').toString() });
   }
 });
 
-// Cancel/close mid-upload — drop the staging dir.
+// Cancel/close mid-upload — drop the staging dir or remote staged folder.
 router.post('/deploy-folder-abort', (req, res) => {
   const u = folderUploads.get((req.body || {}).uploadId);
-  if (u) { fs.rmSync(u.dir, { recursive: true, force: true }); folderUploads.delete((req.body || {}).uploadId); }
+  if (u) {
+    if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) {}
+    if (u.remoteReady && u.deploy && u.deploy.server && u.deploy.remotePath) {
+      remoteCompose.removeRemoteDir(u.deploy.server, u.deploy.remotePath).catch(() => {});
+    }
+    folderUploads.delete((req.body || {}).uploadId);
+  }
   res.json({ success: true });
 });
 
@@ -1362,18 +1428,42 @@ router.post('/deploy-git-prepare', async (req, res) => {
     if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
       return res.status(409).json({ error: `A project named "${project}" already exists` });
     }
-    // Resolve the deploy target (local or a chosen remote folder) — same shape as deploy-folder-start.
-    let deploy = { mode: 'local', source: 'git' };
+    const uploadId = crypto.randomBytes(16).toString('hex');
+    const secret = crypto.randomBytes(18).toString('hex');
+
+    // Remote server deploy -> clone directly ON THE REMOTE SERVER (native, superfast, no SFTP upload needed later!)
     if (target && target.mode === 'remote') {
       const server = remoteCompose.getActiveRemoteServer();
       if (!server) return res.status(400).json({ error: 'Remote deploy needs a remote SSH server active in the header.' });
       if (!(await remoteCompose.checkComposeAvailable(server))) return res.status(400).json({ error: 'docker compose (v2) is not available on the remote host — install it there first.' });
+      
       const remotePath = await remoteCompose.resolveRemotePath(server, (target.remotePath || `~/.dockgate/projects/${project}`));
-      deploy = { mode: 'remote', server, remotePath, source: 'git' };
+      const deploy = { mode: 'remote', server, remotePath, source: 'git', serverId: server.id };
+
+      // Ensure directory is clean and ready on remote server
+      await remoteCompose.execRemote(server, `mkdir -p ${remoteCompose.shq(path.posix.dirname(remotePath))}`);
+      await remoteCompose.execRemote(server, `rm -rf ${remoteCompose.shq(remotePath)}`);
+
+      const cloneArgs = ['clone', '--depth', '1'];
+      if (branch) cloneArgs.push('--branch', branch);
+      cloneArgs.push(keyId ? repoUrl : gitUrlWithToken(repoUrl, token), remotePath);
+
+      // Clone natively ON THE REMOTE SERVER (superfast gigabit network!)
+      await remoteCompose.runGitOnRemote(server, keyId, null, cloneArgs);
+
+      // Scan compose files directly on the remote server
+      const { files } = await remoteScanComposeFiles(server, remotePath, { maxdepth: 6 });
+      let deployedCommit = '';
+      try { deployedCommit = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'HEAD'])).trim(); } catch (e) {}
+
+      folderUploads.set(uploadId, { project, remoteReady: true, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl, branch, keyId: keyId || '', token: keyId ? '' : token, secret, deployedCommit, serverId: server.id } });
+      return res.json({ uploadId, files, target: deploy.mode, remotePath: deploy.remotePath, webhookSecret: secret });
     }
-    const uploadId = crypto.randomBytes(16).toString('hex');
+
+    // Local daemon deploy:
     const dir = path.join(STAGING_DIR, `${project}-${uploadId}`);
     fs.mkdirSync(dir, { recursive: true });
+    let deploy = { mode: 'local', source: 'git', serverId: 'local' };
     const cloneArgs = ['clone', '--depth', '1'];
     if (branch) cloneArgs.push('--branch', branch);
     cloneArgs.push(keyId ? repoUrl : gitUrlWithToken(repoUrl, token), dir);
@@ -1382,8 +1472,9 @@ router.post('/deploy-git-prepare', async (req, res) => {
     const files = findComposeFiles(dir);
     const scanned = [];
     for (const f of files) scanned.push(await scanComposeFile(dir, f));
-    const secret = crypto.randomBytes(18).toString('hex');
-    folderUploads.set(uploadId, { project, dir, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl, branch, keyId, token, secret } });
+    let deployedCommit = '';
+    try { deployedCommit = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) {}
+    folderUploads.set(uploadId, { project, dir, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl, branch, keyId: keyId || '', token: keyId ? '' : token, secret, deployedCommit, serverId: 'local' } });
     res.json({ uploadId, files: scanned, target: deploy.mode, remotePath: deploy.remotePath, webhookSecret: secret });
   } catch (err) { res.status(500).json({ error: redactToken(err.message, token) }); }
 });
@@ -1415,20 +1506,33 @@ router.post('/deploy-git', async (req, res) => {
 async function gitRedeploy(project, onData) {
   const meta = readGitMeta(project);
   if (!meta) { const e = new Error('Not a Git-managed project'); e.statusCode = 400; throw e; }
+  const dm = readDeployMeta(project);
+  const targetServerId = meta.serverId || (dm && dm.serverId);
+  const wantRemote = (targetServerId && targetServerId !== 'local') || meta.deployMode === 'remote' || (dm && dm.mode === 'remote');
+  let server = null;
+  if (wantRemote) {
+    if (targetServerId && targetServerId !== 'local') {
+      const { stmts } = require('../db');
+      server = stmts.getServer.get(targetServerId);
+    }
+    if (!server) server = remoteCompose.getActiveRemoteServer();
+  }
+
+  if (wantRemote && server) {
+    const remotePath = meta.remotePath || (dm && dm.remotePath);
+    const composeFile = meta.composeFile || 'docker-compose.yml';
+    if (onData) onData(`[${server.host}] Fetching latest code on server...\n`);
+    await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['fetch', '--depth', '1', 'origin', meta.branch || 'HEAD'], onData);
+    await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['reset', '--hard', 'FETCH_HEAD'], onData);
+    const output = await remoteCompose.runComposeInRemoteDir(server, remotePath, project, ['up', '-d', '--build'], onData);
+    return { output, composeFile };
+  }
+
   const dir = managedDir(project);
   const projectDir = meta.subdir ? path.join(dir, meta.subdir) : dir;
   await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', '--progress', 'origin', meta.branch || 'HEAD'], { onData });
   await gitWithKey(meta.keyId, ['-C', dir, 'reset', '--hard', 'FETCH_HEAD'], { onData });
   const composeFile = meta.composeFile || findComposeFile(projectDir);
-  // Remote git project (Model A) → re-transfer the updated tree + rebuild THERE.
-  const dm = readDeployMeta(project);
-  const server = remoteCompose.getActiveRemoteServer();
-  if (dm && dm.mode === 'remote' && server && dm.serverId === dockerService.getActiveServerId()) {
-    if (onData) onData(`\nUploading to ${dm.remotePath}…\n`);
-    await remoteCompose.uploadDirToRemote(server, projectDir, dm.remotePath);
-    const output = await remoteCompose.runComposeInRemoteDir(server, dm.remotePath, project, ['up', '-d', '--build', '--force-recreate'], onData);
-    return { output, composeFile };
-  }
   const output = await runCompose(project, ['up', '-d', '--build'], projectDir, onData);
   return { output, composeFile };
 }
@@ -1438,7 +1542,7 @@ router.get('/:project/git', (req, res) => {
   if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
   const meta = readGitMeta(req.params.project);
   if (!meta) return res.json({ gitManaged: false });
-  res.json({ gitManaged: true, repoUrl: meta.repoUrl, branch: meta.branch || 'default', subdir: meta.subdir || '', hasToken: !!meta.token, hasKey: !!meta.keyId, webhookSecret: meta.secret });
+  res.json({ gitManaged: true, repoUrl: meta.repoUrl, branch: meta.branch || 'default', subdir: meta.subdir || '', hasToken: !!meta.token, hasKey: !!meta.keyId, webhookSecret: meta.secret, serverId: meta.serverId || 'local' });
 });
 
 // Cheap "is the repo ahead of what we deployed?" check via `git ls-remote` (no clone). Cached 5 min/project
@@ -1501,35 +1605,91 @@ function gitRedeployJob(project, reqIp) {
   const meta = readGitMeta(project);
   if (!meta) { const e = new Error('Not a Git-managed project'); e.statusCode = 400; throw e; }
   gcDeployJobs();
-  const dir = path.join(STAGING_DIR, `${project}-${crypto.randomBytes(16).toString('hex')}`);
+  const dm = readDeployMeta(project);
+  const targetServerId = meta.serverId || (dm && dm.serverId);
+  const wantRemote = (targetServerId && targetServerId !== 'local') || meta.deployMode === 'remote' || (dm && dm.mode === 'remote');
+  
   const job = { id: crypto.randomBytes(8).toString('hex'), project, status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
   deployJobs.set(job.id, job);
+  
   (async () => {
     try {
-      fs.mkdirSync(dir, { recursive: true });
-      const dm = readDeployMeta(project);
-      const wantRemote = meta.deployMode === 'remote' || (dm && dm.mode === 'remote');
-      let deploy = { mode: 'local', source: 'git' };
       if (wantRemote) {
-        const server = remoteCompose.getActiveRemoteServer();
-        if (!server) throw Object.assign(new Error('Switch to the server this project was deployed to, then redeploy.'), { statusCode: 400 });
+        let server = null;
+        if (targetServerId && targetServerId !== 'local') {
+          const { stmts } = require('../db');
+          server = stmts.getServer.get(targetServerId);
+        }
+        if (!server) server = remoteCompose.getActiveRemoteServer();
+        if (!server) throw Object.assign(new Error(`Target server ("${targetServerId || 'unknown'}") was not found in the database.`), { statusCode: 400 });
+
         const remotePath = await remoteCompose.resolveRemotePath(server, meta.remotePath || (dm && dm.remotePath) || `~/.dockgate/projects/${project}`);
-        deploy = { mode: 'remote', server, remotePath, source: 'git' };
+        const composeFile = meta.composeFile || 'docker-compose.yml';
+        const relSub = safeRelPath(meta.subdir);
+        const projectDir = relSub ? path.posix.join(remotePath, relSub) : remotePath;
+        const branch = meta.branch || 'HEAD';
+        const url = meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token);
+
+        job.phase = 'pull';
+        jobLog(job, `[${server.host}] $ git fetch --depth 1 origin ${branch}\n`);
+        await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['fetch', '--depth', '1', '--progress', 'origin', branch], (c) => jobStream(job, c));
+
+        const fromSHA = (meta.deployedCommit || '').trim();
+        let toSHA = '';
+        try { toSHA = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'FETCH_HEAD'])).trim(); } catch (e) {}
+
+        // Reset to FETCH_HEAD
+        jobLog(job, `\n[${server.host}] $ git reset --hard FETCH_HEAD\n`);
+        await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['reset', '--hard', 'FETCH_HEAD'], (c) => jobStream(job, c));
+
+        // Diff output if we had a baseline
+        if (fromSHA && toSHA && fromSHA !== toSHA) {
+          try {
+            await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['fetch', '--depth', '1', url, fromSHA]);
+            const names = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['diff', '--name-status', fromSHA, toSHA])).trim();
+            const stat = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['diff', '--shortstat', fromSHA, toSHA])).trim();
+            jobLog(job, `\n📦 Changes pulled (${fromSHA.slice(0, 7)} → ${toSHA.slice(0, 7)}):\n`);
+            if (names) {
+              const icon = s => s.startsWith('A') ? '✚' : s.startsWith('D') ? '🗑' : s.startsWith('R') ? '➟' : '✎';
+              for (const line of names.split('\n')) {
+                const parts = line.split('\t');
+                jobLog(job, `   ${icon(parts[0])} ${parts.slice(1).join(' → ')}\n`);
+              }
+            }
+            if (stat) jobLog(job, `  ${stat}\n`);
+          } catch (e) {}
+        } else if (toSHA) {
+          jobLog(job, `✓ At commit ${toSHA.slice(0, 7)}\n`);
+        }
+
+        // Persist updated commit & metadata
+        fs.writeFileSync(gitMetaPath(project), JSON.stringify({ ...meta, serverId: server.id, deployedCommit: toSHA || fromSHA, deployMode: 'remote', remotePath }, null, 2), { mode: 0o600 });
+        writeDeployMeta(project, { mode: 'remote', serverId: server.id, remotePath, composeFile, source: 'git' });
+
+        // Run docker compose up -d --build
+        job.phase = 'up';
+        jobLog(job, `\n[${server.host}] $ docker compose -f ${composeFile} up -d --build\n`);
+        await remoteCompose.runComposeInRemoteDir(server, projectDir, project, ['-f', path.posix.basename(composeFile), 'up', '-d', '--build', '--force-recreate'], (c) => jobStream(job, c));
+
+        job.phase = 'done';
+        job.status = 'done';
+        jobLog(job, '\n✓ Redeploy completed successfully');
+        job.finishedAt = Date.now();
+        logAction({ sourceIp: reqIp, server: server.id, resourceId: project, resourceType: 'compose', resourceName: project, action: 'redeploy', details: { commit: toSHA } });
+      } else {
+        // Local redeploy
+        const dir = path.join(STAGING_DIR, `${project}-${crypto.randomBytes(16).toString('hex')}`);
+        fs.mkdirSync(dir, { recursive: true });
+        let deploy = { mode: 'local', source: 'git' };
+        const cloneArgs = ['clone', '--depth', '1', '--progress'];
+        if (meta.branch) cloneArgs.push('--branch', meta.branch);
+        cloneArgs.push(meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token), dir);
+        job.phase = 'clone'; jobLog(job, `$ git clone ${redactToken(meta.repoUrl, meta.token)}\n`);
+        await gitWithKey(meta.keyId, cloneArgs, { onData: (c) => jobStream(job, c) });
+        await streamGitChanges(job, dir, meta).catch(() => {});
+        const u = { project, dir, files: 1, deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId, token: meta.token, secret: meta.secret, serverId: 'local' }, plan: meta.plan || null };
+        await runDeployJob(job, u, meta.composeFile, true, reqIp);
       }
-      const cloneArgs = ['clone', '--depth', '1', '--progress'];
-      if (meta.branch) cloneArgs.push('--branch', meta.branch);
-      cloneArgs.push(meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token), dir);
-      job.phase = 'clone'; jobLog(job, `$ git clone ${redactToken(meta.repoUrl, meta.token)}\n`);
-      await gitWithKey(meta.keyId, cloneArgs, { onData: (c) => jobStream(job, c) });
-      // Auto-show what was pulled (changed files since the last deploy) right in the redeploy console.
-      await streamGitChanges(job, dir, meta).catch(() => {});
-      // Do NOT wipe the remote folder on redeploy. It holds the project's runtime bind-mount data (e.g.
-      // ./docker/volumes/postgres_data, caddy_data) that the containers created as root — deleting it would
-      // (a) destroy live data and (b) fail "Permission denied" because the SSH user doesn't own those
-      // root-created files. runDeployJob re-uploads the source over the existing folder, so code changes
-      // land while runtime data survives.
-      const u = { project, dir, files: 1, deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId, token: meta.token, secret: meta.secret }, plan: meta.plan || null };
-      await runDeployJob(job, u, meta.composeFile, true, reqIp); // sets job done/error itself
     } catch (err) {
       job.status = 'error'; job.phase = 'error'; job.error = redactToken((err.stderr || err.message || 'redeploy failed').toString(), meta.token); jobLog(job, '✗ ' + job.error); job.finishedAt = Date.now();
     }
@@ -1548,14 +1708,22 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
     if (!meta) return res.status(400).json({ error: 'Not a Git-managed project' });
     gcFolderUploads();
     const dm = readDeployMeta(project);
-    const wantRemote = meta.deployMode === 'remote' || (dm && dm.mode === 'remote');
+    const targetServerId = meta.serverId || (dm && dm.serverId);
+    const wantRemote = (targetServerId && targetServerId !== 'local') || meta.deployMode === 'remote' || (dm && dm.mode === 'remote');
+    
     let deploy = { mode: 'local', source: 'git' };
     if (wantRemote) {
-      const server = remoteCompose.getActiveRemoteServer();
-      if (!server) return res.status(400).json({ error: 'Switch to the server this project was deployed to, then redeploy.' });
+      let server = null;
+      if (targetServerId && targetServerId !== 'local') {
+        const { stmts } = require('../db');
+        server = stmts.getServer.get(targetServerId);
+      }
+      if (!server) server = remoteCompose.getActiveRemoteServer();
+      if (!server) return res.status(400).json({ error: `Target server ("${targetServerId || 'unknown'}") was not found in database.` });
       const remotePath = await remoteCompose.resolveRemotePath(server, meta.remotePath || (dm && dm.remotePath) || `~/.dockgate/projects/${project}`);
       deploy = { mode: 'remote', server, remotePath, source: 'git' };
     }
+
     const uploadId = crypto.randomBytes(16).toString('hex');
     const dir = path.join(STAGING_DIR, `${project}-${uploadId}`);
     fs.mkdirSync(dir, { recursive: true });
@@ -1587,14 +1755,14 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
     // this only sets the reference point. Without this, every pull was stuck on "first pull".)
     let baselineRecorded = false;
     if (!fromSHA && toSHA) {
-      try { fs.writeFileSync(gitMetaPath(project), JSON.stringify({ ...meta, deployedCommit: toSHA }, null, 2), { mode: 0o600 }); baselineRecorded = true; } catch (e) {}
+      try { fs.writeFileSync(gitMetaPath(project), JSON.stringify({ ...meta, serverId: meta.serverId || (wantRemote ? targetServerId : 'local'), deployedCommit: toSHA }, null, 2), { mode: 0o600 }); baselineRecorded = true; } catch (e) {}
     }
     const affectedStacks = scanned.filter(s => {
       const d = s.dir === '.' ? '' : s.dir.replace(/\/+$/, '') + '/';
       return d === '' ? changedFiles.length > 0 : changedFiles.some(cf => cf.startsWith(d));
     }).map(s => s.path);
     const secret = meta.secret || crypto.randomBytes(18).toString('hex');
-    folderUploads.set(uploadId, { project, dir, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId || '', token: meta.keyId ? '' : (meta.token || ''), secret }, redeploy: true });
+    folderUploads.set(uploadId, { project, dir, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId || '', token: meta.keyId ? '' : (meta.token || ''), secret, serverId: meta.serverId || (wantRemote ? targetServerId : 'local') }, redeploy: true });
     res.json({ uploadId, files: scanned, target: deploy.mode, remotePath: deploy.remotePath,
       diff: { fromSHA, toSHA, changedFiles, commits, affectedStacks, hasBaseline: !!fromSHA, baselineRecorded, upToDate: !!(fromSHA && toSHA && fromSHA === toSHA) } });
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.message || 'redeploy prepare failed').toString() }); }
@@ -1611,14 +1779,14 @@ router.post('/:project/redeploy', (req, res) => {
 });
 
 // Webhook: push-triggered re-deploy. Secured by the per-project secret in ?key= (no session needed).
-// Targets the CURRENTLY ACTIVE daemon (note: switch to the project's host before relying on it).
+// Automatically targets the server recorded in the project's metadata.
 router.post('/webhook/:project', (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(404).json({ error: 'not found' });
     const meta = readGitMeta(req.params.project);
     if (!meta || !meta.secret || req.query.key !== meta.secret) return res.status(403).json({ error: 'invalid webhook key' });
     const job = gitRedeployJob(req.params.project, req.ip);
-    logAction({ req, server: 'local', resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'webhook-redeploy' });
+    logAction({ req, server: meta.serverId || 'local', resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'webhook-redeploy' });
     res.json({ success: true, jobId: job.id });
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || '').toString() }); }
 });
@@ -1641,19 +1809,20 @@ function isSafeHostPath(p) {
 // Run a git command in `cwd` on the project's host: local fs (server null) or the active remote (SSH).
 // `args` are constant git tokens; `cwd` is the only label-derived value — validated by the caller and
 // shq()-quoted here. Returns stdout; throws (statusCode 400) on non-zero exit.
-async function gitInDir(server, cwd, args, onData) {
+async function gitInDir(server, cwd, args, onData, keyId) {
   if (!server) {
+    if (keyId) {
+      return (await gitWithKey(keyId, ['-C', cwd, ...args])).stdout;
+    }
     const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], { env: GIT_ENV, maxBuffer: 16 * 1024 * 1024 });
     return stdout;
   }
-  const cmd = 'GIT_TERMINAL_PROMPT=0 git -C ' + remoteCompose.shq(cwd) + ' ' + args.map(remoteCompose.shq).join(' ');
-  const r = await remoteCompose.execRemote(server, 'timeout 120 ' + cmd, onData);
-  if (r.code !== 0) { const e = new Error((r.stderr || r.stdout || 'git failed').trim()); e.statusCode = 400; throw e; }
-  return r.stdout;
+  return await remoteCompose.runGitOnRemote(server, keyId, cwd, args, onData);
 }
 
 // Strip embedded credentials from a remote URL before display (https://user:tok@host → //***@host).
 function redactRemoteUrl(u) { return String(u || '').replace(/\/\/[^@/]+@/, '//***@'); }
+
 
 // Probe whether `project` is an external (non-DockGate) git checkout we can adopt, with its current state.
 async function detectExternalGit(project) {
