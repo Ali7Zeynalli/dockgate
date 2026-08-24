@@ -538,10 +538,11 @@ Router.register('settings', async (content, params) => {
         tabContent.innerHTML = '<div class="text-muted text-sm">Loading notification settings...</div>';
 
         try {
-          const [smtpConfig, tgConfig, rules] = await Promise.all([
+          const [smtpConfig, tgConfig, rules, hostNotifs] = await Promise.all([
             API.get('/meta/smtp'),
             API.get('/meta/telegram'),
             API.get('/meta/notifications/rules'),
+            API.get('/meta/notifications/hosts').catch(() => ({ local: { enabled: true }, servers: [] })),
           ]);
 
           const ruleLabels = {
@@ -645,6 +646,38 @@ Router.register('settings', async (content, params) => {
               </div>
             </div>
 
+            <!-- Monitored Hosts / Server Muting -->
+            <div class="settings-section" style="margin-top:20px;">
+              <div class="settings-section-title">Monitored Hosts &amp; Server Muting</div>
+              <div class="text-xs text-muted" style="margin-bottom:12px;">Enable or mute alerts per server. Muting a host suppresses its emails and Telegram alerts while all containers, deployments, and metrics continue running normally.</div>
+              
+              <!-- Local Daemon -->
+              <div class="settings-row" style="padding:8px 0;">
+                <div>
+                  <div class="settings-row-label" style="display:flex;align-items:center;gap:6px;">🖥️ Local Daemon <span class="badge" style="font-size:10px;background:var(--bg-tertiary);">local host</span></div>
+                  <div class="settings-row-desc">Docker daemon running on the Dockgate master machine</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span class="text-xs text-muted">${hostNotifs.local?.enabled ? 'Active' : 'Muted'}</span>
+                  <div class="toggle host-notif-toggle ${hostNotifs.local?.enabled ? 'active' : ''}" data-host-id="local"></div>
+                </div>
+              </div>
+
+              <!-- Remote SSH Servers -->
+              ${(hostNotifs.servers || []).map(s => `
+                <div class="settings-row" style="padding:8px 0;border-top:1px solid var(--border);">
+                  <div>
+                    <div class="settings-row-label" style="display:flex;align-items:center;gap:6px;">🌐 ${escapeHtml(s.name || s.id)} <span class="text-xs text-muted font-mono">(${escapeHtml(s.host || '')})</span></div>
+                    <div class="settings-row-desc">Remote SSH Docker server</div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="text-xs text-muted">${s.notifications_enabled ? 'Active' : 'Muted'}</span>
+                    <div class="toggle host-notif-toggle ${s.notifications_enabled ? 'active' : ''}" data-host-id="${escapeHtml(s.id)}"></div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+
             <!-- Rules -->
             <div class="settings-section" style="margin-top:20px;">
               <div class="settings-section-title">Alert Rules</div>
@@ -691,6 +724,25 @@ Router.register('settings', async (content, params) => {
           document.getElementById('tg-channel-toggle')?.addEventListener('click', () => {
             const b = document.getElementById('tg-channel-body'), c = document.getElementById('tg-chevron');
             if (b && b.style.display === 'none') { b.style.display = 'block'; if (c) c.textContent = '▼'; }
+          });
+
+          // Host notification toggles
+          tabContent.querySelectorAll('.host-notif-toggle').forEach(toggle => {
+            toggle.addEventListener('click', async function() {
+              const hostId = this.dataset.hostId;
+              const willEnable = !this.classList.contains('active');
+              this.classList.toggle('active');
+              try {
+                await API.put(`/meta/notifications/hosts/${hostId}`, { enabled: willEnable });
+                showToast(willEnable
+                  ? `✓ Alerts enabled for ${hostId === 'local' ? 'Local Daemon' : hostId}`
+                  : `🔕 Alerts muted for ${hostId === 'local' ? 'Local Daemon' : hostId}`, 'info');
+                renderNotifications();
+              } catch(err) {
+                this.classList.toggle('active'); // rollback
+                showToast(err.message, 'error');
+              }
+            });
           });
 
           // Rule toggles

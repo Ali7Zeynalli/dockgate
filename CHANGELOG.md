@@ -2,6 +2,22 @@
 
 ---
 
+## [2.1.47] - 2026-08-24
+
+### Added — Notifications: Host-Level Notification Muting (Local Daemon & Remote Servers)
+- **Per-Host Notification Muting (`EventMonitor.isNotificationEnabled`)**:
+  - You can now mute or unmute alert notifications individually for any remote SSH server and for the Local Daemon.
+  - Muting a host suppresses all its outgoing incident alerts (container die, restart, OOM, disk threshold, unhealthy) via Email/Telegram, while all containers, deployments, builds, and monitoring continue running completely normally.
+- **Settings ▸ Notifications UI ("Monitored Hosts & Server Muting")**:
+  - Added a dedicated section in **Settings ▸ Notifications** with live toggles for the Local Daemon and every registered remote host.
+- **Servers Page Integration**:
+  - Servers table displays a `🔕 Muted` status badge when a server's notifications are disabled.
+  - Server Add and Edit modals now include a `🔔 Send alert notifications for this server` checkbox.
+- **Unit Tests**:
+  - Added test suite in `test/unit/host-notifications.test.js` validating muting behavior for local and remote monitors.
+
+---
+
 ## [2.1.46] - 2026-08-24
 
 ### Added — Compose: Server-Native Git Deploy & Multi-Server Redeploy Routing (100% SFTP-Free)
@@ -23,7 +39,7 @@
 
 ### Security & Reliability
 - Added `secrets.decryptStrict()` to fail fast on corrupted or mismatched master key secrets instead of passing unauthenticated ciphertexts.
-- Added comprehensive unit tests in `test/unit/remote-compose.test.js` and updated `test/unit/auth.test.js` (46 unit tests passing).
+- Added comprehensive unit tests in `test/unit/remote-compose.test.js` and updated `test/unit/auth.test.js` (51 unit tests passing).
 
 ---
 

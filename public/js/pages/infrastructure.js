@@ -82,8 +82,9 @@ Router.register('infra', async (content, params) => {
         : '<span class="badge badge-restarting">needs setup</span>';
       const health = (isLocal || !ls) ? '<span class="text-xs text-muted">—</span>'
         : `<div style="min-width:130px">${miniBar('CPU', ls.cpu)}${miniBar('MEM', ls.mem)}${miniBar('DSK', ls.disk)}</div>`;
+      const mutedBadge = (!isLocal && s.notifications_enabled === 0) ? ' <span class="badge" style="font-size:10px;background:var(--bg-tertiary);" title="Alert notifications are muted for this server">🔕 Muted</span>' : '';
       return `<tr>
-          <td>${isLocal ? '🖥' : '🔐'} ${s.name ? `<span style="font-weight:600">${escapeHtml(s.name)}</span> <span class="td-mono text-xs text-muted">${escapeHtml(s.id)}</span>` : `<span class="td-mono">${escapeHtml(s.id)}</span>`}${s.hasAccessPassword ? ' <span title="Access password required to switch to this server">🔒</span>' : ''}</td>
+          <td>${isLocal ? '🖥' : '🔐'} ${s.name ? `<span style="font-weight:600">${escapeHtml(s.name)}</span> <span class="td-mono text-xs text-muted">${escapeHtml(s.id)}</span>` : `<span class="td-mono">${escapeHtml(s.id)}</span>`}${s.hasAccessPassword ? ' <span title="Access password required to switch to this server">🔒</span>' : ''}${mutedBadge}</td>
           <td class="text-xs">${escapeHtml(s.type)}</td>
           <td class="td-mono text-xs">${hostStr}</td>
           <td>${authBadge}</td>
@@ -163,6 +164,7 @@ Router.register('infra', async (content, params) => {
         <input class="input" id="srv-desc" placeholder="Description (optional)" style="margin:8px 0;width:100%;" />
         <input class="input" id="srv-access" type="password" placeholder="🔒 Access password (optional) — a 2nd password required to switch to this server" autocomplete="new-password" style="margin:0 0 8px;width:100%;" />
         <div class="text-xs text-muted" style="margin:0 0 8px">Docker access (usermod -aG docker) is handled by <b>Manage → Setup</b> per server (idempotent).</div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="srv-notifs" checked /> 🔔 Send alert notifications for this server</label>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-secondary btn-sm" id="srv-test-new">Test Connection</button>
           <button class="btn btn-primary btn-sm" id="srv-add">Add Server</button>
@@ -306,13 +308,14 @@ Router.register('infra', async (content, params) => {
       const name = document.getElementById('srv-name')?.value.trim() || '';
       const description = document.getElementById('srv-desc').value.trim();
       const accessPassword = document.getElementById('srv-access')?.value || '';
+      const notifications_enabled = document.getElementById('srv-notifs')?.checked ? 1 : 0;
       const auth = buildAuthBody();
       if (!id || !auth.host || !auth.username) {
         showToast('ID, host və username tələb olunur', 'warning');
         return;
       }
       try {
-        await API.post('/servers', { id, name, ...auth, description, accessPassword });
+        await API.post('/servers', { id, name, ...auth, description, accessPassword, notifications_enabled });
         showToast(`Server "${id}" (${authMode}) əlavə olundu`);
         if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
         renderServers();
@@ -357,6 +360,9 @@ Router.register('infra', async (content, params) => {
             <input class="input" id="esrv-access-new" type="password" placeholder="access password (optional)" autocomplete="off" style="width:100%;margin-top:4px" />
           `}
         </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;"><input type="checkbox" id="esrv-notifs" ${s.notifications_enabled !== 0 ? 'checked' : ''} /> 🔔 Send alert notifications for this server</label>
+        </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button class="btn btn-secondary btn-sm" id="esrv-test" type="button">Test Connection</button>
           <span id="esrv-test-result" class="text-xs"></span>
@@ -385,6 +391,7 @@ Router.register('infra', async (content, params) => {
         port: parseInt(root.querySelector('#esrv-port').value) || 22,
         username: root.querySelector('#esrv-user').value.trim(),
         description: root.querySelector('#esrv-desc').value.trim(),
+        notifications_enabled: root.querySelector('#esrv-notifs')?.checked ? 1 : 0,
       };
       if (authMode === 'key') {
         const k = root.querySelector('#esrv-key').value;

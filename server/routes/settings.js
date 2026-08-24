@@ -304,6 +304,45 @@ router.put('/notifications/rules/:type', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ============ HOST NOTIFICATIONS (LOCAL & SERVERS) ============
+router.get('/notifications/hosts', (req, res) => {
+  try {
+    const localSetting = stmts.getSetting.get('local_notifications_enabled');
+    const localEnabled = !localSetting || localSetting.value !== '0';
+    const servers = stmts.getServers.all().map(s => ({
+      id: s.id,
+      name: s.name || s.id,
+      host: s.host,
+      notifications_enabled: s.notifications_enabled !== 0,
+    }));
+    res.json({
+      local: { id: 'local', name: 'Local Daemon', enabled: localEnabled },
+      servers,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/notifications/hosts/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { enabled } = req.body || {};
+    const isEnabled = !(enabled === 0 || enabled === false);
+
+    if (id === 'local') {
+      stmts.setSetting.run('local_notifications_enabled', isEnabled ? '1' : '0');
+      logAction({ req, server: 'local', resourceType: 'notification', resourceName: 'local', action: 'host_notification_toggle', details: { enabled: isEnabled } });
+      return res.json({ success: true, id: 'local', enabled: isEnabled });
+    }
+
+    const server = stmts.getServer.get(id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    stmts.setServerNotifications.run(isEnabled ? 1 : 0, id);
+    logAction({ req, server: 'local', resourceId: id, resourceType: 'notification', resourceName: id, action: 'host_notification_toggle', details: { enabled: isEnabled } });
+    res.json({ success: true, id, enabled: isEnabled });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ============ NOTIFICATION LOG ============
 router.get('/notifications/log', (req, res) => {
   try {

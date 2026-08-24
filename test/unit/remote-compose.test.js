@@ -42,11 +42,23 @@ class MockClient extends EventEmitter {
   end() {}
 }
 
-require.cache[require.resolve('ssh2')] = {
-  id: require.resolve('ssh2'),
-  filename: require.resolve('ssh2'),
+const Module = require('module');
+const origResolve = Module._resolveFilename;
+Module._resolveFilename = function(request, parent, isMain, options) {
+  if (request === 'ssh2' || request === 'dockerode') return request;
+  return origResolve.call(this, request, parent, isMain, options);
+};
+require.cache['ssh2'] = {
+  id: 'ssh2',
+  filename: 'ssh2',
   loaded: true,
   exports: { Client: MockClient }
+};
+require.cache['dockerode'] = {
+  id: 'dockerode',
+  filename: 'dockerode',
+  loaded: true,
+  exports: class MockDocker {}
 };
 
 // Mock ssh-keys module

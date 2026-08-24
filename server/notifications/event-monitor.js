@@ -319,7 +319,17 @@ class EventMonitor {
     }
   }
 
+  isNotificationEnabled() {
+    if (this.serverId === 'local') {
+      const row = stmts.getSetting.get('local_notifications_enabled');
+      return !row || row.value !== '0';
+    }
+    const s = stmts.getServer.get(this.serverId);
+    return !s || s.notifications_enabled !== 0;
+  }
+
   async _sendNotification(eventType, resourceKey, { subject, html, telegramText }) {
+    if (!this.isNotificationEnabled()) return;
     const rule = stmts.getRule.get(eventType);
     if (!rule || !rule.enabled) return;
     if (this._isThrottled(eventType, resourceKey)) return;

@@ -139,10 +139,11 @@ router.post('/', (req, res) => {
     const pwdToStore = password ? String(password) : null;
     // passphrase only makes sense with key auth (to unlock an encrypted private key)
     const passphraseToStore = (privateKey && passphrase) ? String(passphrase) : null;
+    const notifEnabled = (notifications_enabled === 0 || notifications_enabled === false) ? 0 : 1;
 
-    stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, encrypt(pwdToStore), encrypt(passphraseToStore), description, (name && String(name).trim()) || null);
+    stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, encrypt(pwdToStore), encrypt(passphraseToStore), description, (name && String(name).trim()) || null, notifEnabled);
     if (accessPassword && String(accessPassword).trim()) stmts.setServerAccessPass.run(makeAccessPass(String(accessPassword)), id); // optional 2nd gate
-    logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'add', details: { host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent'), gated: !!(accessPassword && String(accessPassword).trim()) } });
+    logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'add', details: { host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent'), gated: !!(accessPassword && String(accessPassword).trim()), notifications_enabled: notifEnabled } });
 
     // Start dedicated monitor so notifications from this host start flowing immediately
     monitorManager.startMonitor(id);
@@ -153,6 +154,7 @@ router.post('/', (req, res) => {
       hasPassword: !!pwdToStore,
       hasPassphrase: !!passphraseToStore,
       authMode: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent'),
+      notifications_enabled: notifEnabled,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -176,7 +178,7 @@ router.post('/:id/grant-docker', async (req, res) => {
 });
 
 // PUT /api/servers/:id — edit an existing SSH server
-// body: { host?, port?, username?, privateKey?, passphrase?, password?, description? }
+// body: { host?, port?, username?, privateKey?, passphrase?, password?, description?, notifications_enabled? }
 // Only the fields sent are changed (undefined = keep). An empty string for password/passphrase clears it.
 router.put('/:id', (req, res) => {
   try {
@@ -186,7 +188,7 @@ router.put('/:id', (req, res) => {
     const existing = stmts.getServer.get(id);
     if (!existing) return res.status(404).json({ error: 'Server not found' });
 
-    const { host, port, username, privateKey, passphrase, password, description, name, accessPassword, currentAccessPassword } = req.body || {};
+    const { host, port, username, privateKey, passphrase, password, description, name, accessPassword, currentAccessPassword, notifications_enabled } = req.body || {};
 
     // Access password (the 2nd gate) — set / change / remove. Changing or removing an EXISTING one requires
     // the current access password (so nobody can edit the server to strip its gate). Verify BEFORE any write.
@@ -199,6 +201,9 @@ router.put('/:id', (req, res) => {
     const newUsername = username !== undefined ? username : existing.username;
     const newDescription = description !== undefined ? description : existing.description;
     const newName = name !== undefined ? ((name && String(name).trim()) || null) : existing.name; // editable friendly label
+    const newNotificationsEnabled = notifications_enabled !== undefined
+      ? ((notifications_enabled === 0 || notifications_enabled === false) ? 0 : 1)
+      : (existing.notifications_enabled !== undefined ? existing.notifications_enabled : 1);
 
     // Key — if a new privateKey is provided, write it to file; otherwise keep the existing one
     let keyPath = existing.key_path;
@@ -212,7 +217,7 @@ router.put('/:id', (req, res) => {
     const newPassword = password !== undefined ? (password ? String(password) : null) : existing.password;
     const newPassphrase = passphrase !== undefined ? (passphrase ? String(passphrase) : null) : existing.passphrase;
 
-    stmts.updateServer.run(newHost, newPort, newUsername, keyPath, encrypt(newPassword), encrypt(newPassphrase), newDescription, newName, id);
+    stmts.updateServer.run(newHost, newPort, newUsername, keyPath, encrypt(newPassword), encrypt(newPassphrase), newDescription, newName, newNotificationsEnabled, id);
     require('../ssh-pool').invalidate(id); // drop pooled SSH connections so the new host/credentials take effect
     // Apply the access-password change (verified above): empty string removes the gate, non-empty sets/changes it.
     if (accessPassword !== undefined) {
