@@ -115,7 +115,7 @@ router.get('/overview', (req, res) => {
 // Auth iyerarxiyası: privateKey > password > SSH agent
 router.post('/', (req, res) => {
   try {
-    const { id, host, port = 22, username, privateKey, passphrase, password, description = '', name = '', accessPassword } = req.body || {};
+    const { id, host, port = 22, username, privateKey, passphrase, password, description = '', name = '', accessPassword, notifications_enabled } = req.body || {};
 
     if (!validateId(id)) return res.status(400).json({ error: 'id: yalnız hərf, rəqəm, _, - (max 64)' });
     if (id === 'local') return res.status(400).json({ error: '"local" rezerv edilmiş id-dir' });

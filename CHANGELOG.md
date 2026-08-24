@@ -2,6 +2,15 @@
 
 ---
 
+## [2.1.49] - 2026-08-24
+
+### Fixed — Servers: Destructure `notifications_enabled` in POST /api/servers
+- **Remote Server Registration Fix**:
+  - Resolved `ReferenceError: notifications_enabled is not defined` when registering a new remote SSH server.
+  - Properly destructure `notifications_enabled` from `req.body` in `server/routes/servers.js` so server creation succeeds without 500 errors.
+
+---
+
 ## [2.1.48] - 2026-08-24
 
 ### Enhanced — Notifications: Edge Notifier Agent Auto-Sync on Host Mute
