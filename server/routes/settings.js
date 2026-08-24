@@ -322,7 +322,7 @@ router.get('/notifications/hosts', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.put('/notifications/hosts/:id', (req, res) => {
+router.put('/notifications/hosts/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { enabled } = req.body || {};
@@ -339,6 +339,22 @@ router.put('/notifications/hosts/:id', (req, res) => {
 
     stmts.setServerNotifications.run(isEnabled ? 1 : 0, id);
     logAction({ req, server: 'local', resourceId: id, resourceType: 'notification', resourceName: id, action: 'host_notification_toggle', details: { enabled: isEnabled } });
+
+    // If an Edge Notifier agent is installed on this host, synchronize its running state
+    try {
+      const deployer = require('../agent/deployer');
+      const agentStatus = await deployer.statusOne(id);
+      if (agentStatus.installed) {
+        if (!isEnabled && agentStatus.running) {
+          await deployer.powerOne(id, 'stop');
+        } else if (isEnabled && !agentStatus.running) {
+          await deployer.powerOne(id, 'start');
+        }
+      }
+    } catch (e) {
+      // Non-blocking: remote server might be temporarily unreachable
+    }
+
     res.json({ success: true, id, enabled: isEnabled });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

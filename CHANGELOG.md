@@ -2,6 +2,16 @@
 
 ---
 
+## [2.1.48] - 2026-08-24
+
+### Enhanced — Notifications: Edge Notifier Agent Auto-Sync on Host Mute
+- **Edge Notifier Power Synchronization**:
+  - Toggling a server's notification mute in **Settings ▸ Notifications** now automatically synchronizes any on-host **`notifier-agent`** container (`dockgate-notifier`).
+  - When a host is muted, its Edge Notifier agent is automatically stopped; when unmuted, it is automatically resumed.
+  - Ensures 100% silencing of outbound alerts across both central and distributed notification engines.
+
+---
+
 ## [2.1.47] - 2026-08-24
 
 ### Added — Notifications: Host-Level Notification Muting (Local Daemon & Remote Servers)
