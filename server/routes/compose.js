@@ -1212,10 +1212,19 @@ router.post('/deploy-folder-finish', async (req, res) => {
       composeFile = u.composeFile || 'docker-compose.yml';
     } else {
       composeFile = findComposeFile(u.dir);
-      if (!composeFile) { throw Object.assign(new Error('No docker-compose.yml (or compose.yaml) found in the folder'), { statusCode: 400 }); }
-      // Validate synchronously so a bad compose fails fast (before the background job starts).
-      try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: u.dir }); }
-      catch (e) { throw Object.assign(new Error('Invalid compose file: ' + (e.stderr || e.message)), { statusCode: 400 }); }
+      if (!composeFile) {
+        if (!up) {
+          composeFile = 'compose.yaml';
+          try { fs.writeFileSync(path.join(u.dir, composeFile), `# DockGate — ${u.project}\nservices:\n  app:\n    image: alpine\n    command: echo "Configure services in compose.yaml"\n`); } catch (e) {}
+        } else {
+          throw Object.assign(new Error('No docker-compose.yml (or compose.yaml) found in the folder'), { statusCode: 400 });
+        }
+      }
+      // Validate synchronously if bringing up
+      if (up && composeFile) {
+        try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: u.dir }); }
+        catch (e) { throw Object.assign(new Error(`Invalid compose file: ` + (e.stderr || e.message)), { statusCode: 400 }); }
+      }
     }
 
     // Hand the staging session to a background job: the upload + `docker compose up` continue on the

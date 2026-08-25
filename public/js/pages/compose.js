@@ -366,15 +366,61 @@ Router.register('compose', async (content) => {
             `, [{ label: 'Close', className: 'btn btn-secondary' }]);
             dm.overlay.querySelector('#cd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
 
+            dm.overlay.querySelector('#cd-pull')?.addEventListener('click', async (e) => {
+              const b = e.target; b.disabled = true; b.textContent = 'Pulling…';
+              try {
+                const r = await API.post(`/compose/${encodeURIComponent(name)}/git-pull`, {});
+                dm.close();
+                const sh = s => (s || '').slice(0, 7);
+                const commits = r.commits || [];
+                const changed = r.changedFiles || r.changed || [];
+                const body = changed.length || commits.length
+                  ? `<div class="text-sm" style="margin-bottom:6px">⤓ Pulled <span class="td-mono">${sh(r.fromSHA)}</span> → <span class="td-mono">${sh(r.toSHA)}</span></div>
+                     ${commits.length ? `<div class="text-sm" style="margin:8px 0 4px">⬇ <strong>${commits.length}</strong> commit(s) pulled:</div><pre class="logs-viewer" style="max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:0">${commits.map(c => `${escapeHtml(c.hash || '')}  ${escapeHtml(c.date || '')}  ${escapeHtml(c.subject || '')}`).join('\n')}</pre>` : ''}
+                     ${changed.length ? `<div class="text-sm" style="margin:8px 0 4px">📦 <strong>${changed.length}</strong> file(s) changed:</div><pre class="logs-viewer" style="max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:0">${changed.map(escapeHtml).join('\n')}</pre>` : ''}
+                     <div class="text-xs text-muted" style="margin-top:8px">Code pulled successfully to server folder. Containers are untouched. Click <strong>⚡ Deploy now</strong> to build &amp; restart containers.</div>`
+                  : `<div class="text-sm">✓ Already at the latest commit (<span class="td-mono">${sh(r.toSHA || r.fromSHA)}</span>) — repository is up to date on server.</div>`;
+                
+                const pm = showModal(`Git Pull — ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+                if (changed.length || commits.length || !r.upToDate) {
+                  const go = document.createElement('button');
+                  go.className = 'btn btn-primary';
+                  go.innerHTML = '⚡ Deploy now';
+                  pm.overlay.querySelector('#modal-footer').appendChild(go);
+                  go.onclick = async () => {
+                    pm.close();
+                    try {
+                      const res = await API.post(`/compose/${encodeURIComponent(name)}/git-sync`, {});
+                      if (res && res.jobId) openDeployLog(res.jobId, name);
+                      showToast('Deploying latest changes…', 'info', 4000);
+                      render();
+                    } catch (err) { showToast(err.message, 'error', 9000); }
+                  };
+                }
+                render();
+              } catch (err) {
+                b.disabled = false; b.textContent = '⤓ Pull';
+                showModal(`Git Pull Failed — ${escapeHtml(name)}`, `<div class="text-sm" style="color:var(--danger);white-space:pre-wrap;word-break:break-all">${escapeHtml(err.message)}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+              }
+            });
+
+            dm.overlay.querySelector('#cd-redeploy')?.addEventListener('click', async (e) => {
+              dm.close();
+              try {
+                const r = await API.post(`/compose/${encodeURIComponent(name)}/git-sync`, {});
+                if (r && r.jobId) openDeployLog(r.jobId, name);
+                showToast(`Syncing & deploying "${name}"…`, 'info', 4000);
+                render();
+              } catch (err) { showToast(err.message, 'error', 10000); }
+            });
+
             // External git checkout? (DockGate didn't deploy this, but its folder is a git repo on the host.)
-            // Probe lazily; if it's an adoptable checkout, inject a "Git (detected)" card with ⤓ Pull / ↻ Redeploy.
             if (!git.gitManaged) {
-              API.get(`/compose/${name}/git-detect`).then(d => {
-                if (!d || !d.isGit || d.managed) return;
+              API.get(`/compose/${encodeURIComponent(name)}/git-detect`).then(d => {
+                if (!d || !d.isGit) return;
                 const grid = dm.overlay.querySelector('.detail-grid');
                 if (!grid) return;
-                const sh = s => (s || '').slice(0, 7);
-                const where = d.remote ? 'on the active remote server' : 'on local Docker';
+                const where = d.remote ? 'on remote server' : 'on local host';
                 const card = document.createElement('div');
                 card.className = 'card mb-2';
                 card.style.cssText = 'padding:12px;background:var(--accent-dim)';
@@ -382,103 +428,37 @@ Router.register('compose', async (content) => {
                   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
                     <div class="text-sm" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:.85"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><strong>Git (detected)</strong> — ${d.remoteUrl ? `<code>${escapeHtml(d.remoteUrl)}</code> @ ` : ''}<code>${escapeHtml(d.branch || 'HEAD')}</code></div>
                     <div style="display:flex;gap:6px;flex:none">
-                      <button class="btn btn-sm btn-secondary" id="xg-pull" title="Fast-forward this checkout from its own git remote — does not deploy">⤓ Pull</button>
-                      <button class="btn btn-sm btn-primary" id="xg-redeploy" title="Pull (fast-forward), then docker compose up -d --build">↻ Redeploy…</button>
+                      <button class="btn btn-sm btn-secondary" id="xg-pull" title="Fast-forward this checkout — does not deploy">⤓ Pull</button>
+                      <button class="btn btn-sm btn-primary" id="xg-redeploy" title="Pull and docker compose up -d --build">⚡ Sync</button>
                     </div>
                   </div>
-                  <div class="text-xs text-muted" style="margin-top:6px">DockGate didn't deploy this — it's your own git checkout ${where} (<code>${escapeHtml(d.repoRoot)}</code>). Pull is <strong>fast-forward only</strong> and never resets your files.${d.canPull ? '' : ` <span style="color:var(--warning)">⚠ ${escapeHtml(d.reason || 'Pull unavailable')}.</span>`}</div>`;
+                  <div class="text-xs text-muted" style="margin-top:6px">External git repository ${where} (<code>${escapeHtml(d.repoRoot)}</code>). Pull updates files only without touching containers.</div>`;
                 grid.parentNode.insertBefore(card, grid);
                 const pullBtn = card.querySelector('#xg-pull');
                 const redBtn = card.querySelector('#xg-redeploy');
-                if (!d.canPull) { pullBtn.disabled = true; pullBtn.style.opacity = '0.5'; pullBtn.style.cursor = 'not-allowed'; }
                 pullBtn.addEventListener('click', async () => {
                   pullBtn.disabled = true; pullBtn.textContent = 'Pulling…';
                   try {
-                    const r = await API.post(`/compose/${name}/adopt-pull`, {});
+                    const r = await API.post(`/compose/${encodeURIComponent(name)}/git-pull`, {});
                     dm.close();
-                    const body = r.upToDate
-                      ? `<div class="text-sm">✓ Already up to date (<span class="td-mono">${sh(r.toSHA)}</span>) — nothing to pull.</div>`
-                      : `<div class="text-sm" style="margin-bottom:4px">⤓ Fast-forwarded <span class="td-mono">${sh(r.fromSHA)}</span> → <span class="td-mono">${sh(r.toSHA)}</span></div>${(r.commits && r.commits.length) ? `<pre class="logs-viewer" style="max-height:170px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:6px 0">${r.commits.map(c => `${escapeHtml(c.hash || '')}  ${escapeHtml(c.date || '')}  ${escapeHtml(c.subject || '')}`).join('\n')}</pre>` : ''}<div class="text-sm" style="margin:8px 0 4px">📦 <strong>${(r.changed || []).length}</strong> file(s) changed:</div><pre class="logs-viewer" style="max-height:200px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:0">${(r.changed || []).map(escapeHtml).join('\n')}</pre><div class="text-xs text-muted" style="margin-top:6px">Pulled — nothing was deployed. Use ↻ Redeploy to apply it to the containers.</div>`;
-                    showModal(`Pull — ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+                    showToast(r.upToDate ? `✓ "${name}" is up to date.` : `✓ Pulled updates for "${name}". Containers untouched.`, 'success', 5000);
                     render();
                   } catch (err) {
                     pullBtn.disabled = false; pullBtn.textContent = '⤓ Pull';
-                    showModal(`Pull failed — ${escapeHtml(name)}`, `<div class="text-sm" style="color:var(--danger);white-space:pre-wrap;word-break:break-all">${escapeHtml(err.message)}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+                    showToast(err.message, 'error', 9000);
                   }
                 });
-                redBtn.addEventListener('click', () => {
+                redBtn.addEventListener('click', async () => {
                   dm.close();
-                  showConfirm('Redeploy (external git)', `Pull (fast-forward) <strong>${escapeHtml(name)}</strong> then run:<br><code>docker compose -p ${escapeHtml(name)} -f ${escapeHtml(d.configFiles || '')} up -d --build</code><br>in <code>${escapeHtml(d.workingDir)}</code> ${where}.<br><span class="text-xs text-muted">One-shot/stateful services are not force-recreated.</span>`, async () => {
-                    try { const r = await API.post(`/compose/${name}/adopt-redeploy`, {}); if (r && r.jobId) openDeployLog(r.jobId, name); render(); }
-                    catch (err) { showToast(err.message, 'error', 12000); }
-                  });
+                  try {
+                    const r = await API.post(`/compose/${encodeURIComponent(name)}/git-sync`, {});
+                    if (r && r.jobId) openDeployLog(r.jobId, name);
+                    showToast(`Syncing "${name}"…`, 'info', 4000);
+                    render();
+                  } catch (err) { showToast(err.message, 'error', 10000); }
                 });
               }).catch(() => {});
             }
-            dm.overlay.querySelector('#cd-redeploy')?.addEventListener('click', async (e) => {
-              // Change-aware redeploy: pull latest → show what changed → SAME picker (only changed stacks
-              // pre-selected) → deploy the chosen stacks/services. "Stage" = pull only, don't run.
-              const b = e.target; b.disabled = true; b.textContent = 'Pulling…';
-              let prep;
-              try { prep = await API.post(`/compose/${name}/redeploy-prepare`, {}); }
-              catch (err) { showToast(err.message, 'error', 12000); b.disabled = false; b.textContent = '↻ Redeploy…'; return; }
-              const files = prep.files || [];
-              if (!files.length) { showToast('No docker-compose files found in the repo', 'error', 9000); API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); b.disabled = false; b.textContent = '↻ Redeploy…'; return; }
-              dm.close();
-              const d = prep.diff || {};
-              const preselect = d.hasBaseline ? (d.affectedStacks || []) : null; // null → all selected (no baseline yet)
-              const plan = await chooseDeployPlan(files, name, { diff: d, affectedStacks: preselect });
-              if (!plan) { API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); render(); return; }
-              try {
-                const fin = await API.post('/compose/deploy-folder-finish', { uploadId: prep.uploadId, up: plan.up, plan });
-                if (fin && fin.jobId) openDeployLog(fin.jobId, name);
-                showToast(plan.up ? 'Redeploying selected — watch the console.' : 'Pulled & staged. Up each stack when ready.', 'info', 6000);
-                render();
-              } catch (err) { showToast(err.message, 'error', 12000); }
-            });
-            dm.overlay.querySelector('#cd-pull')?.addEventListener('click', async (e) => {
-              // Pull only: fetch the latest + show what changed since the last deploy. Does NOT deploy or
-              // touch running containers. Offers an optional "Deploy these…" path (the same change-aware picker).
-              const b = e.target; b.disabled = true; b.textContent = 'Pulling…';
-              let prep;
-              try { prep = await API.post(`/compose/${name}/redeploy-prepare`, {}); }
-              catch (err) {
-                b.disabled = false; b.textContent = '⤓ Pull';
-                // Show the failure in a modal (not just a fleeting toast) so the reason is clear.
-                showModal(`Pull failed — ${escapeHtml(name)}`, `<div class="text-sm" style="color:var(--danger);white-space:pre-wrap;word-break:break-all">${escapeHtml(err.message)}</div><div class="text-xs text-muted" style="margin-top:8px">Could not fetch from Git — check the repo URL/branch and the SSH key or token (Servers → SSH Keys), and that the host is reachable.</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
-                return;
-              }
-              dm.close();
-              const d = prep.diff || {};
-              const lines = d.changedFiles || [];
-              const commits = d.commits || [];
-              const sh = s => (s || '').slice(0, 7);
-              const commitsHtml = commits.length
-                ? `<div class="text-sm" style="margin:8px 0 4px">⬇ <strong>${commits.length}</strong> commit(s) pulled:</div><pre class="logs-viewer" style="max-height:170px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:0">${commits.map(c => `${escapeHtml(c.hash || '')}  ${escapeHtml(c.date || '')}  ${escapeHtml(c.subject || '')}${c.author ? '  — ' + escapeHtml(c.author) : ''}`).join('\n')}</pre>`
-                : '';
-              const body = lines.length
-                ? `<div class="text-sm" style="margin-bottom:4px">⤓ Pulled <span class="td-mono">${sh(d.fromSHA)}</span> → <span class="td-mono">${sh(d.toSHA)}</span></div>${commitsHtml}<div class="text-sm" style="margin:8px 0 4px">📦 <strong>${lines.length}</strong> file(s) changed:</div><pre class="logs-viewer" style="max-height:200px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:0">${lines.map(escapeHtml).join('\n')}</pre><div class="text-xs text-muted" style="margin-top:6px">Pulled — but nothing was deployed. Your running containers are untouched.</div>`
-                : (d.upToDate ? `<div class="text-sm">✓ Already at the latest commit (<span class="td-mono">${sh(d.toSHA)}</span>) — nothing new to pull.</div>`
-                  : `<div class="text-sm">⤓ Pulled <span class="td-mono">${sh(d.toSHA)}</span>. This project had <strong>no recorded deploy commit</strong> (deployed before commit-tracking), so this commit is now saved as the <strong>baseline</strong>.</div><div class="text-xs text-muted" style="margin-top:6px">From your <strong>next</strong> pull, the new commits &amp; changed files will show here — there was nothing earlier to compare this first pull against. (If the server may be on an older commit, use ↻ Redeploy to sync.)</div>`);
-              const pm = showModal(`Pull — ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
-              let consumed = false;
-              if (lines.length || !d.hasBaseline) {
-                const go = document.createElement('button');
-                go.className = 'btn btn-primary'; go.textContent = '↻ Deploy these…';
-                pm.overlay.querySelector('#modal-footer').appendChild(go);
-                go.onclick = async () => {
-                  consumed = true; pm.close();
-                  const preselect = d.hasBaseline ? (d.affectedStacks || []) : null;
-                  const plan = await chooseDeployPlan(prep.files || [], name, { diff: d, affectedStacks: preselect });
-                  if (!plan) { API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); render(); return; }
-                  try { const fin = await API.post('/compose/deploy-folder-finish', { uploadId: prep.uploadId, up: plan.up, plan }); if (fin && fin.jobId) openDeployLog(fin.jobId, name); render(); }
-                  catch (err) { showToast(err.message, 'error', 12000); }
-                };
-              }
-              // Closing without deploying → drop the staged clone (don't leave it for the TTL GC).
-              const obs = new MutationObserver(() => { if (!document.body.contains(pm.overlay)) { obs.disconnect(); if (!consumed) API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {}); } });
-              obs.observe(document.getElementById('modal-root'), { childList: true });
-            });
           } catch (e) { showToast(e.message, 'error'); }
         });
       });
@@ -733,10 +713,20 @@ Router.register('compose', async (content) => {
         });
         const files = prep.files || [];
         if (!files.length) {
-          showToast('No docker-compose files found in the repo', 'error', 9000);
-          API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {});
-          reset();
-          return;
+          if (!autoUp) {
+            const plan = { createNets: [], stacks: [{ name: project, composeFile: 'compose.yaml', services: [], build: false, noCache: false, pull: false, noDeps: false }] };
+            const fin = await API.post('/compose/deploy-folder-finish', { uploadId: prep.uploadId, up: false, plan });
+            m.close();
+            if (fin && fin.jobId) openDeployLog(fin.jobId, project);
+            showToast(`✓ Cloned & registered "${project}". You can pull code or edit compose files anytime.`, 'success', 7000);
+            render();
+            return;
+          } else {
+            showToast('No docker-compose files found in the repo. Use "📦 Clone only (Stage)" to connect repository without starting containers.', 'warning', 9000);
+            API.post('/compose/deploy-folder-abort', { uploadId: prep.uploadId }).catch(() => {});
+            reset();
+            return;
+          }
         }
 
         if (!autoUp && files.length === 1) {
