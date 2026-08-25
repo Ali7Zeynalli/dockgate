@@ -22,6 +22,16 @@ const isLogFile = (p) => typeof p === 'string' && /^\/var\/log\/[A-Za-z0-9._/-]+
 
 // Run a SERVER-BUILT command through the isolated worker and resolve its stdout.
 function runWorkerCmd(server, cmd) {
+  if (server && (server.id === 'local' || server.host === 'local')) {
+    const { exec } = require('child_process');
+    return new Promise((resolve, reject) => {
+      exec(cmd, { timeout: 15000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err && !stdout) return reject(new Error((stderr || err.message || 'local log read failed').toString().trim()));
+        resolve(stdout || stderr || '');
+      });
+    });
+  }
+
   return new Promise((resolve, reject) => {
     const cfg = { host: server.host, port: server.port, username: server.username, keyPath: server.keyPath || null, password: server.password || null, passphrase: server.passphrase || null, cmd };
     const child = execFile(process.execPath, [path.join(__dirname, 'host-logs-worker.js'), JSON.stringify(cfg)], { maxBuffer: 8 * 1024 * 1024 });

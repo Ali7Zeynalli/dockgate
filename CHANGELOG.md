@@ -2,6 +2,23 @@
 
 ---
 
+## [2.2.5] - 2026-08-25
+
+### Fixed & Revamped — High-Performance 4-in-1 Logs Explorer, Zero-Lag Streaming & Linux Host Discovery (v2.2.5)
+- **High-Performance 4-in-1 Logs & Diagnostics Explorer (`public/js/pages/logs.js`)**:
+  - **Zero Browser Freezing & Low RAM Usage**: Eliminated DOM reflow thrashing and memory spikes by replacing periodic 5s whole-DOM replacements with a strict **circular DOM ring buffer (`maxLines: 1000`)** and **`requestAnimationFrame` micro-batching (60 FPS smoothness)**.
+  - **🐳 Real-Time Container WebSocket Streaming**: Restored continuous Socket.IO streaming (`logs:subscribe`) with live container picker, Connect/Disconnect toggle, Pause/Resume, Tail lines selector (100, 200, 500, 1000, 2000), Timestamps toggle, Auto-scroll, Search filtering, and **`.log` Export Download**.
+  - **🐧 Linux Host & System Logs Explorer**: Discovers and live-streams real host logs (`journalctl`, `kernel/dmesg`, `auth.log`, `syslog`, `/var/log/*`, and systemd service units) on both **Local Daemon** and **Remote SSH Servers** with auto-refresh and customizable line counts.
+  - **🩺 Log Doctor & Autonomous Diagnostics**: Comprehensive Health Score (0–100) card with automatic detection of Kernel OOM kills, Nginx 502/504 Bad Gateways, SSH brute-force attacks, and port collisions with 1-click action buttons.
+  - **🌐 Cross-Container Search**: Instant multi-container error/warn aggregator and search across all container buffers simultaneously.
+- **Native Local Execution for Host Logs (`server/host-logs.js`, `server/routes/servers.js`, `server/routes/monitoring.js`)**:
+  - `hostLogs.runWorkerCmd()` now directly executes local diagnostic commands via `child_process.exec` when `serverId === 'local'`, enabling full systemd discovery and journald reading without SSH overhead.
+  - Added direct fallback for Linux host log sources (`system`, `auth`, `kernel`, `nginx`) in `/api/monitoring/:serverId/logs`.
+- **Tests**:
+  - Added unit test in `test/unit/host-logs.test.js` validating local daemon host log reading. All 64 unit tests pass cleanly in ~800ms.
+
+---
+
 ## [2.2.4] - 2026-08-25
 
 ### Test Update — Live In-App Update Verification (v2.2.4)

@@ -45,3 +45,10 @@ test('host-logs.collectHostLogs: rejects an invalid unit / file before spawning'
   await assert.rejects(() => hl.collectHostLogs({ host: 'x' }, { file: '/etc/passwd' }, 100), /under \/var\/log/);
   await assert.rejects(() => hl.collectHostLogs({ host: 'x' }, { source: 'nope' }, 100), /unknown log source/);
 });
+
+test('host-logs: supports local daemon execution for host logs', async () => {
+  const res = await hl.collectHostLogs({ id: 'local', host: 'local' }, { source: 'journald' }, 20);
+  assert.ok(res, 'returns response object');
+  assert.equal(typeof res.text, 'string');
+  assert.equal(res.label, 'journald');
+});
