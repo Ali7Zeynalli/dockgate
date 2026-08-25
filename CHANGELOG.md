@@ -2,6 +2,21 @@
 
 ---
 
+## [2.2.9] - 2026-08-25
+
+### Fixed & Enhanced — Standalone In-Place Git Pull Across All Modals & Deploy-Free Repo Staging (v2.2.9)
+- **Standalone In-Place Git Pull in Project Details Modal (`public/js/pages/compose.js`)**:
+  - Eliminated legacy ephemeral staging calls from the Project Details Modal (`#cd-pull`, `#cd-redeploy`, `#xg-pull`, `#xg-redeploy`).
+  - Pulling from the modal now routes directly to `POST /api/compose/:project/git-pull`, updating repository files directly on the server filesystem while leaving running containers completely untouched.
+  - Displays newly pulled commit logs and changed files with a clean message confirming containers are unaffected, giving DevOps/Admins full autonomy over how and when to deploy.
+- **Deploy-Free Git Repository Cloning & Staging (`server/routes/compose.js`, `public/js/pages/compose.js`)**:
+  - `📦 Clone only (Stage)` now allows cloning and registering Git repositories on the server even before any `docker-compose.yml` file exists.
+  - Initializes basic stack registration so developers can pull repository code, edit files with DockGate's Web Editor, open interactive Web Terminals, and deploy when ready.
+- **Direct 1-Click Sync/Redeploy Integration**:
+  - Synchronized redeploy action in details modal directly to the live streaming deployment pipeline (`POST /api/compose/:project/git-sync`).
+
+---
+
 ## [2.2.8] - 2026-08-25
 
 ### Fixed & Enhanced — Unified Git Context Engine, Files-Only Git Pull, Subdirectory & SSH Auth Resolution (v2.2.8)
