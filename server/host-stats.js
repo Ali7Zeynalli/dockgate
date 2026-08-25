@@ -107,4 +107,20 @@ function collectHostStats(server) {
   });
 }
 
-module.exports = { parseCpu, parseMem, parseLoad, parseUptime, parseDf, parseNet, parsePs, parsePorts, parseSnapshot, STATS_CMD, collectHostStats };
+// Gather one snapshot locally on the host directly via STATS_CMD
+function collectLocalStats() {
+  const { exec } = require('child_process');
+  return new Promise((resolve, reject) => {
+    exec(STATS_CMD, { timeout: 8000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      if (err) return reject(err);
+      try {
+        resolve(parseSnapshot(stdout));
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}
+
+module.exports = { parseCpu, parseMem, parseLoad, parseUptime, parseDf, parseNet, parsePs, parsePorts, parseSnapshot, STATS_CMD, collectHostStats, collectLocalStats };
+

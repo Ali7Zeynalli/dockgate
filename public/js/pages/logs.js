@@ -269,7 +269,7 @@ Router.register('logs', async (content, params = {}) => {
     }
   }
 
-  render();
+  await render();
 
   return () => {
     cleanupFns.forEach(fn => fn());

@@ -215,7 +215,38 @@ const MonitoringPage = {
 
   async fetchData(serverId) {
     try {
-      const metrics = await API.get(`/monitoring/${serverId}/metrics?range=${this.currentRange}${this.activeContainer ? `&container=${encodeURIComponent(this.activeContainer)}` : ''}`);
+      const [metrics, summary] = await Promise.all([
+        API.get(`/monitoring/${serverId}/metrics?range=${this.currentRange}${this.activeContainer ? `&container=${encodeURIComponent(this.activeContainer)}` : ''}`),
+        API.get(`/monitoring/${serverId}/summary`).catch(() => null)
+      ]);
+
+      // If polling mode with 1 sample, accumulate client-side history so chart draws live graphs!
+      if (metrics.count === 1 && metrics.timestamps && metrics.timestamps.length === 1 && metrics.host && metrics.host.cpu) {
+        if (!this._clientHistory) this._clientHistory = { timestamps: [], cpu: [], mem: [], netRx: [], netTx: [] };
+        const h = this._clientHistory;
+        h.timestamps.push(metrics.timestamps[0]);
+        h.cpu.push(metrics.host.cpu[0]);
+        h.mem.push(metrics.host.memPercent[0]);
+        h.netRx.push(metrics.host.netRxBytesSec[0]);
+        h.netTx.push(metrics.host.netTxBytesSec[0]);
+        if (h.timestamps.length > 60) {
+          h.timestamps.shift();
+          h.cpu.shift();
+          h.mem.shift();
+          h.netRx.shift();
+          h.netTx.shift();
+        }
+        metrics.timestamps = [...h.timestamps];
+        metrics.host.cpu = [...h.cpu];
+        metrics.host.memPercent = [...h.mem];
+        metrics.host.netRxBytesSec = [...h.netRx];
+        metrics.host.netTxBytesSec = [...h.netTx];
+      }
+
+      if (summary && summary.breakdown) {
+        metrics.breakdown = summary.breakdown;
+      }
+
       this.cachedData = metrics;
       this.updateUI(metrics);
     } catch (err) {
@@ -231,7 +262,7 @@ const MonitoringPage = {
         badge.style.background = 'var(--accent-dim)';
         badge.style.color = 'var(--accent)';
       } else {
-        badge.innerHTML = '🟡 Polling Mode';
+        badge.innerHTML = '🟡 Host Live (Polling)';
         badge.style.background = 'rgba(245, 158, 11, 0.15)';
         badge.style.color = '#f59e0b';
       }
@@ -278,40 +309,41 @@ const MonitoringPage = {
     const containerLines = [];
     const colors = ['#a855f7', '#ec4899', '#3b82f6', '#14b8a6', '#f59e0b', '#84cc16'];
     let cIndex = 0;
-    for (const [name, cObj] of Object.entries(data.containers || {})) {
-      if (cObj.cpu && cObj.cpu.length > 0) {
-        containerLines.push({
-          label: name,
-          data: cObj.cpu,
-          color: colors[cIndex % colors.length],
-        });
-        cIndex++;
-      }
+    for (const [cName, cPoints] of Object.entries(data.containers || {})) {
+      containerLines.push({
+        label: cName,
+        data: (cPoints || []).map(p => p.cpuPercent || 0),
+        color: colors[cIndex % colors.length],
+      });
+      cIndex++;
     }
     this.drawChart('chart-containers', timestamps, containerLines, '%');
 
     // 3. Render Containers Table
     const tbody = document.getElementById('mon-containers-tbody');
     if (tbody) {
-      const latestContainers = data.latestContainers || {};
-      const entries = Object.entries(latestContainers);
+      const items = data.breakdown || (data.latestContainers ? Object.entries(data.latestContainers).map(([name, s]) => ({ name, ...s })) : []);
 
-      if (entries.length === 0) {
+      if (items.length === 0) {
         tbody.innerHTML = `<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--text-muted);">No running containers detected</td></tr>`;
       } else {
-        tbody.innerHTML = entries.map(([name, stats]) => {
-          const memMb = (stats.memUsedBytes / (1024 * 1024)).toFixed(1);
+        tbody.innerHTML = items.map((c) => {
+          const name = c.name || c.id || 'container';
+          const cpuP = c.cpuPercent ?? 0;
+          const memMb = c.memUsageBytes ? (c.memUsageBytes / (1024 * 1024)).toFixed(1) : (c.memMb ? c.memMb : '—');
+          const memP = c.memPercent ?? 0;
+
           return `
             <tr style="border-bottom:1px solid var(--border);font-size:13px;">
               <td style="padding:10px 12px;font-weight:600;">
                 <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:6px;"></span>
                 ${escapeHtml(name)}
               </td>
-              <td style="padding:10px 12px;font-family:var(--font-mono);font-weight:600;color:${stats.cpuPercent > 50 ? '#ef4444' : '#00d4aa'};">
-                ${(stats.cpuPercent || 0).toFixed(1)}%
+              <td style="padding:10px 12px;font-family:var(--font-mono);font-weight:600;color:${cpuP > 50 ? '#ef4444' : '#00d4aa'};">
+                ${typeof cpuP === 'number' ? cpuP.toFixed(1) + '%' : cpuP}
               </td>
               <td style="padding:10px 12px;font-family:var(--font-mono);">${memMb} MB</td>
-              <td style="padding:10px 12px;font-family:var(--font-mono);">${(stats.memPercent || 0).toFixed(1)}%</td>
+              <td style="padding:10px 12px;font-family:var(--font-mono);">${typeof memP === 'number' ? memP.toFixed(1) + '%' : memP}</td>
               <td style="padding:10px 12px;">
                 <button class="btn btn-secondary btn-sm" onclick="Router.navigate('activity', { tab: 'logs', container: '${escapeHtml(name)}' })" style="padding:2px 8px;font-size:11px;">
                   📜 Logs
