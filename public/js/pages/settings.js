@@ -991,9 +991,7 @@ Router.register('settings', async (content, params) => {
 
               try {
                 await API.post('/meta/update/apply');
-                localStorage.setItem('dcc_update_available', 'false');
-                const badge = document.getElementById('badge-settings');
-                if (badge) badge.style.display = 'none';
+                if (typeof hideUpdateBadge === 'function') hideUpdateBadge();
               } catch(e) {
                 // Expected HTTP drop during restart
               }

@@ -31,7 +31,6 @@ function initMacSidebar() {
     let itemsHtml = '';
 
     group.items.forEach(key => {
-      const item = navItems[key];
       if (item.tabs) {
         // A section with sub-tabs → a collapsible parent + its tabs as sidebar sub-items (auto-expands
         // when active, so the sidebar stays compact). The in-page tab bar still works too.
@@ -39,10 +38,16 @@ function initMacSidebar() {
           <a class="nav-item nav-parent" data-page="${key}" data-default="${item.default}">
             <span class="nav-item-icon">${item.icon}</span>
             <span style="flex:1">${item.label}</span>
+            <span class="nav-badge" id="badge-${key}" style="display:none;margin-right:6px;"></span>
             <span class="nav-caret">▸</span>
           </a>
           <div class="nav-subitems" id="nav-sub-${key}">
-            ${item.tabs.map(([tab, label]) => `<a class="nav-subitem" data-page="${key}" data-tab="${tab}">${label}</a>`).join('')}
+            ${item.tabs.map(([tab, label]) => `
+              <a class="nav-subitem" data-page="${key}" data-tab="${tab}" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>${label}</span>
+                <span class="nav-badge" id="badge-${key}-${tab}" style="display:none"></span>
+              </a>
+            `).join('')}
           </div>
         `;
         return;
@@ -51,7 +56,7 @@ function initMacSidebar() {
       itemsHtml += `
         <a class="nav-item ${active}" data-page="${key}">
           <span class="nav-item-icon">${item.icon}</span>
-          ${item.label}
+          <span style="flex:1">${item.label}</span>
           <span class="nav-badge" id="badge-${key}" style="display:none"></span>
         </a>
       `;
@@ -304,16 +309,18 @@ async function checkForUpdates(force = false) {
 
     if (!force && lastCheck && (now - parseInt(lastCheck)) < 5 * 60 * 1000) {
       const cached = localStorage.getItem('dcc_update_available');
-      if (cached === 'true') showUpdateBadge();
+      const cachedVer = localStorage.getItem('dcc_update_remote_version') || '';
+      if (cached === 'true') showUpdateBadge(cachedVer);
       return;
     }
 
     const info = await API.get('/meta/update/check');
     localStorage.setItem('dcc_update_last_check', String(now));
     localStorage.setItem('dcc_update_available', String(info.updateAvailable));
+    if (info.remoteVersion) localStorage.setItem('dcc_update_remote_version', info.remoteVersion);
 
     if (info.updateAvailable) {
-      showUpdateBadge();
+      showUpdateBadge(info.remoteVersion);
     } else {
       hideUpdateBadge();
     }
@@ -322,17 +329,34 @@ async function checkForUpdates(force = false) {
   }
 }
 
-function showUpdateBadge() {
-  const badge = document.getElementById('badge-settings');
-  if (badge) {
-    badge.textContent = 'UPDATE';
-    badge.style.display = 'inline-flex';
+function showUpdateBadge(remoteVer = '') {
+  const badgeParent = document.getElementById('badge-settings');
+  if (badgeParent) {
+    badgeParent.textContent = remoteVer ? `v${remoteVer}` : 'UPDATE';
+    badgeParent.style.display = 'inline-flex';
+    badgeParent.style.background = '#f59e0b';
+    badgeParent.style.color = '#000';
+    badgeParent.style.fontWeight = '700';
+    badgeParent.style.padding = '1px 6px';
+    badgeParent.style.fontSize = '9px';
+  }
+  const badgeSub = document.getElementById('badge-settings-update');
+  if (badgeSub) {
+    badgeSub.textContent = '● NEW';
+    badgeSub.style.display = 'inline-flex';
+    badgeSub.style.background = '#38bdf8';
+    badgeSub.style.color = '#000';
+    badgeSub.style.fontWeight = '700';
+    badgeSub.style.padding = '1px 5px';
+    badgeSub.style.fontSize = '8px';
   }
 }
 
 function hideUpdateBadge() {
-  const badge = document.getElementById('badge-settings');
-  if (badge) badge.style.display = 'none';
+  const badgeParent = document.getElementById('badge-settings');
+  if (badgeParent) badgeParent.style.display = 'none';
+  const badgeSub = document.getElementById('badge-settings-update');
+  if (badgeSub) badgeSub.style.display = 'none';
   localStorage.setItem('dcc_update_available', 'false');
 }
 
