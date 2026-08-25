@@ -217,6 +217,49 @@ router.get('/', async (req, res) => {
         }
       }
     }
+
+    // Enrich all projects with accurate Git status (managed & external)
+    for (const p of list) {
+      const gitMeta = readGitMeta(p.name);
+      if (gitMeta) {
+        const targetServerId = gitMeta.serverId || 'local';
+        if (targetServerId === activeId || (targetServerId === 'local' && activeId === 'local')) {
+          p.isGit = true;
+          p.deploySource = 'git';
+          p.gitInfo = {
+            repoUrl: gitMeta.repoUrl,
+            branch: gitMeta.branch || 'main',
+            deployedCommit: (gitMeta.deployedCommit || '').slice(0, 7),
+            subdir: gitMeta.subdir || '',
+            external: false
+          };
+        }
+      } else if (p.deploySource === 'git') {
+        p.isGit = true;
+      } else if (activeId === 'local' && p.workingDir) {
+        try {
+          if (fs.existsSync(path.join(p.workingDir, '.git'))) {
+            p.isGit = true;
+            p.deploySource = p.deploySource || 'adopt';
+            p.gitExternal = true;
+            p.gitInfo = { external: true };
+          }
+        } catch (e) {}
+      } else {
+        const cached = externalGitCache.get(activeId + ':' + p.name);
+        if (cached && cached.result && cached.result.isGit && !cached.result.managed) {
+          p.isGit = true;
+          p.deploySource = p.deploySource || 'adopt';
+          p.gitExternal = true;
+          p.gitInfo = {
+            repoUrl: cached.result.remoteUrl,
+            branch: cached.result.branch || 'HEAD',
+            external: true
+          };
+        }
+      }
+    }
+
     res.json(list);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -930,7 +973,10 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
     } else {
       // Local, single (non-plan) deploy → record the pointer so it shows as git/folder-managed (badge, Pull, delete-files).
       writeDeployMeta(u.project, { mode: 'local', serverId: 'local', workingDir: baseDir, composeFile, source: u.git ? 'git' : 'folder' });
-      if (up) { current = 'deploy'; setStep(job, 'deploy', 'running'); job.phase = 'up'; jobLog(job, '$ docker compose up -d'); await runCompose(u.project, ['up', '-d'], baseDir, stream); setStep(job, 'deploy', 'done'); }
+      if (up) {
+        const upArgs = (u.git || u.redeploy || isUpdate) ? ['up', '-d', '--build', '--force-recreate'] : ['up', '-d'];
+        current = 'deploy'; setStep(job, 'deploy', 'running'); job.phase = 'up'; jobLog(job, `$ docker compose ${upArgs.join(' ')}`); await runCompose(u.project, upArgs, baseDir, stream); setStep(job, 'deploy', 'done');
+      }
       job.result = { composeFile };
       logAction({ sourceIp: reqIp, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder', details: { files: u.files, composeFile } });
     }
@@ -1426,7 +1472,7 @@ router.post('/deploy-git-prepare', async (req, res) => {
     if (!repoUrl || !(isHttp || isSsh)) return res.status(400).json({ error: 'A git URL is required (https://… or git@host:owner/repo.git for an SSH key)' });
     if (keyId && !isSsh) return res.status(400).json({ error: 'With an SSH key, use the SSH clone URL (git@host:owner/repo.git)' });
     if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
-      return res.status(409).json({ error: `A project named "${project}" already exists` });
+      return res.status(409).json({ error: `A project named "${project}" already exists`, projectExists: true, project });
     }
     const uploadId = crypto.randomBytes(16).toString('hex');
     const secret = crypto.randomBytes(18).toString('hex');
@@ -1871,6 +1917,126 @@ router.get('/:project/git-detect', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Unified Git Pull (fast-forward/fetch only — does not restart containers)
+router.post('/:project/git-pull', async (req, res) => {
+  const project = req.params.project;
+  try {
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const meta = readGitMeta(project);
+    if (!meta) {
+      // Check if external (adopted) git checkout
+      const info = await detectExternalGit(project);
+      if (info.isGit) {
+        const server = remoteCompose.getActiveRemoteServer();
+        const root = info.repoRoot;
+        const before = (await gitInDir(server, root, ['rev-parse', 'HEAD'])).trim();
+        await gitInDir(server, root, ['fetch', '--all', '--quiet']);
+        try { await gitInDir(server, root, ['merge', '--ff-only', '@{u}']); }
+        catch (e) { return res.status(409).json({ error: 'Not a fast-forward — checkout has diverged. Use ⚠️ Force Pull to reset.' }); }
+        const after = (await gitInDir(server, root, ['rev-parse', 'HEAD'])).trim();
+        invalidateExternalGit(project);
+        let changed = [], commits = [];
+        if (before !== after) {
+          try { changed = (await gitInDir(server, root, ['diff', '--name-status', before + '..' + after])).trim().split('\n').filter(Boolean).slice(0, 200); } catch (e) {}
+          try {
+            commits = (await gitInDir(server, root, ['log', '--pretty=%h%x09%ad%x09%s', '--date=short', before + '..' + after])).trim().split('\n').filter(Boolean).slice(0, 100)
+              .map(l => { const parts = l.split('\t'); return { hash: parts[0], date: parts[1], subject: parts.slice(2).join('\t') }; });
+          } catch (e) {}
+        }
+        logAction({ req, server: server ? dockerService.getActiveServerId() : 'local', resourceId: project, resourceType: 'compose', resourceName: project, action: 'git-pull', details: { fromSHA: before, toSHA: after, files: changed.length } });
+        return res.json({ success: true, fromSHA: before, toSHA: after, upToDate: before === after, changedFiles: changed, commits });
+      }
+      return res.status(400).json({ error: 'Not a Git-managed project' });
+    }
+
+    // Managed Git project: fetch latest & reset staged files, but don't restart containers
+    const dm = readDeployMeta(project);
+    const targetServerId = meta.serverId || (dm && dm.serverId);
+    const wantRemote = (targetServerId && targetServerId !== 'local') || meta.deployMode === 'remote' || (dm && dm.mode === 'remote');
+    const branch = meta.branch || 'HEAD';
+    const url = meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token);
+    const fromSHA = (meta.deployedCommit || '').trim();
+
+    if (wantRemote) {
+      let server = null;
+      if (targetServerId && targetServerId !== 'local') {
+        const { stmts } = require('../db');
+        server = stmts.getServer.get(targetServerId);
+      }
+      if (!server) server = remoteCompose.getActiveRemoteServer();
+      if (!server) return res.status(400).json({ error: 'Remote server not found' });
+      const remotePath = await remoteCompose.resolveRemotePath(server, meta.remotePath || (dm && dm.remotePath) || `~/.dockgate/projects/${project}`);
+      
+      await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['fetch', '--depth', '1', 'origin', branch]);
+      let toSHA = '';
+      try { toSHA = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'FETCH_HEAD'])).trim(); } catch (e) {}
+      await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['reset', '--hard', 'FETCH_HEAD']);
+      
+      let changedFiles = [], commits = [];
+      if (fromSHA && toSHA && fromSHA !== toSHA) {
+        try {
+          await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['fetch', '--depth', '1', url, fromSHA]);
+          const names = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['diff', '--name-status', fromSHA, toSHA])).trim();
+          changedFiles = names ? names.split('\n').filter(Boolean) : [];
+        } catch (e) {}
+      }
+      fs.writeFileSync(gitMetaPath(project), JSON.stringify({ ...meta, serverId: server.id, deployedCommit: toSHA || fromSHA }, null, 2), { mode: 0o600 });
+      return res.json({ success: true, fromSHA, toSHA: toSHA || fromSHA, upToDate: !fromSHA || fromSHA === toSHA, changedFiles, commits });
+    } else {
+      const dir = managedDir(project);
+      if (fs.existsSync(dir)) {
+        await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', 'origin', branch]);
+        let toSHA = '';
+        try { toSHA = (await gitRun(['-C', dir, 'rev-parse', 'FETCH_HEAD'])).stdout.trim(); } catch (e) {}
+        await gitWithKey(meta.keyId, ['-C', dir, 'reset', '--hard', 'FETCH_HEAD']);
+        let changedFiles = [], commits = [];
+        if (fromSHA && toSHA && fromSHA !== toSHA) {
+          try {
+            await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', url, fromSHA]);
+            const names = (await gitRun(['-C', dir, 'diff', '--name-status', fromSHA, toSHA])).stdout.trim();
+            changedFiles = names ? names.split('\n').filter(Boolean) : [];
+          } catch (e) {}
+        }
+        fs.writeFileSync(gitMetaPath(project), JSON.stringify({ ...meta, deployedCommit: toSHA || fromSHA }, null, 2), { mode: 0o600 });
+        return res.json({ success: true, fromSHA, toSHA: toSHA || fromSHA, upToDate: !fromSHA || fromSHA === toSHA, changedFiles, commits });
+      } else {
+        return res.json({ success: true, message: 'Ready for deploy', upToDate: true });
+      }
+    }
+  } catch (err) { res.status(err.statusCode || 500).json({ error: (err.message || 'Git pull failed').toString() }); }
+});
+
+// Unified Git Sync (Pull latest + docker compose up -d --build --force-recreate)
+router.post('/:project/git-sync', async (req, res) => {
+  const project = req.params.project;
+  try {
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const force = !!(req.body && (req.body.force === true || req.body.force === '1'));
+    const meta = readGitMeta(project);
+    if (!meta) {
+      const info = await detectExternalGit(project);
+      if (info.isGit) {
+        const configFiles = String(info.configFiles || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (!configFiles.length || !configFiles.every(isSafeHostPath)) return res.status(400).json({ error: 'Could not resolve a safe compose file path for this project.' });
+        const server = remoteCompose.getActiveRemoteServer();
+        const job = {
+          id: crypto.randomBytes(8).toString('hex'), project, status: 'running', phase: 'pull', log: '', error: null, result: null,
+          startedAt: Date.now(), finishedAt: null,
+          steps: [{ id: 'pull', label: force ? 'git reset --hard' : 'git pull --ff-only', status: 'pending' }, { id: 'up', label: 'docker compose up -d --build --force-recreate', status: 'pending' }],
+        };
+        deployJobs.set(job.id, job);
+        runAdoptRedeployJob(job, { server, serverId: dockerService.getActiveServerId(), project, info, configFiles, force, reqIp: req.ip });
+        return res.json({ jobId: job.id, project });
+      }
+      return res.status(400).json({ error: 'Not a Git-managed project' });
+    }
+
+    const job = gitRedeployJob(project, req.ip);
+    logAction({ req, resourceId: project, resourceType: 'compose', resourceName: project, action: force ? 'force-git-sync' : 'git-sync' });
+    res.json({ jobId: job.id, project });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || '').toString() }); }
+});
+
 router.post('/:project/adopt-pull', async (req, res) => {
   try {
     const project = req.params.project;
@@ -1914,7 +2080,7 @@ router.post('/:project/adopt-redeploy', async (req, res) => {
     const job = {
       id: crypto.randomBytes(8).toString('hex'), project, status: 'running', phase: 'pull', log: '', error: null, result: null,
       startedAt: Date.now(), finishedAt: null,
-      steps: [{ id: 'pull', label: 'git pull --ff-only', status: 'pending' }, { id: 'up', label: 'docker compose up -d --build', status: 'pending' }],
+      steps: [{ id: 'pull', label: force ? 'git reset --hard' : 'git pull --ff-only', status: 'pending' }, { id: 'up', label: 'docker compose up -d --build --force-recreate', status: 'pending' }],
     };
     deployJobs.set(job.id, job);
     runAdoptRedeployJob(job, { server, serverId: dockerService.getActiveServerId(), project, info, configFiles, force, reqIp: req.ip });
@@ -1926,21 +2092,26 @@ async function runAdoptRedeployJob(job, p) {
   const stream = (c) => jobStream(job, c);
   try {
     setStep(job, 'pull', 'running'); job.phase = 'pull';
-    if (p.info.dirty) throw Object.assign(new Error('Uncommitted local changes on the server — aborting (DockGate will not overwrite your files).'), { statusCode: 409 });
-    if (p.info.canPull) {
-      jobLog(job, '$ git -C ' + p.info.repoRoot + ' fetch && git merge --ff-only');
+    if (p.force) {
+      jobLog(job, '$ git -C ' + p.info.repoRoot + ' fetch && git reset --hard @{u}');
       await gitInDir(p.server, p.info.repoRoot, ['fetch', '--all', '--quiet'], stream);
-      try { await gitInDir(p.server, p.info.repoRoot, ['merge', '--ff-only', '@{u}'], stream); }
-      catch (e) { throw Object.assign(new Error('Not a fast-forward — the server checkout has diverged. Resolve it on the host first.'), { statusCode: 409 }); }
+      await gitInDir(p.server, p.info.repoRoot, ['reset', '--hard', '@{u}'], stream);
     } else {
-      jobLog(job, '(skipping git pull: ' + (p.info.reason || 'not pullable') + ' — redeploying the current checkout)');
+      if (p.info.dirty) throw Object.assign(new Error('Uncommitted local changes on the server — aborting (DockGate will not overwrite your files). Use ⚠️ Force Pull to discard them.'), { statusCode: 409 });
+      if (p.info.canPull) {
+        jobLog(job, '$ git -C ' + p.info.repoRoot + ' fetch && git merge --ff-only');
+        await gitInDir(p.server, p.info.repoRoot, ['fetch', '--all', '--quiet'], stream);
+        try { await gitInDir(p.server, p.info.repoRoot, ['merge', '--ff-only', '@{u}'], stream); }
+        catch (e) { throw Object.assign(new Error('Not a fast-forward — the server checkout has diverged. Use ⚠️ Force Pull to reset.'), { statusCode: 409 }); }
+      } else {
+        jobLog(job, '(skipping git pull: ' + (p.info.reason || 'not pullable') + ' — redeploying the current checkout)');
+      }
     }
     setStep(job, 'pull', 'done');
 
     setStep(job, 'up', 'running'); job.phase = 'up';
     const fileArgs = p.configFiles.flatMap(f => ['-f', f]);
-    const upArgs = [...fileArgs, 'up', '-d', '--build'];
-    if (p.force) upArgs.push('--force-recreate');
+    const upArgs = [...fileArgs, 'up', '-d', '--build', '--force-recreate'];
     jobLog(job, '\n$ docker compose -p ' + p.project + ' ' + upArgs.join(' ') + '\n');
     if (p.server) await remoteCompose.runComposeInRemoteDir(p.server, p.info.workingDir, p.project, upArgs, stream);
     else await runCompose(p.project, upArgs, p.info.workingDir, stream);

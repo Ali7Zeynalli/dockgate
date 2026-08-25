@@ -42,8 +42,13 @@ Router.register('compose', async (content) => {
             <table>
               <thead><tr><th>Project Name</th><th>Status</th><th>Services</th><th>Path</th><th style="text-align:right">Actions</th></tr></thead>
               <tbody>
-                ${projects.map(p => `<tr${p.deploySource === 'git' ? ` data-gitproj="${escapeHtml(p.name)}"` : ''}>
-                  <td class="td-name">${p.deploySource === 'git' ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:.7"><title>Git-managed</title><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>' : ''}${escapeHtml(p.name)}${p.deploySource === 'adopt' ? ' <span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px;vertical-align:1px" title="Adopted in place — the compose file lives on the server; DockGate stops &amp; untracks it on delete but never removes your folder">adopted</span>' : ''}</td>
+                ${projects.map(p => {
+                  const isGit = !!(p.isGit || p.deploySource === 'git');
+                  const gitBranch = p.gitInfo?.branch || '';
+                  return `<tr${isGit ? ` data-gitproj="${escapeHtml(p.name)}"` : ''}>
+                  <td class="td-name">
+                    ${isGit ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:.8;color:var(--accent)"><title>Git-managed project</title><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>' : ''}${escapeHtml(p.name)}${isGit && gitBranch ? ` <span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px;vertical-align:1px;margin-left:4px" title="${escapeHtml(p.gitInfo?.repoUrl || 'Git branch')}">git:${escapeHtml(gitBranch)}</span>` : ''}${p.deploySource === 'adopt' && !isGit ? ' <span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px;vertical-align:1px" title="Adopted in place — the compose file lives on the server; DockGate stops &amp; untracks it on delete but never removes your folder">adopted</span>' : ''}
+                  </td>
                   <td><span class="badge ${p.running === p.total ? 'badge-running' : p.running > 0 ? 'badge-restarting' : 'badge-stopped'}">${p.running}/${p.total} Running</span></td>
                   <td class="text-sm">${p.services.join(', ') || '—'}</td>
                   <td class="td-mono text-xs" title="${escapeHtml(p.workingDir)}">${escapeHtml(p.workingDir) || '—'}</td>
@@ -52,14 +57,20 @@ Router.register('compose', async (content) => {
                     <button class="btn-sm btn-secondary" data-action="down" data-project="${p.name}" ${dis}>${Icons.stop} Down</button>
                     <button class="btn-sm btn-secondary" data-action="restart" data-project="${p.name}" ${dis} title="Restart">${Icons.restart}</button>
                     <button class="btn-sm btn-secondary" data-action="rebuild" data-project="${p.name}" data-services="${escapeHtml((p.services || []).join(','))}" ${dis} title="Rebuild images from source + up (pick which services)">${Icons.layers} Rebuild</button>
+                    ${isGit ? `
+                      <button class="btn-sm btn-secondary" data-git-pull="${escapeHtml(p.name)}" title="⤓ Git Pull: Pull latest code changes (files only, containers untouched)">⤓ Pull</button>
+                      <button class="btn-sm btn-primary" data-git-sync="${escapeHtml(p.name)}" title="⚡ Git Sync &amp; Deploy: Pull latest code &amp; rebuild/restart containers immediately" style="background:var(--accent);border-color:var(--accent)">⚡ Sync</button>
+                    ` : ''}
                     ${p.deploySource === 'folder' ? `<button class="btn-sm btn-secondary" data-update="${p.name}" data-rpath="${escapeHtml(p.workingDir || '')}" data-services="${escapeHtml((p.services || []).join(','))}" title="Re-upload the (updated) folder & rebuild (pick which services)">${Icons.refresh} Update</button>` : ''}
                     <button class="btn-icon" title="Edit YAML" data-edit="${p.name}" ${dis}>${Icons.settings}</button>
                     <button class="btn-icon" title="Project files (Dockerfile, .env…)" data-files="${p.name}">${Icons.folder || Icons.compose}</button>
+                    ${isGit ? `<button class="btn-icon text-warning" title="⚠️ Force Pull: Discard uncommitted changes on server and reset to origin/<branch> + rebuild" data-git-force="${escapeHtml(p.name)}">⚠️</button>` : ''}
                     <button class="btn-icon" title="Open a terminal in this project's folder" data-term="${p.name}" data-cwd="${escapeHtml(p.workingDir || '')}">🖥</button>
-                    <button class="btn-icon" title="View Services" data-detail="${p.name}">${Icons.eye}</button>
+                    <button class="btn-icon" title="View Services &amp; Git details" data-detail="${p.name}">${Icons.eye}</button>
                     <button class="btn-icon text-danger" title="Delete project (containers + files)" data-delproj="${p.name}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}">${Icons.trash}</button>
                   </div></td>
-                </tr>`).join('')}
+                </tr>`;
+                }).join('')}
               </tbody>
             </table>
           </div>
@@ -80,6 +91,76 @@ Router.register('compose', async (content) => {
       content.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
       });
+
+      // Direct Git Pull action handler
+      content.querySelectorAll('[data-git-pull]').forEach(btn => btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const proj = btn.dataset.gitPull;
+        btn.disabled = true;
+        const origText = btn.innerHTML;
+        btn.innerHTML = '⤓ Pulling…';
+        try {
+          const r = await API.post(`/compose/${proj}/git-pull`, {});
+          const sh = s => (s || '').slice(0, 7);
+          const commits = r.commits || [];
+          const changed = r.changedFiles || r.changed || [];
+          const body = changed.length || commits.length
+            ? `<div class="text-sm" style="margin-bottom:6px">⤓ Pulled <span class="td-mono">${sh(r.fromSHA)}</span> → <span class="td-mono">${sh(r.toSHA)}</span></div>
+               ${commits.length ? `<div class="text-sm" style="margin:8px 0 4px">⬇ <strong>${commits.length}</strong> commit(s) pulled:</div><pre class="logs-viewer" style="max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:0">${commits.map(c => `${escapeHtml(c.hash || '')}  ${escapeHtml(c.date || '')}  ${escapeHtml(c.subject || '')}`).join('\n')}</pre>` : ''}
+               ${changed.length ? `<div class="text-sm" style="margin:8px 0 4px">📦 <strong>${changed.length}</strong> file(s) changed:</div><pre class="logs-viewer" style="max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:0">${changed.map(escapeHtml).join('\n')}</pre>` : ''}
+               <div class="text-xs text-muted" style="margin-top:8px">Code pulled successfully. Containers are untouched. Click <strong>⚡ Deploy now</strong> to build &amp; restart containers.</div>`
+            : `<div class="text-sm">✓ Already at the latest commit (<span class="td-mono">${sh(r.toSHA || r.fromSHA)}</span>) — nothing new to pull.</div>`;
+          
+          const pm = showModal(`Git Pull — ${escapeHtml(proj)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+          if (changed.length || commits.length || !r.upToDate) {
+            const go = document.createElement('button');
+            go.className = 'btn btn-primary';
+            go.innerHTML = '⚡ Deploy now';
+            pm.overlay.querySelector('#modal-footer').appendChild(go);
+            go.onclick = async () => {
+              pm.close();
+              try {
+                const res = await API.post(`/compose/${proj}/git-sync`, {});
+                if (res && res.jobId) openDeployLog(res.jobId, proj);
+                showToast('Deploying latest changes…', 'info', 4000);
+                render();
+              } catch (err) { showToast(err.message, 'error', 9000); }
+            };
+          }
+        } catch (err) {
+          showModal(`Git Pull Failed — ${escapeHtml(proj)}`, `<div class="text-sm" style="color:var(--danger);white-space:pre-wrap;word-break:break-all">${escapeHtml(err.message)}</div><div class="text-xs text-muted" style="margin-top:8px">If there are diverged branches or modified files on the server, you can use <strong>⚠️ Force Pull</strong> to reset to origin.</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = origText;
+        }
+      }));
+
+      // Direct Git Sync & Deploy action handler
+      content.querySelectorAll('[data-git-sync]').forEach(btn => btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const proj = btn.dataset.gitSync;
+        try {
+          const r = await API.post(`/compose/${proj}/git-sync`, {});
+          if (r && r.jobId) openDeployLog(r.jobId, proj);
+          showToast(`⚡ Syncing & deploying "${proj}" from Git…`, 'info', 4000);
+          render();
+        } catch (err) { showToast(err.message, 'error', 9000); }
+      }));
+
+      // Direct Force Pull & Rebuild action handler
+      content.querySelectorAll('[data-git-force]').forEach(btn => btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const proj = btn.dataset.gitForce;
+        showConfirm('⚠️ Force Pull &amp; Deploy', `Force pull and redeploy <strong>"${escapeHtml(proj)}"</strong>?<br><br><span class="text-xs text-muted">This will run <code>git reset --hard origin/&lt;branch&gt;</code> (discarding any local uncommitted changes on the server) and rebuild &amp; restart the containers.</span>`, async () => {
+          try {
+            const r = await API.post(`/compose/${proj}/git-sync`, { force: true });
+            if (r && r.jobId) openDeployLog(r.jobId, proj);
+            showToast(`⚠️ Force syncing "${proj}" from Git…`, 'info', 4000);
+            render();
+          } catch (err) { showToast(err.message, 'error', 9000); }
+        }, true);
+      }));
+
       // "⋯ More" row menus — position:fixed so the table's overflow can't clip them. Items keep their
       // data-* attrs, so every action handler (wired above + the data-action block below) still fires;
       // here we only open/close the menu and place it under its toggle.
@@ -103,14 +184,30 @@ Router.register('compose', async (content) => {
         window.addEventListener('resize', () => document.querySelectorAll('.row-menu-pop').forEach(p => p.style.display = 'none'));
       }
 
-      // For git projects, check (server-cached) whether the repo has newer commits → show an "update" badge.
+      // For git projects, check (server-cached) whether the repo has newer commits → show an interactive "update" badge.
       content.querySelectorAll('tr[data-gitproj]').forEach(async (tr) => {
         const proj = tr.dataset.gitproj;
         try {
           const st = await API.get(`/compose/${proj}/git-status`);
           if (!st || !st.behind) return;
           const cell = tr.querySelector('.td-name');
-          if (cell && !cell.querySelector('.upd-badge')) cell.insertAdjacentHTML('beforeend', ' <span class="upd-badge" title="The repo has newer commits since your last deploy — Redeploy to pull them" style="background:var(--accent);color:#fff;font-size:9px;font-weight:700;padding:1px 6px;border-radius:9px;letter-spacing:.4px;vertical-align:middle">UPDATE</span>');
+          if (cell && !cell.querySelector('.upd-badge')) {
+            const badge = document.createElement('span');
+            badge.className = 'upd-badge';
+            badge.style.cssText = 'background:var(--accent);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:9px;letter-spacing:.4px;vertical-align:middle;cursor:pointer;margin-left:5px;display:inline-flex;align-items:center;gap:3px;';
+            badge.title = 'New commits available on Git — Click to Sync & Deploy immediately!';
+            badge.innerHTML = 'UPDATE ↻';
+            badge.onclick = async (e) => {
+              e.stopPropagation();
+              try {
+                const r = await API.post(`/compose/${proj}/git-sync`, {});
+                if (r && r.jobId) openDeployLog(r.jobId, proj);
+                showToast(`⚡ Syncing & deploying "${proj}" from Git…`, 'info', 4000);
+                render();
+              } catch (err) { showToast(err.message, 'error', 9000); }
+            };
+            cell.appendChild(badge);
+          }
         } catch (e) { /* unreachable repo / not git — no badge */ }
       });
 
@@ -459,7 +556,19 @@ Router.register('compose', async (content) => {
         showToast(plan.up ? 'Deploying — watch the live console. Auto-redeploy webhook ready.' : `✓ Cloned & staged "${project}". Start stacks from list when ready.`, 'info', 7000);
         render();
       } catch (e) {
-        showToast(e.message, 'error', 12000);
+        if (e.data?.projectExists || /already exists/i.test(e.message)) {
+          showConfirm('Project Already Exists', `Project "<strong>${escapeHtml(project)}</strong>" is already registered in DockGate.<br><br>Would you like to <strong>Sync &amp; Deploy</strong> the latest code from Git now?`, async () => {
+            m.close();
+            try {
+              const r = await API.post(`/compose/${project}/git-sync`, {});
+              if (r && r.jobId) openDeployLog(r.jobId, project);
+              showToast(`⚡ Syncing & deploying "${project}" from Git…`, 'info', 4000);
+              render();
+            } catch (err) { showToast(err.message, 'error', 9000); }
+          });
+        } else {
+          showToast(e.message, 'error', 12000);
+        }
         reset();
       }
     };
