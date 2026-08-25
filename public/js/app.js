@@ -31,6 +31,8 @@ function initMacSidebar() {
     let itemsHtml = '';
 
     group.items.forEach(key => {
+      const item = navItems[key];
+      if (!item) return;
       if (item.tabs) {
         // A section with sub-tabs → a collapsible parent + its tabs as sidebar sub-items (auto-expands
         // when active, so the sidebar stays compact). The in-page tab bar still works too.
