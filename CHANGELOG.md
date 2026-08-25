@@ -2,9 +2,9 @@
 
 ---
 
-## [2.2.6] - 2026-08-25
+## [2.2.7] - 2026-08-25
 
-### Added & Enhanced — Global Git Pull & Sync Hub, Header Actions, Directory In-Place Deploy & Auto-Detection (v2.2.6)
+### Added & Enhanced — Global Git Pull & Sync Hub, Header Actions, Directory In-Place Deploy & Auto-Detection (v2.2.7)
 - **Top Header Global Git Pull / Sync Menu (`public/js/pages/compose.js`)**:
   - **Prominent Header Action**: Positioned right next to the `+ Deploy ▾` button, a unified **`⤓ Git Pull / Sync ▾`** dropdown provides one-stop access to all Git operations across the server with an active Git project counter.
   - **`⚡ Sync & Deploy All Git Projects`**: Single-click bulk redeploy that iterates all Git-connected projects across their respective directories on the server, fetches newest code, and runs `docker compose up -d --build --force-recreate` with live streaming deploy console.
