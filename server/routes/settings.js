@@ -406,7 +406,7 @@ const REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
 // deploy (previously every Alpine instance failed the fetch and silently showed "up to date").
 function githubRawFetch(filePath) {
   const { execFile } = require('child_process');
-  const url = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${filePath}`;
+  const url = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${filePath}?_t=${Date.now()}`;
   return new Promise((resolve, reject) => {
     execFile('wget', ['-q', '-O', '-', '-T', '5', url], { timeout: 8000 }, (err, stdout) => {
       if (err) return reject(err);

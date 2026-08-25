@@ -921,14 +921,50 @@ Router.register('settings', async (content, params) => {
             `;
 
             document.getElementById('auto-update-btn')?.addEventListener('click', () => {
-              showConfirm('Update DockGate', 'This will pull the latest Docker image and restart the container. Your data will be preserved.', async () => {
+              showConfirm('Update DockGate', `This will pull the latest Docker image (v${escapeHtml(updateInfo.remoteVersion)}) and restart the container. Your data will be preserved.`, async () => {
+                const modal = showModal('Updating DockGate', `
+                  <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px 12px;text-align:center;">
+                    <div style="width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;"></div>
+                    <div>
+                      <div style="font-weight:700;font-size:15px;margin-bottom:6px;">Pulling Image &amp; Restarting…</div>
+                      <div class="text-sm text-muted">Updating from v${escapeHtml(updateInfo.currentVersion)} to v${escapeHtml(updateInfo.remoteVersion)}.</div>
+                      <div class="text-xs text-muted" style="margin-top:6px;">DockGate is pulling <code>ghcr.io/ali7zeynalli/dockgate:latest</code>. The panel will auto-reload as soon as the new container starts.</div>
+                    </div>
+                  </div>
+                  <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+                `, []);
+
                 try {
-                  showToast('Updating... Panel will restart in a moment.', 'info', 15000);
                   await API.post('/meta/update/apply');
                   localStorage.setItem('dcc_update_available', 'false');
                   const badge = document.getElementById('badge-settings');
                   if (badge) badge.style.display = 'none';
-                } catch(e) { showToast('Update started, panel will restart...', 'info', 10000); }
+                } catch(e) {
+                  // The container stopping will abort the active HTTP request — expected!
+                }
+
+                // Start Auto-Reconnect Polling
+                let attempts = 0;
+                const pollTimer = setInterval(async () => {
+                  attempts++;
+                  try {
+                    const res = await fetch('/api/meta/version', { cache: 'no-store' });
+                    if (res.ok) {
+                      const data = await res.json();
+                      if (data && data.version) {
+                        clearInterval(pollTimer);
+                        localStorage.setItem('dcc_app_version', data.version);
+                        window.location.reload();
+                      }
+                    }
+                  } catch (err) {
+                    // Waiting for container to come back up
+                  }
+                  if (attempts > 90) { // 3 minutes timeout
+                    clearInterval(pollTimer);
+                    window.location.reload();
+                  }
+                }, 2000);
               });
             });
 
@@ -950,7 +986,10 @@ Router.register('settings', async (content, params) => {
                 </div>
               </div>
             `;
-            document.getElementById('check-update-btn')?.addEventListener('click', () => renderUpdate());
+            document.getElementById('check-update-btn')?.addEventListener('click', () => {
+              if (typeof checkForUpdates === 'function') checkForUpdates(true);
+              renderUpdate();
+            });
           } else {
             tabContent.innerHTML = `
               <div class="settings-section">
@@ -965,7 +1004,10 @@ Router.register('settings', async (content, params) => {
                 </div>
               </div>
             `;
-            document.getElementById('check-update-btn')?.addEventListener('click', () => renderUpdate());
+            document.getElementById('check-update-btn')?.addEventListener('click', () => {
+              if (typeof checkForUpdates === 'function') checkForUpdates(true);
+              renderUpdate();
+            });
           }
         } catch(e) {
           tabContent.innerHTML = `
@@ -981,7 +1023,10 @@ Router.register('settings', async (content, params) => {
               </div>
             </div>
           `;
-          document.getElementById('retry-update-btn')?.addEventListener('click', () => renderUpdate());
+          document.getElementById('retry-update-btn')?.addEventListener('click', () => {
+            if (typeof checkForUpdates === 'function') checkForUpdates(true);
+            renderUpdate();
+          });
         }
       }
 

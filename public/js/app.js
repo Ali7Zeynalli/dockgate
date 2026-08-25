@@ -260,15 +260,24 @@ async function boot() {
       if (s && s.timezone) localStorage.setItem('dcc_timezone', s.timezone);
     }).catch(() => {});
 
-    // Show version from package.json in sidebar / Sidebar-da versiyanı package.json-dan göstər
+    // Show version from package.json in sidebar and detect post-update / Sidebar-da versiyanı göstər və update-i aşkar et
     API.get('/meta/version').then(v => {
       const el = document.getElementById('app-version');
       if (el && v.version) el.textContent = 'v' + v.version;
+      
+      const lastVersion = localStorage.getItem('dcc_app_version');
+      if (lastVersion && lastVersion !== v.version) {
+        if (typeof showToast === 'function') {
+          showToast(`🎉 DockGate updated to v${v.version}!`, 'success', 8000);
+        }
+        localStorage.setItem('dcc_update_available', 'false');
+      }
+      if (v.version) localStorage.setItem('dcc_app_version', v.version);
     }).catch(() => {});
 
-    // Auto update check — on boot and every 24h / Avtomatik update yoxlama — başlanğıcda və hər 24 saatda bir
+    // Auto update check — on boot and every 5m / Avtomatik update yoxlama — başlanğıcda və hər 5 dəqiqədə bir
     checkForUpdates();
-    setInterval(checkForUpdates, 5 * 60 * 1000);
+    setInterval(() => checkForUpdates(), 5 * 60 * 1000);
 
     // Global "deploy running" indicator on the Deploy nav item — so a running deploy is visible from any page.
     checkRunningDeploys();
@@ -288,13 +297,12 @@ async function boot() {
 }
 
 // Check for updates and show badge in sidebar / Update yoxla və sidebar-da badge göstər
-async function checkForUpdates() {
+async function checkForUpdates(force = false) {
   try {
-    // Has 5 min passed since last check? / Son yoxlamadan 5 dəqiqə keçibmi?
     const lastCheck = localStorage.getItem('dcc_update_last_check');
     const now = Date.now();
-    if (lastCheck && (now - parseInt(lastCheck)) < 5 * 60 * 1000) {
-      // Read from cache / Cache-dən oxu
+
+    if (!force && lastCheck && (now - parseInt(lastCheck)) < 5 * 60 * 1000) {
       const cached = localStorage.getItem('dcc_update_available');
       if (cached === 'true') showUpdateBadge();
       return;
@@ -310,7 +318,6 @@ async function checkForUpdates() {
       hideUpdateBadge();
     }
   } catch(e) {
-    // Network error — don't show badge, fail silently / Şəbəkə xətası — badge göstərmə, sessiz keç
     console.log('Update check failed:', e.message);
   }
 }
