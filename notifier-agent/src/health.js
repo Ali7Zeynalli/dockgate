@@ -37,6 +37,7 @@ function startQueryServer(storage, getState) {
     if (req.method === 'GET' && pathname === '/logs') {
       const logs = storage.getLogs({
         container: query.container || '',
+        source: query.source || '',
         level: query.level || '',
         search: query.search || '',
         limit: query.limit || 100,

@@ -211,6 +211,7 @@ class Storage {
       timestamp: entry.timestamp || Date.now(),
       containerId: entry.containerId || '',
       containerName: entry.containerName || 'system',
+      source: entry.source || (entry.containerName === 'system' || entry.containerName === 'auth' || entry.containerName === 'nginx' || entry.containerName === 'kernel' ? entry.containerName : 'container'),
       stream: entry.stream || 'stdout', // 'stdout' | 'stderr'
       message: String(entry.message || '').trim(),
       level: entry.level || this._detectLogLevel(entry.message, entry.stream),
@@ -238,7 +239,7 @@ class Storage {
     return 'info';
   }
 
-  getLogs({ container = '', level = '', search = '', limit = 100, since = 0 } = {}) {
+  getLogs({ container = '', source = '', level = '', search = '', limit = 100, since = 0 } = {}) {
     const term = search ? search.toLowerCase() : '';
     const lim = Math.max(1, Math.min(1000, Number(limit) || 100));
 
@@ -246,6 +247,9 @@ class Storage {
 
     if (since > 0) {
       matched = matched.filter(l => l.timestamp >= since);
+    }
+    if (source) {
+      matched = matched.filter(l => l.source === source);
     }
     if (container) {
       matched = matched.filter(l => l.containerName === container || l.containerId === container);

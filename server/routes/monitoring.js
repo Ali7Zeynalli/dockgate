@@ -12,18 +12,31 @@ const dockerService = require('../docker');
 const LogDoctor = require('../diagnostics/log-doctor');
 
 // Helper to query on-host agent query server via wget/curl over SSH or loopback
+// Helper to query on-host agent query server via wget/curl over SSH or docker exec
 async function queryAgent(serverId, endpoint) {
   if (serverId === 'local') {
-    return new Promise((resolve, reject) => {
-      const req = http.get(`http://127.0.0.1:9000${endpoint}`, { timeout: 2500 }, (res) => {
-        let data = '';
-        res.on('data', chunk => { data += chunk; });
-        res.on('end', () => {
-          try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('Agent invalid response')); }
+    // 1. Try local loopback if running in same net/process
+    try {
+      return await new Promise((resolve, reject) => {
+        const req = http.get(`http://127.0.0.1:9000${endpoint}`, { timeout: 1500 }, (res) => {
+          let data = '';
+          res.on('data', chunk => { data += chunk; });
+          res.on('end', () => {
+            try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('Agent invalid response')); }
+          });
         });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Agent query timeout')); });
       });
-      req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('Agent query timeout')); });
+    } catch (e) {}
+
+    // 2. Query via docker exec on local dockgate-notifier container
+    const { exec } = require('child_process');
+    return new Promise((resolve, reject) => {
+      exec(`docker exec dockgate-notifier wget -qO- "http://127.0.0.1:9000${endpoint}" 2>/dev/null`, { timeout: 3000 }, (err, stdout) => {
+        if (err || !stdout || !stdout.trim()) return reject(new Error('Local agent not available'));
+        try { resolve(JSON.parse(stdout.trim())); } catch (pe) { reject(pe); }
+      });
     });
   }
 
