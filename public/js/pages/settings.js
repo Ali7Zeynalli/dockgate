@@ -885,141 +885,168 @@ Router.register('settings', async (content, params) => {
 
       // ==================== UPDATE TAB ====================
       async function renderUpdate() {
-        tabContent.innerHTML = '<div class="text-muted text-sm">Checking for updates...</div>';
+        tabContent.innerHTML = '<div class="text-muted text-sm" style="padding:20px 0;"><span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Checking GitHub for updates…</div>';
 
         try {
           const updateInfo = await API.get('/meta/update/check');
+          const isUpdate = !!updateInfo.updateAvailable;
+          const currentVer = updateInfo.currentVersion || '2.2.0';
+          const remoteVer = updateInfo.remoteVersion || currentVer;
+          const changes = updateInfo.changes || [];
+          const repoUrl = updateInfo.repoUrl || 'https://github.com/Ali7Zeynalli/dockgate';
+          const checkedTime = updateInfo.checkedAt ? new Date(updateInfo.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Just now';
 
-          if (updateInfo.updateAvailable) {
-            tabContent.innerHTML = `
-              <div class="settings-section">
-                <div class="insight-card info" style="margin-bottom:12px;">
-                  <span>${Icons.info}</span>
-                  <span>A new version is available: v${escapeHtml(updateInfo.remoteVersion)}</span>
-                </div>
-                <div style="margin-bottom:12px;">
-                  <div class="text-sm text-muted">Current: v${updateInfo.currentVersion} &rarr; Latest: v${updateInfo.remoteVersion}</div>
-                </div>
-                ${updateInfo.changes && updateInfo.changes.length > 0 ? `
-                <div style="margin-bottom:12px;">
-                  <div class="text-xs text-muted" style="margin-bottom:6px;">What's new:</div>
-                  <div style="max-height:150px;overflow-y:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:8px 12px;font-size:12px;">
-                    ${updateInfo.changes.map(c => `<div style="padding:2px 0;">&bull; ${escapeHtml(c)}</div>`).join('')}
-                  </div>
-                </div>` : ''}
-                <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:12px;font-family:var(--font-mono);font-size:12px;line-height:1.8;">
-                  <div class="text-xs text-muted" style="margin-bottom:6px;font-family:var(--font-sans);">To update manually:</div>
-                  <div>docker compose pull</div>
-                  <div>docker compose up -d</div>
-                </div>
-                <div style="display:flex;gap:8px;">
-                  <button class="btn btn-primary btn-sm" id="auto-update-btn">${Icons.download} Update Now</button>
-                  <button class="btn btn-secondary btn-sm" id="copy-update-cmd">${Icons.copy} Copy Commands</button>
-                  <a href="${updateInfo.repoUrl}" target="_blank" class="btn btn-secondary btn-sm">${Icons.externalLink} GitHub</a>
-                </div>
-              </div>
-            `;
-
-            document.getElementById('auto-update-btn')?.addEventListener('click', () => {
-              showConfirm('Update DockGate', `This will pull the latest Docker image (v${escapeHtml(updateInfo.remoteVersion)}) and restart the container. Your data will be preserved.`, async () => {
-                const modal = showModal('Updating DockGate', `
-                  <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px 12px;text-align:center;">
-                    <div style="width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;"></div>
+          tabContent.innerHTML = `
+            <div class="settings-section" style="display:flex;flex-direction:column;gap:16px;">
+              
+              <!-- Status Hero Card -->
+              <div class="card" style="padding:18px 20px;background:linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 41, 59, 0.8));border:1px solid ${isUpdate ? 'rgba(56, 189, 248, 0.4)' : 'rgba(16, 185, 129, 0.3)'};border-radius:var(--radius-lg);box-shadow:0 4px 20px rgba(0,0,0,0.15);">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+                  <div style="display:flex;align-items:center;gap:14px;">
+                    <div style="width:44px;height:44px;border-radius:10px;background:${isUpdate ? 'rgba(56, 189, 248, 0.15)' : 'rgba(16, 185, 129, 0.15)'};display:flex;align-items:center;justify-content:center;font-size:22px;">
+                      ${isUpdate ? '🚀' : '✓'}
+                    </div>
                     <div>
-                      <div style="font-weight:700;font-size:15px;margin-bottom:6px;">Pulling Image &amp; Restarting…</div>
-                      <div class="text-sm text-muted">Updating from v${escapeHtml(updateInfo.currentVersion)} to v${escapeHtml(updateInfo.remoteVersion)}.</div>
-                      <div class="text-xs text-muted" style="margin-top:6px;">DockGate is pulling <code>ghcr.io/ali7zeynalli/dockgate:latest</code>. The panel will auto-reload as soon as the new container starts.</div>
+                      <div style="font-weight:700;font-size:16px;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+                        ${isUpdate ? `New Version Available: v${escapeHtml(remoteVer)}` : 'DockGate is Up to Date'}
+                        <span class="badge" style="background:${isUpdate ? '#38bdf822' : '#10b98122'};color:${isUpdate ? '#38bdf8' : '#10b981'};font-size:11px;font-weight:700;padding:2px 8px;">
+                          ${isUpdate ? 'UPDATE READY' : 'LATEST'}
+                        </span>
+                      </div>
+                      <div class="text-sm text-muted" style="margin-top:2px;">
+                        Installed: <b>v${escapeHtml(currentVer)}</b> &bull; Remote: <b>v${escapeHtml(remoteVer)}</b> &bull; Channel: <b>Stable (main)</b>
+                      </div>
+                      <div class="text-xs text-muted" style="margin-top:4px;">
+                        Last checked: ${checkedTime}
+                      </div>
                     </div>
                   </div>
-                  <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
-                `, []);
 
+                  <!-- Actions -->
+                  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <button class="btn btn-sm btn-secondary" id="check-update-btn" title="Force fresh update check from GitHub">
+                      ${Icons.refresh} Check for Updates
+                    </button>
+                    ${isUpdate ? `
+                      <button class="btn btn-sm btn-primary" id="auto-update-btn" style="background:var(--accent);color:#000;font-weight:700;">
+                        ${Icons.download} Update to v${escapeHtml(remoteVer)} Now
+                      </button>
+                    ` : `
+                      <button class="btn btn-sm btn-secondary" id="force-reinstall-btn" title="Re-pull latest image & restart">
+                        ⚡ Re-pull Latest Image
+                      </button>
+                    `}
+                  </div>
+                </div>
+              </div>
+
+              <!-- What's New / Release Notes -->
+              ${changes.length > 0 ? `
+                <div class="card" style="padding:16px 20px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);">
+                  <div style="font-weight:700;font-size:14px;color:var(--text-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+                    <span>📋</span> What's New in DockGate (Release Notes)
+                  </div>
+                  <div style="max-height:220px;overflow-y:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;font-size:12px;line-height:1.7;">
+                    ${changes.map(c => {
+                      const isHeader = c.startsWith('📌');
+                      return isHeader
+                        ? `<div style="font-weight:700;color:var(--text-primary);margin-top:8px;margin-bottom:4px;">${escapeHtml(c)}</div>`
+                        : `<div style="color:var(--text-secondary);padding-left:8px;">&bull; ${escapeHtml(c)}</div>`;
+                    }).join('')}
+                  </div>
+                </div>
+              ` : ''}
+
+              <!-- Manual Update Instructions Card -->
+              <div class="card" style="padding:16px 20px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                  <div style="font-weight:600;font-size:13px;color:var(--text-primary);">Manual Terminal Update</div>
+                  <div style="display:flex;gap:6px;">
+                    <button class="btn btn-xs btn-secondary" id="copy-update-cmd">${Icons.copy} Copy Commands</button>
+                    <a href="${repoUrl}" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} GitHub Repository</a>
+                  </div>
+                </div>
+                <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 14px;font-family:var(--font-mono);font-size:12px;line-height:1.6;color:#38bdf8;">
+                  docker compose pull && docker compose up -d
+                </div>
+              </div>
+
+            </div>
+          `;
+
+          // Handler for Update / Re-pull action
+          const handleApplyUpdate = (targetVer) => {
+            showConfirm('Update DockGate', `This will pull the latest Docker image (v${escapeHtml(targetVer)}) and recreate the container. Your databases and configs will be preserved.`, async () => {
+              showModal('Updating DockGate', `
+                <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px 12px;text-align:center;">
+                  <div style="width:42px;height:42px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;"></div>
+                  <div>
+                    <div style="font-weight:700;font-size:15px;margin-bottom:6px;">Pulling Image &amp; Recreating Container…</div>
+                    <div class="text-sm text-muted">Updating from v${escapeHtml(currentVer)} to v${escapeHtml(targetVer)}.</div>
+                    <div class="text-xs text-muted" style="margin-top:6px;">DockGate is pulling <code>ghcr.io/ali7zeynalli/dockgate:latest</code>. The panel will auto-reload as soon as the new container starts.</div>
+                  </div>
+                </div>
+                <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+              `, []);
+
+              try {
+                await API.post('/meta/update/apply');
+                localStorage.setItem('dcc_update_available', 'false');
+                const badge = document.getElementById('badge-settings');
+                if (badge) badge.style.display = 'none';
+              } catch(e) {
+                // Expected HTTP drop during restart
+              }
+
+              // Heartbeat Auto-Reconnect Polling
+              let attempts = 0;
+              const pollTimer = setInterval(async () => {
+                attempts++;
                 try {
-                  await API.post('/meta/update/apply');
-                  localStorage.setItem('dcc_update_available', 'false');
-                  const badge = document.getElementById('badge-settings');
-                  if (badge) badge.style.display = 'none';
-                } catch(e) {
-                  // The container stopping will abort the active HTTP request — expected!
-                }
-
-                // Start Auto-Reconnect Polling
-                let attempts = 0;
-                const pollTimer = setInterval(async () => {
-                  attempts++;
-                  try {
-                    const res = await fetch('/api/meta/version', { cache: 'no-store' });
-                    if (res.ok) {
-                      const data = await res.json();
-                      if (data && data.version) {
-                        clearInterval(pollTimer);
-                        localStorage.setItem('dcc_app_version', data.version);
-                        window.location.reload();
-                      }
+                  const res = await fetch('/api/meta/version', { cache: 'no-store' });
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.version) {
+                      clearInterval(pollTimer);
+                      localStorage.setItem('dcc_app_version', data.version);
+                      window.location.reload();
                     }
-                  } catch (err) {
-                    // Waiting for container to come back up
                   }
-                  if (attempts > 90) { // 3 minutes timeout
-                    clearInterval(pollTimer);
-                    window.location.reload();
-                  }
-                }, 2000);
-              });
+                } catch (err) {}
+                if (attempts > 90) {
+                  clearInterval(pollTimer);
+                  window.location.reload();
+                }
+              }, 2000);
             });
+          };
 
-            document.getElementById('copy-update-cmd')?.addEventListener('click', () => {
-              navigator.clipboard.writeText('docker compose pull && docker compose up -d').then(() => showToast('Commands copied'));
-            });
-          } else if (updateInfo.error) {
-            // The check itself failed server-side (e.g. no network / wget). Don't pretend "up to date".
-            tabContent.innerHTML = `
-              <div class="settings-section">
-                <div style="display:flex;align-items:center;gap:12px;">
-                  <span class="text-muted">&#9888;</span>
-                  <div>
-                    <div class="text-sm">Could not check for updates</div>
-                    <div class="text-xs text-muted">${escapeHtml(updateInfo.error)} (current v${updateInfo.currentVersion})</div>
-                  </div>
-                  <button class="btn btn-xs btn-secondary" id="check-update-btn">${Icons.refresh} Retry</button>
-                  <a href="${updateInfo.repoUrl || 'https://github.com/Ali7Zeynalli/dockgate'}" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} GitHub</a>
-                </div>
-              </div>
-            `;
-            document.getElementById('check-update-btn')?.addEventListener('click', () => {
-              if (typeof checkForUpdates === 'function') checkForUpdates(true);
-              renderUpdate();
-            });
-          } else {
-            tabContent.innerHTML = `
-              <div class="settings-section">
-                <div style="display:flex;align-items:center;gap:12px;">
-                  <span style="color:var(--success);font-size:18px;">&#10003;</span>
-                  <div>
-                    <div class="text-sm">DockGate is up to date</div>
-                    <div class="text-xs text-muted">v${updateInfo.currentVersion}</div>
-                  </div>
-                  <button class="btn btn-xs btn-secondary" id="check-update-btn">${Icons.refresh} Check</button>
-                  <a href="${updateInfo.repoUrl || 'https://github.com/Ali7Zeynalli/dockgate'}" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} GitHub</a>
-                </div>
-              </div>
-            `;
-            document.getElementById('check-update-btn')?.addEventListener('click', () => {
-              if (typeof checkForUpdates === 'function') checkForUpdates(true);
-              renderUpdate();
-            });
-          }
+          document.getElementById('auto-update-btn')?.addEventListener('click', () => handleApplyUpdate(remoteVer));
+          document.getElementById('force-reinstall-btn')?.addEventListener('click', () => handleApplyUpdate(currentVer));
+
+          document.getElementById('check-update-btn')?.addEventListener('click', () => {
+            if (typeof checkForUpdates === 'function') checkForUpdates(true);
+            renderUpdate();
+          });
+
+          document.getElementById('copy-update-cmd')?.addEventListener('click', () => {
+            navigator.clipboard.writeText('docker compose pull && docker compose up -d').then(() => showToast('Commands copied to clipboard'));
+          });
+
         } catch(e) {
           tabContent.innerHTML = `
             <div class="settings-section">
-              <div style="display:flex;align-items:center;gap:12px;">
-                <span class="text-muted">&#9888;</span>
-                <div>
-                  <div class="text-sm">Could not check for updates</div>
-                  <div class="text-xs text-muted">Check your internet connection</div>
+              <div class="card" style="padding:18px 20px;border-left:4px solid #ef4444;background:var(--bg-secondary);">
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+                  <div>
+                    <div style="font-weight:700;font-size:14px;color:#ef4444;margin-bottom:4px;">Could not check for updates</div>
+                    <div class="text-xs text-muted">${escapeHtml(e.message || 'Network error')}</div>
+                  </div>
+                  <div style="display:flex;gap:8px;">
+                    <button class="btn btn-sm btn-secondary" id="retry-update-btn">${Icons.refresh} Retry</button>
+                    <a href="https://github.com/Ali7Zeynalli/dockgate" target="_blank" class="btn btn-sm btn-secondary">${Icons.externalLink} GitHub</a>
+                  </div>
                 </div>
-                <button class="btn btn-xs btn-secondary" id="retry-update-btn">${Icons.refresh} Retry</button>
-                <a href="https://github.com/Ali7Zeynalli/dockgate" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} GitHub</a>
               </div>
             </div>
           `;

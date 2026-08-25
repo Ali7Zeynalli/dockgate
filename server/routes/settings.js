@@ -415,22 +415,40 @@ function githubRawFetch(filePath) {
   });
 }
 
-// Fetch recent changes from CHANGELOG.md / CHANGELOG.md-dən son dəyişiklikləri al
+// Fetch recent changes from CHANGELOG.md (remote or local fallback) / CHANGELOG.md-dən son dəyişiklikləri al
 async function fetchRecentChanges() {
+  let content = '';
   try {
-    const content = await githubRawFetch('CHANGELOG.md');
-    const lines = content.split('\n').slice(0, 30);
-    const changes = [];
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-        changes.push(trimmed.substring(2));
+    content = await githubRawFetch('CHANGELOG.md');
+  } catch (e) {
+    try {
+      const fs = require('fs');
+      const localChangelog = require('path').join(__dirname, '..', '..', 'CHANGELOG.md');
+      content = fs.readFileSync(localChangelog, 'utf8');
+    } catch (err) {}
+  }
+
+  if (!content) return [];
+
+  const lines = content.split('\n');
+  const changes = [];
+  let recording = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^##\s+\[.*\]/.test(trimmed)) {
+      if (recording) break; // Finished parsing the latest version section
+      recording = true;
+      continue;
+    }
+    if (recording) {
+      if (trimmed.startsWith('### ')) {
+        changes.push('📌 ' + trimmed.replace(/^###\s+/, ''));
+      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        changes.push(trimmed.replace(/^[-*]\s+/, ''));
       }
     }
-    return changes.slice(0, 10);
-  } catch(e) {
-    return [];
   }
+  return changes.slice(0, 15);
 }
 
 // Compare semver: returns true if remote > current / Semver müqayisə: remote > current olarsa true qaytarır
@@ -444,21 +462,23 @@ function isNewerVersion(current, remote) {
   return false;
 }
 
-// Check for updates — version comparison only / Yenilik yoxla — yalnız versiya müqayisəsi
+// Check for updates — version comparison & changelog / Yenilik yoxla
 router.get('/update/check', async (req, res) => {
+  const pkgPath = require('path').join(__dirname, '..', '..', 'package.json');
+  delete require.cache[require.resolve(pkgPath)];
+  const currentVersion = require(pkgPath).version;
+
   try {
-    const pkgPath = require('path').join(__dirname, '..', '..', 'package.json');
-    delete require.cache[require.resolve(pkgPath)];
-    const currentVersion = require(pkgPath).version;
+    let remoteVersion = currentVersion;
+    try {
+      const remoteContent = await githubRawFetch('package.json');
+      remoteVersion = JSON.parse(remoteContent).version;
+    } catch (fetchErr) {
+      // Remote fetch failed, remoteVersion remains currentVersion
+    }
 
-    const remoteContent = await githubRawFetch('package.json');
-    const remoteVersion = JSON.parse(remoteContent).version;
-
-    // Semver compare — update only if remote is newer / Yalnız remote daha yenidirsə update göstər
     const hasUpdate = isNewerVersion(currentVersion, remoteVersion);
-    console.log(`[Update] v${currentVersion} → v${remoteVersion} (update: ${hasUpdate})`);
-
-    const changes = hasUpdate ? await fetchRecentChanges() : [];
+    const changes = await fetchRecentChanges();
 
     res.json({
       updateAvailable: hasUpdate,
@@ -466,13 +486,23 @@ router.get('/update/check', async (req, res) => {
       remoteVersion,
       changes,
       repoUrl: REPO_URL,
+      branch: 'main',
+      channel: 'Stable',
+      checkedAt: Date.now(),
     });
   } catch (err) {
-    const pkgPath = require('path').join(__dirname, '..', '..', 'package.json');
-    try { delete require.cache[require.resolve(pkgPath)]; } catch(e) {}
-    let currentVersion = '0.0.0';
-    try { currentVersion = require(pkgPath).version; } catch(e) {}
-    res.json({ updateAvailable: false, currentVersion, error: err.message, repoUrl: REPO_URL });
+    const changes = await fetchRecentChanges().catch(() => []);
+    res.json({
+      updateAvailable: false,
+      currentVersion,
+      remoteVersion: currentVersion,
+      changes,
+      error: err.message,
+      repoUrl: REPO_URL,
+      branch: 'main',
+      channel: 'Stable',
+      checkedAt: Date.now(),
+    });
   }
 });
 
