@@ -2,6 +2,25 @@
 
 ---
 
+## [2.2.0] - 2026-08-25
+
+### Added — Unified Observability Engine: Native Metrics & Centralized Log Explorer (v2.2.0)
+- **All-in-One Observability Agent (~40 MB RAM)**:
+  - Replaced the need for heavy external stacks (Prometheus + Grafana + Loki / ELK consuming 1.5–4 GB RAM) with a native, single-container Edge Observability Engine.
+  - **Metrics Engine**: Samples host (CPU%, RAM, Disk I/O, Network RX/TX, Load) and per-container metrics every 10 seconds.
+  - **Auto-Downsampling Ring Buffer**: Capped at <50 MB disk/RAM (10s raw samples for 1h, 1-minute averages for 24h, 15-minute averages for 7d).
+  - **Centralized Log Explorer (Loki-Style)**: Unified multi-container log aggregator with live multiplexing, log level classification (`🔴 Error`, `🟡 Warn`, `🟢 Info`), keyword filtering, and automatic error spike anomaly alerts (>30 errors/min).
+  - **Grafana-Style Native Monitoring Dashboard**: Interactive Canvas/SVG time-series charts with smooth bezier curves, hover tooltips, live refresh toggles (5s/10s/30s), and per-container resource breakdown table.
+- **REST Endpoints (`/api/monitoring/*`)**:
+  - `GET /api/monitoring/servers` — Server fleet agent status and health.
+  - `GET /api/monitoring/:serverId/metrics?range=1h|6h|24h|7d` — Downsampled time-series datasets.
+  - `GET /api/monitoring/:serverId/logs?container=&level=&search=&limit=` — Centralized log querying.
+  - `GET /api/monitoring/:serverId/summary` — Real-time host & container resource matrix.
+- **Tests**:
+  - Added unit test suites for metrics storage/downsampling (`test/unit/agent-metrics.test.js`) and log classification/search (`test/unit/agent-logs.test.js`). All 58 unit tests passing.
+
+---
+
 ## [2.1.49] - 2026-08-24
 
 ### Fixed — Servers: Destructure `notifications_enabled` in POST /api/servers

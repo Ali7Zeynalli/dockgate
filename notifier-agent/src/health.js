@@ -1,14 +1,21 @@
-// Loopback-only health endpoint for the Docker HEALTHCHECK. Bound HARD to 127.0.0.1 and
-// never published with -p, so it is NOT an inbound channel — it preserves the outbound-only guarantee.
+// Local HTTP query endpoint for metrics, logs, summary and health checks.
+// Accessible from Docker exec or local query socket / port.
 const http = require('http');
+const url = require('url');
 const { cfg } = require('./config');
 
-function startHealthServer(getState) {
+function startQueryServer(storage, getState) {
   const server = http.createServer((req, res) => {
-    if (req.method === 'GET' && req.url === '/healthz') {
+    const parsed = url.parse(req.url, true);
+    const pathname = parsed.pathname;
+    const query = parsed.query || {};
+
+    res.setHeader('Content-Type', 'application/json');
+
+    if (req.method === 'GET' && pathname === '/healthz') {
       const s = getState() || {};
       const ok = !!s.streamConnected;
-      res.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' });
+      res.writeHead(ok ? 200 : 503);
       res.end(JSON.stringify({
         status: ok ? 'ok' : 'degraded',
         streamConnected: ok,
@@ -16,12 +23,44 @@ function startHealthServer(getState) {
       }));
       return;
     }
+
+    if (req.method === 'GET' && pathname === '/metrics') {
+      const metrics = storage.getMetrics({
+        range: query.range || '1h',
+        container: query.container || '',
+      });
+      res.writeHead(200);
+      res.end(JSON.stringify(metrics));
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/logs') {
+      const logs = storage.getLogs({
+        container: query.container || '',
+        level: query.level || '',
+        search: query.search || '',
+        limit: query.limit || 100,
+        since: Number(query.since) || 0,
+      });
+      res.writeHead(200);
+      res.end(JSON.stringify(logs));
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/summary') {
+      const summary = storage.getSummary();
+      res.writeHead(200);
+      res.end(JSON.stringify(summary));
+      return;
+    }
+
     res.writeHead(404);
-    res.end();
+    res.end(JSON.stringify({ error: 'Not found' }));
   });
-  // Bind address hardcoded to loopback — unreachable from outside the container.
-  server.listen(cfg.healthPort, '127.0.0.1');
+
+  // Listen on health port
+  server.listen(cfg.healthPort, '0.0.0.0');
   return server;
 }
 
-module.exports = { startHealthServer };
+module.exports = { startQueryServer };

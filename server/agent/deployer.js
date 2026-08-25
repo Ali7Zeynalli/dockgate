@@ -77,7 +77,12 @@ function containerSpec(env) {
     Env: env,
     Labels: { 'dockgate.role': 'notifier-agent', 'dockgate.version': AGENT_VERSION },
     HostConfig: {
-      Binds: ['/var/run/docker.sock:/var/run/docker.sock:ro'],
+      Binds: [
+        '/var/run/docker.sock:/var/run/docker.sock:ro',
+        '/proc:/host/proc:ro',
+        '/sys:/host/sys:ro',
+        '/var/log:/host/var/log:ro',
+      ],
       RestartPolicy: { Name: 'unless-stopped' },
       Memory: 96 * 1024 * 1024,   // 96 MB
       NanoCpus: 250000000,        // 0.25 CPU

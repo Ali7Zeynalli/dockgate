@@ -1,47 +1,67 @@
-// Entry point. Loads cfg, fails fast if NO channel is configured, optionally sends a startup
-// self-test, constructs + starts the Monitor, starts the loopback health server, and wires
-// graceful shutdown on SIGTERM/SIGINT so the event stream and timers tear down cleanly.
+// Entry point for DockGate Unified Observability Agent (Metrics, Logs & Alerting).
 const { cfg } = require('./config');
+const Storage = require('./storage');
+const MetricsCollector = require('./metrics-collector');
+const LogAggregator = require('./log-aggregator');
 const Monitor = require('./monitor');
-const { startHealthServer } = require('./health');
+const { startQueryServer } = require('./health');
 const mailer = require('./mailer');
 const telegram = require('./telegram');
 const templates = require('./templates');
+const Docker = require('dockerode');
 
 (async () => {
-  console.log(`[agent] DockGate Notifier starting — host=${cfg.serverLabel} tz=${cfg.timezone} disk>${cfg.diskThresholdGb}GB`);
+  console.log(`[agent] DockGate Observability Agent starting — host=${cfg.serverLabel} tz=${cfg.timezone} disk>${cfg.diskThresholdGb}GB`);
 
-  if (!mailer.isConfigured() && !telegram.isConfigured()) {
-    console.error('[agent] FATAL: no channel configured (need TG_TOKEN+TG_CHAT_ID or SMTP_HOST+SMTP_PORT+SMTP_FROM+SMTP_TO)');
-    process.exit(1);
-  }
+  const docker = new Docker({ socketPath: cfg.socketPath });
+  const storage = new Storage({ maxLogs: 10000 });
 
+  // Optional startup notification test
   if (process.env.SEND_TEST_ON_START === 'true') {
     try {
-      if (mailer.isConfigured()) await mailer.sendEmail({ subject: 'Test Email', html: templates.testEmailTemplate() });
-      if (telegram.isConfigured()) await telegram.sendMessage({ text: `🐳 <b>DockGate Notifier active</b>\n\nWatching <code>${cfg.serverLabel}</code>` });
+      if (mailer.isConfigured) await mailer.sendEmail({ subject: 'Test Email', html: templates.testEmailTemplate() });
+      if (telegram.isConfigured) await telegram.sendMessage({ text: `🐳 <b>DockGate Agent active</b>\n\nWatching <code>${cfg.serverLabel}</code>` });
     } catch (e) {
       console.warn('[agent] startup test failed:', e && e.message);
     }
   }
 
+  // 1. Start Event Alert Monitor
   const mon = new Monitor();
   mon.start();
-  const health = startHealthServer(() => ({
+
+  // 2. Start Time-Series Metrics Collector
+  const metricsCollector = new MetricsCollector(docker, storage, { intervalMs: 10000 });
+  metricsCollector.start();
+
+  // 3. Start Container Log Aggregator
+  const logAggregator = new LogAggregator(docker, storage, { telegram, mailer });
+  logAggregator.start();
+
+  // 4. Start Host & Web Proxy Log Harvester (syslog, auth.log, nginx, dmesg)
+  const HostLogHarvester = require('./host-log-harvester');
+  const hostHarvester = new HostLogHarvester(storage, { intervalMs: 10000 });
+  hostHarvester.start();
+
+  // 5. Start Query Server (Metrics, Logs, Health)
+  const server = startQueryServer(storage, () => ({
     streamConnected: !!mon.stream && !mon.stopped,
     lastEventAt: mon.lastEventAt,
   }));
 
   const shutdown = () => {
-    console.log('[agent] shutting down');
+    console.log('[agent] shutting down cleanly');
     try { mon.stop(); } catch (e) {}
-    try { health.close(); } catch (e) {}
+    try { metricsCollector.stop(); } catch (e) {}
+    try { logAggregator.stop(); } catch (e) {}
+    try { hostHarvester.stop(); } catch (e) {}
+    try { server.close(); } catch (e) {}
     process.exit(0);
   };
+
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
-  // The daemon socket dropping must NOT kill the agent — the stream's own reconnect handles it.
   process.on('uncaughtException', (e) => console.error('[agent] uncaught:', e && e.message));
   process.on('unhandledRejection', (e) => console.error('[agent] unhandledRejection:', e && (e.message || e)));
 })();

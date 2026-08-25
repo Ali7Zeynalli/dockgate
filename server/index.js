@@ -67,6 +67,7 @@ app.use('/api/servers', require('./routes/servers'));
 app.use('/api/registries', require('./routes/registries'));
 app.use('/api/ssh-keys', require('./routes/ssh-keys'));
 app.use('/api/agent', require('./routes/agent'));
+app.use('/api/monitoring', require('./routes/monitoring'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/meta', require('./routes/settings'));
 

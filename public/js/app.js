@@ -3,6 +3,7 @@
 // tabbed-section.js); the individual pages stay registered as routes but are reached via those tabs.
 const navItems = {
   dashboard: { label: 'Dashboard', icon: Icons.dashboard },
+  monitoring: { label: 'Monitoring', icon: Icons.chart },
   resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['builds', 'Builds'], ['volumes', 'Volumes'], ['networks', 'Networks']], default: 'containers' },
   deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose'], ['templates', 'App Templates']], default: 'compose' },
   activity: { label: 'Activity', icon: Icons.events, tabs: [['logs', 'Logs'], ['terminal', 'Terminal'], ['events', 'Events'], ['files', 'Files'], ['audit', 'Audit Log'], ['cleanup', 'Cleanup']], default: 'logs' },
@@ -14,7 +15,7 @@ const navItems = {
 // Two clear domains: DOCKER management (Resources / Deploy / Activity — each a tabbed section) vs
 // SERVER management (the host itself), then app System. 7 entries instead of 17.
 const navGroups = [
-  { label: 'Overview', items: ['dashboard'] },
+  { label: 'Overview', items: ['dashboard', 'monitoring'] },
   { label: 'Docker', items: ['resources', 'deploy', 'activity'] },
   { label: 'Server', items: ['infra', 'server-console'] },
   { label: 'System', items: ['settings'] }
