@@ -2,6 +2,27 @@
 
 ---
 
+## [2.2.1] - 2026-08-25
+
+### Added & Fixed — Autonomous Log Doctor Diagnostics & Revamped Software Update Center (v2.2.1)
+- **Log Doctor Autonomous Diagnostic Engine (`server/diagnostics/log-doctor.js`)**:
+  - Automatically analyzes multi-layer server and container logs, outputs an overall **Server Health Score (0–100)**, and flags critical issues.
+  - **Kernel OOM Killer:** Detects Linux kernel memory terminations and suggests adjusting container memory limits.
+  - **Nginx 502/504 Bad Gateway:** Detects upstream connection refusals (`111: Connection refused`) and offers 1-click backend restart.
+  - **Port Collisions & Storage Exhaustion:** Flags `EADDRINUSE` conflicts and `No space left on device` with direct 1-click Docker prune.
+  - **SSH Brute-Force Detection:** Tracks repeated attacker IPs from `auth.log` and suggests firewall & SSH hardening.
+- **3-Layer Full-Stack Log Harvester (`notifier-agent/src/host-log-harvester.js`)**:
+  - Live delta-harvesting across Linux Host OS (`syslog`, `auth.log`, `dmesg`), Web Proxies (`/var/log/nginx/error.log`, `caddy`), and Docker container logs.
+- **Revamped Software Update Center (`public/js/pages/settings.js`)**:
+  - **Bypassed GitHub Raw CDN 5-minute Cache:** Added dynamic timestamp cache-busters (`?_t=Date.now()`) to ensure instant live version detection.
+  - **Live In-App Release Notes Dashboard:** Displays the latest changelog and what's new directly in the UI for both new updates and current version.
+  - **Force Re-Pull Support:** Added `⚡ Re-pull Latest Image` button to re-deploy the latest container anytime even if version tags match.
+  - **Zero-Downtime Heartbeat Auto-Reconnect:** Automatically detects container recreation via `/api/auth/status` and refreshes the browser with a celebratory toast (`🎉 DockGate updated to v2.2.1!`).
+- **Tests**:
+  - Added comprehensive diagnostic unit tests in `test/unit/log-doctor.test.js`. All 63 unit tests passing.
+
+---
+
 ## [2.2.0] - 2026-08-25
 
 ### Added — Unified Observability Engine: Native Metrics & Centralized Log Explorer (v2.2.0)
