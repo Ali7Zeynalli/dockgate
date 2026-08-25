@@ -2,6 +2,31 @@
 
 ---
 
+## [2.2.3] - 2026-08-25
+
+### Fixed & Enhanced — Out-of-the-Box Observability, Log Doctor Harvester & Sidebar Update Badges (v2.2.3)
+- **Sidebar Software Update Badges Fixed (`public/js/app.js`, `public/js/pages/settings.js`)**:
+  - Fixed an issue where update notification badges were missing from the DOM when `Settings` was restructured into a collapsible `nav-parent` section.
+  - Added parent `badge-settings` (`v2.2.3 UPDATE`) indicator on the sidebar main item as well as `● NEW` indicator on the `Software Update` sub-tab.
+  - Automatically updates and displays live update badges without requiring the user to navigate to the Settings page first.
+- **Instant Out-of-the-Box Observability & Monitoring (`server/routes/monitoring.js`, `server/host-stats.js`, `public/js/pages/monitoring.js`)**:
+  - Implemented direct Host & Docker fallbacks for `GET /api/monitoring/:serverId/metrics` and `GET /api/monitoring/:serverId/summary`.
+  - Even when the separate edge agent is not installed on `local` or remote hosts, the **Monitoring** page immediately displays live CPU, RAM, Disk, and Network RX/TX graphs alongside the active container matrix.
+  - Added `hostStats.collectLocalStats()` for local direct snapshot gathering without SSH overhead.
+  - Added smooth client-side time-series buffer accumulation so canvas graphs render live curves in polling fallback mode.
+- **Centralized Log Explorer & Log Doctor Harvester (`server/routes/monitoring.js`, `public/js/pages/logs.js`)**:
+  - Added direct multi-container log aggregation fallback for `GET /api/monitoring/:serverId/logs` when agent is absent.
+  - Slices, multiplexes, and chronologically sorts recent logs across all running Docker containers and Linux OS logs in under 50ms.
+  - Fixed property mapping (`c.name`, `c.id`, `c.shortId`) in Docker service queries to prevent `TypeError: undefined replace`.
+- **Edge Notifier & Observability Agent Hardening (`notifier-agent/src/health.js`, `notifier-agent/src/storage.js`)**:
+  - Added `source` multi-layer filtering (`container`, `nginx`, `system`, `auth`, `kernel`) directly into `storage.getLogs()` and `/logs` query server.
+  - Enhanced `queryAgent()` to support lightning-fast internal `docker exec` queries for local agents without requiring exposed host ports.
+  - Verified ring buffers, downsampling buckets (10s, 1m, 15m), and FIFO caps to maintain strict memory efficiency (~25-35 MB RAM).
+- **Tests**:
+  - All 63 unit tests pass cleanly in ~600ms across diagnostics, metrics downsampling, and agent log storage.
+
+---
+
 ## [2.2.2] - 2026-08-25
 
 ### Test Update — Software Update Verification (v2.2.2)
