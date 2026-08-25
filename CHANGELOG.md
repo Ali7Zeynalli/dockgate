@@ -2,6 +2,23 @@
 
 ---
 
+## [2.2.8] - 2026-08-25
+
+### Fixed & Enhanced — Unified Git Context Engine, Files-Only Git Pull, Subdirectory & SSH Auth Resolution (v2.2.8)
+- **Unified Git Context Engine & Root Directory Resolver (`server/routes/compose.js`)**:
+  - **Decoupled Repo Root from Stack Directory**: Resolved path mismatch issues in monorepos and subdirectories (e.g. `services/api/` or `deploy/docker-compose.yml`). Git commands (`fetch`, `pull`, `reset`, `diff`) now always operate in the true Git root (`repoRoot`), while Docker Compose commands target the specific stack directory.
+  - **Unlocked Adopted Git Projects**: Eliminated the exclusionary check that blocked on-server adopted folders (`source: 'adopt'`) from performing Git operations. Adopted Git projects now enjoy full 1-click Git Pull, Git Sync, commit logs, and update badges.
+  - **Offline & Staged Project Discovery**: Global Git Pull and Global Git Sync now discover all registered Git projects (both running containers and stopped/staged stacks in `COMPOSE_DIR`).
+- **Strictly Isolated "Files-Only" Git Pull (`server/routes/compose.js`, `public/js/pages/compose.js`)**:
+  - `POST /api/compose/:project/git-pull` and `POST /api/compose/git-pull-all` strictly pull source code updates and calculate diffs without restarting or recreating containers.
+  - UI modal displays the list of newly pulled commits, changed files, and offers an optional `⚡ Deploy now` button to rebuild when ready.
+- **SSH Key Store Integration & Auth Fallbacks (`server/routes/compose.js`, `server/remote-compose.js`)**:
+  - Properly propagates DockGate's encrypted SSH Key Store (`keyId`) and `GIT_SSH_COMMAND` throughout all Git fetch/merge/reset operations across local daemon and remote SSH hosts.
+- **Custom Path Git Modal Flexibility (`public/js/pages/compose.js`)**:
+  - Added a toggleable **"Deploy containers after pull"** checkbox in the custom server path Git modal, allowing users to choose between pure files-only pull or pull + automatic `docker compose up -d --build`.
+
+---
+
 ## [2.2.7] - 2026-08-25
 
 ### Added & Enhanced — Global Git Pull & Sync Hub, Header Actions, Directory In-Place Deploy & Auto-Detection (v2.2.7)

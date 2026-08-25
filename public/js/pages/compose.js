@@ -570,7 +570,7 @@ Router.register('compose', async (content) => {
     const remote = isRemoteActive();
     const body = `
       <div style="display:flex;flex-direction:column;gap:12px">
-        <div class="text-sm text-muted">Point directly to an existing Git checkout folder on the ${remote ? 'remote server' : 'host'}, pull from Git in-place, and run <code>docker compose up -d --build</code>.</div>
+        <div class="text-sm text-muted">Point directly to an existing Git checkout folder on the ${remote ? 'remote server' : 'host'}, pull from Git in-place, and optionally run <code>docker compose up -d --build</code>.</div>
         <div class="input-group">
           <label>Server directory path *</label>
           <div style="display:flex;gap:6px">
@@ -582,15 +582,21 @@ Router.register('compose', async (content) => {
           <label>Branch (optional)</label>
           <input class="input" id="cp-branch" placeholder="main (leave empty for current branch)">
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="checkbox" id="cp-force" style="cursor:pointer">
-          <label for="cp-force" style="font-size:12px;cursor:pointer;margin:0"><strong>Force reset (git reset --hard)</strong> — discard uncommitted local changes</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:2px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="cp-up" checked style="cursor:pointer">
+            <label for="cp-up" style="font-size:12px;cursor:pointer;margin:0"><strong>Deploy containers after pull</strong> (runs <code>docker compose up -d --build</code>)</label>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="cp-force" style="cursor:pointer">
+            <label for="cp-force" style="font-size:12px;cursor:pointer;margin:0"><strong>Force reset (git reset --hard)</strong> — discard uncommitted local changes</label>
+          </div>
         </div>
       </div>
     `;
     const m = showModal('Pull & Deploy from Server Directory', body, [
       { label: 'Cancel', className: 'btn btn-secondary' },
-      { label: '🚀 Pull & Deploy', className: 'btn btn-primary', id: 'cp-run-btn' }
+      { label: '🚀 Start Git Pull', className: 'btn btn-primary', id: 'cp-run-btn' }
     ]);
     const root = m.overlay;
 
@@ -603,11 +609,12 @@ Router.register('compose', async (content) => {
       if (!targetPath) { showToast('Server directory path is required', 'warning'); return; }
       const branch = root.querySelector('#cp-branch').value.trim();
       const force = root.querySelector('#cp-force').checked;
+      const up = root.querySelector('#cp-up').checked;
       m.close();
       try {
-        const r = await API.post('/compose/git-pull-path', { targetPath, branch, force, up: true });
+        const r = await API.post('/compose/git-pull-path', { targetPath, branch, force, up });
         if (r && r.jobId) openDeployLog(r.jobId, r.root || 'git-pull');
-        showToast('Pulling and deploying in-place…', 'info', 4000);
+        showToast(up ? 'Pulling and deploying in-place…' : 'Pulling repository files…', 'info', 4000);
         render();
       } catch (err) { showToast(err.message, 'error', 10000); }
     });
