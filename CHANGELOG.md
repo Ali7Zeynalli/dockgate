@@ -2,6 +2,16 @@
 
 ---
 
+## [2.2.4] - 2026-08-25
+
+### Test Update — Live In-App Update Verification (v2.2.4)
+- **Live Update Pipeline & Badge Verification**:
+  - Verification of the new Software Update Center live version detection, GitHub raw cache-busting (`?_t=timestamp`), and sidebar update badges.
+  - Validates that the orange `v2.2.4 UPDATE` badge renders on the main Settings menu item and `● NEW` renders in the Software Update tab.
+  - Validates 1-click update deployment, zero-downtime auto-reconnect heartbeat, and post-update celebration toast (`🎉 DockGate updated to v2.2.4!`).
+
+---
+
 ## [2.2.3] - 2026-08-25
 
 ### Fixed & Enhanced — Out-of-the-Box Observability, Log Doctor Harvester & Sidebar Update Badges (v2.2.3)
