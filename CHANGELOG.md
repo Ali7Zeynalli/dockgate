@@ -2,6 +2,15 @@
 
 ---
 
+## [2.2.2] - 2026-08-25
+
+### Test Update — Software Update Verification (v2.2.2)
+- **Live Update Pipeline Verification**:
+  - Verification of the new **Software Update Center**, live GitHub raw fetch with cache busting (`?_t=timestamp`), and automatic post-update reload notifications.
+  - Validated that release notes, version comparison (`v2.2.1 → v2.2.2`), and 1-click update buttons render smoothly.
+
+---
+
 ## [2.2.1] - 2026-08-25
 
 ### Added & Fixed — Autonomous Log Doctor Diagnostics & Revamped Software Update Center (v2.2.1)
