@@ -1003,14 +1003,10 @@ Router.register('settings', async (content, params) => {
               const pollTimer = setInterval(async () => {
                 attempts++;
                 try {
-                  const res = await fetch('/api/meta/version', { cache: 'no-store' });
+                  const res = await fetch('/api/auth/status', { cache: 'no-store' });
                   if (res.ok) {
-                    const data = await res.json();
-                    if (data && data.version) {
-                      clearInterval(pollTimer);
-                      localStorage.setItem('dcc_app_version', data.version);
-                      window.location.reload();
-                    }
+                    clearInterval(pollTimer);
+                    window.location.reload();
                   }
                 } catch (err) {}
                 if (attempts > 90) {
