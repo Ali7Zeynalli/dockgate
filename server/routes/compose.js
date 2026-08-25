@@ -2037,6 +2037,255 @@ router.post('/:project/git-sync', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.stderr || err.message || '').toString() }); }
 });
 
+// Global Git Pull All (fast-forward/fetch all git-connected projects in their directories)
+router.post('/git-pull-all', async (req, res) => {
+  try {
+    const list = await dockerService.listComposeProjects();
+    const activeId = dockerService.getActiveServerId();
+    const server = remoteCompose.getActiveRemoteServer();
+    const results = [];
+    
+    for (const p of list) {
+      const gitMeta = readGitMeta(p.name);
+      if (!gitMeta) {
+        const info = await detectExternalGit(p.name);
+        if (!info.isGit || !info.canPull) continue;
+        try {
+          const root = info.repoRoot;
+          const before = (await gitInDir(server, root, ['rev-parse', 'HEAD'])).trim();
+          await gitInDir(server, root, ['fetch', '--all', '--quiet']);
+          await gitInDir(server, root, ['merge', '--ff-only', '@{u}']);
+          const after = (await gitInDir(server, root, ['rev-parse', 'HEAD'])).trim();
+          invalidateExternalGit(p.name);
+          results.push({ project: p.name, path: root, fromSHA: before, toSHA: after, upToDate: before === after, success: true });
+        } catch (e) {
+          results.push({ project: p.name, path: info.repoRoot, error: e.message, success: false });
+        }
+        continue;
+      }
+      
+      const dm = readDeployMeta(p.name);
+      const targetServerId = gitMeta.serverId || (dm && dm.serverId);
+      const wantRemote = (targetServerId && targetServerId !== 'local') || gitMeta.deployMode === 'remote' || (dm && dm.mode === 'remote');
+      const branch = gitMeta.branch || 'HEAD';
+      const fromSHA = (gitMeta.deployedCommit || '').trim();
+
+      if (wantRemote && server) {
+        const remotePath = await remoteCompose.resolveRemotePath(server, gitMeta.remotePath || (dm && dm.remotePath) || `~/.dockgate/projects/${p.name}`);
+        try {
+          await remoteCompose.runGitOnRemote(server, gitMeta.keyId, remotePath, ['fetch', '--depth', '1', 'origin', branch]);
+          let toSHA = '';
+          try { toSHA = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'FETCH_HEAD'])).trim(); } catch (e) {}
+          await remoteCompose.runGitOnRemote(server, gitMeta.keyId, remotePath, ['reset', '--hard', 'FETCH_HEAD']);
+          fs.writeFileSync(gitMetaPath(p.name), JSON.stringify({ ...gitMeta, serverId: server.id, deployedCommit: toSHA || fromSHA }, null, 2), { mode: 0o600 });
+          results.push({ project: p.name, path: remotePath, fromSHA, toSHA: toSHA || fromSHA, upToDate: !fromSHA || fromSHA === toSHA, success: true });
+        } catch (e) {
+          results.push({ project: p.name, path: remotePath, error: e.message, success: false });
+        }
+      } else {
+        const dir = managedDir(p.name);
+        if (fs.existsSync(dir)) {
+          try {
+            await gitWithKey(gitMeta.keyId, ['-C', dir, 'fetch', '--depth', '1', 'origin', branch]);
+            let toSHA = '';
+            try { toSHA = (await gitRun(['-C', dir, 'rev-parse', 'FETCH_HEAD'])).stdout.trim(); } catch (e) {}
+            await gitWithKey(gitMeta.keyId, ['-C', dir, 'reset', '--hard', 'FETCH_HEAD']);
+            fs.writeFileSync(gitMetaPath(p.name), JSON.stringify({ ...gitMeta, deployedCommit: toSHA || fromSHA }, null, 2), { mode: 0o600 });
+            results.push({ project: p.name, path: dir, fromSHA, toSHA: toSHA || fromSHA, upToDate: !fromSHA || fromSHA === toSHA, success: true });
+          } catch (e) {
+            results.push({ project: p.name, path: dir, error: e.message, success: false });
+          }
+        }
+      }
+    }
+    res.json({ results, total: results.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Global Git Sync All (sequentially pulls & redeploys all git projects with live streaming console)
+router.post('/git-sync-all', async (req, res) => {
+  try {
+    const list = await dockerService.listComposeProjects();
+    const activeId = dockerService.getActiveServerId();
+    const server = remoteCompose.getActiveRemoteServer();
+    const gitProjects = [];
+
+    for (const p of list) {
+      const gm = readGitMeta(p.name);
+      if (gm) {
+        gitProjects.push({ name: p.name, type: 'managed', meta: gm });
+      } else {
+        const info = await detectExternalGit(p.name);
+        if (info.isGit && (info.canPull || req.body.force)) {
+          gitProjects.push({ name: p.name, type: 'adopt', info });
+        }
+      }
+    }
+
+    if (!gitProjects.length) return res.status(400).json({ error: 'No Git-connected compose projects found on this server.' });
+
+    const job = {
+      id: crypto.randomBytes(8).toString('hex'),
+      project: 'all-git-projects',
+      status: 'running',
+      phase: 'starting',
+      log: '',
+      error: null,
+      result: null,
+      startedAt: Date.now(),
+      finishedAt: null,
+      steps: gitProjects.map(g => ({ id: 'proj:' + g.name, label: `Sync ${g.name}`, status: 'pending' }))
+    };
+    deployJobs.set(job.id, job);
+
+    (async () => {
+      jobLog(job, `🚀 Starting Global Git Sync for ${gitProjects.length} project(s)...\n`);
+      for (const gp of gitProjects) {
+        setStep(job, 'proj:' + gp.name, 'running');
+        jobLog(job, `\n========================================\n[${gp.name}] Starting Git Sync...\n========================================\n`);
+        try {
+          if (gp.type === 'managed') {
+            const gm = gp.meta;
+            const dm = readDeployMeta(gp.name);
+            const targetServerId = gm.serverId || (dm && dm.serverId);
+            const wantRemote = (targetServerId && targetServerId !== 'local') || gm.deployMode === 'remote' || (dm && dm.mode === 'remote');
+            const branch = gm.branch || 'HEAD';
+            
+            if (wantRemote && server) {
+              const remotePath = await remoteCompose.resolveRemotePath(server, gm.remotePath || (dm && dm.remotePath) || `~/.dockgate/projects/${gp.name}`);
+              const composeFile = gm.composeFile || 'docker-compose.yml';
+              const relSub = safeRelPath(gm.subdir);
+              const projectDir = relSub ? path.posix.join(remotePath, relSub) : remotePath;
+              jobLog(job, `[${server.host}] Fetching latest code in ${remotePath}...\n`);
+              await remoteCompose.runGitOnRemote(server, gm.keyId, remotePath, ['fetch', '--depth', '1', 'origin', branch], (c) => jobStream(job, c));
+              await remoteCompose.runGitOnRemote(server, gm.keyId, remotePath, ['reset', '--hard', 'FETCH_HEAD'], (c) => jobStream(job, c));
+              let toSHA = '';
+              try { toSHA = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'FETCH_HEAD'])).trim(); } catch (e) {}
+              fs.writeFileSync(gitMetaPath(gp.name), JSON.stringify({ ...gm, serverId: server.id, deployedCommit: toSHA || gm.deployedCommit }, null, 2), { mode: 0o600 });
+              jobLog(job, `[${server.host}] Running docker compose up -d --build...\n`);
+              await remoteCompose.runComposeInRemoteDir(server, projectDir, gp.name, ['-f', path.posix.basename(composeFile), 'up', '-d', '--build', '--force-recreate'], (c) => jobStream(job, c));
+            } else {
+              const dir = managedDir(gp.name);
+              const projectDir = gm.subdir ? path.join(dir, gm.subdir) : dir;
+              jobLog(job, `Fetching latest code in ${dir}...\n`);
+              await gitWithKey(gm.keyId, ['-C', dir, 'fetch', '--depth', '1', 'origin', branch], { onData: (c) => jobStream(job, c) });
+              await gitWithKey(gm.keyId, ['-C', dir, 'reset', '--hard', 'FETCH_HEAD'], { onData: (c) => jobStream(job, c) });
+              let toSHA = '';
+              try { toSHA = (await gitRun(['-C', dir, 'rev-parse', 'FETCH_HEAD'])).stdout.trim(); } catch (e) {}
+              fs.writeFileSync(gitMetaPath(gp.name), JSON.stringify({ ...gm, deployedCommit: toSHA || gm.deployedCommit }, null, 2), { mode: 0o600 });
+              const composeFile = gm.composeFile || findComposeFile(projectDir) || 'docker-compose.yml';
+              jobLog(job, `Running docker compose up -d --build in ${projectDir}...\n`);
+              await runCompose(gp.name, ['-f', composeFile, 'up', '-d', '--build', '--force-recreate'], projectDir, (c) => jobStream(job, c));
+            }
+          } else if (gp.type === 'adopt') {
+            const info = gp.info;
+            const configFiles = String(info.configFiles || '').split(',').map(s => s.trim()).filter(Boolean);
+            jobLog(job, `Fetching & pulling external git in ${info.repoRoot}...\n`);
+            if (server) {
+              await gitInDir(server, info.repoRoot, ['fetch', '--all', '--quiet'], (c) => jobStream(job, c));
+              await gitInDir(server, info.repoRoot, ['reset', '--hard', '@{u}'], (c) => jobStream(job, c));
+              const fileArgs = configFiles.flatMap(f => ['-f', f]);
+              await remoteCompose.runComposeInRemoteDir(server, info.workingDir, gp.name, [...fileArgs, 'up', '-d', '--build', '--force-recreate'], (c) => jobStream(job, c));
+            } else {
+              await gitInDir(null, info.repoRoot, ['fetch', '--all', '--quiet'], (c) => jobStream(job, c));
+              await gitInDir(null, info.repoRoot, ['reset', '--hard', '@{u}'], (c) => jobStream(job, c));
+              const fileArgs = configFiles.flatMap(f => ['-f', f]);
+              await runCompose(gp.name, [...fileArgs, 'up', '-d', '--build', '--force-recreate'], info.workingDir, (c) => jobStream(job, c));
+            }
+          }
+          setStep(job, 'proj:' + gp.name, 'done');
+          jobLog(job, `✓ [${gp.name}] Sync succeeded\n`);
+        } catch (err) {
+          setStep(job, 'proj:' + gp.name, 'failed');
+          jobLog(job, `✗ [${gp.name}] Failed: ${err.message}\n`);
+        }
+      }
+      job.phase = 'done';
+      job.status = 'done';
+      jobLog(job, '\n✓ Global Git Sync finished for all projects.\n');
+      job.finishedAt = Date.now();
+    })();
+
+    res.json({ jobId: job.id, totalProjects: gitProjects.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Pull & deploy any custom directory path on server where a git repo is located
+router.post('/git-pull-path', async (req, res) => {
+  try {
+    let { targetPath, branch = '', force = false, up = true } = req.body || {};
+    if (!targetPath) return res.status(400).json({ error: 'targetPath is required' });
+    const server = remoteCompose.getActiveRemoteServer();
+    if (server) targetPath = await remoteCompose.resolveRemotePath(server, targetPath);
+    else targetPath = path.resolve(targetPath);
+
+    let root = '';
+    try { root = (await gitInDir(server, targetPath, ['rev-parse', '--show-toplevel'])).trim(); }
+    catch (e) { return res.status(400).json({ error: `Not a git repository at path: ${targetPath}` }); }
+
+    const job = {
+      id: crypto.randomBytes(8).toString('hex'),
+      project: path.posix.basename(root) || 'custom-git-pull',
+      status: 'running',
+      phase: 'pull',
+      log: '',
+      error: null,
+      result: null,
+      startedAt: Date.now(),
+      finishedAt: null,
+      steps: [{ id: 'pull', label: force ? 'git reset --hard' : 'git pull', status: 'pending' }]
+    };
+    if (up) job.steps.push({ id: 'up', label: 'docker compose up -d --build', status: 'pending' });
+    deployJobs.set(job.id, job);
+
+    (async () => {
+      const stream = (c) => jobStream(job, c);
+      try {
+        setStep(job, 'pull', 'running');
+        jobLog(job, `Pulling git repository at ${root}...\n`);
+        if (force) {
+          await gitInDir(server, root, ['fetch', '--all', '--quiet'], stream);
+          const targetRef = branch ? `origin/${branch}` : '@{u}';
+          await gitInDir(server, root, ['reset', '--hard', targetRef], stream);
+        } else {
+          await gitInDir(server, root, ['fetch', '--all', '--quiet'], stream);
+          try {
+            await gitInDir(server, root, ['merge', '--ff-only', branch ? `origin/${branch}` : '@{u}'], stream);
+          } catch (e) {
+            jobLog(job, `Fast-forward failed, performing fetch & reset...\n`);
+            await gitInDir(server, root, ['reset', '--hard', branch ? `origin/${branch}` : '@{u}'], stream);
+          }
+        }
+        setStep(job, 'pull', 'done');
+
+        if (up) {
+          setStep(job, 'up', 'running'); job.phase = 'up';
+          jobLog(job, `Scanning compose files in ${root}...\n`);
+          const composeFiles = server
+            ? (await remoteScanComposeFiles(server, root, { maxdepth: 4 })).files
+            : findComposeFiles(root);
+          const found = composeFiles[0];
+          const fileToUse = found ? (found.path || found) : 'docker-compose.yml';
+          jobLog(job, `Running docker compose -f ${fileToUse} up -d --build in ${root}...\n`);
+          if (server) {
+            await remoteCompose.runComposeInRemoteDir(server, root, path.posix.basename(root), ['-f', fileToUse, 'up', '-d', '--build', '--force-recreate'], stream);
+          } else {
+            await runCompose(path.basename(root), ['-f', fileToUse, 'up', '-d', '--build', '--force-recreate'], root, stream);
+          }
+          setStep(job, 'up', 'done');
+        }
+        job.phase = 'done'; job.status = 'done'; jobLog(job, '\n✓ Done'); job.finishedAt = Date.now();
+      } catch (err) {
+        job.status = 'error'; job.phase = 'error'; job.error = err.message;
+        const r = (job.steps || []).find(s => s.status === 'running'); if (r) r.status = 'failed';
+        jobLog(job, '\n✗ ' + err.message); job.finishedAt = Date.now();
+      }
+    })();
+
+    res.json({ jobId: job.id, root });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.post('/:project/adopt-pull', async (req, res) => {
   try {
     const project = req.params.project;

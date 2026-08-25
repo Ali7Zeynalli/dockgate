@@ -19,10 +19,14 @@ Router.register('compose', async (content) => {
       // clear 400 if unsupported, so we no longer pre-disable — just show an informational note.
       const remote = isRemoteActive();
       const dis = '';
+      const gitProjects = (projects || []).filter(p => p.isGit || p.deploySource === 'git');
       content.innerHTML = `
         <div class="page-header">
-          <div><div class="page-title">Compose Projects</div><div class="page-subtitle">${projects.length} project(s)</div></div>
-          <div class="page-actions">
+          <div>
+            <div class="page-title">Compose Projects</div>
+            <div class="page-subtitle">${projects.length} project(s)${gitProjects.length ? ` · <span style="color:var(--accent);font-weight:600">● ${gitProjects.length} Git-connected</span>` : ''}</div>
+          </div>
+          <div class="page-actions" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <div class="row-menu" style="position:relative;display:inline-block">
               <button class="btn btn-primary row-menu-toggle" id="compose-deploy-toggle">${Icons.compose} + Deploy ▾</button>
               <div class="row-menu-pop">
@@ -32,7 +36,24 @@ Router.register('compose', async (content) => {
                 ${remote ? `<button class="rmi" id="compose-adopt">${Icons.folder || Icons.compose} Adopt from server (existing folder)</button>` : ''}
               </div>
             </div>
-            <button class="btn btn-secondary" id="compose-refresh">${Icons.refresh}</button>
+
+            <!-- Global Git Pull / Sync dropdown right next to Deploy -->
+            <div class="row-menu" style="position:relative;display:inline-block">
+              <button class="btn btn-secondary row-menu-toggle" id="global-git-btn" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;${gitProjects.length ? 'border-color:var(--accent);color:var(--accent)' : ''}" title="Global Git operations across server directories">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+                <span>⤓ Git Pull / Sync ▾</span>
+                ${gitProjects.length ? `<span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px;padding:1px 6px">${gitProjects.length}</span>` : ''}
+              </button>
+              <div class="row-menu-pop" style="min-width:250px">
+                <button class="rmi" id="global-git-sync-all">⚡ Sync &amp; Deploy All Git Projects</button>
+                <button class="rmi" id="global-git-pull-all">⤓ Pull All (Files only, no restart)</button>
+                <div style="border-top:1px solid var(--border);margin:4px 0"></div>
+                <button class="rmi" id="global-git-manage-btn">📋 Manage &amp; View All Git Repos…</button>
+                <button class="rmi" id="global-git-pull-custom">📁 Pull &amp; Deploy specific server path…</button>
+              </div>
+            </div>
+
+            <button class="btn btn-secondary" id="compose-refresh" title="Refresh">${Icons.refresh}</button>
           </div>
         </div>
         <div id="deploy-banner"></div>
@@ -84,6 +105,62 @@ Router.register('compose', async (content) => {
       document.getElementById('compose-folder')?.addEventListener('click', openFolderDeploy);
       document.getElementById('compose-adopt')?.addEventListener('click', openAdoptFromServer);
       document.getElementById('compose-git')?.addEventListener('click', openGitDeploy);
+
+      // Global Git header action handlers
+      document.getElementById('global-git-sync-all')?.addEventListener('click', async () => {
+        try {
+          const r = await API.post('/compose/git-sync-all', {});
+          if (r && r.jobId) openDeployLog(r.jobId, 'all-git-projects');
+          showToast(`⚡ Syncing & deploying ${r.totalProjects || 'all'} Git project(s)…`, 'info', 5000);
+          render();
+        } catch (err) { showToast(err.message, 'error', 9000); }
+      });
+      document.getElementById('global-git-pull-all')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          const r = await API.post('/compose/git-pull-all', {});
+          const results = r.results || [];
+          const successCount = results.filter(x => x.success).length;
+          const body = `
+            <div class="text-sm" style="margin-bottom:8px">Pulled <strong>${successCount}/${results.length}</strong> Git project repositories to their target directories on the server:</div>
+            <div class="table-wrapper" style="max-height:300px;overflow:auto">
+              <table>
+                <thead><tr><th>Project</th><th>Directory</th><th>Status</th></tr></thead>
+                <tbody>
+                  ${results.map(x => `
+                    <tr>
+                      <td class="td-name"><strong>${escapeHtml(x.project)}</strong></td>
+                      <td class="td-mono text-xs" title="${escapeHtml(x.path)}">${escapeHtml(x.path)}</td>
+                      <td>
+                        ${x.success ? (x.upToDate ? '<span class="badge badge-running">Up to date</span>' : `<span class="badge" style="background:var(--accent-dim);color:var(--accent)">Pulled (${(x.fromSHA || '').slice(0, 7)}→${(x.toSHA || '').slice(0, 7)})</span>`) : `<span class="badge badge-stopped" title="${escapeHtml(x.error || '')}">Failed</span>`}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+            <div class="text-xs text-muted" style="margin-top:8px">All code pulled into local directories. Containers are untouched. Click <strong>⚡ Deploy All Now</strong> to build and restart all projects.</div>
+          `;
+          const pm = showModal('Global Git Pull Results', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+          const go = document.createElement('button');
+          go.className = 'btn btn-primary';
+          go.innerHTML = '⚡ Deploy All Now';
+          pm.overlay.querySelector('#modal-footer').appendChild(go);
+          go.onclick = async () => {
+            pm.close();
+            try {
+              const res = await API.post('/compose/git-sync-all', {});
+              if (res && res.jobId) openDeployLog(res.jobId, 'all-git-projects');
+              showToast('Deploying all Git projects…', 'info', 4000);
+              render();
+            } catch (err) { showToast(err.message, 'error', 9000); }
+          };
+        } catch (err) { showToast(err.message, 'error', 9000); }
+        finally { btn.disabled = false; }
+      });
+      document.getElementById('global-git-manage-btn')?.addEventListener('click', () => openGlobalGitManageModal(projects));
+      document.getElementById('global-git-pull-custom')?.addEventListener('click', () => openCustomPathGitPullModal());
       content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
       content.querySelectorAll('[data-term]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectTerminal(btn.dataset.term, btn.dataset.cwd); }));
       content.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote, !!btn.dataset.adopted); }));
@@ -406,6 +483,134 @@ Router.register('compose', async (content) => {
         });
       });
     } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+  }
+
+  // Global Git Management Hub — view & pull all git projects across the server
+  function openGlobalGitManageModal(projects) {
+    const gitProjects = (projects || []).filter(p => p.isGit || p.deploySource === 'git');
+    if (!gitProjects.length) {
+      showModal('Git-Connected Projects', '<div class="empty-state"><h3>No Git Projects</h3><p>No Git-connected compose projects found on this server. Deploy a project from Git first.</p></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+      return;
+    }
+    const body = `
+      <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div class="text-sm text-muted">Manage all <strong>${gitProjects.length}</strong> Git-connected repositories across their respective directories on the server.</div>
+        <button class="btn btn-primary btn-sm" id="mg-sync-all-btn">⚡ Sync &amp; Deploy All</button>
+      </div>
+      <div class="table-wrapper" style="max-height:380px;overflow:auto">
+        <table>
+          <thead><tr><th>Project</th><th>Branch</th><th>Location on Server</th><th style="text-align:right">Actions</th></tr></thead>
+          <tbody>
+            ${gitProjects.map(p => `
+              <tr>
+                <td class="td-name"><strong>${escapeHtml(p.name)}</strong></td>
+                <td><span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px">${escapeHtml(p.gitInfo?.branch || 'HEAD')}</span></td>
+                <td class="td-mono text-xs" title="${escapeHtml(p.workingDir)}">${escapeHtml(p.workingDir) || '—'}</td>
+                <td style="text-align:right;white-space:nowrap">
+                  <button class="btn btn-xs btn-secondary" data-mg-pull="${escapeHtml(p.name)}" title="Pull latest code">⤓ Pull</button>
+                  <button class="btn btn-xs btn-primary" data-mg-sync="${escapeHtml(p.name)}" title="Pull & Deploy">⚡ Sync</button>
+                  <button class="btn btn-xs btn-secondary text-warning" data-mg-force="${escapeHtml(p.name)}" title="Force reset & rebuild">⚠️</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+    const m = showModal('Git Repositories & Deploy Hub', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+
+    root.querySelector('#mg-sync-all-btn')?.addEventListener('click', async () => {
+      m.close();
+      try {
+        const r = await API.post('/compose/git-sync-all', {});
+        if (r && r.jobId) openDeployLog(r.jobId, 'all-git-projects');
+        showToast('Syncing all Git projects…', 'info', 4000);
+        render();
+      } catch (err) { showToast(err.message, 'error', 9000); }
+    });
+
+    root.querySelectorAll('[data-mg-pull]').forEach(btn => btn.addEventListener('click', async () => {
+      const proj = btn.dataset.mgPull;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const r = await API.post(`/compose/${proj}/git-pull`, {});
+        showToast(r.upToDate ? `✓ "${proj}" is already up to date.` : `✓ Pulled updates for "${proj}".`, 'success', 4000);
+      } catch (err) { showToast(err.message, 'error', 9000); }
+      finally { btn.disabled = false; btn.textContent = '⤓ Pull'; }
+    }));
+
+    root.querySelectorAll('[data-mg-sync]').forEach(btn => btn.addEventListener('click', async () => {
+      const proj = btn.dataset.mgSync;
+      m.close();
+      try {
+        const r = await API.post(`/compose/${proj}/git-sync`, {});
+        if (r && r.jobId) openDeployLog(r.jobId, proj);
+        showToast(`Syncing "${proj}"…`, 'info', 4000);
+        render();
+      } catch (err) { showToast(err.message, 'error', 9000); }
+    }));
+
+    root.querySelectorAll('[data-mg-force]').forEach(btn => btn.addEventListener('click', () => {
+      const proj = btn.dataset.mgForce;
+      showConfirm('Force Pull & Deploy', `Force pull "${escapeHtml(proj)}"? (Discards local changes on server & rebuilds)`, async () => {
+        m.close();
+        try {
+          const r = await API.post(`/compose/${proj}/git-sync`, { force: true });
+          if (r && r.jobId) openDeployLog(r.jobId, proj);
+          showToast(`Force syncing "${proj}"…`, 'info', 4000);
+          render();
+        } catch (err) { showToast(err.message, 'error', 9000); }
+      }, true);
+    }));
+  }
+
+  // Pull & Deploy directly from any server directory where a git repository is checked out
+  function openCustomPathGitPullModal() {
+    const remote = isRemoteActive();
+    const body = `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="text-sm text-muted">Point directly to an existing Git checkout folder on the ${remote ? 'remote server' : 'host'}, pull from Git in-place, and run <code>docker compose up -d --build</code>.</div>
+        <div class="input-group">
+          <label>Server directory path *</label>
+          <div style="display:flex;gap:6px">
+            <input class="input" id="cp-path" placeholder="/var/www/my-app or ~/.dockgate/projects/my-app" style="flex:1;font-family:var(--font-mono,monospace)">
+            ${remote ? `<button type="button" class="btn btn-secondary btn-sm" id="cp-browse">📁 Browse</button>` : ''}
+          </div>
+        </div>
+        <div class="input-group">
+          <label>Branch (optional)</label>
+          <input class="input" id="cp-branch" placeholder="main (leave empty for current branch)">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="cp-force" style="cursor:pointer">
+          <label for="cp-force" style="font-size:12px;cursor:pointer;margin:0"><strong>Force reset (git reset --hard)</strong> — discard uncommitted local changes</label>
+        </div>
+      </div>
+    `;
+    const m = showModal('Pull & Deploy from Server Directory', body, [
+      { label: 'Cancel', className: 'btn btn-secondary' },
+      { label: '🚀 Pull & Deploy', className: 'btn btn-primary', id: 'cp-run-btn' }
+    ]);
+    const root = m.overlay;
+
+    root.querySelector('#cp-browse')?.addEventListener('click', () => {
+      openRemoteFolderPicker((selected) => { root.querySelector('#cp-path').value = selected; });
+    });
+
+    root.querySelector('#cp-run-btn')?.addEventListener('click', async () => {
+      const targetPath = root.querySelector('#cp-path').value.trim();
+      if (!targetPath) { showToast('Server directory path is required', 'warning'); return; }
+      const branch = root.querySelector('#cp-branch').value.trim();
+      const force = root.querySelector('#cp-force').checked;
+      m.close();
+      try {
+        const r = await API.post('/compose/git-pull-path', { targetPath, branch, force, up: true });
+        if (r && r.jobId) openDeployLog(r.jobId, r.root || 'git-pull');
+        showToast('Pulling and deploying in-place…', 'info', 4000);
+        render();
+      } catch (err) { showToast(err.message, 'error', 10000); }
+    });
   }
 
   // Read a File as base64 (without the data: prefix)

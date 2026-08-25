@@ -4,16 +4,21 @@
 
 ## [2.2.6] - 2026-08-25
 
-### Added & Enhanced — Native 1-Click Git Deploy, Pull & Sync, Auto-Detection & Force Reset (v2.2.6)
+### Added & Enhanced — Global Git Pull & Sync Hub, Header Actions, Directory In-Place Deploy & Auto-Detection (v2.2.6)
+- **Top Header Global Git Pull / Sync Menu (`public/js/pages/compose.js`)**:
+  - **Prominent Header Action**: Positioned right next to the `+ Deploy ▾` button, a unified **`⤓ Git Pull / Sync ▾`** dropdown provides one-stop access to all Git operations across the server with an active Git project counter.
+  - **`⚡ Sync & Deploy All Git Projects`**: Single-click bulk redeploy that iterates all Git-connected projects across their respective directories on the server, fetches newest code, and runs `docker compose up -d --build --force-recreate` with live streaming deploy console.
+  - **`⤓ Pull All (Files only)`**: Fast-forwards all Git repositories on the server to their latest commits without touching containers, and displays a comprehensive multi-repo results matrix with a 1-click `⚡ Deploy All Now` button.
+  - **`📋 Manage & View All Git Repos…`**: Centralized Git repository hub modal listing all Git projects, branches, and exact host directory paths with individual and batch Pull/Sync/Force controls.
+  - **`📁 Pull & Deploy Specific Server Path…`**: Point directly to any directory on the host or remote server; DockGate auto-detects the Git repository in that folder, pulls the latest commits in-place, and executes `docker compose up -d --build`.
 - **Direct 1-Click Git Actions in Compose Table (`public/js/pages/compose.js`)**:
   - **Dynamic Git Visibility**: If a Compose project is connected to Git (DockGate-managed or external checkout), Git actions and branch indicators are prominently displayed in the main table. If not connected to Git, all Git affordances remain cleanly hidden.
-  - **`⤓ Pull`**: Pulls the latest commits directly from Git (fast-forward/fetch) without restarting containers; presents a modal diff with pulled commit log and changed files, plus a 1-click `⚡ Deploy now` button.
+  - **`⤓ Pull`**: Pulls the latest commits directly from Git without restarting containers; presents a modal diff with pulled commit log and changed files, plus a 1-click `⚡ Deploy now` button.
   - **`⚡ Sync`**: 1-click instantaneous Git pull + `docker compose up -d --build --force-recreate` execution with real-time streaming deploy console.
   - **`⚠️ Force Pull & Rebuild`**: Discards uncommitted or diverged local server changes (`git reset --hard origin/<branch>`) and performs a clean build & restart.
   - **Interactive `UPDATE ↻` Badge**: Renders an actionable badge next to project names when newer remote commits are detected via `git ls-remote`, enabling 1-click sync directly from the project row.
-- **Unified Git Endpoints & Local Rebuild Hardening (`server/routes/compose.js`)**:
-  - Added unified `POST /api/compose/:project/git-pull` and `POST /api/compose/:project/git-sync` supporting both managed and adopted/external Git projects across local and remote SSH targets.
-  - Enriched `GET /api/compose` with `isGit: boolean`, `gitInfo` (`repoUrl`, `branch`, `deployedCommit`, `subdir`), and external Git state.
+- **Unified Backend Git Engine & In-Place Deployments (`server/routes/compose.js`)**:
+  - Added `POST /api/compose/git-pull-all`, `POST /api/compose/git-sync-all`, and `POST /api/compose/git-pull-path` supporting both local host and remote SSH targets.
   - Fixed an issue in local deployment engine where containers were created without `--build --force-recreate`, ensuring all newly pulled source code and Dockerfile changes are immediately rebuilt into running containers.
   - Added smart sync prompts in `Deploy from Git` modal when deploying an already registered project name instead of failing with a 409 error.
 
