@@ -5,9 +5,10 @@
 ## [2.2.3] - 2026-08-25
 
 ### Fixed & Enhanced — Out-of-the-Box Observability, Log Doctor Harvester & Sidebar Update Badges (v2.2.3)
-- **Sidebar Software Update Badges Fixed (`public/js/app.js`, `public/js/pages/settings.js`)**:
+- **Sidebar Software Update Badges & Navigation Fix (`public/js/app.js`, `public/js/pages/settings.js`)**:
   - Fixed an issue where update notification badges were missing from the DOM when `Settings` was restructured into a collapsible `nav-parent` section.
   - Added parent `badge-settings` (`v2.2.3 UPDATE`) indicator on the sidebar main item as well as `● NEW` indicator on the `Software Update` sub-tab.
+  - Fixed an `item is not defined` reference error in `initMacSidebar` that prevented the app shell from initializing.
   - Automatically updates and displays live update badges without requiring the user to navigate to the Settings page first.
 - **Instant Out-of-the-Box Observability & Monitoring (`server/routes/monitoring.js`, `server/host-stats.js`, `public/js/pages/monitoring.js`)**:
   - Implemented direct Host & Docker fallbacks for `GET /api/monitoring/:serverId/metrics` and `GET /api/monitoring/:serverId/summary`.
