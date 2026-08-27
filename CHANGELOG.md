@@ -2,6 +2,16 @@
 
 ---
 
+## [2.3.2] - 2026-08-27
+
+### Fixed — Agent Metrics-Only UI Install Logic (v2.3.2)
+- **Frontend UI (`public/js/edge-agent-panel.js`)**:
+  - Fixed a UI bug where the Agent deployment table and "Install on servers" button were hidden if no SMTP or Telegram channel was configured.
+  - The UI now always renders the agent management table, allowing users to successfully deploy the agent in **metrics-only mode** (for telemetry and log aggregation) without requiring notification channels.
+  - Added a clear UI warning badge (`⚠ No notification channel configured...`) when operating in this mode.
+
+---
+
 ## [2.3.1] - 2026-08-27
 
 ### Changed — Global rename to DockGate Agent (v2.3.1)
