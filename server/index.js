@@ -601,3 +601,19 @@ setInterval(() => {
   try { stmts.trimBuilds.run(); } catch(e) {}
   try { stmts.trimNotificationLogs.run(); } catch(e) {}
 }, 6 * 60 * 60 * 1000);
+
+// Background local host metrics sampler — collect & persist every 15s so the monitoring
+// dashboard has historical time-series data for the local daemon (not just single-point live).
+const hostStats = require('./host-stats');
+setInterval(async () => {
+  try {
+    const s = await hostStats.collectLocalStats();
+    if (!s) return;
+    const memPct = s.mem && s.mem.total ? Math.round(s.mem.used / s.mem.total * 100) : null;
+    const swapPct = s.mem && s.mem.swapTotal ? Math.round(s.mem.swapUsed / s.mem.swapTotal * 100) : 0;
+    const rootDisk = (s.disks || []).find(d => d.mount === '/') || (s.disks || [])[0];
+    stmts.insertHostMetric.run('local', s.cpu ?? null, memPct, rootDisk ? rootDisk.usePct : null, swapPct,
+      s.load ? s.load.load1 : null, s.net ? Math.round(s.net.rxBytesSec) : null, s.net ? Math.round(s.net.txBytesSec) : null, s.load ? s.load.procsRunning : null);
+    stmts.trimHostMetrics.run('local', 'local', 2000);
+  } catch (e) { /* best-effort — never crash the main process */ }
+}, 15000);

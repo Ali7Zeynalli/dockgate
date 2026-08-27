@@ -175,7 +175,7 @@ async function removeExisting(client, log) {
 async function installOne(serverId, log, onPhase, forcePull) {
   const env = buildEnv(serverId);
   if (!envHasChannel(env)) {
-    throw new Error('No notification channel configured — set Telegram or SMTP in Settings, or a per-server override.');
+    log('⚠ No notification channel configured — agent will run in metrics-only mode (Telegram/SMTP can be added later via reconfigure)\n');
   }
   const client = clientFor(serverId);
   onPhase('pulling');

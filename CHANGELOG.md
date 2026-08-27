@@ -2,6 +2,27 @@
 
 ---
 
+## [2.3.0] - 2026-08-27
+
+### Fixed & Enhanced — Monitoring Metrics Accuracy & Agent Metrics-Only Install (v2.3.0)
+- **Fixed DB Column Name Mismatch in Monitoring (`server/routes/monitoring.js`)**:
+  - Corrected `host_metrics` column mappings: `created_at` → `ts`, `cpu_pct` → `cpu`, `net_rx_bytes_sec` → `net_rx`, `net_tx_bytes_sec` → `net_tx`. Previously all CPU and Network values read as `undefined` and displayed as 0%.
+- **Fixed Hardcoded Zero Container Resource Metrics (`server/routes/monitoring.js`)**:
+  - `GET /api/monitoring/:serverId/summary` now fetches real container stats via `dockerService.getContainerStats()` using `Promise.all` instead of returning hardcoded `cpuPercent: 0, memUsageBytes: 0, memPercent: 0`.
+  - Container Resource Matrix table and Container CPU Distribution chart now display accurate live data.
+- **Added Live Container Stats to `/metrics` Endpoint**:
+  - Both `db-fallback` and `live-fallback` sources now collect and return per-container CPU/Memory data in the `containers` and `latestContainers` response fields, populating the Container CPU Distribution chart.
+- **Fixed Network I/O Missing from Stat Cards**:
+  - Added `netRxBytesSec` and `netTxBytesSec` to `host.latest` in all fallback responses so Network I/O stat cards display real bandwidth values.
+- **Added Background Local Host Metrics Sampler (`server/index.js`)**:
+  - New 15-second background interval collects local daemon CPU, Memory, Disk, Network, and Load metrics, persisting them to `host_metrics` table. The local server now has full historical time-series charts instead of single-point live polling.
+- **Enabled DB-Fallback for Local Server**:
+  - Removed the `serverId !== 'local'` guard so the local daemon also benefits from stored historical metrics in the monitoring dashboard.
+- **Agent Install Without Notification Channels (`server/agent/deployer.js`)**:
+  - Removed the hard `envHasChannel` requirement that blocked agent installation when no Telegram or SMTP channel was configured. The agent now installs in **metrics-only mode** with a warning log, and notification channels can be added later via reconfigure.
+
+---
+
 ## [2.2.9] - 2026-08-25
 
 ### Fixed & Enhanced — Standalone In-Place Git Pull Across All Modals & Deploy-Free Repo Staging (v2.2.9)

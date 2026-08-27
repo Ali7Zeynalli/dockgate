@@ -84,16 +84,31 @@ router.get('/:serverId/metrics', async (req, res) => {
       // Fallback: Agent not installed -> live sample or DB metrics
     }
 
-    // 2. Query historical DB metrics if remote server
-    if (serverId !== 'local') {
+    // 2. Query historical DB metrics (works for both local and remote servers)
+    {
       const dbMetrics = stmts.getHostMetrics ? stmts.getHostMetrics.all(serverId, 300) : [];
-      if (dbMetrics.length > 0) {
-        const timestamps = dbMetrics.map(m => new Date(m.created_at).getTime()).reverse();
-        const cpu = dbMetrics.map(m => m.cpu_pct || 0).reverse();
+      if (dbMetrics.length > 1) {
+        const timestamps = dbMetrics.map(m => new Date(m.ts).getTime()).reverse();
+        const cpu = dbMetrics.map(m => m.cpu || 0).reverse();
         const memPercent = dbMetrics.map(m => m.mem_pct || 0).reverse();
         const diskPercent = dbMetrics.map(m => m.disk_pct || 0).reverse();
-        const netRx = dbMetrics.map(m => m.net_rx_bytes_sec || 0).reverse();
-        const netTx = dbMetrics.map(m => m.net_tx_bytes_sec || 0).reverse();
+        const netRx = dbMetrics.map(m => m.net_rx || 0).reverse();
+        const netTx = dbMetrics.map(m => m.net_tx || 0).reverse();
+
+        // Also collect live container stats for the container chart/table
+        let liveContainers = {};
+        let latestContainers = {};
+        try {
+          const running = (await dockerService.listContainers(false)).filter(c => c.state === 'running');
+          const statResults = await Promise.all(running.map(c =>
+            dockerService.getContainerStats(c.id).then(s => ({ name: c.name || c.id.substring(0, 12), stats: s })).catch(() => null)
+          ));
+          for (const r of statResults) {
+            if (!r) continue;
+            liveContainers[r.name] = [{ cpuPercent: r.stats.cpuPercent, memPercent: r.stats.memoryPercent }];
+            latestContainers[r.name] = { cpuPercent: r.stats.cpuPercent, memPercent: r.stats.memoryPercent, memUsageBytes: r.stats.memoryUsage };
+          }
+        } catch (e) { /* container stats are best-effort */ }
 
         return res.json({
           source: 'db-fallback',
@@ -110,20 +125,49 @@ router.get('/:serverId/metrics', async (req, res) => {
               cpu: cpu[cpu.length - 1] || 0,
               memPercent: memPercent[memPercent.length - 1] || 0,
               diskPercent: diskPercent[diskPercent.length - 1] || 0,
+              netRxBytesSec: netRx[netRx.length - 1] || 0,
+              netTxBytesSec: netTx[netTx.length - 1] || 0,
             }
           },
-          containers: {},
+          containers: liveContainers,
+          latestContainers,
         });
       }
     }
 
-    // 3. Fallback for Local Server: Collect live host & container metrics
-    const stats = await hostStats.collectLocalStats().catch(() => null);
+    // 3. Fallback: Collect live host & container metrics (single sample)
+    let stats = null;
+    if (serverId === 'local') {
+      stats = await hostStats.collectLocalStats().catch(() => null);
+    } else {
+      try {
+        const server = stmts.getServer.get(serverId);
+        if (server) {
+          const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+          stats = await hostStats.collectHostStats(cfg).catch(() => null);
+        }
+      } catch (e) { /* best-effort */ }
+    }
     const cpuVal = stats ? (stats.cpu || 0) : 0;
     const memVal = (stats && stats.mem && stats.mem.total) ? Math.round((stats.mem.used / stats.mem.total) * 100) : 0;
     const diskVal = (stats && stats.disks && stats.disks[0]) ? (stats.disks[0].usePct || 0) : 0;
     const netRxVal = stats && stats.net ? Math.round(stats.net.rxBytesSec || 0) : 0;
     const netTxVal = stats && stats.net ? Math.round(stats.net.txBytesSec || 0) : 0;
+
+    // Collect live container stats
+    let liveContainers = {};
+    let latestContainers = {};
+    try {
+      const running = (await dockerService.listContainers(false)).filter(c => c.state === 'running');
+      const statResults = await Promise.all(running.map(c =>
+        dockerService.getContainerStats(c.id).then(s => ({ name: c.name || c.id.substring(0, 12), stats: s })).catch(() => null)
+      ));
+      for (const r of statResults) {
+        if (!r) continue;
+        liveContainers[r.name] = [{ cpuPercent: r.stats.cpuPercent, memPercent: r.stats.memoryPercent }];
+        latestContainers[r.name] = { cpuPercent: r.stats.cpuPercent, memPercent: r.stats.memoryPercent, memUsageBytes: r.stats.memoryUsage };
+      }
+    } catch (e) { /* container stats are best-effort */ }
 
     const now = Date.now();
     res.json({
@@ -141,9 +185,12 @@ router.get('/:serverId/metrics', async (req, res) => {
           cpu: cpuVal,
           memPercent: memVal,
           diskPercent: diskVal,
+          netRxBytesSec: netRxVal,
+          netTxBytesSec: netTxVal,
         }
       },
-      containers: {},
+      containers: liveContainers,
+      latestContainers,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -336,17 +383,28 @@ router.get('/:serverId/summary', async (req, res) => {
         }
       }
 
-      // Container resource breakdown
+      // Container resource breakdown — fetch real stats for each running container
       const containers = await dockerService.listContainers(false).catch(() => []);
-      const breakdown = containers.map(c => ({
-        id: c.shortId || c.id.substring(0, 12),
-        name: c.name || c.shortId || c.id.substring(0, 12),
-        image: c.image,
-        state: c.state,
-        status: c.status,
-        cpuPercent: 0,
-        memUsageBytes: 0,
-        memPercent: 0,
+      const breakdown = await Promise.all(containers.map(async (c) => {
+        const base = {
+          id: c.shortId || c.id.substring(0, 12),
+          name: c.name || c.shortId || c.id.substring(0, 12),
+          image: c.image,
+          state: c.state,
+          status: c.status,
+          cpuPercent: 0,
+          memUsageBytes: 0,
+          memPercent: 0,
+        };
+        if (c.state === 'running') {
+          try {
+            const s = await dockerService.getContainerStats(c.id);
+            base.cpuPercent = s.cpuPercent;
+            base.memUsageBytes = s.memoryUsage;
+            base.memPercent = s.memoryPercent;
+          } catch (e) { /* container may have stopped between list and stats */ }
+        }
+        return base;
       }));
 
       res.json({
