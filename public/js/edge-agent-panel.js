@@ -190,12 +190,9 @@
   // ---- public entry points used by settings.js renderNotifications ----
 
   window.edgeAgentSectionHtml = function (channelConfigured) {
-    if (!channelConfigured) {
-      return `<div class="settings-section" style="margin-top:20px;">
-        <div class="settings-section-title">Edge Agent (observability)</div>
-        <div class="text-xs text-muted">Configure a Telegram or SMTP channel above to enable alerts — the agent can also be installed in metrics-only mode for monitoring without notifications.</div>
-      </div>`;
-    }
+    const warningHtml = !channelConfigured ? 
+      `<div class="text-xs text-warning" style="margin-bottom:10px; font-weight:600;">⚠ No notification channel configured above — agent will install in metrics-only mode.</div>` : '';
+    
     return `<div class="settings-section" style="margin-top:20px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap;">
         <div class="settings-section-title" style="margin:0;">Edge Agent (observability)</div>
@@ -205,6 +202,7 @@
         </div>
       </div>
       <div class="settings-row-desc" style="margin-bottom:10px;">A tiny <strong>outbound-only</strong> container on each server collects metrics, aggregates logs, watches Docker events, and sends alerts through configured channels — no inbound ports, works behind NAT, keeps monitoring if DockGate is offline. Installing it stops DockGate's central monitor for that host (no duplicate alerts); removing it resumes the monitor.</div>
+      ${warningHtml}
       <div id="edge-agent-table"><div class="text-xs text-muted">Loading servers…</div></div>
     </div>`;
   };
