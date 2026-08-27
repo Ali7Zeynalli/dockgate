@@ -2,6 +2,18 @@
 
 ---
 
+## [2.3.1] - 2026-08-27
+
+### Changed — Global rename to DockGate Agent (v2.3.1)
+- **Agent Rebranding (`agent/`)**:
+  - Renamed the edge component from `notifier-agent` to **`dockgate-agent`** to better reflect its expanded capabilities (metrics collection, log aggregation, observability).
+  - The agent deployment now runs under the image `dockgate/agent:1.0.0` and container name `dockgate-agent`.
+- **UI & Settings Updates (`public/js/edge-agent-panel.js`)**:
+  - Renamed the UI panel and all visual labels from "Edge Notifier" to **"Edge Agent (observability)"**.
+  - The Agent deployment section in Settings is now **always visible**, making it intuitive to deploy the agent in metrics-only mode even before setting up notification channels.
+
+---
+
 ## [2.3.0] - 2026-08-27
 
 ### Fixed & Enhanced — Monitoring Metrics Accuracy & Agent Metrics-Only Install (v2.3.0)
