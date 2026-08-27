@@ -31,10 +31,10 @@ async function queryAgent(serverId, endpoint) {
       });
     } catch (e) {}
 
-    // 2. Query via docker exec on local dockgate-notifier container
+    // 2. Query via docker exec on local dockgate-agent container
     const { exec } = require('child_process');
     return new Promise((resolve, reject) => {
-      exec(`docker exec dockgate-notifier wget -qO- "http://127.0.0.1:9000${endpoint}" 2>/dev/null`, { timeout: 3000 }, (err, stdout) => {
+      exec(`docker exec dockgate-agent wget -qO- "http://127.0.0.1:9000${endpoint}" 2>/dev/null`, { timeout: 3000 }, (err, stdout) => {
         if (err || !stdout || !stdout.trim()) return reject(new Error('Local agent not available'));
         try { resolve(JSON.parse(stdout.trim())); } catch (pe) { reject(pe); }
       });
@@ -45,7 +45,7 @@ async function queryAgent(serverId, endpoint) {
   if (!server) throw new Error(`Server not found: ${serverId}`);
 
   // Query agent container via docker exec or wget over SSH
-  const cmd = `docker exec dockgate-notifier wget -qO- "http://127.0.0.1:9000${endpoint}" 2>/dev/null || wget -qO- "http://127.0.0.1:9000${endpoint}" 2>/dev/null`;
+  const cmd = `docker exec dockgate-agent wget -qO- "http://127.0.0.1:9000${endpoint}" 2>/dev/null || wget -qO- "http://127.0.0.1:9000${endpoint}" 2>/dev/null`;
   const raw = await remoteCompose.execRemote(server, cmd);
   if (!raw || !raw.trim()) throw new Error('Agent returned empty response or is not responding');
   return JSON.parse(raw.trim());

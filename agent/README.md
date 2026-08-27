@@ -1,9 +1,9 @@
-# DockGate Notifier Agent
+# DockGate Agent
 
-A tiny, **outbound-only** Docker event watcher that DockGate deploys onto each managed
-server. It mounts that host's `/var/run/docker.sock` **read-only**, watches the local
-Docker events, and sends alerts **directly** to Telegram and/or SMTP — the same channels
-you configured in DockGate.
+A tiny, **outbound-only** observability container that DockGate deploys onto each managed
+server. It mounts that host's `/var/run/docker.sock` **read-only**, collects metrics,
+aggregates logs, watches Docker events, and optionally sends alerts **directly** to
+Telegram and/or SMTP — the same channels you configured in DockGate.
 
 It is a faithful port of DockGate's own notification engine
 (`server/notifications/event-monitor.js` + `templates.js` + `telegram.js` + `mailer.js`)
@@ -45,17 +45,18 @@ Stopped), **restart**, **health_status: unhealthy** (event + 60s sweep), and a 5
 | `SEND_TEST_ON_START` | — | `true` → send a hello on boot. |
 | `AGENT_HEALTH_PORT` | `9000` | Loopback health port (never published). |
 
-At least one channel must be configured or the agent exits with a clear error.
+Notification channels are optional — the agent can run in **metrics-only mode** for
+monitoring and log collection without any notification channel configured.
 
 ## How DockGate runs it (deploy spec)
 
 ```
-docker run -d --name dockgate-notifier \
+docker run -d --name dockgate-agent \
   --restart unless-stopped --memory 96m --cpus 0.25 \
   --security-opt no-new-privileges \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  -e TG_TOKEN=… -e TG_CHAT_ID=… -e SERVER_LABEL=… [-e SMTP_*=…] \
-  dockgate/notifier-agent:1.0.0
+  -e SERVER_LABEL=… [-e TG_TOKEN=… -e TG_CHAT_ID=…] [-e SMTP_*=…] \
+  dockgate/agent:1.0.0
 ```
 
 No `-p` / published ports — outbound-only.
@@ -76,7 +77,7 @@ No `-p` / published ports — outbound-only.
 
 ## Versioning
 
-Independent semver (`dockgate/notifier-agent:<ver>`) so panel version bumps don't force a
+Independent semver (`dockgate/agent:<ver>`) so panel version bumps don't force a
 fleet redeploy.
 
 ---

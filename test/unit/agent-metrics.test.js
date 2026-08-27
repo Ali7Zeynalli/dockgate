@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const Storage = require('../../notifier-agent/src/storage');
+const Storage = require('../../agent/src/storage');
 
 describe('Agent Observability - Metrics Storage & Downsampling', () => {
   it('stores raw 10-second samples and retrieves them for 1h range', () => {

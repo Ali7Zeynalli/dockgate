@@ -1,4 +1,4 @@
-// Edge Notifier Agent deployer. Pushes the outbound-only notifier container onto a managed host
+// Edge Observability Agent deployer. Pushes the outbound-only agent container onto a managed host
 // over a PER-HOST dockerode client (createSshClient) — never via setActiveServer, which would mutate
 // the module-global active daemon that the rest of the app shares. Channel creds are read from the
 // global smtp_config + the per-server override (server_channels), decrypted, and injected as env.
@@ -15,10 +15,10 @@ const telegram = require('../notifications/telegram');
 const mailer = require('../notifications/mailer');
 const monitorManager = require('../notifications/monitor-manager');
 
-const IMAGE_REF = process.env.NOTIFIER_AGENT_IMAGE || 'dockgate/notifier-agent:1.0.0';
-const AGENT_NAME = 'dockgate-notifier';
+const IMAGE_REF = process.env.AGENT_IMAGE || 'dockgate/agent:1.0.0';
+const AGENT_NAME = 'dockgate-agent';
 const AGENT_VERSION = '1.0.0';
-const LABEL_FILTER = ['dockgate.role=notifier-agent'];
+const LABEL_FILTER = ['dockgate.role=agent'];
 
 // ---- channel resolution (global smtp_config, overridden per-server) ----
 
@@ -75,7 +75,7 @@ function containerSpec(env) {
     Image: IMAGE_REF,
     name: AGENT_NAME,
     Env: env,
-    Labels: { 'dockgate.role': 'notifier-agent', 'dockgate.version': AGENT_VERSION },
+    Labels: { 'dockgate.role': 'agent', 'dockgate.version': AGENT_VERSION },
     HostConfig: {
       Binds: [
         '/var/run/docker.sock:/var/run/docker.sock:ro',
@@ -110,12 +110,12 @@ function pullOn(client, ref) {
   });
 }
 
-// Build the agent image on DockGate's LOCAL daemon from the bundled notifier-agent/ context.
+// Build the agent image on DockGate's LOCAL daemon from the bundled agent/ context.
 // Uses the host `docker` CLI (same assumption as compose/stack deploy). So the operator never has
 // to run `docker build` by hand — the first install builds it automatically.
 function buildAgentImage(log) {
   return new Promise((resolve, reject) => {
-    const ctx = path.join(__dirname, '..', '..', 'notifier-agent');
+    const ctx = path.join(__dirname, '..', '..', 'agent');
     execFile('docker', ['build', '-t', IMAGE_REF, ctx], { maxBuffer: 16 * 1024 * 1024, timeout: 300000 }, (err, stdout, stderr) => {
       if (err) return reject(new Error('agent image build failed: ' + String(stderr || err.message).trim().slice(-400)));
       log('built agent image locally\n');

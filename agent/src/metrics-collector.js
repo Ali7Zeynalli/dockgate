@@ -152,7 +152,7 @@ class MetricsCollector {
       const fetches = containers.map(async (c) => {
         try {
           const name = (c.Names && c.Names[0] ? c.Names[0] : c.Id).replace(/^\//, '');
-          // Exclude the notifier-agent container itself if desired or keep it lightweight
+          // Exclude the dockgate-agent container itself if desired or keep it lightweight
           const containerObj = this.docker.getContainer(c.Id);
           const stats = await containerObj.stats({ stream: false });
 

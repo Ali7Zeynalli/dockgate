@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const Storage = require('../../notifier-agent/src/storage');
+const Storage = require('../../agent/src/storage');
 
 describe('Agent Observability - Centralized Log Storage & Classification', () => {
   it('correctly classifies log levels based on message content and stream', () => {

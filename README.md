@@ -289,7 +289,7 @@ Honest, current gaps:
 | Database | better-sqlite3 11 (WAL) |
 | Email | nodemailer 8 |
 | Frontend | Vanilla JS / CSS (no build step) · xterm.js · Chart.js — all **bundled in `public/vendor/`** (air-gap friendly) |
-| Agent image | `notifier-agent/` — `node:22-alpine`, dockerode + nodemailer, independent semver |
+| Agent image | `agent/` — `node:22-alpine`, dockerode + nodemailer, independent semver |
 
 Footprint: **~30–96 MB RAM, <5% CPU** at idle (capped at 256 MB / 0.5 CPU by compose).
 

@@ -1,4 +1,4 @@
-// Edge Notifier (agent) — Settings ▸ Notifications panel. Plain-script globals (loaded before settings.js).
+// Edge Agent (observability) — Settings ▸ Notifications panel. Plain-script globals (loaded before settings.js).
 // Renders a per-server table with Install / Start-Stop / Update / Channel / Remove, an "Install on all"
 // fan-out, and a re-openable deploy-log modal. All actions hit /api/agent/* (DockGate-initiated outbound).
 (function () {
@@ -46,7 +46,7 @@
   function openJobModal(jobId, onDone) {
     const body = `<pre id="edge-job-log" style="max-height:340px;overflow:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;">Starting…</pre>
       <div id="edge-job-status" style="margin-top:10px;font-size:13px;font-weight:600;color:var(--text-muted);">⏳ Working…</div>`;
-    const m = showModal('Notifier agent — deploy', body, []);
+    const m = showModal('DockGate Agent — deploy', body, []);
     const footer = m.overlay.querySelector('#modal-footer');
     const closeBtn = document.createElement('button');
     closeBtn.className = 'btn btn-secondary';
@@ -161,12 +161,12 @@
     }).join('');
 
     const body = `
-      <div class="text-xs text-muted" style="margin-bottom:10px;">Pick the servers to install the notifier agent on. Already-installed servers start unchecked — re-checking one reinstalls (recreates) it.</div>
+      <div class="text-xs text-muted" style="margin-bottom:10px;">Pick the servers to install the DockGate agent on. Already-installed servers start unchecked — re-checking one reinstalls (recreates) it.</div>
       <label style="display:flex;align-items:center;gap:10px;padding:4px 0 10px;font-weight:600;cursor:pointer;border-bottom:1px solid var(--border);">
         <input type="checkbox" id="edge-pick-all"> <span>Select all</span>
       </label>
       <div style="max-height:320px;overflow:auto;">${rows}</div>`;
-    const m = showModal('Install notifier agent — choose servers', body, []);
+    const m = showModal('Install DockGate agent — choose servers', body, []);
     const allCb = m.overlay.querySelector('#edge-pick-all');
     allCb?.addEventListener('change', () => {
       m.overlay.querySelectorAll('.edge-pick').forEach(cb => { cb.checked = allCb.checked; });
@@ -189,27 +189,27 @@
 
   // ---- public entry points used by settings.js renderNotifications ----
 
-  window.edgeNotifierSectionHtml = function (channelConfigured) {
+  window.edgeAgentSectionHtml = function (channelConfigured) {
     if (!channelConfigured) {
       return `<div class="settings-section" style="margin-top:20px;">
-        <div class="settings-section-title">Edge Notifier (agent)</div>
-        <div class="text-xs text-muted">Configure a Telegram or SMTP channel above first — the agent reuses it to send alerts directly from each server (no inbound access needed).</div>
+        <div class="settings-section-title">Edge Agent (observability)</div>
+        <div class="text-xs text-muted">Configure a Telegram or SMTP channel above to enable alerts — the agent can also be installed in metrics-only mode for monitoring without notifications.</div>
       </div>`;
     }
     return `<div class="settings-section" style="margin-top:20px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap;">
-        <div class="settings-section-title" style="margin:0;">Edge Notifier (agent)</div>
+        <div class="settings-section-title" style="margin:0;">Edge Agent (observability)</div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-ghost btn-sm" id="edge-refresh">↻ Refresh</button>
           <button class="btn btn-primary btn-sm" id="edge-install-all">Install on servers…</button>
         </div>
       </div>
-      <div class="settings-row-desc" style="margin-bottom:10px;">A tiny <strong>outbound-only</strong> container on each server watches its Docker events and sends alerts through the channel above — no inbound ports, works behind NAT, keeps alerting if DockGate is offline. Installing it stops DockGate's central monitor for that host (no duplicate alerts); removing it resumes the monitor.</div>
+      <div class="settings-row-desc" style="margin-bottom:10px;">A tiny <strong>outbound-only</strong> container on each server collects metrics, aggregates logs, watches Docker events, and sends alerts through configured channels — no inbound ports, works behind NAT, keeps monitoring if DockGate is offline. Installing it stops DockGate's central monitor for that host (no duplicate alerts); removing it resumes the monitor.</div>
       <div id="edge-agent-table"><div class="text-xs text-muted">Loading servers…</div></div>
     </div>`;
   };
 
-  window.attachEdgeNotifierHandlers = function (root, channelConfigured) {
+  window.attachEdgeAgentHandlers = function (root, channelConfigured) {
     if (!channelConfigured) return;
 
     async function load() {
@@ -231,8 +231,8 @@
                 const { jobId } = await API.post('/agent/' + act, { serverId: sid });
                 openJobModal(jobId, load);
               } else if (act === 'remove') {
-                showDeleteConfirm('Remove notifier agent', {
-                  message: `Remove the notifier agent from <strong>${escapeHtml(sid)}</strong>? DockGate's central monitor will resume watching it.`,
+                showDeleteConfirm('Remove DockGate agent', {
+                  message: `Remove the DockGate agent from <strong>${escapeHtml(sid)}</strong>? DockGate's central monitor will resume watching it.`,
                   phrase: sid, confirmLabel: 'Remove',
                   onConfirm: async () => {
                     try { await API.post('/agent/remove', { serverId: sid }); showToast('Agent removed'); load(); }
@@ -263,7 +263,7 @@
   // Push the current rules + channel settings to every installed agent (called after the user
   // changes notification rules / channels, so central edits propagate without per-agent clicks).
   // silentIfNone: don't toast when there are no installed agents (used by the auto-hook).
-  window.edgeNotifierSync = async function (silentIfNone) {
+  window.edgeAgentSync = async function (silentIfNone) {
     try {
       const r = await API.post('/agent/sync', {});
       if (r && r.jobId) { showToast(`Pushing settings to ${r.count} agent(s)…`, 'info'); openJobModal(r.jobId); }
