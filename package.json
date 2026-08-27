@@ -35,7 +35,7 @@
     "better-sqlite3": "^11.10.0",
     "dockerode": "^5.0.0",
     "express": "^4.22.2",
-    "nodemailer": "^8.0.5",
+    "nodemailer": "^9.0.1",
     "socket.io": "^4.8.3"
   },
   "optionalDependencies": {
