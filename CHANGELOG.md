@@ -2,7 +2,7 @@
 
 ---
 
-## [2.4.4] - 2026-08-28
+## [2.4.5] - 2026-08-28
 
 ### Added
 - **Global Quick Terminal (Floating & Minimizable Modal)**:
