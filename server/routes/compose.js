@@ -2095,26 +2095,27 @@ router.post('/:project/git-pull', async (req, res) => {
     const url = keyId ? ctx.repoUrl : gitUrlWithToken(ctx.repoUrl, ctx.token);
     const before = (await gitInDir(server, root, ['rev-parse', 'HEAD'], null, keyId)).trim();
 
-    if (ctx.type === 'managed') {
-      if (ctx.isRemote && server) {
-        await remoteCompose.runGitOnRemote(server, keyId, root, ['fetch', '--depth', '1', 'origin', branch]);
-        await remoteCompose.runGitOnRemote(server, keyId, root, ['reset', '--hard', 'FETCH_HEAD']);
+    const force = req.body && (req.body.force === true || req.body.force === '1');
+
+    if (force) {
+      if (ctx.type === 'managed') {
+        if (ctx.isRemote && server) {
+          await remoteCompose.runGitOnRemote(server, keyId, root, ['fetch', '--depth', '1', 'origin', branch]);
+          await remoteCompose.runGitOnRemote(server, keyId, root, ['reset', '--hard', 'FETCH_HEAD']);
+        } else {
+          await gitWithKey(keyId, ['-C', root, 'fetch', '--depth', '1', 'origin', branch]);
+          await gitWithKey(keyId, ['-C', root, 'reset', '--hard', 'FETCH_HEAD']);
+        }
       } else {
-        await gitWithKey(keyId, ['-C', root, 'fetch', '--depth', '1', 'origin', branch]);
-        await gitWithKey(keyId, ['-C', root, 'reset', '--hard', 'FETCH_HEAD']);
+        await gitInDir(server, root, ['fetch', '--all', '--quiet'], null, keyId);
+        const targetRef = branch && branch !== 'HEAD' ? `origin/${branch}` : '@{u}';
+        await gitInDir(server, root, ['reset', '--hard', targetRef], null, keyId);
       }
     } else {
-      // Adopted / external git checkout
-      await gitInDir(server, root, ['fetch', '--all', '--quiet'], null, keyId);
-      const targetRef = branch && branch !== 'HEAD' ? `origin/${branch}` : '@{u}';
       try {
-        await gitInDir(server, root, ['merge', '--ff-only', targetRef], null, keyId);
+        await gitInDir(server, root, ['pull'], null, keyId);
       } catch (e) {
-        if (req.body && (req.body.force === true || req.body.force === '1')) {
-          await gitInDir(server, root, ['reset', '--hard', targetRef], null, keyId);
-        } else {
-          return res.status(409).json({ error: 'Not a fast-forward — checkout has diverged from remote. Use ⚠️ Force Pull to reset to origin/' + (branch || 'main') + '.' });
-        }
+        return res.status(409).json({ error: 'Git pull failed: ' + e.message + '. You may need to resolve conflicts manually on the server, or use ⚠️ Force Pull to overwrite local changes.' });
       }
     }
 
@@ -2474,19 +2475,14 @@ router.post('/git-pull-path', async (req, res) => {
       try {
         setStep(job, 'pull', 'running');
         jobLog(job, `Pulling git repository at ${root}...\n`);
-        const targetRef = branch ? `origin/${branch}` : '@{u}';
-        await gitInDir(server, root, ['fetch', '--all', '--quiet'], stream);
         if (force) {
+          const targetRef = branch ? `origin/${branch}` : '@{u}';
+          await gitInDir(server, root, ['fetch', '--all', '--quiet'], stream);
           jobLog(job, `$ git -C ${root} reset --hard ${targetRef}\n`);
           await gitInDir(server, root, ['reset', '--hard', targetRef], stream);
         } else {
-          try {
-            jobLog(job, `$ git -C ${root} merge --ff-only ${targetRef}\n`);
-            await gitInDir(server, root, ['merge', '--ff-only', targetRef], stream);
-          } catch (e) {
-            jobLog(job, `Fast-forward failed, performing fetch & reset...\n`);
-            await gitInDir(server, root, ['reset', '--hard', targetRef], stream);
-          }
+          jobLog(job, `$ git -C ${root} pull\n`);
+          await gitInDir(server, root, ['pull'], stream);
         }
         setStep(job, 'pull', 'done');
 

@@ -2,6 +2,16 @@
 
 ---
 
+## [2.3.3] - 2026-08-28
+
+### Changed — Native Git Pull Behavior (v2.3.3)
+- **Git Operations (`server/routes/compose.js`)**:
+  - The standard **"Pull"** action (without force) now uses a traditional, native `git pull` command under the hood, instead of forcing `git fetch` and `git merge --ff-only` with explicit origin branches.
+  - This respects the repository's existing upstream branch tracking configuration ("onsuzda yaddasinda qalib") natively on the server.
+  - If a standard pull fails due to conflicts, it safely stops and prompts the user to resolve them or use **"Force Pull"** (which retains the `git fetch` + `git reset --hard` behavior to discard local changes).
+
+---
+
 ## [2.3.2] - 2026-08-27
 
 ### Fixed — Agent Metrics-Only UI Install Logic (v2.3.2)
