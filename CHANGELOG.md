@@ -2,6 +2,21 @@
 
 ---
 
+## [2.4.0] - 2026-08-28
+
+### Fixed — Persistent SSH Key Config for Git Pull (v2.4.0)
+- **Root Cause**: Git repos cloned via SSH deploy key had no permanent link between the repo and the key. DockGate used a temporary `GIT_SSH_COMMAND` env var that was discarded after each operation, so subsequent `git pull` (both from UI and from server terminal) failed with `Permission denied (publickey)`.
+- **SSH Key Persistence (`ssh-keys.js`)**:
+  - Added `persistDeployKey(id)` — writes the deploy key to a permanent file (`data/git-deploy-keys/dg_key_<id>`) on local servers, so it survives across operations.
+- **Remote Server Key Binding (`remote-compose.js`)**:
+  - Added `persistGitSshConfig(server, repoRoot, keyId)` — uploads the key to `~/.dockgate/keys/` on the remote server and writes `core.sshCommand` into the repo's `.git/config` with the resolved absolute key path.
+- **Automatic Config on Clone & Pull (`compose.js`)**:
+  - After every `git clone` (both local and remote deploy), the SSH config is now automatically persisted into the repo.
+  - Before every `git pull` and `gitRedeploy`, the SSH config is refreshed/ensured.
+  - **Result**: `git pull` now works reliably from DockGate UI, AND from a manual terminal session on the server — no extra setup needed.
+
+---
+
 ## [2.3.3] - 2026-08-28
 
 ### Changed — Native Git Pull Behavior (v2.3.3)

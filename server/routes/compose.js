@@ -104,7 +104,7 @@ function findComposeFiles(dir) {
       const r = rel ? rel + '/' + e.name : e.name;
       if (e.isDirectory()) { if (!SKIP.has(e.name)) walk(path.join(cur, e.name), r); continue; }
       if (!/\.ya?ml$/i.test(e.name)) continue;
-      try { if (/^services:/m.test(fs.readFileSync(path.join(cur, e.name), 'utf8').slice(0, 65536))) out.push(r); } catch (e2) {}
+      try { if (/^services:/m.test(fs.readFileSync(path.join(cur, e.name), 'utf8').slice(0, 65536))) out.push(r); } catch (e2) { }
       if (out.length >= 50) return; // sanity cap
     }
   };
@@ -244,7 +244,7 @@ router.get('/', async (req, res) => {
             p.gitExternal = true;
             p.gitInfo = { external: true };
           }
-        } catch (e) {}
+        } catch (e) { }
       } else {
         const cached = externalGitCache.get(activeId + ':' + p.name);
         if (cached && cached.result && cached.result.isGit && !cached.result.managed) {
@@ -421,12 +421,12 @@ async function scanComposeFilesForRebuild(project) {
   if (r.files && r.cwd) r.files.forEach(f => currentAbs.add(path.posix.join(r.cwd, f)));
   let scanRoot = r.cwd || null;
   if (!scanRoot) return { ok: false, reason: r.reason || 'Could not locate this project on the host' };
-  try { const top = (await gitInDir(server, scanRoot, ['rev-parse', '--show-toplevel'])).trim(); if (top && isSafeHostPath(top)) scanRoot = top; } catch (e) {}
+  try { const top = (await gitInDir(server, scanRoot, ['rev-parse', '--show-toplevel'])).trim(); if (top && isSafeHostPath(top)) scanRoot = top; } catch (e) { }
   const entries = [];
   if (!server) {
     for (const rel of findComposeFiles(scanRoot).slice(0, 40)) {
       let services = [];
-      try { const sc = await scanComposeFile(scanRoot, rel); services = sc.services || []; } catch (e) {}
+      try { const sc = await scanComposeFile(scanRoot, rel); services = sc.services || []; } catch (e) { }
       entries.push({ path: rel, file: path.posix.join(scanRoot, rel), services });
     }
   } else {
@@ -901,11 +901,11 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
         setStep(job, 'upload', 'done');
         baseDir = remotePath;
       } else {
-        if (update && clean) { current = 'clean'; setStep(job, 'clean', 'running'); job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server…`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) {} setStep(job, 'clean', 'done'); }
+        if (update && clean) { current = 'clean'; setStep(job, 'clean', 'running'); job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server…`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) { } setStep(job, 'clean', 'done'); }
         current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server…\n`);
         uploaded = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath, (d, t) => jobStream(job, `\ruploaded ${d}/${t} files`));
         jobLog(job, `\nUploaded ${uploaded} file(s).`); setStep(job, 'upload', 'done');
-        if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) {}
+        if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) { }
         baseDir = remotePath;
       }
     } else {
@@ -986,7 +986,7 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
       const gitComposeFile = plan ? ((plan.stacks[0] && plan.stacks[0].composeFile) || composeFile) : composeFile;
       // Record the commit we just deployed → the baseline a future redeploy diffs against ("what changed").
       let deployedCommit = u.git.deployedCommit || '';
-      try { if (u.dir) deployedCommit = (await gitRun(['-C', u.dir, 'rev-parse', 'HEAD'])).stdout.trim() || deployedCommit; } catch (e) {}
+      try { if (u.dir) deployedCommit = (await gitRun(['-C', u.dir, 'rev-parse', 'HEAD'])).stdout.trim() || deployedCommit; } catch (e) { }
       fs.writeFileSync(gitMetaPath(u.project), JSON.stringify({ ...u.git, serverId: isRemote ? serverId : 'local', deployedCommit, plan: plan || null, deployMode: isRemote ? 'remote' : 'local', remotePath: isRemote ? u.deploy.remotePath : '', composeFile: gitComposeFile }, null, 2), { mode: 0o600 });
     }
     job.phase = 'done'; job.status = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
@@ -994,7 +994,7 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
     if (current) setStep(job, current, 'failed');
     job.status = 'error'; job.phase = 'error'; job.error = (err.stderr || err.message || 'deploy failed').toString();
     jobLog(job, '✗ ' + job.error); job.finishedAt = Date.now();
-    try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) {}
+    try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) { }
   }
 }
 
@@ -1029,6 +1029,7 @@ async function runGitDeployJob(job, p) {
       cloneArgs.push(p.keyId ? p.repoUrl : gitUrlWithToken(p.repoUrl, p.token), remotePath);
 
       await remoteCompose.runGitOnRemote(server, p.keyId, null, cloneArgs, stream);
+      await persistSshConfigForRepo(server, remotePath, p.keyId);
       setStep(job, 'clone', 'done'); current = null;
 
       const projectDir = relSub ? path.posix.join(remotePath, relSub) : remotePath;
@@ -1039,7 +1040,7 @@ async function runGitDeployJob(job, p) {
 
       try {
         deployedCommit = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'HEAD'])).trim();
-      } catch (e) {}
+      } catch (e) { }
 
       fs.mkdirSync(managedDir(p.project), { recursive: true });
       fs.writeFileSync(gitMetaPath(p.project), JSON.stringify({ repoUrl: p.repoUrl, branch: p.branch, token: p.keyId ? '' : p.token, keyId: p.keyId || '', subdir: relSub, composeFile, secret: p.secret, deployedCommit, serverId, deployMode: 'remote', remotePath }, null, 2), { mode: 0o600 });
@@ -1060,6 +1061,7 @@ async function runGitDeployJob(job, p) {
       if (p.branch) cloneArgs.push('--branch', p.branch);
       cloneArgs.push(p.keyId ? p.repoUrl : gitUrlWithToken(p.repoUrl, p.token), dir);
       await gitWithKey(p.keyId, cloneArgs, { onData: stream });
+      await persistSshConfigForRepo(null, dir, p.keyId);
       setStep(job, 'clone', 'done'); current = null;
 
       const projectDir = relSub ? path.join(dir, relSub) : dir;
@@ -1067,7 +1069,7 @@ async function runGitDeployJob(job, p) {
       if (!composeFile) { const found = findComposeFiles(projectDir); if (found.length) composeFile = found[0]; }
       if (!composeFile) throw Object.assign(new Error(`No compose file (docker-compose.yml or any *.yml with "services:") in the repo${relSub ? ' subdir "' + relSub + '"' : ''}`), { statusCode: 400 });
 
-      try { deployedCommit = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) {}
+      try { deployedCommit = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) { }
       fs.writeFileSync(gitMetaPath(p.project), JSON.stringify({ repoUrl: p.repoUrl, branch: p.branch, token: p.keyId ? '' : p.token, keyId: p.keyId || '', subdir: relSub, composeFile, secret: p.secret, deployedCommit, serverId: 'local', deployMode: 'local' }, null, 2), { mode: 0o600 });
       try { await execFileAsync('docker', ['compose', '-f', composeFile, 'config', '-q'], { cwd: projectDir }); }
       catch (e) { throw Object.assign(new Error('Invalid compose file: ' + (e.stderr || e.message)), { statusCode: 400 }); }
@@ -1215,7 +1217,7 @@ router.post('/deploy-folder-finish', async (req, res) => {
       if (!composeFile) {
         if (!up) {
           composeFile = 'compose.yaml';
-          try { fs.writeFileSync(path.join(u.dir, composeFile), `# DockGate — ${u.project}\nservices:\n  app:\n    image: alpine\n    command: echo "Configure services in compose.yaml"\n`); } catch (e) {}
+          try { fs.writeFileSync(path.join(u.dir, composeFile), `# DockGate — ${u.project}\nservices:\n  app:\n    image: alpine\n    command: echo "Configure services in compose.yaml"\n`); } catch (e) { }
         } else {
           throw Object.assign(new Error('No docker-compose.yml (or compose.yaml) found in the folder'), { statusCode: 400 });
         }
@@ -1237,9 +1239,9 @@ router.post('/deploy-folder-finish', async (req, res) => {
   } catch (err) {
     // Validation/setup failure → clean the staging dir so a retry starts fresh.
     if (u) {
-      if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) {}
+      if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) { }
       if (u.remoteReady && u.deploy && u.deploy.server && u.deploy.remotePath) {
-        remoteCompose.removeRemoteDir(u.deploy.server, u.deploy.remotePath).catch(() => {});
+        remoteCompose.removeRemoteDir(u.deploy.server, u.deploy.remotePath).catch(() => { });
       }
       folderUploads.delete((req.body || {}).uploadId);
     }
@@ -1251,9 +1253,9 @@ router.post('/deploy-folder-finish', async (req, res) => {
 router.post('/deploy-folder-abort', (req, res) => {
   const u = folderUploads.get((req.body || {}).uploadId);
   if (u) {
-    if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) {}
+    if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) { }
     if (u.remoteReady && u.deploy && u.deploy.server && u.deploy.remotePath) {
-      remoteCompose.removeRemoteDir(u.deploy.server, u.deploy.remotePath).catch(() => {});
+      remoteCompose.removeRemoteDir(u.deploy.server, u.deploy.remotePath).catch(() => { });
     }
     folderUploads.delete((req.body || {}).uploadId);
   }
@@ -1491,7 +1493,7 @@ router.post('/deploy-git-prepare', async (req, res) => {
       const server = remoteCompose.getActiveRemoteServer();
       if (!server) return res.status(400).json({ error: 'Remote deploy needs a remote SSH server active in the header.' });
       if (!(await remoteCompose.checkComposeAvailable(server))) return res.status(400).json({ error: 'docker compose (v2) is not available on the remote host — install it there first.' });
-      
+
       const remotePath = await remoteCompose.resolveRemotePath(server, (target.remotePath || `~/.dockgate/projects/${project}`));
       const deploy = { mode: 'remote', server, remotePath, source: 'git', serverId: server.id };
 
@@ -1509,7 +1511,7 @@ router.post('/deploy-git-prepare', async (req, res) => {
       // Scan compose files directly on the remote server
       const { files } = await remoteScanComposeFiles(server, remotePath, { maxdepth: 6 });
       let deployedCommit = '';
-      try { deployedCommit = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'HEAD'])).trim(); } catch (e) {}
+      try { deployedCommit = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'HEAD'])).trim(); } catch (e) { }
 
       folderUploads.set(uploadId, { project, remoteReady: true, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl, branch, keyId: keyId || '', token: keyId ? '' : token, secret, deployedCommit, serverId: server.id } });
       return res.json({ uploadId, files, target: deploy.mode, remotePath: deploy.remotePath, webhookSecret: secret });
@@ -1528,7 +1530,7 @@ router.post('/deploy-git-prepare', async (req, res) => {
     const scanned = [];
     for (const f of files) scanned.push(await scanComposeFile(dir, f));
     let deployedCommit = '';
-    try { deployedCommit = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) {}
+    try { deployedCommit = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) { }
     folderUploads.set(uploadId, { project, dir, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl, branch, keyId: keyId || '', token: keyId ? '' : token, secret, deployedCommit, serverId: 'local' } });
     res.json({ uploadId, files: scanned, target: deploy.mode, remotePath: deploy.remotePath, webhookSecret: secret });
   } catch (err) { res.status(500).json({ error: redactToken(err.message, token) }); }
@@ -1577,6 +1579,7 @@ async function gitRedeploy(project, onData) {
     const remotePath = meta.remotePath || (dm && dm.remotePath);
     const composeFile = meta.composeFile || 'docker-compose.yml';
     if (onData) onData(`[${server.host}] Fetching latest code on server...\n`);
+    await persistSshConfigForRepo(server, remotePath, meta.keyId);
     await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['fetch', '--depth', '1', 'origin', meta.branch || 'HEAD'], onData);
     await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['reset', '--hard', 'FETCH_HEAD'], onData);
     const output = await remoteCompose.runComposeInRemoteDir(server, remotePath, project, ['up', '-d', '--build'], onData);
@@ -1585,6 +1588,7 @@ async function gitRedeploy(project, onData) {
 
   const dir = managedDir(project);
   const projectDir = meta.subdir ? path.join(dir, meta.subdir) : dir;
+  await persistSshConfigForRepo(null, dir, meta.keyId);
   await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', '--progress', 'origin', meta.branch || 'HEAD'], { onData });
   await gitWithKey(meta.keyId, ['-C', dir, 'reset', '--hard', 'FETCH_HEAD'], { onData });
   const composeFile = meta.composeFile || findComposeFile(projectDir);
@@ -1656,10 +1660,10 @@ async function streamGitChanges(job, dir, meta) {
   if (oldSHA === newSHA) { jobLog(job, `\n✓ Already at the latest commit ${newSHA.slice(0, 7)} — nothing new pulled.`); return; }
   // The shallow clone only has HEAD; bring in the old commit's tree so we can diff against it.
   const url = meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token);
-  try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', url, oldSHA]); } catch (e) {}
+  try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', url, oldSHA]); } catch (e) { }
   let names = '', stat = '';
-  try { names = (await gitRun(['-C', dir, 'diff', '--name-status', oldSHA, newSHA])).stdout.trim(); } catch (e) {}
-  try { stat = (await gitRun(['-C', dir, 'diff', '--shortstat', oldSHA, newSHA])).stdout.trim(); } catch (e) {}
+  try { names = (await gitRun(['-C', dir, 'diff', '--name-status', oldSHA, newSHA])).stdout.trim(); } catch (e) { }
+  try { stat = (await gitRun(['-C', dir, 'diff', '--shortstat', oldSHA, newSHA])).stdout.trim(); } catch (e) { }
   jobLog(job, `\n📦 Changes pulled (${oldSHA.slice(0, 7)} → ${newSHA.slice(0, 7)}):`);
   if (names) {
     const icon = s => s.startsWith('A') ? '✚' : s.startsWith('D') ? '🗑' : s.startsWith('R') ? '➟' : '✎';
@@ -1681,10 +1685,10 @@ function gitRedeployJob(project, reqIp) {
   const dm = readDeployMeta(project);
   const targetServerId = meta.serverId || (dm && dm.serverId);
   const wantRemote = (targetServerId && targetServerId !== 'local') || meta.deployMode === 'remote' || (dm && dm.mode === 'remote');
-  
+
   const job = { id: crypto.randomBytes(8).toString('hex'), project, status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
   deployJobs.set(job.id, job);
-  
+
   (async () => {
     try {
       if (wantRemote) {
@@ -1709,7 +1713,7 @@ function gitRedeployJob(project, reqIp) {
 
         const fromSHA = (meta.deployedCommit || '').trim();
         let toSHA = '';
-        try { toSHA = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'FETCH_HEAD'])).trim(); } catch (e) {}
+        try { toSHA = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['rev-parse', 'FETCH_HEAD'])).trim(); } catch (e) { }
 
         // Reset to FETCH_HEAD
         jobLog(job, `\n[${server.host}] $ git reset --hard FETCH_HEAD\n`);
@@ -1730,7 +1734,7 @@ function gitRedeployJob(project, reqIp) {
               }
             }
             if (stat) jobLog(job, `  ${stat}\n`);
-          } catch (e) {}
+          } catch (e) { }
         } else if (toSHA) {
           jobLog(job, `✓ At commit ${toSHA.slice(0, 7)}\n`);
         }
@@ -1759,7 +1763,7 @@ function gitRedeployJob(project, reqIp) {
         cloneArgs.push(meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token), dir);
         job.phase = 'clone'; jobLog(job, `$ git clone ${redactToken(meta.repoUrl, meta.token)}\n`);
         await gitWithKey(meta.keyId, cloneArgs, { onData: (c) => jobStream(job, c) });
-        await streamGitChanges(job, dir, meta).catch(() => {});
+        await streamGitChanges(job, dir, meta).catch(() => { });
         const u = { project, dir, files: 1, deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId, token: meta.token, secret: meta.secret, serverId: 'local' }, plan: meta.plan || null };
         await runDeployJob(job, u, meta.composeFile, true, reqIp);
       }
@@ -1783,7 +1787,7 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
     const dm = readDeployMeta(project);
     const targetServerId = meta.serverId || (dm && dm.serverId);
     const wantRemote = (targetServerId && targetServerId !== 'local') || meta.deployMode === 'remote' || (dm && dm.mode === 'remote');
-    
+
     let deploy = { mode: 'local', source: 'git' };
     if (wantRemote) {
       let server = null;
@@ -1812,23 +1816,23 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
     // Diff vs the last-deployed commit → changed files → affected stacks (a compose whose folder has a change).
     const fromSHA = (meta.deployedCommit || '').trim();
     let toSHA = '', changedFiles = [], commits = [];
-    try { toSHA = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) {}
+    try { toSHA = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) { }
     if (fromSHA && toSHA && fromSHA !== toSHA) {
-      try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', url, fromSHA]); } catch (e) {}
-      try { const o = (await gitRun(['-C', dir, 'diff', '--name-only', fromSHA, toSHA])).stdout.trim(); changedFiles = o ? o.split('\n').map(s => s.trim()).filter(Boolean) : []; } catch (e) {}
+      try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', url, fromSHA]); } catch (e) { }
+      try { const o = (await gitRun(['-C', dir, 'diff', '--name-only', fromSHA, toSHA])).stdout.trim(); changedFiles = o ? o.split('\n').map(s => s.trim()).filter(Boolean) : []; } catch (e) { }
       // The actual commits pulled (the "what/how") — deepen the branch so fromSHA..toSHA is walkable, then log. Best-effort.
-      try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '200', url, meta.branch || toSHA]); } catch (e) {}
+      try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '200', url, meta.branch || toSHA]); } catch (e) { }
       try {
         const lo = (await gitRun(['-C', dir, 'log', '--pretty=format:%h\x1f%an\x1f%ad\x1f%s', '--date=short', `${fromSHA}..${toSHA}`])).stdout.trim();
         commits = lo ? lo.split('\n').map(l => { const p = l.split('\x1f'); return { hash: p[0], author: p[1], date: p[2], subject: p[3] }; }) : [];
-      } catch (e) {}
+      } catch (e) { }
     }
     // No baseline yet (project deployed before commit-tracking, or externally) → PERSIST the current
     // commit as the baseline so the NEXT pull can actually diff. (Pull never touches running containers;
     // this only sets the reference point. Without this, every pull was stuck on "first pull".)
     let baselineRecorded = false;
     if (!fromSHA && toSHA) {
-      try { fs.writeFileSync(gitMetaPath(project), JSON.stringify({ ...meta, serverId: meta.serverId || (wantRemote ? targetServerId : 'local'), deployedCommit: toSHA }, null, 2), { mode: 0o600 }); baselineRecorded = true; } catch (e) {}
+      try { fs.writeFileSync(gitMetaPath(project), JSON.stringify({ ...meta, serverId: meta.serverId || (wantRemote ? targetServerId : 'local'), deployedCommit: toSHA }, null, 2), { mode: 0o600 }); baselineRecorded = true; } catch (e) { }
     }
     const affectedStacks = scanned.filter(s => {
       const d = s.dir === '.' ? '' : s.dir.replace(/\/+$/, '') + '/';
@@ -1836,8 +1840,10 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
     }).map(s => s.path);
     const secret = meta.secret || crypto.randomBytes(18).toString('hex');
     folderUploads.set(uploadId, { project, dir, total: 0, files: 1, created: Date.now(), deploy, git: { repoUrl: meta.repoUrl, branch: meta.branch, keyId: meta.keyId || '', token: meta.keyId ? '' : (meta.token || ''), secret, serverId: meta.serverId || (wantRemote ? targetServerId : 'local') }, redeploy: true });
-    res.json({ uploadId, files: scanned, target: deploy.mode, remotePath: deploy.remotePath,
-      diff: { fromSHA, toSHA, changedFiles, commits, affectedStacks, hasBaseline: !!fromSHA, baselineRecorded, upToDate: !!(fromSHA && toSHA && fromSHA === toSHA) } });
+    res.json({
+      uploadId, files: scanned, target: deploy.mode, remotePath: deploy.remotePath,
+      diff: { fromSHA, toSHA, changedFiles, commits, affectedStacks, hasBaseline: !!fromSHA, baselineRecorded, upToDate: !!(fromSHA && toSHA && fromSHA === toSHA) }
+    });
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.message || 'redeploy prepare failed').toString() }); }
 });
 
@@ -1960,11 +1966,11 @@ async function resolveProjectGitContext(project) {
         const root = (await gitInDir(server, candidatePath, ['rev-parse', '--show-toplevel'])).trim();
         if (root && isSafeHostPath(root)) {
           let branch = '';
-          try { branch = (await gitInDir(server, root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim(); } catch (e) {}
+          try { branch = (await gitInDir(server, root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim(); } catch (e) { }
           let repoUrl = '';
-          try { repoUrl = redactRemoteUrl((await gitInDir(server, root, ['remote', 'get-url', 'origin'])).trim()); } catch (e) {}
+          try { repoUrl = redactRemoteUrl((await gitInDir(server, root, ['remote', 'get-url', 'origin'])).trim()); } catch (e) { }
           let deployedCommit = '';
-          try { deployedCommit = (await gitInDir(server, root, ['rev-parse', 'HEAD'])).trim(); } catch (e) {}
+          try { deployedCommit = (await gitInDir(server, root, ['rev-parse', 'HEAD'])).trim(); } catch (e) { }
           return {
             isGit: true,
             type: dm.source || 'adopt',
@@ -1999,11 +2005,11 @@ async function resolveProjectGitContext(project) {
         const root = (await gitInDir(server, wd, ['rev-parse', '--show-toplevel'])).trim();
         if (root && isSafeHostPath(root)) {
           let branch = '';
-          try { branch = (await gitInDir(server, root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim(); } catch (e) {}
+          try { branch = (await gitInDir(server, root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim(); } catch (e) { }
           let repoUrl = '';
-          try { repoUrl = redactRemoteUrl((await gitInDir(server, root, ['remote', 'get-url', 'origin'])).trim()); } catch (e) {}
+          try { repoUrl = redactRemoteUrl((await gitInDir(server, root, ['remote', 'get-url', 'origin'])).trim()); } catch (e) { }
           let deployedCommit = '';
-          try { deployedCommit = (await gitInDir(server, root, ['rev-parse', 'HEAD'])).trim(); } catch (e) {}
+          try { deployedCommit = (await gitInDir(server, root, ['rev-parse', 'HEAD'])).trim(); } catch (e) { }
           const cfgFiles = String(proj.configFiles || '').split(',').map(s => s.trim()).filter(Boolean);
           const composeFile = cfgFiles.length ? path.posix.basename(cfgFiles[0]) : 'docker-compose.yml';
           return {
@@ -2028,7 +2034,7 @@ async function resolveProjectGitContext(project) {
         }
       } catch (e) { /* not a git repo */ }
     }
-  } catch (e) {}
+  } catch (e) { }
 
   return { isGit: false, project };
 }
@@ -2053,13 +2059,13 @@ async function detectExternalGit(project) {
   };
   out.detached = !out.branch || out.branch === 'HEAD';
   try { await gitInDir(server, root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']); out.hasUpstream = true; } catch (e) { out.hasUpstream = false; }
-  let dirty = ''; try { dirty = (await gitInDir(server, root, ['status', '--porcelain'])).trim(); } catch (e) {}
+  let dirty = ''; try { dirty = (await gitInDir(server, root, ['status', '--porcelain'])).trim(); } catch (e) { }
   out.dirty = !!dirty;
   out.dirtyFiles = dirty ? dirty.split('\n').filter(Boolean).slice(0, 30) : [];
   out.canPull = !out.detached && !out.dirty;
   out.reason = out.detached ? 'Detached HEAD — pull unavailable'
     : out.dirty ? 'Uncommitted changes on the server — pull would not be safe (resolve them on the host first)'
-    : '';
+      : '';
   return out;
 }
 
@@ -2097,6 +2103,9 @@ router.post('/:project/git-pull', async (req, res) => {
 
     const force = req.body && (req.body.force === true || req.body.force === '1');
 
+    // Ensure SSH key is persisted in the repo's .git/config so pull works
+    await persistSshConfigForRepo(server, root, keyId);
+
     if (force) {
       if (ctx.type === 'managed') {
         if (ctx.isRemote && server) {
@@ -2133,14 +2142,14 @@ router.post('/:project/git-pull', async (req, res) => {
       try {
         const diffOut = (await gitInDir(server, root, ['diff', '--name-status', before + '..' + after], null, keyId)).trim();
         changed = diffOut ? diffOut.split('\n').filter(Boolean).slice(0, 200) : [];
-      } catch (e) {}
+      } catch (e) { }
       try {
         const logOut = (await gitInDir(server, root, ['log', '--pretty=%h%x09%ad%x09%s', '--date=short', before + '..' + after], null, keyId)).trim();
         commits = logOut ? logOut.split('\n').filter(Boolean).slice(0, 100).map(l => {
           const parts = l.split('\t');
           return { hash: parts[0], date: parts[1], subject: parts.slice(2).join('\t') };
         }) : [];
-      } catch (e) {}
+      } catch (e) { }
     }
 
     logAction({
@@ -2279,7 +2288,7 @@ async function getAllGitProjects(activeId, server) {
         candidates.push(p.name);
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 
   // 2. Stopped / down projects in COMPOSE_DIR
   if (fs.existsSync(COMPOSE_DIR)) {
@@ -2392,7 +2401,7 @@ router.post('/git-sync-all', async (req, res) => {
               await remoteCompose.runGitOnRemote(ctx.server, keyId, root, ['fetch', '--depth', '1', 'origin', branch], (c) => jobStream(job, c));
               await remoteCompose.runGitOnRemote(ctx.server, keyId, root, ['reset', '--hard', 'FETCH_HEAD'], (c) => jobStream(job, c));
               let toSHA = '';
-              try { toSHA = (await remoteCompose.runGitOnRemote(ctx.server, null, root, ['rev-parse', 'FETCH_HEAD'])).trim(); } catch (e) {}
+              try { toSHA = (await remoteCompose.runGitOnRemote(ctx.server, null, root, ['rev-parse', 'FETCH_HEAD'])).trim(); } catch (e) { }
               const meta = readGitMeta(gp.name);
               if (meta) fs.writeFileSync(gitMetaPath(gp.name), JSON.stringify({ ...meta, deployedCommit: toSHA || meta.deployedCommit }, null, 2), { mode: 0o600 });
               jobLog(job, `Running docker compose up -d --build...\n`);
@@ -2401,7 +2410,7 @@ router.post('/git-sync-all', async (req, res) => {
               await gitWithKey(keyId, ['-C', root, 'fetch', '--depth', '1', 'origin', branch], { onData: (c) => jobStream(job, c) });
               await gitWithKey(keyId, ['-C', root, 'reset', '--hard', 'FETCH_HEAD'], { onData: (c) => jobStream(job, c) });
               let toSHA = '';
-              try { toSHA = (await gitRun(['-C', root, 'rev-parse', 'FETCH_HEAD'])).stdout.trim(); } catch (e) {}
+              try { toSHA = (await gitRun(['-C', root, 'rev-parse', 'FETCH_HEAD'])).stdout.trim(); } catch (e) { }
               const meta = readGitMeta(gp.name);
               if (meta) fs.writeFileSync(gitMetaPath(gp.name), JSON.stringify({ ...meta, deployedCommit: toSHA || meta.deployedCommit }, null, 2), { mode: 0o600 });
               jobLog(job, `Running docker compose up -d --build in ${ctx.workingDir}...\n`);
@@ -2534,11 +2543,11 @@ router.post('/:project/adopt-pull', async (req, res) => {
     invalidateExternalGit(project);
     let changed = [], commits = [];
     if (before !== after) {
-      try { changed = (await gitInDir(server, root, ['diff', '--name-status', before + '..' + after], null, keyId)).trim().split('\n').filter(Boolean).slice(0, 200); } catch (e) {}
+      try { changed = (await gitInDir(server, root, ['diff', '--name-status', before + '..' + after], null, keyId)).trim().split('\n').filter(Boolean).slice(0, 200); } catch (e) { }
       try {
         commits = (await gitInDir(server, root, ['log', '--pretty=%h%x09%ad%x09%s', '--date=short', before + '..' + after], null, keyId)).trim().split('\n').filter(Boolean).slice(0, 100)
           .map(l => { const parts = l.split('\t'); return { hash: parts[0], date: parts[1], subject: parts.slice(2).join('\t') }; });
-      } catch (e) {}
+      } catch (e) { }
     }
     logAction({ req, server: server ? dockerService.getActiveServerId() : 'local', resourceId: project, resourceType: 'compose', resourceName: project, action: 'adopt-pull', details: { fromSHA: before, toSHA: after, files: changed.length } });
     res.json({ success: true, repoRoot: root, fromSHA: before, toSHA: after, upToDate: before === after, changed, commits });

@@ -35,7 +35,7 @@ function withConn(server, fn) {
   return new Promise((resolve, reject) => {
     const conn = new Client();
     let settled = false;
-    const finish = (err, val) => { if (settled) return; settled = true; try { conn.end(); } catch (e) {} err ? reject(err) : resolve(val); };
+    const finish = (err, val) => { if (settled) return; settled = true; try { conn.end(); } catch (e) { } err ? reject(err) : resolve(val); };
     conn.on('ready', () => { Promise.resolve(fn(conn)).then(v => finish(null, v)).catch(finish); });
     conn.on('error', finish);
     try { conn.connect(authFor(server)); } catch (e) { finish(e); }
@@ -103,7 +103,7 @@ async function removeRemoteKey(server, keyId) {
   if (!keyId) return;
   try {
     await execRemote(server, `rm -f "$HOME/.dockgate/keys/dg_key_${keyId}"`);
-  } catch (e) {}
+  } catch (e) { }
 }
 
 // Run a git command natively on the remote host with the specified SSH deploy key (if any)
