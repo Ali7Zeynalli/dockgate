@@ -1894,6 +1894,24 @@ async function gitInDir(server, cwd, args, onData, keyId) {
   return await remoteCompose.runGitOnRemote(server, keyId, cwd, args, onData);
 }
 
+// Persist SSH deploy key config into a repo's .git/config (core.sshCommand) so that
+// `git pull` works BOTH from DockGate and from a manual terminal session on the server.
+// Safe to call multiple times — idempotent.
+async function persistSshConfigForRepo(server, repoRoot, keyId) {
+  if (!keyId) return;
+  try {
+    if (server) {
+      await remoteCompose.persistGitSshConfig(server, repoRoot, keyId);
+    } else {
+      const keyPath = sshKeys.persistDeployKey(keyId);
+      const sshCmd = `ssh -i ${keyPath} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new`;
+      await execFileAsync('git', ['-C', repoRoot, 'config', 'core.sshCommand', sshCmd], { env: GIT_ENV });
+    }
+  } catch (e) {
+    console.warn('[git] Failed to persist SSH config for repo:', e.message);
+  }
+}
+
 // Strip embedded credentials from a remote URL before display (https://user:tok@host → //***@host).
 function redactRemoteUrl(u) { return String(u || '').replace(/\/\/[^@/]+@/, '//***@'); }
 
