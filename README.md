@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.2.7-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.4.4-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.2.7-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.4.4-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -168,7 +168,7 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 <summary><strong>Activity</strong> — Logs · Terminal · Events · Files · Audit</summary>
 
 - **Logs** — live-tail any running container's stdout/stderr (tail 200, follow), pause/resume, clear, in-browser search, timestamps.
-- **Terminal** — interactive **container exec** (sh/bash/zsh, full xterm.js PTY) **and** a **host shell** — a PTY inside the local container, or a real **SSH login shell** on a remote host.
+- **Terminal** — interactive **container exec** (sh/bash/zsh, full xterm.js PTY) **and** a **host shell** (PTY or SSH login shell), plus a **Global Quick Terminal** accessible from any page via header shortcut or `Ctrl+\`` / `Alt+T` with **minimize to floating widget**, **maximize**, and **side-by-side split screen (dual terminals)**.
 - **Events** — live Docker daemon event feed with history range (15 m / 1 h / 24 h / live), color-coded, pause/clear.
 - **Files** — an **SFTP file manager** for the active **remote** server: browse, mkdir, upload/download (streamed), rename, delete, **copy/move**, in-browser **edit**; path-traversal guarded. An opt-in **⇆ Explorer** mode adds a **two-pane, FileZilla-style transfer** between *your computer* and the server, from any **Windows / macOS / Linux** browser: **whole-folder upload** (directory structure preserved), **parallel transfers** (7 concurrent), **pre-upload conflict detection** (**Overwrite / Keep-both / Skip**), a **live transfer panel** — `active · done · failed · cancelled / total` — with **Retry-failed**, and **cancel** of in-flight uploads/downloads. The single-pane manager stays the default; Explorer opens only on demand.
 - **Audit** — searchable history of **every mutation** (what / which host / from which IP / when): filter by server/type/action, full-text search, **CSV export**, clear. Single-admin, so it's a "what + from where", not "who".
