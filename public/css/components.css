@@ -1127,7 +1127,12 @@ tbody td {
   z-index: 9991;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), width 0.2s ease;
+}
+
+.quick-term-window.qt-split-mode {
+  width: 1200px;
+  height: 640px;
 }
 
 #quick-terminal-root.qt-open .quick-term-window {
@@ -1142,8 +1147,8 @@ tbody td {
   right: 16px;
   bottom: 16px;
   transform: none !important;
-  width: calc(100vw - 32px);
-  height: calc(100vh - 32px);
+  width: calc(100vw - 32px) !important;
+  height: calc(100vh - 32px) !important;
   max-width: none;
   max-height: none;
   border-radius: var(--radius-lg);
@@ -1230,19 +1235,46 @@ tbody td {
   color: var(--text-primary);
   border-color: var(--border);
 }
+.qt-btn-ctrl.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .qt-btn-close:hover {
   background: var(--danger-bg);
   color: var(--danger);
   border-color: var(--danger);
 }
 
+/* Panes container */
+.quick-term-panes-wrapper {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.quick-term-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.quick-term-pane + .quick-term-pane {
+  border-left: 1px solid var(--border);
+}
+
 .quick-term-controls {
-  padding: 10px 16px;
+  padding: 8px 14px;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .quick-term-tab-group {
@@ -1251,8 +1283,8 @@ tbody td {
 }
 
 .quick-term-tab-btn {
-  padding: 5px 12px;
-  font-size: 12px;
+  padding: 4px 10px;
+  font-size: 11px;
   font-weight: 600;
   border-radius: var(--radius-md);
   background: var(--bg-card);
@@ -1274,13 +1306,13 @@ tbody td {
 .quick-term-target-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .qt-select {
-  padding: 4px 10px;
+  padding: 3px 8px;
   font-size: 12px;
-  height: 30px;
+  height: 28px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1290,13 +1322,13 @@ tbody td {
 .quick-term-viewport {
   flex: 1;
   background: #000000;
-  padding: 8px 12px;
+  padding: 8px 10px;
   overflow: hidden;
   position: relative;
-  min-height: 250px;
+  min-height: 200px;
 }
 
-.quick-term-viewport #qt-terminal-area {
+.quick-term-viewport [id^="qt-terminal-area"] {
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -1320,6 +1352,7 @@ tbody td {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  animation: slideInUp 0.25s ease;
   transition: all var(--transition-fast);
 }
 .quick-term-minimized:hover {
@@ -1355,4 +1388,5 @@ tbody td {
   color: var(--danger);
   border-color: var(--danger);
 }
+
 

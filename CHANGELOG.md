@@ -8,9 +8,13 @@
 - **Global Quick Terminal (Floating & Minimizable Modal)**:
   - Added a global Terminal launcher button (`>_ Terminal [Ctrl+\`]`) directly in the header navigation bar.
   - Global hotkeys: press `Ctrl+\`` (or `Alt+T`) anywhere in the application to toggle the Quick Terminal without leaving your active workflow.
+  - **Side-by-Side Split View (Dual Terminals)**:
+    - Added `[ ◫ Split ]` button in the terminal titlebar to open a second independent terminal pane side-by-side.
+    - Run any combination concurrently: Container 1 on Left + Container 2 on Right, or Container + Host SSH shell, or dual Host shells.
+    - Slot-aware backend streaming (`terminal:*` and `hostterm:*` channels) prevents stream collisions across split panes.
   - **Window Controls (Minimize / Maximize / Restore / Close)**:
     - **Minimize (`_`)**: Collapses the terminal into a sleek, floating status pill at the bottom-right of the screen.
-    - **Cross-Page Session Continuity**: The terminal session remains connected and active in the background even when navigating between different sections (Dashboard, Containers, Compose, Files, Settings, etc.).
+    - **Cross-Page Session Continuity**: Terminal sessions remain connected and active in the background even when navigating between different sections (Dashboard, Containers, Compose, Files, Settings, etc.).
     - **Restore / Maximize (`□` / `⤢`)**: Click the floating pill or use the header button to restore or maximize the window to full size.
   - **Dual Mode Support**:
     - 🐳 **Container Exec**: Live dropdown of running containers with instant shell execution (`/bin/sh`, `/bin/bash`, `/bin/zsh`), buffer clearing, and reconnect.

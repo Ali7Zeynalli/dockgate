@@ -516,13 +516,15 @@ io.on('connection', (socket) => {
     if (eventStream) { try { eventStream.destroy(); } catch(e){} eventStream = null; }
   });
 
-  // Container terminal (exec)
-  socket.on('terminal:start', async ({ containerId, shell = '/bin/sh' }) => {
+  // Container terminal (exec) — slot-aware to support split screen / dual terminals
+  const termStreams = new Map(); // slot -> { stream, exec }
+
+  socket.on('terminal:start', async ({ containerId, shell = '/bin/sh', slot = 0 }) => {
     try {
-      // Clean up previous terminal listeners to prevent leaks
-      // Əvvəlki terminal listener-lərini təmizlə ki, leak olmasın
-      socket.removeAllListeners('terminal:input');
-      socket.removeAllListeners('terminal:resize');
+      if (termStreams.has(slot)) {
+        try { termStreams.get(slot).stream.end(); } catch(e) {}
+        termStreams.delete(slot);
+      }
 
       const container = dockerService.docker.getContainer(containerId);
       const exec = await container.exec({
@@ -532,29 +534,52 @@ io.on('connection', (socket) => {
       const stream = await exec.start({ hijack: true, stdin: true, Tty: true });
 
       stream.on('data', (chunk) => {
-        socket.emit('terminal:data', { containerId, data: chunk.toString('utf8') });
+        socket.emit('terminal:data', { containerId, data: chunk.toString('utf8'), slot });
       });
-      stream.on('end', () => socket.emit('terminal:end', { containerId }));
+      stream.on('end', () => socket.emit('terminal:end', { containerId, slot }));
 
-      socket.on('terminal:input', (data) => {
-        try { stream.write(data); } catch(e) {}
-      });
+      termStreams.set(slot, { stream, exec });
 
-      socket.on('terminal:resize', ({ cols, rows }) => {
-        try { exec.resize({ h: rows, w: cols }); } catch(e) {}
-      });
-
-      socket._termStream = stream;
       // Audit — interactive shell access into the container (session level; keystrokes are not logged)
-      logAction({ socket, resourceId: containerId, resourceType: 'container', resourceName: containerId.substring(0, 12), action: 'terminal_open', details: { shell } });
-      socket.emit('terminal:ready', { containerId });
+      logAction({ socket, resourceId: containerId, resourceType: 'container', resourceName: containerId.substring(0, 12), action: 'terminal_open', details: { shell, slot } });
+      socket.emit('terminal:ready', { containerId, slot });
     } catch (err) {
-      socket.emit('terminal:error', { containerId, error: err.message });
+      socket.emit('terminal:error', { containerId, error: err.message, slot });
     }
   });
 
-  socket.on('terminal:stop', () => {
-    if (socket._termStream) { try { socket._termStream.end(); } catch(e){} socket._termStream = null; }
+  socket.on('terminal:input', (payload) => {
+    const slot = (typeof payload === 'object' && payload !== null && payload.slot !== undefined) ? payload.slot : 0;
+    const data = typeof payload === 'string' ? payload : payload?.data;
+    const s = termStreams.get(slot);
+    if (s?.stream && data !== undefined) {
+      try { s.stream.write(data); } catch(e) {}
+    }
+  });
+
+  socket.on('terminal:resize', (payload) => {
+    const slot = (typeof payload === 'object' && payload !== null && payload.slot !== undefined) ? payload.slot : 0;
+    const cols = payload?.cols;
+    const rows = payload?.rows;
+    const s = termStreams.get(slot);
+    if (s?.exec && cols && rows) {
+      try { s.exec.resize({ h: rows, w: cols }); } catch(e) {}
+    }
+  });
+
+  socket.on('terminal:stop', (payload) => {
+    const slot = (typeof payload === 'object' && payload !== null && payload.slot !== undefined) ? payload.slot : (typeof payload === 'number' ? payload : undefined);
+    if (slot !== undefined) {
+      if (termStreams.has(slot)) {
+        try { termStreams.get(slot).stream.end(); } catch(e) {}
+        termStreams.delete(slot);
+      }
+    } else {
+      for (const { stream } of termStreams.values()) {
+        try { stream.end(); } catch(e) {}
+      }
+      termStreams.clear();
+    }
   });
 
   // Cleanup on disconnect
