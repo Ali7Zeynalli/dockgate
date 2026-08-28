@@ -34,8 +34,10 @@ Router.register('compose', async (content) => {
                 <button class="rmi" id="compose-git">${Icons.registry || Icons.compose} Deploy from Git</button>
                 <button class="rmi" id="compose-folder">${Icons.arrowUp || Icons.compose} Deploy from folder</button>
                 ${remote ? `<button class="rmi" id="compose-adopt">${Icons.folder || Icons.compose} Adopt from server (existing folder)</button>` : ''}
-              </div>
+                </div>
             </div>
+
+            <button class="btn btn-danger" id="compose-bulk-delete" style="display:none;align-items:center;gap:6px">${Icons.trash} Delete (<span id="bulk-count">0</span>)</button>
 
             <!-- Global Git Pull / Sync dropdown right next to Deploy -->
             <div class="row-menu" style="position:relative;display:inline-block">
@@ -61,12 +63,13 @@ Router.register('compose', async (content) => {
         ${projects.length === 0 ? '<div class="empty-state"><h3>No Compose Projects</h3></div>' : `
           <div class="table-wrapper">
             <table>
-              <thead><tr><th>Project Name</th><th>Status</th><th>Services</th><th>Path</th><th style="text-align:right">Actions</th></tr></thead>
+              <thead><tr><th style="width:36px;text-align:center"><input type="checkbox" class="bulk-all"></th><th>Project Name</th><th>Status</th><th>Services</th><th>Path</th><th style="text-align:right">Actions</th></tr></thead>
               <tbody>
                 ${projects.map(p => {
                   const isGit = !!(p.isGit || p.deploySource === 'git');
                   const gitBranch = p.gitInfo?.branch || '';
                   return `<tr${isGit ? ` data-gitproj="${escapeHtml(p.name)}"` : ''}>
+                  <td style="text-align:center"><input type="checkbox" class="bulk-item" data-proj="${escapeHtml(p.name)}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"></td>
                   <td class="td-name">
                     ${isGit ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:.8;color:var(--accent)"><title>Git-managed project</title><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>' : ''}${escapeHtml(p.name)}${isGit && gitBranch ? ` <span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px;vertical-align:1px;margin-left:4px" title="${escapeHtml(p.gitInfo?.repoUrl || 'Git branch')}">git:${escapeHtml(gitBranch)}</span>` : ''}${p.deploySource === 'adopt' && !isGit ? ' <span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px;vertical-align:1px" title="Adopted in place — the compose file lives on the server; DockGate stops &amp; untracks it on delete but never removes your folder">adopted</span>' : ''}
                   </td>
@@ -200,6 +203,35 @@ Router.register('compose', async (content) => {
       content.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
       });
+
+      // Bulk Delete UI logic
+      const bulkAll = content.querySelector('.bulk-all');
+      const bulkItems = content.querySelectorAll('.bulk-item');
+      const bulkBtn = document.getElementById('compose-bulk-delete');
+      const bulkCount = document.getElementById('bulk-count');
+      const updateBulkBtn = () => {
+        const selected = Array.from(bulkItems).filter(i => i.checked);
+        if (selected.length > 0) {
+          bulkBtn.style.display = 'inline-flex';
+          bulkCount.textContent = selected.length;
+          if (bulkAll) bulkAll.checked = selected.length === bulkItems.length;
+        } else {
+          bulkBtn.style.display = 'none';
+          if (bulkAll) bulkAll.checked = false;
+        }
+      };
+      if (bulkAll) bulkAll.addEventListener('change', (e) => {
+        bulkItems.forEach(i => i.checked = e.target.checked);
+        updateBulkBtn();
+      });
+      bulkItems.forEach(i => i.addEventListener('change', updateBulkBtn));
+      bulkBtn?.addEventListener('click', () => {
+        const projs = Array.from(bulkItems).filter(i => i.checked).map(i => ({
+          name: i.dataset.proj, isRemote: !!i.dataset.remote, isAdopted: !!i.dataset.adopted
+        }));
+        if (projs.length) openBulkDeleteProject(projs);
+      });
+
 
       // Direct Git Pull action handler
       content.querySelectorAll('[data-git-pull]').forEach(btn => btn.addEventListener('click', async (e) => {
@@ -940,6 +972,63 @@ Router.register('compose', async (content) => {
         m.close();
         render();
       } catch (e) { showToast(e.message, 'error', 11000); btn.disabled = false; btn.textContent = 'Delete'; }
+    });
+  }
+
+  function openBulkDeleteProject(projs) {
+    const hasAdopted = projs.some(p => p.isAdopted);
+    const body = `<div style="display:flex;flex-direction:column;gap:10px">
+      ${serverContextBanner()}
+      <div class="text-sm">Delete <strong>${projs.length}</strong> selected project(s)?</div>
+      ${hasAdopted ? `<div class="card" style="padding:8px 10px;background:var(--accent-dim);font-size:12px">📌 <strong>Includes adopted projects.</strong> DockGate will stop the containers and untrack them, but <strong>never deletes your folder on the server</strong>.</div>` : ''}
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="bdel-down" checked disabled> Stop &amp; remove containers (<code>docker compose down</code>)</label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="bdel-files" checked> Remove project files (ignored for adopted projects)</label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;color:var(--danger,#f85149)"><input type="checkbox" id="bdel-vols"> Also delete data volumes — <strong>irreversible data loss</strong></label>
+      <label class="text-xs text-muted" style="display:block;margin-top:4px">Type <code style="background:var(--bg-primary);padding:1px 6px;border-radius:4px;border:1px solid var(--border);font-weight:600">DELETE</code> to confirm:</label>
+      <input class="input" id="bdel-confirm" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="DELETE" style="width:100%;margin-top:6px" />
+      <div id="bdel-progress" class="text-sm" style="margin-top:10px;display:none;color:var(--accent)"></div>
+    </div>`;
+    const m = showModal('Bulk Delete Projects', body, [{ label: 'Cancel', className: 'btn btn-secondary' }]);
+    const root = m.overlay;
+    const btn = document.createElement('button'); btn.className = 'btn btn-danger'; btn.textContent = 'Delete Selected';
+    btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed';
+    root.querySelector('#modal-footer').appendChild(btn);
+    const delInput = root.querySelector('#bdel-confirm');
+    const delMatches = () => delInput.value.trim() === 'DELETE';
+    const delSync = () => { const ok = delMatches(); btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; btn.style.cursor = ok ? 'pointer' : 'not-allowed'; };
+    delInput.addEventListener('input', delSync);
+    delInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && delMatches()) { e.preventDefault(); btn.click(); } });
+    setTimeout(() => delInput.focus(), 50);
+
+    btn.addEventListener('click', async () => {
+      if (!delMatches()) return;
+      btn.disabled = true; btn.textContent = 'Deleting…'; delInput.disabled = true;
+      const fCb = root.querySelector('#bdel-files'); fCb.disabled = true;
+      const vCb = root.querySelector('#bdel-vols'); vCb.disabled = true;
+      
+      const vols = vCb.checked ? 1 : 0;
+      const filesChecked = fCb.checked;
+      const prog = root.querySelector('#bdel-progress');
+      prog.style.display = 'block';
+
+      let success = 0, fails = 0;
+      for (let i = 0; i < projs.length; i++) {
+        const p = projs[i];
+        prog.textContent = `Deleting ${i+1}/${projs.length}: ${escapeHtml(p.name)}...`;
+        const files = (filesChecked && !p.isAdopted) ? 1 : 0;
+        try {
+          await API.del(`/compose/${p.name}?volumes=${vols}&files=${files}`);
+          success++;
+        } catch(e) {
+          fails++;
+          showToast(`Failed to delete "${p.name}": ${e.message}`, 'error', 7000);
+        }
+      }
+      
+      m.close();
+      if (success > 0) showToast(`Successfully deleted ${success} project(s)`);
+      if (fails > 0) showToast(`${fails} project(s) failed to delete`, 'error');
+      render();
     });
   }
 

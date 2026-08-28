@@ -2,6 +2,13 @@
 
 ---
 
+## [2.4.3] - 2026-08-28
+
+### Added
+- **Bulk Delete Compose Projects**: Added the ability to select multiple compose projects using checkboxes in the UI and delete them all at once. The bulk delete modal safely confirms the action by requiring the user to type `DELETE` and displays live progress for each project being removed.
+
+---
+
 ## [2.4.2] - 2026-08-28
 
 ### Changed
