@@ -217,9 +217,27 @@ async function removeRemoteDir(server, remoteDir) {
   return p;
 }
 
+// Write `core.sshCommand` into a remote repo's .git/config so that `git pull` works
+// both from DockGate and from a manual terminal session on the server.
+// Resolves $HOME to an absolute path so git can always find the key.
+async function persistGitSshConfig(server, repoRoot, keyId) {
+  if (!keyId || !repoRoot) return;
+  await ensureRemoteKey(server, keyId);
+  // Resolve absolute home path (git config stores literals, no shell expansion)
+  const homeResult = await execRemote(server, 'printf %s "$HOME"');
+  const home = (homeResult.stdout || '').trim();
+  const absKeyPath = `${home}/.dockgate/keys/dg_key_${keyId}`;
+  const sshCmd = `ssh -i ${absKeyPath} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new`;
+  try {
+    await execRemote(server, `cd ${shq(repoRoot)} && git config core.sshCommand ${shq(sshCmd)}`);
+  } catch (e) {
+    console.warn('[remote] Failed to persist git SSH config:', e.message);
+  }
+}
+
 module.exports = {
   getActiveRemoteServer, execRemote, resolveRemotePath, checkComposeAvailable, checkGitAvailable,
-  ensureRemoteKey, removeRemoteKey, runGitOnRemote,
+  ensureRemoteKey, removeRemoteKey, runGitOnRemote, persistGitSshConfig,
   uploadDirToRemote, runComposeInRemoteDir, removeRemoteDir, shq,
 };
 
