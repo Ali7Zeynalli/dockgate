@@ -122,25 +122,57 @@ Router.register('compose', async (content) => {
           const r = await API.post('/compose/git-pull-all', {});
           const results = r.results || [];
           const successCount = results.filter(x => x.success).length;
+          const updatedCount = results.filter(x => x.success && !x.upToDate).length;
+          const sh = s => (s || '').slice(0, 7);
+
+          // Build per-project detail cards
+          const cards = results.map(x => {
+            if (!x.success) {
+              return `<div class="card" style="padding:10px 12px;margin-bottom:8px;border-left:3px solid var(--danger)">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <strong>${escapeHtml(x.project)}</strong>
+                  <span class="badge badge-stopped">Failed</span>
+                </div>
+                <div class="text-xs text-muted" style="margin-top:4px;word-break:break-all">${escapeHtml(x.error || 'Unknown error')}</div>
+              </div>`;
+            }
+            if (x.upToDate) {
+              return `<div class="card" style="padding:10px 12px;margin-bottom:8px;border-left:3px solid var(--success)">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <strong>${escapeHtml(x.project)}</strong>
+                  <span class="badge badge-running">Up to date</span>
+                </div>
+                <div class="text-xs text-muted" style="margin-top:2px">${escapeHtml(x.path)}</div>
+              </div>`;
+            }
+            // Has changes — show commits and file list
+            const commits = (x.commits || []);
+            const files = (x.changedFiles || []);
+            const commitHtml = commits.length ? `
+              <div class="text-xs" style="margin-top:6px"><strong>${commits.length}</strong> commit(s):</div>
+              <pre class="logs-viewer" style="max-height:120px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:4px 0 0">${commits.map(c => `${escapeHtml(c.hash)}  ${escapeHtml(c.date)}  ${escapeHtml(c.subject)}`).join('\n')}</pre>
+            ` : '';
+            const fileHtml = files.length ? `
+              <div class="text-xs" style="margin-top:6px"><strong>${files.length}</strong> file(s) changed:</div>
+              <pre class="logs-viewer" style="max-height:100px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:4px 0 0">${files.map(f => escapeHtml(f)).join('\n')}</pre>
+            ` : '';
+            return `<div class="card" style="padding:10px 12px;margin-bottom:8px;border-left:3px solid var(--accent)">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <strong>${escapeHtml(x.project)}</strong>
+                <span class="badge" style="background:var(--accent-dim);color:var(--accent)">${sh(x.fromSHA)} → ${sh(x.toSHA)}</span>
+              </div>
+              <div class="text-xs text-muted" style="margin-top:2px">${escapeHtml(x.path)}</div>
+              ${commitHtml}${fileHtml}
+            </div>`;
+          }).join('');
+
           const body = `
-            <div class="text-sm" style="margin-bottom:8px">Pulled <strong>${successCount}/${results.length}</strong> Git project repositories to their target directories on the server:</div>
-            <div class="table-wrapper" style="max-height:300px;overflow:auto">
-              <table>
-                <thead><tr><th>Project</th><th>Directory</th><th>Status</th></tr></thead>
-                <tbody>
-                  ${results.map(x => `
-                    <tr>
-                      <td class="td-name"><strong>${escapeHtml(x.project)}</strong></td>
-                      <td class="td-mono text-xs" title="${escapeHtml(x.path)}">${escapeHtml(x.path)}</td>
-                      <td>
-                        ${x.success ? (x.upToDate ? '<span class="badge badge-running">Up to date</span>' : `<span class="badge" style="background:var(--accent-dim);color:var(--accent)">Pulled (${(x.fromSHA || '').slice(0, 7)}→${(x.toSHA || '').slice(0, 7)})</span>`) : `<span class="badge badge-stopped" title="${escapeHtml(x.error || '')}">Failed</span>`}
-                      </td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
+            <div class="text-sm" style="margin-bottom:10px">
+              Pulled <strong>${successCount}/${results.length}</strong> project(s) —
+              <strong>${updatedCount}</strong> updated, <strong>${successCount - updatedCount}</strong> already up to date.
             </div>
-            <div class="text-xs text-muted" style="margin-top:8px">All code pulled into local directories. Containers are untouched. Click <strong>⚡ Deploy All Now</strong> to build and restart all projects.</div>
+            <div style="max-height:400px;overflow:auto">${cards}</div>
+            <div class="text-xs text-muted" style="margin-top:10px">All code pulled to server directories. Containers are untouched. Click <strong>⚡ Deploy All Now</strong> to build and restart.</div>
           `;
           const pm = showModal('Global Git Pull Results', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
           const go = document.createElement('button');

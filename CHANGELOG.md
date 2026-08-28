@@ -2,6 +2,16 @@
 
 ---
 
+## [2.4.2] - 2026-08-28
+
+### Changed
+- **Pull All UI Enhancement**: "Pull All" now displays a detailed summary modal for each project, showing the number of changed files and up to 50 commits, identical to the single-project git pull output.
+
+### Fixed
+- **SSH Key Path Quoting**: Fixed an issue where `git pull` from the terminal would fail if the absolute path to the deploy key contained spaces. The path is now strictly quoted in `.git/config` (`core.sshCommand`), and Windows backslashes are converted to forward slashes to ensure Git parses it safely on all environments.
+
+---
+
 ## [2.4.0] - 2026-08-28
 
 ### Fixed — Persistent SSH Key Config for Git Pull (v2.4.0)

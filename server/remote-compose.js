@@ -227,7 +227,7 @@ async function persistGitSshConfig(server, repoRoot, keyId) {
   const homeResult = await execRemote(server, 'printf %s "$HOME"');
   const home = (homeResult.stdout || '').trim();
   const absKeyPath = `${home}/.dockgate/keys/dg_key_${keyId}`;
-  const sshCmd = `ssh -i ${absKeyPath} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new`;
+  const sshCmd = `ssh -i "${absKeyPath}" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new`;
   try {
     await execRemote(server, `cd ${shq(repoRoot)} && git config core.sshCommand ${shq(sshCmd)}`);
   } catch (e) {

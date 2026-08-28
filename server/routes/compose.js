@@ -1903,8 +1903,8 @@ async function persistSshConfigForRepo(server, repoRoot, keyId) {
     if (server) {
       await remoteCompose.persistGitSshConfig(server, repoRoot, keyId);
     } else {
-      const keyPath = sshKeys.persistDeployKey(keyId);
-      const sshCmd = `ssh -i ${keyPath} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new`;
+      const keyPath = sshKeys.persistDeployKey(keyId).replace(/\\/g, '/');
+      const sshCmd = `ssh -i "${keyPath}" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new`;
       await execFileAsync('git', ['-C', repoRoot, 'config', 'core.sshCommand', sshCmd], { env: GIT_ENV });
     }
   } catch (e) {
@@ -2343,22 +2343,17 @@ router.post('/git-pull-all', async (req, res) => {
         const branch = ctx.branch || 'main';
         const before = (await gitInDir(ctx.server, root, ['rev-parse', 'HEAD'], null, keyId)).trim();
 
-        if (ctx.type === 'managed') {
-          if (ctx.isRemote && ctx.server) {
-            await remoteCompose.runGitOnRemote(ctx.server, keyId, root, ['fetch', '--depth', '1', 'origin', branch]);
-            await remoteCompose.runGitOnRemote(ctx.server, keyId, root, ['reset', '--hard', 'FETCH_HEAD']);
-          } else {
-            await gitWithKey(keyId, ['-C', root, 'fetch', '--depth', '1', 'origin', branch]);
-            await gitWithKey(keyId, ['-C', root, 'reset', '--hard', 'FETCH_HEAD']);
-          }
-        } else {
+        // Persist SSH config so pull works
+        await persistSshConfigForRepo(ctx.server, root, keyId);
+
+        // Native git pull (like single-project pull)
+        const force = req.body && (req.body.force === true || req.body.force === '1');
+        if (force) {
           await gitInDir(ctx.server, root, ['fetch', '--all', '--quiet'], null, keyId);
           const targetRef = branch && branch !== 'HEAD' ? `origin/${branch}` : '@{u}';
-          try {
-            await gitInDir(ctx.server, root, ['merge', '--ff-only', targetRef], null, keyId);
-          } catch (e) {
-            await gitInDir(ctx.server, root, ['reset', '--hard', targetRef], null, keyId);
-          }
+          await gitInDir(ctx.server, root, ['reset', '--hard', targetRef], null, keyId);
+        } else {
+          await gitInDir(ctx.server, root, ['pull'], null, keyId);
         }
 
         const after = (await gitInDir(ctx.server, root, ['rev-parse', 'HEAD'], null, keyId)).trim();
@@ -2369,7 +2364,23 @@ router.post('/git-pull-all', async (req, res) => {
           fs.writeFileSync(gitMetaPath(gp.name), JSON.stringify({ ...meta, deployedCommit: after }, null, 2), { mode: 0o600 });
         }
 
-        results.push({ project: gp.name, path: root, fromSHA: before, toSHA: after, upToDate: before === after, success: true });
+        // Collect changed files and commits (like single-project pull)
+        let changedFiles = [], commits = [];
+        if (before !== after) {
+          try {
+            const diffOut = (await gitInDir(ctx.server, root, ['diff', '--name-status', before + '..' + after], null, keyId)).trim();
+            changedFiles = diffOut ? diffOut.split('\n').filter(Boolean).slice(0, 100) : [];
+          } catch (e) {}
+          try {
+            const logOut = (await gitInDir(ctx.server, root, ['log', '--pretty=%h%x09%ad%x09%s', '--date=short', before + '..' + after], null, keyId)).trim();
+            commits = logOut ? logOut.split('\n').filter(Boolean).slice(0, 50).map(l => {
+              const parts = l.split('\t');
+              return { hash: parts[0], date: parts[1], subject: parts.slice(2).join('\t') };
+            }) : [];
+          } catch (e) {}
+        }
+
+        results.push({ project: gp.name, path: root, fromSHA: before, toSHA: after, upToDate: before === after, success: true, changedFiles, commits });
       } catch (e) {
         results.push({ project: gp.name, path: ctx.repoRoot, error: e.message, success: false });
       }
