@@ -104,5 +104,18 @@ async function testAgainstRepo(id, repoUrl) {
   } finally { k.cleanup(); }
 }
 
-module.exports = { generate, importKey, materializeToTemp, getDecryptedPrivateKey, testAgainstRepo, mask };
+// Persist a deploy key to a permanent file (data/git-deploy-keys/) so it can be referenced
+// by `core.sshCommand` in a repo's .git/config. This lets `git pull` work from both DockGate
+// and manual terminal sessions. Returns the absolute path to the key file.
+function persistDeployKey(id) {
+  const DEPLOY_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'git-deploy-keys');
+  const keyFile = path.join(DEPLOY_DIR, `dg_key_${id}`);
+  if (fs.existsSync(keyFile)) return keyFile;
+  fs.mkdirSync(DEPLOY_DIR, { recursive: true });
+  const { privateKey } = getDecryptedPrivateKey(id);
+  fs.writeFileSync(keyFile, privateKey, { mode: 0o600 });
+  return keyFile;
+}
+
+module.exports = { generate, importKey, materializeToTemp, getDecryptedPrivateKey, persistDeployKey, testAgainstRepo, mask };
 

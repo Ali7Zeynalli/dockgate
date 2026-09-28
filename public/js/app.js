@@ -236,6 +236,7 @@ async function boot() {
 
     initMacSidebar();
     initGlobalSearch();
+    if (window.QuickTerminal) QuickTerminal.init();
 
     // Enable browser Back/Forward navigation + hash deep-links
     Router.init();

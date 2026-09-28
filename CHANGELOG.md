@@ -2,6 +2,78 @@
 
 ---
 
+## [2.4.5] - 2026-08-28
+
+### Added
+- **Global Quick Terminal (Floating & Minimizable Modal)**:
+  - Added a global Terminal launcher button (`>_ Terminal [Ctrl+\`]`) directly in the header navigation bar.
+  - Global hotkeys: press `Ctrl+\`` (or `Alt+T`) anywhere in the application to toggle the Quick Terminal without leaving your active workflow.
+  - **Side-by-Side Split View (Dual Terminals)**:
+    - Added `[ ◫ Split ]` button in the terminal titlebar to open a second independent terminal pane side-by-side.
+    - Run any combination concurrently: Container 1 on Left + Container 2 on Right, or Container + Host SSH shell, or dual Host shells.
+    - Slot-aware backend streaming (`terminal:*` and `hostterm:*` channels) prevents stream collisions across split panes.
+  - **Window Controls (Minimize / Maximize / Restore / Close)**:
+    - **Minimize (`_`)**: Collapses the terminal into a sleek, floating status pill at the bottom-right of the screen.
+    - **Cross-Page Session Continuity**: Terminal sessions remain connected and active in the background even when navigating between different sections (Dashboard, Containers, Compose, Files, Settings, etc.).
+    - **Restore / Maximize (`□` / `⤢`)**: Click the floating pill or use the header button to restore or maximize the window to full size.
+  - **Dual Mode Support**:
+    - 🐳 **Container Exec**: Live dropdown of running containers with instant shell execution (`/bin/sh`, `/bin/bash`, `/bin/zsh`), buffer clearing, and reconnect.
+    - 💻 **System (Host) Shell**: Direct interactive SSH shell into the active server (local container or remote host).
+
+---
+
+## [2.4.3] - 2026-08-28
+
+### Added
+- **Bulk Delete Compose Projects**: Added the ability to select multiple compose projects using checkboxes in the UI and delete them all at once. The bulk delete modal safely confirms the action by requiring the user to type `DELETE` and displays live progress for each project being removed.
+
+---
+
+## [2.4.2] - 2026-08-28
+
+### Changed
+- **Pull All UI Enhancement**: "Pull All" now displays a detailed summary modal for each project, showing the number of changed files and up to 50 commits, identical to the single-project git pull output.
+
+### Fixed
+- **SSH Key Path Quoting**: Fixed an issue where `git pull` from the terminal would fail if the absolute path to the deploy key contained spaces. The path is now strictly quoted in `.git/config` (`core.sshCommand`), and Windows backslashes are converted to forward slashes to ensure Git parses it safely on all environments.
+
+---
+
+## [2.4.0] - 2026-08-28
+
+### Fixed — Persistent SSH Key Config for Git Pull (v2.4.0)
+- **Root Cause**: Git repos cloned via SSH deploy key had no permanent link between the repo and the key. DockGate used a temporary `GIT_SSH_COMMAND` env var that was discarded after each operation, so subsequent `git pull` (both from UI and from server terminal) failed with `Permission denied (publickey)`.
+- **SSH Key Persistence (`ssh-keys.js`)**:
+  - Added `persistDeployKey(id)` — writes the deploy key to a permanent file (`data/git-deploy-keys/dg_key_<id>`) on local servers, so it survives across operations.
+- **Remote Server Key Binding (`remote-compose.js`)**:
+  - Added `persistGitSshConfig(server, repoRoot, keyId)` — uploads the key to `~/.dockgate/keys/` on the remote server and writes `core.sshCommand` into the repo's `.git/config` with the resolved absolute key path.
+- **Automatic Config on Clone & Pull (`compose.js`)**:
+  - After every `git clone` (both local and remote deploy), the SSH config is now automatically persisted into the repo.
+  - Before every `git pull` and `gitRedeploy`, the SSH config is refreshed/ensured.
+  - **Result**: `git pull` now works reliably from DockGate UI, AND from a manual terminal session on the server — no extra setup needed.
+
+---
+
+## [2.3.3] - 2026-08-28
+
+### Changed — Native Git Pull Behavior (v2.3.3)
+- **Git Operations (`server/routes/compose.js`)**:
+  - The standard **"Pull"** action (without force) now uses a traditional, native `git pull` command under the hood, instead of forcing `git fetch` and `git merge --ff-only` with explicit origin branches.
+  - This respects the repository's existing upstream branch tracking configuration ("onsuzda yaddasinda qalib") natively on the server.
+  - If a standard pull fails due to conflicts, it safely stops and prompts the user to resolve them or use **"Force Pull"** (which retains the `git fetch` + `git reset --hard` behavior to discard local changes).
+
+---
+
+## [2.3.2] - 2026-08-27
+
+### Fixed — Agent Metrics-Only UI Install Logic (v2.3.2)
+- **Frontend UI (`public/js/edge-agent-panel.js`)**:
+  - Fixed a UI bug where the Agent deployment table and "Install on servers" button were hidden if no SMTP or Telegram channel was configured.
+  - The UI now always renders the agent management table, allowing users to successfully deploy the agent in **metrics-only mode** (for telemetry and log aggregation) without requiring notification channels.
+  - Added a clear UI warning badge (`⚠ No notification channel configured...`) when operating in this mode.
+
+---
+
 ## [2.3.1] - 2026-08-27
 
 ### Changed — Global rename to DockGate Agent (v2.3.1)
