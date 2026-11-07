@@ -123,7 +123,8 @@ async function renderServicesPanel(serverId, container, sub) {
     ${UI.table([{ label: 'Service' }, { label: 'State' }, { label: 'Start at boot' }, { label: '', align: 'right' }], list.map(x => ({ cls: x.itemId === active ? 'ui-row-selected' : '', cells: [
       `<a href="#" data-sel="${x.itemId}" style="color:inherit;text-decoration:none;font-weight:600">${escapeHtml(x.label)}</a> <span class="ui-sub td-mono">${escapeHtml(x.unit || '')}${x.timer ? ' (timer)' : ''}</span><div class="ui-sub">${escapeHtml((SVC_INFO[x.itemId] || [x.reason || ''])[0])}</div>`,
       stateCell(x), bootCell(x),
-      x.na ? '' : `${x.active === false ? UI.btn('Start', `data-act="start" data-svc="${x.itemId}"`, 'btn-primary') : UI.btn(x.reload ? 'Reload' : 'Restart', `data-act="restart" data-svc="${x.itemId}"`)}${x.active !== false ? UI.btn('Stop', `data-act="stop" data-svc="${x.itemId}"`, 'btn-danger') : ''}`,
+      // state unknown (no systemd and nothing to probe): offer every action, as the old service bar did
+      x.na ? '' : `${x.active !== true ? UI.btn('Start', `data-act="start" data-svc="${x.itemId}"`, 'btn-primary') : ''}${x.active !== false ? UI.btn(x.reload ? 'Reload' : 'Restart', `data-act="restart" data-svc="${x.itemId}"`) : ''}${x.active !== false ? UI.btn('Stop', `data-act="stop" data-svc="${x.itemId}"`, 'btn-danger') : ''}`,
     ] })), { minWidth: 640, empty: 'No manageable services on this server.' })}
     <div id="svc-page" style="margin-top:18px"></div>`;
   const page = container.querySelector('#svc-page');

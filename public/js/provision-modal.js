@@ -169,13 +169,22 @@ async function renderConsoleOverview(serverId, container, onSetup) {
     </div>`;
   container.querySelector('[data-setup]').onclick = () => { if (typeof onSetup === 'function') onSetup(); };
   container.querySelector('[data-mon]').onclick = () => Router.navigate('server-console', { id: serverId, tab: 'monitoring' });
+  // Docker counts refresh every 30 s while the Overview is open (skipped while a dialog is open or the
+  // user is typing; the timer stops itself when the view is swapped out).
   const el = container.querySelector('[data-docker]');
-  try {
-    const d = await API.get(`/servers/${serverId}/docker/summary`);
-    if (!document.body.contains(el)) return;
-    el.innerHTML = `${d.running} of ${d.containers} containers running · ${d.images} images · ${d.volumes} volumes · ${d.networks} networks`;
-    container.querySelector('[data-dstate]').innerHTML = UI.pill('ok', 'Reachable');
-  } catch (e) { if (document.body.contains(el)) { el.textContent = 'Docker is not reachable on this server.'; container.querySelector('[data-dstate]').innerHTML = UI.pill('warn', 'Not reachable'); } }
+  let timer = null;
+  const refresh = async () => {
+    if (!document.body.contains(el)) { clearInterval(timer); return; }
+    if (typeof shouldSkipAutoRefresh === 'function' && shouldSkipAutoRefresh()) return;
+    try {
+      const d = await API.get(`/servers/${serverId}/docker/summary`);
+      if (!document.body.contains(el)) return;
+      el.innerHTML = `${d.running} of ${d.containers} containers running · ${d.images} images · ${d.volumes} volumes · ${d.networks} networks`;
+      container.querySelector('[data-dstate]').innerHTML = UI.pill('ok', 'Reachable');
+    } catch (e) { if (document.body.contains(el)) { el.textContent = 'Docker is not reachable on this server.'; container.querySelector('[data-dstate]').innerHTML = UI.pill('warn', 'Not reachable'); } }
+  };
+  await refresh();
+  timer = setInterval(refresh, 30000);
 }
 
 // ---------- Run progress — steps like a CI job, log underneath ----------

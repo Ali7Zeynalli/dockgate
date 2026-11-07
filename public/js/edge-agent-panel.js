@@ -2,6 +2,12 @@
 // Renders a per-server table with Install / Start-Stop / Update / Channel / Remove, an "Install on all"
 // fan-out, and a re-openable deploy-log modal. All actions hit /api/agent/* (DockGate-initiated outbound).
 (function () {
+  // Status pill + version (used by the install picker and the fleet table).
+  function pill(st) {
+    const [lv, txt] = { running: ['ok', 'Running'], stopped: ['warn', 'Stopped'], absent: ['off', 'Not installed'], unreachable: ['bad', 'Unreachable'] }[st.state] || ['off', 'Not installed'];
+    return UI.pill(lv, txt) + (st.version ? ` <span class="ui-sub">v${escapeHtml(st.version)}</span>` : '');
+  }
+
   // Fleet table (DigitalOcean metrics agent / Datadog Fleet style): one row per server.
   function agentCells(s, st) {
     const sid = escapeHtml(s.id);
