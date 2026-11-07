@@ -20,16 +20,17 @@ async function renderServiceBar(serverId, itemId, el, { label, note, onChange } 
   } catch (e) { el.innerHTML = `<div class="text-xs" style="color:var(--danger)">Service state unavailable: ${escapeHtml(e.message)}</div>`; return; }
   if (!s || s.na) { el.innerHTML = `<div class="text-xs text-muted">${escapeHtml((s && s.reason) || 'Not available on this server')}</div>`; return null; }
   const btn = (act, txt, cls) => `<button class="btn btn-xs ${cls}" data-act="${act}">${txt}</button>`;
-  const acts = s.active
-    ? [btn('restart', s.reload ? 'Reload' : 'Restart', 'btn-secondary'), btn('stop', 'Stop', 'btn-danger')]
-    : [btn('start', 'Start', 'btn-primary')];
-  acts.push(s.enabled ? btn('disable', 'Disable at boot', 'btn-secondary') : btn('enable', 'Enable at boot', 'btn-secondary'));
+  // active/enabled are null when the server has no systemd and the state cannot be probed
+  const acts = s.active === null
+    ? [btn('start', 'Start', 'btn-primary'), btn('restart', s.reload ? 'Reload' : 'Restart', 'btn-secondary'), btn('stop', 'Stop', 'btn-danger')]
+    : (s.active ? [btn('restart', s.reload ? 'Reload' : 'Restart', 'btn-secondary'), btn('stop', 'Stop', 'btn-danger')] : [btn('start', 'Start', 'btn-primary')]);
+  if (s.enabled !== null) acts.push(s.enabled ? btn('disable', 'Disable at boot', 'btn-secondary') : btn('enable', 'Enable at boot', 'btn-secondary'));
   el.innerHTML = `
     <div class="flex items-center justify-between" style="gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card)">
       <div class="flex items-center gap-2" style="flex-wrap:wrap">
         <span style="font-weight:600">${escapeHtml(label || s.label)}</span>
-        ${s.active ? '<span class="badge badge-running"><span class="badge-dot"></span> active</span>' : '<span class="badge badge-stopped">inactive</span>'}
-        <span class="text-xs ${s.enabled ? '' : 'text-muted'}" style="${s.enabled ? 'color:var(--success)' : ''}">${s.enabled ? '● starts at boot' : '○ not started at boot'}</span>
+        ${s.active === null ? '<span class="badge" title="No systemd on this server and no way to check this service">state unknown</span>' : (s.active ? '<span class="badge badge-running"><span class="badge-dot"></span> active</span>' : '<span class="badge badge-stopped">inactive</span>')}
+        ${s.enabled === null ? '<span class="text-xs text-muted" title="Starting at boot is managed by systemd, which this server does not run">no systemd · boot start not managed</span>' : `<span class="text-xs ${s.enabled ? '' : 'text-muted'}" style="${s.enabled ? 'color:var(--success)' : ''}">${s.enabled ? '● starts at boot' : '○ not started at boot'}</span>`}
         <span class="text-xs text-muted td-mono">${escapeHtml(s.unit || '')}${s.timer ? ' (timer)' : ''}</span>
       </div>
       <div class="flex gap-1" style="flex-wrap:wrap">${acts.join('')}</div>

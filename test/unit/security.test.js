@@ -393,3 +393,18 @@ test('firewalld: commands — permanent + reload, rich rules for sources/deny, q
   assert.throws(() => plans.fwdRemoveCmd('public', [{ kind: 'rich', key: "rule accept'\n; id" }]), /rich rule/);
   assert.equal(plans.fwdRemoveCmd('public', []), 'true');
 });
+
+// ---------------------------------------------------------------- services without systemd
+test('services: without systemd, state comes from a probe (or "unknown") and actions use `service`', () => {
+  const catalog = require('../../server/provision/catalog');
+  const ssh = catalog.serviceFor('ssh-hardening', 'ubuntu');
+  assert.match(ssh.verbs.status, /^if \[ -d \/run\/systemd\/system \]; then systemctl is-active ssh .*else \{ pgrep -x sshd; \}/);
+  assert.match(ssh.verbs.restart, /else command -v service .*sudo service ssh reload/);
+  assert.match(ssh.verbs.enable, /else \{ echo "This server does not run systemd/);
+  assert.match(ssh.verbs.enabled, /else echo unknown; fi$/);
+  const au = catalog.serviceFor('unattended-upgrades', 'ubuntu');
+  assert.match(au.verbs.status, /else echo unknown; fi$/, 'no probe → unknown, not "inactive"');
+  assert.match(au.verbs.start, /sudo service apt-daily-upgrade start/, '.timer suffix dropped for `service`');
+  const alpine = catalog.serviceFor('docker', 'alpine');
+  assert.equal(alpine.verbs.status, 'rc-service docker status >/dev/null 2>&1 && echo active || echo inactive', 'openrc unchanged');
+});

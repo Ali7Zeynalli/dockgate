@@ -278,30 +278,30 @@ const SERVICE = {
   timesync: {
     risk: 'low',
     family: {
-      debian: { manager: 'systemd', unit: 'chrony',   configPaths: ['/etc/chrony/chrony.conf'] },
-      rhel:   { manager: 'systemd', unit: 'chronyd',  configPaths: ['/etc/chrony.conf'] },
+      debian: { manager: 'systemd', unit: 'chrony',   probe: 'pgrep -x chronyd', configPaths: ['/etc/chrony/chrony.conf'] },
+      rhel:   { manager: 'systemd', unit: 'chronyd',  probe: 'pgrep -x chronyd', configPaths: ['/etc/chrony.conf'] },
       alpine: { manager: 'openrc',  unit: 'chronyd',  configPaths: ['/etc/chrony/chrony.conf'] },
     },
   },
   firewall: {
     risk: 'high',
     family: {
-      debian: { manager: 'systemd', unit: 'ufw',       configPaths: ['/etc/default/ufw'] },
-      rhel:   { manager: 'systemd', unit: 'firewalld', configPaths: ['/etc/firewalld/firewalld.conf'], validate: 'sudo firewall-cmd --check-config' },
+      debian: { manager: 'systemd', unit: 'ufw',       probe: "sudo ufw status | grep -q 'Status: active'", configPaths: ['/etc/default/ufw'] },
+      rhel:   { manager: 'systemd', unit: 'firewalld', probe: 'sudo firewall-cmd --state', configPaths: ['/etc/firewalld/firewalld.conf'], validate: 'sudo firewall-cmd --check-config' },
     },
   },
   'ssh-hardening': {
     risk: 'high', requiresKeyForConfig: true,
     family: {
-      debian: { manager: 'systemd', unit: 'ssh',  reload: true, configPaths: ['/etc/ssh/sshd_config.d/10-dockgate-access.conf'], validate: 'sudo sshd -t' },
-      rhel:   { manager: 'systemd', unit: 'sshd', reload: true, configPaths: ['/etc/ssh/sshd_config.d/10-dockgate-access.conf'], validate: 'sudo sshd -t' },
+      debian: { manager: 'systemd', unit: 'ssh',  reload: true, probe: 'pgrep -x sshd', configPaths: ['/etc/ssh/sshd_config.d/10-dockgate-access.conf'], validate: 'sudo sshd -t' },
+      rhel:   { manager: 'systemd', unit: 'sshd', reload: true, probe: 'pgrep -x sshd', configPaths: ['/etc/ssh/sshd_config.d/10-dockgate-access.conf'], validate: 'sudo sshd -t' },
     },
   },
   fail2ban: {
     risk: 'low',
     family: {
-      debian: { manager: 'systemd', unit: 'fail2ban', reload: true, configPaths: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
-      rhel:   { manager: 'systemd', unit: 'fail2ban', reload: true, configPaths: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
+      debian: { manager: 'systemd', unit: 'fail2ban', reload: true, probe: 'pgrep -f fail2ban-server', configPaths: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
+      rhel:   { manager: 'systemd', unit: 'fail2ban', reload: true, probe: 'pgrep -f fail2ban-server', configPaths: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
     },
   },
   'unattended-upgrades': {
@@ -314,8 +314,8 @@ const SERVICE = {
   docker: {
     risk: 'medium',
     family: {
-      debian: { manager: 'systemd', unit: 'docker', configPaths: ['/etc/docker/daemon.json'] },
-      rhel:   { manager: 'systemd', unit: 'docker', configPaths: ['/etc/docker/daemon.json'] },
+      debian: { manager: 'systemd', unit: 'docker', probe: 'pgrep -x dockerd', configPaths: ['/etc/docker/daemon.json'] },
+      rhel:   { manager: 'systemd', unit: 'docker', probe: 'pgrep -x dockerd', configPaths: ['/etc/docker/daemon.json'] },
       alpine: { manager: 'openrc',  unit: 'docker', configPaths: ['/etc/docker/daemon.json'] },
     },
   },
@@ -327,7 +327,11 @@ const DESTRUCTIVE = ['stop', 'restart', 'disable'];
 
 // Concrete action/status commands for a unit, per init system. unit comes from SERVICE (a catalog
 // constant), never from the request — so interpolation here cannot be an injection vector.
-function serviceVerbs(manager, unit, reload) {
+// Without systemd as PID 1 (some containers / WSL / sysvinit hosts) systemctl cannot answer, so the
+// state comes from `probe` (a process / tool check, catalog constant) — "unknown" when there is none —
+// and start/stop/restart go through `service`. Boot enable/disable needs systemd.
+const HAS_SYSTEMD = '[ -d /run/systemd/system ]';
+function serviceVerbs(manager, unit, reload, probe) {
   if (manager === 'openrc') {
     return {
       start:   `sudo rc-service ${unit} start`,
@@ -340,15 +344,20 @@ function serviceVerbs(manager, unit, reload) {
       enabled: `rc-update show default 2>/dev/null | grep -qw ${unit} && echo enabled || echo disabled`,
     };
   }
+  const svc = unit.replace(/\.timer$/, '');
+  const either = (sd, other) => `if ${HAS_SYSTEMD}; then ${sd}; else ${other}; fi`;
+  const viaService = (verb) => `command -v service >/dev/null 2>&1 && sudo service ${svc} ${verb} || { echo "This server does not run systemd and has no 'service' command"; exit 1; }`;
+  const noBoot = `{ echo "This server does not run systemd — starting at boot cannot be changed here"; exit 1; }`;
+  const restart = reload ? 'reload' : 'restart';
   return {
-    start:   `sudo systemctl start ${unit}`,
-    stop:    `sudo systemctl stop ${unit}`,
-    restart: reload ? `sudo systemctl reload ${unit}` : `sudo systemctl restart ${unit}`,
-    enable:  `sudo systemctl enable --now ${unit}`,
-    disable: `sudo systemctl disable --now ${unit}`,
-    apply:   reload ? `sudo systemctl reload ${unit}` : `sudo systemctl restart ${unit}`,
-    status:  `systemctl is-active ${unit} 2>/dev/null || echo inactive`,
-    enabled: `systemctl is-enabled ${unit} 2>/dev/null || echo disabled`,
+    start:   either(`sudo systemctl start ${unit}`, viaService('start')),
+    stop:    either(`sudo systemctl stop ${unit}`, viaService('stop')),
+    restart: either(`sudo systemctl ${restart} ${unit}`, viaService(restart)),
+    enable:  either(`sudo systemctl enable --now ${unit}`, noBoot),
+    disable: either(`sudo systemctl disable --now ${unit}`, noBoot),
+    apply:   either(`sudo systemctl ${restart} ${unit}`, viaService(restart)),
+    status:  either(`systemctl is-active ${unit} 2>/dev/null || echo inactive`, probe ? `{ ${probe}; } >/dev/null 2>&1 && echo active || echo inactive` : 'echo unknown'),
+    enabled: either(`systemctl is-enabled ${unit} 2>/dev/null || echo disabled`, 'echo unknown'),
   };
 }
 
@@ -373,7 +382,7 @@ function serviceFor(itemId, osId) {
     requiresKeyForConfig: !!def.requiresKeyForConfig,
     configPaths: (f.configPaths || []).slice(),
     validate: f.validate || null,
-    verbs: serviceVerbs(f.manager, f.unit, f.reload),
+    verbs: serviceVerbs(f.manager, f.unit, f.reload, f.probe),
   };
 }
 
