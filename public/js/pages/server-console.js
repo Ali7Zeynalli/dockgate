@@ -35,7 +35,7 @@ Router.register('server-console', async (content, params) => {
   const ph = (title, desc) => `<div class="empty-state" style="padding:48px 24px;text-align:center"><h3>${title}</h3><p class="text-muted">${desc}</p></div>`;
   function renderConTab(tab) {
     if (tab === 'overview') {
-      con.innerHTML = '<div id="con-sec"></div><div id="con-ov"></div>';
+      con.innerHTML = '<div id="con-ov"></div><div id="con-sec" style="margin-top:16px"></div>';
       renderSecurityPosture(id, con.querySelector('#con-sec'), goTab);
       renderConsoleOverview(id, con.querySelector('#con-ov'), () => goTab('setup'));
     }

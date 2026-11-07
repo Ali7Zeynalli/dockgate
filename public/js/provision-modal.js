@@ -141,110 +141,41 @@ async function openRunLog(runId) {
   m.overlay.querySelector('.modal-footer').append(c);
 }
 
-// ---------- Overview tab — merged readiness + live host metrics (Dashboard-grade) ----------
-// One scan feeds the readiness banner + component cards; renderHostMonitoring owns the live
-// metrics subtree (its own self-terminating 5s poll). One scan + one host poll — no double work.
+// ---------- Overview tab — server summary (OS, setup state, Docker). Live metrics live in Monitoring,
+// the full component list in Setup; security recommendations are rendered below by server-security.js.
 async function renderConsoleOverview(serverId, container, onSetup) {
-  container.innerHTML = `
-    <div class="text-sm text-muted">🔍 Scanning <b>${escapeHtml(serverId)}</b> over SSH…</div>
-    <div class="skeleton" style="height:18px;width:55%;margin-top:10px"></div>
-    <div class="skeleton" style="height:18px;width:40%;margin-top:6px"></div>`;
+  container.innerHTML = '<div class="skeleton" style="height:90px;width:100%"></div>';
   let catalog, scan;
-  try {
-    [catalog, scan] = await Promise.all([API.get('/servers/provision/catalog'), API.get(`/servers/${serverId}/provision/scan`)]);
-  } catch (e) {
-    container.innerHTML = `<div class="card" style="border-left:3px solid var(--danger)"><div class="text-danger" style="font-weight:600">Scan failed</div><div class="text-sm text-muted" style="margin-top:4px">${escapeHtml(e.message)}</div><button class="btn btn-secondary btn-sm" id="ov-retry" style="margin-top:10px">Retry scan</button></div>`;
-    container.querySelector('#ov-retry')?.addEventListener('click', () => renderConsoleOverview(serverId, container, onSetup));
-    return;
-  }
-
+  try { [catalog, scan] = await Promise.all([API.get('/servers/provision/catalog'), API.get(`/servers/${serverId}/provision/scan`)]); }
+  catch (e) { return secError(container, 'Could not reach the server', e, () => renderConsoleOverview(serverId, container, onSetup)); }
   const stateOf = PV_STATE(scan.items);
   const items = catalog.items || [];
   const installed = items.filter(it => stateOf(it.id) === 'present').length;
-  const missingItems = items.filter(it => !it.alwaysRun && !it.optional && stateOf(it.id) === 'missing');
-  const missing = missingItems.length;
-  const missingNames = missingItems.map(it => it.label).join(' · '); // name them, not just count them
-  const naCount = items.filter(it => stateOf(it.id) === 'na').length;
+  const missing = items.filter(it => !it.alwaysRun && !it.optional && stateOf(it.id) === 'missing');
   const ready = stateOf('docker') === 'present';
-
-  const meta = {
-    present: { ic: '✓', col: 'var(--success)', txt: 'installed' },
-    missing: { ic: '●', col: 'var(--warning, #f59e0b)', txt: 'missing' },
-    action:  { ic: '↻', col: 'var(--info)', txt: 'runs every time' },
-    optional:{ ic: '◦', col: 'var(--text-muted)', txt: 'optional · not installed' },
-    na:      { ic: '⊘', col: 'var(--text-muted)', txt: 'n/a on this OS' },
-    unknown: { ic: '?', col: 'var(--text-muted)', txt: 'unknown' },
-  };
-  // Compact component row (status icon + label + state) — no nested cards, so the Components zone stays tidy.
-  const compRow = (it) => {
-    const st = it.alwaysRun ? 'action' : (it.optional && stateOf(it.id) === 'missing' ? 'optional' : stateOf(it.id)), c = meta[st] || meta.unknown;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;border-bottom:1px solid var(--border);opacity:${st === 'na' ? 0.55 : 1}">
-      <span style="color:${c.col};width:14px;text-align:center">${c.ic}</span>
-      <span style="flex:1;min-width:0">${escapeHtml(it.label)}${it.risk === 'high' ? ' <span class="text-xs" style="color:var(--danger)">⚠</span>' : ''}</span>
-      <span class="text-xs text-muted">${c.txt}</span>
-    </div>`;
-  };
-  const groups = [['base', 'Base'], ['security', 'Security'], ['system', 'System']];
-  const componentsHtml = groups.map(([g, glabel]) => {
-    const gItems = items.filter(it => it.group === g);
-    if (!gItems.length) return '';
-    return `<div style="margin-bottom:10px"><div class="text-xs text-muted" style="font-weight:700;letter-spacing:.4px;margin-bottom:2px">${glabel.toUpperCase()}</div>${gItems.map(compRow).join('')}</div>`;
-  }).join('');
-
-  // Zoned layout: readiness banner (top) · grid-2 [Docker | Components] · live host metrics (full width).
   container.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:16px">
-      <div class="card" style="border-left:4px solid ${ready ? 'var(--success)' : 'var(--warning, #f59e0b)'}">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-          <div>
-            <div style="font-size:17px;font-weight:700">${ready ? '✓ Ready' : '⚠ Needs setup'}</div>
-            <div class="text-sm text-muted">${scan.distro ? 'OS: ' + escapeHtml(scan.distro) + ' · ' : ''}${installed} installed · ${missing} missing${naCount ? ` · ${naCount} n/a` : ''}</div>
-            ${missing ? `<div class="text-sm" style="color:var(--warning,#f59e0b);font-weight:600;margin-top:3px">Missing: ${escapeHtml(missingNames)}</div>` : ''}
-          </div>
-          ${missing ? `<button class="btn btn-primary btn-sm" id="ov-setup">Set up ${missing} missing →</button>` : ''}
-        </div>
+    ${UI.header('Overview', 'The state of this server and what to do next.')}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
+      <div class="card" style="padding:14px 16px;display:grid;gap:8px">
+        <div class="flex justify-between items-center"><b>Setup</b>${ready ? UI.pill('ok', 'Ready') : UI.pill('warn', 'Needs setup')}</div>
+        <div class="ui-sub">${scan.distro ? 'OS ' + escapeHtml(scan.distro) + ' · ' : ''}${installed} installed${missing.length ? ` · ${missing.length} missing: ${escapeHtml(missing.map(m => m.label).join(', '))}` : ''}</div>
+        <div>${UI.btn(missing.length ? `Set up ${missing.length} missing →` : 'Open Setup', 'data-setup', missing.length ? 'btn-primary' : 'btn-secondary')}</div>
       </div>
-
-      <div class="grid-2">
-        <div class="card">
-          <div style="font-size:15px;font-weight:700;margin-bottom:10px">Docker</div>
-          <div id="ov-docker"><div class="text-xs text-muted">loading…</div></div>
-        </div>
-        <div class="card">
-          <div style="font-size:15px;font-weight:700;margin-bottom:10px">Components</div>
-          ${componentsHtml || '<div class="text-xs text-muted">No components</div>'}
-          <div class="text-xs text-muted" style="margin-top:8px">Scanned over SSH · use <b>Setup</b> to install missing.</div>
-        </div>
-      </div>
-
-      <div>
-        <div style="font-size:15px;font-weight:700;margin-bottom:8px">Live host metrics</div>
-        <div id="ov-host"></div>
+      <div class="card" style="padding:14px 16px;display:grid;gap:8px">
+        <div class="flex justify-between items-center"><b>Docker</b><span data-dstate></span></div>
+        <div data-docker class="ui-sub">loading…</div>
+        <div>${UI.btn('Open Monitoring', 'data-mon')}</div>
       </div>
     </div>`;
-  container.querySelector('#ov-setup')?.addEventListener('click', () => { if (typeof onSetup === 'function') onSetup(); });
-
-  // Docker counts — compact stat row, auto-refreshed every 30s (self-terminating; skipped while a modal
-  // is open or the user is typing). The readiness scan is one-shot (slow + rarely changes); host metrics
-  // refresh on their own 5s tick.
-  const dockerStat = (d) => {
-    const s = (v, l, col) => `<div style="text-align:center;min-width:60px"><div style="font-size:20px;font-weight:800;line-height:1.1;color:${col || 'var(--text-primary)'}">${v}</div><div class="text-xs text-muted">${l}</div></div>`;
-    return `<div style="display:flex;gap:16px;flex-wrap:wrap">${s(d.containers, 'Containers')}${s(d.running, 'Running', 'var(--success)')}${s(d.images, 'Images')}${s(d.volumes, 'Volumes')}${s(d.networks, 'Networks')}</div>`;
-  };
-  let dt = null;
-  async function refreshDocker() {
-    const el = container.querySelector('#ov-docker');
-    if (!el || !document.body.contains(el)) { if (dt) clearInterval(dt); return; } // view swapped out
-    if (typeof shouldSkipAutoRefresh === 'function' && shouldSkipAutoRefresh()) return; // modal open / typing
-    try { const d = await API.get(`/servers/${serverId}/docker/summary`); if (document.body.contains(el)) el.innerHTML = dockerStat(d); }
-    catch (e) { if (document.body.contains(el)) el.innerHTML = '<div class="text-xs text-muted">Docker not reachable on this host</div>'; }
-  }
-  refreshDocker();
-  dt = setInterval(refreshDocker, 30000);
-
-  // Embed the live host-metrics dashboard; it self-terminates its 5s poll when this view is swapped out.
-  const hostEl = container.querySelector('#ov-host');
-  if (hostEl && typeof renderHostMonitoring === 'function') renderHostMonitoring(serverId, hostEl);
+  container.querySelector('[data-setup]').onclick = () => { if (typeof onSetup === 'function') onSetup(); };
+  container.querySelector('[data-mon]').onclick = () => Router.navigate('server-console', { id: serverId, tab: 'monitoring' });
+  const el = container.querySelector('[data-docker]');
+  try {
+    const d = await API.get(`/servers/${serverId}/docker/summary`);
+    if (!document.body.contains(el)) return;
+    el.innerHTML = `${d.running} of ${d.containers} containers running · ${d.images} images · ${d.volumes} volumes · ${d.networks} networks`;
+    container.querySelector('[data-dstate]').innerHTML = UI.pill('ok', 'Reachable');
+  } catch (e) { if (document.body.contains(el)) { el.textContent = 'Docker is not reachable on this server.'; container.querySelector('[data-dstate]').innerHTML = UI.pill('warn', 'Not reachable'); } }
 }
 
 // ---------- Run progress — steps like a CI job, log underneath ----------

@@ -1422,6 +1422,7 @@ tbody td {
 .ui-table td.ui-td-actions .btn + .btn { margin-left: 4px; }
 .ui-table tr.ui-row-default td { color: var(--text-secondary); background: rgba(127, 127, 127, .04); }
 .ui-table tr.ui-row-selected td { background: var(--bg-card-hover); }
+.ui-table tr.ui-row-muted td { opacity: .6; }
 .ui-sub { font-size: 12px; color: var(--text-secondary); }
 .ui-settings { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-card); }
 .ui-set { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--border); }

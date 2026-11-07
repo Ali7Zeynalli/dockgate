@@ -100,35 +100,82 @@ function renderServiceLogs(text, el) {
   el.innerHTML = `<details class="card" style="padding:12px 14px"><summary class="text-sm" style="cursor:pointer;font-weight:600">Recent log</summary><div style="margin-top:10px">${svcPre(text, '(no journal entries)')}</div></details>`;
 }
 
-// ---------- Services tab ----------
-function renderServicesPanel(serverId, container, sub) {
-  const pages = [['docker', 'Docker'], ['timesync', 'Time sync'], ['unattended-upgrades', 'Auto updates']];
-  let active = pages.some(p => p[0] === sub) ? sub : 'docker';
+// ---------- Services tab — Cockpit "Services" style: one table, select a row for its details ----------
+const SVC_INFO = {
+  docker: ['Container engine', null], timesync: ['Keeps the clock right (chrony)', null], 'unattended-upgrades': ['Installs security updates', null],
+  'ssh-hardening': ['Remote login', 'access'], firewall: ['Blocks unwanted traffic', 'firewall'], fail2ban: ['Bans brute-force IPs', 'fail2ban'],
+};
+const SVC_NAME = { docker: 'Docker', timesync: 'Time sync', 'unattended-upgrades': 'Auto updates', 'ssh-hardening': 'SSH server', firewall: 'Firewall', fail2ban: 'Fail2ban' };
+async function renderServicesPanel(serverId, container, sub) {
+  container.innerHTML = '<div class="skeleton" style="height:160px;width:100%"></div>';
+  let data;
+  try { data = await API.get(`/servers/${serverId}/services/status`); }
+  catch (e) { return secError(container, "Couldn't read services", e, () => renderServicesPanel(serverId, container, sub)); }
+  const list = (data.services || []).filter(x => x.itemId).map(x => ({ ...x, label: SVC_NAME[x.itemId] || x.label }));
+  const usable = list.filter(x => !x.na);
+  let active = usable.some(x => x.itemId === sub) ? sub : (usable.find(x => x.itemId === 'docker') || usable[0] || {}).itemId;
+  const reload = () => renderServicesPanel(serverId, container, active);
+  const stateCell = (x) => x.na ? UI.pill('off', 'Not available') : x.active === null ? UI.pill('off', 'Unknown') : x.active ? UI.pill('ok', 'Running') : UI.pill('bad', 'Stopped');
+  const bootCell = (x) => x.na || x.enabled === null ? '<span class="ui-sub">—</span>'
+    : `<button type="button" class="toggle ${x.enabled ? 'active' : ''}" role="switch" aria-checked="${!!x.enabled}" aria-label="Start ${escapeHtml(x.label)} at boot" data-boot="${x.itemId}" style="border:0"></button>`;
   container.innerHTML = `
-    <div class="tab-bar" id="svc-tabs" style="margin-bottom:14px">${pages.map(([v, l]) => `<button class="tab-btn ${v === active ? 'active' : ''}" data-svc="${v}">${l}</button>`).join('')}</div>
-    <div class="text-xs text-muted" style="margin:-6px 0 14px">SSH is managed in <b>Access &amp; SSH</b>, the firewall in <b>Firewall</b>, fail2ban in <b>Fail2ban</b>.</div>
-    <div id="svc-page"></div>`;
+    ${UI.header('Services', 'System services DockGate manages on this server. Select one for its settings and log.')}
+    ${UI.table([{ label: 'Service' }, { label: 'State' }, { label: 'Start at boot' }, { label: '', align: 'right' }], list.map(x => ({ cls: x.itemId === active ? 'ui-row-selected' : '', cells: [
+      `<a href="#" data-sel="${x.itemId}" style="color:inherit;text-decoration:none;font-weight:600">${escapeHtml(x.label)}</a> <span class="ui-sub td-mono">${escapeHtml(x.unit || '')}${x.timer ? ' (timer)' : ''}</span><div class="ui-sub">${escapeHtml((SVC_INFO[x.itemId] || [x.reason || ''])[0])}</div>`,
+      stateCell(x), bootCell(x),
+      x.na ? '' : `${x.active === false ? UI.btn('Start', `data-act="start" data-svc="${x.itemId}"`, 'btn-primary') : UI.btn(x.reload ? 'Reload' : 'Restart', `data-act="restart" data-svc="${x.itemId}"`)}${x.active !== false ? UI.btn('Stop', `data-act="stop" data-svc="${x.itemId}"`, 'btn-danger') : ''}`,
+    ] })), { minWidth: 640, empty: 'No manageable services on this server.' })}
+    <div id="svc-page" style="margin-top:18px"></div>`;
   const page = container.querySelector('#svc-page');
-  const show = (v) => {
-    active = v;
-    container.querySelectorAll('#svc-tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.svc === v));
-    renderServicePage(serverId, v, page);
+  const show = (id) => {
+    active = id;
+    container.querySelectorAll('tr').forEach(tr => tr.classList.toggle('ui-row-selected', !!tr.querySelector(`[data-sel="${id}"]`)));
+    const x = list.find(y => y.itemId === id);
+    const tab = (SVC_INFO[id] || [])[1];
+    if (!x) { page.innerHTML = ''; return; }
+    if (tab) {
+      page.innerHTML = `${UI.header(escapeHtml(x.label), `Settings for this service are on the <b>${escapeHtml({ access: 'Access & SSH', firewall: 'Firewall', fail2ban: 'Fail2ban' }[tab])}</b> tab.`, UI.btn('Open', 'data-goto', 'btn-primary'))}`;
+      page.querySelector('[data-goto]').onclick = () => document.querySelector(`#con-tabs .tab-btn[data-ctab="${tab}"]`)?.click();
+    } else {
+      page.innerHTML = UI.header(escapeHtml(x.label), escapeHtml((SVC_INFO[id] || [''])[0])) + '<div data-detail></div>';
+      renderServicePage(serverId, id, page.querySelector('[data-detail]'));
+    }
   };
-  container.querySelector('#svc-tabs').addEventListener('click', (e) => { const b = e.target.closest('.tab-btn'); if (b) show(b.dataset.svc); });
-  show(active);
+  container.querySelectorAll('[data-sel]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); show(a.dataset.sel); }));
+  const run = (x, action, label) => svcRunAction(serverId, x, action, label, reload);
+  container.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => run(list.find(y => y.itemId === b.dataset.svc), b.dataset.act, b.textContent)));
+  container.querySelectorAll('[data-boot]').forEach(b => b.addEventListener('click', () => { const x = list.find(y => y.itemId === b.dataset.boot); run(x, x.enabled ? 'disable' : 'enable', x.enabled ? 'Disable at boot' : 'Enable at boot'); }));
+  if (active) show(active);
+}
+
+/** One lifecycle action with the same confirm rules as the service bar (risky services ask first). */
+function svcRunAction(serverId, s, action, label, done) {
+  const send = (confirm) => API.post(`/servers/${serverId}/services/${s.itemId}/action`, { action, confirm });
+  const ok = () => { showToast(`${s.label}: ${label.toLowerCase()} ✓`); setTimeout(done, 700); };
+  send(false).then(ok).catch((e) => {
+    if (/confirm/i.test(e.message || '')) secConfirm({
+      title: `${escapeHtml(label)} — ${escapeHtml(s.label)}`, danger: true, confirmLabel: label,
+      change: `${escapeHtml(s.label)} (${escapeHtml(s.unit || '')}) will ${escapeHtml(label.toLowerCase())}.`,
+      protects: s.risk === 'high' ? 'This service guards access (SSH / firewall): stopping it over a password login is refused, and open SSH sessions survive a reload.' : 'Only this service is affected.',
+      undo: action === 'stop' || action === 'disable' ? 'Start / enable it again here.' : 'Nothing to undo.',
+      onConfirm: () => send(true).then(ok).catch(e2 => showToast(e2.message, 'error', 8000)),
+    });
+    else showToast(e.message, 'error', 8000);
+  });
 }
 
 async function renderServicePage(serverId, item, el) {
   el.innerHTML = `
-    <div data-bar style="margin-bottom:16px"></div>
     <div data-body><div class="card"><div class="skeleton" style="width:100%;height:120px"></div></div></div>
     <div data-raw style="margin-top:16px"></div>
     <div data-logs style="margin-top:12px"></div>`;
   const reload = () => renderServicePage(serverId, item, el);
-  renderServiceBar(serverId, item, el.querySelector('[data-bar]'), { onChange: reload }).then((svc) => {
+  // state + start/stop live in the Services table above; here: settings, the raw config file and the log
+  API.get(`/servers/${serverId}/services/status`).then((d) => {
+    const svc = (d.services || []).find(x => x.itemId === item);
     const p = svc && svc.configPaths && svc.configPaths[0];
     if (p && document.body.contains(el)) renderRawConfig(serverId, item, p, el.querySelector('[data-raw]'), { label: p });
-  });
+  }).catch(() => {});
   const body = el.querySelector('[data-body]');
   let info;
   try { info = await API.get(`/servers/${serverId}/services/${item}/info`); }
