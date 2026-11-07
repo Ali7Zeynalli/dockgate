@@ -2,6 +2,14 @@
 
 ---
 
+## [2.5.1] - 2026-11-07
+
+### Added
+- **Automatic GitHub Releases:** when a push to `main` changes the version in `package.json`, the publish workflow now also creates the matching GitHub Release (`v<version>` tag on that commit), with that version's CHANGELOG section as the notes and the Docker image tag. Nothing happens if the release already exists.
+- **Manual release workflow** (*Actions → Create GitHub Release (manual) → Run workflow*): creates the release for an older version from its CHANGELOG section at a chosen commit — for versions published before the automatic step existed.
+
+---
+
 ## [2.5.0] - 2026-11-07
 
 ### Added

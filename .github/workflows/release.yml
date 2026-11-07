@@ -1,0 +1,38 @@
+name: Create GitHub Release (manual)
+
+# For a version whose release was not created automatically (e.g. older versions):
+# Actions → "Create GitHub Release (manual)" → Run workflow → version + commit/branch.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without "v", e.g. 2.4.5 (must have a section in CHANGELOG.md)'
+        required: true
+      target:
+        description: 'Commit SHA or branch the tag should point to'
+        required: true
+        default: main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          case "$VERSION" in *[!0-9.]*|'') echo "Invalid version: $VERSION"; exit 1;; esac
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "Release $TAG already exists"; exit 0; fi
+          awk -v v="$VERSION" 'index($0, "## [" v "]")==1 {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md | sed '/^---$/d' > notes.md
+          [ -s notes.md ] || { echo "No section for $VERSION in CHANGELOG.md at this commit"; exit 1; }
+          gh release create "$TAG" --target "$(git rev-parse HEAD)" --title "$TAG" --notes-file notes.md
