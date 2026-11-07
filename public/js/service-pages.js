@@ -251,6 +251,7 @@ function renderTimesyncPage(serverId, info, body, reload) {
 function renderAutoUpdatesPage(serverId, info, body, reload) {
   const st = info.settings || {};
   const debian = info.family !== 'rhel';
+  const rs = info.rhelSettings || {};
   body.innerHTML = `
     <div class="grid-2">
       <div class="card">
@@ -261,7 +262,13 @@ function renderAutoUpdatesPage(serverId, info, body, reload) {
           <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Reboot automatically when needed</div><div class="settings-row-desc">Only when an update requires it (kernel, libc)</div></div><div class="toggle ${st.autoReboot ? 'active' : ''}" id="au-rb" role="switch" tabindex="0"></div></div>
           <div class="settings-row" style="padding:8px 0;border-bottom:0"><div><div class="settings-row-label">Reboot time</div><div class="settings-row-desc">Server local time, 24-hour</div></div><input class="input" id="au-time" value="${escapeHtml(st.rebootTime || '04:00')}" style="width:90px"></div>
           <button class="btn btn-sm btn-primary" type="submit" style="justify-self:start;margin-top:6px">Save</button>
-        </form>` : `<div class="text-sm text-muted" style="margin:6px 0 10px">dnf-automatic settings:</div>${svcPre(info.rhel, 'dnf-automatic is not configured')}`}
+        </form>` : (info.installed === false ? `<div class="text-sm text-muted" style="margin:6px 0 10px">dnf-automatic is not installed — install it in Setup → Auto updates.</div>` : `
+        <form data-form style="display:grid;gap:4px">
+          <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Install updates automatically</div><div class="settings-row-desc">Daily, via dnf-automatic.timer</div></div><div class="toggle ${rs.enabled ? 'active' : ''}" id="au-en" role="switch" tabindex="0"></div></div>
+          <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Which updates</div><div class="settings-row-desc">Security only is the safer choice for servers</div></div><select class="select" id="au-type" style="width:150px"><option value="security" ${rs.upgradeType === 'security' ? 'selected' : ''}>Security only</option><option value="default" ${rs.upgradeType !== 'security' ? 'selected' : ''}>All updates</option></select></div>
+          <div class="settings-row" style="padding:8px 0;border-bottom:0"><div><div class="settings-row-label">Reboot automatically when needed</div><div class="settings-row-desc">Right after an update that requires it (kernel, glibc). Needs dnf 4.15+ / dnf5 — older versions ignore it</div></div><div class="toggle ${rs.reboot === 'when-needed' ? 'active' : ''}" id="au-rb" role="switch" tabindex="0"></div></div>
+          <button class="btn btn-sm btn-primary" type="submit" style="justify-self:start;margin-top:6px">Save</button>
+        </form>`)}
       </div>
       <div class="card">
         <div style="font-weight:700;font-size:15px;margin-bottom:10px">Status</div>
@@ -270,11 +277,13 @@ function renderAutoUpdatesPage(serverId, info, body, reload) {
         ${info.last ? `<details style="margin-top:8px"><summary class="text-xs text-muted" style="cursor:pointer">Last unattended-upgrades log</summary><div style="margin-top:6px">${svcPre(info.last)}</div></details>` : ''}
       </div>
     </div>`;
-  if (!debian) return;
+  if (!debian && !body.querySelector('[data-form]')) return;
   body.querySelectorAll('.toggle').forEach(t => { const f = () => t.classList.toggle('active'); t.addEventListener('click', f); t.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); f(); } }); });
   body.querySelector('[data-form]').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const v = { enabled: body.querySelector('#au-en').classList.contains('active'), autoReboot: body.querySelector('#au-rb').classList.contains('active'), rebootTime: body.querySelector('#au-time').value.trim() };
+    const v = debian
+      ? { enabled: body.querySelector('#au-en').classList.contains('active'), autoReboot: body.querySelector('#au-rb').classList.contains('active'), rebootTime: body.querySelector('#au-time').value.trim() }
+      : { family: 'rhel', enabled: body.querySelector('#au-en').classList.contains('active'), upgradeType: body.querySelector('#au-type').value, reboot: body.querySelector('#au-rb').classList.contains('active') ? 'when-needed' : 'never' };
     try { await API.post(`/servers/${serverId}/services/unattended-upgrades/settings`, v); showToast('Auto update settings saved'); reload(); }
     catch (er) { showToast(er.message, 'error', 8000); }
   });

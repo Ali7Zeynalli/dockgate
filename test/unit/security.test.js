@@ -408,3 +408,17 @@ test('services: without systemd, state comes from a probe (or "unknown") and act
   const alpine = catalog.serviceFor('docker', 'alpine');
   assert.equal(alpine.verbs.status, 'rc-service docker status >/dev/null 2>&1 && echo active || echo inactive', 'openrc unchanged');
 });
+
+test('plans: dnf-automatic — validated choices, backup + restore, timer follows the switch', () => {
+  const on = plans.dnfAutomaticPlan({ enabled: true, upgradeType: 'security', reboot: 'when-needed' });
+  const all = on.steps.map(s => s.cmd).join('\n');
+  assert.match(all, /cp -p \/etc\/dnf\/automatic\.conf \/etc\/dnf\/automatic\.conf\.dockgate-prev/);
+  assert.match(all, /apply_updates = yes/);
+  assert.match(all, /upgrade_type = security/);
+  assert.match(all, /reboot = when-needed/);
+  assert.match(all, /systemctl enable --now dnf-automatic\.timer/);
+  const off = plans.dnfAutomaticPlan({ enabled: false, upgradeType: 'default', reboot: 'never' });
+  assert.match(off.steps.map(s => s.cmd).join('\n'), /apply_updates = no[\s\S]*systemctl disable --now dnf-automatic\.timer/);
+  assert.throws(() => plans.dnfAutomaticPlan({ enabled: true, upgradeType: 'all; rm', reboot: 'never' }), /upgradeType/);
+  assert.throws(() => plans.dnfAutomaticPlan({ enabled: true, upgradeType: 'default', reboot: 'always' }), /reboot/);
+});

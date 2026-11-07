@@ -18,11 +18,11 @@ const plans = require('../security/plans');
 const runner = require('../security/runner');
 const hostkey = require('../ssh-hostkey');
 
-const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
-if (!fs.existsSync(SSH_KEYS_DIR)) fs.mkdirSync(SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
+const paths = require('../paths');
+paths.ensureKeysDir();
 
 // ---------------------------------------------------------------- helpers
-const absKey = (p) => (p ? (path.isAbsolute(p) ? p : path.join(SSH_KEYS_DIR, p)) : null);
+const absKey = (p) => paths.keyPath(p);
 
 function loadServer(req) {
   const row = stmts.getServer.get(req.params.id);
@@ -669,6 +669,16 @@ router.get('/:id/services/:item/info', send(async (req) => {
       rebootTime: (/Automatic-Reboot-Time\s+"([^"]+)"/.exec(sec.dockgate || '') || [])[1] || '04:00',
     };
     out.timer = sec.timer || ''; out.last = sec.last || ''; out.rhel = sec.rhel || '';
+    if (family === 'rhel') {
+      const k = (key) => (new RegExp('^' + key + '\\s*=\\s*(\\S+)', 'm').exec(sec.rhel || '') || [])[1];
+      out.installed = !!(sec.rhpkg || '').trim();
+      out.rhelSettings = {
+        enabled: k('apply_updates') === 'yes' && /^enabled/.test((sec.rhtimer || '').trim()),
+        upgradeType: k('upgrade_type') === 'security' ? 'security' : 'default',
+        reboot: k('reboot') === 'when-needed' ? 'when-needed' : 'never',
+        timerEnabled: /^enabled/.test((sec.rhtimer || '').trim()),
+      };
+    }
     out.pending = Number((sec.pending || '').trim()) || 0;
     out.rebootRequired = /yes/.test(sec.reboot || '');
   }
@@ -708,7 +718,13 @@ router.post('/:id/services/timesync/settings', send(async (req) => {
 
 router.post('/:id/services/unattended-upgrades/settings', send(async (req) => {
   const row = loadServer(req);
-  const { enabled, autoReboot, rebootTime } = req.body || {};
+  const { enabled, autoReboot, rebootTime, family } = req.body || {};
+  if (family === 'rhel') {
+    const { upgradeType, reboot } = req.body;
+    await runOrThrow(row, plans.dnfAutomaticPlan({ enabled: !!enabled, upgradeType, reboot }), 'Auto updates');
+    audit(req, row, 'auto-updates-settings', { family, enabled: !!enabled, upgradeType, reboot });
+    return { success: true };
+  }
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(rebootTime || ''))) throw P.httpError(400, 'Reboot time must be HH:MM (24-hour), e.g. 04:00');
   await runOrThrow(row, plans.unattendedSettingsPlan({ enabled: !!enabled, autoReboot: !!autoReboot, rebootTime }), 'Auto updates');
   audit(req, row, 'auto-updates-settings', { enabled: !!enabled, autoReboot: !!autoReboot, rebootTime });

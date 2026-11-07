@@ -27,10 +27,8 @@ const hostStats = require('../host-stats');
 const hostLogs = require('../host-logs');
 const serviceCtl = require('../service-ctl');
 
-const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
-if (!fs.existsSync(SSH_KEYS_DIR)) {
-  fs.mkdirSync(SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
-}
+const paths = require('../paths');
+const SSH_KEYS_DIR = paths.ensureKeysDir();
 
 // ID validate — yalnız təhlükəsiz simvollar
 function validateId(id) {
@@ -47,7 +45,7 @@ function validateId(id) {
 function grantDockerAccess(server) {
   const { execFile } = require('child_process');
   const keyPath = server.key_path
-    ? (path.isAbsolute(server.key_path) ? server.key_path : path.join(SSH_KEYS_DIR, server.key_path))
+    ? paths.keyPath(server.key_path)
     : null;
   const cfg = { host: server.host, port: server.port, username: server.username, keyPath, password: decrypt(server.password), passphrase: decrypt(server.passphrase), hostKey: server.host_key || null };
   return new Promise((resolve, reject) => {
@@ -334,9 +332,7 @@ router.delete('/:id', (req, res) => {
 
     // Key faylını sil
     if (server.key_path) {
-      const keyFile = path.isAbsolute(server.key_path)
-        ? server.key_path
-        : path.join(SSH_KEYS_DIR, server.key_path);
+      const keyFile = paths.keyPath(server.key_path);
       if (fs.existsSync(keyFile)) {
         try { fs.unlinkSync(keyFile); } catch(e) {}
       }
@@ -344,7 +340,7 @@ router.delete('/:id', (req, res) => {
 
     // Key pairs DockGate generated for this server's users (deploy user, Users → Add key)
     for (const g of stmts.getGeneratedKeys.all(id)) {
-      try { fs.unlinkSync(path.isAbsolute(g.key_path) ? g.key_path : path.join(SSH_KEYS_DIR, g.key_path)); } catch (e) {}
+      try { fs.unlinkSync(paths.keyPath(g.key_path)); } catch (e) {}
     }
     stmts.deleteGeneratedKeysForServer.run(id);
     stmts.deleteServer.run(id);
@@ -364,7 +360,7 @@ router.delete('/:id', (req, res) => {
 // ============ PROVISIONING ============
 function resolveKeyPath(server) {
   if (!server.key_path) return null;
-  return path.isAbsolute(server.key_path) ? server.key_path : path.join(SSH_KEYS_DIR, server.key_path);
+  return paths.keyPath(server.key_path);
 }
 
 // GET /api/servers/provision/catalog — read-only reference (explainer + custom checklist).

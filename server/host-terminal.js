@@ -14,7 +14,7 @@ const { decrypt } = require('./auth/secrets');
 let pty = null;
 try { pty = require('node-pty'); } catch (e) { /* optional dep — local host terminal disabled if missing */ }
 
-const SSH_KEYS_DIR = path.join(__dirname, '..', 'data', 'ssh-keys');
+const paths = require('./paths');
 
 function attachHostTerminal(socket, { dockerService, stmts, logAction }) {
   const hostSessions = new Map(); // slot -> { sshConn, sshStream, ptyProc }
@@ -62,7 +62,7 @@ function attachHostTerminal(socket, { dockerService, stmts, logAction }) {
       if (!s) { socket.emit('hostterm:error', { error: 'Active server not found', slot }); return; }
       const opts = { host: s.host, port: s.port || 22, username: s.username, readyTimeout: 20000, keepaliveInterval: 15000, hostVerifier: require('./ssh-hostkey').verifierFor(s) };
       if (s.key_path) {
-        const keyPath = path.isAbsolute(s.key_path) ? s.key_path : path.join(SSH_KEYS_DIR, s.key_path);
+        const keyPath = paths.keyPath(s.key_path);
         if (!fs.existsSync(keyPath)) { socket.emit('hostterm:error', { error: `SSH key not found: ${keyPath}`, slot }); return; }
         opts.privateKey = fs.readFileSync(keyPath);
         if (s.passphrase) opts.passphrase = decrypt(s.passphrase);

@@ -1,6 +1,7 @@
 const Docker = require('dockerode');
 const fs = require('fs');
 const path = require('path');
+const paths = require('./paths');
 const { decrypt } = require('./auth/secrets');
 
 // ============ DYNAMIC DOCKER CLIENT ============
@@ -25,9 +26,7 @@ function createSshClient(server) {
   // privateKey/passphrase MUST live inside sshOptions or they are silently dropped, which makes
   // ssh2 fall back to the (absent) agent → "All configured authentication methods failed".
   if (server.key_path) {
-    const keyPath = path.isAbsolute(server.key_path)
-      ? server.key_path
-      : path.join(__dirname, '..', 'data', 'ssh-keys', server.key_path);
+    const keyPath = paths.keyPath(server.key_path);
     if (!fs.existsSync(keyPath)) throw new Error(`SSH key not found: ${keyPath}`);
     opts.sshOptions = {
       privateKey: fs.readFileSync(keyPath),

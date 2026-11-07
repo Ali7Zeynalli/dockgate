@@ -14,8 +14,8 @@ const path = require('path');
 const { stmts } = require('./db');
 const { decrypt } = require('./auth/secrets');
 
-const SSH_KEYS_DIR = path.join(__dirname, '..', 'data', 'ssh-keys');
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+const paths = require('./paths');
+const { DATA_DIR } = paths;
 
 /**
  * Write the registry credentials into a DOCKER_CONFIG dir (so the CLI pulls private images).
@@ -62,7 +62,7 @@ function buildCliEnv(activeServerId, subdir) {
     throw e;
   }
 
-  const keyPath = path.isAbsolute(s.key_path) ? s.key_path : path.join(SSH_KEYS_DIR, s.key_path);
+  const keyPath = paths.keyPath(s.key_path);
   // The docker ssh connhelper invokes `ssh` from PATH with no way to pass `-i`. So we put a tiny `ssh`
   // wrapper first on PATH that injects our stored key + non-interactive options. (A temp HOME/.ssh/config
   // is NOT honored reliably by the connhelper, but a PATH-shadowed wrapper always is.)

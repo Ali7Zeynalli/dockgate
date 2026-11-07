@@ -464,6 +464,8 @@ const SERVICE_INFO = {
     'echo @@last; {{S}}tail -n 40 /var/log/unattended-upgrades/unattended-upgrades.log 2>/dev/null',
     "echo @@pending; if command -v apt >/dev/null 2>&1; then apt list --upgradable 2>/dev/null | tail -n +2 | wc -l; else dnf -q check-update 2>/dev/null | grep -c '^[a-zA-Z0-9]'; fi",
     "echo @@rhel; grep -E '^(apply_updates|upgrade_type|reboot)[[:space:]]*=' /etc/dnf/automatic.conf 2>/dev/null",
+    'echo @@rhtimer; systemctl is-enabled dnf-automatic.timer 2>/dev/null',
+    "echo @@rhpkg; rpm -q dnf-automatic dnf5-plugin-automatic 2>/dev/null | grep -v 'not installed'",
     'echo @@reboot; [ -f /var/run/reboot-required ] && echo yes; true',
   ],
 };
@@ -499,6 +501,29 @@ function unattendedSettingsPlan({ enabled, autoReboot, rebootTime }) {
   };
 }
 
+/**
+ * RHEL family dnf-automatic: on/off (timer + apply_updates), all vs security-only updates, reboot policy.
+ * Keys are set in place in /etc/dnf/automatic.conf ([commands]); a missing key is added under [commands].
+ */
+function dnfAutomaticPlan({ enabled, upgradeType, reboot }) {
+  if (!['default', 'security'].includes(upgradeType)) throw P.httpError(400, 'upgradeType must be default or security');
+  if (!['never', 'when-needed'].includes(reboot)) throw P.httpError(400, 'reboot must be never or when-needed');
+  const F = '/etc/dnf/automatic.conf';
+  // active key → replace it; else the first commented-out one → un-comment it; else add under [commands]
+  const set = (k, v) => `if {{S}}grep -qE '^[[:space:]]*${k}[[:space:]]*=' ${F}; then {{S}}sed -i -E 's/^[[:space:]]*${k}[[:space:]]*=.*/${k} = ${v}/' ${F}; ` +
+    `elif {{S}}grep -qE '^#[[:space:]]*${k}[[:space:]]*=' ${F}; then {{S}}sed -i -E '0,/^#[[:space:]]*${k}[[:space:]]*=.*/s//${k} = ${v}/' ${F}; ` +
+    `else {{S}}sed -i '/^\\[commands\\]/a ${k} = ${v}' ${F}; fi`;
+  const restore = `{{S}}mv -f ${F}.dockgate-prev ${F}`;
+  return {
+    steps: [
+      { label: 'Check dnf-automatic', cmd: `{{S}}test -f ${F} || { echo "dnf-automatic is not installed — install it in Setup → Auto updates"; exit 1; }; {{S}}grep -q '^\\[commands\\]' ${F} || { echo "${F} has no [commands] section"; exit 1; }; {{S}}cp -p ${F} ${F}.dockgate-prev` },
+      { label: 'Write the settings', cmd: `{ ${set('apply_updates', enabled ? 'yes' : 'no')} && ${set('upgrade_type', upgradeType)} && ${set('reboot', reboot)}; } || { ${restore}; echo "could not write ${F} — restored"; exit 1; }` },
+      { label: enabled ? 'Enable the daily timer' : 'Disable the daily timer', cmd: `${enabled ? '{{S}}systemctl enable --now dnf-automatic.timer' : '{{S}}systemctl disable --now dnf-automatic.timer'} >/dev/null 2>&1 || { ${restore}; echo "systemctl could not ${enabled ? 'enable' : 'disable'} dnf-automatic.timer — restored"; exit 1; }` },
+      { label: 'Clean up', cmd: `{{S}}rm -f ${F}.dockgate-prev; true` },
+    ],
+  };
+}
+module.exports.dnfAutomaticPlan = dnfAutomaticPlan;
 module.exports.serviceInfoScript = serviceInfoScript;
 module.exports.SERVICE_INFO_ITEMS = Object.keys(SERVICE_INFO);
 module.exports.dockerSettingsPlan = dockerSettingsPlan;

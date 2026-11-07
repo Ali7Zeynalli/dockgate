@@ -9,12 +9,12 @@ const { stmts } = require('./db');
 const dockerService = require('./docker');
 const { decrypt } = require('./auth/secrets');
 
-const SSH_KEYS_DIR = path.join(__dirname, '..', 'data', 'ssh-keys');
+const paths = require('./paths');
 
 function authFor(s) {
   const opts = { host: s.host, port: s.port || 22, username: s.username, readyTimeout: 20000, hostVerifier: require('./ssh-hostkey').verifierFor(s) };
   if (s.key_path) {
-    const keyPath = path.isAbsolute(s.key_path) ? s.key_path : path.join(SSH_KEYS_DIR, s.key_path);
+    const keyPath = paths.keyPath(s.key_path);
     if (!fs.existsSync(keyPath)) throw new Error(`SSH key not found: ${keyPath}`);
     opts.privateKey = fs.readFileSync(keyPath);
     if (s.passphrase) opts.passphrase = decrypt(s.passphrase);

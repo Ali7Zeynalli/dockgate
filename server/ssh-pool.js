@@ -10,7 +10,7 @@ const path = require('path');
 const { Client } = require('ssh2');
 const { decrypt } = require('./auth/secrets');
 
-const SSH_KEYS_DIR = path.join(__dirname, '..', 'data', 'ssh-keys');
+const paths = require('./paths');
 const POOL_MAX = 8;               // max live connections per server (the real concurrency cap — a few, FileZilla-style)
 const IDLE_TTL_MS = 60 * 1000;    // close a connection left idle this long
 const ACQUIRE_TIMEOUT_MS = 25000; // fail a borrow if no connection frees up in time (never hang forever)
@@ -21,7 +21,7 @@ const CONNECT_OPTS = { readyTimeout: 20000, keepaliveInterval: 15000, keepaliveC
 function authFor(s) {
   const opts = { host: s.host, port: s.port || 22, username: s.username, ...CONNECT_OPTS, hostVerifier: require('./ssh-hostkey').verifierFor(s) };
   if (s.key_path) {
-    const keyPath = path.isAbsolute(s.key_path) ? s.key_path : path.join(SSH_KEYS_DIR, s.key_path);
+    const keyPath = paths.keyPath(s.key_path);
     if (!fs.existsSync(keyPath)) throw new Error(`SSH key not found: ${keyPath}`);
     opts.privateKey = fs.readFileSync(keyPath);
     if (s.passphrase) opts.passphrase = decrypt(s.passphrase);
