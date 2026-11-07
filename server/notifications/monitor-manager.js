@@ -41,6 +41,8 @@ function buildClient(server) {
   } else if (server.password) {
     opts.password = decrypt(server.password);
   }
+  // Pinned host key (docker-modem merges sshOptions into the ssh2 connect options).
+  opts.sshOptions = { ...(opts.sshOptions || {}), hostVerifier: require('../ssh-hostkey').verifierFor(server) };
   return new Docker(opts);
 }
 

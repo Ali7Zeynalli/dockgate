@@ -59,6 +59,8 @@
 .btn-sm svg { width: 14px; height: 14px; }
 
 .btn-xs { padding: 3px 8px; font-size: 11px; border-radius: var(--radius-sm); }
+/* A disabled action must look disabled (e.g. "Remove" on the key DockGate itself connects with). */
+.btn:disabled, .btn[disabled] { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
 
 /* ============ CARDS ============ */
 .card {

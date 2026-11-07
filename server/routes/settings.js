@@ -143,10 +143,16 @@ router.delete('/activity', (req, res) => {
 });
 
 // ============ SETTINGS ============
+// Server-side secrets live in the same settings table (admin password hash + salt, the session signing
+// secret). They must NEVER reach the browser: the session secret alone lets anyone forge a valid login
+// cookie that survives a password change. Explicit list + a name-pattern safety net for future keys.
+const SECRET_SETTING_KEYS = new Set(['auth_password_hash', 'auth_salt', 'session_secret']);
+const isSecretSettingKey = (k) => SECRET_SETTING_KEYS.has(k) || /(secret|password|passwd|_hash|_salt|token|private_key)/i.test(k);
+
 router.get('/settings', (req, res) => {
   try {
     const settings = {};
-    stmts.getSettings.all().forEach(s => { settings[s.key] = s.value; });
+    stmts.getSettings.all().forEach(s => { if (!isSecretSettingKey(s.key)) settings[s.key] = s.value; });
     res.json(settings);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

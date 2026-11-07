@@ -12,7 +12,7 @@ const { decrypt } = require('./auth/secrets');
 const SSH_KEYS_DIR = path.join(__dirname, '..', 'data', 'ssh-keys');
 
 function authFor(s) {
-  const opts = { host: s.host, port: s.port || 22, username: s.username, readyTimeout: 20000 };
+  const opts = { host: s.host, port: s.port || 22, username: s.username, readyTimeout: 20000, hostVerifier: require('./ssh-hostkey').verifierFor(s) };
   if (s.key_path) {
     const keyPath = path.isAbsolute(s.key_path) ? s.key_path : path.join(SSH_KEYS_DIR, s.key_path);
     if (!fs.existsSync(keyPath)) throw new Error(`SSH key not found: ${keyPath}`);

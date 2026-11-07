@@ -78,3 +78,16 @@ test('clearing the audit log leaves a single activity_cleared entry', async () =
   assert.strictEqual(res.body.length, 1);
   assert.strictEqual(res.body[0].action, 'activity_cleared');
 });
+
+test('GET /api/meta/settings never exposes server-side secrets (session secret, password hash/salt)', async () => {
+  const { stmts } = require('../../server/db');
+  stmts.setSetting.run('session_secret', 'test-session-secret');
+  stmts.setSetting.run('auth_password_hash', 'test-hash');
+  stmts.setSetting.run('auth_salt', 'test-salt');
+  const get = await request(app).get('/api/meta/settings');
+  assert.strictEqual(get.status, 200);
+  for (const k of ['session_secret', 'auth_password_hash', 'auth_salt']) {
+    assert.ok(!(k in get.body), `${k} must not be returned`);
+  }
+  assert.ok('theme' in get.body, 'ordinary settings are still returned');
+});

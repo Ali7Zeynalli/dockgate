@@ -1,6 +1,7 @@
 // Per-server console — a full-page management view for one remote server.
 // Reached from the sidebar (Manage → Server Console) or Infrastructure → Servers → Manage.
-// Tabs: Overview (readiness + live host metrics) · Setup (provisioning) · Manage (service control) · Logs (host logs).
+// Tabs: Overview (security status + readiness + live host metrics) · Setup (provisioning) · Access & SSH ·
+// Users · Firewall · Services (service control; the 'manage' id is kept for old deep links) · Logs (host logs).
 Router.register('server-console', async (content, params) => {
   const id = params && params.id;
   if (!id) { content.innerHTML = '<div class="empty-state"><p>No server selected.</p><button class="btn btn-primary mt-2" onclick="Router.navigate(\'infra\',{tab:\'servers\'})">Back to Servers</button></div>'; return; }
@@ -9,7 +10,7 @@ Router.register('server-console', async (content, params) => {
   let server = { id };
   try { const data = await API.get('/servers'); server = (data.servers || []).find(s => s.id === id) || { id }; } catch (e) {}
 
-  const tabs = [['overview', 'Overview'], ['setup', 'Setup'], ['manage', 'Manage'], ['logs', 'Logs']];
+  const tabs = [['overview', 'Overview'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users'], ['firewall', 'Firewall'], ['manage', 'Services'], ['logs', 'Logs']];
   const validTabs = tabs.map(t => t[0]);
   let active = (params && validTabs.includes(params.tab)) ? params.tab : 'overview';
 
@@ -31,7 +32,14 @@ Router.register('server-console', async (content, params) => {
 
   const ph = (title, desc) => `<div class="empty-state" style="padding:48px 24px;text-align:center"><h3>${title}</h3><p class="text-muted">${desc}</p></div>`;
   function renderConTab(tab) {
-    if (tab === 'overview') renderConsoleOverview(id, con, () => goTab('setup'));
+    if (tab === 'overview') {
+      con.innerHTML = '<div id="con-sec"></div><div id="con-ov"></div>';
+      renderSecurityPosture(id, con.querySelector('#con-sec'), goTab);
+      renderConsoleOverview(id, con.querySelector('#con-ov'), () => goTab('setup'));
+    }
+    else if (tab === 'access') renderAccessPanel(id, con);
+    else if (tab === 'users') renderUsersPanel(id, con);
+    else if (tab === 'firewall') renderFirewallPanel(id, con);
     else if (tab === 'setup') renderProvisionPanel(id, con);
     else if (tab === 'manage') renderServiceManager(id, con);
     else if (tab === 'logs') renderHostLogs(id, con);

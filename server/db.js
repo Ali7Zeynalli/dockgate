@@ -242,6 +242,20 @@ migrate('ALTER TABLE servers ADD COLUMN passphrase TEXT'); // SSH key passphrase
 migrate('ALTER TABLE servers ADD COLUMN name TEXT');       // optional friendly display name (the id stays the immutable key)
 migrate('ALTER TABLE servers ADD COLUMN access_pass TEXT'); // optional per-server access password (stored as salt:scryptHash) — a 2nd gate required to switch to this server
 migrate('ALTER TABLE servers ADD COLUMN notifications_enabled INTEGER DEFAULT 1'); // per-server alert notification toggle (1 = on, 0 = muted)
+migrate('ALTER TABLE servers ADD COLUMN host_key TEXT');      // pinned SSH host key fingerprint (SHA256:…) — trust-on-first-use, then enforced
+migrate('ALTER TABLE servers ADD COLUMN host_key_blob TEXT'); // pinned host key, base64 wire format (for a known_hosts line used by the docker/ssh CLI)
+migrate('ALTER TABLE servers ADD COLUMN host_key_at DATETIME'); // when the host key was pinned
+// SSH key pairs DockGate generated for server users (deploy user / Users → Add key). The private key file
+// lives in data/ssh-keys (0600); the row lets the UI mark the key as DockGate's and offer its download.
+migrate(`CREATE TABLE IF NOT EXISTS generated_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  server_id TEXT NOT NULL,
+  username TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  key_path TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+migrate('CREATE INDEX IF NOT EXISTS idx_generated_keys_server ON generated_keys (server_id, username)');
 migrate('ALTER TABLE activity ADD COLUMN server TEXT');     // audit: which host the action was performed on (multi-host context)
 migrate('ALTER TABLE activity ADD COLUMN source_ip TEXT');  // audit: where from (the only "who" signal, since there's no auth)
 migrate('ALTER TABLE registries ADD COLUMN last_test_status TEXT');  // 'ok' | 'fail' — cached Test-login result for the status pill
@@ -383,6 +397,15 @@ const stmts = {
   updateServer: db.prepare('UPDATE servers SET host = ?, port = ?, username = ?, key_path = ?, password = ?, passphrase = ?, description = ?, name = ?, notifications_enabled = ? WHERE id = ?'),
   setServerNotifications: db.prepare('UPDATE servers SET notifications_enabled = ? WHERE id = ?'),
   setServerAccessPass: db.prepare('UPDATE servers SET access_pass = ? WHERE id = ?'),
+  setServerHostKey: db.prepare('UPDATE servers SET host_key = ?, host_key_blob = ?, host_key_at = CURRENT_TIMESTAMP WHERE id = ? AND host_key IS NULL'),
+  clearServerHostKey: db.prepare('UPDATE servers SET host_key = NULL, host_key_blob = NULL, host_key_at = NULL WHERE id = ?'),
+  setServerConnection: db.prepare('UPDATE servers SET username = ?, key_path = ?, passphrase = NULL WHERE id = ?'),
+  setServerPort: db.prepare('UPDATE servers SET port = ? WHERE id = ?'),
+  insertGeneratedKey: db.prepare('INSERT INTO generated_keys (server_id, username, fingerprint, key_path) VALUES (?, ?, ?, ?)'),
+  getGeneratedKeys: db.prepare('SELECT * FROM generated_keys WHERE server_id = ?'),
+  getGeneratedKey: db.prepare('SELECT * FROM generated_keys WHERE server_id = ? AND username = ? AND fingerprint = ?'),
+  deleteGeneratedKey: db.prepare('DELETE FROM generated_keys WHERE id = ?'),
+  deleteGeneratedKeysForServer: db.prepare('DELETE FROM generated_keys WHERE server_id = ?'),
   deleteServer: db.prepare('DELETE FROM servers WHERE id = ?'),
 
   // Registries (private image registry credentials — used to authenticate pull/push)

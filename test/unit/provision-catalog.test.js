@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const cat = require('../../server/provision/catalog');
 
 test('catalog: presets resolve to ordered, dependency-closed item ids', () => {
-  assert.deepEqual(cat.resolveItems('just-docker'), ['update', 'docker', 'docker-group']);
+  assert.deepEqual(cat.resolveItems('just-docker'), ['update', 'docker', 'docker-config', 'docker-group']);
   const sec = cat.resolveItems('secure-baseline');
   assert.ok(sec.includes('docker') && sec.includes('docker-group') && sec.includes('firewall'));
   const seqs = sec.map(id => cat.byId[id].seq);
@@ -31,7 +31,7 @@ test('catalog: distroFamily maps os-release ids, null for unknown', () => {
 
 test('catalog: buildPlanForDistro returns concrete commands; throws on unknown distro', () => {
   const plan = cat.buildPlanForDistro(cat.resolveItems('just-docker'), 'ubuntu');
-  assert.equal(plan.length, 3);
+  assert.equal(plan.length, 4);
   for (const step of plan) {
     assert.ok(step.detect && step.install && step.verify, `step ${step.id} has all 3 commands`);
   }
@@ -80,4 +80,48 @@ test('catalog: ssh-hardening is SAFE — no PasswordAuthentication/PermitRootLog
     assert.ok(/MaxAuthTries/i.test(inst), `${fam}: should set MaxAuthTries (safe hardening)`);
     assert.ok(/X11Forwarding\s+no/i.test(inst), `${fam}: should disable X11 forwarding`);
   }
+});
+
+test('catalog: apt waits for the dpkg lock and keeps modified config files on upgrade', () => {
+  const up = cat.byId.update.distro.debian.install;
+  assert.match(up, /DPkg::Lock::Timeout=300/);
+  assert.match(up, /--force-confold/);
+  assert.match(cat.byId['base-utils'].distro.debian.install, /DPkg::Lock::Timeout=300/);
+});
+
+test('catalog: RHEL firewall opens the CURRENT ssh port before reload (no lockout on a non-22 port)', () => {
+  const fw = cat.byId.firewall.distro.rhel.install;
+  assert.match(fw, /SSH_CONNECTION/);
+  assert.ok(fw.indexOf('--add-port="${P:-22}"/tcp') < fw.indexOf('--reload'));
+});
+
+test('catalog: fail2ban writes its own jail.d drop-in (never jail.local) and detects an ACTIVE service', () => {
+  for (const fam of ['debian', 'rhel']) {
+    const f = cat.byId.fail2ban.distro[fam];
+    assert.match(f.install, /jail\.d\/dockgate\.conf/);
+    assert.doesNotMatch(f.install, /jail\.local/);
+    assert.match(f.detect, /is-active/);
+  }
+});
+
+test('catalog: swap is sized to RAM and refuses when the disk lacks room', () => {
+  const sw = cat.byId.swap.distro.debian.install;
+  assert.match(sw, /MemTotal/);
+  assert.match(sw, /Not enough free disk/);
+  // the disk check must gate the destructive part (no stray `;` after it)
+  assert.ok(/false; fi && \{ sudo swapoff/.test(sw));
+});
+
+test('catalog: docker-config depends on docker, caps logs, merges an existing daemon.json', () => {
+  const dc = cat.byId['docker-config'];
+  assert.deepEqual(dc.dependsOn, ['docker']);
+  assert.match(dc.distro.debian.install, /max-size/);
+  assert.match(dc.distro.debian.install, /daemon\.json\.dockgate\.bak/);
+  assert.ok(cat.resolveItems('custom', ['docker-config']).includes('docker'));
+});
+
+test('provision-worker.adaptSudo: root drops sudo; a normal user gets non-interactive sudo -n', () => {
+  const { adaptSudo } = require('../../server/provision/provision-worker');
+  assert.equal(adaptSudo('curl x | sudo sh && sudo -n true', true), 'curl x | sh && true');
+  assert.equal(adaptSudo('curl x | sudo sh && sudo -n true', false), 'curl x | sudo -n sh && sudo -n true');
 });

@@ -8,7 +8,7 @@ const navItems = {
   deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose'], ['templates', 'App Templates']], default: 'compose' },
   activity: { label: 'Activity', icon: Icons.events, tabs: [['logs', 'Logs'], ['terminal', 'Terminal'], ['events', 'Events'], ['files', 'Files'], ['audit', 'Audit Log'], ['cleanup', 'Cleanup']], default: 'logs' },
   infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH Keys'], ['registries', 'Registries']], default: 'servers' },
-  'server-console': { label: 'Server Console', icon: Icons.terminal, tabs: [['overview', 'Overview'], ['setup', 'Setup'], ['manage', 'Manage'], ['logs', 'Logs']], default: 'overview' },
+  'server-console': { label: 'Server Console', icon: Icons.terminal, tabs: [['overview', 'Overview'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users'], ['firewall', 'Firewall'], ['manage', 'Services'], ['logs', 'Logs']], default: 'overview' },
   settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification Log'], ['update', 'Software Update'], ['system', 'System'], ['security', 'Security']], default: 'general' }
 };
 

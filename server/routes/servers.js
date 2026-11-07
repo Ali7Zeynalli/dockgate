@@ -49,7 +49,7 @@ function grantDockerAccess(server) {
   const keyPath = server.key_path
     ? (path.isAbsolute(server.key_path) ? server.key_path : path.join(SSH_KEYS_DIR, server.key_path))
     : null;
-  const cfg = { host: server.host, port: server.port, username: server.username, keyPath, password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
+  const cfg = { host: server.host, port: server.port, username: server.username, keyPath, password: decrypt(server.password), passphrase: decrypt(server.passphrase), hostKey: server.host_key || null };
   return new Promise((resolve, reject) => {
     execFile(process.execPath, [path.join(__dirname, '..', 'grant-docker-worker.js'), JSON.stringify(cfg)], { timeout: 30000 }, (err, stdout, stderr) => {
       if (err) return reject(new Error((stderr || err.message || 'grant failed').toString().trim()));
@@ -218,6 +218,8 @@ router.put('/:id', (req, res) => {
     const newPassphrase = passphrase !== undefined ? (passphrase ? String(passphrase) : null) : existing.passphrase;
 
     stmts.updateServer.run(newHost, newPort, newUsername, keyPath, encrypt(newPassword), encrypt(newPassphrase), newDescription, newName, newNotificationsEnabled, id);
+    // A different host is a different machine — its host key must be pinned afresh.
+    if (newHost !== existing.host) stmts.clearServerHostKey.run(id);
     require('../ssh-pool').invalidate(id); // drop pooled SSH connections so the new host/credentials take effect
     // Apply the access-password change (verified above): empty string removes the gate, non-empty sets/changes it.
     if (accessPassword !== undefined) {
@@ -340,6 +342,11 @@ router.delete('/:id', (req, res) => {
       }
     }
 
+    // Key pairs DockGate generated for this server's users (deploy user, Users → Add key)
+    for (const g of stmts.getGeneratedKeys.all(id)) {
+      try { fs.unlinkSync(path.isAbsolute(g.key_path) ? g.key_path : path.join(SSH_KEYS_DIR, g.key_path)); } catch (e) {}
+    }
+    stmts.deleteGeneratedKeysForServer.run(id);
     stmts.deleteServer.run(id);
     require('../ssh-pool').invalidate(id); // close any pooled SSH connection to the removed server
     try { stmts.deleteHostMetrics.run(id); } catch (e) { console.warn('[host-metrics] cleanup failed:', e.message); }
@@ -382,7 +389,16 @@ router.get('/provision/catalog', (req, res) => {
 router.get('/provision/job/:id', (req, res) => {
   const job = provisionRunner.getJob(req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found (it may have finished — see run history)' });
-  res.json({ id: job.id, serverId: job.serverId, status: job.status, phase: job.phase, distro: job.distro, log: job.log, items: job.items, error: job.error });
+  res.json({ id: job.id, serverId: job.serverId, status: job.status, phase: job.phase, distro: job.distro, log: job.log, items: job.items, error: job.error, rebootRequired: !!job.rebootRequired });
+});
+
+// POST /api/servers/provision/job/:id/cancel — stop a run before its next item (the current one finishes).
+router.post('/provision/job/:id/cancel', (req, res) => {
+  try {
+    const r = provisionRunner.cancelJob(req.params.id);
+    logAction({ req, server: 'local', resourceType: 'server', resourceId: req.params.id, resourceName: req.params.id, action: 'provision-cancel' });
+    res.json(r);
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
 // GET /api/servers/provision/runs/:runId — one run + its items (re-openable after the job is gone).
@@ -444,7 +460,7 @@ router.post('/:id/provision', (req, res) => {
     const { jobId, runId } = provisionRunner.startProvision(cfg, { preset, only, confirm, sourceIp: ipFromReq(req) });
     res.json({ jobId, runId });
   } catch (err) {
-    if (err.statusCode === 409) return res.status(409).json({ error: err.message, risks: err.risks || [] });
+    if (err.statusCode === 409) return res.status(409).json({ error: err.message, risks: err.risks || [], jobId: err.jobId || null });
     res.status(err.statusCode || 500).json({ error: err.message });
   }
 });

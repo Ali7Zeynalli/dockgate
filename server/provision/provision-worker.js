@@ -11,15 +11,26 @@ const catalog = require('./catalog');
 
 delete process.env.SSH_AUTH_SOCK; // auth strictly via the provided key/password — no agent fallback
 
+// Catalog commands are written with `sudo`. Logged in as root → drop it (minimal images often have no
+// sudo binary at all). Otherwise → `sudo -n`, so a password-protected sudo fails fast instead of hanging.
+// (Also used by service-ctl-worker — everything below the require.main check only runs as the worker.)
+function adaptSudo(cmd, isRoot) {
+  return isRoot ? cmd.replace(/\bsudo (-n )?/g, '') : cmd.replace(/\bsudo (?!-n )/g, 'sudo -n ');
+}
+module.exports = { adaptSudo };
+if (require.main !== module) return;
+
 function emit(obj) { process.stdout.write(JSON.stringify(obj) + '\n'); }
+
+// Cancel: the parent sends SIGTERM; the run stops BEFORE the next item (never mid-install, which could
+// leave a half-configured package manager).
+let cancelRequested = false;
+process.on('SIGTERM', () => { cancelRequested = true; });
 
 const cfg = JSON.parse(process.argv[2] || '{}');
 
 function authOpts(c) {
-  const opts = { host: c.host, port: c.port || 22, username: c.username, readyTimeout: 20000, tryKeyboard: false };
-  if (c.keyPath) { opts.privateKey = fs.readFileSync(c.keyPath); if (c.passphrase) opts.passphrase = c.passphrase; }
-  else if (c.password) opts.password = c.password;
-  return opts;
+  return require('../ssh-connect').workerConnectOpts(c); // auth + pinned host key
 }
 
 // Run one command; resolve { code, out } (stdout+stderr merged). Never rejects.
@@ -50,6 +61,28 @@ function run(conn, cmd) {
 
       emit({ type: 'meta', distro, total: plan.length });
 
+      // ---- Pre-flight: privileges, cloud-init, then adapt every command to root/sudo ----
+      const who = await run(conn, 'id -u');
+      const isRoot = String(who.out || '').trim().split('\n').pop().trim() === '0';
+      if (!isRoot) {
+        const s = await run(conn, 'sudo -n true');
+        if (s.code !== 0 && cfg.mode !== 'scan') { // a scan still runs: sudo-gated detects simply report "missing"
+          emit({ type: 'fatal', error: `"${cfg.username}" needs passwordless sudo for setup (sudo -n true failed). Log in as root, or add "${cfg.username} ALL=(ALL) NOPASSWD:ALL" to /etc/sudoers.d/.` });
+          clearTimeout(watchdog); conn.end(); return process.exit(0);
+        }
+      }
+      if (cfg.mode !== 'scan') {
+        emit({ type: 'log', line: `▶ Pre-flight: ${isRoot ? 'root login' : 'passwordless sudo OK'} · ${distro}` });
+        const ci = await run(conn, 'if command -v cloud-init >/dev/null 2>&1; then timeout 600 cloud-init status --wait >/dev/null 2>&1; echo waited; fi');
+        if (/waited/.test(ci.out || '')) emit({ type: 'log', line: '  ✓ cloud-init finished' });
+      }
+      for (const step of plan) {
+        if (step.na) continue;
+        step.detect = adaptSudo(step.detect, isRoot);
+        step.install = adaptSudo(step.install, isRoot);
+        step.verify = adaptSudo(step.verify, isRoot);
+      }
+
       // Scan mode — read-only: run each item's detect command only (no install/verify), report present/missing.
       if (cfg.mode === 'scan') {
         for (const step of plan) {
@@ -63,6 +96,7 @@ function run(conn, cmd) {
 
       let ok = 0, failed = 0;
       for (const step of plan) {
+        if (cancelRequested) { emit({ type: 'log', line: '■ Cancelled — stopped before the next item' }); emit({ type: 'cancelled' }); break; }
         const t0 = Date.now();
         if (step.na) { emit({ type: 'item', id: step.id, label: step.label, state: 'skipped', reason: step.reason, durationMs: 0 }); continue; }
 
@@ -87,6 +121,9 @@ function run(conn, cmd) {
         emit({ type: 'log', line: state === 'verified' ? `  ✓ ${step.label}` : `  ✗ ${step.label}${error ? ' — ' + String(error).split('\n')[0] : ''}` });
       }
 
+      // Kernel / libc updates need a reboot to take effect — tell the UI (Debian flag file / RHEL tool).
+      const rb = await run(conn, adaptSudo('[ -f /var/run/reboot-required ] && echo REBOOT; command -v needs-restarting >/dev/null 2>&1 && { sudo needs-restarting -r >/dev/null 2>&1 || echo REBOOT; }; true', isRoot));
+      if (/REBOOT/.test(rb.out || '')) emit({ type: 'reboot-required' });
       emit({ type: 'done', ok, failed });
       clearTimeout(watchdog); conn.end(); process.exit(0);
     } catch (e) {

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.4.5-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.5.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.4.5-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.5.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -34,7 +34,7 @@ DockGate started as a lightweight, browser-based Docker UI and has grown into a 
 
 - **One panel, many hosts** — switch the active server in the sidebar; the whole UI (containers, images, logs, terminal…) follows it.
 - **Run & deploy** — launch containers from a guided form, build images, create & edit Compose projects, and deploy from an App-Templates marketplace.
-- **Server management** — add SSH hosts, **provision a fresh server** (update, Docker, fail2ban, swap, firewall, SSH-hardening) with one click, **monitor the host** (CPU/RAM/disk/net/load + host logs), and manage system **services** (ssh / firewall / fail2ban) from a console.
+- **Server management** — add SSH hosts, **provision a fresh server** (update, Docker, fail2ban, swap, firewall, SSH-hardening, deploy user) with one click, create a **non-root deploy user** with an SSH key, manage **SSH access** (root login, password login, port), **users & keys** and the **firewall incl. Docker ports**, **monitor the host** (CPU/RAM/disk/net/load + host logs), and manage system **services** from a console.
 - **Alerts that survive** — Telegram + email notifications on container die/crash/OOM/restart/unhealthy/start/pause/unpause/disk, plus an optional **outbound-only Edge Notifier agent** that keeps alerting even if DockGate itself is offline.
 - **Authenticated & audited** — single admin password (scrypt + signed session cookie), encrypted SSH/registry/channel secrets at rest, and a full audit log of every change.
 - **Lightweight** — runs in **≤256 MB RAM / ≤0.5 CPU**; vanilla-JS frontend, no build step, fully air-gappable.
@@ -182,14 +182,20 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 - **Servers** — add/edit/remove SSH hosts (host/port/user; **key** with optional passphrase, **password**, or SSH-agent — precedence key > password > agent), **test connection**, switch the active server, and **grant the docker group** (passwordless `docker`). SSH passwords/passphrases are **encrypted at rest** (AES-256-GCM).
 - **Registries** — store private-registry credentials (encrypted); auto-matched by host so private **pull/push** "just works" from Images, Run and Compose. Includes a pre-save **login test**.
 - **Cleanup** — preview-before-prune for stopped containers, unused/dangling images, unused volumes, unused networks, build cache, or a full system prune.
-- **Provisioning** — point DockGate at a **fresh SSH server** and it runs **detect → install → verify** for a chosen preset (**Full / Secure-baseline / Just-Docker / Custom**): system update, **Docker Engine**, **fail2ban**, swap, docker-group, **safe SSH-hardening** (never disables password/root login — no lockout), and a **firewall** (SSH+80+443). Every item's detect/install/verify commands come from one central catalog; a per-server **history + state matrix** records what's done / missing / failed, with the real commands. Runs in isolated forked SSH workers so they never contend with live monitoring.
+- **Provisioning** — point DockGate at a **fresh SSH server** and it runs **detect → install → verify** for a chosen preset (**Full / Secure-baseline / Just-Docker / Custom**): system update, **Docker Engine**, **Docker log limits** (`daemon.json`), **fail2ban**, swap (sized to RAM), docker-group, **deploy user**, **safe SSH-hardening** (never disables password/root login — no lockout), and a **firewall** (current SSH port + 80 + 443). A **pre-flight** checks root / passwordless sudo and waits for cloud-init; apt waits for the dpkg lock and keeps modified config files. One run per server at a time, **cancel** between items, and a **reboot-required** notice after kernel updates. Every item's commands come from one central catalog; a per-server **history + state matrix** records what's done / missing / failed. Runs in isolated forked SSH workers.
 - **Host monitoring** — beyond Docker: the host's **CPU / load / RAM / swap / disk / disk-IO / net / uptime / top processes**, plus a **host-log viewer** (journald / auth / syslog / kernel / boot, any systemd unit, any `/var/log` file) over SSH. Samples opportunistically on read (no background SSH storm), stores a SQLite time-series, and draws trend charts; refreshes in place every 5 s.
 </details>
 
 <details>
-<summary><strong>Server Console</strong> — host service management</summary>
+<summary><strong>Server Console</strong> — security status · deploy user · Access &amp; SSH · Users · Firewall · Services</summary>
 
-Per-service **status / start / stop / restart / enable / disable** (ssh, firewall, fail2ban, docker…), plus **config editing** with a strict safety net: allowlisted paths, automatic backup, validation (`sshd -t` / `fail2ban-client -t`), auto-restore on failure, an explicit confirm, and full audit. Rich guarded ops: **fail2ban ban/unban**, **ufw allow/deny/delete** — all parameter-validated (no free-form shell).
+- **Security status** (Overview) — deploy user, password login, root login, firewall, Docker ports and host key at a glance, each linking to the place that fixes it.
+- **Deploy user** — one wizard creates a non-root user with passwordless sudo + Docker access, generates an ed25519 key (optionally adds your own public key), **proves a new key login works**, and only then switches DockGate's connection to it. Password login stays on until you turn it off yourself.
+- **Access &amp; SSH** — root login (allowed / key only / blocked), password login, SSH port and hardening, written to DockGate's own `sshd_config.d` drop-in. Every change is a **lifeline job**: validate (`sshd -t`) → arm an automatic **120 s rollback** on the server → reload → **open a NEW SSH connection** → keep, or restore immediately. Restricting root/password login is refused until DockGate itself uses a non-root key login.
+- **Users** — create / delete / lock users, sudo and docker membership, SSH keys (paste or generate; download a generated private key after re-entering the admin password). DockGate never lets you lock out its own user/key, remove the last sudo user, or remove the last key while password login is off.
+- **Firewall** — every listening port with *where it is reachable from*; **Docker port isolation** (DOCKER-USER rules) so published container ports no longer bypass UFW — you choose which stay public; open a port to everyone or one IP; add/delete UFW rules. The SSH port is always kept open.
+- **Services** — per-service **status / start / stop / restart / enable / disable** plus guarded **config editing** (allowlisted paths, backup, validation, auto-restore), **fail2ban ban/unban** and **ufw** ops — all parameter-validated (no free-form shell).
+- **Host key pinning** — every SSH connection (panel, workers, Docker CLI) pins the server's host key on first use and refuses a different one; re-trust it here after a rebuild.
 </details>
 
 ### ⚙️ System — Settings
@@ -262,6 +268,8 @@ Browser (vanilla JS + xterm.js + Chart.js)
 - **CSRF defense.** State-changing requests whose `Origin` host ≠ `Host` are rejected (403); combined with `SameSite=Lax`.
 - **Encrypted at rest.** SSH, registry and Telegram/SMTP secrets are AES-256-GCM encrypted in the SQLite DB.
 - **Audited.** Every mutating action (and terminal/agent/provision op) is recorded with the target host + source IP.
+- **SSH host keys are pinned** (trust on first use) for every connection to a managed server; a changed key is refused instead of silently accepted.
+- **No secrets to the browser.** `GET /api/meta/settings` never returns the session secret or the password hash/salt.
 - **Still:** don't expose port 7077 to the public internet — put it behind a VPN/SSH tunnel (see [Remote access](#-remote-access)). And because it's single-admin, anyone with the password has full control of every connected host.
 
 ---
@@ -272,7 +280,8 @@ Honest, current gaps:
 
 - **Single-tenant.** One admin password; **no multi-user, no roles/RBAC, no per-user data isolation.** Everyone with the password sees and controls everything.
 - **Local-host-only operations.** Anything needing the host CLI/filesystem — Compose, buildx, build-cache prune, **self-update**, auto-start — only works when **Local** is the active server (remote daemons are managed via the Docker API only). Local host **filesystem browsing** isn't offered (remote SFTP only).
-- **Provisioning / host management need SSH + (mostly) passwordless sudo** on the target; results are code-traced but should be validated on your own throwaway VPS first.
+- **Provisioning / host management need SSH + root or passwordless sudo** on the target; validate on your own throwaway VPS first.
+- **Docker port isolation and port rules work with UFW** (Debian/Ubuntu). On firewalld hosts the ports are listed and firewalld ports are managed in Services; isolation rules cover IPv4.
 - **Edge agent caveats** — channel secrets land in the container env on each host (use a dedicated bot/credential); after a DockGate restart the central monitor isn't yet auto-suppressed for agent-hosts (possible brief duplicate alert).
 - **Docker Swarm** support was **removed** (it couldn't work for the common local-manager-behind-NAT topology).
 
@@ -305,7 +314,8 @@ All under `/api`, JSON, **session-gated** (except `/api/auth/{status,setup,login
 **Volumes / Networks** — full CRUD + network connect/disconnect
 **Compose** — list/detail · up/down/restart/pull · `POST /compose/create` · `GET|PUT /compose/:p/file` *(local host)*
 **Builds / Cleanup / System** — build history & cache · prune (containers/images/volumes/networks/cache/system) · system info/version/df
-**Servers** — `GET /servers` · `POST /servers` · `PUT /servers/:id` · `POST /servers/test` · `POST /servers/active` · `DELETE /servers/:id` · provisioning + host metrics/logs + service ops
+**Servers** — `GET /servers` · `POST /servers` · `PUT /servers/:id` · `POST /servers/test` · `POST /servers/active` · `DELETE /servers/:id` · provisioning (`POST /servers/provision/job/:id/cancel`) + host metrics/logs + service ops
+**Server security** — `GET /servers/:id/security/posture` · `GET|POST /servers/:id/access` · `POST /servers/:id/access/retrust-host-key` · `POST /servers/:id/deploy-user` · `GET /servers/:id/jobs/:jobId` · `GET|POST /servers/:id/users` · `PUT|DELETE /servers/:id/users/:name` · `POST|DELETE /servers/:id/users/:name/keys` · `POST /servers/:id/users/:name/keys/private` · `GET /servers/:id/firewall` · `POST /servers/:id/firewall/{docker-isolation,expose,rules}` · `DELETE /servers/:id/firewall/rules/:n` · `POST /servers/:id/reboot`
 **Registries** — CRUD + `POST /registries/test`
 **Templates** — `GET /templates` · `GET /templates/stackfile?url=` · `GET /templates/logo?url=`
 **Agent (Edge Notifier)** — `GET /agent/status` · `POST /agent/{install,update,reconfigure,install-all,remove,power,sync}` · `GET /agent/job/:id` · `GET|POST|DELETE /agent/channel/:serverId`

@@ -36,6 +36,8 @@ function createSshClient(server) {
   } else if (server.password) {
     opts.password = decrypt(server.password); // docker-modem forwards top-level password to ssh2
   }
+  // Pinned host key (docker-modem merges sshOptions into the ssh2 connect options).
+  opts.sshOptions = { ...(opts.sshOptions || {}), hostVerifier: require('./ssh-hostkey').verifierFor(server) };
   // If neither is set, ssh2 falls back to the SSH agent.
   return new Docker(opts);
 }
@@ -1082,6 +1084,7 @@ async function setAutoStart(enabled) {
 // leak to the UI). The literal cause stays available, but this is what the user reads.
 function friendlySshError(err) {
   const m = (err && err.message ? err.message : String(err)).toLowerCase();
+  if (require('./ssh-hostkey').isHostKeyError(err)) return require('./ssh-hostkey').MISMATCH_MESSAGE;
   if (/no tty|password change required/.test(m)) return 'The account requires a first-login password change — log in once over SSH to set a password, or use an SSH key.';
   if (/all configured authentication|authentication method|permission denied|incorrect password|auth/.test(m)) return 'Authentication failed — check the username and the password / SSH key.';
   if (/econnrefused/.test(m)) return 'Connection refused — nothing is listening on that port (is SSH running, and is the port correct?).';
