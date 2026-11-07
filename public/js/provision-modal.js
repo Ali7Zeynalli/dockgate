@@ -8,175 +8,137 @@ const PV_STATE = (scanItems) => {
   return (id) => { const s = present[id]; return s ? (s.na ? 'na' : (s.present ? 'present' : 'missing')) : 'unknown'; };
 };
 
-// ---------- Setup tab ----------
-async function renderProvisionPanel(serverId, container) {
-  container.innerHTML = `
-    <div class="text-sm text-muted">🔍 Scanning <b>${escapeHtml(serverId)}</b> over SSH — checking what's already installed…</div>
-    <div class="skeleton" style="height:16px;width:60%;margin-top:10px"></div>
-    <div class="skeleton" style="height:16px;width:45%;margin-top:6px"></div>`;
-  let catalog, scan;
+// ---------- Setup tab — components table (AWS Systems Manager / Azure Machine Configuration style) ----------
+// Live scan = what is installed now; matrix = the last result DockGate recorded per component (errors);
+// runs = history. "Run setup" shows the plan first; the run streams step by step (GitHub Actions style).
+const PV_PRESETS = [
+  ['just-docker', 'Just Docker', 'Docker Engine + Compose and log limits'],
+  ['secure-baseline', 'Secure baseline', 'update · firewall · SSH hardening · fail2ban · Docker · deploy user'],
+  ['full', 'Full', 'Everything in the list'],
+  ['custom', 'Custom', 'Pick components'],
+];
+async function renderProvisionPanel(serverId, container, opts = {}) {
+  container.innerHTML = `<div class="text-sm text-muted">Scanning <b>${escapeHtml(serverId)}</b> over SSH — checking what is installed…</div><div class="skeleton" style="height:16px;width:60%;margin-top:10px"></div>`;
+  let catalog, scan, matrix = [], runs = [];
   try {
-    [catalog, scan] = await Promise.all([API.get('/servers/provision/catalog'), API.get(`/servers/${serverId}/provision/scan`)]);
+    [catalog, scan, matrix, runs] = await Promise.all([
+      API.get('/servers/provision/catalog'), API.get(`/servers/${serverId}/provision/scan`),
+      API.get(`/servers/${serverId}/provision/matrix`).then(r => r.matrix || []).catch(() => []),
+      API.get(`/servers/${serverId}/provision/runs`).then(r => r.runs || []).catch(() => []),
+    ]);
   } catch (e) {
-    container.innerHTML =
-      `<div class="card" style="border-left:3px solid var(--danger)"><div class="text-danger" style="font-weight:600">Scan failed</div><div class="text-sm text-muted" style="margin-top:4px">${escapeHtml(e.message)}</div><div class="text-xs text-muted" style="margin-top:6px">The server may be unreachable, or it uses password auth the scan couldn't use. Fix the connection (Test) then retry.</div><button class="btn btn-secondary btn-sm" id="pv-retry" style="margin-top:10px">Retry scan</button></div>`;
-    container.querySelector('#pv-retry')?.addEventListener('click', () => renderProvisionPanel(serverId, container));
-    return;
+    return secError(container, 'Scan failed — the server may be unreachable, or the login cannot be used for the scan', e, () => renderProvisionPanel(serverId, container));
   }
-  renderProvisionForm(serverId, catalog, scan, container);
+  renderProvisionForm(serverId, catalog, scan, container, { matrix, runs, preset: opts.preset });
 }
 
-function renderProvisionForm(serverId, catalog, scan, container) {
+function renderProvisionForm(serverId, catalog, scan, container, { matrix = [], runs = [], preset: startPreset } = {}) {
   const stateOf = PV_STATE(scan.items);
   const items = catalog.items || [];
-  const missingCount = items.filter(it => !it.alwaysRun && !it.optional && stateOf(it.id) === 'missing').length;
-
-  const presets = [
-    ['just-docker', 'Just Docker', '🐳', 'Docker Engine + compose plugin'],
-    ['secure-baseline', 'Secure baseline', '🛡', 'update · firewall · SSH hardening · fail2ban · Docker · deploy user'],
-    ['full', 'Full', '🏭', 'Everything — also swap, time sync, auto-updates'],
-    ['custom', 'Custom', '⚙️', 'Pick individual items'],
-  ];
-  const presetCards = presets.map(([v, label, emoji, desc], i) => `
-    <label class="pv-preset-card" data-preset="${v}" style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;transition:border-color .15s,background .15s">
-      <input type="radio" name="pv-preset" value="${v}"${i === 1 ? ' checked' : ''} style="display:none">
-      <div style="font-size:22px;line-height:1">${emoji}</div>
-      <div><div style="font-weight:600">${escapeHtml(label)}</div><div class="text-xs text-muted" style="margin-top:2px">${escapeHtml(desc)}</div></div>
-    </label>`).join('');
-
-  // On-card status: border colour + a pill, matching the Overview component cards.
-  const pvState = {
-    present: { col: 'var(--success)', pill: '<span class="badge badge-healthy">installed</span>' },
-    missing: { col: 'var(--warning, #f59e0b)', pill: '<span class="badge" style="background:var(--warning,#f59e0b);color:#1f2937;font-weight:700">missing</span>' },
-    action:  { col: 'var(--info)', pill: '<span class="badge" style="background:var(--info-bg);color:var(--info)">runs every time</span>' },
-    optional:{ col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.6">optional</span>' },
-    na:      { col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.55">n/a</span>' },
-    unknown: { col: 'var(--text-muted)', pill: '<span class="badge" style="opacity:.55">unknown</span>' },
+  const last = Object.fromEntries(matrix.map(m => [m.id, m]));
+  let preset = startPreset || 'secure-baseline';
+  let custom = new Set(items.filter(it => stateOf(it.id) === 'missing' && !it.optional && !it.alwaysRun).map(it => it.id));
+  const statusOf = (it) => {
+    const st = stateOf(it.id);
+    if (st === 'na') return ['off', 'Not available', 'na'];
+    if (it.alwaysRun) return ['info', 'Runs every time', 'action'];
+    if (st === 'present') return ['ok', 'Installed', 'present'];
+    if (st === 'missing' && last[it.id] && last[it.id].state === 'failed') return ['bad', 'Failed', 'failed'];
+    if (st === 'missing') return it.optional ? ['off', 'Optional', 'optional'] : ['warn', 'Missing', 'missing'];
+    return ['off', 'Unknown', 'unknown'];
   };
-  const itemCard = (it) => {
-    const st = it.alwaysRun ? 'action' : (it.optional && stateOf(it.id) === 'missing' ? 'optional' : stateOf(it.id)), m = pvState[st] || pvState.unknown;
-    return `<label class="card pv-item-card" style="display:flex;gap:10px;align-items:flex-start;border-left:3px solid ${m.col};padding:12px 14px;opacity:${st === 'na' ? 0.55 : 1};transition:background .12s,box-shadow .12s">
-      <input type="checkbox" class="pv-item" value="${escapeHtml(it.id)}" data-risk="${escapeHtml(it.risk)}"${st === 'na' ? ' data-na="1"' : ''} style="margin-top:3px;accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-          <span style="font-weight:600">${escapeHtml(it.label)}</span>
-          <span style="display:flex;align-items:center;gap:6px">
-            <span class="pv-sel-badge badge" style="display:none;background:var(--accent);color:var(--text-inverse)">✓ selected</span>
-            ${m.pill}
-          </span>
-        </div>
-        ${it.description ? `<div class="text-xs text-muted" style="margin-top:3px">${escapeHtml(it.description)}</div>` : ''}
-        ${it.risk === 'high' ? '<div class="text-xs" style="color:var(--danger);margin-top:3px">⚠ risky — can lock you out if misconfigured</div>' : ''}
-      </div>
-    </label>`;
-  };
+  const selected = () => preset === 'custom' ? [...custom] : (preset === 'full' ? items.map(i => i.id) : (catalog.presets[preset] || []));
+  const todoOf = (ids) => items.filter(it => ids.includes(it.id) && ['missing', 'failed', 'optional', 'action'].includes(statusOf(it)[2]));
   const groupLabel = (g) => ({ base: 'Base', security: 'Security', system: 'System' }[g] || (g ? g[0].toUpperCase() + g.slice(1) : 'Other'));
   const ord = ['base', 'security', 'system'];
-  const groupKeys = [...new Set(items.map(it => it.group))].sort((a, b) => (ord.indexOf(a) < 0 ? 99 : ord.indexOf(a)) - (ord.indexOf(b) < 0 ? 99 : ord.indexOf(b)));
-  const itemCardsGrouped = groupKeys.map(g => {
-    const gItems = items.filter(it => it.group === g);
-    if (!gItems.length) return '';
-    return `<div style="margin-bottom:14px"><div style="font-weight:600;margin-bottom:8px">${groupLabel(g)}</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">${gItems.map(itemCard).join('')}</div></div>`;
-  }).join('');
+  const sorted = items.slice().sort((a, b) => (ord.indexOf(a.group) - ord.indexOf(b.group)) || (a.seq - b.seq));
+  const fmtWhen = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '—');
+  const dur = (a, b) => { if (!a || !b) return '—'; const s = Math.max(0, (new Date(b.replace(' ', 'T') + 'Z') - new Date(a.replace(' ', 'T') + 'Z')) / 1000); return s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`; };
 
-  container.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:16px">
-      <div class="card">
-        <div style="font-weight:700;font-size:15px">Set up ${escapeHtml(serverId)}</div>
-        <div class="text-xs text-muted" style="margin-top:2px">${scan.distro ? 'OS ' + escapeHtml(scan.distro) + ' · ' : ''}${missingCount} missing · detect → install → verify over SSH (present items are skipped)</div>
-      </div>
+  const draw = () => {
+    const sel = selected(), todo = todoOf(sel);
+    const counts = items.reduce((a, it) => { const k = statusOf(it)[2]; a[k] = (a[k] || 0) + 1; return a; }, {});
+    container.innerHTML = `
+      ${UI.statusLine([
+        scan.distro ? `<b>OS</b> <span class="text-muted">${escapeHtml(scan.distro)}</span>` : '',
+        UI.pill('ok', `${counts.present || 0} installed`),
+        counts.missing ? UI.pill('warn', `${counts.missing} missing`) : '',
+        counts.failed ? UI.pill('bad', `${counts.failed} failed`) : '',
+        counts.na ? `<span class="text-muted">${counts.na} not available on this OS</span>` : '',
+      ])}
+      ${UI.header('Setup', 'What is installed on this server. Each component is checked before it is installed and verified after.', `${UI.btn('Scan again', 'data-rescan', 'btn-ghost')}<button type="button" class="btn btn-sm btn-primary" data-run ${todo.length ? '' : 'disabled'}>${todo.length ? `Run setup (${todo.length})…` : 'Nothing to install'}</button>`)}
+      <div class="ui-field" style="margin-bottom:10px"><span class="ui-label">Preset</span>
+        <div class="ui-seg">${PV_PRESETS.map(([v, l]) => `<button type="button" data-preset="${v}" aria-pressed="${preset === v}">${l}</button>`).join('')}</div>
+        <span class="ui-help">${escapeHtml(PV_PRESETS.find(x => x[0] === preset)[2])} · ${sel.length} components, ${todo.length} to run${preset === 'custom' ? ' · tick the components below' : ''}</span></div>
+      ${UI.table([{ label: '', width: '34px' }, { label: 'Component' }, { label: 'Group' }, { label: 'Status' }, { label: 'Details' }, { label: 'Last run' }, { label: '', align: 'right' }], sorted.map(it => {
+        const [lv, txt, key] = statusOf(it), m = last[it.id];
+        const on = sel.includes(it.id);
+        const detail = key === 'failed' && m && (m.error || m.reason) ? `<span style="color:var(--danger)">${escapeHtml(String(m.error || m.reason).split('\n').slice(-1)[0].slice(0, 140))}</span>`
+          : key === 'na' ? escapeHtml((scan.items.find(x => x.id === it.id) || {}).reason || 'not on this OS') : escapeHtml(it.description || '');
+        return { cls: on ? 'ui-row-selected' : '', cells: [
+          `<input type="checkbox" data-comp="${escapeHtml(it.id)}" aria-label="Include ${escapeHtml(it.label)}" ${on ? 'checked' : ''} ${preset === 'custom' && key !== 'na' ? '' : 'disabled'} style="accent-color:var(--accent)">`,
+          `<b>${escapeHtml(it.label)}</b>${it.risk === 'high' ? '<div class="ui-sub" style="color:var(--warning)">risky · tested with a new SSH login</div>' : ''}`,
+          `<span class="ui-sub">${groupLabel(it.group)}</span>`,
+          UI.pill(lv, txt),
+          `<span class="ui-sub" title="${escapeHtml(key === 'failed' && m ? (m.error || m.reason || '') : (it.description || ''))}">${detail}</span>`,
+          `<span class="ui-sub">${fmtWhen(m && m.lastAt)}</span>`,
+          ['missing', 'failed', 'optional'].includes(key) ? UI.btn(key === 'failed' ? 'Retry' : 'Install', `data-one="${escapeHtml(it.id)}"`) : '',
+        ] };
+      }), { minWidth: 820 })}
+      ${UI.header('Run history', 'Every setup run with its full log.')}
+      ${UI.table([{ label: 'Started' }, { label: 'Preset' }, { label: 'Result' }, { label: 'Duration' }, { label: '', align: 'right' }], runs.map(r => ({ cells: [
+        `<span class="ui-sub">${fmtWhen(r.started_at)}</span>`,
+        escapeHtml((PV_PRESETS.find(x => x[0] === r.preset) || [0, r.preset])[1]),
+        `${UI.pill(...({ running: ['info', 'Running'], done: ['ok', 'Succeeded'], partial: ['bad', 'Failed'], error: ['bad', 'Error'], cancelled: ['warn', 'Cancelled'] }[r.status] || ['off', escapeHtml(r.status)]))} <span class="ui-sub">${r.item_ok || 0} ok · ${r.item_failed || 0} failed</span>`,
+        `<span class="ui-sub">${dur(r.started_at, r.finished_at)}</span>`,
+        UI.btn('View log', `data-log="${escapeHtml(r.id)}"`),
+      ] })), { minWidth: 600, empty: 'No runs yet.' })}`;
 
-      <div>
-        <div style="font-weight:600;margin-bottom:8px">1 · Choose a preset</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">${presetCards}</div>
-      </div>
+    container.querySelector('[data-rescan]').onclick = () => renderProvisionPanel(serverId, container, { preset });
+    container.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => { preset = b.dataset.preset; draw(); });
+    container.querySelectorAll('[data-comp]').forEach(cb => cb.onchange = () => { if (cb.checked) custom.add(cb.dataset.comp); else custom.delete(cb.dataset.comp); draw(); });
+    container.querySelector('[data-run]').onclick = () => openRunSetup(todoOf(selected()), preset === 'custom' ? [...custom] : undefined, preset, selected());
+    container.querySelectorAll('[data-one]').forEach(b => b.onclick = () => { const it = items.find(x => x.id === b.dataset.one); openRunSetup([it], [it.id], 'custom', [it.id]); });
+    container.querySelectorAll('[data-log]').forEach(b => b.onclick = () => openRunLog(b.dataset.log));
+  };
 
-      <div id="pv-items">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-          <div style="font-weight:600">2 · Components on this server</div>
-          <div class="text-xs text-muted" id="pv-custom-hint">Switch to <b>Custom</b> to tick individual items</div>
-        </div>
-        ${itemCardsGrouped}
-      </div>
-
-      <div id="pv-confirm-wrap" class="card" style="display:none;border-color:var(--danger);background:rgba(248,81,73,.06)">
-        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
-          <input type="checkbox" id="pv-confirm" style="margin-top:3px">
-          <div><div style="font-weight:600;color:var(--danger)">⚠ Risky steps selected</div><div class="text-xs text-muted">Firewall / SSH hardening can lock you out if misconfigured. I understand and want to proceed.</div></div>
-        </label>
-      </div>
-
-      <div id="pv-deploy-wrap" class="card" style="display:none;padding:12px 14px">
-        <label class="text-sm" for="pv-deploy-name" style="font-weight:600">Deploy user name</label>
-        <div class="flex gap-2 items-center" style="margin-top:6px;flex-wrap:wrap"><input class="input" id="pv-deploy-name" value="deploy" spellcheck="false" style="width:200px;font-family:var(--font-mono)"><span class="text-xs text-muted">Created with sudo + Docker access and an SSH key DockGate generates; DockGate then connects as this user.</span></div>
-      </div>
-
-      <div style="display:flex;gap:10px;align-items:center">
-        <button class="btn btn-primary" id="pv-run">▶ Run provisioning</button>
-        <span class="text-xs text-muted">Runs in the background — safe to navigate away. Each item is detected first and skipped if already present.</span>
-      </div>
-    </div>`;
-
-  function update() {
-    const preset = container.querySelector('input[name="pv-preset"]:checked')?.value;
-    container.querySelectorAll('.pv-preset-card').forEach(card => {
-      const on = card.dataset.preset === preset;
-      card.style.borderColor = on ? 'var(--accent, #00d4aa)' : 'var(--border)';
-      card.style.background = on ? 'rgba(0,212,170,.07)' : 'transparent';
+  function openRunSetup(todo, only, presetName, selIds) {
+    // the server asks for confirmation when ANY selected component is high-risk (it re-checks installed ones)
+    const risky = items.filter(it => selIds.includes(it.id) && it.risk === 'high' && statusOf(it)[2] !== 'na');
+    const needsUser = todo.some(it => it.id === 'deploy-user');
+    UI.dialog({
+      title: 'Run setup', saveLabel: `Start (${todo.length})`, wide: true,
+      body: `<div class="ui-sub">Only what is missing or failed runs; installed components are skipped. You can cancel between components.</div>
+        <div class="card ui-steps" style="padding:0">${todo.map(it => `<div><span class="text-muted">○</span><span><b>${escapeHtml(it.label)}</b>${it.description ? `<div class="ui-sub">${escapeHtml(it.description)}</div>` : ''}</span><span class="ui-sub">${groupLabel(it.group)}</span></div>`).join('')}</div>
+        ${needsUser ? `<div class="ui-field"><label for="pv-deploy-name">Deploy user name</label><input class="input" id="pv-deploy-name" value="deploy" spellcheck="false" style="width:200px;font-family:var(--font-mono)"><span class="ui-help">Created with sudo + Docker access and an SSH key DockGate generates; DockGate then connects as this user.</span></div>` : ''}
+        ${risky.length ? `<label class="flex gap-2 text-sm" style="align-items:flex-start"><input type="checkbox" id="pv-confirm" style="margin-top:3px"><span><b style="color:var(--danger)">${risky.map(r => escapeHtml(r.label)).join(', ')}</b> can lock you out if misconfigured (installed ones are only re-checked). DockGate tests a new SSH login and rolls back on failure. I want to proceed.</span></label>` : ''}
+        ${UI.explain('Packages are installed and config files written on the server.', 'Each component is detected first and verified after; firewall and SSH changes test a new login.')}`,
+      onSave: async (ov) => {
+        const confirm = !!ov.querySelector('#pv-confirm')?.checked;
+        if (risky.length && !confirm) throw new Error('Tick the confirmation for the risky components first');
+        const deployUser = (ov.querySelector('#pv-deploy-name')?.value || 'deploy').trim();
+        const r = await API.post(`/servers/${serverId}/provision`, { preset: presetName, only, confirm, deployUser });
+        setTimeout(() => streamProvisionJob(serverId, r.jobId, container), 0);
+      },
     });
-    const custom = preset === 'custom';
-    const presetIds = custom ? null : (catalog.presets[preset] || []);
-    // Non-custom: TICK exactly the items this preset installs (read-only) so you SEE the selection.
-    // Custom: checkboxes are editable; keep whatever is ticked (a sensible start when switching presets).
-    container.querySelectorAll('.pv-item').forEach(cb => {
-      const na = cb.dataset.na === '1';
-      if (custom) { cb.disabled = na; }
-      else { cb.checked = !na && presetIds.includes(cb.value); cb.disabled = true; }
-      const sel = cb.checked;
-      const card = cb.closest('.pv-item-card');
-      const badge = card && card.querySelector('.pv-sel-badge');
-      // Native checkbox is the control in Custom; under a preset it's read-only → hide it and make the
-      // selection unmistakable with an accent ring + tint + a "✓ selected" badge.
-      cb.style.display = custom ? '' : 'none';
-      if (badge) badge.style.display = (!custom && sel) ? '' : 'none';
-      if (card) {
-        card.style.boxShadow = sel ? 'inset 0 0 0 1.5px var(--accent)' : 'none';
-        card.style.background = sel ? 'var(--accent-dim)' : '';
-      }
-    });
-    const hint = container.querySelector('#pv-custom-hint');
-    if (hint) hint.textContent = custom
-      ? 'Tick the items you want to install'
-      : 'These items will be installed by this preset — switch to Custom to change';
-    // Risky = any TICKED high-risk item (works for both modes, since the preset's items are ticked above).
-    const risky = [...container.querySelectorAll('.pv-item:checked')].some(c => c.dataset.risk === 'high');
-    container.querySelector('#pv-confirm-wrap').style.display = risky ? 'block' : 'none';
-    const dep = container.querySelector('.pv-item[value="deploy-user"]');
-    container.querySelector('#pv-deploy-wrap').style.display = dep && dep.checked ? 'block' : 'none';
   }
-  container.querySelectorAll('input[name="pv-preset"]').forEach(r => r.addEventListener('change', update));
-  container.querySelector('#pv-items').addEventListener('change', update);
-  update();
+  draw();
+}
 
-  container.querySelector('#pv-run').addEventListener('click', async () => {
-    const runBtn = container.querySelector('#pv-run');
-    const preset = container.querySelector('input[name="pv-preset"]:checked')?.value || 'secure-baseline';
-    const only = preset === 'custom' ? [...container.querySelectorAll('.pv-item:checked')].map(c => c.value) : undefined;
-    const confirm = !!container.querySelector('#pv-confirm')?.checked;
-    if (preset === 'custom' && (!only || !only.length)) { showToast('Pick at least one item', 'warning'); return; }
-    runBtn.disabled = true; runBtn.textContent = 'Starting…';
-    try {
-      const deployUser = (container.querySelector('#pv-deploy-name')?.value || 'deploy').trim();
-      const r = await API.post(`/servers/${serverId}/provision`, { preset, only, confirm, deployUser });
-      streamProvisionJob(serverId, r.jobId, container);
-    } catch (e) {
-      runBtn.disabled = false; runBtn.textContent = '▶ Run provisioning';
-      if (/already running/i.test(e.message || '')) showToast(e.message, 'warning', 8000);
-      else if (/confirm/i.test(e.message || '')) { container.querySelector('#pv-confirm-wrap').style.display = 'block'; showToast('Tick the risky-steps confirmation first', 'warning', 6000); }
-      else showToast(e.message, 'error', 8000);
-    }
-  });
+async function openRunLog(runId) {
+  let d;
+  try { d = await API.get(`/servers/provision/runs/${encodeURIComponent(runId)}`); }
+  catch (e) { return showToast(e.message, 'error', 8000); }
+  const ic = { verified: ['ok', 'Verified'], present: ['ok', 'Already there'], installed: ['ok', 'Installed'], failed: ['bad', 'Failed'], skipped: ['off', 'Skipped'] };
+  const m = showModal(`Setup run · ${escapeHtml(String(d.run.started_at || '').slice(0, 16))}`, `
+    ${UI.table([{ label: 'Component' }, { label: 'Result' }, { label: 'Time' }], (d.items || []).map(i => ({ cells: [
+      `<b>${escapeHtml(i.label || i.item_id)}</b>${i.error ? `<div class="ui-sub" style="color:var(--danger)">${escapeHtml(String(i.error).slice(0, 200))}</div>` : ''}`,
+      UI.pill(...(ic[i.state] || ['off', i.state])), `<span class="ui-sub">${i.duration_ms ? (i.duration_ms / 1000).toFixed(1) + ' s' : '—'}</span>`,
+    ] })), { minWidth: 420, empty: 'No components recorded.' })}
+    <details style="margin-top:10px"><summary class="text-sm" style="cursor:pointer;font-weight:600">Full log</summary><pre style="white-space:pre-wrap;background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);padding:10px;border-radius:8px;max-height:45vh;overflow:auto;font-size:12px;margin-top:8px">${escapeHtml(d.run.log || '(empty)')}</pre></details>`, []);
+  m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+  const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Close'; c.onclick = () => m.close();
+  m.overlay.querySelector('.modal-footer').append(c);
 }
 
 // ---------- Overview tab — merged readiness + live host metrics (Dashboard-grade) ----------
@@ -285,77 +247,62 @@ async function renderConsoleOverview(serverId, container, onSetup) {
   if (hostEl && typeof renderHostMonitoring === 'function') renderHostMonitoring(serverId, hostEl);
 }
 
-// ---------- Run progress — step cards (primary) + collapsible log (secondary, not a raw terminal) ----------
+// ---------- Run progress — steps like a CI job, log underneath ----------
 function streamProvisionJob(serverId, jobId, container) {
   container.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-        <div><div style="font-weight:700" id="pv-title">Provisioning ${escapeHtml(serverId)}…</div>
-          <div class="text-xs text-muted">Runs on the server even if you leave this page.</div></div>
-        <div class="flex gap-1"><button class="btn btn-secondary btn-sm" id="pv-cancel">■ Cancel</button><button class="btn btn-secondary btn-sm" id="pv-rescan" style="display:none">↻ Re-scan</button></div>
-      </div>
-      <div id="pv-steps" style="display:flex;flex-direction:column;gap:8px"></div>
-      <details class="card"><summary class="text-sm" style="cursor:pointer;font-weight:600">Show full log</summary>
-        <pre id="pv-log" style="white-space:pre-wrap;background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);padding:10px;border-radius:8px;max-height:38vh;overflow:auto;font-size:12px;margin-top:8px"></pre>
-      </details>
-    </div>`;
+    ${UI.header(`<span id="pv-title">Setting up ${escapeHtml(serverId)}…</span>`, 'Runs on the server even if you leave this page.', `<button class="btn btn-sm btn-secondary" id="pv-cancel">Cancel after this step</button><button class="btn btn-sm btn-primary" id="pv-rescan" style="display:none">Back to components</button>`)}
+    <div class="card ui-steps" style="padding:0" id="pv-steps"></div>
+    <details class="card" style="margin-top:12px"><summary class="text-sm" style="cursor:pointer;font-weight:600">Full log</summary>
+      <pre id="pv-log" style="white-space:pre-wrap;background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);padding:10px;border-radius:8px;max-height:38vh;overflow:auto;font-size:12px;margin-top:8px"></pre>
+    </details>`;
   const logEl = container.querySelector('#pv-log');
   const stepsEl = container.querySelector('#pv-steps');
   const titleEl = container.querySelector('#pv-title');
   const rescan = container.querySelector('#pv-rescan');
   rescan.addEventListener('click', () => renderProvisionPanel(serverId, container));
   const cancelBtn = container.querySelector('#pv-cancel');
-  cancelBtn.addEventListener('click', () => showConfirm('Cancel provisioning', 'The item that is installing now finishes first (stopping a package manager halfway can break it); nothing after it runs.', async () => {
+  cancelBtn.addEventListener('click', () => showConfirm('Cancel setup', 'The component that is installing now finishes first (stopping a package manager halfway can break it); nothing after it runs.', async () => {
     try { await API.post(`/servers/provision/job/${jobId}/cancel`); cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling…'; }
     catch (e) { showToast(e.message, 'error', 6000); }
   }, true));
-
   const sm = {
-    verified: { ic: '✓', c: 'var(--success)' }, present: { ic: '✓', c: 'var(--success)' }, installed: { ic: '✓', c: 'var(--success)' },
-    failed: { ic: '✗', c: 'var(--danger)' }, skipped: { ic: '⊘', c: 'var(--text-muted)' },
+    verified: ['✓', 'var(--success)', 'verified'], present: ['✓', 'var(--success)', 'already there'], installed: ['✓', 'var(--success)', 'installed'],
+    failed: ['✕', 'var(--danger)', 'failed'], skipped: ['⊘', 'var(--text-muted)', 'skipped'],
   };
-  const stepCard = (label, state, running) => {
-    const m = sm[state] || { ic: running ? '⟳' : '○', c: 'var(--text-muted)' };
-    return `<div class="card" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-left:3px solid ${m.c}">
-      <div style="color:${m.c};font-size:16px;width:18px;text-align:center">${m.ic}</div>
-      <div style="flex:1;font-weight:500">${escapeHtml(label)}</div>
-      <div class="text-xs text-muted">${running ? 'running…' : (state || '')}</div></div>`;
+  const step = (label, state, running) => {
+    const [ic, c, txt] = sm[state] || [running ? '●' : '○', running ? 'var(--accent)' : 'var(--text-muted)', running ? 'running…' : (state || '')];
+    return `<div><span style="color:${c};text-align:center">${ic}</span><span>${escapeHtml(label)}</span><span class="ui-sub">${txt}</span></div>`;
   };
-
   let timer = null;
   const poll = async () => {
     if (!document.body.contains(stepsEl)) { clearInterval(timer); return; }
     let job;
     try { job = await API.get(`/servers/provision/job/${jobId}`); }
-    catch (e) { clearInterval(timer); if (document.body.contains(stepsEl)) { titleEl.textContent = 'Job finished — see Run history'; rescan.style.display = ''; } return; }
+    catch (e) { clearInterval(timer); if (document.body.contains(stepsEl)) { titleEl.textContent = 'Run finished — see Run history'; rescan.style.display = ''; cancelBtn.style.display = 'none'; } return; }
     logEl.textContent = job.log || '';
     logEl.scrollTop = logEl.scrollHeight;
-    const done = (job.items || []).filter(i => ['verified', 'present', 'failed', 'skipped'].includes(i.state)).length;
-    const rows = (job.items || []).map(i => stepCard(i.label || i.id, i.state, false));
-    // a "running" row for the item currently in progress (job.phase) if it isn't a completed item yet
-    if (job.status === 'running' && job.phase && !(job.items || []).some(i => i.id === job.phase)) {
-      rows.push(stepCard(job.phase, null, true));
-    }
-    stepsEl.innerHTML = rows.join('');
+    const rows = (job.items || []).map(i => step(i.label || i.id, i.state, false));
+    if (job.status === 'running' && job.phase && !(job.items || []).some(i => i.id === job.phase)) rows.push(step(job.phase, null, true));
+    stepsEl.innerHTML = rows.join('') || '<div><span></span><span class="ui-sub">Starting…</span><span></span></div>';
     if (job.status && job.status !== 'running') {
       clearInterval(timer);
       rescan.style.display = '';
       cancelBtn.style.display = 'none';
       if (job.rebootRequired && !container.querySelector('#pv-reboot')) {
         const rb = document.createElement('div');
-        rb.id = 'pv-reboot'; rb.className = 'insight-card warning'; rb.style.justifyContent = 'space-between';
-        rb.innerHTML = '<span>Updates need a reboot to take effect.</span><button class="btn btn-sm btn-secondary">Reboot server</button>';
+        rb.id = 'pv-reboot'; rb.className = 'insight-card warning'; rb.style.cssText = 'justify-content:space-between;margin-bottom:12px';
+        rb.innerHTML = '<span>Updates need a reboot to take effect.</span><button class="btn btn-sm btn-secondary">Reboot server…</button>';
         rb.querySelector('button').addEventListener('click', () => showConfirm('Reboot server', 'The server restarts now and is unreachable for a minute or two.', async () => {
           try { await API.post(`/servers/${serverId}/reboot`, { confirm: true }); showToast('Reboot started', 'info', 6000); } catch (e) { showToast(e.message, 'error', 8000); }
         }, true));
         stepsEl.parentNode.insertBefore(rb, stepsEl);
       }
-      const ok = (job.items || []).filter(i => ['verified', 'present'].includes(i.state)).length;
+      const ok = (job.items || []).filter(i => ['verified', 'present', 'installed'].includes(i.state)).length;
       const failed = (job.items || []).filter(i => i.state === 'failed').length;
-      titleEl.textContent = `${failed ? '⚠' : '✓'} Provisioning ${job.status} — ${ok} ok, ${failed} failed`;
-      showToast(`Provisioning ${job.status}: ${ok} ok, ${failed} failed`, failed ? 'warning' : 'success', 8000);
+      titleEl.textContent = `Setup ${job.status} — ${ok} ok, ${failed} failed`;
+      showToast(`Setup ${job.status}: ${ok} ok, ${failed} failed`, failed ? 'warning' : 'success', 8000);
     } else {
-      titleEl.textContent = `Provisioning ${escapeHtml(serverId)}… (${done} done)`;
+      titleEl.textContent = `Setting up ${serverId}… (${(job.items || []).length} done)`;
     }
   };
   poll();
