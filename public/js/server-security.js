@@ -542,12 +542,14 @@ async function renderFirewallPanel(serverId, container) {
   catch (e) { return secError(container, "Couldn't read the firewall", e, () => renderFirewallPanel(serverId, container)); }
   const reload = () => renderFirewallPanel(serverId, container);
   const bypass = f.ports.filter(p => p.exposure === 'bypass');
+  const isFwd = f.backend === 'firewalld';
+  const fwName = isFwd ? 'firewalld' : 'UFW';
   const EXPO = {
     public:     ['var(--warning)', 'Public'],
     restricted: ['var(--accent)', 'Restricted'],
     internal:   ['var(--success)', 'Internal only'],
     local:      ['var(--text-muted)', 'This server only'],
-    bypass:     ['var(--danger)', 'Public · bypasses UFW'],
+    bypass:     ['var(--danger)', `Public · bypasses ${fwName}`],
   };
   const statCard = (label, value, sub) => `<div class="card"><div class="text-xs text-muted" style="text-transform:uppercase;font-weight:600;letter-spacing:.04em">${label}</div><div style="font-weight:700;margin-top:4px">${value}</div><div class="text-xs text-muted">${sub}</div></div>`;
   const sshRule = (r) => { const m = /^(\d+)(\/tcp)?$/.exec(r.to); return m && Number(m[1]) === f.sshPort && r.dir === 'IN' && r.action !== 'DENY' && !r.v6; };
@@ -555,8 +557,8 @@ async function renderFirewallPanel(serverId, container) {
   let banner = '';
   if (!f.active) {
     banner = `<div class="card" style="border-left:3px solid var(--danger);margin-bottom:16px"><div class="flex justify-between items-center" style="gap:12px;flex-wrap:wrap"><div style="min-width:0;flex:1"><div style="font-weight:700;font-size:15px;color:var(--danger)">The firewall is off — every listening port is reachable from the internet</div><div class="text-sm text-muted" style="margin-top:4px">Turning it on blocks all incoming traffic except SSH (${f.sshPort}/tcp) and, if you keep them, 80 and 443. DockGate tests a new SSH login and switches it off again by itself if that fails.</div></div><button class="btn btn-danger" data-ufwon>Turn the firewall on</button></div></div>`;
-  } else if (!f.ufwActive) {
-    banner = `<div class="insight-card info" style="margin-bottom:16px">This server uses firewalld. Port rules and Docker port isolation here work with UFW; manage firewalld ports in Services → Firewall.</div>`;
+  } else if (isFwd) {
+    banner = `<div class="insight-card ${bypass.length ? 'warning' : 'info'}" style="margin-bottom:16px">This server uses firewalld (zone <b>${escapeHtml(f.zone || '?')}</b>). Ports and rules below are managed in that zone; every change is saved permanently and applied with a reload.${bypass.length ? ` <b>${bypass.length} container port${bypass.length === 1 ? '' : 's'}</b> published by Docker skip${bypass.length === 1 ? 's' : ''} firewalld — publish them on 127.0.0.1 in the compose file if they should stay private. Docker port isolation is available with UFW only.` : ''}</div>`;
   } else if (!f.dockerIsolation && bypass.length) {
     banner = `
     <div class="card" style="border-left:3px solid var(--danger);margin-bottom:16px">
@@ -571,12 +573,12 @@ async function renderFirewallPanel(serverId, container) {
   }
 
   container.innerHTML = `
-    <div class="flex gap-1 items-start" style="margin-bottom:12px;flex-wrap:wrap"><div data-ufwbar style="flex:1;min-width:280px"></div>${f.ufwActive ? '<button class="btn btn-sm btn-secondary" data-ufwreload style="margin-top:6px">Reload rules</button>' : ''}</div>
+    <div class="flex gap-1 items-start" style="margin-bottom:12px;flex-wrap:wrap"><div data-ufwbar style="flex:1;min-width:280px"></div>${f.managed ? '<button class="btn btn-sm btn-secondary" data-ufwreload style="margin-top:6px">Reload rules</button>' : ''}</div>
     ${banner}
     <div class="grid-4" style="margin-bottom:16px">
       ${statCard('Firewall', f.active ? '<span style="color:var(--success)">● Active</span>' : '<span style="color:var(--danger)">○ Inactive</span>', escapeHtml(f.backend === 'none' ? 'not installed' : f.backend.toUpperCase()) + (f.ufwActive ? ' · <a href="#" data-ufwoff style="color:var(--danger)">turn off</a>' : ''))}
       ${statCard('Incoming', f.active ? 'Deny by default' : 'Allow all', 'Outgoing: allow')}
-      ${statCard('Docker ports', f.dockerIsolation ? '<span style="color:var(--success)">● Isolated</span>' : (f.ufwActive ? '<span style="color:var(--danger)">● Bypass UFW</span>' : '—'), f.dockerIsolation ? `DOCKER-USER chain · <a href="#" data-iso-off style="color:var(--accent)">turn off</a>` : 'DOCKER-USER chain')}
+      ${statCard('Docker ports', f.dockerIsolation ? '<span style="color:var(--success)">● Isolated</span>' : (f.managed ? `<span style="color:var(--danger)">● Bypass ${fwName}</span>` : '—'), f.dockerIsolation ? `DOCKER-USER chain · <a href="#" data-iso-off style="color:var(--accent)">turn off</a>` : (isFwd ? 'isolation needs UFW' : 'DOCKER-USER chain'))}
       ${statCard('SSH', `${f.sshPort}/tcp`, 'Always kept open')}
     </div>
 
@@ -589,8 +591,8 @@ async function renderFirewallPanel(serverId, container) {
         let act = '';
         if (p.exposure === 'local') act = '<span class="text-xs text-muted">bound to localhost</span>';
         else if (p.isSsh) act = '<span class="text-xs text-muted">managed in Access &amp; SSH</span>';
-        else if (!f.ufwActive) act = '<span class="text-xs text-muted">needs UFW</span>';
-        else if (p.exposure === 'bypass') act = '<span class="text-xs text-muted">turn on isolation first</span>';
+        else if (!f.managed) act = '<span class="text-xs text-muted">turn the firewall on first</span>';
+        else if (p.exposure === 'bypass') act = `<span class="text-xs text-muted">${isFwd ? 'Docker skips firewalld' : 'turn on isolation first'}</span>`;
         else if (p.exposure === 'internal') act = `<button class="btn btn-xs btn-primary" data-open="${key}">Open to internet</button> <button class="btn btn-xs btn-secondary" data-restrict="${key}">Allow one IP…</button>`;
         else act = `<button class="btn btn-xs btn-secondary" data-close="${key}">Close</button>`;
         return `<tr>
@@ -602,20 +604,20 @@ async function renderFirewallPanel(serverId, container) {
         </tr>`; }).join('') : '<tr><td colspan="5" class="text-sm text-muted">No listening ports found (ss / netstat unavailable?)</td></tr>'}</tbody>
     </table></div>
 
-    ${f.ufwActive ? `
+    ${f.managed ? `
     <div class="grid-2">
       <div>
-        <div style="font-size:15px;font-weight:700;margin-bottom:8px">UFW rules</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">${isFwd ? `firewalld rules · zone ${escapeHtml(f.zone || '')}` : 'UFW rules'}</div>
         <div class="table-wrapper"><table>
           <thead><tr><th>#</th><th>To</th><th>Action</th><th>From</th><th></th></tr></thead>
           <tbody>${f.rules.length ? f.rules.map(r => `<tr>
             <td class="text-muted">${r.n}</td><td class="td-mono">${escapeHtml(r.to)}${r.v6 ? ' <span class="text-xs text-muted">v6</span>' : ''}</td>
             <td><span style="color:${r.action === 'ALLOW' || r.action === 'LIMIT' ? 'var(--success)' : 'var(--danger)'};font-weight:600;font-size:12px">${escapeHtml(r.action + ' ' + r.dir)}</span></td>
             <td class="text-sm">${escapeHtml(r.from)}${r.note ? ` <span class="text-xs text-muted">· ${escapeHtml(r.note)}</span>` : ''}</td>
-            <td style="text-align:right">${sshRule(r) ? '<span class="text-xs text-muted" title="Keeps SSH reachable">locked</span>' : (r.v6 ? '' : `<button class="btn btn-xs btn-danger" data-delrule="${r.n}">Delete</button>`)}</td>
+            <td style="text-align:right">${sshRule(r) ? '<span class="text-xs text-muted" title="Keeps SSH reachable">locked</span>' : (r.v6 && !isFwd ? '' : `<button class="btn btn-xs btn-danger" data-delrule="${r.n}">Delete</button>`)}</td>
           </tr>`).join('') : '<tr><td colspan="5" class="text-sm text-muted">No rules</td></tr>'}</tbody>
         </table></div>
-        <div class="text-xs text-muted" style="margin-top:6px">Deleting a rule also deletes its IPv6 twin.</div>
+        <div class="text-xs text-muted" style="margin-top:6px">${isFwd ? 'Deleting a service removes all of its ports. A rule from one IP is a rich rule.' : 'Deleting a rule also deletes its IPv6 twin.'}</div>
       </div>
       <div class="card" style="align-self:start">
         <div style="font-size:15px;font-weight:700;margin-bottom:8px">Add rule</div>
@@ -635,7 +637,7 @@ async function renderFirewallPanel(serverId, container) {
   const warnToast = (r) => (r && r.warnings || []).forEach(w => showToast(w, 'warning', 12000));
   container.querySelector('[data-ufwreload]')?.addEventListener('click', () => secConfirm({
     title: 'Reload firewall rules', confirmLabel: 'Reload',
-    change: 'UFW re-reads its saved rules (including the Docker isolation rules).',
+    change: isFwd ? 'firewalld re-reads its permanent configuration. Rules added only at runtime (not with --permanent) are dropped.' : 'UFW re-reads its saved rules (including the Docker isolation rules).',
     protects: 'Open connections, including SSH, stay up. Afterwards DockGate checks that fail2ban still holds its bans and that no container stopped.',
     undo: 'Nothing to undo — the saved rules are applied as they are.',
     onConfirm: async () => {
@@ -692,7 +694,7 @@ async function renderFirewallPanel(serverId, container) {
       ${serverContextBanner()}
       <p class="text-sm" style="color:var(--text-secondary);margin-bottom:10px">After this, container ports are closed to the internet unless you open them. Inside the server nothing changes. Choose which of these currently public ports should <b>stay</b> public:</p>
       <div style="display:grid;gap:6px;margin-bottom:12px">${bypass.map(p => `<label class="flex items-center gap-2" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="checkbox" value="${p.port}/${p.proto}" ${[80, 443].includes(p.port) ? 'checked' : ''}><span class="td-mono" style="font-weight:600;min-width:72px">${p.port}/${p.proto}</span><span class="text-sm">${escapeHtml(p.usedBy)}</span>${p.containerPort !== p.port ? `<span class="text-xs text-muted">→ :${p.containerPort}</span>` : ''}</label>`).join('')}</div>
-      <div class="text-xs text-muted">Web traffic (80/443) is ticked by default. Databases and dashboards should usually stay closed. IPv6 is not covered by these rules.</div>`, []);
+      <div class="text-xs text-muted">Web traffic (80/443) is ticked by default. Databases and dashboards should usually stay closed. When UFW manages IPv6 (IPV6=yes), the same rules are written for IPv6 too.</div>`, []);
     const footer = m.overlay.querySelector('.modal-footer');
     const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
     const ok = document.createElement('button'); ok.className = 'btn btn-danger'; ok.textContent = 'Turn on isolation';
@@ -740,7 +742,7 @@ async function renderFirewallPanel(serverId, container) {
   }));
   container.querySelectorAll('[data-delrule]').forEach(b => b.addEventListener('click', () => secConfirm({
     title: `Delete rule #${b.dataset.delrule}`, danger: true, confirmLabel: 'Delete rule',
-    change: 'The rule (and its IPv6 twin) is removed from UFW immediately.',
+    change: isFwd ? 'The rule is removed from the permanent firewalld configuration and firewalld is reloaded. For a service, all of its ports go.' : 'The rule (and its IPv6 twin) is removed from UFW immediately.',
     protects: 'The rule that keeps SSH reachable cannot be deleted. fail2ban bans and running containers are checked afterwards.',
     undo: 'Add the same rule again with "Add rule".',
     onConfirm: async () => {

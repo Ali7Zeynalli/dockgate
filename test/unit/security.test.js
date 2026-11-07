@@ -315,3 +315,81 @@ test('plans: switching UFW on allows SSH first, tests a new login, rolls back wi
   assert.match(armed, /ufw --force disable/, 'the server-side rollback script switches UFW off');
   assert.throws(() => plans.ufwEnablePlan({ id: 'u2', sshPorts: ['22;id'], webPorts: [], test: {} }), e => e.statusCode === 400);
 });
+
+// ---------------------------------------------------------------- firewalld
+const FWD_LIST = `public (active)
+  target: default
+  interfaces: eth0
+  sources: 
+  services: dhcpv6-client ssh
+  ports: 8080/tcp 9000-9010/udp
+  forward-ports: 
+  rich rules: 
+\trule family="ipv4" source address="203.0.113.5" port port="5432" protocol="tcp" accept
+\trule port port="3306" protocol="tcp" reject`;
+const FWD_SVC = 'dhcpv6-client 546/udp\nssh 22/tcp';
+
+test('firewalld: --list-all → zone + UFW-shaped rules (deny first, services resolved to ports)', () => {
+  const f = P.parseFirewalld(FWD_LIST, FWD_SVC);
+  assert.equal(f.zone, 'public');
+  assert.equal(f.active, true);
+  assert.deepEqual(f.rules.map(r => `${r.n} ${r.to} ${r.action} ${r.from} ${r.kind}`), [
+    '1 3306/tcp DENY Anywhere rich',
+    '2 546/udp ALLOW Anywhere service',
+    '3 22/tcp ALLOW Anywhere service',
+    '4 8080/tcp ALLOW Anywhere port',
+    '5 9000-9010/udp ALLOW Anywhere port',
+    '6 5432/tcp ALLOW 203.0.113.5 rich',
+  ]);
+  assert.equal(f.rules[2].key, 'ssh');
+  assert.match(f.rules[5].key, /^rule family="ipv4" source address="203\.0\.113\.5"/);
+  assert.equal(P.parseFirewalld('', '').active, false);
+});
+
+test('firewall: port ranges count as open, but only single-port rules are deleted by "Close"', () => {
+  assert.deepEqual(P.ruleTarget('9000:9010/tcp'), { port: 9000, portEnd: 9010, proto: 'tcp' });
+  assert.deepEqual(P.ruleTarget('9000-9010/udp'), { port: 9000, portEnd: 9010, proto: 'udp' });
+  assert.ok(P.targetCovers(P.ruleTarget('9000-9010/udp'), 9005, 'udp', false));
+  assert.ok(!P.targetCovers(P.ruleTarget('9000-9010/udp'), 9005, 'udp', true));
+  assert.ok(!P.targetCovers(P.ruleTarget('9000-9010/udp'), 9005, 'tcp', false));
+  const ufw = P.parseUfwNumbered('Status: active\n[ 1] 9000:9010/tcp              ALLOW IN    Anywhere\n');
+  assert.deepEqual(P.ruleNumbersFor(ufw.rules, { port: 9005, proto: 'tcp', dir: 'IN' }), []);
+});
+
+test('firewalld: exposure — services/ports/rich rules, container ports always bypass', () => {
+  const f = P.parseFirewalld(FWD_LIST, FWD_SVC);
+  const listeners = [
+    { port: 22, proto: 'tcp', bind: '0.0.0.0', process: 'sshd' },
+    { port: 5432, proto: 'tcp', bind: '0.0.0.0', process: 'postgres' },
+    { port: 9005, proto: 'udp', bind: '0.0.0.0', process: 'app' },
+    { port: 6379, proto: 'tcp', bind: '0.0.0.0', process: 'redis' },
+  ];
+  const dockerPorts = [{ hostIp: '0.0.0.0', hostPort: 8081, containerPort: 80, proto: 'tcp', container: 'web' }];
+  const rows = P.computePorts({ listeners, dockerPorts, ufw: f, isolation: false, sshPort: 22 });
+  const by = (p) => rows.find(r => r.port === p);
+  assert.equal(by(22).exposure, 'public');
+  assert.equal(by(5432).exposure, 'restricted');
+  assert.equal(by(5432).restrictedTo, '203.0.113.5');
+  assert.equal(by(9005).exposure, 'public', 'inside a range');
+  assert.equal(by(6379).exposure, 'internal');
+  assert.equal(by(8081).exposure, 'bypass');
+});
+
+test('firewalld: commands — permanent + reload, rich rules for sources/deny, quoted removal', () => {
+  assert.equal(plans.fwdAddCmd({ zone: 'public', port: 8443, proto: 'tcp', from: 'any', action: 'allow' }),
+    '{{S}}firewall-cmd --permanent --zone=public --add-port=8443/tcp >/dev/null && {{S}}firewall-cmd --reload >/dev/null');
+  assert.match(plans.fwdAddCmd({ zone: 'public', port: 5432, proto: 'tcp', from: '10.0.0.0/24', action: 'allow' }),
+    /--add-rich-rule='rule family="ipv4" source address="10\.0\.0\.0\/24" port port="5432" protocol="tcp" accept'/);
+  assert.match(plans.fwdAddCmd({ zone: 'public', port: 25, proto: 'tcp', from: 'any', action: 'deny' }),
+    /--add-rich-rule='rule port port="25" protocol="tcp" reject'/);
+  assert.match(plans.fwdRichRule({ port: 80, proto: 'tcp', from: '2001:db8::/32', action: 'allow' }), /family="ipv6"/);
+  assert.throws(() => plans.fwdAddCmd({ zone: 'pub;rm', port: 80, proto: 'tcp', from: 'any', action: 'allow' }), /zone/);
+  assert.throws(() => plans.fwdAddCmd({ zone: 'public', port: 80, proto: 'tcp', from: '1.2.3.4;id', action: 'allow' }));
+  const f = P.parseFirewalld(FWD_LIST, FWD_SVC);
+  const rm = plans.fwdRemoveCmd('public', [f.rules[5], f.rules[2], f.rules[2]]);
+  assert.match(rm, /--remove-rich-rule='rule family="ipv4" source address="203\.0\.113\.5" port port="5432" protocol="tcp" accept'/);
+  assert.equal((rm.match(/--remove-service=ssh/g) || []).length, 1, 'one removal per service');
+  assert.match(rm, /firewall-cmd --reload/);
+  assert.throws(() => plans.fwdRemoveCmd('public', [{ kind: 'rich', key: "rule accept'\n; id" }]), /rich rule/);
+  assert.equal(plans.fwdRemoveCmd('public', []), 'true');
+});

@@ -359,12 +359,19 @@ async function firewallOf(row) {
   const sec = await readState(row, plans.READ_FIREWALL);
   const ufw = P.parseUfwNumbered(sec.ufw);
   const firewalld = /running/.test(sec.firewalld || '');
+  const fwd = firewalld ? P.parseFirewalld(sec.fwd, sec.fwdsvc) : null;
   const isolation = Number(sec.iso || 0) > 0;
   const t = P.parseSshdT(sec.sshdT);
   const sshPort = t.port[0] || row.port || 22;
-  const ports = P.computePorts({ listeners: P.parseSs(sec.ss), dockerPorts: P.parseDockerPorts(sec.docker), ufw, isolation, sshPort });
-  const backend = (sec.ufwbin || '').trim() ? 'ufw' : (firewalld ? 'firewalld' : 'none');
-  return { backend, active: ufw.active || firewalld, ufwActive: ufw.active, firewalld, dockerIsolation: isolation, isolationSupported: backend === 'ufw', sshPort, rules: ufw.rules, ports };
+  // firewalld wins when it runs and UFW is not active (ufw can be installed on RHEL without being used)
+  const backend = ufw.active ? 'ufw' : (firewalld ? 'firewalld' : ((sec.ufwbin || '').trim() ? 'ufw' : 'none'));
+  // Docker publishes container ports past firewalld's zones, so with firewalld they always bypass it.
+  const effective = backend === 'firewalld' ? { active: !!(fwd && fwd.active), rules: fwd ? fwd.rules : [] } : ufw;
+  const ports = P.computePorts({ listeners: P.parseSs(sec.ss), dockerPorts: P.parseDockerPorts(sec.docker), ufw: effective, isolation: backend === 'ufw' && isolation, sshPort });
+  return {
+    backend, active: ufw.active || firewalld, managed: ufw.active || !!(fwd && fwd.active), ufwActive: ufw.active, firewalld,
+    zone: fwd ? fwd.zone : null, dockerIsolation: backend === 'ufw' && isolation, isolationSupported: backend === 'ufw', sshPort, rules: effective.rules, ports,
+  };
 }
 // ---- health check around firewall changes
 async function healthOf(row) {
@@ -389,7 +396,11 @@ async function runFirewallOp(row, plan, title) {
   return healthWarnings(before, await healthOf(row));
 }
 
-const requireUfw = (fw) => { if (!fw.ufwActive) throw P.httpError(400, fw.backend === 'firewalld' ? 'This server uses firewalld — port management here works with UFW. Use Services → Firewall for firewalld ports.' : 'UFW is not active — enable the firewall in Setup first'); };
+const requireUfw = (fw) => { if (!fw.ufwActive) throw P.httpError(400, fw.backend === 'firewalld' ? 'This works with UFW only — this server uses firewalld' : 'UFW is not active — turn the firewall on first'); };
+/** UFW or firewalld — the port actions work with both. */
+const requireManaged = (fw) => { if (!fw.managed) throw P.httpError(400, fw.firewalld ? "firewalld runs but its default zone couldn't be read" : 'The firewall is off — turn it on first'); };
+/** Does any other allow rule (IPv4 / any family) keep the SSH port reachable from anywhere? */
+const sshKeptBy = (fw, exclude) => fw.rules.some(r => !exclude.includes(r) && !r.v6 && r.dir === 'IN' && (r.action === 'ALLOW' || r.action === 'LIMIT') && r.from === 'Anywhere' && P.targetCovers(P.ruleTarget(r.to), fw.sshPort, 'tcp', false));
 
 router.get('/:id/firewall', send(async (req) => firewallOf(loadServer(req))));
 
@@ -426,13 +437,24 @@ router.post('/:id/firewall/expose', send(async (req) => {
   const from = scope === 'ip' ? P.assertSource(ip) : 'any';
   if (scope === 'ip' && from === 'any') throw P.httpError(400, 'Enter an IP address or CIDR');
   const fw = await firewallOf(row);
-  requireUfw(fw);
+  requireManaged(fw);
   const p = fw.ports.find(x => x.port === portN && x.proto === proto);
   if (!p) throw P.httpError(404, `Nothing listens on ${portN}/${proto}`);
   if (p.exposure === 'local') throw P.httpError(400, 'This port only listens on localhost — it cannot be reached from outside anyway');
   if (p.isSsh) throw P.httpError(400, 'This is the SSH port — change it in Access & SSH instead');
   let cmd;
-  if (p.kind === 'container') {
+  if (fw.backend === 'firewalld') {
+    if (p.kind === 'container') throw P.httpError(400, 'Docker publishes container ports past firewalld, so they cannot be opened or closed here. Publish the port on 127.0.0.1 in the compose file, or use UFW with Docker port isolation.');
+    if (open) cmd = plans.fwdAddCmd({ zone: fw.zone, port: portN, proto, from, action: 'allow' });
+    else {
+      // like UFW's close: every allow rule for exactly this port goes (open to all and restricted to one IP)
+      const hits = fw.rules.filter(r => r.action === 'ALLOW' && P.targetCovers(P.ruleTarget(r.to), portN, proto, false));
+      const wide = hits.filter(r => r.kind === 'service' || !P.targetCovers(P.ruleTarget(r.to), portN, proto, true));
+      if (wide.length) throw P.httpError(400, `${portN}/${proto} is opened by ${wide.map(r => r.note || r.to).join(', ')} — delete that rule in the rules list instead`);
+      if (!hits.length) throw P.httpError(400, 'No rule opening this port was found — refresh the page');
+      cmd = plans.fwdRemoveCmd(fw.zone, hits);
+    }
+  } else if (p.kind === 'container') {
     if (!fw.dockerIsolation) throw P.httpError(400, 'Turn on Docker port isolation first — until then every container port is public');
     cmd = open ? plans.exposeCmd({ kind: 'container', port: p.containerPort, proto, from })
       : plans.deleteRulesCmd(P.ruleNumbersFor(fw.rules, { port: p.containerPort, proto, dir: 'FWD' }));
@@ -440,6 +462,7 @@ router.post('/:id/firewall/expose', send(async (req) => {
     cmd = open ? plans.exposeCmd({ kind: 'host', port: portN, proto, from })
       : plans.deleteRulesCmd(P.ruleNumbersFor(fw.rules, { port: portN, proto, dir: 'IN' }));
   }
+  if (!open && cmd === 'true') throw P.httpError(400, `${portN}/${proto} is opened by a wider rule (a range or an app profile) — delete that rule in the rules list instead`);
   const warnings = await runFirewallOp(row, { steps: [{ label: open ? `Open ${portN}/${proto}` : `Close ${portN}/${proto}`, cmd }] }, 'Firewall');
   audit(req, row, open ? 'firewall-open' : 'firewall-close', { port: portN, proto, from, kind: p.kind, containerPort: p.containerPort || null });
   return { success: true, warnings };
@@ -452,9 +475,10 @@ router.post('/:id/firewall/rules', send(async (req) => {
   const src = P.assertSource(from);
   if (action !== 'allow' && action !== 'deny') throw P.httpError(400, 'action must be allow or deny');
   const fw = await firewallOf(row);
-  requireUfw(fw);
+  requireManaged(fw);
   if (action === 'deny' && portN === fw.sshPort) throw P.httpError(400, 'Denying the SSH port would lock you out — change the port in Access & SSH instead');
-  const warnings = await runFirewallOp(row, { steps: [{ label: 'Add rule', cmd: plans.addRuleCmd({ port: portN, proto, from: src, action }) }] }, 'Firewall');
+  const cmd = fw.backend === 'firewalld' ? plans.fwdAddCmd({ zone: fw.zone, port: portN, proto, from: src, action }) : plans.addRuleCmd({ port: portN, proto, from: src, action });
+  const warnings = await runFirewallOp(row, { steps: [{ label: 'Add rule', cmd }] }, 'Firewall');
   audit(req, row, 'firewall-rule-add', { port: portN, proto, from: src, action });
   return { success: true, warnings };
 }));
@@ -463,9 +487,17 @@ router.delete('/:id/firewall/rules/:n', send(async (req) => {
   const row = loadServer(req);
   const n = Number(req.params.n);
   const fw = await firewallOf(row);
-  requireUfw(fw);
+  requireManaged(fw);
   const rule = fw.rules.find(r => r.n === n);
   if (!rule) throw P.httpError(404, 'Rule not found — refresh the list');
+  if (fw.backend === 'firewalld') {
+    // a service or rich rule can span several rows (one per port) — they all go together
+    const group = fw.rules.filter(r => r.kind === rule.kind && r.key === rule.key);
+    if (rule.action !== 'DENY' && P.targetCovers(P.ruleTarget(rule.to), fw.sshPort, 'tcp', false) && !sshKeptBy(fw, group)) throw P.httpError(400, 'This rule keeps SSH reachable — change the SSH port in Access & SSH instead');
+    const warnings = await runFirewallOp(row, { steps: [{ label: `Delete rule #${n}`, cmd: plans.fwdRemoveCmd(fw.zone, group) }] }, 'Firewall');
+    audit(req, row, 'firewall-rule-delete', { n, to: rule.to, action: rule.action, from: rule.from, kind: rule.kind, key: rule.key });
+    return { success: true, warnings };
+  }
   const t = P.ruleTarget(rule.to);
   if (t && t.port === fw.sshPort && rule.dir === 'IN' && rule.action !== 'DENY') {
     const others = fw.rules.filter(r => r.n !== n && !r.v6 && r.dir === 'IN' && r.action !== 'DENY' && (P.ruleTarget(r.to) || {}).port === fw.sshPort && r.from === 'Anywhere');
@@ -510,8 +542,9 @@ router.post('/:id/firewall/reload', send(async (req) => {
   const row = loadServer(req);
   requireConfirm(req.body);
   const fw = await firewallOf(row);
-  requireUfw(fw);
-  const warnings = await runFirewallOp(row, { steps: [{ label: 'Reload UFW', cmd: plans.UFW_RELOAD }] }, 'Firewall');
+  requireManaged(fw);
+  const fwd = fw.backend === 'firewalld';
+  const warnings = await runFirewallOp(row, { steps: [{ label: fwd ? 'Reload firewalld' : 'Reload UFW', cmd: fwd ? plans.FWD_RELOAD : plans.UFW_RELOAD }] }, 'Firewall');
   audit(req, row, 'firewall-reload', {});
   return { success: true, warnings };
 }));

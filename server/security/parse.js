@@ -263,10 +263,67 @@ function parseUfwNumbered(out) {
   return { active, rules };
 }
 
-/** "8080" / "8080/tcp" / "Anywhere" → { port, proto } (proto null = both). Non-port targets → null. */
+/**
+ * "8080" / "8080/tcp" / "9000:9010/udp" (UFW) / "9000-9010/udp" (firewalld) → { port, portEnd, proto }
+ * (proto null = both). Non-port targets ("Anywhere", "OpenSSH") → null.
+ */
 function ruleTarget(to) {
-  const m = /^(\d+)(?:\/(tcp|udp))?$/.exec(String(to).trim());
-  return m ? { port: Number(m[1]), proto: m[2] || null } : null;
+  const m = /^(\d+)(?:[:-](\d+))?(?:\/(tcp|udp))?$/.exec(String(to).trim());
+  return m ? { port: Number(m[1]), portEnd: Number(m[2] || m[1]), proto: m[3] || null } : null;
+}
+/** Does a rule target cover this port/proto? exact: only a single-port target counts (for deleting). */
+function targetCovers(t, port, proto, exact) {
+  if (!t || (t.proto && t.proto !== proto)) return false;
+  return exact ? (t.port === port && t.portEnd === port) : (port >= t.port && port <= t.portEnd);
+}
+
+// ---------------------------------------------------------------- firewalld
+const FWD_ZONE_RE = /^[A-Za-z0-9_-]{1,32}$/;
+const FWD_SERVICE_RE = /^[A-Za-z0-9_.+-]{1,64}$/;
+
+/**
+ * `firewall-cmd --list-all` (one zone) + service→ports lines ("ssh 22/tcp") → UFW-shaped rules, so the
+ * port table, the open/close actions and the rule list work the same way for both firewalls.
+ * Each rule: { n, to, action, dir:'IN', from, v6:false, note, kind:'service'|'port'|'rich', key }.
+ * Deny rich rules come first — firewalld checks its deny rules before any allow.
+ */
+function parseFirewalld(listAll, svcPorts) {
+  const text = String(listAll || '');
+  const head = /^(\S+)(?:\s+\(([^)]*)\))?\s*$/m.exec(text.split('\n').find(l => l.trim()) || '');
+  const zone = head && FWD_ZONE_RE.test(head[1]) ? head[1] : null;
+  const field = (name) => { const m = new RegExp('^\\s*' + name + ':[ \\t]*(.*)$', 'm').exec(text); return m ? m[1].trim().split(/\s+/).filter(Boolean) : []; };
+  const svcMap = {};
+  for (const line of String(svcPorts || '').split('\n')) {
+    const [name, ...ports] = line.trim().split(/\s+/);
+    if (name && FWD_SERVICE_RE.test(name)) svcMap[name] = ports.filter(x => /^\d+(-\d+)?\/(tcp|udp|sctp|dccp)$/.test(x));
+  }
+  const allow = [], deny = [];
+  for (const svc of field('services')) {
+    const ports = svcMap[svc] || [];
+    if (!ports.length) allow.push({ to: svc, action: 'ALLOW', from: 'Anywhere', kind: 'service', key: svc, note: 'service' });
+    for (const p of ports) allow.push({ to: p, action: 'ALLOW', from: 'Anywhere', kind: 'service', key: svc, note: `service ${svc}` });
+  }
+  for (const p of field('ports')) if (/^\d+(-\d+)?\/(tcp|udp)$/.test(p)) allow.push({ to: p, action: 'ALLOW', from: 'Anywhere', kind: 'port', key: p, note: '' });
+  // rich rules: one per line, indented under "rich rules:"
+  const ri = text.split('\n').findIndex(l => /^\s*rich rules:/.test(l));
+  if (ri >= 0) {
+    for (const raw of text.split('\n').slice(ri + 1)) {
+      const line = raw.trim();
+      if (!/^rule\b/.test(line)) { if (line && !/^rule/.test(line) && /^\S+:/.test(line)) break; continue; }
+      const src = (/source address="([^"]+)"/.exec(line) || [])[1];
+      const port = (/port port="(\d+(?:-\d+)?)" protocol="(tcp|udp)"/.exec(line) || []);
+      const svc = (/service name="([^"]+)"/.exec(line) || [])[1];
+      const act = /\s(reject|drop)\b/.test(line) ? 'DENY' : (/\saccept\b/.test(line) ? 'ALLOW' : 'OTHER');
+      const tos = port[1] ? [`${port[1]}/${port[2]}`] : (svc ? (svcMap[svc] || [svc]) : ['Anywhere']);
+      const not = /source NOT address/.test(line);
+      for (const to of tos) {
+        const r = { to, action: act, from: src ? (not ? `not ${src}` : src) : 'Anywhere', kind: 'rich', key: line, note: 'rich rule', v6: /family="ipv6"/.test(line) };
+        (act === 'DENY' ? deny : allow).push(r);
+      }
+    }
+  }
+  const rules = [...deny, ...allow].map((r, i) => ({ n: i + 1, dir: 'IN', v6: false, ...r }));
+  return { zone, active: !!zone, rules };
 }
 
 /** Listening sockets from `ss -H -tulpn` (or `netstat -tulpn` on hosts without iproute2). */
@@ -318,8 +375,8 @@ function findAllow(rules, port, proto, dir) {
   for (const r of rules) {
     if (r.action !== 'ALLOW' && r.action !== 'LIMIT') continue;
     if (dir === 'FWD' ? r.dir !== 'FWD' : r.dir === 'FWD') continue;
-    const t = ruleTarget(r.to);
-    if (!t || t.port !== port || (t.proto && t.proto !== proto)) continue;
+    if (r.v6 || /^not /.test(r.from)) continue;
+    if (!targetCovers(ruleTarget(r.to), port, proto, false)) continue;
     return { from: r.from === 'Anywhere' ? 'any' : r.from };
   }
   return null;
@@ -367,8 +424,7 @@ function ruleNumbersFor(rules, { port, proto, dir, from }) {
   return rules.filter((r) => {
     if (r.action !== 'ALLOW' && r.action !== 'LIMIT') return false;
     if (dir === 'FWD' ? r.dir !== 'FWD' : r.dir === 'FWD') return false;
-    const t = ruleTarget(r.to);
-    if (!t || t.port !== port || (t.proto && t.proto !== proto)) return false;
+    if (!targetCovers(ruleTarget(r.to), port, proto, true)) return false;
     if (from && from !== 'any' && r.from !== from) return false;
     return true;
   }).map(r => r.n).sort((a, b) => b - a);
@@ -397,5 +453,5 @@ module.exports = {
   sections, parseSshdT, parseAccessConf, buildAccessConf, accessState, ROOT_LOGIN_VALUES,
   parseAuthorizedKeys, removeAuthorizedKey, usersState,
   validHost, parseChronyConf,
-  parseUfwNumbered, ruleTarget, parseSs, parseDockerPorts, computePorts, ruleNumbersFor, isLoopback,
+  parseUfwNumbered, ruleTarget, targetCovers, parseFirewalld, FWD_ZONE_RE, FWD_SERVICE_RE, parseSs, parseDockerPorts, computePorts, ruleNumbersFor, isLoopback,
 };

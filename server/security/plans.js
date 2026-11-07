@@ -35,6 +35,9 @@ const READ_FIREWALL = [
   'echo @@ufwbin; command -v ufw',
   'echo @@ufw; {{S}}ufw status numbered 2>/dev/null',
   'echo @@firewalld; {{S}}firewall-cmd --state 2>/dev/null',
+  // firewalld: default zone rules + the ports behind each enabled service (rich rules reference services too)
+  'echo @@fwd; {{S}}firewall-cmd --list-all 2>/dev/null',
+  "echo @@fwdsvc; if {{S}}firewall-cmd --state >/dev/null 2>&1; then for s in $({{S}}firewall-cmd --list-services 2>/dev/null) $({{S}}firewall-cmd --list-rich-rules 2>/dev/null | sed -n 's/.*service name=\"\\([^\"]*\\)\".*/\\1/p'); do echo \"$s $({{S}}firewall-cmd --permanent --service=\"$s\" --get-ports 2>/dev/null)\"; done; fi",
   "echo @@iso; {{S}}grep -c 'BEGIN DOCKGATE-DOCKER' /etc/ufw/after.rules 2>/dev/null",
   'echo @@ss; if command -v ss >/dev/null 2>&1; then {{S}}ss -H -tulpn 2>/dev/null; else {{S}}netstat -tulpn 2>/dev/null | tail -n +3; fi',
   "echo @@docker; {{S}}docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null",
@@ -308,6 +311,40 @@ function isolationPlan({ id, enable, keepPublic, test }) {
   return { steps, rollback: rollbackNow(id) };
 }
 
+// ---------------------------------------------------------------- firewalld
+// Every change is written to the permanent config and then applied with --reload, so it survives a reboot.
+const fwdZone = (z) => { if (!P.FWD_ZONE_RE.test(String(z || ''))) throw P.httpError(400, 'Invalid firewalld zone'); return z; };
+const FWD_RELOAD = '{{S}}firewall-cmd --reload >/dev/null';
+const fwd = (zone, args) => `{{S}}firewall-cmd --permanent --zone=${fwdZone(zone)} ${args} >/dev/null`;
+/** A rich rule for one port: from a source (family follows the address) or from anywhere (both families). */
+function fwdRichRule({ port, proto, from, action }) {
+  P.assertPort(port); P.assertProto(proto);
+  const src = from && from !== 'any' ? P.assertSource(from) : null;
+  const family = src ? ` family="${src.includes(':') ? 'ipv6' : 'ipv4'}" source address="${src}"` : '';
+  return `rule${family} port port="${port}" protocol="${proto}" ${action === 'deny' ? 'reject' : 'accept'}`;
+}
+/** Allow (or deny) a port. Allow from anywhere = a plain port entry; everything else is a rich rule. */
+function fwdAddCmd({ zone, port, proto, from, action }) {
+  const any = !from || from === 'any';
+  const add = any && action !== 'deny'
+    ? fwd(zone, `--add-port=${P.assertPort(port)}/${P.assertProto(proto)}`)
+    : fwd(zone, `--add-rich-rule=${shq(fwdRichRule({ port, proto, from, action }))}`);
+  return `${add} && ${FWD_RELOAD}`;
+}
+/** Remove parsed firewalld rules (see parse.parseFirewalld) — one entry each, then reload. */
+function fwdRemoveCmd(zone, rules) {
+  const seen = new Set(), cmds = [];
+  for (const r of rules) {
+    const id = r.kind + '|' + r.key;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (r.kind === 'service') { if (!P.FWD_SERVICE_RE.test(r.key)) throw P.httpError(400, 'Invalid service name'); cmds.push(fwd(zone, `--remove-service=${r.key}`)); }
+    else if (r.kind === 'port') { if (!/^\d+(-\d+)?\/(tcp|udp)$/.test(r.key)) throw P.httpError(400, 'Invalid port'); cmds.push(fwd(zone, `--remove-port=${r.key}`)); }
+    else if (r.kind === 'rich') { if (/[\n\r]/.test(r.key) || !/^rule\b/.test(r.key)) throw P.httpError(400, 'Invalid rich rule'); cmds.push(fwd(zone, `--remove-rich-rule=${shq(r.key)}`)); }
+  }
+  return cmds.length ? `${cmds.join(' && ')} && ${FWD_RELOAD}` : 'true';
+}
+
 /** ufw allow/route-allow for one port. kind 'container' uses the CONTAINER port (post-DNAT). */
 function exposeCmd({ kind, port, proto, from }) {
   const src = from && from !== 'any' ? from : 'any';
@@ -402,6 +439,7 @@ const READ_HEALTH = [
 ].join('; ');
 module.exports.READ_HEALTH = READ_HEALTH;
 module.exports.UFW_RELOAD = '{{S}}ufw reload >/dev/null';
+Object.assign(module.exports, { FWD_RELOAD, fwdAddCmd, fwdRemoveCmd, fwdRichRule });
 
 // ---------------------------------------------------------------- Services sub-pages (Docker · Time sync · Auto updates)
 const UNITS = { docker: 'docker', timesync: 'chrony chronyd systemd-timesyncd', 'unattended-upgrades': 'unattended-upgrades apt-daily-upgrade dnf-automatic' };
