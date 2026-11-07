@@ -1,4 +1,4 @@
-// Server security pages — Overview security status · Access & SSH · Users · Firewall · Deploy-user wizard.
+// Server security pages — Overview security status · Access & SSH · Users · Deploy-user wizard (Firewall: firewall-panel.js).
 // Same style as service-manager.js / provision-modal.js (globals, API.*, design-system classes).
 // Every risky change goes through a confirm dialog and then a server-side "lifeline" job (validate →
 // arm rollback → apply → test a NEW SSH connection → commit), whose steps runLifelineJob() shows live.
@@ -102,7 +102,7 @@ async function renderSecurityPosture(serverId, container, goTab) {
   catch (e) { container.innerHTML = ''; return; }
   const worst = data.checks.some(c => c.level === 'crit') ? 'crit' : data.checks.some(c => c.level === 'warn') ? 'warn' : 'ok';
   const dep = data.checks.find(c => c.id === 'deploy-user');
-  const go = { 'deploy-wizard': 'Set up', access: 'Open Access & SSH', firewall: 'Open Firewall' };
+  const go = { 'deploy-wizard': 'Set up', access: 'Open Access & SSH', firewall: 'Open Firewall', fail2ban: 'Open Fail2ban', setup: 'Open Setup' };
   container.innerHTML = `
     ${data.rebootRequired ? `
     <div class="card" style="border-left:3px solid var(--warning);margin-bottom:16px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap">
@@ -132,10 +132,16 @@ async function renderSecurityPosture(serverId, container, goTab) {
     </div>`;
   const refreshConsole = () => Router.navigate('server-console', { id: serverId, tab: 'overview' });
   container.querySelector('[data-wizard]')?.addEventListener('click', () => openDeployUserWizard(serverId, refreshConsole));
-  container.querySelector('[data-reboot]')?.addEventListener('click', () => showConfirm('Reboot server', 'The server restarts now and is unreachable for a minute or two. Containers with a restart policy start again by themselves.', async () => {
-    try { await API.post(`/servers/${serverId}/reboot`, { confirm: true }); showToast('Reboot started — the server is back in a minute or two', 'info', 8000); }
-    catch (e) { showToast(e.message, 'error', 8000); }
-  }, true));
+  container.querySelector('[data-reboot]')?.addEventListener('click', () => secConfirm({
+    title: 'Reboot server', danger: true, confirmLabel: 'Reboot',
+    change: 'The server restarts now and is unreachable for a minute or two.',
+    protects: 'Containers with a restart policy and enabled services start again by themselves. SSH and firewall settings are on disk and survive the reboot.',
+    undo: 'Not applicable — wait for the server to come back; DockGate reconnects automatically.',
+    onConfirm: async () => {
+      try { await API.post(`/servers/${serverId}/reboot`, { confirm: true }); showToast('Reboot started — the server is back in a minute or two', 'info', 8000); }
+      catch (e) { showToast(e.message, 'error', 8000); }
+    },
+  }));
   container.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
     if (b.dataset.go === 'deploy-wizard') openDeployUserWizard(serverId, refreshConsole);
     else goTab(b.dataset.go);
@@ -381,9 +387,15 @@ async function renderUsersPanel(serverId, container) {
   container.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openUserPerms(serverId, byName(b.dataset.edit), reload)));
   container.querySelectorAll('[data-lock]').forEach(b => b.addEventListener('click', () => {
     const u = byName(b.dataset.lock);
-    showConfirm(u.locked ? `Unlock ${escapeHtml(u.name)}` : `Lock ${escapeHtml(u.name)}`, u.locked ? 'The user can log in again with their keys.' : 'The user can no longer log in (password and keys). Files and processes are kept.', async () => {
-      try { await API.put(`/servers/${serverId}/users/${encodeURIComponent(u.name)}`, { locked: !u.locked }); showToast(u.locked ? 'User unlocked' : 'User locked'); reload(); } catch (e) { showToast(e.message, 'error', 7000); }
-    }, !u.locked);
+    secConfirm({
+      title: u.locked ? `Unlock ${escapeHtml(u.name)}` : `Lock ${escapeHtml(u.name)}`, danger: !u.locked, confirmLabel: u.locked ? 'Unlock' : 'Lock',
+      change: u.locked ? 'The account expiry is removed; the user can log in again with their keys or password.' : 'The account is expired and its password locked: no password or key login. Files, processes and keys are kept.',
+      protects: 'DockGate never locks the user it connects as, nor the last user with sudo.',
+      undo: u.locked ? 'Lock it again here.' : 'Unlock it here at any time.',
+      onConfirm: async () => {
+        try { await API.put(`/servers/${serverId}/users/${encodeURIComponent(u.name)}`, { locked: !u.locked }); showToast(u.locked ? 'User unlocked' : 'User locked'); reload(); } catch (e) { showToast(e.message, 'error', 7000); }
+      },
+    });
   }));
   container.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
     const u = byName(b.dataset.del);
@@ -518,169 +530,4 @@ function openUserKeys(serverId, u, d, reload) {
     try { await API.post(`/servers/${serverId}/users/${encodeURIComponent(u.name)}/keys`, { mode, publicKey: ov.querySelector('[data-pub]').value.trim() }); showToast('Key added'); refresh(); }
     catch (e) { ov.querySelector('[data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
   };
-}
-
-// ============================================================
-// Firewall tab
-// ============================================================
-async function renderFirewallPanel(serverId, container) {
-  container.innerHTML = `<div class="card"><div class="skeleton" style="width:100%;height:160px"></div></div>`;
-  let f;
-  try { f = await API.get(`/servers/${serverId}/firewall`); }
-  catch (e) { return secError(container, "Couldn't read the firewall", e, () => renderFirewallPanel(serverId, container)); }
-  const reload = () => renderFirewallPanel(serverId, container);
-  const bypass = f.ports.filter(p => p.exposure === 'bypass');
-  const EXPO = {
-    public:     ['var(--warning)', 'Public'],
-    restricted: ['var(--accent)', 'Restricted'],
-    internal:   ['var(--success)', 'Internal only'],
-    local:      ['var(--text-muted)', 'This server only'],
-    bypass:     ['var(--danger)', 'Public · bypasses UFW'],
-  };
-  const statCard = (label, value, sub) => `<div class="card"><div class="text-xs text-muted" style="text-transform:uppercase;font-weight:600;letter-spacing:.04em">${label}</div><div style="font-weight:700;margin-top:4px">${value}</div><div class="text-xs text-muted">${sub}</div></div>`;
-  const sshRule = (r) => { const m = /^(\d+)(\/tcp)?$/.exec(r.to); return m && Number(m[1]) === f.sshPort && r.dir === 'IN' && r.action !== 'DENY' && !r.v6; };
-
-  let banner = '';
-  if (!f.active) {
-    banner = `<div class="card" style="border-left:3px solid var(--danger);margin-bottom:16px"><div style="font-weight:700;font-size:15px;color:var(--danger)">The firewall is off — every listening port is reachable from the internet</div><div class="text-sm text-muted" style="margin-top:4px">Turn it on in <b>Setup → Firewall (UFW)</b>: incoming is denied by default and only SSH, 80 and 443 stay open.</div></div>`;
-  } else if (!f.ufwActive) {
-    banner = `<div class="insight-card info" style="margin-bottom:16px">This server uses firewalld. Port rules and Docker port isolation here work with UFW; manage firewalld ports in Services → Firewall.</div>`;
-  } else if (!f.dockerIsolation && bypass.length) {
-    banner = `
-    <div class="card" style="border-left:3px solid var(--danger);margin-bottom:16px">
-      <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:12px">
-        <div style="min-width:0;flex:1">
-          <div style="font-weight:700;font-size:15px;color:var(--danger)">${bypass.length} container port${bypass.length === 1 ? ' is' : 's are'} open to the internet despite UFW</div>
-          <div class="text-sm text-muted" style="margin-top:4px;max-width:72ch">Docker writes its own iptables rules, so ports published with <span class="td-mono">-p</span> skip UFW entirely. Turn on Docker port isolation: containers keep talking to each other and to this server, but only the ports you choose are reachable from outside.</div>
-        </div>
-        <button class="btn btn-danger" data-iso>Turn on Docker port isolation</button>
-      </div>
-    </div>`;
-  }
-
-  container.innerHTML = `
-    <div class="flex gap-1 items-start" style="margin-bottom:12px;flex-wrap:wrap"><div data-ufwbar style="flex:1;min-width:280px"></div>${f.ufwActive ? '<button class="btn btn-sm btn-secondary" data-ufwreload style="margin-top:6px">Reload rules</button>' : ''}</div>
-    ${banner}
-    <div class="grid-4" style="margin-bottom:16px">
-      ${statCard('Firewall', f.active ? '<span style="color:var(--success)">● Active</span>' : '<span style="color:var(--danger)">○ Inactive</span>', escapeHtml(f.backend === 'none' ? 'not installed' : f.backend.toUpperCase()))}
-      ${statCard('Incoming', f.active ? 'Deny by default' : 'Allow all', 'Outgoing: allow')}
-      ${statCard('Docker ports', f.dockerIsolation ? '<span style="color:var(--success)">● Isolated</span>' : (f.ufwActive ? '<span style="color:var(--danger)">● Bypass UFW</span>' : '—'), f.dockerIsolation ? `DOCKER-USER chain · <a href="#" data-iso-off style="color:var(--accent)">turn off</a>` : 'DOCKER-USER chain')}
-      ${statCard('SSH', `${f.sshPort}/tcp`, 'Always kept open')}
-    </div>
-
-    <div class="flex justify-between items-center mb-2"><div style="font-size:15px;font-weight:700">Listening ports</div><span class="text-xs text-muted">What is reachable from where (IPv4)</span></div>
-    <div class="table-wrapper" style="margin-bottom:20px"><table>
-      <thead><tr><th>Port</th><th>Used by</th><th>Listens on</th><th>Reachable from</th><th style="text-align:right">Actions</th></tr></thead>
-      <tbody>${f.ports.length ? f.ports.map(p => {
-        const [col, lbl] = EXPO[p.exposure] || ['var(--text-muted)', p.exposure];
-        const key = p.port + '/' + p.proto;
-        let act = '';
-        if (p.exposure === 'local') act = '<span class="text-xs text-muted">bound to localhost</span>';
-        else if (p.isSsh) act = '<span class="text-xs text-muted">managed in Access &amp; SSH</span>';
-        else if (!f.ufwActive) act = '<span class="text-xs text-muted">needs UFW</span>';
-        else if (p.exposure === 'bypass') act = '<span class="text-xs text-muted">turn on isolation first</span>';
-        else if (p.exposure === 'internal') act = `<button class="btn btn-xs btn-primary" data-open="${key}">Open to internet</button> <button class="btn btn-xs btn-secondary" data-restrict="${key}">Allow one IP…</button>`;
-        else act = `<button class="btn btn-xs btn-secondary" data-close="${key}">Close</button>`;
-        return `<tr>
-          <td class="td-mono" style="font-weight:600">${key}</td>
-          <td><div>${escapeHtml(p.usedBy)}</div><div class="text-xs text-muted">${p.kind === 'container' ? 'container · ' + escapeHtml(p.container) + (p.containerPort && p.containerPort !== p.port ? ' · inside :' + p.containerPort : '') : 'host process'}</div></td>
-          <td class="td-mono text-xs">${escapeHtml(p.bind)}</td>
-          <td><span style="color:${col};font-weight:600;font-size:13px">● ${lbl}</span>${p.restrictedTo ? `<div class="text-xs text-muted td-mono">${escapeHtml(p.restrictedTo)}</div>` : ''}</td>
-          <td style="text-align:right;white-space:nowrap">${act}</td>
-        </tr>`; }).join('') : '<tr><td colspan="5" class="text-sm text-muted">No listening ports found (ss / netstat unavailable?)</td></tr>'}</tbody>
-    </table></div>
-
-    ${f.ufwActive ? `
-    <div class="grid-2">
-      <div>
-        <div style="font-size:15px;font-weight:700;margin-bottom:8px">UFW rules</div>
-        <div class="table-wrapper"><table>
-          <thead><tr><th>#</th><th>To</th><th>Action</th><th>From</th><th></th></tr></thead>
-          <tbody>${f.rules.length ? f.rules.map(r => `<tr>
-            <td class="text-muted">${r.n}</td><td class="td-mono">${escapeHtml(r.to)}${r.v6 ? ' <span class="text-xs text-muted">v6</span>' : ''}</td>
-            <td><span style="color:${r.action === 'ALLOW' || r.action === 'LIMIT' ? 'var(--success)' : 'var(--danger)'};font-weight:600;font-size:12px">${escapeHtml(r.action + ' ' + r.dir)}</span></td>
-            <td class="text-sm">${escapeHtml(r.from)}${r.note ? ` <span class="text-xs text-muted">· ${escapeHtml(r.note)}</span>` : ''}</td>
-            <td style="text-align:right">${sshRule(r) ? '<span class="text-xs text-muted" title="Keeps SSH reachable">locked</span>' : (r.v6 ? '' : `<button class="btn btn-xs btn-danger" data-delrule="${r.n}">Delete</button>`)}</td>
-          </tr>`).join('') : '<tr><td colspan="5" class="text-sm text-muted">No rules</td></tr>'}</tbody>
-        </table></div>
-        <div class="text-xs text-muted" style="margin-top:6px">Deleting a rule also deletes its IPv6 twin.</div>
-      </div>
-      <div class="card" style="align-self:start">
-        <div style="font-size:15px;font-weight:700;margin-bottom:8px">Add rule</div>
-        <form data-rule style="display:grid;gap:10px">
-          <div class="flex gap-1"><input class="input" id="fw-port" type="number" min="1" max="65535" placeholder="Port, e.g. 8443" style="flex:1"><select class="select" id="fw-proto" style="width:90px"><option>tcp</option><option>udp</option></select></div>
-          <input class="input" id="fw-from" placeholder="From: any, or 198.51.100.24 / 10.0.0.0/24" value="any">
-          <div class="tab-bar" id="fw-act"><button class="tab-btn active" type="button" data-a="allow">Allow</button><button class="tab-btn" type="button" data-a="deny">Deny</button></div>
-          <button class="btn btn-sm btn-primary" type="submit">Add rule</button>
-          <div data-err></div>
-        </form>
-      </div>
-    </div>` : ''}`;
-
-  renderServiceBar(serverId, 'firewall', container.querySelector('[data-ufwbar]'), { label: 'Firewall service', onChange: reload });
-  if (f.backend === 'ufw') { const rawEl = document.createElement('div'); rawEl.style.marginTop = '16px'; container.appendChild(rawEl); renderRawConfig(serverId, 'firewall', '/etc/default/ufw', rawEl, { label: '/etc/default/ufw', high: true }); }
-  // Warnings when a firewall change touched something it should not have (fail2ban bans, containers).
-  const warnToast = (r) => (r && r.warnings || []).forEach(w => showToast(w, 'warning', 12000));
-  container.querySelector('[data-ufwreload]')?.addEventListener('click', () => showConfirm('Reload firewall rules', 'UFW re-reads its saved rules. Open connections stay up. Afterwards DockGate checks that fail2ban still holds its bans and that no container stopped.', async () => {
-    try { const r = await API.post(`/servers/${serverId}/firewall/reload`, { confirm: true }); showToast('Firewall reloaded'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
-  }));
-  const runIsolation = async (enable, keepPublic) => {
-    try {
-      const { jobId } = await API.post(`/servers/${serverId}/firewall/docker-isolation`, { enable, keepPublic, confirm: true });
-      const okk = await runLifelineJob(serverId, jobId, enable ? 'Docker port isolation' : 'Turn off Docker port isolation');
-      if (okk) showToast(enable ? 'Docker port isolation on' : 'Docker port isolation off');
-      reload();
-    } catch (e) { showToast(e.message, 'error', 8000); }
-  };
-  // Isolation: list current bypassing ports and ask which stay public (default closed; web ports pre-ticked).
-  container.querySelector('[data-iso]')?.addEventListener('click', () => {
-    const m = showModal('Turn on Docker port isolation', `
-      ${serverContextBanner()}
-      <p class="text-sm" style="color:var(--text-secondary);margin-bottom:10px">After this, container ports are closed to the internet unless you open them. Inside the server nothing changes. Choose which of these currently public ports should <b>stay</b> public:</p>
-      <div style="display:grid;gap:6px;margin-bottom:12px">${bypass.map(p => `<label class="flex items-center gap-2" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="checkbox" value="${p.port}/${p.proto}" ${[80, 443].includes(p.port) ? 'checked' : ''}><span class="td-mono" style="font-weight:600;min-width:72px">${p.port}/${p.proto}</span><span class="text-sm">${escapeHtml(p.usedBy)}</span>${p.containerPort !== p.port ? `<span class="text-xs text-muted">→ :${p.containerPort}</span>` : ''}</label>`).join('')}</div>
-      <div class="text-xs text-muted">Web traffic (80/443) is ticked by default. Databases and dashboards should usually stay closed. IPv6 is not covered by these rules.</div>`, []);
-    const footer = m.overlay.querySelector('.modal-footer');
-    const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
-    const ok = document.createElement('button'); ok.className = 'btn btn-danger'; ok.textContent = 'Turn on isolation';
-    footer.append(c, ok);
-    ok.onclick = () => { const keep = [...m.overlay.querySelectorAll('input[type=checkbox]:checked')].map(x => x.value); m.close(); runIsolation(true, keep); };
-  });
-  container.querySelector('[data-iso-off]')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    secConfirm({ title: 'Turn off Docker port isolation', change: 'The DOCKER-USER rules are removed. Every published container port becomes reachable from the internet again.', protects: 'SSH is tested with a new connection; on failure the previous rules come back.', undo: 'Turn isolation on again here.', danger: true, confirmLabel: 'Turn off', onConfirm: () => runIsolation(false, []) });
-  });
-
-  const expose = async (key, open, scope, ip) => {
-    const [port, proto] = key.split('/');
-    const r = await API.post(`/servers/${serverId}/firewall/expose`, { port: Number(port), proto, open, scope, ip });
-    showToast(open ? `${key} opened${scope === 'ip' ? ' for ' + ip : ''}` : `${key} closed`);
-    warnToast(r);
-    reload();
-  };
-  const tryExpose = (...a) => expose(...a).catch(e => showToast(e.message, 'error', 8000));
-  container.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => showConfirm(`Open ${b.dataset.open} to the internet`, 'Anyone on the internet will be able to reach this port.', () => tryExpose(b.dataset.open, true, 'any'))));
-  container.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => showConfirm(`Close ${b.dataset.close}`, 'The port stays reachable inside this server, but not from outside.', () => tryExpose(b.dataset.close, false), true)));
-  container.querySelectorAll('[data-restrict]').forEach(b => b.addEventListener('click', () => {
-    const m = showModal(`Allow one IP · ${b.dataset.restrict}`, `<label class="text-sm" for="fw-ip" style="font-weight:600;display:block;margin-bottom:4px">IP address or range</label><input class="input" id="fw-ip" placeholder="198.51.100.24 or 10.0.0.0/24" style="font-family:var(--font-mono);width:100%"><div data-err style="margin-top:8px"></div>`, []);
-    const footer = m.overlay.querySelector('.modal-footer');
-    const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
-    const ok = document.createElement('button'); ok.className = 'btn btn-primary'; ok.textContent = 'Allow';
-    footer.append(c, ok);
-    ok.onclick = async () => {
-      const ip = m.overlay.querySelector('#fw-ip').value.trim();
-      try { await expose(b.dataset.restrict, true, 'ip', ip); m.close(); }
-      catch (e) { m.overlay.querySelector('[data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
-    };
-  }));
-  container.querySelectorAll('[data-delrule]').forEach(b => b.addEventListener('click', () => showConfirm(`Delete rule #${b.dataset.delrule}`, 'The rule (and its IPv6 twin) is removed from UFW immediately.', async () => {
-    try { const r = await API.del(`/servers/${serverId}/firewall/rules/${b.dataset.delrule}`); showToast('Rule deleted'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
-  }, true)));
-  let action = 'allow';
-  container.querySelector('#fw-act')?.addEventListener('click', (e) => { const b = e.target.closest('.tab-btn'); if (!b) return; action = b.dataset.a; container.querySelectorAll('#fw-act .tab-btn').forEach(x => x.classList.toggle('active', x === b)); });
-  container.querySelector('[data-rule]')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const body = { port: Number(container.querySelector('#fw-port').value), proto: container.querySelector('#fw-proto').value, from: container.querySelector('#fw-from').value.trim() || 'any', action };
-    try { const r = await API.post(`/servers/${serverId}/firewall/rules`, body); showToast('Rule added'); warnToast(r); reload(); }
-    catch (er) { container.querySelector('[data-rule] [data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(er.message)}</div>`; }
-  });
 }

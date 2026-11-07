@@ -35,6 +35,12 @@ const READ_FIREWALL = [
   'echo @@ufwbin; command -v ufw',
   'echo @@ufw; {{S}}ufw status numbered 2>/dev/null',
   'echo @@firewalld; {{S}}firewall-cmd --state 2>/dev/null',
+  // the address DockGate connects from, as this server sees it (for the "DockGate's IP" source and the SSH guard)
+  'echo @@me; echo "$SSH_CONNECTION" | cut -d" " -f1',
+  "echo @@ufw6; grep -E '^IPV6=' /etc/default/ufw 2>/dev/null",
+  // firewalld: default zone rules + the ports behind each enabled service (rich rules reference services too)
+  'echo @@fwd; {{S}}firewall-cmd --list-all 2>/dev/null',
+  "echo @@fwdsvc; if {{S}}firewall-cmd --state >/dev/null 2>&1; then for s in $({{S}}firewall-cmd --list-services 2>/dev/null) $({{S}}firewall-cmd --list-rich-rules 2>/dev/null | sed -n 's/.*service name=\"\\([^\"]*\\)\".*/\\1/p'); do echo \"$s $({{S}}firewall-cmd --permanent --service=\"$s\" --get-ports 2>/dev/null)\"; done; fi",
   "echo @@iso; {{S}}grep -c 'BEGIN DOCKGATE-DOCKER' /etc/ufw/after.rules 2>/dev/null",
   'echo @@ss; if command -v ss >/dev/null 2>&1; then {{S}}ss -H -tulpn 2>/dev/null; else {{S}}netstat -tulpn 2>/dev/null | tail -n +3; fi',
   "echo @@docker; {{S}}docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null",
@@ -258,27 +264,88 @@ COMMIT
 # END DOCKGATE-DOCKER
 `;
 
-const AFTER = '/etc/ufw/after.rules';
-const STRIP_BLOCK = `{{S}}sed -i '/# BEGIN DOCKGATE-DOCKER/,/# END DOCKGATE-DOCKER/d' ${AFTER}`;
+// IPv6: Docker with ip6tables (default on IPv6 networks since Docker 27) NATs published ports through the
+// ip6tables FORWARD chain too, so the same idea goes into after6.rules. Container networks there are ULA
+// (fc00::/7) or link-local; traffic between them passes, new outside → container connections are dropped.
+const DOCKER_BLOCK6 = `# BEGIN DOCKGATE-DOCKER
+# Managed by DockGate — IPv6 twin of the after.rules block. Open a port with: ufw route allow proto tcp from any to any port <container-port>
+*filter
+:ufw6-user-forward - [0:0]
+:ufw6-docker-logging-deny - [0:0]
+:DOCKER-USER - [0:0]
+-A DOCKER-USER -j ufw6-user-forward
+-A DOCKER-USER -j RETURN -s fc00::/7
+-A DOCKER-USER -j RETURN -s fe80::/10
+-A DOCKER-USER -p udp -m udp --sport 53 --dport 1024:65535 -j RETURN
+-A DOCKER-USER -j ufw6-docker-logging-deny -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -d fc00::/7
+-A DOCKER-USER -j ufw6-docker-logging-deny -p udp -m udp --dport 0:32767 -d fc00::/7
+-A DOCKER-USER -j RETURN
+-A ufw6-docker-logging-deny -m limit --limit 3/min --limit-burst 10 -j LOG --log-prefix "[UFW DOCKER BLOCK] "
+-A ufw6-docker-logging-deny -j DROP
+COMMIT
+# END DOCKGATE-DOCKER
+`;
 
-/** Turn Docker port isolation on (keepPublic: [{ port: containerPort, proto }]) or off. */
+const AFTER = '/etc/ufw/after.rules';
+const AFTER6 = '/etc/ufw/after6.rules';
+const stripBlock = (f) => `{{S}}sed -i '/# BEGIN DOCKGATE-DOCKER/,/# END DOCKGATE-DOCKER/d' ${f}`;
+const STRIP_BLOCK = stripBlock(AFTER);
+
+/** Turn Docker port isolation on (keepPublic: [{ port: containerPort, proto }]) or off — IPv4 and IPv6. */
 function isolationPlan({ id, enable, keepPublic, test }) {
-  const prev = `${AFTER}.dockgate-prev`;
-  const restoreRoot = `[ -f ${prev} ] && mv -f ${prev} ${AFTER}\nufw reload >/dev/null 2>&1`;
+  const prev = `${AFTER}.dockgate-prev`, prev6 = `${AFTER6}.dockgate-prev`;
+  const restoreRoot = `[ -f ${prev} ] && mv -f ${prev} ${AFTER}\n[ -f ${prev6} ] && mv -f ${prev6} ${AFTER6}\nufw reload >/dev/null 2>&1`;
+  // after6.rules only exists (and only matters) when UFW manages IPv6 (IPV6=yes in /etc/default/ufw)
+  const v6 = (cmd) => `if {{S}}test -f ${AFTER6}; then ${cmd}; fi`;
   const steps = [
-    { label: `Back up ${AFTER}`, cmd: `command -v ufw >/dev/null 2>&1 && {{S}}ufw status | grep -q 'Status: active' || { echo "UFW is not active — enable the firewall first (Setup → Firewall)"; exit 1; }; {{S}}cp -p ${AFTER} ${prev}` },
+    { label: `Back up ${AFTER} and ${AFTER6}`, cmd: `command -v ufw >/dev/null 2>&1 && {{S}}ufw status | grep -q 'Status: active' || { echo "UFW is not active — turn the firewall on first"; exit 1; }; {{S}}cp -p ${AFTER} ${prev} && ${v6(`{{S}}cp -p ${AFTER6} ${prev6}`)}` },
     enable
-      ? { label: 'Add the DOCKER-USER rules (drop new outside → container connections)', cmd: `${STRIP_BLOCK} && echo ${b64('\n' + DOCKER_BLOCK)} | base64 -d | {{S}}tee -a ${AFTER} >/dev/null` }
-      : { label: 'Remove the DOCKER-USER rules', cmd: STRIP_BLOCK },
+      ? { label: 'Add the DOCKER-USER rules, IPv4 + IPv6 (drop new outside → container connections)', cmd: `${STRIP_BLOCK} && echo ${b64('\n' + DOCKER_BLOCK)} | base64 -d | {{S}}tee -a ${AFTER} >/dev/null && ${v6(`${stripBlock(AFTER6)} && echo ${b64('\n' + DOCKER_BLOCK6)} | base64 -d | {{S}}tee -a ${AFTER6} >/dev/null`)}` }
+      : { label: 'Remove the DOCKER-USER rules (IPv4 + IPv6)', cmd: `${STRIP_BLOCK} && ${v6(stripBlock(AFTER6))}` },
     { label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, restoreRoot) },
   ];
   if (enable && keepPublic.length) {
+    // `ufw route allow` adds the IPv4 and the IPv6 rule (when UFW manages IPv6)
     steps.push({ label: `Keep public: ${keepPublic.map(k => `${k.port}/${k.proto}`).join(', ')}`, cmd: keepPublic.map(k => `{{S}}ufw route allow proto ${P.assertProto(k.proto)} from any to any port ${P.assertPort(k.port)} >/dev/null`).join(' && ') });
   }
   steps.push({ label: 'Reload UFW', cmd: '{{S}}ufw reload >/dev/null', rollbackOnFail: true });
   steps.push({ label: 'Open a NEW SSH connection to test', test, rollbackOnFail: true });
-  steps.push({ label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; {{S}}rm -f ${prev}; true` });
+  steps.push({ label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; {{S}}rm -f ${prev} ${prev6}; true` });
   return { steps, rollback: rollbackNow(id) };
+}
+
+// ---------------------------------------------------------------- firewalld
+// Every change is written to the permanent config and then applied with --reload, so it survives a reboot.
+const fwdZone = (z) => { if (!P.FWD_ZONE_RE.test(String(z || ''))) throw P.httpError(400, 'Invalid firewalld zone'); return z; };
+const FWD_RELOAD = '{{S}}firewall-cmd --reload >/dev/null';
+const fwd = (zone, args) => `{{S}}firewall-cmd --permanent --zone=${fwdZone(zone)} ${args} >/dev/null`;
+/** A rich rule for one port: from a source (family follows the address) or from anywhere (both families). */
+function fwdRichRule({ port, proto, from, action }) {
+  P.assertPort(port); P.assertProto(proto);
+  const src = from && from !== 'any' ? P.assertSource(from) : null;
+  const family = src ? ` family="${src.includes(':') ? 'ipv6' : 'ipv4'}" source address="${src}"` : '';
+  return `rule${family} port port="${port}" protocol="${proto}" ${action === 'deny' ? 'reject' : 'accept'}`;
+}
+/** Allow (or deny) a port. Allow from anywhere = a plain port entry; everything else is a rich rule. */
+function fwdAddCmd({ zone, port, proto, from, action }) {
+  const any = !from || from === 'any';
+  const add = any && action !== 'deny'
+    ? fwd(zone, `--add-port=${P.assertPort(port)}/${P.assertProto(proto)}`)
+    : fwd(zone, `--add-rich-rule=${shq(fwdRichRule({ port, proto, from, action }))}`);
+  return `${add} && ${FWD_RELOAD}`;
+}
+/** Remove parsed firewalld rules (see parse.parseFirewalld) — one entry each, then reload. */
+function fwdRemoveCmd(zone, rules) {
+  const seen = new Set(), cmds = [];
+  for (const r of rules) {
+    const id = r.kind + '|' + r.key;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (r.kind === 'service') { if (!P.FWD_SERVICE_RE.test(r.key)) throw P.httpError(400, 'Invalid service name'); cmds.push(fwd(zone, `--remove-service=${r.key}`)); }
+    else if (r.kind === 'port') { if (!/^\d+(-\d+)?\/(tcp|udp)$/.test(r.key)) throw P.httpError(400, 'Invalid port'); cmds.push(fwd(zone, `--remove-port=${r.key}`)); }
+    else if (r.kind === 'rich') { if (/[\n\r]/.test(r.key) || !/^rule\b/.test(r.key)) throw P.httpError(400, 'Invalid rich rule'); cmds.push(fwd(zone, `--remove-rich-rule=${shq(r.key)}`)); }
+  }
+  return cmds.length ? `${cmds.join(' && ')} && ${FWD_RELOAD}` : 'true';
 }
 
 /** ufw allow/route-allow for one port. kind 'container' uses the CONTAINER port (post-DNAT). */
@@ -298,7 +365,7 @@ function addRuleCmd({ port, proto, from, action }) {
 const REBOOT = `{{S}}sh -c ${shq('nohup sh -c "sleep 2; systemctl reboot 2>/dev/null || reboot" >/dev/null 2>&1 &')}`;
 
 module.exports = {
-  DROPIN, DOCKER_BLOCK, READ_ACCESS, READ_FIREWALL, READ_USERS, READ_POSTURE, readKeysScript, SSHD_RELOAD_ROOT,
+  DROPIN, DOCKER_BLOCK, DOCKER_BLOCK6, READ_ACCESS, READ_FIREWALL, READ_USERS, READ_POSTURE, readKeysScript, SSHD_RELOAD_ROOT,
   accessPlan, deployUserPlan, createUserPlan, setPermsPlan, lockPlan, deleteUserPlan, addKeysPlan, writeKeysPlan,
   isolationPlan, exposeCmd, deleteRulesCmd, addRuleCmd, REBOOT, b64, shq,
 };
@@ -375,6 +442,7 @@ const READ_HEALTH = [
 ].join('; ');
 module.exports.READ_HEALTH = READ_HEALTH;
 module.exports.UFW_RELOAD = '{{S}}ufw reload >/dev/null';
+Object.assign(module.exports, { FWD_RELOAD, fwdAddCmd, fwdRemoveCmd, fwdRichRule });
 
 // ---------------------------------------------------------------- Services sub-pages (Docker · Time sync · Auto updates)
 const UNITS = { docker: 'docker', timesync: 'chrony chronyd systemd-timesyncd', 'unattended-upgrades': 'unattended-upgrades apt-daily-upgrade dnf-automatic' };
@@ -389,6 +457,7 @@ const SERVICE_INFO = {
     'echo @@tracking; chronyc tracking 2>/dev/null',
     'echo @@sources; chronyc -n sources 2>/dev/null',
     'echo @@timedatectl; timedatectl 2>/dev/null',
+    'echo @@conf; cat /etc/chrony/chrony.conf 2>/dev/null || cat /etc/chrony.conf 2>/dev/null',
   ],
   'unattended-upgrades': [
     'echo @@family; command -v apt-get >/dev/null 2>&1 && echo debian || echo rhel',
@@ -398,6 +467,8 @@ const SERVICE_INFO = {
     'echo @@last; {{S}}tail -n 40 /var/log/unattended-upgrades/unattended-upgrades.log 2>/dev/null',
     "echo @@pending; if command -v apt >/dev/null 2>&1; then apt list --upgradable 2>/dev/null | tail -n +2 | wc -l; else dnf -q check-update 2>/dev/null | grep -c '^[a-zA-Z0-9]'; fi",
     "echo @@rhel; grep -E '^(apply_updates|upgrade_type|reboot)[[:space:]]*=' /etc/dnf/automatic.conf 2>/dev/null",
+    'echo @@rhtimer; systemctl is-enabled dnf-automatic.timer 2>/dev/null',
+    "echo @@rhpkg; rpm -q dnf-automatic dnf5-plugin-automatic 2>/dev/null | grep -v 'not installed'",
     'echo @@reboot; [ -f /var/run/reboot-required ] && echo yes; true',
   ],
 };
@@ -433,7 +504,136 @@ function unattendedSettingsPlan({ enabled, autoReboot, rebootTime }) {
   };
 }
 
+/**
+ * RHEL family dnf-automatic: on/off (timer + apply_updates), all vs security-only updates, reboot policy.
+ * Keys are set in place in /etc/dnf/automatic.conf ([commands]); a missing key is added under [commands].
+ */
+function dnfAutomaticPlan({ enabled, upgradeType, reboot }) {
+  if (!['default', 'security'].includes(upgradeType)) throw P.httpError(400, 'upgradeType must be default or security');
+  if (!['never', 'when-needed'].includes(reboot)) throw P.httpError(400, 'reboot must be never or when-needed');
+  const F = '/etc/dnf/automatic.conf';
+  // active key → replace it; else the first commented-out one → un-comment it; else add under [commands]
+  const set = (k, v) => `if {{S}}grep -qE '^[[:space:]]*${k}[[:space:]]*=' ${F}; then {{S}}sed -i -E 's/^[[:space:]]*${k}[[:space:]]*=.*/${k} = ${v}/' ${F}; ` +
+    `elif {{S}}grep -qE '^#[[:space:]]*${k}[[:space:]]*=' ${F}; then {{S}}sed -i -E '0,/^#[[:space:]]*${k}[[:space:]]*=.*/s//${k} = ${v}/' ${F}; ` +
+    `else {{S}}sed -i '/^\\[commands\\]/a ${k} = ${v}' ${F}; fi`;
+  const restore = `{{S}}mv -f ${F}.dockgate-prev ${F}`;
+  return {
+    steps: [
+      { label: 'Check dnf-automatic', cmd: `{{S}}test -f ${F} || { echo "dnf-automatic is not installed — install it in Setup → Auto updates"; exit 1; }; {{S}}grep -q '^\\[commands\\]' ${F} || { echo "${F} has no [commands] section"; exit 1; }; {{S}}cp -p ${F} ${F}.dockgate-prev` },
+      { label: 'Write the settings', cmd: `{ ${set('apply_updates', enabled ? 'yes' : 'no')} && ${set('upgrade_type', upgradeType)} && ${set('reboot', reboot)}; } || { ${restore}; echo "could not write ${F} — restored"; exit 1; }` },
+      { label: enabled ? 'Enable the daily timer' : 'Disable the daily timer', cmd: `${enabled ? '{{S}}systemctl enable --now dnf-automatic.timer' : '{{S}}systemctl disable --now dnf-automatic.timer'} >/dev/null 2>&1 || { ${restore}; echo "systemctl could not ${enabled ? 'enable' : 'disable'} dnf-automatic.timer — restored"; exit 1; }` },
+      { label: 'Clean up', cmd: `{{S}}rm -f ${F}.dockgate-prev; true` },
+    ],
+  };
+}
+module.exports.dnfAutomaticPlan = dnfAutomaticPlan;
 module.exports.serviceInfoScript = serviceInfoScript;
 module.exports.SERVICE_INFO_ITEMS = Object.keys(SERVICE_INFO);
 module.exports.dockerSettingsPlan = dockerSettingsPlan;
 module.exports.unattendedSettingsPlan = unattendedSettingsPlan;
+
+// ---------------------------------------------------------------- Time sync (chrony NTP sources)
+const CHRONY_CONF = 'C=/etc/chrony/chrony.conf; [ -f $C ] || C=/etc/chrony.conf; [ -f $C ] || { echo "chrony is not installed — install it in Setup → Time sync"; exit 1; }';
+const CHRONY_RESTORE = 'if {{S}}test -f $C.dockgate-prev; then {{S}}mv -f $C.dockgate-prev $C; fi';
+const CHRONY_RESTART = '{{S}}systemctl restart chrony 2>/dev/null || {{S}}systemctl restart chronyd 2>/dev/null || {{S}}rc-service chronyd restart';
+
+/**
+ * Set chrony's NTP sources. servers = [{ host, type: 'pool'|'server' }]; empty = back to the distro's own.
+ * The distro's pool/server lines are commented out with a "#dockgate# " marker (and restored when going
+ * back to defaults); DockGate's sources live between BEGIN/END markers. Validated with `chronyd -p`.
+ */
+function ntpPlan({ servers }) {
+  const block = '# BEGIN DOCKGATE-NTP — managed by DockGate (Server Console → Services → Time sync)\n' +
+    servers.map(x => `${x.type} ${x.host} iburst`).join('\n') + '\n# END DOCKGATE-NTP\n';
+  // remove DockGate's block, un-comment the distro's lines, drop trailing blank lines (no build-up)
+  const reset = "{{S}}sed -i -e '/^# BEGIN DOCKGATE-NTP/,/^# END DOCKGATE-NTP/d' -e 's/^#dockgate# //' $C && {{S}}sed -i -e :a -e '/^\\n*$/{$d;N;ba' -e '}' $C";
+  const apply = servers.length
+    ? `${reset} && {{S}}sed -i -E 's/^(pool|server|peer)([[:space:]])/#dockgate# \\1\\2/' $C && echo ${b64('\n' + block)} | base64 -d | {{S}}tee -a $C >/dev/null`
+    : reset;
+  return {
+    steps: [
+      { label: 'Back up the chrony configuration', cmd: `${CHRONY_CONF}; {{S}}cp -p $C $C.dockgate-prev` },
+      { label: servers.length ? `Use ${servers.map(x => x.host).join(', ')}` : "Go back to the distro's own NTP sources", cmd: `${CHRONY_CONF}; ${apply}` },
+      { label: 'Validate (chronyd -p)', cmd: `${CHRONY_CONF}; {{S}}chronyd -p -f $C >/dev/null 2>&1 || { out=$({{S}}chronyd -p -f $C 2>&1 | tail -2); ${CHRONY_RESTORE}; echo "chrony rejected the configuration — restored: $out"; exit 1; }` },
+      { label: 'Restart chrony', cmd: `${CHRONY_CONF}; ${CHRONY_RESTART} || { ${CHRONY_RESTORE}; ${CHRONY_RESTART}; echo "chrony failed to start — previous configuration restored"; exit 1; }` },
+      { label: 'Clean up', cmd: `${CHRONY_CONF}; {{S}}rm -f $C.dockgate-prev; true` },
+    ],
+  };
+}
+module.exports.ntpPlan = ntpPlan;
+
+// ---------------------------------------------------------------- UFW on/off
+/**
+ * Turn UFW on with a lifeline: the SSH port(s) are allowed BEFORE enabling, a rollback (`ufw disable`)
+ * is armed, and a NEW SSH login must succeed or the firewall is switched off again.
+ * opts: { id, sshPorts: [n], webPorts: [n], test }
+ */
+function ufwEnablePlan({ id, sshPorts, webPorts, test }) {
+  const allow = [...new Set([...sshPorts, ...webPorts].map(P.assertPort))];
+  return {
+    steps: [
+      { label: 'Make sure UFW is installed', cmd: 'command -v ufw >/dev/null 2>&1 || { if command -v apt-get >/dev/null 2>&1; then {{S}}env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y ufw >/dev/null; else echo "UFW is not available on this distribution — use firewalld (Setup → Firewall)"; exit 1; fi; }' },
+      { label: `Allow ${allow.map(p => p + '/tcp').join(', ')} before switching on`, cmd: allow.map(p => `{{S}}ufw allow ${p}/tcp >/dev/null`).join(' && ') },
+      { label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, 'ufw --force disable >/dev/null 2>&1') },
+      { label: 'Switch the firewall on (deny incoming by default)', cmd: '{{S}}ufw default deny incoming >/dev/null && {{S}}ufw default allow outgoing >/dev/null && {{S}}ufw --force enable >/dev/null', rollbackOnFail: true },
+      { label: 'Open a NEW SSH connection to test', test, rollbackOnFail: true },
+      { label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; true` },
+    ],
+    rollback: rollbackNow(id),
+  };
+}
+const UFW_DISABLE = '{{S}}ufw --force disable >/dev/null';
+module.exports.ufwEnablePlan = ufwEnablePlan;
+
+// ---------------------------------------------------------------- per-port sources (one rule per source)
+const ufwAct = (a) => (a === 'LIMIT' ? 'limit' : 'allow');
+/**
+ * Commands that turn a port's current sources into the wanted ones. Adds run first, then removes, so a
+ * source that stays is never interrupted. UFW rules are deleted by their spec (not by number — numbers
+ * shift as rules are added); the spec matches a rule regardless of its comment.
+ *   cur:  [{ src, action, proto|null, kind?, key? }]   (from the server)
+ *   add:  [{ src, tag }]                                (normalised addresses or 'any')
+ */
+function sourcesCmds({ backend, zone, port, proto, route, add, remove }) {
+  P.assertPort(port); P.assertProto(proto);
+  const out = [];
+  if (backend === 'firewalld') {
+    for (const a of add) out.push(a.src === 'any'
+      ? `{{S}}firewall-cmd --permanent --zone=${zone} --add-port=${port}/${proto} >/dev/null`
+      : `{{S}}firewall-cmd --permanent --zone=${zone} --add-rich-rule=${shq(fwdRichRule({ port, proto, from: a.src, action: 'allow' }))} >/dev/null`);
+    const rm = fwdRemoveCmd(zone, remove.map(r => ({ kind: r.kind, key: r.key })));
+    if (rm !== 'true') out.push(rm.replace(/ && \{\{S\}\}firewall-cmd --reload >\/dev\/null$/, ''));
+    if (out.length) out.push(FWD_RELOAD);
+    return out;
+  }
+  const verb = route ? 'ufw route' : 'ufw';
+  for (const a of add) {
+    const src = a.src === 'any' ? 'any' : P.assertSource(a.src);
+    out.push(`{{S}}${verb} allow proto ${proto} from ${src} to any port ${port}${a.src === 'any' ? '' : ` comment 'dockgate:${String(a.tag).replace(/[^A-Za-z0-9_-]/g, '')}'`} >/dev/null`);
+  }
+  for (const r of remove) {
+    const src = r.src === 'any' ? 'any' : P.assertSource(r.src);
+    out.push(`{{S}}${verb} delete ${ufwAct(r.action)}${r.proto ? ` proto ${r.proto}` : ''} from ${src} to any port ${port} >/dev/null`);
+  }
+  return out;
+}
+/** The same change with a lifeline (for the SSH port): backup, rollback armed, apply, new-login test. */
+function sourcesLifelinePlan({ id, backend, zone, cmds, test }) {
+  const files = backend === 'firewalld' ? [`/etc/firewalld/zones/${fwdZone(zone)}.xml`] : ['/etc/ufw/user.rules', '/etc/ufw/user6.rules'];
+  const backup = files.map(f => `if {{S}}test -f ${f}; then {{S}}cp -p ${f} ${f}.dockgate-prev; else {{S}}touch ${f}.dockgate-none; fi`).join('; ');
+  const restoreRoot = files.map(f => `if [ -f ${f}.dockgate-prev ]; then mv -f ${f}.dockgate-prev ${f}; elif [ -f ${f}.dockgate-none ]; then rm -f ${f} ${f}.dockgate-none; fi`).join('\n') +
+    (backend === 'firewalld' ? '\nfirewall-cmd --reload >/dev/null 2>&1' : '\nufw reload >/dev/null 2>&1');
+  const clean = files.map(f => `{{S}}rm -f ${f}.dockgate-prev ${f}.dockgate-none`).join('; ');
+  return {
+    steps: [
+      { label: 'Back up the firewall rules', cmd: backup },
+      { label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, restoreRoot) },
+      { label: 'Apply the new sources', cmd: cmds.join(' && '), rollbackOnFail: true },
+      { label: 'Open a NEW SSH connection to test', test, rollbackOnFail: true },
+      { label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; ${clean}; true` },
+    ],
+    rollback: rollbackNow(id),
+  };
+}
+Object.assign(module.exports, { sourcesCmds, sourcesLifelinePlan });
+module.exports.UFW_DISABLE = UFW_DISABLE;

@@ -8,8 +8,9 @@ const P = require('./parse');
 const plans = require('./plans');
 const runner = require('./runner');
 
-const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
-const absKey = (p) => (p ? (path.isAbsolute(p) ? p : path.join(SSH_KEYS_DIR, p)) : null);
+const paths = require('../paths');
+const { SSH_KEYS_DIR } = paths;
+const absKey = (p) => paths.keyPath(p);
 const cfgOf = (row) => ({ ...row, keyPath: absKey(row.key_path), password: decrypt(row.password), passphrase: decrypt(row.passphrase) });
 
 // After DockGate's own connection changes (user / key / port): drop pooled connections, restart the

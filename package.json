@@ -1,6 +1,6 @@
 {
   "name": "dockgate",
-  "version": "2.6.0",
+  "version": "2.10.0",
   "description": "DockGate — A lightweight, browser-based Docker control panel",
   "main": "server/index.js",
   "author": "Ali Zeynalli",
@@ -24,7 +24,7 @@
     "docker-compose"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "dev": "node server/index.js",
@@ -35,7 +35,9 @@
     "better-sqlite3": "^11.10.0",
     "dockerode": "^5.0.0",
     "express": "^4.22.2",
-    "nodemailer": "^9.0.1",
+    "ipaddr.js": "^1.9.1",
+    "nodemailer": "^10.3.1",
+    "proxy-addr": "^2.0.8",
     "socket.io": "^4.8.3"
   },
   "optionalDependencies": {

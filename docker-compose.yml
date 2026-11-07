@@ -9,6 +9,8 @@ services:
     environment:
       - PORT=7077
       - NODE_ENV=production
+      # - TRUST_PROXY=loopback        # only behind a reverse proxy on this host (nginx/caddy/traefik)
+      # - DG_SETUP_TOKEN=change-me    # require this token for the first-run admin setup
     volumes:
       # Required for managing host Docker daemon
       - /var/run/docker.sock:/var/run/docker.sock

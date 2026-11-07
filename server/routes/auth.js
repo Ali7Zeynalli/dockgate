@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 const { stmts } = require('../db');
 const { hashPassword, verifyPassword } = require('../auth/password');
-const { issueToken, verifyToken, serializeSessionCookie, clearSessionCookie, readSessionToken } = require('../auth/session');
+const { issueToken, verifyToken, serializeSessionCookie, clearSessionCookie, readSessionToken, revokeAllSessions } = require('../auth/session');
 const { logAction } = require('../audit');
 
 const MIN_PASSWORD_LEN = 8;
@@ -12,7 +12,36 @@ const MIN_PASSWORD_LEN = 8;
 function getSetting(key) { return stmts.getSetting.get(key)?.value; }
 function isSetupDone() { return getSetting('admin_setup_done') === 'true'; }
 
-// In-memory login/setup rate limit per source IP (req.ip is correct — trust proxy is ON in index.js).
+// ---- First-run setup gate ----
+// Until an admin password exists, whoever reaches /setup first becomes admin. So setup from the internet
+// needs a one-time token that only someone with access to the server/container logs can read. Setup from
+// the same machine or a private network (the usual LAN install) needs no token — unless DG_SETUP_TOKEN is
+// set, which then is always required.
+const crypto = require('crypto');
+const ipaddr = require('ipaddr.js');
+const ENV_SETUP_TOKEN = process.env.DG_SETUP_TOKEN ? String(process.env.DG_SETUP_TOKEN).trim() : '';
+const SETUP_TOKEN = ENV_SETUP_TOKEN || crypto.randomBytes(9).toString('base64url');
+function isLocalNetwork(ip) {
+  try {
+    let a = ipaddr.process(String(ip || ''));
+    return ['loopback', 'private', 'uniqueLocal', 'linkLocal'].includes(a.range());
+  } catch (e) { return false; }
+}
+function setupTokenRequired(req) { return !!ENV_SETUP_TOKEN || !isLocalNetwork(req.ip || (req.socket && req.socket.remoteAddress)); }
+function setupTokenOk(given) {
+  const a = Buffer.from(String(given || '')), b = Buffer.from(SETUP_TOKEN);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+if (!isSetupDone()) {
+  console.log('\n  ┌────────────────────────────────────────────────────────────┐');
+  console.log('  │  DockGate first-run setup                                  │');
+  console.log(`  │  Setup token: ${SETUP_TOKEN.padEnd(45)}│`);
+  console.log('  │  Needed when setting the admin password from outside your  │');
+  console.log('  │  local network. (docker logs <container> shows it again.)  │');
+  console.log('  └────────────────────────────────────────────────────────────┘\n');
+}
+
+// In-memory login/setup rate limit per source IP (req.ip honours TRUST_PROXY — see server/trust-proxy.js).
 const RL_WINDOW_MS = 15 * 60 * 1000;
 const RL_MAX = 10;
 const rlHits = new Map(); // ip -> { count, resetAt }
@@ -30,14 +59,19 @@ function clearRateLimit(req) { rlHits.delete(req.ip || 'unknown'); }
 // GET /api/auth/status — used by the SPA on boot to decide setup vs login vs panel.
 router.get('/status', (req, res) => {
   const uid = verifyToken(readSessionToken(req));
-  res.json({ authenticated: !!uid, setupDone: isSetupDone() });
+  const setupDone = isSetupDone();
+  res.json({ authenticated: !!uid, setupDone, ...(setupDone ? {} : { setupTokenRequired: setupTokenRequired(req) }) });
 });
 
 // POST /api/auth/setup — first-run only: set the admin password. Auto-logs-in on success.
 router.post('/setup', (req, res) => {
   if (rateLimited(req, res)) return;
   if (isSetupDone()) return res.status(409).json({ error: 'Already configured' });
-  const { password } = req.body || {};
+  const { password, setupToken } = req.body || {};
+  if (setupTokenRequired(req) && !setupTokenOk(setupToken)) {
+    logAction({ req, server: 'local', resourceType: 'system', resourceName: 'auth', action: 'auth_setup_denied' });
+    return res.status(403).json({ error: 'Setup token is missing or wrong — find it in the DockGate logs (docker logs <container>).' });
+  }
   if (!password || String(password).length < MIN_PASSWORD_LEN) {
     return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LEN} characters` });
   }
@@ -72,6 +106,16 @@ router.post('/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// POST /api/auth/logout-all — end every session on every device (this one included).
+router.post('/logout-all', (req, res) => {
+  const uid = verifyToken(readSessionToken(req));
+  if (!uid) return res.status(401).json({ error: 'Not authenticated' });
+  revokeAllSessions();
+  logAction({ req, server: 'local', resourceType: 'system', resourceName: 'auth', action: 'logout_all' });
+  res.setHeader('Set-Cookie', clearSessionCookie());
+  res.json({ success: true });
+});
+
 // POST /api/auth/change-password — requires a valid session; verify the current password, set a new one.
 // (This route lives in the open /api/auth router, so it checks the session itself.)
 router.post('/change-password', (req, res) => {
@@ -89,11 +133,13 @@ router.post('/change-password', (req, res) => {
   const { salt, hash } = hashPassword(String(newPassword));
   stmts.setSetting.run('auth_salt', salt);
   stmts.setSetting.run('auth_password_hash', hash);
+  revokeAllSessions(); // every other browser/device must log in again with the new password
   clearRateLimit(req);
   logAction({ req, server: 'local', resourceType: 'system', resourceName: 'auth', action: 'password_change' });
-  // Re-issue the session cookie so the current device stays logged in after the change.
+  // Re-issue the session cookie (new version) so the current device stays logged in after the change.
   res.setHeader('Set-Cookie', serializeSessionCookie(issueToken(uid)));
   res.json({ success: true });
 });
 
 module.exports = router;
+module.exports._test = { isLocalNetwork, setupTokenOk, SETUP_TOKEN };

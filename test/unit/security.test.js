@@ -207,6 +207,22 @@ test('plans: Docker isolation block = DOCKER-USER rules + ufw-user-forward; keep
   assert.ok(plan.steps.some(s => s.test && s.rollbackOnFail));
 });
 
+test('plans: Docker isolation covers IPv6 (after6.rules) when UFW manages it, and rollback restores both files', () => {
+  assert.match(plans.DOCKER_BLOCK6, /-A DOCKER-USER -j ufw6-user-forward/);
+  assert.match(plans.DOCKER_BLOCK6, /fc00::\/7/);
+  assert.doesNotMatch(plans.DOCKER_BLOCK6, /\b10\.0\.0\.0|192\.168/, 'no IPv4 ranges in the v6 table');
+  const on = plans.isolationPlan({ id: 'i6', enable: true, keepPublic: [], test: { username: 'deploy' } });
+  const all = on.steps.map(s => s.cmd || '').join('\n');
+  assert.match(all, /if \{\{S\}\}test -f \/etc\/ufw\/after6\.rules; then/, 'v6 step is guarded by file existence');
+  assert.match(all, /tee -a \/etc\/ufw\/after6\.rules/);
+  assert.match(all, /cp -p \/etc\/ufw\/after6\.rules \/etc\/ufw\/after6\.rules\.dockgate-prev/);
+  const decoded = all.match(/echo ([A-Za-z0-9+/=]{20,}) \| base64 -d/g).map(m => Buffer.from(m.split(' ')[1], 'base64').toString()).join('\n');
+  assert.match(decoded, /mv -f \/etc\/ufw\/after6\.rules\.dockgate-prev \/etc\/ufw\/after6\.rules/, 'rollback restores after6.rules');
+  assert.match(decoded, /mv -f \/etc\/ufw\/after\.rules\.dockgate-prev \/etc\/ufw\/after\.rules/, 'rollback restores after.rules');
+  const off = plans.isolationPlan({ id: 'i7', enable: false, keepPublic: [], test: { username: 'deploy' } });
+  assert.ok(off.steps.some(s => /after6\.rules/.test(s.cmd || '') && /sed -i/.test(s.cmd)), 'turning off strips the v6 block too');
+});
+
 // ---------------------------------------------------------------- host keys
 test('ssh-hostkey: fingerprints, strict verifier and known_hosts line', () => {
   const blob = blobOf();
@@ -267,4 +283,142 @@ test('security: hardening drop-in — grace time, empty passwords, real idle lim
   assert.equal(st.dropin.maxAuthTries, 4, 'values from the old 99-dockgate.conf are carried over');
   assert.equal(st.legacyFile, true);
   assert.equal(P.accessState(P.sections('@@sshver\nOpenSSH_8.9p1\n')).supportsIdleTimeout, false);
+});
+
+test('time sync: host validation and chrony.conf parsing', () => {
+  for (const ok of ['pool.ntp.org', 'time.cloudflare.com', '192.0.2.1', 'ntp1']) assert.ok(P.validHost(ok), ok);
+  for (const bad of ['', 'a b', 'x;rm', 'bad..host', '-x.org', '10.0.0.0/8', 'a'.repeat(254)]) assert.ok(!P.validHost(bad), bad);
+  const c = P.parseChronyConf('#dockgate# pool ntp.ubuntu.com iburst\n# BEGIN DOCKGATE-NTP\npool pool.ntp.org iburst\nserver 192.0.2.1 iburst\n# END DOCKGATE-NTP\n');
+  assert.deepEqual(c.servers, [{ type: 'pool', host: 'pool.ntp.org' }, { type: 'server', host: '192.0.2.1' }]);
+  assert.equal(c.managed, true);
+  assert.equal(P.parseChronyConf('pool ntp.ubuntu.com iburst').managed, false);
+});
+
+test('plans: NTP change = backup → write → validate (chronyd -p) → restart, restore on failure', () => {
+  const plan = plans.ntpPlan({ servers: [{ type: 'pool', host: 'pool.ntp.org' }] });
+  const labels = plan.steps.map(s => s.label);
+  assert.match(labels[0], /Back up/);
+  assert.match(plan.steps[2].cmd, /chronyd -p -f \$C/);
+  assert.match(plan.steps[2].cmd, /dockgate-prev/, 'restores the backup when chrony rejects the file');
+  assert.ok(!plan.steps[1].cmd.includes('pool.ntp.org'), 'the new lines travel base64-encoded');
+  assert.match(plans.ntpPlan({ servers: [] }).steps[1].cmd, /s\/\^#dockgate# \/\//, 'defaults: the distro lines are uncommented');
+});
+
+test('plans: switching UFW on allows SSH first, tests a new login, rolls back with ufw disable', () => {
+  const plan = plans.ufwEnablePlan({ id: 'u1', sshPorts: [2222, 22], webPorts: [80, 443], test: { username: 'deploy' } });
+  const i = (re) => plan.steps.findIndex(s => re.test(s.label));
+  assert.ok(i(/^Allow 2222\/tcp, 22\/tcp, 80\/tcp, 443\/tcp/) >= 0);
+  assert.ok(i(/^Allow/) < i(/Switch the firewall on/));
+  assert.ok(i(/Switch the firewall on/) < i(/NEW SSH/));
+  assert.ok(plan.steps[i(/NEW SSH/)].rollbackOnFail);
+  const armed = Buffer.from(/echo (\S+) \| base64 -d/.exec(plan.steps[i(/^Arm/)].cmd)[1], 'base64').toString();
+  assert.match(armed, /ufw --force disable/, 'the server-side rollback script switches UFW off');
+  assert.throws(() => plans.ufwEnablePlan({ id: 'u2', sshPorts: ['22;id'], webPorts: [], test: {} }), e => e.statusCode === 400);
+});
+
+// ---------------------------------------------------------------- firewalld
+const FWD_LIST = `public (active)
+  target: default
+  interfaces: eth0
+  sources: 
+  services: dhcpv6-client ssh
+  ports: 8080/tcp 9000-9010/udp
+  forward-ports: 
+  rich rules: 
+\trule family="ipv4" source address="203.0.113.5" port port="5432" protocol="tcp" accept
+\trule port port="3306" protocol="tcp" reject`;
+const FWD_SVC = 'dhcpv6-client 546/udp\nssh 22/tcp';
+
+test('firewalld: --list-all → zone + UFW-shaped rules (deny first, services resolved to ports)', () => {
+  const f = P.parseFirewalld(FWD_LIST, FWD_SVC);
+  assert.equal(f.zone, 'public');
+  assert.equal(f.active, true);
+  assert.deepEqual(f.rules.map(r => `${r.n} ${r.to} ${r.action} ${r.from} ${r.kind}`), [
+    '1 3306/tcp DENY Anywhere rich',
+    '2 546/udp ALLOW Anywhere service',
+    '3 22/tcp ALLOW Anywhere service',
+    '4 8080/tcp ALLOW Anywhere port',
+    '5 9000-9010/udp ALLOW Anywhere port',
+    '6 5432/tcp ALLOW 203.0.113.5 rich',
+  ]);
+  assert.equal(f.rules[2].key, 'ssh');
+  assert.match(f.rules[5].key, /^rule family="ipv4" source address="203\.0\.113\.5"/);
+  assert.equal(P.parseFirewalld('', '').active, false);
+});
+
+test('firewall: port ranges count as open, but only single-port rules are deleted by "Close"', () => {
+  assert.deepEqual(P.ruleTarget('9000:9010/tcp'), { port: 9000, portEnd: 9010, proto: 'tcp' });
+  assert.deepEqual(P.ruleTarget('9000-9010/udp'), { port: 9000, portEnd: 9010, proto: 'udp' });
+  assert.ok(P.targetCovers(P.ruleTarget('9000-9010/udp'), 9005, 'udp', false));
+  assert.ok(!P.targetCovers(P.ruleTarget('9000-9010/udp'), 9005, 'udp', true));
+  assert.ok(!P.targetCovers(P.ruleTarget('9000-9010/udp'), 9005, 'tcp', false));
+  const ufw = P.parseUfwNumbered('Status: active\n[ 1] 9000:9010/tcp              ALLOW IN    Anywhere\n');
+  assert.deepEqual(P.ruleNumbersFor(ufw.rules, { port: 9005, proto: 'tcp', dir: 'IN' }), []);
+});
+
+test('firewalld: exposure — services/ports/rich rules, container ports always bypass', () => {
+  const f = P.parseFirewalld(FWD_LIST, FWD_SVC);
+  const listeners = [
+    { port: 22, proto: 'tcp', bind: '0.0.0.0', process: 'sshd' },
+    { port: 5432, proto: 'tcp', bind: '0.0.0.0', process: 'postgres' },
+    { port: 9005, proto: 'udp', bind: '0.0.0.0', process: 'app' },
+    { port: 6379, proto: 'tcp', bind: '0.0.0.0', process: 'redis' },
+  ];
+  const dockerPorts = [{ hostIp: '0.0.0.0', hostPort: 8081, containerPort: 80, proto: 'tcp', container: 'web' }];
+  const rows = P.computePorts({ listeners, dockerPorts, ufw: f, isolation: false, sshPort: 22 });
+  const by = (p) => rows.find(r => r.port === p);
+  assert.equal(by(22).exposure, 'public');
+  assert.equal(by(5432).exposure, 'restricted');
+  assert.equal(by(5432).restrictedTo, '203.0.113.5');
+  assert.equal(by(9005).exposure, 'public', 'inside a range');
+  assert.equal(by(6379).exposure, 'internal');
+  assert.equal(by(8081).exposure, 'bypass');
+});
+
+test('firewalld: commands — permanent + reload, rich rules for sources/deny, quoted removal', () => {
+  assert.equal(plans.fwdAddCmd({ zone: 'public', port: 8443, proto: 'tcp', from: 'any', action: 'allow' }),
+    '{{S}}firewall-cmd --permanent --zone=public --add-port=8443/tcp >/dev/null && {{S}}firewall-cmd --reload >/dev/null');
+  assert.match(plans.fwdAddCmd({ zone: 'public', port: 5432, proto: 'tcp', from: '10.0.0.0/24', action: 'allow' }),
+    /--add-rich-rule='rule family="ipv4" source address="10\.0\.0\.0\/24" port port="5432" protocol="tcp" accept'/);
+  assert.match(plans.fwdAddCmd({ zone: 'public', port: 25, proto: 'tcp', from: 'any', action: 'deny' }),
+    /--add-rich-rule='rule port port="25" protocol="tcp" reject'/);
+  assert.match(plans.fwdRichRule({ port: 80, proto: 'tcp', from: '2001:db8::/32', action: 'allow' }), /family="ipv6"/);
+  assert.throws(() => plans.fwdAddCmd({ zone: 'pub;rm', port: 80, proto: 'tcp', from: 'any', action: 'allow' }), /zone/);
+  assert.throws(() => plans.fwdAddCmd({ zone: 'public', port: 80, proto: 'tcp', from: '1.2.3.4;id', action: 'allow' }));
+  const f = P.parseFirewalld(FWD_LIST, FWD_SVC);
+  const rm = plans.fwdRemoveCmd('public', [f.rules[5], f.rules[2], f.rules[2]]);
+  assert.match(rm, /--remove-rich-rule='rule family="ipv4" source address="203\.0\.113\.5" port port="5432" protocol="tcp" accept'/);
+  assert.equal((rm.match(/--remove-service=ssh/g) || []).length, 1, 'one removal per service');
+  assert.match(rm, /firewall-cmd --reload/);
+  assert.throws(() => plans.fwdRemoveCmd('public', [{ kind: 'rich', key: "rule accept'\n; id" }]), /rich rule/);
+  assert.equal(plans.fwdRemoveCmd('public', []), 'true');
+});
+
+// ---------------------------------------------------------------- services without systemd
+test('services: without systemd, state comes from a probe (or "unknown") and actions use `service`', () => {
+  const catalog = require('../../server/provision/catalog');
+  const ssh = catalog.serviceFor('ssh-hardening', 'ubuntu');
+  assert.match(ssh.verbs.status, /^if \[ -d \/run\/systemd\/system \]; then systemctl is-active ssh .*else \{ pgrep -x sshd; \}/);
+  assert.match(ssh.verbs.restart, /else command -v service .*sudo service ssh reload/);
+  assert.match(ssh.verbs.enable, /else \{ echo "This server does not run systemd/);
+  assert.match(ssh.verbs.enabled, /else echo unknown; fi$/);
+  const au = catalog.serviceFor('unattended-upgrades', 'ubuntu');
+  assert.match(au.verbs.status, /else echo unknown; fi$/, 'no probe → unknown, not "inactive"');
+  assert.match(au.verbs.start, /sudo service apt-daily-upgrade start/, '.timer suffix dropped for `service`');
+  const alpine = catalog.serviceFor('docker', 'alpine');
+  assert.equal(alpine.verbs.status, 'rc-service docker status >/dev/null 2>&1 && echo active || echo inactive', 'openrc unchanged');
+});
+
+test('plans: dnf-automatic — validated choices, backup + restore, timer follows the switch', () => {
+  const on = plans.dnfAutomaticPlan({ enabled: true, upgradeType: 'security', reboot: 'when-needed' });
+  const all = on.steps.map(s => s.cmd).join('\n');
+  assert.match(all, /cp -p \/etc\/dnf\/automatic\.conf \/etc\/dnf\/automatic\.conf\.dockgate-prev/);
+  assert.match(all, /apply_updates = yes/);
+  assert.match(all, /upgrade_type = security/);
+  assert.match(all, /reboot = when-needed/);
+  assert.match(all, /systemctl enable --now dnf-automatic\.timer/);
+  const off = plans.dnfAutomaticPlan({ enabled: false, upgradeType: 'default', reboot: 'never' });
+  assert.match(off.steps.map(s => s.cmd).join('\n'), /apply_updates = no[\s\S]*systemctl disable --now dnf-automatic\.timer/);
+  assert.throws(() => plans.dnfAutomaticPlan({ enabled: true, upgradeType: 'all; rm', reboot: 'never' }), /upgradeType/);
+  assert.throws(() => plans.dnfAutomaticPlan({ enabled: true, upgradeType: 'default', reboot: 'always' }), /reboot/);
 });

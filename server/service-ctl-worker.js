@@ -63,11 +63,20 @@ async function doStatus() {
       itemId, label: svc.label, unit: svc.unit, timer: svc.timer, risk: svc.risk,
       requiresKeyForConfig: svc.requiresKeyForConfig, configPaths: svc.configPaths,
       managed: true,
-      active: lastLine(a.out) === 'active',
-      enabled: ['enabled', 'static', 'enabled-runtime'].includes(lastLine(en.out)),
+      ...stateOf(a.out, en.out),
     });
   }
   ok({ distro, services });
+}
+
+/** status/enabled output → booleans; null = unknown (no systemd and no probe for this service). */
+function stateOf(statusOut, enabledOut) {
+  const st = lastLine(statusOut), en = lastLine(enabledOut);
+  return {
+    active: st === 'unknown' ? null : st === 'active',
+    enabled: en === 'unknown' ? null : ['enabled', 'static', 'enabled-runtime'].includes(en),
+    systemd: !(st === 'unknown' || en === 'unknown'),
+  };
 }
 
 async function doReadConfig() {
@@ -95,7 +104,7 @@ async function doAction() {
     const svc = catalog.serviceFor(cfg.itemId, distro);
     if (svc && !svc.na) {
       const a = await run(svc.verbs.status); const en = await run(svc.verbs.enabled);
-      after = { active: lastLine(a.out) === 'active', enabled: ['enabled', 'static', 'enabled-runtime'].includes(lastLine(en.out)) };
+      after = stateOf(a.out, en.out);
     }
   } catch (e) {}
   if (r.code !== 0) {
@@ -144,7 +153,7 @@ async function doWriteConfig() {
   const ap = await run(applyCmd);
   // Always probe is-active (valid for timers too — an enabled timer reports "active"); a daemon/timer
   // that fails to come up gets the previous config restored and re-applied.
-  const healthOk = lastLine((await run(svc.verbs.status)).out) === 'active';
+  const healthOk = ['active', 'unknown'].includes(lastLine((await run(svc.verbs.status)).out)); // unknown = no systemd, nothing to probe
   if (ap.code !== 0 || !healthOk) {
     await restore();
     const re = await run(applyCmd);

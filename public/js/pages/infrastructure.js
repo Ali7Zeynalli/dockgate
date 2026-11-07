@@ -315,10 +315,17 @@ Router.register('infra', async (content, params) => {
         return;
       }
       try {
-        await API.post('/servers', { id, name, ...auth, description, accessPassword, notifications_enabled });
+        const added = await API.post('/servers', { id, name, ...auth, description, accessPassword, notifications_enabled });
         showToast(`Server "${id}" (${authMode}) əlavə olundu`);
         if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
         renderServers();
+        // Root or password login → offer the deploy-user wizard straight away (non-root user + SSH key).
+        if (auth.username === 'root' || added.authMode !== 'key') {
+          showModal('Create a deploy user?', `<p class="text-sm" style="color:var(--text-secondary)">DockGate connects to <b>${escapeHtml(id)}</b> as <b>${escapeHtml(auth.username)}</b>${added.authMode === 'key' ? ' with a key' : ' with a password'}. A deploy user is a non-root account with sudo and Docker access that DockGate logs in to with an SSH key it generates — the first step before turning off root and password login.</p><p class="text-xs text-muted" style="margin-top:8px">Nothing is locked down by this step. You can also do it later from the server's Overview.</p>`, [
+            { label: 'Later', className: 'btn btn-secondary' },
+            { label: 'Create deploy user', className: 'btn btn-primary', onClick: () => Router.navigate('server-console', { id, tab: 'overview', wizard: '1' }) },
+          ]);
+        }
       } catch (e) { showToast(e.message, 'error'); }
     });
   }

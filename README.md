@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.6.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
-  <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
+  <img src="https://img.shields.io/badge/DockGate-v2.10.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.6.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.10.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -189,13 +189,13 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 <details>
 <summary><strong>Server Console</strong> — security status · deploy user · Access &amp; SSH · Users · Firewall · Fail2ban · Services</summary>
 
-- **Security status** (Overview) — deploy user, password login, root login, firewall, Docker ports and host key at a glance, each linking to the place that fixes it.
+- **Security status** (Overview) — deploy user, password login, root login, firewall, Docker ports, host key and fail2ban at a glance, each linking to the place that fixes it. Adding a server that DockGate reaches as root or with a password offers the deploy-user wizard right away.
 - **Deploy user** — one wizard creates a non-root user with passwordless sudo + Docker access, generates an ed25519 key (optionally adds your own public key), **proves a new key login works**, and only then switches DockGate's connection to it. Password login stays on until you turn it off yourself.
 - **Access &amp; SSH** — root login (allowed / key only / blocked), password login, SSH port and hardening (auth tries, login grace time, dead-connection timeout, real idle-session timeout on OpenSSH 9.2+), all in DockGate's **one** `sshd_config.d` drop-in. A port change also moves fail2ban's sshd jail to the new port. Every change is a **lifeline job**: validate (`sshd -t`) → arm an automatic **120 s rollback** on the server → reload → **open a NEW SSH connection** → keep, or restore immediately. Restricting root/password login is refused until DockGate itself uses a non-root key login.
 - **Users** — create / delete / lock users, sudo and docker membership, SSH keys (paste or generate; download a generated private key after re-entering the admin password). DockGate never lets you lock out its own user/key, remove the last sudo user, or remove the last key while password login is off.
-- **Firewall** — UFW service state and **reload**, every listening port with *where it is reachable from*; **Docker port isolation** (DOCKER-USER rules) so published container ports no longer bypass UFW — you choose which stay public; open a port to everyone or one IP; add/delete UFW rules. After each change DockGate checks that fail2ban kept its bans and no container stopped. The SSH port is always kept open.
+- **Firewall** — switch UFW **on/off** (SSH allowed first, new-login test, automatic switch-off on failure), UFW service state and **reload**, every port with **who can reach it** — *Anyone*, IP lists (**Cloudflare**, GitHub webhooks, UptimeRobot, your own) and addresses, IPv4 and IPv6 in one row; paste many addresses at once, see the exact rules added/removed before applying; the SSH port can only be restricted while DockGate's own IP stays allowed (tested with a new login); **Docker port isolation** (DOCKER-USER rules) so published container ports no longer bypass UFW — you choose which stay public; open a port to everyone or one IP; add/delete UFW rules. After each change DockGate checks that fail2ban kept its bans and no container stopped. The SSH port is always kept open.
 - **Fail2ban** — banned IPs with ban/expiry times (unban, unban + whitelist, manual ban), whitelist (`ignoreip`), a settings form with a live preview of the real ban lengths, and ban history. Settings go to DockGate's own `jail.d`/`fail2ban.d` files, are tested with `fail2ban-client -t` and applied with a **reload** (current bans are kept). DockGate flags settings that cannot work: a recidive jail that can never trigger, a jail watching the wrong SSH port, a short ban memory, its own IP being banned.
-- **Services** — sub-pages for **Docker** (log size limits, live-restore, engine details), **Time sync** (sync state, NTP sources) and **Auto updates** (on/off, automatic reboot and time, pending updates, last run). Each page has the service's state and actions, the raw config file as an advanced, guarded editor (backup → validate → auto-restore), and its recent log. SSH, UFW and fail2ban are managed in their own tabs.
+- **Services** — sub-pages for **Docker** (log size limits, live-restore, engine details), **Time sync** (choose NTP sources or go back to the distro's, sync state) and **Auto updates** (on/off, automatic reboot and time, pending updates, last run). Each page has the service's state and actions, the raw config file as an advanced, guarded editor (backup → validate → auto-restore), and its recent log. SSH, UFW and fail2ban are managed in their own tabs.
 - **Host key pinning** — every SSH connection (panel, workers, Docker CLI) pins the server's host key on first use and refuses a different one; re-trust it here after a rebuild.
 </details>
 
@@ -264,7 +264,8 @@ Browser (vanilla JS + xterm.js + Chart.js)
 
 > **Docker socket access = root-equivalent control of the host.** Treat DockGate as a privileged tool.
 
-- **Authentication.** Single **admin password** — scrypt hash + salt, set on first run (min 8). Login issues an **HMAC-signed, HttpOnly, SameSite=Lax** session cookie (7-day TTL; `Secure` when `COOKIE_SECURE=true`). Login is **rate-limited** (10 / 15 min per IP). Change it any time in **Settings → Security**.
+- **Authentication.** Single **admin password** — scrypt hash + salt, set on first run (min 8). Login issues an **HMAC-signed, HttpOnly, SameSite=Lax** session cookie (7-day TTL; `Secure` when `COOKIE_SECURE=true`). Login is **rate-limited** (10 / 15 min per IP; the client IP is only taken from `X-Forwarded-For` when `TRUST_PROXY` says the proxy is trusted). Change the password in **Settings → Security** — that signs out every other device; **Sign out everywhere** ends all sessions.
+- **First-run setup.** From the same machine or a private network the admin password can be set directly. From the internet a one-time **setup token** is required — DockGate prints it in its log at start (`docker logs dockgate-control-panel`), or set your own with `DG_SETUP_TOKEN`.
 - **Every `/api` route and every WebSocket stream requires a valid session** — an unauthenticated client can reach nothing but the login/setup endpoints.
 - **CSRF defense.** State-changing requests whose `Origin` host ≠ `Host` are rejected (403); combined with `SameSite=Lax`.
 - **Encrypted at rest.** SSH, registry and Telegram/SMTP secrets are AES-256-GCM encrypted in the SQLite DB.
@@ -282,7 +283,7 @@ Honest, current gaps:
 - **Single-tenant.** One admin password; **no multi-user, no roles/RBAC, no per-user data isolation.** Everyone with the password sees and controls everything.
 - **Local-host-only operations.** Anything needing the host CLI/filesystem — Compose, buildx, build-cache prune, **self-update**, auto-start — only works when **Local** is the active server (remote daemons are managed via the Docker API only). Local host **filesystem browsing** isn't offered (remote SFTP only).
 - **Provisioning / host management need SSH + root or passwordless sudo** on the target; validate on your own throwaway VPS first.
-- **Docker port isolation and port rules work with UFW** (Debian/Ubuntu). On firewalld hosts the ports are listed and firewalld ports are managed in Services; isolation rules cover IPv4.
+- **Docker port isolation needs UFW** (Debian/Ubuntu); it covers IPv4 and, when UFW manages IPv6, IPv6. On firewalld hosts the Firewall tab manages ports, services and rich rules of the default zone, but container ports published by Docker skip firewalld.
 - **Edge agent caveats** — channel secrets land in the container env on each host (use a dedicated bot/credential); after a DockGate restart the central monitor isn't yet auto-suppressed for agent-hosts (possible brief duplicate alert).
 - **Docker Swarm** support was **removed** (it couldn't work for the common local-manager-behind-NAT topology).
 
@@ -292,7 +293,7 @@ Honest, current gaps:
 
 | Layer | Tech |
 |---|---|
-| Runtime | Node.js 18 (Alpine) + `docker-cli`, `openssh-client`, `git` |
+| Runtime | Node.js 22 LTS (Alpine) + `docker-cli`, `openssh-client`, `git` |
 | Web / real-time | Express 4 · Socket.IO 4 |
 | Docker SDK | dockerode 5 (local socket + SSH transport) |
 | SSH | dockerode SSH transport · `ssh2` (SFTP, host shell, workers) |
@@ -316,7 +317,7 @@ All under `/api`, JSON, **session-gated** (except `/api/auth/{status,setup,login
 **Compose** — list/detail · up/down/restart/pull · `POST /compose/create` · `GET|PUT /compose/:p/file` *(local host)*
 **Builds / Cleanup / System** — build history & cache · prune (containers/images/volumes/networks/cache/system) · system info/version/df
 **Servers** — `GET /servers` · `POST /servers` · `PUT /servers/:id` · `POST /servers/test` · `POST /servers/active` · `DELETE /servers/:id` · provisioning (`POST /servers/provision/job/:id/cancel`) + host metrics/logs + service ops
-**Server security** — `GET /servers/:id/fail2ban` · `POST /servers/:id/fail2ban/{settings,ban,unban}` · `GET /servers/:id/services/:item/info` · `POST /servers/:id/services/{docker,unattended-upgrades}/settings` · `POST /servers/:id/firewall/reload` · `GET /servers/:id/security/posture` · `GET|POST /servers/:id/access` · `POST /servers/:id/access/retrust-host-key` · `POST /servers/:id/deploy-user` · `GET /servers/:id/jobs/:jobId` · `GET|POST /servers/:id/users` · `PUT|DELETE /servers/:id/users/:name` · `POST|DELETE /servers/:id/users/:name/keys` · `POST /servers/:id/users/:name/keys/private` · `GET /servers/:id/firewall` · `POST /servers/:id/firewall/{docker-isolation,expose,rules}` · `DELETE /servers/:id/firewall/rules/:n` · `POST /servers/:id/reboot`
+**Server security** — `GET /servers/:id/fail2ban` · `POST /servers/:id/fail2ban/{settings,ban,unban}` · `GET /servers/:id/services/:item/info` · `POST /servers/:id/services/{docker,timesync,unattended-upgrades}/settings` · `POST /servers/:id/firewall/{ufw,reload}` · `GET /servers/:id/security/posture` · `GET|POST /servers/:id/access` · `POST /servers/:id/access/retrust-host-key` · `POST /servers/:id/deploy-user` · `GET /servers/:id/jobs/:jobId` · `GET|POST /servers/:id/users` · `PUT|DELETE /servers/:id/users/:name` · `POST|DELETE /servers/:id/users/:name/keys` · `POST /servers/:id/users/:name/keys/private` · `GET /servers/:id/firewall` · `POST /servers/:id/firewall/{docker-isolation,expose,rules,ports/sources}` · `GET|POST /firewall-lists` · `PUT|DELETE /firewall-lists/:id` · `POST /firewall-lists/{parse,:id/check,:id/update}` · `DELETE /servers/:id/firewall/rules/:n` · `POST /servers/:id/reboot`
 **Registries** — CRUD + `POST /registries/test`
 **Templates** — `GET /templates` · `GET /templates/stackfile?url=` · `GET /templates/logo?url=`
 **Agent (Edge Notifier)** — `GET /agent/status` · `POST /agent/{install,update,reconfigure,install-all,remove,power,sync}` · `GET /agent/job/:id` · `GET|POST|DELETE /agent/channel/:serverId`
@@ -335,6 +336,8 @@ All under `/api`, JSON, **session-gated** (except `/api/auth/{status,setup,login
 | `DG_MASTER_KEY` | *(generated)* | 64-hex AES key for at-rest secret encryption (else `data/.master.key`, mode 0600) |
 | `DG_SESSION_SECRET` | *(generated)* | session-cookie signing secret (else persisted in DB) |
 | `COOKIE_SECURE` | `false` | set `true` behind HTTPS to mark the session cookie `Secure` |
+| `TRUST_PROXY` | *(none)* | reverse proxies allowed to set the client IP (`X-Forwarded-For`): `loopback` (proxy on the same host), `uniquelocal`, IPs/CIDRs, or a hop count. Leave unset when DockGate is reached directly |
+| `DG_SETUP_TOKEN` | *(random, printed in the log)* | first-run setup token; when set it is required even from the local network |
 | `ALLOWED_ORIGIN` | *(same-origin)* | permit a specific cross-origin panel |
 
 **Data** lives under `data/`: `docker-panel.db` (SQLite), `ssh-keys/` (0600), `compose/` (managed projects), `.master.key`.

@@ -9,13 +9,14 @@ test('service: manageableItems() = the 6 service items in seq order', () => {
 test('service: serviceFor resolves unit + verbs per distro; na where no variant; null for non-services; throws on unknown distro', () => {
   const docker = cat.serviceFor('docker', 'ubuntu');
   assert.equal(docker.unit, 'docker');
-  assert.equal(docker.verbs.restart, 'sudo systemctl restart docker');
+  const sd = (cmd) => (/^if \[ -d \/run\/systemd\/system \]; then (.+?); else /.exec(cmd) || [])[1]; // the systemd branch
+  assert.equal(sd(docker.verbs.restart), 'sudo systemctl restart docker');
   assert.deepEqual(docker.configPaths, ['/etc/docker/daemon.json']);
 
   const ssh = cat.serviceFor('ssh-hardening', 'rocky');
   assert.equal(ssh.unit, 'sshd');
   assert.equal(ssh.reload, true);
-  assert.equal(ssh.verbs.restart, 'sudo systemctl reload sshd', 'reload-mode service maps restart→reload');
+  assert.equal(sd(ssh.verbs.restart), 'sudo systemctl reload sshd', 'reload-mode service maps restart→reload');
   assert.equal(ssh.validate, 'sudo sshd -t');
   assert.equal(ssh.requiresKeyForConfig, true);
 
@@ -32,8 +33,9 @@ test('service: openrc verbs on alpine (docker)', () => {
 });
 
 test('service: serviceAction returns the fixed command; unknown action/item throws 400', () => {
-  assert.equal(cat.serviceAction('fail2ban', 'ubuntu', 'restart'), 'sudo systemctl reload fail2ban', 'fail2ban reloads — current bans are kept');
-  assert.equal(cat.serviceAction('ssh-hardening', 'ubuntu', 'restart'), 'sudo systemctl reload ssh');
+  const sd = (cmd) => (/^if \[ -d \/run\/systemd\/system \]; then (.+?); else /.exec(cmd) || [])[1];
+  assert.equal(sd(cat.serviceAction('fail2ban', 'ubuntu', 'restart')), 'sudo systemctl reload fail2ban', 'fail2ban reloads — current bans are kept');
+  assert.equal(sd(cat.serviceAction('ssh-hardening', 'ubuntu', 'restart')), 'sudo systemctl reload ssh');
   assert.throws(() => cat.serviceAction('docker', 'ubuntu', 'rm -rf /'), (e) => e.statusCode === 400);
   assert.throws(() => cat.serviceAction('update', 'ubuntu', 'restart'), (e) => e.statusCode === 400);
 });

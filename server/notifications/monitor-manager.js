@@ -9,7 +9,7 @@ const EventMonitor = require('./event-monitor');
 const { stmts } = require('../db');
 const { decrypt } = require('../auth/secrets');
 
-const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
+const paths = require('../paths');
 
 const monitors = new Map(); // serverId → EventMonitor
 
@@ -26,9 +26,7 @@ function buildClient(server) {
   // Auth precedence: key > password > SSH agent — same as docker.js createSshClient.
   // privateKey/passphrase must go inside sshOptions; docker-modem drops them at the top level.
   if (server.key_path) {
-    const keyPath = path.isAbsolute(server.key_path)
-      ? server.key_path
-      : path.join(SSH_KEYS_DIR, server.key_path);
+    const keyPath = paths.keyPath(server.key_path);
     if (fs.existsSync(keyPath)) {
       opts.sshOptions = {
         privateKey: fs.readFileSync(keyPath),

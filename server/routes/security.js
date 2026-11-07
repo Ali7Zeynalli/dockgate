@@ -18,11 +18,11 @@ const plans = require('../security/plans');
 const runner = require('../security/runner');
 const hostkey = require('../ssh-hostkey');
 
-const SSH_KEYS_DIR = path.join(__dirname, '..', '..', 'data', 'ssh-keys');
-if (!fs.existsSync(SSH_KEYS_DIR)) fs.mkdirSync(SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
+const paths = require('../paths');
+paths.ensureKeysDir();
 
 // ---------------------------------------------------------------- helpers
-const absKey = (p) => (p ? (path.isAbsolute(p) ? p : path.join(SSH_KEYS_DIR, p)) : null);
+const absKey = (p) => paths.keyPath(p);
 
 function loadServer(req) {
   const row = stmts.getServer.get(req.params.id);
@@ -69,7 +69,8 @@ router.get('/:id/jobs/:jobId', send((req) => {
 // ---------------------------------------------------------------- posture (Overview)
 router.get('/:id/security/posture', send(async (req) => {
   const row = loadServer(req);
-  const sec = await readState(row, plans.READ_POSTURE);
+  // fail2ban is read in parallel (its own worker) — a failure there must not hide the rest.
+  const [sec, f2b] = await Promise.all([readState(row, plans.READ_POSTURE), fail2banOf(row).catch(() => null)]);
   const a = P.accessState(sec);
   const ufw = P.parseUfwNumbered(sec.ufw);
   const firewalld = /running/.test(sec.firewalld || '');
@@ -90,8 +91,22 @@ router.get('/:id/security/posture', send(async (req) => {
   checks.push({ id: 'docker-ports', label: 'Docker ports', action: null, ...dp });
   const hk = hostKeyInfo(row);
   checks.push({ id: 'host-key', label: 'Host key', level: hk.pinned ? 'ok' : 'warn', value: hk.pinned ? `${hk.type} pinned` : 'Not pinned yet', action: null });
+  checks.push(fail2banCheck(f2b));
   return { checks, rebootRequired: a.rebootRequired };
 }));
+
+/** The Overview's fail2ban line: not installed / stopped / has problems / running. */
+function fail2banCheck(f) {
+  const base = { id: 'fail2ban', label: 'Fail2ban' };
+  if (!f) return { ...base, level: 'warn', value: 'State unavailable', action: 'fail2ban' };
+  if (!f.installed) return { ...base, level: 'warn', value: 'Not installed — nothing bans brute-force IPs', action: 'setup' };
+  if (!f.active) return { ...base, level: 'crit', value: 'Installed but not running', action: 'fail2ban' };
+  const crit = f.problems.filter(p => p.level === 'crit').length, warn = f.problems.filter(p => p.level === 'warn').length;
+  const banned = f.jails.reduce((n, j) => n + j.currentlyBanned, 0);
+  if (crit) return { ...base, level: 'crit', value: `${crit} setting${crit > 1 ? 's' : ''} cannot work as configured`, action: 'fail2ban' };
+  if (warn) return { ...base, level: 'warn', value: `Running · ${warn} thing${warn > 1 ? 's' : ''} to review`, action: 'fail2ban' };
+  return { ...base, level: 'ok', value: `Running · ${banned} IP${banned === 1 ? '' : 's'} banned now`, action: null };
+}
 
 // ---------------------------------------------------------------- Access & SSH
 router.get('/:id/access', send(async (req) => {
@@ -344,13 +359,81 @@ async function firewallOf(row) {
   const sec = await readState(row, plans.READ_FIREWALL);
   const ufw = P.parseUfwNumbered(sec.ufw);
   const firewalld = /running/.test(sec.firewalld || '');
+  const fwd = firewalld ? P.parseFirewalld(sec.fwd, sec.fwdsvc) : null;
   const isolation = Number(sec.iso || 0) > 0;
   const t = P.parseSshdT(sec.sshdT);
   const sshPort = t.port[0] || row.port || 22;
-  const ports = P.computePorts({ listeners: P.parseSs(sec.ss), dockerPorts: P.parseDockerPorts(sec.docker), ufw, isolation, sshPort });
-  const backend = (sec.ufwbin || '').trim() ? 'ufw' : (firewalld ? 'firewalld' : 'none');
-  return { backend, active: ufw.active || firewalld, ufwActive: ufw.active, firewalld, dockerIsolation: isolation, isolationSupported: backend === 'ufw', sshPort, rules: ufw.rules, ports };
+  // firewalld wins when it runs and UFW is not active (ufw can be installed on RHEL without being used)
+  const backend = ufw.active ? 'ufw' : (firewalld ? 'firewalld' : ((sec.ufwbin || '').trim() ? 'ufw' : 'none'));
+  // Docker publishes container ports past firewalld's zones, so with firewalld they always bypass it.
+  const effective = backend === 'firewalld' ? { active: !!(fwd && fwd.active), rules: fwd ? fwd.rules : [] } : ufw;
+  const ports = P.computePorts({ listeners: P.parseSs(sec.ss), dockerPorts: P.parseDockerPorts(sec.docker), ufw: effective, isolation: backend === 'ufw' && isolation, sshPort });
+  const fw = {
+    backend, active: ufw.active || firewalld, managed: ufw.active || !!(fwd && fwd.active), ufwActive: ufw.active, firewalld,
+    zone: fwd ? fwd.zone : null, dockerIsolation: backend === 'ufw' && isolation, isolationSupported: backend === 'ufw', sshPort, rules: effective.rules, ports,
+    dockgateIp: IPL.normalizeSource((sec.me || '').trim()), ipv6: backend !== 'ufw' || !/^IPV6=no/m.test(sec.ufw6 || ''),
+  };
+  addPortSources(fw);
+  return fw;
 }
+// ---- per-port sources
+const IPL = require('../security/iplists');
+const familyOf = (srcs) => {
+  if (!srcs.length) return null;
+  if (srcs.includes('any')) return 'IPv4 + IPv6';
+  const v4 = srcs.some(x => !IPL.isV6(x)), v6 = srcs.some(IPL.isV6);
+  return v4 && v6 ? 'IPv4 + IPv6' : (v6 ? 'IPv6 only' : 'IPv4 only');
+};
+/**
+ * The allow rules that open exactly this port (one per source) → cur [{ src, action, proto, kind, key }].
+ * Rules DockGate cannot express as sources (a port range, an app profile or service, a source port)
+ * make the port `locked` for source editing, with the reason.
+ */
+function rulesForPort(fw, { port, proto, dir }) {
+  const cur = [], seen = new Set();
+  let locked = null;
+  for (const r of fw.rules) {
+    if (r.action !== 'ALLOW' && r.action !== 'LIMIT') continue;
+    if ((dir === 'FWD') !== (r.dir === 'FWD')) continue;
+    const t = P.ruleTarget(r.to);
+    if (!P.targetCovers(t, port, proto, false)) continue;
+    if (!P.targetCovers(t, port, proto, true)) { locked = locked || `opened by the range ${r.to}`; continue; }
+    if (r.kind === 'service') { locked = locked || `opened by the firewalld service "${r.key}"`; continue; }
+    const src = r.from === 'Anywhere' ? 'any' : IPL.normalizeSource(r.from);
+    if (!src) { locked = locked || `has a rule from "${r.from}" that DockGate cannot edit`; continue; }
+    if (seen.has(src)) continue; // the v6 twin of an "Anywhere" rule
+    seen.add(src);
+    cur.push({ src, action: r.action, proto: t.proto, kind: r.kind || null, key: r.key || null });
+  }
+  return { cur, locked };
+}
+function addPortSources(fw) {
+  if (!fw.managed) return;
+  const lists = IPL.all();
+  // ports that have rules but nothing listening on them yet
+  const have = new Set(fw.ports.map(p => (p.kind === 'container' ? `c${p.containerPort}` : `h${p.port}`) + '/' + p.proto));
+  for (const r of fw.rules) {
+    if ((r.action !== 'ALLOW' && r.action !== 'LIMIT') || r.dir === 'FWD') continue;
+    const t = P.ruleTarget(r.to);
+    if (!t || t.port !== t.portEnd) continue;
+    for (const proto of t.proto ? [t.proto] : ['tcp', 'udp']) {
+      if (have.has(`h${t.port}/${proto}`)) continue;
+      have.add(`h${t.port}/${proto}`);
+      fw.ports.push({ port: t.port, proto, bind: '—', usedBy: '—', kind: 'host', isSsh: t.port === fw.sshPort && proto === 'tcp', exposure: 'public', noListener: true });
+    }
+  }
+  fw.ports.sort((a, b) => a.port - b.port || a.proto.localeCompare(b.proto));
+  for (const p of fw.ports) {
+    if (p.exposure === 'local' || p.exposure === 'bypass') { p.sources = null; continue; }
+    const { cur, locked } = rulesForPort(fw, p.kind === 'container' ? { port: p.containerPort, proto: p.proto, dir: 'FWD' } : { port: p.port, proto: p.proto, dir: 'IN' });
+    const raw = cur.map(c => c.src);
+    const inf = IPL.inferSources(raw, lists, fw.dockgateIp);
+    p.sources = inf.sources; p.outdated = inf.outdated; p.sourceCount = raw.filter(x => x !== 'any').length;
+    p.family = familyOf(raw); p.locked = locked;
+    if (p.noListener) p.exposure = !raw.length ? 'internal' : (raw.includes('any') ? 'public' : 'restricted');
+  }
+}
+
 // ---- health check around firewall changes
 async function healthOf(row) {
   try {
@@ -374,7 +457,11 @@ async function runFirewallOp(row, plan, title) {
   return healthWarnings(before, await healthOf(row));
 }
 
-const requireUfw = (fw) => { if (!fw.ufwActive) throw P.httpError(400, fw.backend === 'firewalld' ? 'This server uses firewalld — port management here works with UFW. Use Services → Firewall for firewalld ports.' : 'UFW is not active — enable the firewall in Setup first'); };
+const requireUfw = (fw) => { if (!fw.ufwActive) throw P.httpError(400, fw.backend === 'firewalld' ? 'This works with UFW only — this server uses firewalld' : 'UFW is not active — turn the firewall on first'); };
+/** UFW or firewalld — the port actions work with both. */
+const requireManaged = (fw) => { if (!fw.managed) throw P.httpError(400, fw.firewalld ? "firewalld runs but its default zone couldn't be read" : 'The firewall is off — turn it on first'); };
+/** Does any other allow rule (IPv4 / any family) keep the SSH port reachable from anywhere? */
+const sshKeptBy = (fw, exclude) => fw.rules.some(r => !exclude.includes(r) && !r.v6 && r.dir === 'IN' && (r.action === 'ALLOW' || r.action === 'LIMIT') && r.from === 'Anywhere' && P.targetCovers(P.ruleTarget(r.to), fw.sshPort, 'tcp', false));
 
 router.get('/:id/firewall', send(async (req) => firewallOf(loadServer(req))));
 
@@ -411,13 +498,24 @@ router.post('/:id/firewall/expose', send(async (req) => {
   const from = scope === 'ip' ? P.assertSource(ip) : 'any';
   if (scope === 'ip' && from === 'any') throw P.httpError(400, 'Enter an IP address or CIDR');
   const fw = await firewallOf(row);
-  requireUfw(fw);
+  requireManaged(fw);
   const p = fw.ports.find(x => x.port === portN && x.proto === proto);
   if (!p) throw P.httpError(404, `Nothing listens on ${portN}/${proto}`);
   if (p.exposure === 'local') throw P.httpError(400, 'This port only listens on localhost — it cannot be reached from outside anyway');
   if (p.isSsh) throw P.httpError(400, 'This is the SSH port — change it in Access & SSH instead');
   let cmd;
-  if (p.kind === 'container') {
+  if (fw.backend === 'firewalld') {
+    if (p.kind === 'container') throw P.httpError(400, 'Docker publishes container ports past firewalld, so they cannot be opened or closed here. Publish the port on 127.0.0.1 in the compose file, or use UFW with Docker port isolation.');
+    if (open) cmd = plans.fwdAddCmd({ zone: fw.zone, port: portN, proto, from, action: 'allow' });
+    else {
+      // like UFW's close: every allow rule for exactly this port goes (open to all and restricted to one IP)
+      const hits = fw.rules.filter(r => r.action === 'ALLOW' && P.targetCovers(P.ruleTarget(r.to), portN, proto, false));
+      const wide = hits.filter(r => r.kind === 'service' || !P.targetCovers(P.ruleTarget(r.to), portN, proto, true));
+      if (wide.length) throw P.httpError(400, `${portN}/${proto} is opened by ${wide.map(r => r.note || r.to).join(', ')} — delete that rule in the rules list instead`);
+      if (!hits.length) throw P.httpError(400, 'No rule opening this port was found — refresh the page');
+      cmd = plans.fwdRemoveCmd(fw.zone, hits);
+    }
+  } else if (p.kind === 'container') {
     if (!fw.dockerIsolation) throw P.httpError(400, 'Turn on Docker port isolation first — until then every container port is public');
     cmd = open ? plans.exposeCmd({ kind: 'container', port: p.containerPort, proto, from })
       : plans.deleteRulesCmd(P.ruleNumbersFor(fw.rules, { port: p.containerPort, proto, dir: 'FWD' }));
@@ -425,6 +523,7 @@ router.post('/:id/firewall/expose', send(async (req) => {
     cmd = open ? plans.exposeCmd({ kind: 'host', port: portN, proto, from })
       : plans.deleteRulesCmd(P.ruleNumbersFor(fw.rules, { port: portN, proto, dir: 'IN' }));
   }
+  if (!open && cmd === 'true') throw P.httpError(400, `${portN}/${proto} is opened by a wider rule (a range or an app profile) — delete that rule in the rules list instead`);
   const warnings = await runFirewallOp(row, { steps: [{ label: open ? `Open ${portN}/${proto}` : `Close ${portN}/${proto}`, cmd }] }, 'Firewall');
   audit(req, row, open ? 'firewall-open' : 'firewall-close', { port: portN, proto, from, kind: p.kind, containerPort: p.containerPort || null });
   return { success: true, warnings };
@@ -437,20 +536,76 @@ router.post('/:id/firewall/rules', send(async (req) => {
   const src = P.assertSource(from);
   if (action !== 'allow' && action !== 'deny') throw P.httpError(400, 'action must be allow or deny');
   const fw = await firewallOf(row);
-  requireUfw(fw);
+  requireManaged(fw);
   if (action === 'deny' && portN === fw.sshPort) throw P.httpError(400, 'Denying the SSH port would lock you out — change the port in Access & SSH instead');
-  const warnings = await runFirewallOp(row, { steps: [{ label: 'Add rule', cmd: plans.addRuleCmd({ port: portN, proto, from: src, action }) }] }, 'Firewall');
+  const cmd = fw.backend === 'firewalld' ? plans.fwdAddCmd({ zone: fw.zone, port: portN, proto, from: src, action }) : plans.addRuleCmd({ port: portN, proto, from: src, action });
+  const warnings = await runFirewallOp(row, { steps: [{ label: 'Add rule', cmd }] }, 'Firewall');
   audit(req, row, 'firewall-rule-add', { port: portN, proto, from: src, action });
   return { success: true, warnings };
+}));
+
+// Set who can reach one port: sources = ['any'] | addresses / '@<list>' / '@dockgate' (empty = close).
+// dryRun returns the change (rules added/removed + commands) without touching the server.
+router.post('/:id/firewall/ports/sources', send(async (req) => {
+  const row = loadServer(req);
+  const { port, proto, sources, dryRun } = req.body || {};
+  const portN = P.assertPort(port); P.assertProto(proto);
+  if (!Array.isArray(sources) || sources.length > 50) throw P.httpError(400, 'sources must be a list (at most 50 entries — use an IP list for more)');
+  const fw = await firewallOf(row);
+  requireManaged(fw);
+  const p = fw.ports.find(x => x.port === portN && x.proto === proto) ||
+    { port: portN, proto, kind: 'host', isSsh: portN === fw.sshPort && proto === 'tcp', exposure: 'internal', usedBy: '—' };
+  if (p.exposure === 'local') throw P.httpError(400, 'This port only listens on localhost — it cannot be reached from outside anyway');
+  if (p.kind === 'container' && fw.backend === 'firewalld') throw P.httpError(400, 'Docker publishes container ports past firewalld, so their sources cannot be set here');
+  if (p.kind === 'container' && !fw.dockerIsolation) throw P.httpError(400, 'Turn on Docker port isolation first — until then every container port is public');
+  const container = p.kind === 'container';
+  const { cur, locked } = rulesForPort(fw, container ? { port: p.containerPort, proto, dir: 'FWD' } : { port: portN, proto, dir: 'IN' });
+  if (locked) throw P.httpError(400, `This port is ${locked} — delete that rule in the rules list first`);
+  const want = IPL.expandSources(sources, IPL.all(), fw.dockgateIp);
+  if (want.length > 1000) throw P.httpError(400, 'At most 1000 addresses per port');
+  if (!fw.ipv6 && want.some(w => w.src !== 'any' && IPL.isV6(w.src))) throw P.httpError(400, 'UFW has IPv6 switched off on this server (IPV6=no in /etc/default/ufw) — IPv6 ranges cannot be added. Remove them, or turn IPv6 on in /etc/default/ufw and reload UFW.');
+  if (p.isSsh) {
+    if (!want.length) throw P.httpError(400, 'The SSH port cannot be closed — DockGate would lock itself out');
+    if (!fw.dockgateIp) throw P.httpError(400, "DockGate could not see its own IP on this server, so it cannot check that SSH stays reachable — keep \"Anyone\"");
+    if (!want.some(w => IPL.sourceContains(w.src, fw.dockgateIp))) throw P.httpError(400, `Keep DockGate's IP (${fw.dockgateIp}) or a range that contains it — otherwise DockGate locks itself out of SSH`);
+  }
+  const curSet = new Set(cur.map(c => c.src)), wantSet = new Set(want.map(w => w.src));
+  const add = want.filter(w => !curSet.has(w.src));
+  const remove = cur.filter(c => !wantSet.has(c.src));
+  const target = container ? p.containerPort : portN;
+  const cmds = add.length || remove.length ? plans.sourcesCmds({ backend: fw.backend, zone: fw.zone, port: target, proto, route: container, add, remove }) : [];
+  const summary = { add: add.map(a => a.src), remove: remove.map(r => r.src), keep: want.length - add.length, commands: cmds, family: familyOf(want.map(w => w.src)), ssh: !!p.isSsh };
+  if (dryRun || !cmds.length) return { ...summary, applied: false };
+  const details = { port: portN, proto, sources, added: add.length, removed: remove.length, container };
+  if (p.isSsh) {
+    const before = await healthOf(row);
+    const jobId = runner.startPlan(cfgOf(row), plans.sourcesLifelinePlan({ id: newId(), backend: fw.backend, zone: fw.zone, cmds, test: { username: row.username } }), {
+      title: `Sources for ${portN}/${proto}`,
+      successText: `Saved. ${add.length} rule(s) added, ${remove.length} removed. A new SSH login worked.`,
+      onSuccess: async () => { audit(req, row, 'firewall-port-sources', details); return { warnings: healthWarnings(before, await healthOf(row)) }; },
+    });
+    return { ...summary, jobId };
+  }
+  const warnings = await runFirewallOp(row, { steps: [{ label: `Sources for ${portN}/${proto}`, cmd: cmds.join(' && ') }] }, 'Firewall');
+  audit(req, row, 'firewall-port-sources', details);
+  return { ...summary, applied: true, warnings };
 }));
 
 router.delete('/:id/firewall/rules/:n', send(async (req) => {
   const row = loadServer(req);
   const n = Number(req.params.n);
   const fw = await firewallOf(row);
-  requireUfw(fw);
+  requireManaged(fw);
   const rule = fw.rules.find(r => r.n === n);
   if (!rule) throw P.httpError(404, 'Rule not found — refresh the list');
+  if (fw.backend === 'firewalld') {
+    // a service or rich rule can span several rows (one per port) — they all go together
+    const group = fw.rules.filter(r => r.kind === rule.kind && r.key === rule.key);
+    if (rule.action !== 'DENY' && P.targetCovers(P.ruleTarget(rule.to), fw.sshPort, 'tcp', false) && !sshKeptBy(fw, group)) throw P.httpError(400, 'This rule keeps SSH reachable — change the SSH port in Access & SSH instead');
+    const warnings = await runFirewallOp(row, { steps: [{ label: `Delete rule #${n}`, cmd: plans.fwdRemoveCmd(fw.zone, group) }] }, 'Firewall');
+    audit(req, row, 'firewall-rule-delete', { n, to: rule.to, action: rule.action, from: rule.from, kind: rule.kind, key: rule.key });
+    return { success: true, warnings };
+  }
   const t = P.ruleTarget(rule.to);
   if (t && t.port === fw.sshPort && rule.dir === 'IN' && rule.action !== 'DENY') {
     const others = fw.rules.filter(r => r.n !== n && !r.v6 && r.dir === 'IN' && r.action !== 'DENY' && (P.ruleTarget(r.to) || {}).port === fw.sshPort && r.from === 'Anywhere');
@@ -463,13 +618,41 @@ router.delete('/:id/firewall/rules/:n', send(async (req) => {
   return { success: true, warnings };
 }));
 
+// Switch UFW on (lifeline: SSH allowed first, new-login test, auto-off on failure) or off.
+router.post('/:id/firewall/ufw', send(async (req) => {
+  const row = loadServer(req);
+  requireConfirm(req.body);
+  const fw = await firewallOf(row);
+  if (fw.firewalld) throw P.httpError(400, 'This server uses firewalld — UFW and firewalld must not run together. Manage firewalld in Setup → Firewall.');
+  if (req.body.enable === false) {
+    if (!fw.ufwActive) return { success: true, unchanged: true };
+    const warnings = await runFirewallOp(row, { steps: [{ label: 'Switch the firewall off', cmd: plans.UFW_DISABLE }] }, 'Firewall');
+    audit(req, row, 'firewall-off', {});
+    return { success: true, warnings };
+  }
+  if (fw.ufwActive) return { success: true, unchanged: true };
+  const sshPorts = [...new Set([fw.sshPort, row.port || 22].filter(Boolean))];
+  const webPorts = req.body.allowWeb === false ? [] : [80, 443];
+  const before = await healthOf(row);
+  const jobId = runner.startPlan(cfgOf(row), plans.ufwEnablePlan({ id: newId(), sshPorts, webPorts, test: { username: row.username } }), {
+    title: 'Switch the firewall on',
+    successText: `The firewall is on. Open from outside: ${[...sshPorts, ...webPorts].map(p => p + '/tcp').join(', ')}. Everything else incoming is blocked.`,
+    onSuccess: async () => {
+      audit(req, row, 'firewall-on', { sshPorts, webPorts });
+      return { warnings: healthWarnings(before, await healthOf(row)) };
+    },
+  });
+  return { jobId };
+}));
+
 // Reload UFW from its saved rules (Firewall tab), then check fail2ban + containers survived.
 router.post('/:id/firewall/reload', send(async (req) => {
   const row = loadServer(req);
   requireConfirm(req.body);
   const fw = await firewallOf(row);
-  requireUfw(fw);
-  const warnings = await runFirewallOp(row, { steps: [{ label: 'Reload UFW', cmd: plans.UFW_RELOAD }] }, 'Firewall');
+  requireManaged(fw);
+  const fwd = fw.backend === 'firewalld';
+  const warnings = await runFirewallOp(row, { steps: [{ label: fwd ? 'Reload firewalld' : 'Reload UFW', cmd: fwd ? plans.FWD_RELOAD : plans.UFW_RELOAD }] }, 'Firewall');
   audit(req, row, 'firewall-reload', {});
   return { success: true, warnings };
 }));
@@ -583,6 +766,7 @@ router.get('/:id/services/:item/info', send(async (req) => {
     out.tracking = sec.tracking || ''; out.sources = sec.sources || ''; out.timedatectl = sec.timedatectl || '';
     out.synced = /System clock synchronized:\s*yes/i.test(sec.timedatectl || '') || /Leap status\s*:\s*Normal/i.test(sec.tracking || '');
     out.offset = (/System time\s*:\s*(.+)/.exec(sec.tracking || '') || [])[1] || null;
+    Object.assign(out, P.parseChronyConf(sec.conf), { installed: !!(sec.conf || '').trim() });
   } else {
     const family = (sec.family || '').trim();
     const v = (re) => (re.exec(sec.auto || '') || [])[1];
@@ -593,6 +777,16 @@ router.get('/:id/services/:item/info', send(async (req) => {
       rebootTime: (/Automatic-Reboot-Time\s+"([^"]+)"/.exec(sec.dockgate || '') || [])[1] || '04:00',
     };
     out.timer = sec.timer || ''; out.last = sec.last || ''; out.rhel = sec.rhel || '';
+    if (family === 'rhel') {
+      const k = (key) => (new RegExp('^' + key + '\\s*=\\s*(\\S+)', 'm').exec(sec.rhel || '') || [])[1];
+      out.installed = !!(sec.rhpkg || '').trim();
+      out.rhelSettings = {
+        enabled: k('apply_updates') === 'yes' && /^enabled/.test((sec.rhtimer || '').trim()),
+        upgradeType: k('upgrade_type') === 'security' ? 'security' : 'default',
+        reboot: k('reboot') === 'when-needed' ? 'when-needed' : 'never',
+        timerEnabled: /^enabled/.test((sec.rhtimer || '').trim()),
+      };
+    }
     out.pending = Number((sec.pending || '').trim()) || 0;
     out.rebootRequired = /yes/.test(sec.reboot || '');
   }
@@ -613,9 +807,32 @@ router.post('/:id/services/docker/settings', send(async (req) => {
   return { jobId };
 }));
 
+router.post('/:id/services/timesync/settings', send(async (req) => {
+  const row = loadServer(req);
+  const list = Array.isArray(req.body && req.body.servers) ? req.body.servers : [];
+  if (list.length > 10) throw P.httpError(400, 'At most 10 NTP sources');
+  const servers = list.map((x) => {
+    const host = String((x && x.host) || '').trim(), type = x && x.type === 'server' ? 'server' : 'pool';
+    if (!P.validHost(host)) throw P.httpError(400, `"${host}" is not a valid host name or IP address`);
+    return { host, type };
+  });
+  const jobId = runner.startPlan(cfgOf(row), plans.ntpPlan({ servers }), {
+    title: 'Time sync sources',
+    successText: servers.length ? 'Saved — chrony restarted with the new sources. Sync can take a minute.' : "Back to the distro's own NTP sources — chrony restarted.",
+    onSuccess: () => audit(req, row, 'timesync-sources', { servers }),
+  });
+  return { jobId };
+}));
+
 router.post('/:id/services/unattended-upgrades/settings', send(async (req) => {
   const row = loadServer(req);
-  const { enabled, autoReboot, rebootTime } = req.body || {};
+  const { enabled, autoReboot, rebootTime, family } = req.body || {};
+  if (family === 'rhel') {
+    const { upgradeType, reboot } = req.body;
+    await runOrThrow(row, plans.dnfAutomaticPlan({ enabled: !!enabled, upgradeType, reboot }), 'Auto updates');
+    audit(req, row, 'auto-updates-settings', { family, enabled: !!enabled, upgradeType, reboot });
+    return { success: true };
+  }
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(rebootTime || ''))) throw P.httpError(400, 'Reboot time must be HH:MM (24-hour), e.g. 04:00');
   await runOrThrow(row, plans.unattendedSettingsPlan({ enabled: !!enabled, autoReboot: !!autoReboot, rebootTime }), 'Auto updates');
   audit(req, row, 'auto-updates-settings', { enabled: !!enabled, autoReboot: !!autoReboot, rebootTime });

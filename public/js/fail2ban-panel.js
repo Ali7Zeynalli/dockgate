@@ -119,15 +119,27 @@ function f2bBanned(serverId, f, body, reload) {
   body.querySelectorAll('[data-unban]').forEach(b => b.addEventListener('click', () => unban(rows[Number(b.dataset.unban)], false)));
   body.querySelectorAll('[data-unwl]').forEach(b => b.addEventListener('click', () => {
     const r = rows[Number(b.dataset.unwl)];
-    showConfirm(`Unban and whitelist ${escapeHtml(r.ip)}`, 'The IP is unbanned now and fail2ban will never ban it again (it is added to ignoreip and fail2ban reloads).', () => unban(r, true));
+    secConfirm({
+      title: `Unban and whitelist ${escapeHtml(r.ip)}`, confirmLabel: 'Unban + whitelist',
+      change: 'The IP is unbanned now and added to the whitelist (ignoreip) — fail2ban will never ban it again.',
+      protects: 'fail2ban reloads after a configuration test; other bans are kept.',
+      undo: 'Remove it in the Whitelist tab.',
+      onConfirm: () => unban(r, true),
+    });
   }));
   body.querySelector('[data-ban]').addEventListener('submit', (e) => {
     e.preventDefault();
     const jail = body.querySelector('#f2b-jail').value, ip = body.querySelector('#f2b-ip').value.trim();
-    showConfirm(`Ban ${escapeHtml(ip)}`, `The IP is banned in the "${escapeHtml(jail)}" jail for that jail's ban time.`, async () => {
-      try { await API.post(`/servers/${serverId}/fail2ban/ban`, { jail, ip }); showToast(`${ip} banned`); reload('banned'); }
-      catch (er) { showToast(er.message, 'error', 8000); }
-    }, true);
+    secConfirm({
+      title: `Ban ${escapeHtml(ip)}`, danger: true, confirmLabel: 'Ban',
+      change: `The IP is blocked in the "${escapeHtml(jail)}" jail for that jail's ban time.`,
+      protects: 'DockGate refuses to ban the IP it connects from.',
+      undo: '"Unban" in this list.',
+      onConfirm: async () => {
+        try { await API.post(`/servers/${serverId}/fail2ban/ban`, { jail, ip }); showToast(`${ip} banned`); reload('banned'); }
+        catch (er) { showToast(er.message, 'error', 8000); }
+      },
+    });
   });
 }
 

@@ -2,6 +2,82 @@
 
 ---
 
+## [2.10.0] - 2026-11-07
+
+### Added
+- **Who can reach each port.** The Firewall tab's port table now shows the sources of every port in one row: *Anyone (internet)*, IP lists, single addresses and ranges, IPv4 and IPv6 together, with an *IPv4 + IPv6 / IPv4 only / IPv6 only* label. UFW's separate "(v6)" rules are merged into that one row.
+- **Edit sources.** *Edit* (or *Allow…*) opens one dialog: choose *Anyone* or *Only these sources*, paste many addresses at once (one per line, spaces or commas; IPv4 and IPv6 mixed), add lists with one click. Before anything runs it shows the exact change: rules added, removed, unchanged, and the commands. Only the difference is applied: new sources are added first, removed ones deleted after, so a source that stays is never interrupted. Addresses are normalised (`10.0.0.5/24` → `10.0.0.0/24`, compact IPv6).
+- **Add port rule** for a port nothing listens on yet.
+- **IP lists:** Cloudflare (15 IPv4 + 7 IPv6), GitHub webhooks and UptimeRobot as official lists, plus your own named lists (*Office*, *VPN*…). Official lists are fetched only when you press *Check for updates*; the difference is shown and saved only after you confirm. Ports that still hold the older version show *an older version is applied here* with an *update* link. Pasting exactly a list's ranges offers to use the list instead.
+- **DockGate's IP** as a source (the address the server sees DockGate connect from).
+- UFW rules carry a comment naming their list (`dockgate:cloudflare`, `dockgate:manual`).
+- Works with firewalld too: one rich rule per source, a plain port for *Anyone*.
+
+### Safety
+- The SSH port can be restricted only if DockGate's own IP (or a range containing it) stays allowed. The change runs as a lifeline job: rules backed up, rollback armed, a new SSH login tested, restored automatically on failure.
+- When UFW has IPv6 switched off (`IPV6=no`), IPv6 sources are refused with an explanation instead of half-applying a list.
+- Ports opened by a range, an app profile or a firewalld service are not edited as sources; the dialog explains which rule to delete first.
+
+### Changed
+- The full rule list moved under *All UFW rules (n)* (collapsed when long). Specific IPv6 rules can be deleted there individually.
+
+### Not tested on a live server
+- Fetching the official lists could not be tried from the development environment (outbound access blocked); it is covered by tests with a stubbed download. The UptimeRobot address list URL is the one UptimeRobot documents; if it moves, *Check for updates* shows the error and nothing changes.
+
+---
+
+## [2.9.0] - 2026-11-07
+
+### Added
+- **Firewall tab works with firewalld** (RHEL family). The listening-ports table, *Open to internet*, *Allow one IP…*, *Close*, *Add rule* (allow/deny, from any or one IP/range) and *Delete* now manage firewalld's default zone: plain ports, services (resolved to their ports) and rich rules. Changes are written permanently and applied with `firewall-cmd --reload`. The rule that keeps SSH reachable cannot be deleted. Container ports published by Docker skip firewalld and are shown as such; Docker port isolation stays UFW-only.
+- **Auto updates on RHEL family:** a form for dnf-automatic — on/off (timer + `apply_updates`), all updates or security only, reboot when needed. The previous config is backed up and restored if a step fails.
+- **Docker port isolation covers IPv6.** When UFW manages IPv6 (`/etc/ufw/after6.rules` exists), the same DOCKER-USER rules are written for ip6tables; both files are backed up and restored together by the automatic rollback.
+
+### Fixed
+- **Services on hosts without systemd** (some containers, WSL, sysvinit) showed every service as *inactive*. The state now comes from a process check (sshd, chronyd, dockerd, fail2ban, UFW/firewalld status); start/stop/restart use `service`; boot enable/disable is shown as not available; a service with no way to check shows *state unknown*. Saving a config no longer rolls back just because the state cannot be checked.
+- A port opened by a range (`9000:9010/tcp`) is now shown as open; *Close* on such a port explains which rule to delete instead of silently doing nothing.
+- **SSH keys follow `DATA_DIR`.** They were always stored under `<app>/data/ssh-keys` even when `DATA_DIR` pointed elsewhere. Keys stored there by older versions are still found.
+
+### Changed
+- Compose routes split into `compose.js`, `compose-shared.js` and `compose-files.js`; the Firewall tab moved to `firewall-panel.js`. No behaviour change.
+- New route integration tests (firewall UFW + firewalld, confirm gates, auto updates, compose Files API). 144 tests.
+
+### Not tested on a live server
+- firewalld changes, IPv6 isolation and the dnf-automatic form were tested with unit/route tests and command checks only (the config edits were run against sample files); please try them on a test server first.
+
+---
+
+## [2.8.0] - 2026-11-07
+
+### Security
+- **Dependencies:** all 10 known vulnerabilities fixed (`npm audit`: 0) — express 4.22.3, body-parser, qs, socket.io / engine.io / ws, proxy-addr, and **nodemailer 10.3.1** (major upgrade; the mail API DockGate uses is unchanged).
+- **Client IP can no longer be spoofed.** `trust proxy` was on for every hop, so any client could send `X-Forwarded-For` to dodge the login rate limit and fake the audit IP (the WebSocket audit read the header unconditionally too). Now nobody is trusted by default; set `TRUST_PROXY` (e.g. `loopback`) when DockGate sits behind a reverse proxy. HTTP and WebSocket use the same rule.
+- **First-run setup is protected.** Until an admin password exists, setting it from outside the local network needs a one-time setup token that DockGate prints in its log (`docker logs …`). From the same machine or a private network nothing changes. `DG_SETUP_TOKEN` sets your own token and makes it always required.
+- **Sessions can be revoked.** Changing the password signs out every other browser/device (this one stays logged in). New **Settings → Security → Sign out everywhere** ends all sessions.
+- **Node.js 22 LTS** in the image and CI (Node 18 no longer receives security fixes). `engines` now `>=20` (nodemailer 10 needs it).
+
+### Upgrade notes
+- Behind a reverse proxy, add `TRUST_PROXY=loopback` (proxy on the same host) or the proxy's address — otherwise audit entries show the proxy's IP and all clients share one login rate-limit bucket.
+
+---
+
+## [2.7.0] - 2026-11-07
+
+### Added
+- **Overview → Security status** shows fail2ban: not installed, installed but stopped, settings that cannot work, or running with the number of banned IPs — with a link to the place that fixes it.
+- **Services → Time sync:** choose chrony's NTP sources (pool or server; host names and IPs validated) or go back to the distro's own. The distro's lines are kept (commented) and restored exactly; the change is validated with `chronyd -p` and restored if chrony fails to restart.
+- **Firewall → Turn the firewall on/off.** Switching UFW on allows the SSH port(s) — and 80/443 if kept — first, arms a server-side rollback, tests a new SSH login, and switches UFW off again by itself on failure. Refused on firewalld servers.
+- **Deploy user offer:** adding a server that DockGate reaches as root or with a password offers the deploy-user wizard straight away.
+- **Setup → Deploy user name** can be chosen (default `deploy`).
+
+### Changed
+- Every risky action (reboot, lock/unlock user, open/close port, delete rule, reload/switch off the firewall, ban, unban + whitelist, Docker settings, NTP defaults, raw config save, stopping a service) now uses the same confirm dialog: what changes · what protects you · how to undo.
+
+### Fixed
+- In Server Console, confirm dialogs named the header's active server (often "Local") instead of the server being changed. They now name the console's server.
+
+---
+
 ## [2.6.0] - 2026-11-07
 
 ### Added

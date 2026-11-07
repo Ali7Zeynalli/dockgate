@@ -107,6 +107,11 @@ function renderProvisionForm(serverId, catalog, scan, container) {
         </label>
       </div>
 
+      <div id="pv-deploy-wrap" class="card" style="display:none;padding:12px 14px">
+        <label class="text-sm" for="pv-deploy-name" style="font-weight:600">Deploy user name</label>
+        <div class="flex gap-2 items-center" style="margin-top:6px;flex-wrap:wrap"><input class="input" id="pv-deploy-name" value="deploy" spellcheck="false" style="width:200px;font-family:var(--font-mono)"><span class="text-xs text-muted">Created with sudo + Docker access and an SSH key DockGate generates; DockGate then connects as this user.</span></div>
+      </div>
+
       <div style="display:flex;gap:10px;align-items:center">
         <button class="btn btn-primary" id="pv-run">▶ Run provisioning</button>
         <span class="text-xs text-muted">Runs in the background — safe to navigate away. Each item is detected first and skipped if already present.</span>
@@ -147,6 +152,8 @@ function renderProvisionForm(serverId, catalog, scan, container) {
     // Risky = any TICKED high-risk item (works for both modes, since the preset's items are ticked above).
     const risky = [...container.querySelectorAll('.pv-item:checked')].some(c => c.dataset.risk === 'high');
     container.querySelector('#pv-confirm-wrap').style.display = risky ? 'block' : 'none';
+    const dep = container.querySelector('.pv-item[value="deploy-user"]');
+    container.querySelector('#pv-deploy-wrap').style.display = dep && dep.checked ? 'block' : 'none';
   }
   container.querySelectorAll('input[name="pv-preset"]').forEach(r => r.addEventListener('change', update));
   container.querySelector('#pv-items').addEventListener('change', update);
@@ -160,7 +167,8 @@ function renderProvisionForm(serverId, catalog, scan, container) {
     if (preset === 'custom' && (!only || !only.length)) { showToast('Pick at least one item', 'warning'); return; }
     runBtn.disabled = true; runBtn.textContent = 'Starting…';
     try {
-      const r = await API.post(`/servers/${serverId}/provision`, { preset, only, confirm });
+      const deployUser = (container.querySelector('#pv-deploy-name')?.value || 'deploy').trim();
+      const r = await API.post(`/servers/${serverId}/provision`, { preset, only, confirm, deployUser });
       streamProvisionJob(serverId, r.jobId, container);
     } catch (e) {
       runBtn.disabled = false; runBtn.textContent = '▶ Run provisioning';

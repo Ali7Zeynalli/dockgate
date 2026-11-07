@@ -1,7 +1,7 @@
 # ---- Stage 1: builder ----
 # Native modulları (better-sqlite3, node-pty) build toolchain ilə qurur.
 # Toolchain yalnız bu mərhələdə qalır — final image-ə daşınmır.
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ RUN npm ci --omit=dev
 
 # ---- Stage 2: runtime ----
 # Yalnız runtime — build toolchain yox, image kiçik qalır.
-FROM node:18-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
@@ -23,7 +23,7 @@ WORKDIR /app
 # git: "Deploy from Git" — repo clone/pull (#2-B).
 RUN apk add --no-cache docker-cli docker-cli-compose openssh-client git
 
-# Hazır qurulmuş node_modules-i builder-dən köçür (eyni node:18-alpine → ABI uyğun)
+# Hazır qurulmuş node_modules-i builder-dən köçür (eyni node:22-alpine → ABI uyğun)
 COPY --from=builder /app/node_modules ./node_modules
 
 # Tətbiq kodu (.dockerignore node_modules-i istisna edir → köçürülən qalır)
