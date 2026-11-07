@@ -374,10 +374,28 @@ function ruleNumbersFor(rules, { port, proto, dir, from }) {
   }).map(r => r.n).sort((a, b) => b - a);
 }
 
+/** A DNS name or IP address that is safe to put in a config line. */
+function validHost(h) {
+  const s = String(h || '').trim();
+  if (isIpOrCidr(s) && !s.includes('/')) return true;
+  return s.length <= 253 && /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(s);
+}
+
+/** chrony.conf → active NTP sources + whether DockGate manages them. */
+function parseChronyConf(text) {
+  const servers = [];
+  for (const line of String(text || '').split('\n')) {
+    const m = /^(pool|server)\s+(\S+)/.exec(line.trim());
+    if (m) servers.push({ type: m[1], host: m[2] });
+  }
+  return { servers, managed: /^# BEGIN DOCKGATE-NTP/m.test(String(text || '')) };
+}
+
 module.exports = {
   httpError, validUsername, assertNewUsername, parsePublicKey, assertPublicKey, keyFingerprint,
   validPort, assertPort, assertProto, assertSource,
   sections, parseSshdT, parseAccessConf, buildAccessConf, accessState, ROOT_LOGIN_VALUES,
   parseAuthorizedKeys, removeAuthorizedKey, usersState,
+  validHost, parseChronyConf,
   parseUfwNumbered, ruleTarget, parseSs, parseDockerPorts, computePorts, ruleNumbersFor, isLoopback,
 };

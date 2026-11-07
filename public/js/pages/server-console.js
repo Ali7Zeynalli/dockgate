@@ -11,6 +11,7 @@ Router.register('server-console', async (content, params) => {
   let server = { id };
   try { const data = await API.get('/servers'); server = (data.servers || []).find(s => s.id === id) || { id }; } catch (e) {}
 
+  window.__consoleServer = { ...server, type: server.type || 'ssh' }; // confirm dialogs name THIS server
   const tabs = [['overview', 'Overview'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users'], ['firewall', 'Firewall'], ['fail2ban', 'Fail2ban'], ['manage', 'Services'], ['logs', 'Logs']];
   const validTabs = tabs.map(t => t[0]);
   let active = (params && validTabs.includes(params.tab)) ? params.tab : 'overview';
@@ -57,4 +58,9 @@ Router.register('server-console', async (content, params) => {
     const b = e.target.closest('.tab-btn'); if (b) goTab(b.dataset.ctab);
   });
   renderConTab(active);
+  // Arrived from "Add server" → "Create deploy user": open the wizard once, then drop the flag from the URL.
+  if (params && params.wizard === '1' && typeof openDeployUserWizard === 'function') {
+    Router.updateParams({ id, tab: active });
+    openDeployUserWizard(id, () => Router.navigate('server-console', { id, tab: 'overview' }));
+  }
 });

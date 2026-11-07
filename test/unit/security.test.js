@@ -268,3 +268,34 @@ test('security: hardening drop-in — grace time, empty passwords, real idle lim
   assert.equal(st.legacyFile, true);
   assert.equal(P.accessState(P.sections('@@sshver\nOpenSSH_8.9p1\n')).supportsIdleTimeout, false);
 });
+
+test('time sync: host validation and chrony.conf parsing', () => {
+  for (const ok of ['pool.ntp.org', 'time.cloudflare.com', '192.0.2.1', 'ntp1']) assert.ok(P.validHost(ok), ok);
+  for (const bad of ['', 'a b', 'x;rm', 'bad..host', '-x.org', '10.0.0.0/8', 'a'.repeat(254)]) assert.ok(!P.validHost(bad), bad);
+  const c = P.parseChronyConf('#dockgate# pool ntp.ubuntu.com iburst\n# BEGIN DOCKGATE-NTP\npool pool.ntp.org iburst\nserver 192.0.2.1 iburst\n# END DOCKGATE-NTP\n');
+  assert.deepEqual(c.servers, [{ type: 'pool', host: 'pool.ntp.org' }, { type: 'server', host: '192.0.2.1' }]);
+  assert.equal(c.managed, true);
+  assert.equal(P.parseChronyConf('pool ntp.ubuntu.com iburst').managed, false);
+});
+
+test('plans: NTP change = backup → write → validate (chronyd -p) → restart, restore on failure', () => {
+  const plan = plans.ntpPlan({ servers: [{ type: 'pool', host: 'pool.ntp.org' }] });
+  const labels = plan.steps.map(s => s.label);
+  assert.match(labels[0], /Back up/);
+  assert.match(plan.steps[2].cmd, /chronyd -p -f \$C/);
+  assert.match(plan.steps[2].cmd, /dockgate-prev/, 'restores the backup when chrony rejects the file');
+  assert.ok(!plan.steps[1].cmd.includes('pool.ntp.org'), 'the new lines travel base64-encoded');
+  assert.match(plans.ntpPlan({ servers: [] }).steps[1].cmd, /s\/\^#dockgate# \/\//, 'defaults: the distro lines are uncommented');
+});
+
+test('plans: switching UFW on allows SSH first, tests a new login, rolls back with ufw disable', () => {
+  const plan = plans.ufwEnablePlan({ id: 'u1', sshPorts: [2222, 22], webPorts: [80, 443], test: { username: 'deploy' } });
+  const i = (re) => plan.steps.findIndex(s => re.test(s.label));
+  assert.ok(i(/^Allow 2222\/tcp, 22\/tcp, 80\/tcp, 443\/tcp/) >= 0);
+  assert.ok(i(/^Allow/) < i(/Switch the firewall on/));
+  assert.ok(i(/Switch the firewall on/) < i(/NEW SSH/));
+  assert.ok(plan.steps[i(/NEW SSH/)].rollbackOnFail);
+  const armed = Buffer.from(/echo (\S+) \| base64 -d/.exec(plan.steps[i(/^Arm/)].cmd)[1], 'base64').toString();
+  assert.match(armed, /ufw --force disable/, 'the server-side rollback script switches UFW off');
+  assert.throws(() => plans.ufwEnablePlan({ id: 'u2', sshPorts: ['22;id'], webPorts: [], test: {} }), e => e.statusCode === 400);
+});

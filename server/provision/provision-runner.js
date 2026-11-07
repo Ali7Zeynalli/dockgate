@@ -42,7 +42,7 @@ function startProvision(server, opts = {}) {
   const specials = planned.itemIds.filter(id => catalog.byId[id] && catalog.byId[id].special);
   const itemIds = planned.itemIds.filter(id => !specials.includes(id));
   const jobId = crypto.randomBytes(8).toString('hex');
-  const job = { id: jobId, serverId: server.id, preset: opts.preset, status: 'running', phase: 'starting', distro: null, log: '', items: [], startedAt: Date.now(), finishedAt: null, dbInserted: false, _skipped: skipped, _ip: opts.sourceIp || null, error: null, rebootRequired: false, cancelled: false, _child: null, _specials: specials };
+  const job = { id: jobId, serverId: server.id, preset: opts.preset, status: 'running', phase: 'starting', distro: null, log: '', items: [], startedAt: Date.now(), finishedAt: null, dbInserted: false, _skipped: skipped, _ip: opts.sourceIp || null, error: null, rebootRequired: false, cancelled: false, _child: null, _specials: specials, _deployUser: opts.deployUser || 'deploy' };
   provisionJobs.set(jobId, job);
   gc();
 
@@ -116,7 +116,7 @@ async function runSpecialItems(job) {
   job.phase = 'deploy-user';
   jobLog(job, `▶ ${label}`);
   let secJobId;
-  try { secJobId = require('../security/service').startDeployUser(row, { username: 'deploy' }, { sourceIp: job._ip }); }
+  try { secJobId = require('../security/service').startDeployUser(row, { username: job._deployUser }, { sourceIp: job._ip }); }
   catch (e) { record('failed', { error: e.message }); jobLog(job, '  ✗ ' + e.message); return; }
   const runner = require('../security/runner');
   let sj;
@@ -126,7 +126,7 @@ async function runSpecialItems(job) {
     if (!sj || sj.status !== 'running') break;
   }
   for (const st of (sj ? sj.steps : [])) jobLog(job, `  ${st.state === 'done' ? '✓' : st.state === 'failed' ? '✗' : '·'} ${st.label}`);
-  if (sj && sj.status === 'done') { record('verified', { durationMs: Date.now() - t0 }); jobLog(job, '  ✓ DockGate now connects as deploy (SSH key)'); }
+  if (sj && sj.status === 'done') { record('verified', { durationMs: Date.now() - t0 }); jobLog(job, `  ✓ DockGate now connects as ${job._deployUser} (SSH key)`); }
   else record('failed', { error: (sj && sj.error) || 'deploy user failed', durationMs: Date.now() - t0 });
 }
 
@@ -147,7 +147,7 @@ function finalize(job) {
 function getJob(id) {
   const j = provisionJobs.get(id);
   if (!j) return null;
-  const { _child, _skipped, _ip, _specials, ...pub } = j;
+  const { _child, _skipped, _ip, _specials, _deployUser, ...pub } = j;
   return pub;
 }
 

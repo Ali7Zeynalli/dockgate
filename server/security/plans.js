@@ -389,6 +389,7 @@ const SERVICE_INFO = {
     'echo @@tracking; chronyc tracking 2>/dev/null',
     'echo @@sources; chronyc -n sources 2>/dev/null',
     'echo @@timedatectl; timedatectl 2>/dev/null',
+    'echo @@conf; cat /etc/chrony/chrony.conf 2>/dev/null || cat /etc/chrony.conf 2>/dev/null',
   ],
   'unattended-upgrades': [
     'echo @@family; command -v apt-get >/dev/null 2>&1 && echo debian || echo rhel',
@@ -437,3 +438,57 @@ module.exports.serviceInfoScript = serviceInfoScript;
 module.exports.SERVICE_INFO_ITEMS = Object.keys(SERVICE_INFO);
 module.exports.dockerSettingsPlan = dockerSettingsPlan;
 module.exports.unattendedSettingsPlan = unattendedSettingsPlan;
+
+// ---------------------------------------------------------------- Time sync (chrony NTP sources)
+const CHRONY_CONF = 'C=/etc/chrony/chrony.conf; [ -f $C ] || C=/etc/chrony.conf; [ -f $C ] || { echo "chrony is not installed — install it in Setup → Time sync"; exit 1; }';
+const CHRONY_RESTORE = 'if {{S}}test -f $C.dockgate-prev; then {{S}}mv -f $C.dockgate-prev $C; fi';
+const CHRONY_RESTART = '{{S}}systemctl restart chrony 2>/dev/null || {{S}}systemctl restart chronyd 2>/dev/null || {{S}}rc-service chronyd restart';
+
+/**
+ * Set chrony's NTP sources. servers = [{ host, type: 'pool'|'server' }]; empty = back to the distro's own.
+ * The distro's pool/server lines are commented out with a "#dockgate# " marker (and restored when going
+ * back to defaults); DockGate's sources live between BEGIN/END markers. Validated with `chronyd -p`.
+ */
+function ntpPlan({ servers }) {
+  const block = '# BEGIN DOCKGATE-NTP — managed by DockGate (Server Console → Services → Time sync)\n' +
+    servers.map(x => `${x.type} ${x.host} iburst`).join('\n') + '\n# END DOCKGATE-NTP\n';
+  // remove DockGate's block, un-comment the distro's lines, drop trailing blank lines (no build-up)
+  const reset = "{{S}}sed -i -e '/^# BEGIN DOCKGATE-NTP/,/^# END DOCKGATE-NTP/d' -e 's/^#dockgate# //' $C && {{S}}sed -i -e :a -e '/^\\n*$/{$d;N;ba' -e '}' $C";
+  const apply = servers.length
+    ? `${reset} && {{S}}sed -i -E 's/^(pool|server|peer)([[:space:]])/#dockgate# \\1\\2/' $C && echo ${b64('\n' + block)} | base64 -d | {{S}}tee -a $C >/dev/null`
+    : reset;
+  return {
+    steps: [
+      { label: 'Back up the chrony configuration', cmd: `${CHRONY_CONF}; {{S}}cp -p $C $C.dockgate-prev` },
+      { label: servers.length ? `Use ${servers.map(x => x.host).join(', ')}` : "Go back to the distro's own NTP sources", cmd: `${CHRONY_CONF}; ${apply}` },
+      { label: 'Validate (chronyd -p)', cmd: `${CHRONY_CONF}; {{S}}chronyd -p -f $C >/dev/null 2>&1 || { out=$({{S}}chronyd -p -f $C 2>&1 | tail -2); ${CHRONY_RESTORE}; echo "chrony rejected the configuration — restored: $out"; exit 1; }` },
+      { label: 'Restart chrony', cmd: `${CHRONY_CONF}; ${CHRONY_RESTART} || { ${CHRONY_RESTORE}; ${CHRONY_RESTART}; echo "chrony failed to start — previous configuration restored"; exit 1; }` },
+      { label: 'Clean up', cmd: `${CHRONY_CONF}; {{S}}rm -f $C.dockgate-prev; true` },
+    ],
+  };
+}
+module.exports.ntpPlan = ntpPlan;
+
+// ---------------------------------------------------------------- UFW on/off
+/**
+ * Turn UFW on with a lifeline: the SSH port(s) are allowed BEFORE enabling, a rollback (`ufw disable`)
+ * is armed, and a NEW SSH login must succeed or the firewall is switched off again.
+ * opts: { id, sshPorts: [n], webPorts: [n], test }
+ */
+function ufwEnablePlan({ id, sshPorts, webPorts, test }) {
+  const allow = [...new Set([...sshPorts, ...webPorts].map(P.assertPort))];
+  return {
+    steps: [
+      { label: 'Make sure UFW is installed', cmd: 'command -v ufw >/dev/null 2>&1 || { if command -v apt-get >/dev/null 2>&1; then {{S}}env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y ufw >/dev/null; else echo "UFW is not available on this distribution — use firewalld (Setup → Firewall)"; exit 1; fi; }' },
+      { label: `Allow ${allow.map(p => p + '/tcp').join(', ')} before switching on`, cmd: allow.map(p => `{{S}}ufw allow ${p}/tcp >/dev/null`).join(' && ') },
+      { label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, 'ufw --force disable >/dev/null 2>&1') },
+      { label: 'Switch the firewall on (deny incoming by default)', cmd: '{{S}}ufw default deny incoming >/dev/null && {{S}}ufw default allow outgoing >/dev/null && {{S}}ufw --force enable >/dev/null', rollbackOnFail: true },
+      { label: 'Open a NEW SSH connection to test', test, rollbackOnFail: true },
+      { label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; true` },
+    ],
+    rollback: rollbackNow(id),
+  };
+}
+const UFW_DISABLE = '{{S}}ufw --force disable >/dev/null';
+module.exports.ufwEnablePlan = ufwEnablePlan;
+module.exports.UFW_DISABLE = UFW_DISABLE;

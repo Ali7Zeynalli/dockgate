@@ -456,8 +456,10 @@ router.post('/:id/provision', (req, res) => {
     if (!server) return res.status(404).json({ error: 'Server not found' });
     if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Provisioning targets a remote SSH server' });
     const { preset = 'secure-baseline', only, confirm } = req.body || {};
+    const deployUser = req.body && req.body.deployUser ? String(req.body.deployUser).trim() : 'deploy';
+    require('../security/parse').assertNewUsername(deployUser);
     const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
-    const { jobId, runId } = provisionRunner.startProvision(cfg, { preset, only, confirm, sourceIp: ipFromReq(req) });
+    const { jobId, runId } = provisionRunner.startProvision(cfg, { preset, only, confirm, deployUser, sourceIp: ipFromReq(req) });
     res.json({ jobId, runId });
   } catch (err) {
     if (err.statusCode === 409) return res.status(409).json({ error: err.message, risks: err.risks || [], jobId: err.jobId || null });

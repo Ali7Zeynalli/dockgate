@@ -102,7 +102,7 @@ async function renderSecurityPosture(serverId, container, goTab) {
   catch (e) { container.innerHTML = ''; return; }
   const worst = data.checks.some(c => c.level === 'crit') ? 'crit' : data.checks.some(c => c.level === 'warn') ? 'warn' : 'ok';
   const dep = data.checks.find(c => c.id === 'deploy-user');
-  const go = { 'deploy-wizard': 'Set up', access: 'Open Access & SSH', firewall: 'Open Firewall' };
+  const go = { 'deploy-wizard': 'Set up', access: 'Open Access & SSH', firewall: 'Open Firewall', fail2ban: 'Open Fail2ban', setup: 'Open Setup' };
   container.innerHTML = `
     ${data.rebootRequired ? `
     <div class="card" style="border-left:3px solid var(--warning);margin-bottom:16px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap">
@@ -132,10 +132,16 @@ async function renderSecurityPosture(serverId, container, goTab) {
     </div>`;
   const refreshConsole = () => Router.navigate('server-console', { id: serverId, tab: 'overview' });
   container.querySelector('[data-wizard]')?.addEventListener('click', () => openDeployUserWizard(serverId, refreshConsole));
-  container.querySelector('[data-reboot]')?.addEventListener('click', () => showConfirm('Reboot server', 'The server restarts now and is unreachable for a minute or two. Containers with a restart policy start again by themselves.', async () => {
-    try { await API.post(`/servers/${serverId}/reboot`, { confirm: true }); showToast('Reboot started — the server is back in a minute or two', 'info', 8000); }
-    catch (e) { showToast(e.message, 'error', 8000); }
-  }, true));
+  container.querySelector('[data-reboot]')?.addEventListener('click', () => secConfirm({
+    title: 'Reboot server', danger: true, confirmLabel: 'Reboot',
+    change: 'The server restarts now and is unreachable for a minute or two.',
+    protects: 'Containers with a restart policy and enabled services start again by themselves. SSH and firewall settings are on disk and survive the reboot.',
+    undo: 'Not applicable — wait for the server to come back; DockGate reconnects automatically.',
+    onConfirm: async () => {
+      try { await API.post(`/servers/${serverId}/reboot`, { confirm: true }); showToast('Reboot started — the server is back in a minute or two', 'info', 8000); }
+      catch (e) { showToast(e.message, 'error', 8000); }
+    },
+  }));
   container.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
     if (b.dataset.go === 'deploy-wizard') openDeployUserWizard(serverId, refreshConsole);
     else goTab(b.dataset.go);
@@ -381,9 +387,15 @@ async function renderUsersPanel(serverId, container) {
   container.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openUserPerms(serverId, byName(b.dataset.edit), reload)));
   container.querySelectorAll('[data-lock]').forEach(b => b.addEventListener('click', () => {
     const u = byName(b.dataset.lock);
-    showConfirm(u.locked ? `Unlock ${escapeHtml(u.name)}` : `Lock ${escapeHtml(u.name)}`, u.locked ? 'The user can log in again with their keys.' : 'The user can no longer log in (password and keys). Files and processes are kept.', async () => {
-      try { await API.put(`/servers/${serverId}/users/${encodeURIComponent(u.name)}`, { locked: !u.locked }); showToast(u.locked ? 'User unlocked' : 'User locked'); reload(); } catch (e) { showToast(e.message, 'error', 7000); }
-    }, !u.locked);
+    secConfirm({
+      title: u.locked ? `Unlock ${escapeHtml(u.name)}` : `Lock ${escapeHtml(u.name)}`, danger: !u.locked, confirmLabel: u.locked ? 'Unlock' : 'Lock',
+      change: u.locked ? 'The account expiry is removed; the user can log in again with their keys or password.' : 'The account is expired and its password locked: no password or key login. Files, processes and keys are kept.',
+      protects: 'DockGate never locks the user it connects as, nor the last user with sudo.',
+      undo: u.locked ? 'Lock it again here.' : 'Unlock it here at any time.',
+      onConfirm: async () => {
+        try { await API.put(`/servers/${serverId}/users/${encodeURIComponent(u.name)}`, { locked: !u.locked }); showToast(u.locked ? 'User unlocked' : 'User locked'); reload(); } catch (e) { showToast(e.message, 'error', 7000); }
+      },
+    });
   }));
   container.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
     const u = byName(b.dataset.del);
@@ -542,7 +554,7 @@ async function renderFirewallPanel(serverId, container) {
 
   let banner = '';
   if (!f.active) {
-    banner = `<div class="card" style="border-left:3px solid var(--danger);margin-bottom:16px"><div style="font-weight:700;font-size:15px;color:var(--danger)">The firewall is off — every listening port is reachable from the internet</div><div class="text-sm text-muted" style="margin-top:4px">Turn it on in <b>Setup → Firewall (UFW)</b>: incoming is denied by default and only SSH, 80 and 443 stay open.</div></div>`;
+    banner = `<div class="card" style="border-left:3px solid var(--danger);margin-bottom:16px"><div class="flex justify-between items-center" style="gap:12px;flex-wrap:wrap"><div style="min-width:0;flex:1"><div style="font-weight:700;font-size:15px;color:var(--danger)">The firewall is off — every listening port is reachable from the internet</div><div class="text-sm text-muted" style="margin-top:4px">Turning it on blocks all incoming traffic except SSH (${f.sshPort}/tcp) and, if you keep them, 80 and 443. DockGate tests a new SSH login and switches it off again by itself if that fails.</div></div><button class="btn btn-danger" data-ufwon>Turn the firewall on</button></div></div>`;
   } else if (!f.ufwActive) {
     banner = `<div class="insight-card info" style="margin-bottom:16px">This server uses firewalld. Port rules and Docker port isolation here work with UFW; manage firewalld ports in Services → Firewall.</div>`;
   } else if (!f.dockerIsolation && bypass.length) {
@@ -562,7 +574,7 @@ async function renderFirewallPanel(serverId, container) {
     <div class="flex gap-1 items-start" style="margin-bottom:12px;flex-wrap:wrap"><div data-ufwbar style="flex:1;min-width:280px"></div>${f.ufwActive ? '<button class="btn btn-sm btn-secondary" data-ufwreload style="margin-top:6px">Reload rules</button>' : ''}</div>
     ${banner}
     <div class="grid-4" style="margin-bottom:16px">
-      ${statCard('Firewall', f.active ? '<span style="color:var(--success)">● Active</span>' : '<span style="color:var(--danger)">○ Inactive</span>', escapeHtml(f.backend === 'none' ? 'not installed' : f.backend.toUpperCase()))}
+      ${statCard('Firewall', f.active ? '<span style="color:var(--success)">● Active</span>' : '<span style="color:var(--danger)">○ Inactive</span>', escapeHtml(f.backend === 'none' ? 'not installed' : f.backend.toUpperCase()) + (f.ufwActive ? ' · <a href="#" data-ufwoff style="color:var(--danger)">turn off</a>' : ''))}
       ${statCard('Incoming', f.active ? 'Deny by default' : 'Allow all', 'Outgoing: allow')}
       ${statCard('Docker ports', f.dockerIsolation ? '<span style="color:var(--success)">● Isolated</span>' : (f.ufwActive ? '<span style="color:var(--danger)">● Bypass UFW</span>' : '—'), f.dockerIsolation ? `DOCKER-USER chain · <a href="#" data-iso-off style="color:var(--accent)">turn off</a>` : 'DOCKER-USER chain')}
       ${statCard('SSH', `${f.sshPort}/tcp`, 'Always kept open')}
@@ -621,9 +633,51 @@ async function renderFirewallPanel(serverId, container) {
   if (f.backend === 'ufw') { const rawEl = document.createElement('div'); rawEl.style.marginTop = '16px'; container.appendChild(rawEl); renderRawConfig(serverId, 'firewall', '/etc/default/ufw', rawEl, { label: '/etc/default/ufw', high: true }); }
   // Warnings when a firewall change touched something it should not have (fail2ban bans, containers).
   const warnToast = (r) => (r && r.warnings || []).forEach(w => showToast(w, 'warning', 12000));
-  container.querySelector('[data-ufwreload]')?.addEventListener('click', () => showConfirm('Reload firewall rules', 'UFW re-reads its saved rules. Open connections stay up. Afterwards DockGate checks that fail2ban still holds its bans and that no container stopped.', async () => {
-    try { const r = await API.post(`/servers/${serverId}/firewall/reload`, { confirm: true }); showToast('Firewall reloaded'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
+  container.querySelector('[data-ufwreload]')?.addEventListener('click', () => secConfirm({
+    title: 'Reload firewall rules', confirmLabel: 'Reload',
+    change: 'UFW re-reads its saved rules (including the Docker isolation rules).',
+    protects: 'Open connections, including SSH, stay up. Afterwards DockGate checks that fail2ban still holds its bans and that no container stopped.',
+    undo: 'Nothing to undo — the saved rules are applied as they are.',
+    onConfirm: async () => {
+      try { const r = await API.post(`/servers/${serverId}/firewall/reload`, { confirm: true }); showToast('Firewall reloaded'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
+    },
   }));
+  container.querySelector('[data-ufwon]')?.addEventListener('click', () => {
+    const m = showModal('Turn the firewall on', `
+      ${serverContextBanner()}
+      <div class="detail-grid" style="grid-template-columns:1fr;gap:10px">
+        <div class="detail-item"><div class="detail-label">What changes</div><div class="detail-value" style="white-space:normal;word-break:normal">UFW is switched on: incoming connections are blocked unless a rule allows them. Outgoing traffic is not affected.</div></div>
+        <div class="detail-item"><div class="detail-label">What protects you</div><div class="detail-value" style="white-space:normal;word-break:normal">SSH (${f.sshPort}/tcp) is allowed before switching on. DockGate then opens a new SSH login; if it fails, the firewall is switched off again (and on the server itself after 120 s if DockGate loses contact).</div></div>
+        <div class="detail-item"><div class="detail-label">How to undo</div><div class="detail-value" style="white-space:normal;word-break:normal">"turn off" next to the firewall state on this page.</div></div>
+      </div>
+      <label class="flex items-center gap-2" style="margin-top:12px"><input type="checkbox" id="ufw-web" checked> Keep web traffic open (80/tcp, 443/tcp)</label>`, []);
+    const footer = m.overlay.querySelector('.modal-footer');
+    const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
+    const ok = document.createElement('button'); ok.className = 'btn btn-danger'; ok.textContent = 'Turn on';
+    footer.append(c, ok);
+    ok.onclick = async () => {
+      const allowWeb = m.overlay.querySelector('#ufw-web').checked;
+      m.close();
+      try {
+        const { jobId } = await API.post(`/servers/${serverId}/firewall/ufw`, { enable: true, allowWeb, confirm: true });
+        if (jobId) { const okk = await runLifelineJob(serverId, jobId, 'Switch the firewall on'); if (okk) showToast('Firewall on'); }
+        reload();
+      } catch (e) { showToast(e.message, 'error', 8000); }
+    };
+  });
+  container.querySelector('[data-ufwoff]')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    secConfirm({
+      title: 'Turn the firewall off', danger: true, confirmLabel: 'Turn off',
+      change: 'UFW is switched off. Every listening port becomes reachable from the internet; Docker port isolation stops working.',
+      protects: 'Nothing is locked out by this — SSH stays reachable. fail2ban bans and running containers are checked afterwards.',
+      undo: 'Turn the firewall on again here; your rules are kept.',
+      onConfirm: async () => {
+        try { const r = await API.post(`/servers/${serverId}/firewall/ufw`, { enable: false, confirm: true }); showToast('Firewall off', 'warning'); warnToast(r); reload(); }
+        catch (er) { showToast(er.message, 'error', 8000); }
+      },
+    });
+  });
   const runIsolation = async (enable, keepPublic) => {
     try {
       const { jobId } = await API.post(`/servers/${serverId}/firewall/docker-isolation`, { enable, keepPublic, confirm: true });
@@ -658,8 +712,20 @@ async function renderFirewallPanel(serverId, container) {
     reload();
   };
   const tryExpose = (...a) => expose(...a).catch(e => showToast(e.message, 'error', 8000));
-  container.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => showConfirm(`Open ${b.dataset.open} to the internet`, 'Anyone on the internet will be able to reach this port.', () => tryExpose(b.dataset.open, true, 'any'))));
-  container.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => showConfirm(`Close ${b.dataset.close}`, 'The port stays reachable inside this server, but not from outside.', () => tryExpose(b.dataset.close, false), true)));
+  container.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => secConfirm({
+    title: `Open ${b.dataset.open} to the internet`, confirmLabel: 'Open',
+    change: 'A firewall rule lets anyone on the internet reach this port.',
+    protects: 'Only this port is opened. fail2ban bans and running containers are checked afterwards.',
+    undo: '"Close" on the same row.',
+    onConfirm: () => tryExpose(b.dataset.open, true, 'any'),
+  })));
+  container.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => secConfirm({
+    title: `Close ${b.dataset.close}`, danger: true, confirmLabel: 'Close',
+    change: 'The rule that opens this port is removed. It stays reachable inside the server, but not from outside.',
+    protects: 'The SSH port cannot be closed here. fail2ban bans and running containers are checked afterwards.',
+    undo: '"Open to internet" on the same row.',
+    onConfirm: () => tryExpose(b.dataset.close, false),
+  })));
   container.querySelectorAll('[data-restrict]').forEach(b => b.addEventListener('click', () => {
     const m = showModal(`Allow one IP · ${b.dataset.restrict}`, `<label class="text-sm" for="fw-ip" style="font-weight:600;display:block;margin-bottom:4px">IP address or range</label><input class="input" id="fw-ip" placeholder="198.51.100.24 or 10.0.0.0/24" style="font-family:var(--font-mono);width:100%"><div data-err style="margin-top:8px"></div>`, []);
     const footer = m.overlay.querySelector('.modal-footer');
@@ -672,9 +738,15 @@ async function renderFirewallPanel(serverId, container) {
       catch (e) { m.overlay.querySelector('[data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
     };
   }));
-  container.querySelectorAll('[data-delrule]').forEach(b => b.addEventListener('click', () => showConfirm(`Delete rule #${b.dataset.delrule}`, 'The rule (and its IPv6 twin) is removed from UFW immediately.', async () => {
-    try { const r = await API.del(`/servers/${serverId}/firewall/rules/${b.dataset.delrule}`); showToast('Rule deleted'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
-  }, true)));
+  container.querySelectorAll('[data-delrule]').forEach(b => b.addEventListener('click', () => secConfirm({
+    title: `Delete rule #${b.dataset.delrule}`, danger: true, confirmLabel: 'Delete rule',
+    change: 'The rule (and its IPv6 twin) is removed from UFW immediately.',
+    protects: 'The rule that keeps SSH reachable cannot be deleted. fail2ban bans and running containers are checked afterwards.',
+    undo: 'Add the same rule again with "Add rule".',
+    onConfirm: async () => {
+      try { const r = await API.del(`/servers/${serverId}/firewall/rules/${b.dataset.delrule}`); showToast('Rule deleted'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
+    },
+  })));
   let action = 'allow';
   container.querySelector('#fw-act')?.addEventListener('click', (e) => { const b = e.target.closest('.tab-btn'); if (!b) return; action = b.dataset.a; container.querySelectorAll('#fw-act .tab-btn').forEach(x => x.classList.toggle('active', x === b)); });
   container.querySelector('[data-rule]')?.addEventListener('submit', async (e) => {

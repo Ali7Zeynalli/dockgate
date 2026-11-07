@@ -2,6 +2,23 @@
 
 ---
 
+## [2.7.0] - 2026-11-07
+
+### Added
+- **Overview → Security status** shows fail2ban: not installed, installed but stopped, settings that cannot work, or running with the number of banned IPs — with a link to the place that fixes it.
+- **Services → Time sync:** choose chrony's NTP sources (pool or server; host names and IPs validated) or go back to the distro's own. The distro's lines are kept (commented) and restored exactly; the change is validated with `chronyd -p` and restored if chrony fails to restart.
+- **Firewall → Turn the firewall on/off.** Switching UFW on allows the SSH port(s) — and 80/443 if kept — first, arms a server-side rollback, tests a new SSH login, and switches UFW off again by itself on failure. Refused on firewalld servers.
+- **Deploy user offer:** adding a server that DockGate reaches as root or with a password offers the deploy-user wizard straight away.
+- **Setup → Deploy user name** can be chosen (default `deploy`).
+
+### Changed
+- Every risky action (reboot, lock/unlock user, open/close port, delete rule, reload/switch off the firewall, ban, unban + whitelist, Docker settings, NTP defaults, raw config save, stopping a service) now uses the same confirm dialog: what changes · what protects you · how to undo.
+
+### Fixed
+- In Server Console, confirm dialogs named the header's active server (often "Local") instead of the server being changed. They now name the console's server.
+
+---
+
 ## [2.6.0] - 2026-11-07
 
 ### Added

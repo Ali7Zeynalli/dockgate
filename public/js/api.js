@@ -171,7 +171,9 @@ function showModal(title, bodyHtml, actions = []) {
 // can't confuse Local with a remote prod host before a destructive action. Reusable by showConfirm AND
 // any custom destructive showModal (e.g. Compose "Delete project").
 function serverContextBanner() {
-  const active = (typeof Store !== 'undefined') ? Store.get('activeServer') : null;
+  // In Server Console the action targets the console's server, not the header's active server.
+  const consoleSrv = (typeof Store !== 'undefined' && Store.get('currentPage') === 'server-console') ? window.__consoleServer : null;
+  const active = consoleSrv || ((typeof Store !== 'undefined') ? Store.get('activeServer') : null);
   const isRemote = active && active.id !== 'local' && active.type !== 'local';
   const who = isRemote
     ? `🔐 On remote server: <strong>${escapeHtml(active.name || active.id)}</strong>${active.host ? ' · ' + escapeHtml(active.host) : ''}`

@@ -69,7 +69,8 @@ router.get('/:id/jobs/:jobId', send((req) => {
 // ---------------------------------------------------------------- posture (Overview)
 router.get('/:id/security/posture', send(async (req) => {
   const row = loadServer(req);
-  const sec = await readState(row, plans.READ_POSTURE);
+  // fail2ban is read in parallel (its own worker) — a failure there must not hide the rest.
+  const [sec, f2b] = await Promise.all([readState(row, plans.READ_POSTURE), fail2banOf(row).catch(() => null)]);
   const a = P.accessState(sec);
   const ufw = P.parseUfwNumbered(sec.ufw);
   const firewalld = /running/.test(sec.firewalld || '');
@@ -90,8 +91,22 @@ router.get('/:id/security/posture', send(async (req) => {
   checks.push({ id: 'docker-ports', label: 'Docker ports', action: null, ...dp });
   const hk = hostKeyInfo(row);
   checks.push({ id: 'host-key', label: 'Host key', level: hk.pinned ? 'ok' : 'warn', value: hk.pinned ? `${hk.type} pinned` : 'Not pinned yet', action: null });
+  checks.push(fail2banCheck(f2b));
   return { checks, rebootRequired: a.rebootRequired };
 }));
+
+/** The Overview's fail2ban line: not installed / stopped / has problems / running. */
+function fail2banCheck(f) {
+  const base = { id: 'fail2ban', label: 'Fail2ban' };
+  if (!f) return { ...base, level: 'warn', value: 'State unavailable', action: 'fail2ban' };
+  if (!f.installed) return { ...base, level: 'warn', value: 'Not installed — nothing bans brute-force IPs', action: 'setup' };
+  if (!f.active) return { ...base, level: 'crit', value: 'Installed but not running', action: 'fail2ban' };
+  const crit = f.problems.filter(p => p.level === 'crit').length, warn = f.problems.filter(p => p.level === 'warn').length;
+  const banned = f.jails.reduce((n, j) => n + j.currentlyBanned, 0);
+  if (crit) return { ...base, level: 'crit', value: `${crit} setting${crit > 1 ? 's' : ''} cannot work as configured`, action: 'fail2ban' };
+  if (warn) return { ...base, level: 'warn', value: `Running · ${warn} thing${warn > 1 ? 's' : ''} to review`, action: 'fail2ban' };
+  return { ...base, level: 'ok', value: `Running · ${banned} IP${banned === 1 ? '' : 's'} banned now`, action: null };
+}
 
 // ---------------------------------------------------------------- Access & SSH
 router.get('/:id/access', send(async (req) => {
@@ -463,6 +478,33 @@ router.delete('/:id/firewall/rules/:n', send(async (req) => {
   return { success: true, warnings };
 }));
 
+// Switch UFW on (lifeline: SSH allowed first, new-login test, auto-off on failure) or off.
+router.post('/:id/firewall/ufw', send(async (req) => {
+  const row = loadServer(req);
+  requireConfirm(req.body);
+  const fw = await firewallOf(row);
+  if (fw.firewalld) throw P.httpError(400, 'This server uses firewalld — UFW and firewalld must not run together. Manage firewalld in Setup → Firewall.');
+  if (req.body.enable === false) {
+    if (!fw.ufwActive) return { success: true, unchanged: true };
+    const warnings = await runFirewallOp(row, { steps: [{ label: 'Switch the firewall off', cmd: plans.UFW_DISABLE }] }, 'Firewall');
+    audit(req, row, 'firewall-off', {});
+    return { success: true, warnings };
+  }
+  if (fw.ufwActive) return { success: true, unchanged: true };
+  const sshPorts = [...new Set([fw.sshPort, row.port || 22].filter(Boolean))];
+  const webPorts = req.body.allowWeb === false ? [] : [80, 443];
+  const before = await healthOf(row);
+  const jobId = runner.startPlan(cfgOf(row), plans.ufwEnablePlan({ id: newId(), sshPorts, webPorts, test: { username: row.username } }), {
+    title: 'Switch the firewall on',
+    successText: `The firewall is on. Open from outside: ${[...sshPorts, ...webPorts].map(p => p + '/tcp').join(', ')}. Everything else incoming is blocked.`,
+    onSuccess: async () => {
+      audit(req, row, 'firewall-on', { sshPorts, webPorts });
+      return { warnings: healthWarnings(before, await healthOf(row)) };
+    },
+  });
+  return { jobId };
+}));
+
 // Reload UFW from its saved rules (Firewall tab), then check fail2ban + containers survived.
 router.post('/:id/firewall/reload', send(async (req) => {
   const row = loadServer(req);
@@ -583,6 +625,7 @@ router.get('/:id/services/:item/info', send(async (req) => {
     out.tracking = sec.tracking || ''; out.sources = sec.sources || ''; out.timedatectl = sec.timedatectl || '';
     out.synced = /System clock synchronized:\s*yes/i.test(sec.timedatectl || '') || /Leap status\s*:\s*Normal/i.test(sec.tracking || '');
     out.offset = (/System time\s*:\s*(.+)/.exec(sec.tracking || '') || [])[1] || null;
+    Object.assign(out, P.parseChronyConf(sec.conf), { installed: !!(sec.conf || '').trim() });
   } else {
     const family = (sec.family || '').trim();
     const v = (re) => (re.exec(sec.auto || '') || [])[1];
@@ -609,6 +652,23 @@ router.post('/:id/services/docker/settings', send(async (req) => {
   const jobId = runner.startPlan(cfgOf(row), plans.dockerSettingsPlan({ maxSize, maxFile: mf, liveRestore: !!liveRestore }), {
     title: 'Docker settings', successText: 'Saved. New limits apply to containers created from now on (recreate a container to apply them to it).',
     onSuccess: () => audit(req, row, 'docker-settings', { maxSize, maxFile: mf, liveRestore: !!liveRestore }),
+  });
+  return { jobId };
+}));
+
+router.post('/:id/services/timesync/settings', send(async (req) => {
+  const row = loadServer(req);
+  const list = Array.isArray(req.body && req.body.servers) ? req.body.servers : [];
+  if (list.length > 10) throw P.httpError(400, 'At most 10 NTP sources');
+  const servers = list.map((x) => {
+    const host = String((x && x.host) || '').trim(), type = x && x.type === 'server' ? 'server' : 'pool';
+    if (!P.validHost(host)) throw P.httpError(400, `"${host}" is not a valid host name or IP address`);
+    return { host, type };
+  });
+  const jobId = runner.startPlan(cfgOf(row), plans.ntpPlan({ servers }), {
+    title: 'Time sync sources',
+    successText: servers.length ? 'Saved — chrony restarted with the new sources. Sync can take a minute.' : "Back to the distro's own NTP sources — chrony restarted.",
+    onSuccess: () => audit(req, row, 'timesync-sources', { servers }),
   });
   return { jobId };
 }));

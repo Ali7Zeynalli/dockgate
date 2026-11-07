@@ -40,7 +40,13 @@ async function renderServiceBar(serverId, itemId, el, { label, note, onChange } 
     const send = (confirm) => API.post(`/servers/${serverId}/services/${itemId}/action`, { action, confirm });
     const done = () => { showToast(`${s.label}: ${b.textContent.toLowerCase()} ✓`); setTimeout(() => { renderServiceBar(serverId, itemId, el, { label, note, onChange }); onChange && onChange(); }, 700); };
     send(false).then(done).catch((e) => {
-      if (/confirm/i.test(e.message || '')) showConfirm(`${b.textContent} — ${escapeHtml(s.label)}?`, `${escapeHtml(e.message)}. Continue?`, () => send(true).then(done).catch(e2 => showToast(e2.message, 'error', 8000)), true);
+      if (/confirm/i.test(e.message || '')) secConfirm({
+        title: `${escapeHtml(b.textContent)} — ${escapeHtml(s.label)}`, danger: true, confirmLabel: b.textContent,
+        change: `${escapeHtml(s.label)} (${escapeHtml(s.unit || '')}) will ${escapeHtml(b.textContent.toLowerCase())}.`,
+        protects: s.risk === 'high' ? 'This service guards access (SSH / firewall): stopping it over a password login is refused, and open SSH sessions survive a reload.' : 'Only this service is affected.',
+        undo: action === 'stop' || action === 'disable' ? 'Start / enable it again from this bar.' : 'Nothing to undo.',
+        onConfirm: () => send(true).then(done).catch(e2 => showToast(e2.message, 'error', 8000)),
+      });
       else showToast(e.message, 'error', 8000);
     });
   }));
@@ -73,14 +79,20 @@ function renderRawConfig(serverId, itemId, path, el, { label, high, hint } = {})
     } catch (e) { ta.placeholder = 'could not read: ' + e.message; loaded = false; }
     ta.disabled = false;
   });
-  el.querySelector('[data-save]').addEventListener('click', () => showConfirm(`Save ${escapeHtml(label || path)}`, high
-    ? 'Editing this file over SSH can lock you out if it is wrong. It is backed up, validated, and restored if the service fails to restart.'
-    : 'The file is backed up and validated, and restored if the service fails to restart.', async () => {
-    try {
-      const r = await API.post(`/servers/${serverId}/services/${itemId}/config`, { path, content: ta.value, confirm: true });
-      showToast(`Saved${r.validated ? ' & validated' : ''}${r.backup ? ' · backup kept' : ''}`, 'success', 6000);
-    } catch (e) { showToast('Save failed: ' + e.message, 'error', 10000); }
-  }, true));
+  el.querySelector('[data-save]').addEventListener('click', () => secConfirm({
+    title: `Save ${escapeHtml(label || path)}`, danger: !!high, confirmLabel: 'Validate & save',
+    change: `${escapeHtml(path)} is replaced with the text above and the service applies it.`,
+    protects: high
+      ? 'The file is backed up and validated, and restored if the service fails to restart. This editor does NOT test a new login — a wrong value can still lock you out; prefer the form above.'
+      : 'The file is backed up and validated, and restored if the service fails to restart.',
+    undo: 'The previous version is kept as a backup next to the file.',
+    onConfirm: async () => {
+      try {
+        const r = await API.post(`/servers/${serverId}/services/${itemId}/config`, { path, content: ta.value, confirm: true });
+        showToast(`Saved${r.validated ? ' & validated' : ''}${r.backup ? ' · backup kept' : ''}`, 'success', 6000);
+      } catch (e) { showToast('Save failed: ' + e.message, 'error', 10000); }
+    },
+  }));
 }
 
 function renderServiceLogs(text, el) {
@@ -122,7 +134,7 @@ async function renderServicePage(serverId, item, el) {
   catch (e) { body.innerHTML = `<div class="card" style="border-left:3px solid var(--danger)"><div style="font-weight:600;color:var(--danger)">Couldn't read service details</div><div class="text-sm text-muted" style="margin-top:4px">${escapeHtml(e.message)}</div></div>`; return; }
   if (!document.body.contains(body)) return;
   if (item === 'docker') renderDockerPage(serverId, info, body, reload);
-  else if (item === 'timesync') renderTimesyncPage(info, body);
+  else if (item === 'timesync') renderTimesyncPage(serverId, info, body, reload);
   else renderAutoUpdatesPage(serverId, info, body, reload);
   renderServiceLogs(info.logs, el.querySelector('[data-logs]'));
 }
@@ -156,30 +168,83 @@ function renderDockerPage(serverId, info, body, reload) {
   body.querySelector('[data-form]').addEventListener('submit', (e) => {
     e.preventDefault();
     const v = { maxSize: body.querySelector('#dk-size').value.trim(), maxFile: Number(body.querySelector('#dk-files').value), liveRestore: lr.classList.contains('active') };
-    showConfirm('Save Docker settings', 'daemon.json is backed up and validated. With no running containers Docker restarts; otherwise it reloads, so running containers are not stopped.', async () => {
-      try {
-        const { jobId } = await API.post(`/servers/${serverId}/services/docker/settings`, { ...v, confirm: true });
-        const ok = await runLifelineJob(serverId, jobId, 'Docker settings');
-        if (ok) reload();
-      } catch (er) { showToast(er.message, 'error', 8000); }
+    secConfirm({
+      title: 'Save Docker settings', confirmLabel: 'Save',
+      change: '/etc/docker/daemon.json gets the new log limits and live-restore setting. New containers use them; existing ones keep theirs until recreated.',
+      protects: 'The file is backed up and validated. With running containers Docker only reloads, so nothing is stopped; with none it restarts. A failure restores the previous file.',
+      undo: 'Save the old values again, or restore the file under Advanced.',
+      onConfirm: async () => {
+        try {
+          const { jobId } = await API.post(`/servers/${serverId}/services/docker/settings`, { ...v, confirm: true });
+          const ok = await runLifelineJob(serverId, jobId, 'Docker settings');
+          if (ok) reload();
+        } catch (er) { showToast(er.message, 'error', 8000); }
+      },
     });
   });
 }
 
-function renderTimesyncPage(info, body) {
+function renderTimesyncPage(serverId, info, body, reload) {
+  const list = (info.servers || []).map(x => ({ ...x }));
   body.innerHTML = `
     <div class="grid-2">
       <div class="card">
-        <div class="flex justify-between items-center" style="margin-bottom:10px"><div style="font-weight:700;font-size:15px">Clock</div>${info.synced ? '<span class="badge badge-running">synchronised</span>' : '<span class="badge badge-stopped">not synchronised</span>'}</div>
-        ${info.offset ? `<div class="text-sm" style="margin-bottom:8px">Offset from NTP: <span class="td-mono">${escapeHtml(info.offset)}</span></div>` : ''}
-        ${svcPre(info.timedatectl, 'timedatectl unavailable')}
+        <div class="flex justify-between items-center" style="margin-bottom:4px"><div style="font-weight:700;font-size:15px">NTP sources</div>${info.managed ? '<span class="badge" style="background:var(--accent-dim);color:var(--accent)">set by DockGate</span>' : '<span class="badge" style="opacity:.7">distro defaults</span>'}</div>
+        <div class="text-sm text-muted" style="margin-bottom:10px">Where this server gets its time. A <b>pool</b> name resolves to several servers; a <b>server</b> is one host. DockGate keeps the distro's own lines (commented) and can switch back to them.</div>
+        ${info.installed === false ? '<div class="insight-card warning">chrony is not installed — install it in Setup → Time sync.</div>' : `
+        <div data-list style="display:grid;gap:6px;margin-bottom:10px"></div>
+        <form data-add class="flex gap-1 items-center" style="flex-wrap:wrap">
+          <select class="select" id="ntp-type"><option value="pool">pool</option><option value="server">server</option></select>
+          <input class="input" id="ntp-host" placeholder="e.g. pool.ntp.org, time.cloudflare.com" style="width:240px">
+          <button class="btn btn-sm btn-secondary" type="submit">Add</button>
+        </form>
+        <div class="flex gap-1" style="margin-top:14px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-primary" data-save>Save &amp; restart chrony</button>
+          ${info.managed ? '<button class="btn btn-sm btn-secondary" data-defaults>Use distro defaults</button>' : ''}
+        </div>
+        <div data-err style="margin-top:8px"></div>`}
       </div>
       <div class="card">
-        <div style="font-weight:700;font-size:15px;margin-bottom:10px">Time sources (chrony)</div>
-        ${svcPre(info.sources, 'chrony is not installed or not running — install it in Setup → Time sync')}
-        ${info.tracking ? `<details style="margin-top:8px"><summary class="text-xs text-muted" style="cursor:pointer">Tracking details</summary><div style="margin-top:6px">${svcPre(info.tracking)}</div></details>` : ''}
+        <div class="flex justify-between items-center" style="margin-bottom:10px"><div style="font-weight:700;font-size:15px">Clock</div>${info.synced ? '<span class="badge badge-running">synchronised</span>' : '<span class="badge badge-stopped">not synchronised</span>'}</div>
+        ${info.offset ? `<div class="text-sm" style="margin-bottom:8px">Offset from NTP: <span class="td-mono">${escapeHtml(info.offset)}</span></div>` : ''}
+        ${svcPre(info.sources, 'chrony is not installed or not running')}
+        <details style="margin-top:8px"><summary class="text-xs text-muted" style="cursor:pointer">timedatectl / tracking</summary><div style="margin-top:6px">${svcPre([info.timedatectl, info.tracking].filter(Boolean).join('\n\n'))}</div></details>
       </div>
     </div>`;
+  if (info.installed === false) return;
+  const listEl = body.querySelector('[data-list]');
+  const draw = () => {
+    listEl.innerHTML = list.length ? list.map((x, i) => `<div class="flex items-center justify-between" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px"><span><span class="text-xs text-muted" style="display:inline-block;width:52px">${escapeHtml(x.type)}</span><span class="td-mono">${escapeHtml(x.host)}</span></span><button class="btn btn-xs btn-secondary" data-rm="${i}">Remove</button></div>`).join('')
+      : '<div class="text-sm text-muted">No sources — add at least one, or use the distro defaults.</div>';
+    listEl.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { list.splice(Number(b.dataset.rm), 1); draw(); }));
+  };
+  draw();
+  body.querySelector('[data-add]').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const host = body.querySelector('#ntp-host').value.trim();
+    if (!host) return;
+    if (!list.some(x => x.host === host)) list.push({ type: body.querySelector('#ntp-type').value, host });
+    body.querySelector('#ntp-host').value = '';
+    draw();
+  });
+  const save = async (servers) => {
+    try {
+      const { jobId } = await API.post(`/servers/${serverId}/services/timesync/settings`, { servers });
+      const ok = await runLifelineJob(serverId, jobId, 'Time sync sources');
+      if (ok) reload();
+    } catch (e) { body.querySelector('[data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
+  };
+  body.querySelector('[data-save]').addEventListener('click', () => {
+    if (!list.length) { body.querySelector('[data-err]').innerHTML = '<div class="insight-card warning">Add at least one source, or use the distro defaults.</div>'; return; }
+    save(list);
+  });
+  body.querySelector('[data-defaults]')?.addEventListener('click', () => secConfirm({
+    title: 'Use distro defaults', confirmLabel: 'Use defaults',
+    change: "DockGate's NTP sources are removed and the distro's own pool/server lines come back. chrony restarts.",
+    protects: 'The configuration is validated (chronyd -p) and restored if chrony fails to start.',
+    undo: 'Add your sources again and save.',
+    onConfirm: () => save([]),
+  }));
 }
 
 function renderAutoUpdatesPage(serverId, info, body, reload) {
