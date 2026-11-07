@@ -40,10 +40,11 @@ function runLifelineJob(serverId, jobId, title, { successText } = {}) {
       stepsEl.innerHTML = job.steps.map(s => `<div class="flex items-center gap-2" style="font-size:13px;${s.state === 'pending' ? 'color:var(--text-muted)' : ''}"><span style="width:16px;text-align:center">${icon(s.state)}</span><span>${escapeHtml(s.label)}</span></div>`).join('');
       if (job.status === 'running') return setTimeout(tick, 400);
       const ok = job.status === 'done';
+      const warns = (job.result && job.result.warnings) || [];
       const failedStep = job.steps.find(s => s.state === 'failed');
       const rb = job.rolledBack === true ? ' The previous configuration was restored.' : (job.rolledBack === false ? ' Automatic restore did not confirm — the server restores it by itself within 120 s.' : '');
       resEl.innerHTML = ok
-        ? `<div class="insight-card info" style="background:var(--success-bg);color:var(--success);border-left-color:var(--success)">${escapeHtml(job.successText || successText || 'Applied and verified with a new SSH connection.')}</div>`
+        ? `<div class="insight-card info" style="background:var(--success-bg);color:var(--success);border-left-color:var(--success)">${escapeHtml(job.successText || successText || 'Applied and verified with a new SSH connection.')}</div>${warns.map(w => `<div class="insight-card warning" style="margin-top:8px">${escapeHtml(w)}</div>`).join('')}`
         : `<div class="insight-card danger" style="display:block"><div style="font-weight:600">${escapeHtml(failedStep ? failedStep.label + ' failed.' : 'Failed.')}${escapeHtml(rb)}</div><pre style="white-space:pre-wrap;margin-top:6px;font-size:11px;max-height:160px;overflow:auto">${escapeHtml(String(job.error || '').slice(-1500))}</pre></div>`;
       footer.innerHTML = '';
       const b = document.createElement('button'); b.className = 'btn btn-primary'; b.textContent = 'Done'; b.onclick = () => m.close(); footer.appendChild(b);
@@ -213,6 +214,8 @@ async function renderAccessPanel(serverId, container) {
   const rootOpts = [['yes', 'Allowed'], ['prohibit-password', 'Key only'], ['no', 'Blocked']];
 
   container.innerHTML = `
+    <div data-sshbar style="margin-bottom:16px"></div>
+    ${a.legacyFile ? '<div class="insight-card info" style="margin-bottom:16px">Settings from the old /etc/ssh/sshd_config.d/99-dockgate.conf are shown below and move into DockGate\'s single file (10-dockgate-access.conf) on the next save.</div>' : ''}
     ${a.includesDropins === false ? `<div class="insight-card warning" style="margin-bottom:16px">/etc/ssh/sshd_config does not include sshd_config.d/*.conf, so DockGate cannot change SSH settings. Add "Include /etc/ssh/sshd_config.d/*.conf" at the top of that file first.</div>` : ''}
     <div class="card" style="margin-bottom:16px">
       <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:12px">
@@ -263,13 +266,18 @@ async function renderAccessPanel(serverId, container) {
         <div class="text-sm text-muted" style="margin-top:4px">Written to <span class="td-mono">/etc/ssh/sshd_config.d/10-dockgate-access.conf</span>. The main sshd_config is never edited.</div>
         <form data-hard style="margin-top:8px">
           <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Max auth tries</div><div class="settings-row-desc">Attempts per connection before it is dropped</div></div><input class="input" id="acc-tries" type="number" min="1" max="10" value="${a.maxAuthTries}" style="width:80px"></div>
-          <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Idle timeout (minutes)</div><div class="settings-row-desc">Disconnect silent sessions</div></div><input class="input" id="acc-idle" type="number" min="1" max="120" value="${a.idleTimeoutMin}" style="width:80px"></div>
+          <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Login grace time (seconds)</div><div class="settings-row-desc">Time allowed to finish logging in</div></div><input class="input" id="acc-grace" type="number" min="10" max="600" value="${a.loginGraceTime}" style="width:80px"></div>
+          <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Dead connection timeout (minutes)</div><div class="settings-row-desc">Drops a connection whose client stopped answering (network gone, laptop asleep). It does NOT log out an idle but open terminal. 0 = off</div></div><input class="input" id="acc-dead" type="number" min="0" max="240" value="${a.deadTimeoutMin}" style="width:80px"></div>
+          <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Idle session timeout (minutes)</div><div class="settings-row-desc">${a.supportsIdleTimeout ? 'Closes a session with no input or output for this long (ChannelTimeout). 0 = off' : `Needs OpenSSH 9.2+ — this server runs ${escapeHtml(a.sshVersion || 'an older version')}`}</div></div><input class="input" id="acc-idle" type="number" min="0" max="1440" value="${a.idleTimeoutMin || 0}" style="width:80px" ${a.supportsIdleTimeout ? '' : 'disabled'}></div>
           <div class="settings-row" style="padding:8px 0;border-bottom:0"><div><div class="settings-row-label">X11 forwarding</div><div class="settings-row-desc">Not needed on servers</div></div><div class="toggle ${a.x11 ? 'active' : ''}" id="acc-x11" role="switch" tabindex="0" aria-checked="${a.x11}"></div></div>
           <button class="btn btn-sm btn-primary" type="submit" style="margin-top:8px">Save hardening</button>
         </form>
       </div>
     </div>`;
 
+  renderServiceBar(serverId, 'ssh-hardening', container.querySelector('[data-sshbar]'), { label: 'SSH server (sshd)', note: 'Reload applies config changes without closing open sessions.' });
+  const rawEl = document.createElement('div'); rawEl.style.marginTop = '16px'; container.appendChild(rawEl);
+  renderRawConfig(serverId, 'ssh-hardening', '/etc/ssh/sshd_config.d/10-dockgate-access.conf', rawEl, { label: 'DockGate sshd drop-in', high: true });
   container.querySelector('[data-retrust]')?.addEventListener('click', (e) => { e.preventDefault(); confirmRetrust(serverId, reload); });
   container.querySelectorAll('[data-wizard]').forEach(l => l.addEventListener('click', (e) => { e.preventDefault(); openDeployUserWizard(serverId, () => Router.navigate('server-console', { id: serverId, tab: 'access' })); }));
 
@@ -327,7 +335,7 @@ async function renderAccessPanel(serverId, container) {
   x11.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
   container.querySelector('[data-hard]').addEventListener('submit', (e) => {
     e.preventDefault();
-    const value = { maxAuthTries: Number(container.querySelector('#acc-tries').value), idleTimeoutMin: Number(container.querySelector('#acc-idle').value), x11: x11.classList.contains('active') };
+    const value = { maxAuthTries: Number(container.querySelector('#acc-tries').value), loginGraceTime: Number(container.querySelector('#acc-grace').value), deadTimeoutMin: Number(container.querySelector('#acc-dead').value), idleTimeoutMin: Number(container.querySelector('#acc-idle').value) || 0, x11: x11.classList.contains('active') };
     apply('hardening', value, 'SSH hardening', 'Hardening saved.');
   });
 }
@@ -551,6 +559,7 @@ async function renderFirewallPanel(serverId, container) {
   }
 
   container.innerHTML = `
+    <div class="flex gap-1 items-start" style="margin-bottom:12px;flex-wrap:wrap"><div data-ufwbar style="flex:1;min-width:280px"></div>${f.ufwActive ? '<button class="btn btn-sm btn-secondary" data-ufwreload style="margin-top:6px">Reload rules</button>' : ''}</div>
     ${banner}
     <div class="grid-4" style="margin-bottom:16px">
       ${statCard('Firewall', f.active ? '<span style="color:var(--success)">● Active</span>' : '<span style="color:var(--danger)">○ Inactive</span>', escapeHtml(f.backend === 'none' ? 'not installed' : f.backend.toUpperCase()))}
@@ -608,6 +617,13 @@ async function renderFirewallPanel(serverId, container) {
       </div>
     </div>` : ''}`;
 
+  renderServiceBar(serverId, 'firewall', container.querySelector('[data-ufwbar]'), { label: 'Firewall service', onChange: reload });
+  if (f.backend === 'ufw') { const rawEl = document.createElement('div'); rawEl.style.marginTop = '16px'; container.appendChild(rawEl); renderRawConfig(serverId, 'firewall', '/etc/default/ufw', rawEl, { label: '/etc/default/ufw', high: true }); }
+  // Warnings when a firewall change touched something it should not have (fail2ban bans, containers).
+  const warnToast = (r) => (r && r.warnings || []).forEach(w => showToast(w, 'warning', 12000));
+  container.querySelector('[data-ufwreload]')?.addEventListener('click', () => showConfirm('Reload firewall rules', 'UFW re-reads its saved rules. Open connections stay up. Afterwards DockGate checks that fail2ban still holds its bans and that no container stopped.', async () => {
+    try { const r = await API.post(`/servers/${serverId}/firewall/reload`, { confirm: true }); showToast('Firewall reloaded'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
+  }));
   const runIsolation = async (enable, keepPublic) => {
     try {
       const { jobId } = await API.post(`/servers/${serverId}/firewall/docker-isolation`, { enable, keepPublic, confirm: true });
@@ -636,8 +652,9 @@ async function renderFirewallPanel(serverId, container) {
 
   const expose = async (key, open, scope, ip) => {
     const [port, proto] = key.split('/');
-    await API.post(`/servers/${serverId}/firewall/expose`, { port: Number(port), proto, open, scope, ip });
+    const r = await API.post(`/servers/${serverId}/firewall/expose`, { port: Number(port), proto, open, scope, ip });
     showToast(open ? `${key} opened${scope === 'ip' ? ' for ' + ip : ''}` : `${key} closed`);
+    warnToast(r);
     reload();
   };
   const tryExpose = (...a) => expose(...a).catch(e => showToast(e.message, 'error', 8000));
@@ -656,14 +673,14 @@ async function renderFirewallPanel(serverId, container) {
     };
   }));
   container.querySelectorAll('[data-delrule]').forEach(b => b.addEventListener('click', () => showConfirm(`Delete rule #${b.dataset.delrule}`, 'The rule (and its IPv6 twin) is removed from UFW immediately.', async () => {
-    try { await API.del(`/servers/${serverId}/firewall/rules/${b.dataset.delrule}`); showToast('Rule deleted'); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
+    try { const r = await API.del(`/servers/${serverId}/firewall/rules/${b.dataset.delrule}`); showToast('Rule deleted'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
   }, true)));
   let action = 'allow';
   container.querySelector('#fw-act')?.addEventListener('click', (e) => { const b = e.target.closest('.tab-btn'); if (!b) return; action = b.dataset.a; container.querySelectorAll('#fw-act .tab-btn').forEach(x => x.classList.toggle('active', x === b)); });
   container.querySelector('[data-rule]')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const body = { port: Number(container.querySelector('#fw-port').value), proto: container.querySelector('#fw-proto').value, from: container.querySelector('#fw-from').value.trim() || 'any', action };
-    try { await API.post(`/servers/${serverId}/firewall/rules`, body); showToast('Rule added'); reload(); }
+    try { const r = await API.post(`/servers/${serverId}/firewall/rules`, body); showToast('Rule added'); warnToast(r); reload(); }
     catch (er) { container.querySelector('[data-rule] [data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(er.message)}</div>`; }
   });
 }

@@ -43,6 +43,8 @@ function parsePublicKey(text) {
   try {
     const len = blob.readUInt32BE(0);
     if (blob.slice(4, 4 + len).toString('ascii') !== type) return null;
+    // ed25519: the key itself must be exactly 32 bytes (a truncated key can never log in)
+    if (type === 'ssh-ed25519' && (blob.readUInt32BE(4 + len) !== 32 || blob.length !== 4 + len + 4 + 32)) return null;
   } catch (e) { return null; }
   // Comments are informational — keep a safe subset so the stored line can never break out.
   const comment = parts.slice(i + 2).join(' ').replace(/[^A-Za-z0-9 @._+:-]/g, '').slice(0, 80);
@@ -95,7 +97,7 @@ function parseSshdT(out) {
   return r;
 }
 
-const ACCESS_KEYS = { PermitRootLogin: 'rootLogin', PasswordAuthentication: 'passwordAuth', KbdInteractiveAuthentication: 'kbdInteractive', Port: 'port', MaxAuthTries: 'maxAuthTries', ClientAliveInterval: 'clientAliveInterval', ClientAliveCountMax: 'clientAliveCountMax', X11Forwarding: 'x11' };
+const ACCESS_KEYS = { PermitRootLogin: 'rootLogin', PasswordAuthentication: 'passwordAuth', KbdInteractiveAuthentication: 'kbdInteractive', Port: 'port', MaxAuthTries: 'maxAuthTries', ClientAliveInterval: 'clientAliveInterval', ClientAliveCountMax: 'clientAliveCountMax', X11Forwarding: 'x11', LoginGraceTime: 'loginGraceTime', PermitEmptyPasswords: 'permitEmptyPasswords', ChannelTimeout: 'channelTimeout', UnusedConnectionTimeout: 'unusedConnectionTimeout' };
 
 /** Parse DockGate's own sshd drop-in into settings ({} when absent). */
 function parseAccessConf(text) {
@@ -107,7 +109,9 @@ function parseAccessConf(text) {
     if (!key) continue;
     const v = m[2];
     if (key === 'port') (s.ports = s.ports || []).push(Number(v));
-    else if (key === 'passwordAuth' || key === 'kbdInteractive' || key === 'x11') s[key] = v === 'yes';
+    else if (key === 'passwordAuth' || key === 'kbdInteractive' || key === 'x11' || key === 'permitEmptyPasswords') s[key] = v === 'yes';
+    else if (key === 'channelTimeout') { const m = /session=(\d+)m/.exec(line); s.idleTimeoutMin = m ? Number(m[1]) : null; }
+    else if (key === 'unusedConnectionTimeout') continue;
     else if (key === 'rootLogin') s.rootLogin = v;
     else s[key] = Number(v);
   }
@@ -129,22 +133,37 @@ function buildAccessConf(s) {
   if (s.maxAuthTries != null) { const n = Number(s.maxAuthTries); if (!Number.isInteger(n) || n < 1 || n > 10) throw httpError(400, 'Max auth tries must be 1–10'); lines.push(`MaxAuthTries ${n}`); }
   if (s.clientAliveInterval != null) { const n = Number(s.clientAliveInterval); if (!Number.isInteger(n) || n < 0 || n > 7200) throw httpError(400, 'Idle timeout out of range'); lines.push(`ClientAliveInterval ${n}`); lines.push(`ClientAliveCountMax ${Number.isInteger(Number(s.clientAliveCountMax)) ? Number(s.clientAliveCountMax) : 2}`); }
   if (typeof s.x11 === 'boolean') lines.push(`X11Forwarding ${s.x11 ? 'yes' : 'no'}`);
+  if (s.loginGraceTime != null) { const n = Number(s.loginGraceTime); if (!Number.isInteger(n) || n < 10 || n > 600) throw httpError(400, 'Login grace time must be 10–600 seconds'); lines.push(`LoginGraceTime ${n}`); }
+  if (typeof s.permitEmptyPasswords === 'boolean') lines.push(`PermitEmptyPasswords ${s.permitEmptyPasswords ? 'yes' : 'no'}`);
+  // Real idle limit (OpenSSH 9.2+): close a session with no traffic in either direction, then the
+  // connection once it has no channels left. 0/null = off.
+  if (s.idleTimeoutMin) { const n = Number(s.idleTimeoutMin); if (!Number.isInteger(n) || n < 1 || n > 1440) throw httpError(400, 'Idle session timeout must be 1–1440 minutes'); lines.push(`ChannelTimeout session=${n}m`); lines.push(`UnusedConnectionTimeout ${n}m`); }
   return lines.join('\n') + '\n';
 }
 
 /** The Access & SSH view from the read script sections. */
 function accessState(sec) {
   const t = parseSshdT(sec.sshdT);
-  const dropin = parseAccessConf(sec.dropin);
+  // Settings from DockGate's old hardening file (99-dockgate.conf) are carried into the managed file.
+  const dropin = { ...parseAccessConf(sec.legacy), ...parseAccessConf(sec.dropin) };
   const interval = Number(t.clientaliveinterval || 0), count = Number(t.clientalivecountmax || 3);
+  const ver = /OpenSSH_(\d+)\.(\d+)/.exec(sec.sshver || '');
+  const supportsIdle = !!ver && (Number(ver[1]) > 9 || (Number(ver[1]) === 9 && Number(ver[2]) >= 2));
+  const ct = /session=(\d+)([smhd]?)/.exec(t.channeltimeout || '');
+  const idleMin = ct ? Math.round(Number(ct[1]) * ({ s: 1 / 60, m: 1, h: 60, d: 1440 }[ct[2] || 's'] || 1 / 60)) : 0;
   return {
     sshPort: t.port[0] || 22,
     ports: t.port.length ? t.port : [22],
     rootLogin: t.permitrootlogin === 'without-password' ? 'prohibit-password' : (t.permitrootlogin || 'prohibit-password'),
     passwordAuth: (t.passwordauthentication || 'yes') === 'yes',
     maxAuthTries: Number(t.maxauthtries || 6),
-    idleTimeoutMin: interval > 0 ? Math.round((interval * count) / 60) : 0,
+    deadTimeoutMin: interval > 0 ? Math.round((interval * count) / 60) : 0,
+    idleTimeoutMin: idleMin,
+    supportsIdleTimeout: supportsIdle,
+    sshVersion: ver ? `${ver[1]}.${ver[2]}` : null,
+    loginGraceTime: Number(t.logingracetime || 120),
     x11: (t.x11forwarding || 'no') === 'yes',
+    legacyFile: !!(sec.legacy && sec.legacy.trim()),
     dropin,
     includesDropins: /sshd_config\.d/i.test(sec.include || ''),
     readable: !!(sec.sshdT && t.port.length),

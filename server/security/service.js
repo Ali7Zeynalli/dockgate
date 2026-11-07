@@ -25,10 +25,22 @@ function refreshConnections(serverId) {
 /** Generate an ed25519 key pair for `username` on this server; returns { privatePath (relative), abs, pub }. */
 function generateKey(serverId, username) {
   const { utils } = require('ssh2');
-  const kp = utils.generateKeyPairSync('ed25519', { comment: `dockgate@${serverId}` });
+  // ssh2's generator occasionally drops a leading zero byte from the ed25519 public key (~1 in 200),
+  // producing a key that can never authenticate. Accept a pair only when the public key parses strictly
+  // AND equals the public half derived from the private key.
+  let kp, pub;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    kp = utils.generateKeyPairSync('ed25519', { comment: `dockgate@${serverId}` });
+    pub = P.parsePublicKey(kp.public);
+    const priv = utils.parseKey(kp.private);
+    if (pub && priv && !(priv instanceof Error) && priv.getPublicSSH().toString('base64') === pub.b64) break;
+    pub = null;
+  }
+  if (!pub) throw new Error('Could not generate a valid SSH key pair — try again');
+  if (!fs.existsSync(SSH_KEYS_DIR)) fs.mkdirSync(SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
   const file = `${serverId}--${username}--${Date.now()}.pem`;
   fs.writeFileSync(path.join(SSH_KEYS_DIR, file), kp.private, { mode: 0o600 });
-  return { privatePath: file, abs: path.join(SSH_KEYS_DIR, file), pub: P.parsePublicKey(kp.public) };
+  return { privatePath: file, abs: path.join(SSH_KEYS_DIR, file), pub };
 }
 const removeKeyFile = (rel) => { try { fs.unlinkSync(absKey(rel)); } catch (e) {} };
 
