@@ -5,8 +5,23 @@ const { logAction } = require('../audit');
 const sshKeys = require('../ssh-keys');
 
 // GET / — list keys (private key is NEVER returned, only public + fingerprint)
+// Which Git-deployed compose projects use each key (from their .dockgate-git.json) — shown as "Used by".
+function keyUsage() {
+  const fs = require('fs'), path = require('path');
+  const { COMPOSE_DIR } = require('./compose-shared');
+  const used = {};
+  let dirs = [];
+  try { dirs = fs.readdirSync(COMPOSE_DIR, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name); } catch (e) { return used; }
+  for (const project of dirs) {
+    try {
+      const meta = JSON.parse(fs.readFileSync(path.join(COMPOSE_DIR, project, '.dockgate-git.json'), 'utf8'));
+      if (meta.keyId) (used[String(meta.keyId)] = used[String(meta.keyId)] || []).push(project);
+    } catch (e) { /* not a git project */ }
+  }
+  return used;
+}
 router.get('/', (req, res) => {
-  try { res.json(stmts.getSshKeys.all().map(sshKeys.mask)); }
+  try { const used = keyUsage(); res.json(stmts.getSshKeys.all().map(r => ({ ...sshKeys.mask(r), usedBy: used[String(r.id)] || [] }))); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
