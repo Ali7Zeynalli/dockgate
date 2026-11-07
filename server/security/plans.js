@@ -38,6 +38,7 @@ const READ_FIREWALL = [
   // the address DockGate connects from, as this server sees it (for the "DockGate's IP" source and the SSH guard)
   'echo @@me; echo "$SSH_CONNECTION" | cut -d" " -f1',
   "echo @@ufw6; grep -E '^IPV6=' /etc/default/ufw 2>/dev/null",
+  "echo @@ufwv; {{S}}ufw status verbose 2>/dev/null | grep -i '^Default:'",
   // firewalld: default zone rules + the ports behind each enabled service (rich rules reference services too)
   'echo @@fwd; {{S}}firewall-cmd --list-all 2>/dev/null',
   "echo @@fwdsvc; if {{S}}firewall-cmd --state >/dev/null 2>&1; then for s in $({{S}}firewall-cmd --list-services 2>/dev/null) $({{S}}firewall-cmd --list-rich-rules 2>/dev/null | sed -n 's/.*service name=\"\\([^\"]*\\)\".*/\\1/p'); do echo \"$s $({{S}}firewall-cmd --permanent --service=\"$s\" --get-ports 2>/dev/null)\"; done; fi",

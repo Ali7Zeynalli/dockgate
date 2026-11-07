@@ -68,6 +68,7 @@ app.use('/api/system', require('./routes/system'));
 app.use('/api/cleanup', require('./routes/cleanup'));
 app.use('/api/servers', require('./routes/servers'));
 app.use('/api/firewall-lists', require('./routes/ip-lists')); // IP lists used as firewall port sources
+app.use('/api/servers', require('./routes/firewall')); // Firewall: inbound/outbound rules, defaults, Docker isolation
 app.use('/api/servers', require('./routes/security')); // Access & SSH · Users · Firewall · deploy user · reboot
 app.use('/api/registries', require('./routes/registries'));
 app.use('/api/ssh-keys', require('./routes/ssh-keys'));

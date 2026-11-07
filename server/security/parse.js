@@ -257,8 +257,11 @@ function parseUfwNumbered(out) {
   for (const line of text.split('\n')) {
     const m = /^\[\s*(\d+)\]\s+(.+?)\s{2,}(ALLOW|DENY|REJECT|LIMIT)(?:\s+(IN|OUT|FWD))?\s+(.+?)\s*(?:#\s*(.*))?$/.exec(line.trim());
     if (!m) continue;
-    const to = m[2].trim(), from = m[5].trim();
-    rules.push({ n: Number(m[1]), to: to.replace(/\s*\(v6\)$/, ''), action: m[3], dir: m[4] || 'IN', from: from.replace(/\s*\(v6\)$/, ''), v6: /\(v6\)/.test(to) || /\(v6\)/.test(from), note: (m[6] || '').trim() });
+    const to = m[2].trim();
+    // trailing attributes ufw prints after the source: "(out)", "(log)", "(log-all, out)"
+    const attrs = (/\s+\(((?:out|log|log-all)(?:,\s*(?:out|log|log-all))*)\)\s*$/.exec(m[5]) || [])[1] || '';
+    const from = m[5].replace(/\s+\((?:out|log|log-all)(?:,\s*(?:out|log|log-all))*\)\s*$/, '').trim();
+    rules.push({ n: Number(m[1]), to: to.replace(/\s*\(v6\)$/, ''), action: m[3], dir: m[4] || 'IN', from: from.replace(/\s*\(v6\)$/, ''), v6: /\(v6\)/.test(to) || /\(v6\)/.test(from), note: (m[6] || '').trim(), attrs });
   }
   return { active, rules };
 }
