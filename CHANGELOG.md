@@ -38,6 +38,11 @@ Every server page now follows the layout cloud panels use (Hetzner, DigitalOcean
 - Removed an unused copy of the old server management code from the Settings page.
 - Kept from the old screens after a line-by-line check: Start for services whose state cannot be read (no systemd), the 30-second refresh of Docker counts on the Overview, and the agent status pill in "Install on servers…" (it would have stopped that dialog from opening).
 - The sidebar lists the new console tabs (Monitoring, Users & keys, Settings).
+- **Phones and narrow windows**: the sidebar was always open (260 px) and left about 70 px for the page. Below 900 px it is now a drawer opened with ☰ that closes after navigating, on Esc or when the page behind it is tapped; the header is compact.
+- **Errors explained**: 14 places showed only "Error · connect ENOENT /var/run/docker.sock". They now say what happened in plain words (Docker not reachable, login refused, server not answering, host key changed), why, and offer the next step (Retry, Switch server, Open Setup, Open server Settings), with the technical message under Details.
+- **Release notes** in Settings → Software Update showed `**bold**` markers literally; bold, code, italics and links are now rendered (escaped first).
+- The Files page pointed to "Settings → Servers", which no longer exists; it now points to Servers.
+- "Servers" no longer appears three times on the Servers page; the header says "Monitoring" instead of a title that wrapped onto two lines.
 
 ### Not tested on a live server
 - Outbound rules, default-policy changes and the new rule editing were checked with route tests and `ufw --dry-run` against UFW 0.36 only.

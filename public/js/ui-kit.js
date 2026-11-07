@@ -129,5 +129,5 @@ function mdInline(text) {
     .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\[([^\]]+)\]\((https:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:]|$)/g, '$1<i>$2</i>');
+    .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:…!?]|$)/g, '$1<i>$2</i>');
 }
