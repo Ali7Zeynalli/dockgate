@@ -20,8 +20,11 @@ const { attachHostTerminal } = require('./host-terminal');
 
 const PORT = process.env.PORT || 7077;
 
-// For the correct source IP behind a reverse proxy (nginx, etc.) — audit source_ip is derived from this
-app.set('trust proxy', true);
+// Which reverse proxies may set X-Forwarded-For (TRUST_PROXY env, default: none) — the login rate limit
+// and the audit source IP rely on it, so trusting every hop would let any client spoof its IP.
+const trustProxy = require('./trust-proxy');
+app.set('trust proxy', trustProxy.setting);
+if (trustProxy.setting === true) console.warn('[security] TRUST_PROXY=true — every X-Forwarded-For hop is trusted. Only safe when DockGate is reachable ONLY through your proxy.');
 
 // Middleware
 // Body parsing: 5MB protects every endpoint (SSH key uploads, normal API payloads). The folder-deploy

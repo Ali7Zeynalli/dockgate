@@ -168,11 +168,11 @@ async function ensureAuthenticated() {
   try { status = await API.get('/auth/status'); }
   catch (e) { status = { authenticated: false, setupDone: true }; }
   if (status.authenticated) return true;
-  renderAuthScreen(status.setupDone ? 'login' : 'setup');
+  renderAuthScreen(status.setupDone ? 'login' : 'setup', { tokenRequired: !!status.setupTokenRequired });
   return false;
 }
 
-function renderAuthScreen(mode) {
+function renderAuthScreen(mode, { tokenRequired = false } = {}) {
   const root = document.getElementById('auth-root');
   if (!root) return;
   const isSetup = mode === 'setup';
@@ -189,6 +189,7 @@ function renderAuthScreen(mode) {
         <div style="color:var(--text-muted,#8b949e);font-size:13px;margin:4px 0 18px;">${sub}</div>
         <input class="input" id="auth-pw" type="password" placeholder="Password" autocomplete="${isSetup ? 'new-password' : 'current-password'}" style="width:100%;">
         ${isSetup ? '<input class="input" id="auth-pw2" type="password" placeholder="Confirm password" autocomplete="new-password" style="width:100%;margin-top:8px;">' : ''}
+        ${isSetup && tokenRequired ? '<input class="input" id="auth-token" type="text" placeholder="Setup token" autocomplete="off" spellcheck="false" style="width:100%;margin-top:8px;font-family:var(--font-mono,monospace);"><div style="color:var(--text-muted,#8b949e);font-size:11px;margin-top:6px;text-align:left;">You are connecting from outside the local network. The setup token is printed in DockGate\'s log: <code>docker logs dockgate-control-panel</code></div>' : ''}
         <button class="btn btn-primary" type="submit" style="width:100%;margin-top:14px;">${btnLabel}</button>
         <div id="auth-error" style="color:var(--danger,#f85149);font-size:12px;margin-top:10px;min-height:14px;"></div>
         ${isSetup ? '<div style="color:var(--text-muted,#8b949e);font-size:11px;margin-top:6px;">Minimum 8 characters · stored as a scrypt hash.</div>' : ''}
@@ -204,7 +205,8 @@ function renderAuthScreen(mode) {
         const pw2 = root.querySelector('#auth-pw2').value;
         if (pw.length < 8) { err.textContent = 'Password must be at least 8 characters'; return; }
         if (pw !== pw2) { err.textContent = 'Passwords do not match'; return; }
-        await API.post('/auth/setup', { password: pw });
+        const tokEl = root.querySelector('#auth-token');
+        await API.post('/auth/setup', { password: pw, ...(tokEl ? { setupToken: tokEl.value.trim() } : {}) });
       } else {
         if (!pw) { err.textContent = 'Enter your password'; return; }
         await API.post('/auth/login', { password: pw });

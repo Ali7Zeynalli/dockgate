@@ -8,21 +8,17 @@
 
 const { stmts } = require('./db');
 
-// Source IP from req (req.ip is correct when Express trust-proxy is ON)
+// Source IP from req — req.ip already applies the TRUST_PROXY setting (server/trust-proxy.js). The raw
+// X-Forwarded-For header is never read directly: any client can send one.
 function ipFromReq(req) {
   if (!req) return null;
-  const xff = req.headers && req.headers['x-forwarded-for'];
-  return req.ip
-    || (xff ? String(xff).split(',')[0].trim() : null)
-    || (req.socket && req.socket.remoteAddress)
-    || null;
+  return req.ip || (req.socket && req.socket.remoteAddress) || null;
 }
 
-// Source IP from socket.io handshake
+// Source IP from a socket.io handshake, with the same proxy trust as HTTP.
 function ipFromSocket(socket) {
   if (!socket || !socket.handshake) return null;
-  const xff = socket.handshake.headers && socket.handshake.headers['x-forwarded-for'];
-  return (xff ? String(xff).split(',')[0].trim() : null) || socket.handshake.address || null;
+  return require('./trust-proxy').socketClientIp(socket.handshake);
 }
 
 /**

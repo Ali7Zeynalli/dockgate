@@ -2,6 +2,20 @@
 
 ---
 
+## [2.8.0] - 2026-11-07
+
+### Security
+- **Dependencies:** all 10 known vulnerabilities fixed (`npm audit`: 0) — express 4.22.3, body-parser, qs, socket.io / engine.io / ws, proxy-addr, and **nodemailer 10.3.1** (major upgrade; the mail API DockGate uses is unchanged).
+- **Client IP can no longer be spoofed.** `trust proxy` was on for every hop, so any client could send `X-Forwarded-For` to dodge the login rate limit and fake the audit IP (the WebSocket audit read the header unconditionally too). Now nobody is trusted by default; set `TRUST_PROXY` (e.g. `loopback`) when DockGate sits behind a reverse proxy. HTTP and WebSocket use the same rule.
+- **First-run setup is protected.** Until an admin password exists, setting it from outside the local network needs a one-time setup token that DockGate prints in its log (`docker logs …`). From the same machine or a private network nothing changes. `DG_SETUP_TOKEN` sets your own token and makes it always required.
+- **Sessions can be revoked.** Changing the password signs out every other browser/device (this one stays logged in). New **Settings → Security → Sign out everywhere** ends all sessions.
+- **Node.js 22 LTS** in the image and CI (Node 18 no longer receives security fixes). `engines` now `>=20` (nodemailer 10 needs it).
+
+### Upgrade notes
+- Behind a reverse proxy, add `TRUST_PROXY=loopback` (proxy on the same host) or the proxy's address — otherwise audit entries show the proxy's IP and all clients share one login rate-limit bucket.
+
+---
+
 ## [2.7.0] - 2026-11-07
 
 ### Added

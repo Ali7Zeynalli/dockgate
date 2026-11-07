@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.7.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
-  <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
+  <img src="https://img.shields.io/badge/DockGate-v2.8.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.7.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.8.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -264,7 +264,8 @@ Browser (vanilla JS + xterm.js + Chart.js)
 
 > **Docker socket access = root-equivalent control of the host.** Treat DockGate as a privileged tool.
 
-- **Authentication.** Single **admin password** — scrypt hash + salt, set on first run (min 8). Login issues an **HMAC-signed, HttpOnly, SameSite=Lax** session cookie (7-day TTL; `Secure` when `COOKIE_SECURE=true`). Login is **rate-limited** (10 / 15 min per IP). Change it any time in **Settings → Security**.
+- **Authentication.** Single **admin password** — scrypt hash + salt, set on first run (min 8). Login issues an **HMAC-signed, HttpOnly, SameSite=Lax** session cookie (7-day TTL; `Secure` when `COOKIE_SECURE=true`). Login is **rate-limited** (10 / 15 min per IP; the client IP is only taken from `X-Forwarded-For` when `TRUST_PROXY` says the proxy is trusted). Change the password in **Settings → Security** — that signs out every other device; **Sign out everywhere** ends all sessions.
+- **First-run setup.** From the same machine or a private network the admin password can be set directly. From the internet a one-time **setup token** is required — DockGate prints it in its log at start (`docker logs dockgate-control-panel`), or set your own with `DG_SETUP_TOKEN`.
 - **Every `/api` route and every WebSocket stream requires a valid session** — an unauthenticated client can reach nothing but the login/setup endpoints.
 - **CSRF defense.** State-changing requests whose `Origin` host ≠ `Host` are rejected (403); combined with `SameSite=Lax`.
 - **Encrypted at rest.** SSH, registry and Telegram/SMTP secrets are AES-256-GCM encrypted in the SQLite DB.
@@ -292,7 +293,7 @@ Honest, current gaps:
 
 | Layer | Tech |
 |---|---|
-| Runtime | Node.js 18 (Alpine) + `docker-cli`, `openssh-client`, `git` |
+| Runtime | Node.js 22 LTS (Alpine) + `docker-cli`, `openssh-client`, `git` |
 | Web / real-time | Express 4 · Socket.IO 4 |
 | Docker SDK | dockerode 5 (local socket + SSH transport) |
 | SSH | dockerode SSH transport · `ssh2` (SFTP, host shell, workers) |
@@ -335,6 +336,8 @@ All under `/api`, JSON, **session-gated** (except `/api/auth/{status,setup,login
 | `DG_MASTER_KEY` | *(generated)* | 64-hex AES key for at-rest secret encryption (else `data/.master.key`, mode 0600) |
 | `DG_SESSION_SECRET` | *(generated)* | session-cookie signing secret (else persisted in DB) |
 | `COOKIE_SECURE` | `false` | set `true` behind HTTPS to mark the session cookie `Secure` |
+| `TRUST_PROXY` | *(none)* | reverse proxies allowed to set the client IP (`X-Forwarded-For`): `loopback` (proxy on the same host), `uniquelocal`, IPs/CIDRs, or a hop count. Leave unset when DockGate is reached directly |
+| `DG_SETUP_TOKEN` | *(random, printed in the log)* | first-run setup token; when set it is required even from the local network |
 | `ALLOWED_ORIGIN` | *(same-origin)* | permit a specific cross-origin panel |
 
 **Data** lives under `data/`: `docker-panel.db` (SQLite), `ssh-keys/` (0600), `compose/` (managed projects), `.master.key`.

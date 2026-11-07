@@ -34,9 +34,22 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(ba, bb);
 }
 
+// Session version: stamped into every token. Bumping it (password change, "sign out everywhere")
+// invalidates every token issued before — stateless tokens are otherwise valid until they expire.
+// Tokens from before this existed carry no version and count as version 0 (no mass logout on upgrade).
+function currentVersion() {
+  try { return Number(require('../db').stmts.getSetting.get('session_version')?.value || 0) || 0; } catch (e) { return 0; }
+}
+/** Invalidate every session issued so far. Returns the new version. */
+function revokeAllSessions() {
+  const v = currentVersion() + 1;
+  require('../db').stmts.setSetting.run('session_version', String(v));
+  return v;
+}
+
 /** Issue a signed session token for a user id. */
 function issueToken(userId) {
-  const payload = Buffer.from(JSON.stringify({ uid: String(userId), exp: Date.now() + TOKEN_TTL_MS }), 'utf8').toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ uid: String(userId), exp: Date.now() + TOKEN_TTL_MS, v: currentVersion() }), 'utf8').toString('base64url');
   return `${payload}.${sign(payload)}`;
 }
 
@@ -50,6 +63,7 @@ function verifyToken(token) {
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!data || !data.exp || Date.now() > data.exp) return null;
+    if ((Number(data.v) || 0) !== currentVersion()) return null; // revoked by a password change / sign-out-everywhere
     return data.uid || null;
   } catch (e) { return null; }
 }
@@ -83,6 +97,6 @@ function readSessionToken(req) {
 
 module.exports = {
   COOKIE_NAME, TOKEN_TTL_MS,
-  issueToken, verifyToken,
+  issueToken, verifyToken, revokeAllSessions,
   serializeSessionCookie, clearSessionCookie, readSessionToken,
 };

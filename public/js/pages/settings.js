@@ -76,7 +76,7 @@ Router.register('settings', async (content, params) => {
         tabContent.innerHTML = `
           <div class="settings-section" style="max-width:520px;">
             <div class="settings-section-title">Change Password</div>
-            <div class="settings-row-desc" style="margin-bottom:14px;">Update the admin password used to sign in to DockGate. You stay logged in on this device after changing it.</div>
+            <div class="settings-row-desc" style="margin-bottom:14px;">Update the admin password used to sign in to DockGate. You stay logged in on this device; every other browser or device is signed out.</div>
             <form id="sec-form" autocomplete="on">
               <input type="text" id="sec-user" name="username" autocomplete="username" value="admin" readonly aria-hidden="true" tabindex="-1" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
               <div style="display:flex;flex-direction:column;gap:10px;">
@@ -89,7 +89,15 @@ Router.register('settings', async (content, params) => {
               </div>
             </form>
           </div>
+          <div class="settings-section" style="max-width:520px;">
+            <div class="settings-section-title">Sessions</div>
+            <div class="settings-row-desc" style="margin-bottom:14px;">Signs out every browser and device that is logged in to DockGate — this one too. Use it if you logged in on a machine you do not trust or think your session was copied.</div>
+            <button class="btn btn-danger btn-sm" id="sec-logout-all" type="button">Sign out everywhere</button>
+          </div>
         `;
+        document.getElementById('sec-logout-all')?.addEventListener('click', () => showConfirm('Sign out everywhere', 'Every DockGate session ends now, including this one. You will need the admin password to log in again.', async () => {
+          try { await API.post('/auth/logout-all'); location.reload(); } catch (e) { showToast(e.message, 'error'); }
+        }, true));
         // Password fields wrapped in a <form> (+ a hidden username field) so the browser/password-manager
         // is happy ("password field not in a form" gone); submit is handled in JS, never reloads the page.
         document.getElementById('sec-form')?.addEventListener('submit', async (e) => {
