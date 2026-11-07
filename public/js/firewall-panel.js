@@ -7,6 +7,7 @@ async function renderFirewallPanel(serverId, container) {
   try { f = await API.get(`/servers/${serverId}/firewall`); }
   catch (e) { return secError(container, "Couldn't read the firewall", e, () => renderFirewallPanel(serverId, container)); }
   const reload = () => renderFirewallPanel(serverId, container);
+  const lists = (await API.get('/firewall-lists').catch(() => ({ lists: [] }))).lists || [];
   const bypass = f.ports.filter(p => p.exposure === 'bypass');
   const isFwd = f.backend === 'firewalld';
   const fwName = isFwd ? 'firewalld' : 'UFW';
@@ -48,29 +49,33 @@ async function renderFirewallPanel(serverId, container) {
       ${statCard('SSH', `${f.sshPort}/tcp`, 'Always kept open')}
     </div>
 
-    <div class="flex justify-between items-center mb-2"><div style="font-size:15px;font-weight:700">Listening ports</div><span class="text-xs text-muted">What is reachable from where (IPv4)</span></div>
+    <div class="flex justify-between items-center mb-2" style="gap:10px;flex-wrap:wrap"><div><div style="font-size:15px;font-weight:700">Ports</div><div class="text-xs text-muted">Who can reach each port from outside · IPv4 and IPv6 together</div></div>${f.managed ? '<button class="btn btn-sm btn-primary" data-addport>Add port rule</button>' : ''}</div>
     <div class="table-wrapper" style="margin-bottom:20px"><table>
-      <thead><tr><th>Port</th><th>Used by</th><th>Listens on</th><th>Reachable from</th><th style="text-align:right">Actions</th></tr></thead>
-      <tbody>${f.ports.length ? f.ports.map(p => {
+      <thead><tr><th>Port</th><th>Used by</th><th>Who can reach it</th><th>Family</th><th style="text-align:right">Actions</th></tr></thead>
+      <tbody>${f.ports.length ? f.ports.map((p, i) => {
         const [col, lbl] = EXPO[p.exposure] || ['var(--text-muted)', p.exposure];
-        const key = p.port + '/' + p.proto;
         let act = '';
         if (p.exposure === 'local') act = '<span class="text-xs text-muted">bound to localhost</span>';
-        else if (p.isSsh) act = '<span class="text-xs text-muted">managed in Access &amp; SSH</span>';
         else if (!f.managed) act = '<span class="text-xs text-muted">turn the firewall on first</span>';
         else if (p.exposure === 'bypass') act = `<span class="text-xs text-muted">${isFwd ? 'Docker skips firewalld' : 'turn on isolation first'}</span>`;
-        else if (p.exposure === 'internal') act = `<button class="btn btn-xs btn-primary" data-open="${key}">Open to internet</button> <button class="btn btn-xs btn-secondary" data-restrict="${key}">Allow one IP…</button>`;
-        else act = `<button class="btn btn-xs btn-secondary" data-close="${key}">Close</button>`;
+        else if (p.locked) act = `<span class="text-xs text-muted" title="${escapeHtml(p.locked)}">edit in the rules list</span>`;
+        else act = `<button class="btn btn-xs ${p.sources && p.sources.length ? 'btn-secondary' : 'btn-primary'}" data-src="${i}">${p.sources && p.sources.length ? 'Edit' : 'Allow…'}</button>${p.sources && p.sources.length && !p.isSsh ? ` <button class="btn btn-xs btn-danger" data-closeport="${i}">Close</button>` : ''}`;
+        const reach = p.sources && p.exposure !== 'bypass' && p.exposure !== 'local'
+          ? (p.sources.length ? `<div class="flex gap-1" style="flex-wrap:wrap">${p.sources.map(x => fwSourceChip(x, lists, f.dockgateIp)).join('')}</div>${p.outdated && p.outdated.length ? `<div class="text-xs" style="color:var(--warning);margin-top:4px">${p.outdated.map(id => escapeHtml((lists.find(l => l.id === id) || {}).name || id)).join(', ')}: an older version is applied here — <a href="#" data-src="${i}">update</a></div>` : ''}${p.sourceCount ? `<div class="text-xs text-muted" style="margin-top:3px">${p.sourceCount} address${p.sourceCount === 1 ? '' : 'es'}</div>` : ''}`
+            : '<span style="color:var(--success);font-weight:600;font-size:13px">● Internal only</span><div class="text-xs text-muted">containers and this server only</div>')
+          : `<span style="color:${col};font-weight:600;font-size:13px">● ${lbl}</span>`;
         return `<tr>
-          <td class="td-mono" style="font-weight:600">${key}</td>
-          <td><div>${escapeHtml(p.usedBy)}</div><div class="text-xs text-muted">${p.kind === 'container' ? 'container · ' + escapeHtml(p.container) + (p.containerPort && p.containerPort !== p.port ? ' · inside :' + p.containerPort : '') : 'host process'}</div></td>
-          <td class="td-mono text-xs">${escapeHtml(p.bind)}</td>
-          <td><span style="color:${col};font-weight:600;font-size:13px">● ${lbl}</span>${p.restrictedTo ? `<div class="text-xs text-muted td-mono">${escapeHtml(p.restrictedTo)}</div>` : ''}</td>
+          <td class="td-mono" style="font-weight:600;white-space:nowrap">${p.port}/${p.proto}${p.isSsh ? ' <span class="text-xs text-muted">SSH</span>' : ''}</td>
+          <td><div>${escapeHtml(p.usedBy)}</div><div class="text-xs text-muted">${p.noListener ? 'nothing listens yet' : (p.kind === 'container' ? 'container · ' + escapeHtml(p.container) + (p.containerPort && p.containerPort !== p.port ? ' · inside :' + p.containerPort : '') : 'host · ' + escapeHtml(p.bind))}</div></td>
+          <td style="min-width:0">${reach}</td>
+          <td>${p.family ? `<span class="text-xs" style="border:1px solid var(--border);border-radius:6px;padding:1px 6px;white-space:nowrap">${p.family}</span>` : '<span class="text-xs text-muted">—</span>'}</td>
           <td style="text-align:right;white-space:nowrap">${act}</td>
         </tr>`; }).join('') : '<tr><td colspan="5" class="text-sm text-muted">No listening ports found (ss / netstat unavailable?)</td></tr>'}</tbody>
     </table></div>
+    <div data-iplists style="margin-bottom:20px"></div>
 
     ${f.managed ? `
+    <details ${f.rules.length <= 12 ? 'open' : ''} style="margin-bottom:8px"><summary style="cursor:pointer;font-size:15px;font-weight:700;margin-bottom:8px">All ${isFwd ? 'firewalld' : 'UFW'} rules (${f.rules.length}) <span class="text-xs text-muted" style="font-weight:400">· one rule per source, as the firewall stores them</span></summary>
     <div class="grid-2">
       <div>
         <div style="font-size:15px;font-weight:700;margin-bottom:8px">${isFwd ? `firewalld rules · zone ${escapeHtml(f.zone || '')}` : 'UFW rules'}</div>
@@ -80,10 +85,10 @@ async function renderFirewallPanel(serverId, container) {
             <td class="text-muted">${r.n}</td><td class="td-mono">${escapeHtml(r.to)}${r.v6 ? ' <span class="text-xs text-muted">v6</span>' : ''}</td>
             <td><span style="color:${r.action === 'ALLOW' || r.action === 'LIMIT' ? 'var(--success)' : 'var(--danger)'};font-weight:600;font-size:12px">${escapeHtml(r.action + ' ' + r.dir)}</span></td>
             <td class="text-sm">${escapeHtml(r.from)}${r.note ? ` <span class="text-xs text-muted">· ${escapeHtml(r.note)}</span>` : ''}</td>
-            <td style="text-align:right">${sshRule(r) ? '<span class="text-xs text-muted" title="Keeps SSH reachable">locked</span>' : (r.v6 && !isFwd ? '' : `<button class="btn btn-xs btn-danger" data-delrule="${r.n}">Delete</button>`)}</td>
+            <td style="text-align:right">${sshRule(r) ? '<span class="text-xs text-muted" title="Keeps SSH reachable">locked</span>' : (r.v6 && !isFwd && r.from === 'Anywhere' ? '' : `<button class="btn btn-xs btn-danger" data-delrule="${r.n}">Delete</button>`)}</td>
           </tr>`).join('') : '<tr><td colspan="5" class="text-sm text-muted">No rules</td></tr>'}</tbody>
         </table></div>
-        <div class="text-xs text-muted" style="margin-top:6px">${isFwd ? 'Deleting a service removes all of its ports. A rule from one IP is a rich rule.' : 'Deleting a rule also deletes its IPv6 twin.'}</div>
+        <div class="text-xs text-muted" style="margin-top:6px">${isFwd ? 'Deleting a service removes all of its ports. A rule from one IP is a rich rule.' : 'Deleting an "Anywhere" rule also deletes its IPv6 twin. To change who can reach a port, use Edit in the Ports table.'}</div>
       </div>
       <div class="card" style="align-self:start">
         <div style="font-size:15px;font-weight:700;margin-bottom:8px">Add rule</div>
@@ -95,7 +100,7 @@ async function renderFirewallPanel(serverId, container) {
           <div data-err></div>
         </form>
       </div>
-    </div>` : ''}`;
+    </div></details>` : ''}`;
 
   renderServiceBar(serverId, 'firewall', container.querySelector('[data-ufwbar]'), { label: 'Firewall service', onChange: reload });
   if (f.backend === 'ufw') { const rawEl = document.createElement('div'); rawEl.style.marginTop = '16px'; container.appendChild(rawEl); renderRawConfig(serverId, 'firewall', '/etc/default/ufw', rawEl, { label: '/etc/default/ufw', high: true }); }
@@ -172,40 +177,22 @@ async function renderFirewallPanel(serverId, container) {
     secConfirm({ title: 'Turn off Docker port isolation', change: 'The DOCKER-USER rules are removed. Every published container port becomes reachable from the internet again.', protects: 'SSH is tested with a new connection; on failure the previous rules come back.', undo: 'Turn isolation on again here.', danger: true, confirmLabel: 'Turn off', onConfirm: () => runIsolation(false, []) });
   });
 
-  const expose = async (key, open, scope, ip) => {
-    const [port, proto] = key.split('/');
-    const r = await API.post(`/servers/${serverId}/firewall/expose`, { port: Number(port), proto, open, scope, ip });
-    showToast(open ? `${key} opened${scope === 'ip' ? ' for ' + ip : ''}` : `${key} closed`);
-    warnToast(r);
-    reload();
-  };
-  const tryExpose = (...a) => expose(...a).catch(e => showToast(e.message, 'error', 8000));
-  container.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => secConfirm({
-    title: `Open ${b.dataset.open} to the internet`, confirmLabel: 'Open',
-    change: 'A firewall rule lets anyone on the internet reach this port.',
-    protects: 'Only this port is opened. fail2ban bans and running containers are checked afterwards.',
-    undo: '"Close" on the same row.',
-    onConfirm: () => tryExpose(b.dataset.open, true, 'any'),
-  })));
-  container.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => secConfirm({
-    title: `Close ${b.dataset.close}`, danger: true, confirmLabel: 'Close',
-    change: 'The rule that opens this port is removed. It stays reachable inside the server, but not from outside.',
-    protects: 'The SSH port cannot be closed here. fail2ban bans and running containers are checked afterwards.',
-    undo: '"Open to internet" on the same row.',
-    onConfirm: () => tryExpose(b.dataset.close, false),
-  })));
-  container.querySelectorAll('[data-restrict]').forEach(b => b.addEventListener('click', () => {
-    const m = showModal(`Allow one IP · ${b.dataset.restrict}`, `<label class="text-sm" for="fw-ip" style="font-weight:600;display:block;margin-bottom:4px">IP address or range</label><input class="input" id="fw-ip" placeholder="198.51.100.24 or 10.0.0.0/24" style="font-family:var(--font-mono);width:100%"><div data-err style="margin-top:8px"></div>`, []);
-    const footer = m.overlay.querySelector('.modal-footer');
-    const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
-    const ok = document.createElement('button'); ok.className = 'btn btn-primary'; ok.textContent = 'Allow';
-    footer.append(c, ok);
-    ok.onclick = async () => {
-      const ip = m.overlay.querySelector('#fw-ip').value.trim();
-      try { await expose(b.dataset.restrict, true, 'ip', ip); m.close(); }
-      catch (e) { m.overlay.querySelector('[data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
-    };
+  container.querySelectorAll('[data-src]').forEach(b => b.addEventListener('click', (e) => { e.preventDefault(); openSourcesDialog(serverId, f, lists, f.ports[Number(b.dataset.src)], reload); }));
+  container.querySelector('[data-addport]')?.addEventListener('click', () => openSourcesDialog(serverId, f, lists, null, reload));
+  container.querySelectorAll('[data-closeport]').forEach(b => b.addEventListener('click', () => {
+    const p = f.ports[Number(b.dataset.closeport)];
+    secConfirm({
+      title: `Close ${p.port}/${p.proto}`, danger: true, confirmLabel: 'Close',
+      change: `Every rule that opens this port is removed (${p.sourceCount || (p.sources.includes('any') ? 'anyone' : 0)}${p.sourceCount ? ' addresses' : ''}). It stays reachable inside the server, but not from outside.`,
+      protects: 'The SSH port cannot be closed. fail2ban bans and running containers are checked afterwards.',
+      undo: '"Allow…" on the same row.',
+      onConfirm: async () => {
+        try { const r = await API.post(`/servers/${serverId}/firewall/ports/sources`, { port: p.port, proto: p.proto, sources: [] }); showToast(`${p.port}/${p.proto} closed`); warnToast(r); reload(); }
+        catch (er) { showToast(er.message, 'error', 8000); }
+      },
+    });
   }));
+  if (f.managed) renderIpLists(container.querySelector('[data-iplists]'), lists, reload);
   container.querySelectorAll('[data-delrule]').forEach(b => b.addEventListener('click', () => secConfirm({
     title: `Delete rule #${b.dataset.delrule}`, danger: true, confirmLabel: 'Delete rule',
     change: isFwd ? 'The rule is removed from the permanent firewalld configuration and firewalld is reloaded. For a service, all of its ports go.' : 'The rule (and its IPv6 twin) is removed from UFW immediately.',
@@ -223,4 +210,158 @@ async function renderFirewallPanel(serverId, container) {
     try { const r = await API.post(`/servers/${serverId}/firewall/rules`, body); showToast('Rule added'); warnToast(r); reload(); }
     catch (er) { container.querySelector('[data-rule] [data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(er.message)}</div>`; }
   });
+}
+
+// ---------------------------------------------------------------- port sources
+function fwSourceChip(s, lists, dockgateIp, removable) {
+  const x = removable ? ` <button type="button" data-rm="${escapeHtml(s)}" aria-label="Remove" style="all:unset;cursor:pointer;color:var(--text-muted);padding:0 2px">×</button>` : '';
+  const base = 'display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:999px;padding:1px 9px;font-size:12px;white-space:nowrap;';
+  if (s === 'any') return `<span style="${base}color:var(--warning)">Anyone (internet)${x}</span>`;
+  if (s === '@dockgate') return `<span style="${base}color:var(--accent)" title="${escapeHtml(dockgateIp || '')}">DockGate's IP${x}</span>`;
+  if (s[0] === '@') { const l = lists.find(y => y.id === s.slice(1)); return `<span style="${base}color:${s === '@cloudflare' ? '#f38020' : '#a78bfa'}">${escapeHtml(l ? l.name : s.slice(1))}${l ? ' · ' + l.items.length : ''}${x}</span>`; }
+  return `<span style="${base}" class="td-mono">${escapeHtml(s)}${x}</span>`;
+}
+
+/** Add a port rule (p = null) or edit who can reach a port. Shows the exact change before applying. */
+function openSourcesDialog(serverId, f, lists, p, reload) {
+  const isNew = !p;
+  let mode = p && p.sources && p.sources.includes('any') ? 'any' : 'list';
+  let sources = p && p.sources ? p.sources.filter(s => s !== 'any') : [];
+  // an outdated list on this port: keep it selected, saving applies the current version
+  let note = '', hint = null, previewSeq = 0;
+  const m = showModal(isNew ? 'Add port rule' : `Who can reach ${p.port}/${p.proto}`, `${serverContextBanner()}<div data-body style="display:grid;gap:12px"></div>`, []);
+  const body = m.overlay.querySelector('[data-body]');
+  const footer = m.overlay.querySelector('.modal-footer');
+  const cancel = document.createElement('button'); cancel.className = 'btn btn-secondary'; cancel.textContent = 'Cancel'; cancel.onclick = () => m.close();
+  const save = document.createElement('button'); save.className = 'btn btn-primary'; save.textContent = isNew ? 'Add rule' : 'Apply changes';
+  footer.append(cancel, save);
+  const portOf = () => isNew ? { port: Number(body.querySelector('#src-port')?.value), proto: body.querySelector('#src-proto')?.value || 'tcp' } : { port: p.port, proto: p.proto };
+  const wanted = () => (mode === 'any' ? ['any'] : sources);
+  const official = lists.filter(l => l.kind === 'official');
+  const preview = async () => {
+    const seq = ++previewSeq; const box = body.querySelector('[data-preview]'); if (!box) return;
+    const { port, proto } = portOf();
+    if (!(port >= 1 && port <= 65535)) { box.innerHTML = '<span class="text-xs text-muted">Enter a port to see the change.</span>'; save.disabled = true; return; }
+    box.innerHTML = '<span class="text-xs text-muted">Checking…</span>';
+    try {
+      const r = await API.post(`/servers/${serverId}/firewall/ports/sources`, { port, proto, sources: wanted(), dryRun: true });
+      if (seq !== previewSeq) return;
+      save.disabled = !r.commands.length;
+      box.innerHTML = `<div class="text-xs">${r.commands.length ? `<b style="color:var(--success)">+${r.add.length}</b> rule${r.add.length === 1 ? '' : 's'} · <b style="color:var(--danger)">−${r.remove.length}</b> · ${r.keep} unchanged${r.family ? ' · ' + r.family : ''}${r.ssh ? ' · SSH: a new login is tested, rollback after 120 s if it fails' : ''}` : 'No change.'}</div>
+        ${r.commands.length ? `<details style="margin-top:6px"><summary class="text-xs text-muted" style="cursor:pointer">Commands (${r.commands.length})</summary><pre class="td-mono" style="font-size:11.5px;max-height:200px;overflow:auto;margin:6px 0 0;padding:8px;background:var(--bg-secondary,rgba(0,0,0,.2));border-radius:8px;white-space:pre-wrap">${escapeHtml(r.commands.map(c => c.replace(/\{\{S\}\}/g, '').replace(/ >\/dev\/null$/, '')).join('\n'))}</pre></details>` : ''}`;
+    } catch (e) { if (seq !== previewSeq) return; save.disabled = true; box.innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
+  };
+  const draw = () => {
+    body.innerHTML = `
+      ${isNew ? `<div class="flex gap-1" style="flex-wrap:wrap"><div style="display:grid;gap:4px"><label class="text-sm" for="src-port" style="font-weight:600">Port</label><input class="input" id="src-port" type="number" min="1" max="65535" placeholder="8443" style="width:120px" value="${escapeHtml(body.dataset.port || '')}"></div><div style="display:grid;gap:4px"><label class="text-sm" for="src-proto" style="font-weight:600">Protocol</label><select class="select" id="src-proto" style="width:90px"><option ${body.dataset.proto !== 'udp' ? 'selected' : ''}>tcp</option><option ${body.dataset.proto === 'udp' ? 'selected' : ''}>udp</option></select></div></div>` : ''}
+      <div style="display:grid;gap:6px"><div class="text-sm" style="font-weight:600">Who can reach this port</div>
+        <div class="tab-bar" style="width:max-content;max-width:100%"><button type="button" class="tab-btn ${mode === 'any' ? 'active' : ''}" data-mode="any">Anyone (internet)</button><button type="button" class="tab-btn ${mode === 'list' ? 'active' : ''}" data-mode="list">Only these sources</button></div></div>
+      ${mode === 'list' ? `
+        <div style="display:grid;gap:6px"><div class="text-sm" style="font-weight:600">Sources <span class="text-xs text-muted" style="font-weight:400">· IPv4 and IPv6 together</span></div>
+          <div class="flex gap-1" style="flex-wrap:wrap">${sources.length ? sources.map(s => fwSourceChip(s, lists, f.dockgateIp, true)).join('') : '<span class="text-xs text-muted">No sources: the port is closed to the outside.</span>'}</div></div>
+        ${note ? `<div class="insight-card info" style="font-size:13px"><div>${note}</div></div>` : ''}
+        ${hint ? `<div class="insight-card warning" style="font-size:13px"><div>These are exactly <b>${escapeHtml(hint.name)}</b>'s official ranges. Use the ${escapeHtml(hint.name)} list instead: when it changes, every port is updated with one click.<div class="flex gap-1" style="margin-top:8px;flex-wrap:wrap"><button type="button" class="btn btn-xs btn-primary" data-uselist="${hint.id}">Use the ${escapeHtml(hint.name)} list</button><button type="button" class="btn btn-xs btn-secondary" data-keepips>Keep separate addresses</button></div></div></div>` : ''}
+        <div style="display:grid;gap:4px"><label class="text-sm" for="src-paste" style="font-weight:600">Add addresses or ranges</label>
+          <textarea class="input" id="src-paste" rows="3" placeholder="Paste here: one per line, or separated by spaces or commas. IPv4 and IPv6 can be mixed." style="font-family:var(--font-mono);font-size:12.5px;width:100%;resize:vertical"></textarea>
+          <div class="flex justify-between items-center" style="gap:8px;flex-wrap:wrap"><span class="text-xs text-muted">Ctrl+Enter adds</span><button type="button" class="btn btn-xs btn-secondary" data-paste>Add</button></div><div data-perr class="text-xs" style="color:var(--danger)"></div></div>
+        <div style="display:grid;gap:6px"><div class="text-sm" style="font-weight:600">Lists</div><div class="flex gap-1" style="flex-wrap:wrap">
+          ${f.dockgateIp ? `<button type="button" class="btn btn-xs btn-secondary" data-preset="@dockgate" ${sources.includes('@dockgate') ? 'disabled' : ''}>+ DockGate's IP (${escapeHtml(f.dockgateIp)})</button>` : ''}
+          ${lists.filter(l => l.items.length).map(l => `<button type="button" class="btn btn-xs btn-secondary" data-preset="@${l.id}" ${sources.includes('@' + l.id) ? 'disabled' : ''}>+ ${escapeHtml(l.name)} (${l.items.length})</button>`).join('')}
+        </div></div>` : ''}
+      <div data-preview></div>`;
+    body.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { mode = b.dataset.mode; draw(); });
+    body.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { sources = sources.filter(s => s !== b.dataset.rm); hint = null; draw(); });
+    body.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => { sources.push(b.dataset.preset); draw(); });
+    body.querySelector('[data-uselist]')?.addEventListener('click', () => { const l = hint; sources = sources.filter(s => !l.items.includes(s)); if (!sources.includes('@' + l.id)) sources.push('@' + l.id); note = `Replaced ${l.items.length} addresses with the ${escapeHtml(l.name)} list.`; hint = null; draw(); });
+    body.querySelector('[data-keepips]')?.addEventListener('click', () => { hint = null; draw(); });
+    const paste = async () => {
+      const ta = body.querySelector('#src-paste');
+      try {
+        const r = await API.post('/firewall-lists/parse', { text: ta.value });
+        if (r.invalid.length) { body.querySelector('[data-perr]').textContent = `Not an IP address or range: ${r.invalid.slice(0, 6).join(', ')}${r.invalid.length > 6 ? ' …' : ''}`; return; }
+        if (r.valid.some(v => v === '0.0.0.0/0' || v === '::/0')) { body.querySelector('[data-perr]').textContent = 'Use "Anyone (internet)" instead of 0.0.0.0/0 or ::/0'; return; }
+        const fresh = r.valid.filter(v => !sources.includes(v)); fresh.forEach(v => sources.push(v));
+        const n6 = fresh.filter(v => v.includes(':')).length;
+        note = fresh.length ? `Added ${fresh.length} address${fresh.length === 1 ? '' : 'es'}: ${fresh.length - n6} IPv4 + ${n6} IPv6.${r.valid.length > fresh.length ? ` ${r.valid.length - fresh.length} were already there.` : ''}` : 'All of these are already in the sources.';
+        hint = official.find(l => l.items.length && l.items.every(x => sources.includes(x))) || null;
+        draw();
+      } catch (e) { body.querySelector('[data-perr]').textContent = e.message; }
+    };
+    body.querySelector('[data-paste]')?.addEventListener('click', paste);
+    body.querySelector('#src-paste')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); paste(); } });
+    body.querySelector('#src-port')?.addEventListener('change', (e) => { body.dataset.port = e.target.value; preview(); });
+    body.querySelector('#src-proto')?.addEventListener('change', (e) => { body.dataset.proto = e.target.value; preview(); });
+    preview();
+  };
+  save.onclick = async () => {
+    const { port, proto } = portOf();
+    save.disabled = true;
+    try {
+      const r = await API.post(`/servers/${serverId}/firewall/ports/sources`, { port, proto, sources: wanted() });
+      m.close();
+      if (r.jobId) { const ok = await runLifelineJob(serverId, r.jobId, `Sources for ${port}/${proto}`); if (ok) showToast(`${port}/${proto} updated`); }
+      else { showToast(`${port}/${proto}: +${r.add.length} −${r.remove.length} rules`); (r.warnings || []).forEach(w => showToast(w, 'warning', 12000)); }
+      reload();
+    } catch (e) { save.disabled = false; const box = body.querySelector('[data-preview]'); if (box) box.innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
+  };
+  draw();
+}
+
+// ---------------------------------------------------------------- IP lists
+function renderIpLists(el, lists, reloadPanel) {
+  const kindLabel = { official: 'official', custom: 'yours' };
+  el.innerHTML = `
+    <div class="flex justify-between items-center mb-2" style="gap:10px;flex-wrap:wrap"><div><div style="font-size:15px;font-weight:700">IP lists</div><div class="text-xs text-muted">Use a list as a port source. Official lists change only when you check and confirm.</div></div><button class="btn btn-sm btn-secondary" data-newlist>New list</button></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px">${lists.map(l => `
+      <div class="card" style="display:grid;gap:6px;align-content:start">
+        <div class="flex justify-between items-center"><b>${escapeHtml(l.name)}</b><span class="text-xs text-muted">${kindLabel[l.kind] || l.kind}</span></div>
+        <div class="text-xs text-muted">${l.items.length ? `${l.v4} IPv4 · ${l.v6} IPv6` : 'Not loaded yet — "Check for updates" loads it'}${l.source ? ' · ' + escapeHtml(l.source) : ''}${l.fetchedAt ? ' · fetched ' + escapeHtml(l.fetchedAt) : (l.kind === 'official' && l.items.length ? ' · built-in copy' : '')}</div>
+        <div class="flex gap-1" style="flex-wrap:wrap;margin-top:2px">${l.kind === 'official' ? `<button class="btn btn-xs btn-secondary" data-check="${l.id}">Check for updates</button>` : `<button class="btn btn-xs btn-secondary" data-editlist="${l.id}">Edit</button><button class="btn btn-xs btn-danger" data-dellist="${l.id}">Delete</button>`}</div>
+      </div>`).join('')}</div>`;
+  el.querySelector('[data-newlist]').onclick = () => openListDialog(null, reloadPanel);
+  el.querySelectorAll('[data-editlist]').forEach(b => b.onclick = () => openListDialog(lists.find(l => l.id === b.dataset.editlist), reloadPanel));
+  el.querySelectorAll('[data-dellist]').forEach(b => b.onclick = () => {
+    const l = lists.find(x => x.id === b.dataset.dellist);
+    secConfirm({ title: `Delete list "${escapeHtml(l.name)}"`, danger: true, confirmLabel: 'Delete list',
+      change: 'The list is removed from DockGate. Firewall rules already on servers stay — they show as separate addresses.',
+      protects: 'No server is changed.', undo: 'Create the list again with the same addresses; ports are recognised again.',
+      onConfirm: async () => { try { await API.del(`/firewall-lists/${l.id}`); showToast('List deleted'); reloadPanel(); } catch (e) { showToast(e.message, 'error', 8000); } } });
+  });
+  el.querySelectorAll('[data-check]').forEach(b => b.onclick = async () => {
+    const l = lists.find(x => x.id === b.dataset.check);
+    b.disabled = true; b.textContent = 'Checking…';
+    let r;
+    try { r = await API.post(`/firewall-lists/${l.id}/check`); }
+    catch (e) { showToast(e.message, 'error', 10000); b.disabled = false; b.textContent = 'Check for updates'; return; }
+    b.disabled = false; b.textContent = 'Check for updates';
+    if (!r.add.length && !r.remove.length) { showToast(`${l.name} is up to date`); return; }
+    const m = showModal(`${escapeHtml(l.name)} · update`, `
+      <div class="text-sm" style="margin-bottom:8px">${r.add.length} new range${r.add.length === 1 ? '' : 's'}, ${r.remove.length} removed.</div>
+      <pre class="td-mono" style="font-size:12px;max-height:240px;overflow:auto;padding:8px;border-radius:8px;background:var(--bg-secondary,rgba(0,0,0,.2))">${r.add.map(x => `<span style="color:var(--success)">+ ${escapeHtml(x)}</span>`).join('\n')}${r.add.length && r.remove.length ? '\n' : ''}${r.remove.map(x => `<span style="color:var(--danger)">− ${escapeHtml(x)}</span>`).join('\n')}</pre>
+      <div class="text-xs text-muted">Saving updates the list in DockGate. Servers are not changed yet: ports that use the list then show "an older version is applied here" with an <b>update</b> link, so you apply it per port and see the exact rules first.</div>`, []);
+    const footer = m.overlay.querySelector('.modal-footer');
+    const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
+    const ok = document.createElement('button'); ok.className = 'btn btn-primary'; ok.textContent = 'Save the new version';
+    footer.append(c, ok);
+    ok.onclick = async () => { try { await API.post(`/firewall-lists/${l.id}/update`, { items: r.upstream }); m.close(); showToast(`${l.name} saved`); reloadPanel(); } catch (e) { showToast(e.message, 'error', 8000); } };
+  });
+}
+
+function openListDialog(l, reloadPanel) {
+  const m = showModal(l ? `Edit list · ${escapeHtml(l.name)}` : 'New IP list', `
+    <div style="display:grid;gap:10px">
+      <div style="display:grid;gap:4px"><label class="text-sm" for="ipl-name" style="font-weight:600">Name</label><input class="input" id="ipl-name" value="${escapeHtml(l ? l.name : '')}" placeholder="Office, VPN, Partner API…" maxlength="40"></div>
+      <div style="display:grid;gap:4px"><label class="text-sm" for="ipl-items" style="font-weight:600">Addresses <span class="text-xs text-muted" style="font-weight:400">· one per line, IPv4 and IPv6</span></label><textarea class="input" id="ipl-items" rows="8" style="font-family:var(--font-mono);font-size:12.5px;width:100%;resize:vertical">${escapeHtml(l ? l.items.join('\n') : '')}</textarea></div>
+      ${l ? '<div class="text-xs text-muted">Ports that use this list then show "an older version is applied here" until you update them.</div>' : ''}
+      <div data-err></div>
+    </div>`, []);
+  const footer = m.overlay.querySelector('.modal-footer');
+  const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
+  const ok = document.createElement('button'); ok.className = 'btn btn-primary'; ok.textContent = 'Save list';
+  footer.append(c, ok);
+  ok.onclick = async () => {
+    const body = { name: m.overlay.querySelector('#ipl-name').value, items: m.overlay.querySelector('#ipl-items').value };
+    try { if (l) await API.put(`/firewall-lists/${l.id}`, body); else await API.post('/firewall-lists', body); m.close(); showToast('List saved'); reloadPanel(); }
+    catch (e) { m.overlay.querySelector('[data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
+  };
 }

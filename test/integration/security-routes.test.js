@@ -129,3 +129,110 @@ test('auto updates: RHEL family goes to dnf-automatic, choices validated', async
   assert.strictEqual((await request(app).post('/api/servers/srv/services/unattended-upgrades/settings').send({ family: 'rhel', enabled: true, upgradeType: 'x', reboot: 'never' })).status, 400);
   assert.strictEqual((await request(app).post('/api/servers/srv/services/unattended-upgrades/settings').send({ enabled: true, autoReboot: true, rebootTime: '25:00' })).status, 400);
 });
+
+// ---------------------------------------------------------------- per-port sources + IP lists
+const IPL = require('../../server/security/iplists');
+const CF = IPL.get('cloudflare').items;
+function ufwStatus(lines) {
+  return 'Status: active\n\n     To                         Action      From\n     --                         ------      ----\n' +
+    lines.map((l, i) => `[${String(i + 1).padStart(2)}] ${l}`).join('\n') + '\n';
+}
+const SRC_FIXTURE = () => ({
+  ...UFW_FIXTURE, me: '192.0.2.44', ufw6: 'IPV6=yes',
+  ss: SS + '\ntcp   LISTEN 0 4096 0.0.0.0:443 0.0.0.0:* users:(("nginx",pid=5,fd=3))',
+  ufw: ufwStatus([
+    '22/tcp                     ALLOW IN    Anywhere',
+    ...CF.filter(x => !x.includes(':')).map(x => `443/tcp                    ALLOW IN    ${x.padEnd(20)}   # dockgate:cloudflare`),
+    '22/tcp (v6)                ALLOW IN    Anywhere (v6)',
+    ...CF.filter(x => x.includes(':')).map(x => `443/tcp (v6)               ALLOW IN    ${x.padEnd(20)}   # dockgate:cloudflare`),
+  ]),
+});
+
+test('sources: a port holding every Cloudflare range shows as the Cloudflare list, IPv4 + IPv6', async () => {
+  fixture = SRC_FIXTURE();
+  const r = await request(app).get('/api/servers/srv/firewall');
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  const p443 = r.body.ports.find(p => p.port === 443);
+  assert.deepStrictEqual(p443.sources, ['@cloudflare']);
+  assert.strictEqual(p443.family, 'IPv4 + IPv6');
+  assert.strictEqual(p443.sourceCount, 22);
+  assert.deepStrictEqual(r.body.ports.find(p => p.port === 22).sources, ['any']);
+  assert.deepStrictEqual(r.body.ports.find(p => p.port === 5432).sources, []);
+  assert.strictEqual(r.body.dockgateIp, '192.0.2.44');
+});
+
+test('sources: dry run shows the diff; apply adds first, then deletes by spec (with comments)', async () => {
+  fixture = SRC_FIXTURE();
+  const dry = await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 443, proto: 'tcp', sources: ['@cloudflare', '203.0.113.5'], dryRun: true });
+  assert.strictEqual(dry.status, 200, JSON.stringify(dry.body));
+  assert.deepStrictEqual(dry.body.add, ['203.0.113.5']);
+  assert.deepStrictEqual(dry.body.remove, []);
+  assert.strictEqual(dry.body.keep, 22);
+  assert.strictEqual(ran.length, 0, 'dry run touches nothing');
+  const ok = await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 443, proto: 'tcp', sources: ['any'] });
+  assert.strictEqual(ok.status, 200, JSON.stringify(ok.body));
+  const c = cmds(ran[0]);
+  assert.match(c, /^\{\{S\}\}ufw allow proto tcp from any to any port 443 >\/dev\/null/);
+  assert.match(c, /ufw delete allow proto tcp from 2400:cb00::\/32 to any port 443/);
+  assert.strictEqual((c.match(/ufw delete/g) || []).length, 22);
+  // pasted addresses are normalised and get a comment
+  ran.length = 0;
+  await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 5432, proto: 'tcp', sources: ['10.1.2.3/24', '2001:DB8::1'] });
+  assert.match(cmds(ran[0]), /from 10\.1\.2\.0\/24 to any port 5432 comment 'dockgate:manual'/);
+  assert.match(cmds(ran[0]), /from 2001:db8::1 to any port 5432/);
+});
+
+test('sources: SSH port keeps DockGate reachable and runs as a lifeline job', async () => {
+  fixture = SRC_FIXTURE();
+  const lock = await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 22, proto: 'tcp', sources: ['203.0.113.5'] });
+  assert.strictEqual(lock.status, 400);
+  assert.match(lock.body.error, /192\.0\.2\.44/);
+  assert.strictEqual((await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 22, proto: 'tcp', sources: [] })).status, 400);
+  const ok = await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 22, proto: 'tcp', sources: ['@dockgate', '198.51.100.0/24'] });
+  assert.strictEqual(ok.status, 200, JSON.stringify(ok.body));
+  assert.ok(ok.body.jobId);
+  const plan = cmds(started[0]);
+  assert.match(plan, /cp -p \/etc\/ufw\/user\.rules/);
+  assert.match(plan, /from 192\.0\.2\.44 to any port 22 comment 'dockgate:dockgate'/);
+  assert.ok(started[0].steps.some(s => s.test && s.rollbackOnFail));
+  // a range that contains DockGate's IP is enough
+  assert.strictEqual((await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 22, proto: 'tcp', sources: ['192.0.2.0/24'], dryRun: true })).status, 200);
+});
+
+test('sources: IPv6 ranges refused when UFW has IPv6 off; bad input refused', async () => {
+  fixture = { ...SRC_FIXTURE(), ufw6: 'IPV6=no' };
+  const r = await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 5432, proto: 'tcp', sources: ['@cloudflare'], dryRun: true });
+  assert.strictEqual(r.status, 400);
+  assert.match(r.body.error, /IPV6=no/);
+  fixture = SRC_FIXTURE();
+  assert.strictEqual((await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 5432, proto: 'tcp', sources: ['1.2.3.4; reboot'] })).status, 400);
+  assert.strictEqual((await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 5432, proto: 'tcp', sources: ['any', '1.2.3.4'] })).status, 400);
+  assert.strictEqual((await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 5432, proto: 'tcp', sources: ['@nope'] })).status, 400);
+});
+
+test('sources: an outdated list is recognised and saving applies the new version', async () => {
+  const before = IPL.get('cloudflare').items;
+  IPL.saveOfficial('cloudflare', [...before, '104.30.0.0/19']);
+  try {
+    fixture = SRC_FIXTURE();
+    const r = await request(app).get('/api/servers/srv/firewall');
+    const p443 = r.body.ports.find(p => p.port === 443);
+    assert.deepStrictEqual(p443.sources, ['@cloudflare']);
+    assert.deepStrictEqual(p443.outdated, ['cloudflare']);
+    const dry = await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 443, proto: 'tcp', sources: ['@cloudflare'], dryRun: true });
+    assert.deepStrictEqual(dry.body.add, ['104.30.0.0/19']);
+  } finally { IPL.saveOfficial('cloudflare', before); }
+});
+
+test('sources: firewalld uses rich rules per source and a plain port for "Anyone"', async () => {
+  fixture = { ...FWD_FIXTURE, me: '192.0.2.44', fwd: 'public (active)\n  services: ssh\n  ports: 8443/tcp\n  rich rules: \n' };
+  const r = await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 8443, proto: 'tcp', sources: ['2606:4700::/32', '10.0.0.0/8'] });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  const c = cmds(ran[0]);
+  assert.match(c, /--add-rich-rule='rule family="ipv6" source address="2606:4700::\/32" port port="8443" protocol="tcp" accept'/);
+  assert.match(c, /--remove-port=8443\/tcp/);
+  assert.match(c, /firewall-cmd --reload/);
+  const ssh = await request(app).post('/api/servers/srv/firewall/ports/sources').send({ port: 22, proto: 'tcp', sources: ['@dockgate'], dryRun: true });
+  assert.strictEqual(ssh.status, 400, 'opened by the ssh service');
+  assert.match(ssh.body.error, /service/);
+});

@@ -35,6 +35,9 @@ const READ_FIREWALL = [
   'echo @@ufwbin; command -v ufw',
   'echo @@ufw; {{S}}ufw status numbered 2>/dev/null',
   'echo @@firewalld; {{S}}firewall-cmd --state 2>/dev/null',
+  // the address DockGate connects from, as this server sees it (for the "DockGate's IP" source and the SSH guard)
+  'echo @@me; echo "$SSH_CONNECTION" | cut -d" " -f1',
+  "echo @@ufw6; grep -E '^IPV6=' /etc/default/ufw 2>/dev/null",
   // firewalld: default zone rules + the ports behind each enabled service (rich rules reference services too)
   'echo @@fwd; {{S}}firewall-cmd --list-all 2>/dev/null',
   "echo @@fwdsvc; if {{S}}firewall-cmd --state >/dev/null 2>&1; then for s in $({{S}}firewall-cmd --list-services 2>/dev/null) $({{S}}firewall-cmd --list-rich-rules 2>/dev/null | sed -n 's/.*service name=\"\\([^\"]*\\)\".*/\\1/p'); do echo \"$s $({{S}}firewall-cmd --permanent --service=\"$s\" --get-ports 2>/dev/null)\"; done; fi",
@@ -581,4 +584,56 @@ function ufwEnablePlan({ id, sshPorts, webPorts, test }) {
 }
 const UFW_DISABLE = '{{S}}ufw --force disable >/dev/null';
 module.exports.ufwEnablePlan = ufwEnablePlan;
+
+// ---------------------------------------------------------------- per-port sources (one rule per source)
+const ufwAct = (a) => (a === 'LIMIT' ? 'limit' : 'allow');
+/**
+ * Commands that turn a port's current sources into the wanted ones. Adds run first, then removes, so a
+ * source that stays is never interrupted. UFW rules are deleted by their spec (not by number — numbers
+ * shift as rules are added); the spec matches a rule regardless of its comment.
+ *   cur:  [{ src, action, proto|null, kind?, key? }]   (from the server)
+ *   add:  [{ src, tag }]                                (normalised addresses or 'any')
+ */
+function sourcesCmds({ backend, zone, port, proto, route, add, remove }) {
+  P.assertPort(port); P.assertProto(proto);
+  const out = [];
+  if (backend === 'firewalld') {
+    for (const a of add) out.push(a.src === 'any'
+      ? `{{S}}firewall-cmd --permanent --zone=${zone} --add-port=${port}/${proto} >/dev/null`
+      : `{{S}}firewall-cmd --permanent --zone=${zone} --add-rich-rule=${shq(fwdRichRule({ port, proto, from: a.src, action: 'allow' }))} >/dev/null`);
+    const rm = fwdRemoveCmd(zone, remove.map(r => ({ kind: r.kind, key: r.key })));
+    if (rm !== 'true') out.push(rm.replace(/ && \{\{S\}\}firewall-cmd --reload >\/dev\/null$/, ''));
+    if (out.length) out.push(FWD_RELOAD);
+    return out;
+  }
+  const verb = route ? 'ufw route' : 'ufw';
+  for (const a of add) {
+    const src = a.src === 'any' ? 'any' : P.assertSource(a.src);
+    out.push(`{{S}}${verb} allow proto ${proto} from ${src} to any port ${port}${a.src === 'any' ? '' : ` comment 'dockgate:${String(a.tag).replace(/[^A-Za-z0-9_-]/g, '')}'`} >/dev/null`);
+  }
+  for (const r of remove) {
+    const src = r.src === 'any' ? 'any' : P.assertSource(r.src);
+    out.push(`{{S}}${verb} delete ${ufwAct(r.action)}${r.proto ? ` proto ${r.proto}` : ''} from ${src} to any port ${port} >/dev/null`);
+  }
+  return out;
+}
+/** The same change with a lifeline (for the SSH port): backup, rollback armed, apply, new-login test. */
+function sourcesLifelinePlan({ id, backend, zone, cmds, test }) {
+  const files = backend === 'firewalld' ? [`/etc/firewalld/zones/${fwdZone(zone)}.xml`] : ['/etc/ufw/user.rules', '/etc/ufw/user6.rules'];
+  const backup = files.map(f => `if {{S}}test -f ${f}; then {{S}}cp -p ${f} ${f}.dockgate-prev; else {{S}}touch ${f}.dockgate-none; fi`).join('; ');
+  const restoreRoot = files.map(f => `if [ -f ${f}.dockgate-prev ]; then mv -f ${f}.dockgate-prev ${f}; elif [ -f ${f}.dockgate-none ]; then rm -f ${f} ${f}.dockgate-none; fi`).join('\n') +
+    (backend === 'firewalld' ? '\nfirewall-cmd --reload >/dev/null 2>&1' : '\nufw reload >/dev/null 2>&1');
+  const clean = files.map(f => `{{S}}rm -f ${f}.dockgate-prev ${f}.dockgate-none`).join('; ');
+  return {
+    steps: [
+      { label: 'Back up the firewall rules', cmd: backup },
+      { label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, restoreRoot) },
+      { label: 'Apply the new sources', cmd: cmds.join(' && '), rollbackOnFail: true },
+      { label: 'Open a NEW SSH connection to test', test, rollbackOnFail: true },
+      { label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; ${clean}; true` },
+    ],
+    rollback: rollbackNow(id),
+  };
+}
+Object.assign(module.exports, { sourcesCmds, sourcesLifelinePlan });
 module.exports.UFW_DISABLE = UFW_DISABLE;

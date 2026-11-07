@@ -368,11 +368,72 @@ async function firewallOf(row) {
   // Docker publishes container ports past firewalld's zones, so with firewalld they always bypass it.
   const effective = backend === 'firewalld' ? { active: !!(fwd && fwd.active), rules: fwd ? fwd.rules : [] } : ufw;
   const ports = P.computePorts({ listeners: P.parseSs(sec.ss), dockerPorts: P.parseDockerPorts(sec.docker), ufw: effective, isolation: backend === 'ufw' && isolation, sshPort });
-  return {
+  const fw = {
     backend, active: ufw.active || firewalld, managed: ufw.active || !!(fwd && fwd.active), ufwActive: ufw.active, firewalld,
     zone: fwd ? fwd.zone : null, dockerIsolation: backend === 'ufw' && isolation, isolationSupported: backend === 'ufw', sshPort, rules: effective.rules, ports,
+    dockgateIp: IPL.normalizeSource((sec.me || '').trim()), ipv6: backend !== 'ufw' || !/^IPV6=no/m.test(sec.ufw6 || ''),
   };
+  addPortSources(fw);
+  return fw;
 }
+// ---- per-port sources
+const IPL = require('../security/iplists');
+const familyOf = (srcs) => {
+  if (!srcs.length) return null;
+  if (srcs.includes('any')) return 'IPv4 + IPv6';
+  const v4 = srcs.some(x => !IPL.isV6(x)), v6 = srcs.some(IPL.isV6);
+  return v4 && v6 ? 'IPv4 + IPv6' : (v6 ? 'IPv6 only' : 'IPv4 only');
+};
+/**
+ * The allow rules that open exactly this port (one per source) → cur [{ src, action, proto, kind, key }].
+ * Rules DockGate cannot express as sources (a port range, an app profile or service, a source port)
+ * make the port `locked` for source editing, with the reason.
+ */
+function rulesForPort(fw, { port, proto, dir }) {
+  const cur = [], seen = new Set();
+  let locked = null;
+  for (const r of fw.rules) {
+    if (r.action !== 'ALLOW' && r.action !== 'LIMIT') continue;
+    if ((dir === 'FWD') !== (r.dir === 'FWD')) continue;
+    const t = P.ruleTarget(r.to);
+    if (!P.targetCovers(t, port, proto, false)) continue;
+    if (!P.targetCovers(t, port, proto, true)) { locked = locked || `opened by the range ${r.to}`; continue; }
+    if (r.kind === 'service') { locked = locked || `opened by the firewalld service "${r.key}"`; continue; }
+    const src = r.from === 'Anywhere' ? 'any' : IPL.normalizeSource(r.from);
+    if (!src) { locked = locked || `has a rule from "${r.from}" that DockGate cannot edit`; continue; }
+    if (seen.has(src)) continue; // the v6 twin of an "Anywhere" rule
+    seen.add(src);
+    cur.push({ src, action: r.action, proto: t.proto, kind: r.kind || null, key: r.key || null });
+  }
+  return { cur, locked };
+}
+function addPortSources(fw) {
+  if (!fw.managed) return;
+  const lists = IPL.all();
+  // ports that have rules but nothing listening on them yet
+  const have = new Set(fw.ports.map(p => (p.kind === 'container' ? `c${p.containerPort}` : `h${p.port}`) + '/' + p.proto));
+  for (const r of fw.rules) {
+    if ((r.action !== 'ALLOW' && r.action !== 'LIMIT') || r.dir === 'FWD') continue;
+    const t = P.ruleTarget(r.to);
+    if (!t || t.port !== t.portEnd) continue;
+    for (const proto of t.proto ? [t.proto] : ['tcp', 'udp']) {
+      if (have.has(`h${t.port}/${proto}`)) continue;
+      have.add(`h${t.port}/${proto}`);
+      fw.ports.push({ port: t.port, proto, bind: '—', usedBy: '—', kind: 'host', isSsh: t.port === fw.sshPort && proto === 'tcp', exposure: 'public', noListener: true });
+    }
+  }
+  fw.ports.sort((a, b) => a.port - b.port || a.proto.localeCompare(b.proto));
+  for (const p of fw.ports) {
+    if (p.exposure === 'local' || p.exposure === 'bypass') { p.sources = null; continue; }
+    const { cur, locked } = rulesForPort(fw, p.kind === 'container' ? { port: p.containerPort, proto: p.proto, dir: 'FWD' } : { port: p.port, proto: p.proto, dir: 'IN' });
+    const raw = cur.map(c => c.src);
+    const inf = IPL.inferSources(raw, lists, fw.dockgateIp);
+    p.sources = inf.sources; p.outdated = inf.outdated; p.sourceCount = raw.filter(x => x !== 'any').length;
+    p.family = familyOf(raw); p.locked = locked;
+    if (p.noListener) p.exposure = !raw.length ? 'internal' : (raw.includes('any') ? 'public' : 'restricted');
+  }
+}
+
 // ---- health check around firewall changes
 async function healthOf(row) {
   try {
@@ -481,6 +542,53 @@ router.post('/:id/firewall/rules', send(async (req) => {
   const warnings = await runFirewallOp(row, { steps: [{ label: 'Add rule', cmd }] }, 'Firewall');
   audit(req, row, 'firewall-rule-add', { port: portN, proto, from: src, action });
   return { success: true, warnings };
+}));
+
+// Set who can reach one port: sources = ['any'] | addresses / '@<list>' / '@dockgate' (empty = close).
+// dryRun returns the change (rules added/removed + commands) without touching the server.
+router.post('/:id/firewall/ports/sources', send(async (req) => {
+  const row = loadServer(req);
+  const { port, proto, sources, dryRun } = req.body || {};
+  const portN = P.assertPort(port); P.assertProto(proto);
+  if (!Array.isArray(sources) || sources.length > 50) throw P.httpError(400, 'sources must be a list (at most 50 entries — use an IP list for more)');
+  const fw = await firewallOf(row);
+  requireManaged(fw);
+  const p = fw.ports.find(x => x.port === portN && x.proto === proto) ||
+    { port: portN, proto, kind: 'host', isSsh: portN === fw.sshPort && proto === 'tcp', exposure: 'internal', usedBy: '—' };
+  if (p.exposure === 'local') throw P.httpError(400, 'This port only listens on localhost — it cannot be reached from outside anyway');
+  if (p.kind === 'container' && fw.backend === 'firewalld') throw P.httpError(400, 'Docker publishes container ports past firewalld, so their sources cannot be set here');
+  if (p.kind === 'container' && !fw.dockerIsolation) throw P.httpError(400, 'Turn on Docker port isolation first — until then every container port is public');
+  const container = p.kind === 'container';
+  const { cur, locked } = rulesForPort(fw, container ? { port: p.containerPort, proto, dir: 'FWD' } : { port: portN, proto, dir: 'IN' });
+  if (locked) throw P.httpError(400, `This port is ${locked} — delete that rule in the rules list first`);
+  const want = IPL.expandSources(sources, IPL.all(), fw.dockgateIp);
+  if (want.length > 1000) throw P.httpError(400, 'At most 1000 addresses per port');
+  if (!fw.ipv6 && want.some(w => w.src !== 'any' && IPL.isV6(w.src))) throw P.httpError(400, 'UFW has IPv6 switched off on this server (IPV6=no in /etc/default/ufw) — IPv6 ranges cannot be added. Remove them, or turn IPv6 on in /etc/default/ufw and reload UFW.');
+  if (p.isSsh) {
+    if (!want.length) throw P.httpError(400, 'The SSH port cannot be closed — DockGate would lock itself out');
+    if (!fw.dockgateIp) throw P.httpError(400, "DockGate could not see its own IP on this server, so it cannot check that SSH stays reachable — keep \"Anyone\"");
+    if (!want.some(w => IPL.sourceContains(w.src, fw.dockgateIp))) throw P.httpError(400, `Keep DockGate's IP (${fw.dockgateIp}) or a range that contains it — otherwise DockGate locks itself out of SSH`);
+  }
+  const curSet = new Set(cur.map(c => c.src)), wantSet = new Set(want.map(w => w.src));
+  const add = want.filter(w => !curSet.has(w.src));
+  const remove = cur.filter(c => !wantSet.has(c.src));
+  const target = container ? p.containerPort : portN;
+  const cmds = add.length || remove.length ? plans.sourcesCmds({ backend: fw.backend, zone: fw.zone, port: target, proto, route: container, add, remove }) : [];
+  const summary = { add: add.map(a => a.src), remove: remove.map(r => r.src), keep: want.length - add.length, commands: cmds, family: familyOf(want.map(w => w.src)), ssh: !!p.isSsh };
+  if (dryRun || !cmds.length) return { ...summary, applied: false };
+  const details = { port: portN, proto, sources, added: add.length, removed: remove.length, container };
+  if (p.isSsh) {
+    const before = await healthOf(row);
+    const jobId = runner.startPlan(cfgOf(row), plans.sourcesLifelinePlan({ id: newId(), backend: fw.backend, zone: fw.zone, cmds, test: { username: row.username } }), {
+      title: `Sources for ${portN}/${proto}`,
+      successText: `Saved. ${add.length} rule(s) added, ${remove.length} removed. A new SSH login worked.`,
+      onSuccess: async () => { audit(req, row, 'firewall-port-sources', details); return { warnings: healthWarnings(before, await healthOf(row)) }; },
+    });
+    return { ...summary, jobId };
+  }
+  const warnings = await runFirewallOp(row, { steps: [{ label: `Sources for ${portN}/${proto}`, cmd: cmds.join(' && ') }] }, 'Firewall');
+  audit(req, row, 'firewall-port-sources', details);
+  return { ...summary, applied: true, warnings };
 }));
 
 router.delete('/:id/firewall/rules/:n', send(async (req) => {
