@@ -11,7 +11,12 @@ const plans = require('../../server/security/plans');
 const hostkey = require('../../server/ssh-hostkey');
 const { utils } = require('ssh2');
 
-const pub = utils.generateKeyPairSync('ed25519', { comment: 'me@laptop' }).public;
+// ssh2's ed25519 generator occasionally emits a truncated public key (~1/200) — tests use valid ones only.
+function validPair(comment) {
+  for (;;) { const k = utils.generateKeyPairSync('ed25519', comment ? { comment } : undefined); if (!(utils.parseKey(k.public) instanceof Error)) return k; }
+}
+const pub = validPair('me@laptop').public;
+const blobOf = () => utils.parseKey(validPair().public).getPublicSSH();
 
 // ---------------------------------------------------------------- validation
 test('security: usernames — only safe Linux names, system names reserved', () => {
@@ -53,7 +58,8 @@ test('security: sshd -T parsing and the access view', () => {
   assert.deepEqual(a.ports, [22, 2222]);
   assert.equal(a.rootLogin, 'prohibit-password', 'without-password is normalised');
   assert.equal(a.passwordAuth, true);
-  assert.equal(a.idleTimeoutMin, 10);
+  assert.equal(a.deadTimeoutMin, 10, 'ClientAlive = dead-connection detection, not an idle limit');
+  assert.equal(a.idleTimeoutMin, 0, 'no ChannelTimeout → no idle limit');
   assert.equal(a.includesDropins, true);
   assert.equal(a.rebootRequired, true);
   assert.equal(a.isRoot, true);
@@ -101,7 +107,7 @@ test('security: users view — human accounts, sudo/docker/locked, keys; service
 });
 
 test('security: removing a key keeps every other line', () => {
-  const other = utils.generateKeyPairSync('ed25519', { comment: 'other' }).public;
+  const other = validPair('other').public;
   const fp = P.parsePublicKey(pub).fingerprint;
   const { content, removed } = P.removeAuthorizedKey(`# my keys\n${pub}\n${other}\n`, fp);
   assert.equal(removed, 1);
@@ -203,7 +209,7 @@ test('plans: Docker isolation block = DOCKER-USER rules + ufw-user-forward; keep
 
 // ---------------------------------------------------------------- host keys
 test('ssh-hostkey: fingerprints, strict verifier and known_hosts line', () => {
-  const blob = utils.parseKey(utils.generateKeyPairSync('ed25519').public).getPublicSSH();
+  const blob = blobOf();
   const fp = hostkey.fingerprint(blob);
   assert.match(fp, /^SHA256:/);
   assert.equal(hostkey.keyType(blob), 'ssh-ed25519');
@@ -220,8 +226,8 @@ test('ssh-hostkey: fingerprints, strict verifier and known_hosts line', () => {
 test('ssh-hostkey: main-process verifier pins on first use, then refuses a different key', () => {
   const { stmts } = require('../../server/db');
   stmts.insertServer.run('pin-test', 'ssh', 'h', 22, 'u', null, null, null, '', null, 1);
-  const a = utils.parseKey(utils.generateKeyPairSync('ed25519').public).getPublicSSH();
-  const b = utils.parseKey(utils.generateKeyPairSync('ed25519').public).getPublicSSH();
+  const a = blobOf();
+  const b = blobOf();
   const verify = hostkey.verifierFor({ id: 'pin-test' });
   assert.equal(verify(a), true, 'first key is pinned');
   assert.equal(stmts.getServer.get('pin-test').host_key, hostkey.fingerprint(a));
@@ -229,4 +235,36 @@ test('ssh-hostkey: main-process verifier pins on first use, then refuses a diffe
   assert.equal(verify(b), false, 'different key refused');
   stmts.clearServerHostKey.run('pin-test');
   assert.equal(verify(b), true, 're-trust → the new key is pinned');
+});
+
+test('security: a truncated ed25519 public key (ssh2 generator bug) is rejected', () => {
+  const good = P.parsePublicKey(pub);
+  const blob = Buffer.from(good.b64, 'base64');
+  const truncated = Buffer.concat([blob.slice(0, 15), Buffer.from([0, 0, 0, 31]), blob.slice(20, 51)]);
+  assert.equal(P.parsePublicKey('ssh-ed25519 ' + truncated.toString('base64')), null);
+});
+
+test('security: generateKey only returns pairs whose public key really matches the private key', () => {
+  const svc = require('../../server/security/service');
+  for (let i = 0; i < 50; i++) {
+    const g = svc.generateKey('unit', 'u');
+    const priv = utils.parseKey(require('node:fs').readFileSync(g.abs, 'utf8'));
+    assert.equal(priv.getPublicSSH().toString('base64'), g.pub.b64);
+    svc.removeKeyFile(g.privatePath);
+  }
+});
+
+test('security: hardening drop-in — grace time, empty passwords, real idle limit (ChannelTimeout)', () => {
+  const conf = P.buildAccessConf({ maxAuthTries: 3, loginGraceTime: 30, permitEmptyPasswords: false, clientAliveInterval: 300, clientAliveCountMax: 2, idleTimeoutMin: 15, x11: false });
+  assert.match(conf, /^LoginGraceTime 30$/m);
+  assert.match(conf, /^PermitEmptyPasswords no$/m);
+  assert.match(conf, /^ChannelTimeout session=15m$/m);
+  assert.match(conf, /^UnusedConnectionTimeout 15m$/m);
+  assert.equal(P.parseAccessConf(conf).idleTimeoutMin, 15);
+  const st = P.accessState(P.sections('@@sshdT\nport 22\nchanneltimeout session=15m\n@@sshver\nOpenSSH_9.6p1 Ubuntu\n@@legacy\nMaxAuthTries 4\n@@dropin\nX11Forwarding no\n'));
+  assert.equal(st.idleTimeoutMin, 15);
+  assert.equal(st.supportsIdleTimeout, true);
+  assert.equal(st.dropin.maxAuthTries, 4, 'values from the old 99-dockgate.conf are carried over');
+  assert.equal(st.legacyFile, true);
+  assert.equal(P.accessState(P.sections('@@sshver\nOpenSSH_8.9p1\n')).supportsIdleTimeout, false);
 });

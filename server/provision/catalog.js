@@ -36,6 +36,31 @@ const DOCKER_CFG_INSTALL = 'LR=true; [ "$(sudo docker info --format \'{{.Swarm.L
   'else echo "/etc/docker/daemon.json already exists and python3 is missing — add log-opts by hand"; false; fi && ' +
   'if [ -z "$(sudo docker ps -q 2>/dev/null)" ]; then sudo systemctl restart docker; else sudo systemctl reload docker; fi';
 
+
+// SSH hardening into DockGate's single managed sshd drop-in (see ssh-hardening below).
+const SSH_DROPIN = '/etc/ssh/sshd_config.d/10-dockgate-access.conf';
+const SSH_LEGACY = '/etc/ssh/sshd_config.d/99-dockgate.conf';
+const SSH_HARDEN_DETECT = `sudo grep -qsi '^MaxAuthTries' ${SSH_DROPIN} ${SSH_LEGACY}`;
+const SSH_HARDEN_INSTALL = `F=${SSH_DROPIN}; L=${SSH_LEGACY}; sudo mkdir -p /etc/ssh/sshd_config.d && ` +
+  `{ sudo test -s $F || echo "# Managed by DockGate (Server Console → Access & SSH). Edit there, not by hand." | sudo tee $F >/dev/null; } && ` +
+  `sudo cp -p $F $F.dockgate-prev && { sudo test -f $L && sudo cp -p $L $L.dockgate-prev; true; } && ` +
+  'for kv in "MaxAuthTries 3" "LoginGraceTime 30" "PermitEmptyPasswords no" "X11Forwarding no" "ClientAliveInterval 300" "ClientAliveCountMax 2"; do ' +
+  'k=$(echo "$kv" | cut -d" " -f1); sudo grep -qi "^$k " $F || echo "$kv" | sudo tee -a $F >/dev/null; done && sudo rm -f $L && ' +
+  `{ sudo sshd -t || { sudo mv -f $F.dockgate-prev $F; sudo test -f $L.dockgate-prev && sudo mv -f $L.dockgate-prev $L; echo "sshd rejected the config — restored"; false; }; } && ` +
+  'sudo rm -f $F.dockgate-prev $L.dockgate-prev && (sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true)';
+
+// Fail2ban: DockGate's managed jail + daemon files (same builder as Server Console → Fail2ban), with the
+// jail on the port sshd really uses, the log file recidive reads, then a clean (re)start.
+const F2B_WRITE = (() => {
+  const F2B = require('../security/fail2ban');
+  const s = F2B.normalizeSettings(F2B.DEFAULTS);
+  const b = (t) => Buffer.from(t, 'utf8').toString('base64');
+  return `sudo mkdir -p /etc/fail2ban/jail.d /etc/fail2ban/fail2ban.d && echo ${b(F2B.buildJailConf(s, 22))} | base64 -d | sudo tee ${F2B.JAIL_FILE} >/dev/null && ` +
+    `P=$(echo "$SSH_CONNECTION" | awk "{print \\$4}") && sudo sed -i "s/^port = .*/port = \${P:-22}/" ${F2B.JAIL_FILE} && ` +
+    `echo ${b(F2B.buildDaemonConf(s))} | base64 -d | sudo tee ${F2B.DAEMON_FILE} >/dev/null && sudo touch ${F2B.LOG_FILE} && ` +
+    'sudo fail2ban-client -t >/dev/null && sudo systemctl enable fail2ban && sudo systemctl restart fail2ban';
+})();
+
 // Canonical order (lower seq runs first): base → identity → perimeter → service.
 const ITEMS = [
   {
@@ -88,30 +113,22 @@ const ITEMS = [
   },
   {
     id: 'ssh-hardening', seq: 50, label: 'SSH hardening', group: 'security', risk: 'low', needsSudo: true,
-    // SAFE hardening only — deliberately does NOT disable password auth or root password login, because
-    // that locks out password-based servers (e.g. a default DigitalOcean root+password VPS). It limits
-    // auth attempts, disables empty passwords + X11 forwarding, and adds an idle timeout — none of which
-    // can cut your login. Brute-force is handled by fail2ban. The drop-in self-cleans if `sshd -t` rejects it.
-    description: 'Safe SSH hardening — limit auth attempts, disable empty passwords & X11 forwarding, add an idle timeout. Does NOT disable password login, so it can never lock you out (works on key OR password servers). Brute-force is handled by fail2ban.',
+    // SAFE hardening only — never disables password auth or root login (that is Access & SSH's job, with
+    // its lockout guards). Values go into DockGate's ONE managed sshd file (10-dockgate-access.conf, also
+    // edited by Access & SSH); a key the admin already set there is kept. The old 99-dockgate.conf is
+    // folded in and removed. `sshd -t` failure restores the previous files.
+    description: 'Safe SSH hardening — limit auth attempts (3), 30 s login grace time, no empty passwords, no X11 forwarding, drop dead connections after ~10 min. Does NOT disable password or root login, so it cannot lock you out. Written to the same file Access & SSH manages; values you already set there are kept.',
     distro: {
-      debian: {
-        detect: 'sudo sshd -T 2>/dev/null | grep -qi "^maxauthtries 3"',
-        install: 'printf "MaxAuthTries 3\\nLoginGraceTime 30\\nPermitEmptyPasswords no\\nX11Forwarding no\\nClientAliveInterval 300\\nClientAliveCountMax 2\\n" | sudo tee /etc/ssh/sshd_config.d/99-dockgate.conf >/dev/null && (sudo sshd -t && (sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd) || (sudo rm -f /etc/ssh/sshd_config.d/99-dockgate.conf; false))',
-        verify: 'sudo sshd -T | grep -qi "^maxauthtries 3"',
-      },
-      rhel: {
-        detect: 'sudo sshd -T 2>/dev/null | grep -qi "^maxauthtries 3"',
-        install: 'printf "MaxAuthTries 3\\nLoginGraceTime 30\\nPermitEmptyPasswords no\\nX11Forwarding no\\nClientAliveInterval 300\\nClientAliveCountMax 2\\n" | sudo tee /etc/ssh/sshd_config.d/99-dockgate.conf >/dev/null && (sudo sshd -t && sudo systemctl reload sshd || (sudo rm -f /etc/ssh/sshd_config.d/99-dockgate.conf; false))',
-        verify: 'sudo sshd -T | grep -qi "^maxauthtries 3"',
-      },
+      debian: { detect: SSH_HARDEN_DETECT, install: SSH_HARDEN_INSTALL, verify: SSH_HARDEN_DETECT },
+      rhel:   { detect: SSH_HARDEN_DETECT, install: SSH_HARDEN_INSTALL, verify: SSH_HARDEN_DETECT },
     },
   },
   {
     id: 'fail2ban', seq: 60, label: 'Fail2ban', group: 'security', risk: 'low', needsSudo: true,
     description: 'Bans IPs after repeated failed SSH logins — reduces brute-force noise. Writes its own /etc/fail2ban/jail.d/dockgate.conf; an existing jail.local is left untouched.',
     distro: {
-      debian: { detect: 'systemctl is-active --quiet fail2ban', install: `${APT} install -y fail2ban python3-systemd && sudo mkdir -p /etc/fail2ban/jail.d && printf "[sshd]\\nenabled = true\\nbackend = systemd\\n" | sudo tee /etc/fail2ban/jail.d/dockgate.conf >/dev/null && sudo systemctl enable fail2ban && sudo systemctl restart fail2ban`, verify: 'systemctl is-active --quiet fail2ban' },
-      rhel:   { detect: 'systemctl is-active --quiet fail2ban', install: `if ${IS_AMZN}; then echo "fail2ban is not packaged for Amazon Linux"; false; fi && (${EPEL}) && sudo dnf -y install fail2ban && sudo mkdir -p /etc/fail2ban/jail.d && printf "[sshd]\\nenabled = true\\nbackend = systemd\\n" | sudo tee /etc/fail2ban/jail.d/dockgate.conf >/dev/null && sudo systemctl enable fail2ban && sudo systemctl restart fail2ban`, verify: 'systemctl is-active --quiet fail2ban' },
+      debian: { detect: 'systemctl is-active --quiet fail2ban', install: `${APT} install -y fail2ban python3-systemd && ${F2B_WRITE}`, verify: 'systemctl is-active --quiet fail2ban' },
+      rhel:   { detect: 'systemctl is-active --quiet fail2ban', install: `if ${IS_AMZN}; then echo "fail2ban is not packaged for Amazon Linux"; false; fi && (${EPEL}) && sudo dnf -y install fail2ban python3-systemd && ${F2B_WRITE}`, verify: 'systemctl is-active --quiet fail2ban' },
     },
   },
   {
@@ -276,15 +293,15 @@ const SERVICE = {
   'ssh-hardening': {
     risk: 'high', requiresKeyForConfig: true,
     family: {
-      debian: { manager: 'systemd', unit: 'ssh',  reload: true, configPaths: ['/etc/ssh/sshd_config.d/99-dockgate.conf'], validate: 'sudo sshd -t' },
-      rhel:   { manager: 'systemd', unit: 'sshd', reload: true, configPaths: ['/etc/ssh/sshd_config.d/99-dockgate.conf'], validate: 'sudo sshd -t' },
+      debian: { manager: 'systemd', unit: 'ssh',  reload: true, configPaths: ['/etc/ssh/sshd_config.d/10-dockgate-access.conf'], validate: 'sudo sshd -t' },
+      rhel:   { manager: 'systemd', unit: 'sshd', reload: true, configPaths: ['/etc/ssh/sshd_config.d/10-dockgate-access.conf'], validate: 'sudo sshd -t' },
     },
   },
   fail2ban: {
     risk: 'low',
     family: {
-      debian: { manager: 'systemd', unit: 'fail2ban', configPaths: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
-      rhel:   { manager: 'systemd', unit: 'fail2ban', configPaths: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
+      debian: { manager: 'systemd', unit: 'fail2ban', reload: true, configPaths: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
+      rhel:   { manager: 'systemd', unit: 'fail2ban', reload: true, configPaths: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
     },
   },
   'unattended-upgrades': {

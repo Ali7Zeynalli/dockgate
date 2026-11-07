@@ -141,12 +141,20 @@ router.post('/:id/access', send(async (req) => {
     successText = `SSH now listens on port ${to}. Use "-p ${to}" (or Port ${to} in ~/.ssh/config) from your own machine.`;
   } else if (setting === 'hardening') {
     const v = value || {};
-    const tries = Number(v.maxAuthTries), idle = Number(v.idleTimeoutMin);
+    const tries = Number(v.maxAuthTries), grace = Number(v.loginGraceTime), dead = Number(v.deadTimeoutMin), idle = Number(v.idleTimeoutMin || 0);
     if (!Number.isInteger(tries) || tries < 1 || tries > 10) throw P.httpError(400, 'Max auth tries must be 1–10');
-    if (!Number.isInteger(idle) || idle < 0 || idle > 240) throw P.httpError(400, 'Idle timeout must be 0–240 minutes (0 = off)');
+    if (!Number.isInteger(grace) || grace < 10 || grace > 600) throw P.httpError(400, 'Login grace time must be 10–600 seconds');
+    if (!Number.isInteger(dead) || dead < 0 || dead > 240) throw P.httpError(400, 'Dead connection timeout must be 0–240 minutes (0 = off)');
+    if (!Number.isInteger(idle) || idle < 0 || idle > 1440) throw P.httpError(400, 'Idle session timeout must be 0–1440 minutes (0 = off)');
+    if (idle && !state.supportsIdleTimeout) throw P.httpError(400, `This server runs OpenSSH ${state.sshVersion || '(unknown)'} — an idle session timeout needs OpenSSH 9.2 or newer`);
     next.maxAuthTries = tries;
-    next.clientAliveInterval = idle ? Math.max(30, Math.round((idle * 60) / 2)) : 0;
+    next.loginGraceTime = grace;
+    next.permitEmptyPasswords = false;
+    // Dead connection = the client stops answering keepalives (network gone, laptop asleep):
+    // probe every dead/2 minutes, give up after 2 unanswered probes.
+    next.clientAliveInterval = dead ? Math.max(15, Math.round((dead * 60) / 2)) : 0;
     next.clientAliveCountMax = 2;
+    next.idleTimeoutMin = idle || null;
     next.x11 = !!v.x11;
     title = 'SSH hardening';
     successText = 'Hardening saved.';
@@ -343,6 +351,29 @@ async function firewallOf(row) {
   const backend = (sec.ufwbin || '').trim() ? 'ufw' : (firewalld ? 'firewalld' : 'none');
   return { backend, active: ufw.active || firewalld, ufwActive: ufw.active, firewalld, dockerIsolation: isolation, isolationSupported: backend === 'ufw', sshPort, rules: ufw.rules, ports };
 }
+// ---- health check around firewall changes
+async function healthOf(row) {
+  try {
+    const sec = await readState(row, plans.READ_HEALTH);
+    const bans = String(sec.f2bbans || '').split('\n').map(Number).filter(n => Number.isFinite(n));
+    return { f2bActive: /^active/m.test(sec.f2b || ''), f2bBanned: bans.reduce((a, b) => a + b, 0), containers: Number((sec.docker || '').trim()) || 0 };
+  } catch (e) { return null; }
+}
+/** Human warnings when something changed that a firewall change should not have touched. */
+function healthWarnings(before, after) {
+  if (!before || !after) return [];
+  const w = [];
+  if (before.f2bActive && !after.f2bActive) w.push('fail2ban stopped running after this change — start it in the Fail2ban tab.');
+  else if (after.f2bBanned < before.f2bBanned) w.push(`fail2ban now holds ${after.f2bBanned} ban(s), it had ${before.f2bBanned} — some bans may have been dropped. Check the Fail2ban tab.`);
+  if (after.containers < before.containers) w.push(`${before.containers - after.containers} container(s) stopped running during this change.`);
+  return w;
+}
+async function runFirewallOp(row, plan, title) {
+  const before = await healthOf(row);
+  await runOrThrow(row, plan, title);
+  return healthWarnings(before, await healthOf(row));
+}
+
 const requireUfw = (fw) => { if (!fw.ufwActive) throw P.httpError(400, fw.backend === 'firewalld' ? 'This server uses firewalld — port management here works with UFW. Use Services → Firewall for firewalld ports.' : 'UFW is not active — enable the firewall in Setup first'); };
 
 router.get('/:id/firewall', send(async (req) => firewallOf(loadServer(req))));
@@ -361,10 +392,14 @@ router.post('/:id/firewall/docker-isolation', send(async (req) => {
     keepPublic.push({ port: p.containerPort, proto: p.proto });
   }
   const plan = plans.isolationPlan({ id: newId(), enable, keepPublic, test: { username: row.username } });
+  const before = await healthOf(row);
   const jobId = runner.startPlan(cfgOf(row), plan, {
     title: enable ? 'Docker port isolation' : 'Turn off Docker port isolation',
     successText: enable ? `Isolation is on. Public container ports: ${(req.body.keepPublic || []).join(', ') || 'none'}.` : 'Isolation is off — published container ports bypass UFW again.',
-    onSuccess: () => audit(req, row, 'firewall-docker-isolation', { enable, keepPublic: req.body.keepPublic || [] }),
+    onSuccess: async () => {
+      audit(req, row, 'firewall-docker-isolation', { enable, keepPublic: req.body.keepPublic || [] });
+      return { warnings: healthWarnings(before, await healthOf(row)) };
+    },
   });
   return { jobId };
 }));
@@ -390,9 +425,9 @@ router.post('/:id/firewall/expose', send(async (req) => {
     cmd = open ? plans.exposeCmd({ kind: 'host', port: portN, proto, from })
       : plans.deleteRulesCmd(P.ruleNumbersFor(fw.rules, { port: portN, proto, dir: 'IN' }));
   }
-  await runOrThrow(row, { steps: [{ label: open ? `Open ${portN}/${proto}` : `Close ${portN}/${proto}`, cmd }] }, 'Firewall');
+  const warnings = await runFirewallOp(row, { steps: [{ label: open ? `Open ${portN}/${proto}` : `Close ${portN}/${proto}`, cmd }] }, 'Firewall');
   audit(req, row, open ? 'firewall-open' : 'firewall-close', { port: portN, proto, from, kind: p.kind, containerPort: p.containerPort || null });
-  return { success: true };
+  return { success: true, warnings };
 }));
 
 router.post('/:id/firewall/rules', send(async (req) => {
@@ -404,9 +439,9 @@ router.post('/:id/firewall/rules', send(async (req) => {
   const fw = await firewallOf(row);
   requireUfw(fw);
   if (action === 'deny' && portN === fw.sshPort) throw P.httpError(400, 'Denying the SSH port would lock you out — change the port in Access & SSH instead');
-  await runOrThrow(row, { steps: [{ label: 'Add rule', cmd: plans.addRuleCmd({ port: portN, proto, from: src, action }) }] }, 'Firewall');
+  const warnings = await runFirewallOp(row, { steps: [{ label: 'Add rule', cmd: plans.addRuleCmd({ port: portN, proto, from: src, action }) }] }, 'Firewall');
   audit(req, row, 'firewall-rule-add', { port: portN, proto, from: src, action });
-  return { success: true };
+  return { success: true, warnings };
 }));
 
 router.delete('/:id/firewall/rules/:n', send(async (req) => {
@@ -423,8 +458,167 @@ router.delete('/:id/firewall/rules/:n', send(async (req) => {
   }
   // Delete the IPv4 rule together with its (v6) twin; highest number first (numbers shift).
   const nums = fw.rules.filter(r => r.n === n || (r.to === rule.to && r.action === rule.action && r.dir === rule.dir && r.from === rule.from && r.v6 !== rule.v6)).map(r => r.n).sort((a, b) => b - a);
-  await runOrThrow(row, { steps: [{ label: `Delete rule #${n}`, cmd: plans.deleteRulesCmd(nums) }] }, 'Firewall');
+  const warnings = await runFirewallOp(row, { steps: [{ label: `Delete rule #${n}`, cmd: plans.deleteRulesCmd(nums) }] }, 'Firewall');
   audit(req, row, 'firewall-rule-delete', { n, to: rule.to, action: rule.action, from: rule.from });
+  return { success: true, warnings };
+}));
+
+// Reload UFW from its saved rules (Firewall tab), then check fail2ban + containers survived.
+router.post('/:id/firewall/reload', send(async (req) => {
+  const row = loadServer(req);
+  requireConfirm(req.body);
+  const fw = await firewallOf(row);
+  requireUfw(fw);
+  const warnings = await runFirewallOp(row, { steps: [{ label: 'Reload UFW', cmd: plans.UFW_RELOAD }] }, 'Firewall');
+  audit(req, row, 'firewall-reload', {});
+  return { success: true, warnings };
+}));
+
+// ---------------------------------------------------------------- fail2ban
+const F2B = require('../security/fail2ban');
+
+async function fail2banOf(row) {
+  const sec = await readState(row, plans.READ_FAIL2BAN);
+  const installed = /yes/.test(sec.installed || '');
+  const active = /^active/m.test(sec.active || '');
+  const jailNames = F2B.parseJailList(sec.status);
+  const jails = jailNames.map((name) => {
+    const opts = F2B.parseKv(sec['opts ' + name]);
+    const port = (/\['port', '([^']*)'\]/.exec(opts.port || '') || [])[1] || null;
+    const ignore = String(opts.ignoreip || '').split(/\s+/).filter(x => /^[0-9a-fA-F:.\/]+$/.test(x) && /[.:]/.test(x));
+    return {
+      name, ...F2B.parseJailStatus(sec['jail ' + name]), banned: F2B.parseBanList(sec['bans ' + name]),
+      maxretry: Number(opts.maxretry) || null, findtime: Number(opts.findtime) || null, bantime: Number(opts.bantime) || null,
+      logpath: (opts.logpath || '').replace(/Current monitored log file\(s\):|`-|\|-/g, ' ').trim(), port, ignoreip: ignore,
+    };
+  });
+  const managed = F2B.parseJailConf(sec.dockgate);
+  const settings = managed || JSON.parse(JSON.stringify(F2B.DEFAULTS));
+  const dp = F2B.parseDaemonConf(sec.daemon);
+  if (dp) settings.dbpurgeage = dp;
+  const sshPort = Number((sec.sshport || '').trim()) || row.port || 22;
+  const dockgateIp = (sec.myip || '').trim() || null;
+  const sshdJail = jails.find(j => j.name === 'sshd');
+  const recidive = jails.find(j => j.name === 'recidive');
+  const runtime = { dbpurgeage: (sec.dbpurgeage || '').trim() ? Number(sec.dbpurgeage) : null, jails: jailNames, recidiveLogpath: recidive ? recidive.logpath : null };
+  const problems = installed && active ? F2B.detectProblems({
+    settings, runtime, sshPort, jailPort: sshdJail && sshdJail.port, jailLocal: !!(sec.jaillocal || '').trim(), dockgateIp,
+    banned: jails.flatMap(j => j.banned.map(b => b.ip)),
+  }) : [];
+  if (installed && !active) problems.unshift({ level: 'crit', text: 'fail2ban is installed but not running — nothing is being banned.', fix: 'start' });
+  return {
+    installed, active, version: (sec.version || '').trim(), jails, settings, managed: !!managed, runtime, sshPort, dockgateIp,
+    jailLocal: (sec.jaillocal || '').trim() || null,
+    history: F2B.parseHistory(sec.history).slice(0, 100),
+    sequence: F2B.banSequence(settings.sshd, 6).map(F2B.human),
+    memory: F2B.human(F2B.memoryAfterBan(F2B.toSeconds(settings.sshd.bantime), runtime.dbpurgeage != null ? runtime.dbpurgeage : F2B.toSeconds(settings.dbpurgeage))),
+    problems,
+  };
+}
+
+const assertJail = (j) => { if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(String(j || ''))) throw P.httpError(400, 'Invalid jail name'); return j; };
+const assertIp = (ip) => { const v = String(ip || '').trim(); if (!require('../provision/catalog').isIpOrCidr(v)) throw P.httpError(400, 'Enter an IP address or CIDR'); return v; };
+
+router.get('/:id/fail2ban', send(async (req) => fail2banOf(loadServer(req))));
+
+router.post('/:id/fail2ban/settings', send(async (req) => {
+  const row = loadServer(req);
+  requireConfirm(req.body);
+  const settings = F2B.normalizeSettings(req.body.settings);
+  const cur = await fail2banOf(row);
+  if (!cur.installed) throw P.httpError(400, 'fail2ban is not installed — install it in Setup first');
+  const jobId = runner.startPlan(cfgOf(row), plans.fail2banSettingsPlan(settings, cur.sshPort), {
+    title: 'Fail2ban settings',
+    successText: 'Saved and reloaded — current bans were kept.',
+    onSuccess: () => audit(req, row, 'fail2ban-settings', { settings }),
+  });
+  return { jobId };
+}));
+
+router.post('/:id/fail2ban/ban', send(async (req) => {
+  const row = loadServer(req);
+  const jail = assertJail(req.body.jail), ip = assertIp(req.body.ip);
+  const cur = await fail2banOf(row);
+  if (cur.dockgateIp && ip === cur.dockgateIp) throw P.httpError(400, 'That is the IP DockGate connects from — banning it would cut DockGate off this server.');
+  if (!cur.jails.some(j => j.name === jail)) throw P.httpError(404, `Jail "${jail}" is not running`);
+  await runOrThrow(row, { steps: [{ label: `Ban ${ip}`, cmd: plans.f2bBanCmd(jail, ip) }] }, 'Fail2ban');
+  audit(req, row, 'fail2ban-ban', { jail, ip });
+  return { success: true };
+}));
+
+router.post('/:id/fail2ban/unban', send(async (req) => {
+  const row = loadServer(req);
+  const ip = assertIp(req.body.ip);
+  const jail = req.body.jail ? assertJail(req.body.jail) : null;
+  await runOrThrow(row, { steps: [{ label: `Unban ${ip}`, cmd: plans.f2bUnbanCmd(jail, ip) }] }, 'Fail2ban');
+  if (req.body.whitelist) {
+    const cur = await fail2banOf(row);
+    const settings = F2B.normalizeSettings({ ...cur.settings, ignoreip: [...cur.settings.ignoreip, ip] });
+    await runOrThrow(row, plans.fail2banSettingsPlan(settings, cur.sshPort), 'Fail2ban whitelist');
+  }
+  audit(req, row, 'fail2ban-unban', { jail, ip, whitelist: !!req.body.whitelist });
+  return { success: true };
+}));
+
+// ---------------------------------------------------------------- Services sub-pages
+router.get('/:id/services/:item/info', send(async (req) => {
+  const row = loadServer(req);
+  const item = req.params.item;
+  if (!plans.SERVICE_INFO_ITEMS.includes(item)) throw P.httpError(404, 'No details for this service');
+  const sec = await readState(row, plans.serviceInfoScript(item));
+  const out = { item, logs: sec.logs || '' };
+  if (item === 'docker') {
+    let info = null; try { info = JSON.parse(sec.info || 'null'); } catch (e) {}
+    let daemon = {}; try { daemon = sec.daemon ? JSON.parse(sec.daemon) : {}; } catch (e) { daemon = null; }
+    const lo = (daemon && daemon['log-opts']) || {};
+    out.summary = info && info.ServerVersion ? {
+      version: info.ServerVersion, storageDriver: info.Driver, loggingDriver: info.LoggingDriver, cgroupDriver: info.CgroupDriver,
+      containers: info.Containers, running: info.ContainersRunning, images: info.Images, liveRestore: !!info.LiveRestoreEnabled,
+      swarm: info.Swarm ? info.Swarm.LocalNodeState : null, os: info.OperatingSystem,
+    } : null;
+    out.settings = { maxSize: lo['max-size'] || '', maxFile: Number(lo['max-file']) || 0, liveRestore: !!(daemon && daemon['live-restore']) };
+    out.daemonJsonValid = daemon !== null;
+    out.df = sec.df || '';
+  } else if (item === 'timesync') {
+    out.tracking = sec.tracking || ''; out.sources = sec.sources || ''; out.timedatectl = sec.timedatectl || '';
+    out.synced = /System clock synchronized:\s*yes/i.test(sec.timedatectl || '') || /Leap status\s*:\s*Normal/i.test(sec.tracking || '');
+    out.offset = (/System time\s*:\s*(.+)/.exec(sec.tracking || '') || [])[1] || null;
+  } else {
+    const family = (sec.family || '').trim();
+    const v = (re) => (re.exec(sec.auto || '') || [])[1];
+    out.family = family;
+    out.settings = {
+      enabled: v(/Unattended-Upgrade\s+"(\d)"/) === '1',
+      autoReboot: /Automatic-Reboot\s+"true"/.test(sec.dockgate || ''),
+      rebootTime: (/Automatic-Reboot-Time\s+"([^"]+)"/.exec(sec.dockgate || '') || [])[1] || '04:00',
+    };
+    out.timer = sec.timer || ''; out.last = sec.last || ''; out.rhel = sec.rhel || '';
+    out.pending = Number((sec.pending || '').trim()) || 0;
+    out.rebootRequired = /yes/.test(sec.reboot || '');
+  }
+  return out;
+}));
+
+router.post('/:id/services/docker/settings', send(async (req) => {
+  const row = loadServer(req);
+  requireConfirm(req.body);
+  const { maxSize, maxFile, liveRestore } = req.body || {};
+  if (!/^\d{1,4}[kmg]$/.test(String(maxSize || ''))) throw P.httpError(400, 'Log size per file: a number with k, m or g, e.g. 10m');
+  const mf = Number(maxFile);
+  if (!Number.isInteger(mf) || mf < 1 || mf > 50) throw P.httpError(400, 'Log files to keep must be 1–50');
+  const jobId = runner.startPlan(cfgOf(row), plans.dockerSettingsPlan({ maxSize, maxFile: mf, liveRestore: !!liveRestore }), {
+    title: 'Docker settings', successText: 'Saved. New limits apply to containers created from now on (recreate a container to apply them to it).',
+    onSuccess: () => audit(req, row, 'docker-settings', { maxSize, maxFile: mf, liveRestore: !!liveRestore }),
+  });
+  return { jobId };
+}));
+
+router.post('/:id/services/unattended-upgrades/settings', send(async (req) => {
+  const row = loadServer(req);
+  const { enabled, autoReboot, rebootTime } = req.body || {};
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(rebootTime || ''))) throw P.httpError(400, 'Reboot time must be HH:MM (24-hour), e.g. 04:00');
+  await runOrThrow(row, plans.unattendedSettingsPlan({ enabled: !!enabled, autoReboot: !!autoReboot, rebootTime }), 'Auto updates');
+  audit(req, row, 'auto-updates-settings', { enabled: !!enabled, autoReboot: !!autoReboot, rebootTime });
   return { success: true };
 }));
 

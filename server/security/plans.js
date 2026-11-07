@@ -18,12 +18,15 @@ const STATE_DIR = '/var/lib/dockgate';
 const sudoersFile = (u) => `/etc/sudoers.d/90-dockgate-${u}`;
 
 // ---------------------------------------------------------------- read scripts (one round trip each)
-const SSHD_T = "{{S}}sshd -T 2>/dev/null | grep -iE '^(port|permitrootlogin|passwordauthentication|kbdinteractiveauthentication|maxauthtries|clientaliveinterval|clientalivecountmax|x11forwarding) '";
+const SSHD_T = "{{S}}sshd -T 2>/dev/null | grep -iE '^(port|permitrootlogin|passwordauthentication|kbdinteractiveauthentication|maxauthtries|clientaliveinterval|clientalivecountmax|x11forwarding|logingracetime|channeltimeout) '";
+const LEGACY = '/etc/ssh/sshd_config.d/99-dockgate.conf'; // pre-2.6 hardening file, merged into DROPIN
 
 const READ_ACCESS = [
   'echo @@uid; id -u',
   `echo @@sshdT; ${SSHD_T}`,
   `echo @@dropin; {{S}}cat ${DROPIN} 2>/dev/null`,
+  `echo @@legacy; {{S}}cat ${LEGACY} 2>/dev/null`,
+  'echo @@sshver; ssh -V 2>&1 | head -1',
   "echo @@include; grep -iE '^[[:space:]]*Include[[:space:]]' /etc/ssh/sshd_config 2>/dev/null",
   'echo @@reboot; { [ -f /var/run/reboot-required ] && echo yes; command -v needs-restarting >/dev/null 2>&1 && { {{S}}needs-restarting -r >/dev/null 2>&1 || echo yes; }; } ; true',
 ].join('; ');
@@ -133,8 +136,8 @@ const commitRollback = (id) => `{{S}}systemctl stop dockgate-rollback-${id}.time
  * opts: { id, content, test, portChange?: { from, to } }
  */
 function accessPlan({ id, content, test, portChange }) {
-  const prev = `${DROPIN}.dockgate-prev`;
-  const restoreRoot = `if [ -f ${prev} ]; then mv -f ${prev} ${DROPIN}; else rm -f ${DROPIN}; fi\n${SSHD_RELOAD_ROOT}`;
+  const prev = `${DROPIN}.dockgate-prev`, lprev = `${LEGACY}.dockgate-prev`;
+  const restoreRoot = `if [ -f ${prev} ]; then mv -f ${prev} ${DROPIN}; else rm -f ${DROPIN}; fi\n[ -f ${lprev} ] && mv -f ${lprev} ${LEGACY}\n${SSHD_RELOAD_ROOT}`;
   const steps = [];
   if (portChange) {
     const to = P.assertPort(portChange.to);
@@ -154,8 +157,10 @@ function accessPlan({ id, content, test, portChange }) {
       `grep -qiE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\\.d/' /etc/ssh/sshd_config || { echo "/etc/ssh/sshd_config does not include sshd_config.d/*.conf — add 'Include /etc/ssh/sshd_config.d/*.conf' at the top first"; exit 1; }`,
       `{{S}}mkdir -p /etc/ssh/sshd_config.d`,
       `if {{S}}test -f ${DROPIN}; then {{S}}cp -p ${DROPIN} ${prev}; else {{S}}rm -f ${prev}; fi`,
+      // the old hardening file's values are already merged into `content` — move it aside (one file)
+      `if {{S}}test -f ${LEGACY}; then {{S}}mv -f ${LEGACY} ${lprev}; else {{S}}rm -f ${lprev}; fi`,
       writeFile(DROPIN, content, '0644'),
-      `{{S}}sshd -t || { if {{S}}test -f ${prev}; then {{S}}mv -f ${prev} ${DROPIN}; else {{S}}rm -f ${DROPIN}; fi; echo "sshd rejected the config — nothing was applied"; exit 1; }`,
+      `{{S}}sshd -t || { if {{S}}test -f ${prev}; then {{S}}mv -f ${prev} ${DROPIN}; else {{S}}rm -f ${DROPIN}; fi; [ -f ${lprev} ] && {{S}}mv -f ${lprev} ${LEGACY}; echo "sshd rejected the config — nothing was applied"; exit 1; }`,
     ].join(' && '),
   });
   steps.push({ label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, restoreRoot) });
@@ -172,7 +177,9 @@ function accessPlan({ id, content, test, portChange }) {
       ].join('; '),
     });
   }
-  steps.push({ label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; {{S}}rm -f ${prev}; true` });
+  steps.push({ label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; {{S}}rm -f ${prev} ${lprev}; true` });
+  // After the change is kept: fail2ban must ban the NEW port, or banned IPs could still reach SSH.
+  if (portChange) steps.push({ label: `Point fail2ban at port ${P.assertPort(portChange.to)}`, cmd: module.exports.f2bPortSyncCmd(portChange.to) });
   return { steps, rollback: rollbackNow(id) };
 }
 
@@ -295,3 +302,138 @@ module.exports = {
   accessPlan, deployUserPlan, createUserPlan, setPermsPlan, lockPlan, deleteUserPlan, addKeysPlan, writeKeysPlan,
   isolationPlan, exposeCmd, deleteRulesCmd, addRuleCmd, REBOOT, b64, shq,
 };
+
+// ---------------------------------------------------------------- fail2ban
+const F2B = require('./fail2ban');
+// One read for the Fail2ban tab: service state, jails + counters + bans (with times), effective
+// per-jail options, daemon options, DockGate's own files, jail.local presence, recent history, and the
+// IP DockGate connects from (as the server sees it).
+const READ_FAIL2BAN = [
+  'echo @@installed; command -v fail2ban-client >/dev/null 2>&1 && echo yes',
+  'echo @@active; systemctl is-active fail2ban 2>/dev/null || ({{S}}fail2ban-client ping >/dev/null 2>&1 && echo active)',
+  'echo @@version; fail2ban-client --version 2>/dev/null | head -1',
+  'echo @@status; {{S}}fail2ban-client status 2>/dev/null',
+  `for j in $({{S}}fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:[[:space:]]*//p' | tr ',' ' '); do ` +
+    'echo "@@jail $j"; {{S}}fail2ban-client status "$j" 2>/dev/null; ' +
+    'echo "@@bans $j"; {{S}}fail2ban-client get "$j" banip --with-time 2>/dev/null; ' +
+    'echo "@@opts $j"; for k in maxretry findtime bantime; do printf "%s=" $k; {{S}}fail2ban-client get "$j" $k 2>/dev/null | tail -1; done; ' +
+    'printf "logpath="; {{S}}fail2ban-client get "$j" logpath 2>/dev/null | tr "\\n" " "; echo; ' +
+    'printf "ignoreip="; {{S}}fail2ban-client get "$j" ignoreip 2>/dev/null | tr "\\n" " "; echo; ' +
+    `printf "port="; {{S}}fail2ban-client -d 2>/dev/null | grep "'$j', 'action'" | grep -o "\\['port', '[^']*'\\]" | head -1; echo; ` +
+  'done',
+  "echo @@dbpurgeage; {{S}}fail2ban-client get dbpurgeage 2>/dev/null | grep -o '[0-9]*' | head -1",
+  `echo @@dockgate; {{S}}cat ${F2B.JAIL_FILE} 2>/dev/null`,
+  `echo @@daemon; {{S}}cat ${F2B.DAEMON_FILE} 2>/dev/null`,
+  "echo @@jaillocal; {{S}}grep -lE '^\\[(sshd|recidive)\\]' /etc/fail2ban/jail.local /etc/fail2ban/jail.d/*.local 2>/dev/null",
+  `echo @@history; {{S}}grep -hE '\\] (Ban|Unban|Increase Ban|Restore Ban) ' ${F2B.LOG_FILE} 2>/dev/null | tail -n 150`,
+  "echo @@myip; echo \"$SSH_CONNECTION\" | awk '{print $1}'",
+  "echo @@sshport; {{S}}sshd -T 2>/dev/null | awk '$1==\"port\"{print $2; exit}'",
+].join('; ');
+
+/** Write DockGate's fail2ban files, test the whole config, reload (bans are kept). Restore on failure. */
+function fail2banSettingsPlan(settings, sshPort) {
+  const jail = F2B.buildJailConf(settings, sshPort), daemon = F2B.buildDaemonConf(settings);
+  const restore = `for f in ${F2B.JAIL_FILE} ${F2B.DAEMON_FILE}; do if {{S}}test -f "$f.dockgate-prev"; then {{S}}mv -f "$f.dockgate-prev" "$f"; else {{S}}rm -f "$f"; fi; done`;
+  return {
+    steps: [
+      { label: 'Back up the current DockGate fail2ban files', cmd: `command -v fail2ban-client >/dev/null 2>&1 || { echo "fail2ban is not installed — install it in Setup first"; exit 1; }; {{S}}mkdir -p /etc/fail2ban/jail.d /etc/fail2ban/fail2ban.d && for f in ${F2B.JAIL_FILE} ${F2B.DAEMON_FILE}; do if {{S}}test -f "$f"; then {{S}}cp -p "$f" "$f.dockgate-prev"; else {{S}}rm -f "$f.dockgate-prev"; fi; done` },
+      // recidive needs its log file to exist, or fail2ban refuses to start at all.
+      { label: 'Write jail.d/dockgate.conf and fail2ban.d/dockgate.conf', cmd: `${writeFile(F2B.JAIL_FILE, jail, '0644')} && ${writeFile(F2B.DAEMON_FILE, daemon, '0644')} && {{S}}touch ${F2B.LOG_FILE}` },
+      { label: 'Test the whole configuration (fail2ban-client -t)', cmd: `{{S}}fail2ban-client -t >/dev/null 2>&1 || { out=$({{S}}fail2ban-client -t 2>&1 | tail -5); ${restore}; echo "fail2ban rejected the configuration — nothing was applied:"; echo "$out"; exit 1; }` },
+      { label: 'Reload fail2ban (current bans are kept)', cmd: `if {{S}}fail2ban-client ping >/dev/null 2>&1; then {{S}}fail2ban-client reload >/dev/null; else {{S}}systemctl enable --now fail2ban; fi || { ${restore}; {{S}}fail2ban-client reload >/dev/null 2>&1; echo "reload failed — previous files restored"; exit 1; }` },
+      { label: 'Clean up', cmd: `{{S}}rm -f ${F2B.JAIL_FILE}.dockgate-prev ${F2B.DAEMON_FILE}.dockgate-prev; true` },
+    ],
+  };
+}
+
+const f2bBanCmd = (jail, ip) => `{{S}}fail2ban-client set ${jail} banip ${ip}`;
+const f2bUnbanCmd = (jail, ip) => jail ? `{{S}}fail2ban-client set ${jail} unbanip ${ip}` : `{{S}}fail2ban-client unban ${ip}`;
+
+/** After an SSH port change: point the sshd jail at the new port (never fails the SSH job). */
+function f2bPortSyncCmd(port) {
+  const p = P.assertPort(port);
+  return `if command -v fail2ban-client >/dev/null 2>&1 && {{S}}fail2ban-client ping >/dev/null 2>&1; then ` +
+    `{{S}}mkdir -p /etc/fail2ban/jail.d; F=${F2B.JAIL_FILE}; ` +
+    `if {{S}}grep -q '^\\[sshd\\]' "$F" 2>/dev/null; then {{S}}sed -i '/^\\[sshd\\]/,/^\\[/{/^port[[:space:]]*=/d}' "$F" && {{S}}sed -i '/^\\[sshd\\]/a port = ${p}' "$F"; ` +
+    `else printf '\\n[sshd]\\nport = ${p}\\n' | {{S}}tee -a "$F" >/dev/null; fi; ` +
+    `{{S}}fail2ban-client -t >/dev/null 2>&1 && {{S}}fail2ban-client reload >/dev/null 2>&1 && echo "fail2ban now bans port ${p}" || echo "WARNING: could not update fail2ban — set its sshd port to ${p} in the Fail2ban tab"; ` +
+    `else echo "fail2ban not running — nothing to update"; fi; true`;
+}
+
+module.exports.READ_FAIL2BAN = READ_FAIL2BAN;
+module.exports.fail2banSettingsPlan = fail2banSettingsPlan;
+module.exports.f2bBanCmd = f2bBanCmd;
+module.exports.f2bUnbanCmd = f2bUnbanCmd;
+module.exports.f2bPortSyncCmd = f2bPortSyncCmd;
+
+// Health snapshot taken before/after a firewall change: is fail2ban still running with its bans, and are
+// the same number of containers running? (A firewall reload must not silently drop either.)
+const READ_HEALTH = [
+  'echo @@f2b; systemctl is-active fail2ban 2>/dev/null',
+  `echo @@f2bbans; for j in $({{S}}fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:[[:space:]]*//p' | tr ',' ' '); do {{S}}fail2ban-client status "$j" 2>/dev/null | grep -o 'Currently banned:[[:space:]]*[0-9]*' | grep -o '[0-9]*$'; done`,
+  'echo @@docker; {{S}}docker ps -q 2>/dev/null | wc -l',
+].join('; ');
+module.exports.READ_HEALTH = READ_HEALTH;
+module.exports.UFW_RELOAD = '{{S}}ufw reload >/dev/null';
+
+// ---------------------------------------------------------------- Services sub-pages (Docker · Time sync · Auto updates)
+const UNITS = { docker: 'docker', timesync: 'chrony chronyd systemd-timesyncd', 'unattended-upgrades': 'unattended-upgrades apt-daily-upgrade dnf-automatic' };
+const logsFor = (item) => `echo @@logs; for u in ${UNITS[item]}; do if systemctl list-unit-files "$u.service" >/dev/null 2>&1 && systemctl cat "$u.service" >/dev/null 2>&1; then {{S}}journalctl -u "$u" -n 60 --no-pager -o short-iso 2>/dev/null; break; fi; done`;
+const SERVICE_INFO = {
+  docker: [
+    "echo @@info; {{S}}docker info --format '{{json .}}' 2>/dev/null | head -c 60000",
+    'echo @@daemon; {{S}}cat /etc/docker/daemon.json 2>/dev/null',
+    "echo @@df; {{S}}docker system df 2>/dev/null",
+  ],
+  timesync: [
+    'echo @@tracking; chronyc tracking 2>/dev/null',
+    'echo @@sources; chronyc -n sources 2>/dev/null',
+    'echo @@timedatectl; timedatectl 2>/dev/null',
+  ],
+  'unattended-upgrades': [
+    'echo @@family; command -v apt-get >/dev/null 2>&1 && echo debian || echo rhel',
+    'echo @@auto; cat /etc/apt/apt.conf.d/20auto-upgrades 2>/dev/null',
+    'echo @@dockgate; cat /etc/apt/apt.conf.d/52dockgate-unattended 2>/dev/null',
+    "echo @@timer; systemctl list-timers apt-daily-upgrade.timer dnf-automatic.timer --no-pager 2>/dev/null | sed -n '2,3p'",
+    'echo @@last; {{S}}tail -n 40 /var/log/unattended-upgrades/unattended-upgrades.log 2>/dev/null',
+    "echo @@pending; if command -v apt >/dev/null 2>&1; then apt list --upgradable 2>/dev/null | tail -n +2 | wc -l; else dnf -q check-update 2>/dev/null | grep -c '^[a-zA-Z0-9]'; fi",
+    "echo @@rhel; grep -E '^(apply_updates|upgrade_type|reboot)[[:space:]]*=' /etc/dnf/automatic.conf 2>/dev/null",
+    'echo @@reboot; [ -f /var/run/reboot-required ] && echo yes; true',
+  ],
+};
+const serviceInfoScript = (item) => [...SERVICE_INFO[item], logsFor(item)].join('; ');
+
+/** Docker daemon.json: log limits + live-restore, merged (backup), validated, applied. */
+function dockerSettingsPlan({ maxSize, maxFile, liveRestore }) {
+  const F = '/etc/docker/daemon.json';
+  const py = `import json,sys,os;p='${F}';d=json.load(open(p)) if os.path.exists(p) and os.path.getsize(p)>0 else {};d['log-driver']=d.get('log-driver','json-file');o=d.setdefault('log-opts',{});o['max-size']=sys.argv[1];o['max-file']=sys.argv[2];d['live-restore']=sys.argv[3]=='true';json.dump(d,open(p,'w'),indent=2)`;
+  const restore = `if {{S}}test -f ${F}.dockgate-prev; then {{S}}mv -f ${F}.dockgate-prev ${F}; else {{S}}rm -f ${F}; fi`;
+  return {
+    steps: [
+      { label: 'Check Docker and swarm mode', cmd: `command -v docker >/dev/null 2>&1 || { echo "Docker is not installed"; exit 1; }; ${liveRestore ? `[ "$({{S}}docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)" = active ] && { echo "live-restore cannot be used in swarm mode — turn it off"; exit 1; }; ` : ''}command -v python3 >/dev/null 2>&1 || { echo "python3 is needed to edit daemon.json safely"; exit 1; }` },
+      { label: `Back up and update ${F}`, cmd: `{{S}}mkdir -p /etc/docker && { if {{S}}test -f ${F}; then {{S}}cp -p ${F} ${F}.dockgate-prev; else {{S}}rm -f ${F}.dockgate-prev; fi; } && {{S}}python3 -c ${shq(py)} ${maxSize} ${maxFile} ${liveRestore ? 'true' : 'false'}` },
+      { label: 'Validate (dockerd --validate)', cmd: `if {{S}}dockerd --validate --config-file ${F} >/dev/null 2>&1 || ! {{S}}dockerd --help 2>/dev/null | grep -q -- --validate; then true; else out=$({{S}}dockerd --validate --config-file ${F} 2>&1 | tail -3); ${restore}; echo "Docker rejected daemon.json — restored: $out"; exit 1; fi` },
+      { label: 'Apply (restart if no containers run, otherwise reload)', cmd: `if [ -z "$({{S}}docker ps -q 2>/dev/null)" ]; then {{S}}systemctl restart docker; else {{S}}systemctl reload docker; fi || { ${restore}; {{S}}systemctl restart docker; echo "Docker failed to apply the change — restored"; exit 1; }` },
+      { label: 'Clean up', cmd: `{{S}}rm -f ${F}.dockgate-prev; true` },
+    ],
+  };
+}
+
+/** Debian/Ubuntu unattended-upgrades: on/off + automatic reboot (and when). */
+function unattendedSettingsPlan({ enabled, autoReboot, rebootTime }) {
+  const auto = `APT::Periodic::Update-Package-Lists "${enabled ? 1 : 0}";\nAPT::Periodic::Unattended-Upgrade "${enabled ? 1 : 0}";\n`;
+  const dg = `// Managed by DockGate (Server Console → Services → Auto updates)\nUnattended-Upgrade::Automatic-Reboot "${autoReboot ? 'true' : 'false'}";\nUnattended-Upgrade::Automatic-Reboot-Time "${rebootTime}";\n`;
+  const A = '/etc/apt/apt.conf.d/20auto-upgrades', D = '/etc/apt/apt.conf.d/52dockgate-unattended';
+  return {
+    steps: [
+      { label: 'Check unattended-upgrades', cmd: `dpkg -l unattended-upgrades 2>/dev/null | grep -q '^ii' || { echo "unattended-upgrades is not installed — install it in Setup first"; exit 1; }; for f in ${A} ${D}; do if {{S}}test -f $f; then {{S}}cp -p $f $f.dockgate-prev; else {{S}}rm -f $f.dockgate-prev; fi; done` },
+      { label: 'Write the settings', cmd: `${writeFile(A, auto, '0644')} && ${writeFile(D, dg, '0644')}` },
+      { label: 'Validate (apt-config)', cmd: `apt-config dump >/dev/null 2>&1 || { for f in ${A} ${D}; do if {{S}}test -f $f.dockgate-prev; then {{S}}mv -f $f.dockgate-prev $f; else {{S}}rm -f $f; fi; done; echo "apt rejected the settings — restored"; exit 1; }; {{S}}rm -f ${A}.dockgate-prev ${D}.dockgate-prev` },
+    ],
+  };
+}
+
+module.exports.serviceInfoScript = serviceInfoScript;
+module.exports.SERVICE_INFO_ITEMS = Object.keys(SERVICE_INFO);
+module.exports.dockerSettingsPlan = dockerSettingsPlan;
+module.exports.unattendedSettingsPlan = unattendedSettingsPlan;

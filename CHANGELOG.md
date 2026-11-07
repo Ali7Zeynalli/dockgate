@@ -2,6 +2,32 @@
 
 ---
 
+## [2.6.0] - 2026-11-07
+
+### Added
+- **Fail2ban tab** (Server Console): banned IPs with ban and expiry times, unban, unban + whitelist, manual ban; whitelist (`ignoreip`) with a one-click "DockGate's IP"; settings form (failures, counting window, first ban, longer bans for repeat offenders, growth factor, longest ban, history kept, detection mode, recidive) with a live preview of the ban lengths fail2ban really uses (`bantime × 2^n × factor`, capped); ban history from `/var/log/fail2ban.log`; `jail.local` as an advanced editor.
+- **Fail2ban problem detection:** a recidive jail that can never trigger (its window shorter than the time N sshd bans take), recidive reading the journal instead of fail2ban's log file, the sshd jail watching another port than SSH, a ban memory shorter than a week (`dbpurgeage`), DockGate's own IP being banned, `jail.local` overriding DockGate's values. Problems that settings can fix have a *Fix now* button.
+- **Services sub-pages:** Docker (log size limit, files kept, live-restore; engine details and disk usage), Time sync (sync state, offset, NTP sources), Auto updates (on/off, automatic reboot and its time, pending updates, next/last run). Each with service state and actions, a guarded raw-config editor and the recent log.
+- **Firewall:** UFW service state and *Reload rules*; after every firewall change DockGate compares fail2ban's bans and the running containers before and after, and warns if a change dropped either.
+- **Access & SSH:** login grace time, a real **idle session timeout** (`ChannelTimeout` / `UnusedConnectionTimeout`, OpenSSH 9.2+), sshd service state, and the drop-in as an advanced editor.
+
+### Changed
+- Settings written by DockGate for fail2ban: the admin's values are kept as defaults (3 failures in 1 day → 24 h ban, ×2 growth up to 30 days); **recidive now works** (reads `/var/log/fail2ban.log`, 3 bans in 30 days → blocked on all ports for 1 week); ban history kept 30 days (`dbpurgeage`, in `fail2ban.d/dockgate.conf`); the sshd jail always targets the port SSH really listens on. Setup → Fail2ban writes the same configuration.
+- Fail2ban changes **reload** instead of restart, so current bans are kept.
+- An SSH port change now also moves fail2ban's sshd jail to the new port.
+- All SSH settings live in **one** file, `/etc/ssh/sshd_config.d/10-dockgate-access.conf`. The old `99-dockgate.conf` (Setup → SSH hardening) is merged into it and removed; Setup now adds only values that are not set yet.
+- UFW, SSH hardening and fail2ban moved out of Services into their own tabs (no more two places editing the same thing).
+
+### Fixed
+- Access & SSH "Idle timeout" was really `ClientAliveInterval`, which drops dead connections but never logs out an idle session. It is now labelled *Dead connection timeout*; the real idle limit is a separate field.
+- Generated ed25519 keys: ssh2's generator occasionally (~1 in 200) emits a truncated public key that can never log in. DockGate now verifies each generated pair and rejects truncated public keys anywhere.
+- Fail2ban refused to start when recidive was enabled and its log file did not exist — the file is now created first.
+
+### Removed
+- `public/js/service-manager.js` (replaced by the Access & SSH, Firewall, Fail2ban and Services pages).
+
+---
+
 ## [2.5.1] - 2026-11-07
 
 ### Added

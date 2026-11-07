@@ -32,7 +32,7 @@ test('service: openrc verbs on alpine (docker)', () => {
 });
 
 test('service: serviceAction returns the fixed command; unknown action/item throws 400', () => {
-  assert.equal(cat.serviceAction('fail2ban', 'ubuntu', 'restart'), 'sudo systemctl restart fail2ban');
+  assert.equal(cat.serviceAction('fail2ban', 'ubuntu', 'restart'), 'sudo systemctl reload fail2ban', 'fail2ban reloads — current bans are kept');
   assert.equal(cat.serviceAction('ssh-hardening', 'ubuntu', 'restart'), 'sudo systemctl reload ssh');
   assert.throws(() => cat.serviceAction('docker', 'ubuntu', 'rm -rf /'), (e) => e.statusCode === 400);
   assert.throws(() => cat.serviceAction('update', 'ubuntu', 'restart'), (e) => e.statusCode === 400);
@@ -40,7 +40,7 @@ test('service: serviceAction returns the fixed command; unknown action/item thro
 
 test('service: isConfigPathAllowed exact-match allowlist; rejects traversal / non-absolute / non-listed', () => {
   assert.equal(cat.isConfigPathAllowed('fail2ban', 'ubuntu', '/etc/fail2ban/jail.local'), true);
-  assert.equal(cat.isConfigPathAllowed('ssh-hardening', 'ubuntu', '/etc/ssh/sshd_config.d/99-dockgate.conf'), true);
+  assert.equal(cat.isConfigPathAllowed('ssh-hardening', 'ubuntu', '/etc/ssh/sshd_config.d/10-dockgate-access.conf'), true);
   assert.equal(cat.isConfigPathAllowed('fail2ban', 'ubuntu', '/etc/passwd'), false, 'not in allowlist');
   assert.equal(cat.isConfigPathAllowed('fail2ban', 'ubuntu', '/etc/fail2ban/../shadow'), false, 'traversal');
   assert.equal(cat.isConfigPathAllowed('fail2ban', 'ubuntu', 'etc/fail2ban/jail.local'), false, 'non-absolute');
