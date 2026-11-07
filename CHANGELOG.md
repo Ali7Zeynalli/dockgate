@@ -2,6 +2,27 @@
 
 ---
 
+## [2.9.0] - 2026-11-07
+
+### Added
+- **Firewall tab works with firewalld** (RHEL family). The listening-ports table, *Open to internet*, *Allow one IP…*, *Close*, *Add rule* (allow/deny, from any or one IP/range) and *Delete* now manage firewalld's default zone: plain ports, services (resolved to their ports) and rich rules. Changes are written permanently and applied with `firewall-cmd --reload`. The rule that keeps SSH reachable cannot be deleted. Container ports published by Docker skip firewalld and are shown as such; Docker port isolation stays UFW-only.
+- **Auto updates on RHEL family:** a form for dnf-automatic — on/off (timer + `apply_updates`), all updates or security only, reboot when needed. The previous config is backed up and restored if a step fails.
+- **Docker port isolation covers IPv6.** When UFW manages IPv6 (`/etc/ufw/after6.rules` exists), the same DOCKER-USER rules are written for ip6tables; both files are backed up and restored together by the automatic rollback.
+
+### Fixed
+- **Services on hosts without systemd** (some containers, WSL, sysvinit) showed every service as *inactive*. The state now comes from a process check (sshd, chronyd, dockerd, fail2ban, UFW/firewalld status); start/stop/restart use `service`; boot enable/disable is shown as not available; a service with no way to check shows *state unknown*. Saving a config no longer rolls back just because the state cannot be checked.
+- A port opened by a range (`9000:9010/tcp`) is now shown as open; *Close* on such a port explains which rule to delete instead of silently doing nothing.
+- **SSH keys follow `DATA_DIR`.** They were always stored under `<app>/data/ssh-keys` even when `DATA_DIR` pointed elsewhere. Keys stored there by older versions are still found.
+
+### Changed
+- Compose routes split into `compose.js`, `compose-shared.js` and `compose-files.js`; the Firewall tab moved to `firewall-panel.js`. No behaviour change.
+- New route integration tests (firewall UFW + firewalld, confirm gates, auto updates, compose Files API). 144 tests.
+
+### Not tested on a live server
+- firewalld changes, IPv6 isolation and the dnf-automatic form were tested with unit/route tests and command checks only (the config edits were run against sample files); please try them on a test server first.
+
+---
+
 ## [2.8.0] - 2026-11-07
 
 ### Security

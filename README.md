@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.8.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.9.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.8.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.9.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -283,7 +283,7 @@ Honest, current gaps:
 - **Single-tenant.** One admin password; **no multi-user, no roles/RBAC, no per-user data isolation.** Everyone with the password sees and controls everything.
 - **Local-host-only operations.** Anything needing the host CLI/filesystem — Compose, buildx, build-cache prune, **self-update**, auto-start — only works when **Local** is the active server (remote daemons are managed via the Docker API only). Local host **filesystem browsing** isn't offered (remote SFTP only).
 - **Provisioning / host management need SSH + root or passwordless sudo** on the target; validate on your own throwaway VPS first.
-- **Docker port isolation and port rules work with UFW** (Debian/Ubuntu). On firewalld hosts the ports are listed and firewalld ports are managed in Services; isolation rules cover IPv4.
+- **Docker port isolation needs UFW** (Debian/Ubuntu); it covers IPv4 and, when UFW manages IPv6, IPv6. On firewalld hosts the Firewall tab manages ports, services and rich rules of the default zone, but container ports published by Docker skip firewalld.
 - **Edge agent caveats** — channel secrets land in the container env on each host (use a dedicated bot/credential); after a DockGate restart the central monitor isn't yet auto-suppressed for agent-hosts (possible brief duplicate alert).
 - **Docker Swarm** support was **removed** (it couldn't work for the common local-manager-behind-NAT topology).
 
