@@ -37,7 +37,7 @@ Router.register('dashboard', async (content) => {
             <div class="page-subtitle">${isRemote ? '🔐 ' + escapeHtml(activeId) + ' — host &amp; Docker' : '🖥 Local — Docker environment'}</div>
           </div>
           <div class="page-actions">
-            <button class="btn btn-secondary" onclick="Router.navigate('activity', {tab:'cleanup'})">${Icons.cleanup} Cleanup</button>
+            <button class="btn btn-secondary" onclick="Router.navigate('resources', {tab:'prune'})">${Icons.cleanup} Cleanup</button>
             <button class="btn btn-primary" id="dash-refresh">${Icons.refresh} Refresh</button>
           </div>
         </div>
@@ -89,7 +89,7 @@ Router.register('dashboard', async (content) => {
               <div class="summary-card-label">Networks</div>
             </div>
           </div>
-          <div class="summary-card" onclick="Router.navigate('infra',{tab:'registries'})">
+          <div class="summary-card" onclick="Router.navigate('deploy',{tab:'registries'})">
             <div class="summary-card-icon blue"><span class="nav-item-icon">${Icons.registry}</span></div>
             <div class="summary-card-content">
               <div class="summary-card-value" id="dash-reg-value">–</div>
@@ -300,7 +300,7 @@ Router.register('dashboard', async (content) => {
             <div style="font-size:15px;font-weight:700;margin-bottom:12px">Smart Insights</div>
             ${data.insights.length === 0 ? '<div class="text-muted text-sm">No issues detected. Everything looks good! ✨</div>' :
               data.insights.map(i => `
-                <div class="insight-card ${i.type}"${i.action === 'cleanup' ? ` onclick="Router.navigate('activity', {tab:'cleanup'})" style="cursor:pointer" title="Open Cleanup"` : ''}>
+                <div class="insight-card ${i.type}"${i.action === 'cleanup' ? ` onclick="Router.navigate('resources', {tab:'prune'})" style="cursor:pointer" title="Open Cleanup"` : ''}>
                   <span class="nav-item-icon">${i.type === 'warning' ? Icons.alert : Icons.info}</span>
                   <span>${escapeHtml(i.message)}</span>
                 </div>

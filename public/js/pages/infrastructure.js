@@ -1,43 +1,18 @@
-// Servers Page (route key 'infra') — top-level section hosting Servers + SSH Keys + Registries as
-// sub-tabs: everything to connect to remote hosts & registries / store credentials, in one place.
-// SSH Keys + Registries render via the global renderSshKeysInto / renderRegistriesInto. Settings is
-// app-config only; Cleanup moved to the Activity section.
+// Servers section (route key 'infra'): Servers · SSH keys · Edge agent, chosen in the sidebar.
+// Registries moved to Deploy and Cleanup to Resources → Prune; their old links are redirected by Router.resolve.
 Router.register('infra', async (content, params) => {
   const pageNavId = Router._navId;
 
-  content.innerHTML = `
-    <div class="page-header">
-      <div><div class="page-title">Servers</div><div class="page-subtitle">Remote SSH hosts, SSH keys & image registries</div></div>
-    </div>
-    <div class="tab-bar" id="infra-tabs">
-      <button class="tab-btn active" data-tab="servers">Servers</button>
-      <button class="tab-btn" data-tab="sshkeys">SSH Keys</button>
-      <button class="tab-btn" data-tab="registries">Registries</button>
-    </div>
-    <div id="infra-tab-content" style="padding-top:20px;"></div>
-  `;
-
+  // The sidebar lists Servers · SSH keys · Edge agent, so the page has no tab bar of its own.
+  content.innerHTML = `<div id="infra-tab-content"></div>`;
   const tabContent = document.getElementById('infra-tab-content');
-  // Restore the active sub-tab from the URL params (deep-link / refresh / Back), default Servers.
-  const validTabs = ['servers', 'sshkeys', 'registries'];
-  let activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'servers';
-  document.querySelectorAll('#infra-tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === activeTab));
-
-  document.getElementById('infra-tabs').addEventListener('click', (e) => {
-    const btn = e.target.closest('.tab-btn');
-    if (!btn) return;
-    document.querySelectorAll('#infra-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    activeTab = btn.dataset.tab;
-    renderTab(activeTab);
-    // Sync the sub-tab into the URL hash so Back/Forward + refresh land on it.
-    Router.updateParams({ tab: activeTab });
-  });
+  const validTabs = ['servers', 'sshkeys', 'agent'];
+  const activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'servers';
 
   function renderTab(tab) {
     if (tab === 'servers') renderServers();
     else if (tab === 'sshkeys') renderSshKeysInto(tabContent, { embedded: true });   // moved here from Settings
-    else if (tab === 'registries') renderRegistriesInto(tabContent, { embedded: true }); // moved here from Settings
+    else if (tab === 'agent') renderEdgeAgentInto(tabContent);                        // moved here from Settings → Notifications
   }
 
   // ==================== SERVERS SUB-TAB — list like DigitalOcean Droplets / Hetzner Servers ====================
@@ -48,7 +23,7 @@ Router.register('infra', async (content, params) => {
     try {
       const [data, ov] = await Promise.all([API.get('/servers'), API.get('/servers/overview').catch(() => ({ servers: {} }))]);
       renderServersList(data, ov.servers || {});
-    } catch (e) { tabContent.innerHTML = `<div class="text-xs text-danger">${escapeHtml(e.message)}</div>`; }
+    } catch (e) { tabContent.innerHTML = UI.errorState(e); }
   }
 
   function renderServersList(data, overview = {}) {
@@ -171,11 +146,21 @@ Router.register('infra', async (content, params) => {
   renderTab(activeTab);
 });
 
-// #/registries now lives in the Servers section (Servers / SSH Keys / Registries). Old deep-link redirects there.
-Router.register('registries', async (content, params) => Router.navigate('infra', { tab: 'registries' }, { replace: true }));
-// Cleanup moved into the Activity section. The route now RENDERS (so the Activity tabbed section can host
-// it); a bare #/cleanup deep-link is upgraded to #/activity?tab=cleanup via SECTION_OF on boot.
-Router.register('cleanup', async (content, params) => renderCleanupInto(content, { embedded: true }));
+// Pages hosted by the Deploy and Resources sections (tabbed-section.js invokes these handlers).
+Router.register('registries', async (content) => renderRegistriesInto(content, { embedded: true }));
+Router.register('prune', async (content) => renderCleanupInto(content, { embedded: true }));
+Router.register('cleanup', async (content) => renderCleanupInto(content, { embedded: true }));
+
+// Edge agent: installed per server, so it lives with the servers. Notifications links here.
+async function renderEdgeAgentInto(el) {
+  let configured = true;
+  try {
+    const [smtp, tg] = await Promise.all([API.get('/meta/smtp'), API.get('/meta/telegram')]);
+    configured = !!(smtp.smtp_host || tg.tg_chat_id);
+  } catch (e) { /* the agent table still loads; only the channel warning depends on this */ }
+  el.innerHTML = edgeAgentSectionHtml(configured);
+  attachEdgeAgentHandlers(el, true);
+}
 
 // Stage-1 SSH auth failures get an actionable hint ("usermod -aG docker" fixes the Docker stage, not this).
 function sshErrorHint(msg) {

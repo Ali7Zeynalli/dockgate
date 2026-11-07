@@ -166,22 +166,12 @@
     if (footer) footer.appendChild(go);
   }
 
-  // ---- public entry points used by settings.js renderNotifications ----
+  // ---- public entry points used by the Servers → Edge agent page ----
 
   window.edgeAgentSectionHtml = function (channelConfigured) {
-    const warningHtml = !channelConfigured ? 
-      `<div class="text-xs text-warning" style="margin-bottom:10px; font-weight:600;">⚠ No notification channel configured above — agent will install in metrics-only mode.</div>` : '';
-    
-    return `<div class="settings-section" style="margin-top:20px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap;">
-        <div class="settings-section-title" style="margin:0;">Edge Agent (observability)</div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost btn-sm" id="edge-refresh">↻ Refresh</button>
-          <button class="btn btn-primary btn-sm" id="edge-install-all">Install on servers…</button>
-        </div>
-      </div>
-      <div class="settings-row-desc" style="margin-bottom:10px;">A tiny <strong>outbound-only</strong> container on each server collects metrics, aggregates logs, watches Docker events, and sends alerts through configured channels — no inbound ports, works behind NAT, keeps monitoring if DockGate is offline. Installing it stops DockGate's central monitor for that host (no duplicate alerts); removing it resumes the monitor.</div>
-      ${warningHtml}
+    return `<div class="ui-page">
+      ${UI.header('', 'A small outbound-only container on each server collects metrics and logs, watches Docker events and sends alerts through your notification channels. It needs no inbound port, works behind NAT and keeps watching when DockGate is offline. While it runs, DockGate\'s own monitor for that server pauses so you get no duplicate alerts.', `${UI.btn('Refresh', 'id="edge-refresh"')} ${UI.primary('Install on servers…', 'id="edge-install-all"')}`)}
+      ${channelConfigured ? '' : `<div class="insight-card warning" style="margin-bottom:12px"><span>No notification channel is set up yet, so the agent installs in metrics-only mode. <a href="#/settings?tab=notifications">Set up a channel</a></span></div>`}
       <div id="edge-agent-table"><div class="text-xs text-muted">Loading servers…</div></div>
     </div>`;
   };
@@ -196,7 +186,7 @@
         const [serversResp, status] = await Promise.all([API.get('/servers'), API.get('/agent/status')]);
         const servers = (serversResp.servers || serversResp || []).filter(s => s.id !== 'local' && s.type !== 'local');
         if (!servers.length) {
-          el.innerHTML = `<div class="text-xs text-muted">No remote servers yet. Add one under Infrastructure to deploy the agent.</div>`;
+          el.innerHTML = `<div class="text-xs text-muted">No remote servers yet. Add one in Servers to install the agent on it.</div>`;
           return;
         }
         el.innerHTML = UI.table([{ label: 'Server' }, { label: 'Address' }, { label: 'Agent' }, { label: 'Version' }, { label: '', align: 'right' }], servers.map(s => ({ cells: agentCells(s, status[s.id] || {}) })), { minWidth: 640 });

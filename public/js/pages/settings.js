@@ -366,7 +366,9 @@ Router.register('settings', async (content, params) => {
               <button class="btn btn-primary btn-sm" id="save-rules" style="margin-top:8px;">Save Rules</button>
             </div>
 
-            ${typeof edgeAgentSectionHtml === 'function' ? edgeAgentSectionHtml(emailConfigured || tgConfigured) : ''}
+            <div class="settings-section" style="margin-top:20px;">
+              ${UI.settings([{ label: 'Edge agent', desc: 'Keeps watching a server and sends these alerts when DockGate cannot reach it. Installed per server, so it now lives under Servers.', action: UI.btn('Open Edge agent', 'id="open-edge-agent"') }])}
+            </div>
           `;
 
           // Accordion
@@ -490,7 +492,7 @@ Router.register('settings', async (content, params) => {
           });
 
           // Edge Agent (per-server observability) — always render; agent can install in metrics-only mode.
-          if (typeof attachEdgeAgentHandlers === 'function') attachEdgeAgentHandlers(tabContent, true);
+          document.getElementById('open-edge-agent')?.addEventListener('click', () => Router.navigate('infra', { tab: 'agent' }));
 
         } catch(e) {
           tabContent.innerHTML = '<div class="text-xs text-muted">Could not load notification settings.</div>';

@@ -349,7 +349,7 @@ async function openPushModal(repoTag, imageId) {
         <input class="input" id="push-ref" value="${escapeHtml(repoTag)}" placeholder="ghcr.io/owner/app:tag" spellcheck="false">
       </div>
       <div id="push-reg" class="text-xs" style="min-height:16px"></div>
-      <div class="text-xs text-muted">The credential is matched automatically by registry host — add it under <strong>Servers → Registries</strong> first, with <strong>write/push</strong> access. To push a local image, change the reference to a full registry path: DockGate re-tags it for you, then pushes.</div>
+      <div class="text-xs text-muted">The credential is matched automatically by registry host — add it under <strong>Deploy → Registries</strong> first, with <strong>write/push</strong> access. To push a local image, change the reference to a full registry path: DockGate re-tags it for you, then pushes.</div>
       <pre id="push-log" style="display:none;background:var(--bg-primary,#0d1117);border:1px solid var(--border);border-radius:8px;padding:10px;height:280px;overflow:auto;font-family:var(--font-mono,monospace);font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
       <div id="push-result" style="display:none"></div>
     </div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
@@ -372,7 +372,7 @@ async function openPushModal(repoTag, imageId) {
     const reg = matchRegistry(host, registries);
     regEl.innerHTML = reg
       ? `<span style="color:var(--success,#22c55e)">✓ Will authenticate as <strong>${escapeHtml(reg.name || reg.server_address)}</strong> (${escapeHtml(host)})</span>`
-      : `<span style="color:var(--warning,#f59e0b)">⚠ No stored credential for <strong>${escapeHtml(host)}</strong> — push is anonymous (fails for private). Add it under Servers → Registries.</span>`;
+      : `<span style="color:var(--warning,#f59e0b)">⚠ No stored credential for <strong>${escapeHtml(host)}</strong> — push is anonymous (fails for private). Add it under Deploy → Registries.</span>`;
   };
   refEl.addEventListener('input', updateBadge);
   API.get('/registries').then(rows => { registries = rows || []; updateBadge(); }).catch(() => {});

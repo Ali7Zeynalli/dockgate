@@ -345,7 +345,7 @@ const MonitoringPage = {
               <td style="padding:10px 12px;font-family:var(--font-mono);">${memMb} MB</td>
               <td style="padding:10px 12px;font-family:var(--font-mono);">${typeof memP === 'number' ? memP.toFixed(1) + '%' : memP}</td>
               <td style="padding:10px 12px;">
-                <button class="btn btn-secondary btn-sm" onclick="Router.navigate('activity', { tab: 'logs', container: '${escapeHtml(name)}' })" style="padding:2px 8px;font-size:11px;">
+                <button class="btn btn-secondary btn-sm" onclick="Router.navigate('observe', { tab: 'logs', container: '${escapeHtml(name)}' })" style="padding:2px 8px;font-size:11px;">
                   📜 Logs
                 </button>
               </td>

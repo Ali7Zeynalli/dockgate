@@ -318,3 +318,12 @@
   .page-title { font-size: 19px; }
 }
 @media (prefers-reduced-motion: reduce) { .mac-sidebar { transition: none; } }
+
+/* Top bar breadcrumb: "Section / Page". The page name is the strong part; the section is a hint. */
+.header-title .crumb-parent { color: var(--text-muted); font-weight: 500; }
+.header-title .crumb-sep { color: var(--text-muted); margin: 0 8px; font-weight: 400; opacity: .7; }
+.header-title .crumb-page { color: var(--text-primary); }
+@media (max-width: 900px) { .header-title .crumb-parent, .header-title .crumb-sep { display: none; } }
+/* Sections list their pages in the sidebar; the old in-page tab bar of Settings stays for scripts only. */
+#settings-tabs { display: none; }
+.mac-header-left .header-title { white-space: nowrap; }
