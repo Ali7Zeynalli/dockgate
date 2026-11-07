@@ -85,3 +85,30 @@ jobs:
           package-name: dockgate
           package-type: container
           min-versions-to-keep: 3
+
+  # GitHub Release for the version in package.json — created once, when its tag does not exist yet
+  # (i.e. on the push that bumps the version). Notes = that version's section of CHANGELOG.md.
+  release:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Create GitHub Release (if missing)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(jq -r .version package.json)
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — nothing to do"
+            exit 0
+          fi
+          awk -v v="$VERSION" 'index($0, "## [" v "]")==1 {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md | sed '/^---$/d' > notes.md
+          [ -s notes.md ] || echo "See CHANGELOG.md" > notes.md
+          printf '\n**Docker image:** `ghcr.io/%s:%s`\n' "${GITHUB_REPOSITORY,,}" "$VERSION" >> notes.md
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md
