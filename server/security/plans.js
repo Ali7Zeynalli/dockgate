@@ -258,26 +258,53 @@ COMMIT
 # END DOCKGATE-DOCKER
 `;
 
-const AFTER = '/etc/ufw/after.rules';
-const STRIP_BLOCK = `{{S}}sed -i '/# BEGIN DOCKGATE-DOCKER/,/# END DOCKGATE-DOCKER/d' ${AFTER}`;
+// IPv6: Docker with ip6tables (default on IPv6 networks since Docker 27) NATs published ports through the
+// ip6tables FORWARD chain too, so the same idea goes into after6.rules. Container networks there are ULA
+// (fc00::/7) or link-local; traffic between them passes, new outside → container connections are dropped.
+const DOCKER_BLOCK6 = `# BEGIN DOCKGATE-DOCKER
+# Managed by DockGate — IPv6 twin of the after.rules block. Open a port with: ufw route allow proto tcp from any to any port <container-port>
+*filter
+:ufw6-user-forward - [0:0]
+:ufw6-docker-logging-deny - [0:0]
+:DOCKER-USER - [0:0]
+-A DOCKER-USER -j ufw6-user-forward
+-A DOCKER-USER -j RETURN -s fc00::/7
+-A DOCKER-USER -j RETURN -s fe80::/10
+-A DOCKER-USER -p udp -m udp --sport 53 --dport 1024:65535 -j RETURN
+-A DOCKER-USER -j ufw6-docker-logging-deny -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -d fc00::/7
+-A DOCKER-USER -j ufw6-docker-logging-deny -p udp -m udp --dport 0:32767 -d fc00::/7
+-A DOCKER-USER -j RETURN
+-A ufw6-docker-logging-deny -m limit --limit 3/min --limit-burst 10 -j LOG --log-prefix "[UFW DOCKER BLOCK] "
+-A ufw6-docker-logging-deny -j DROP
+COMMIT
+# END DOCKGATE-DOCKER
+`;
 
-/** Turn Docker port isolation on (keepPublic: [{ port: containerPort, proto }]) or off. */
+const AFTER = '/etc/ufw/after.rules';
+const AFTER6 = '/etc/ufw/after6.rules';
+const stripBlock = (f) => `{{S}}sed -i '/# BEGIN DOCKGATE-DOCKER/,/# END DOCKGATE-DOCKER/d' ${f}`;
+const STRIP_BLOCK = stripBlock(AFTER);
+
+/** Turn Docker port isolation on (keepPublic: [{ port: containerPort, proto }]) or off — IPv4 and IPv6. */
 function isolationPlan({ id, enable, keepPublic, test }) {
-  const prev = `${AFTER}.dockgate-prev`;
-  const restoreRoot = `[ -f ${prev} ] && mv -f ${prev} ${AFTER}\nufw reload >/dev/null 2>&1`;
+  const prev = `${AFTER}.dockgate-prev`, prev6 = `${AFTER6}.dockgate-prev`;
+  const restoreRoot = `[ -f ${prev} ] && mv -f ${prev} ${AFTER}\n[ -f ${prev6} ] && mv -f ${prev6} ${AFTER6}\nufw reload >/dev/null 2>&1`;
+  // after6.rules only exists (and only matters) when UFW manages IPv6 (IPV6=yes in /etc/default/ufw)
+  const v6 = (cmd) => `if {{S}}test -f ${AFTER6}; then ${cmd}; fi`;
   const steps = [
-    { label: `Back up ${AFTER}`, cmd: `command -v ufw >/dev/null 2>&1 && {{S}}ufw status | grep -q 'Status: active' || { echo "UFW is not active — enable the firewall first (Setup → Firewall)"; exit 1; }; {{S}}cp -p ${AFTER} ${prev}` },
+    { label: `Back up ${AFTER} and ${AFTER6}`, cmd: `command -v ufw >/dev/null 2>&1 && {{S}}ufw status | grep -q 'Status: active' || { echo "UFW is not active — turn the firewall on first"; exit 1; }; {{S}}cp -p ${AFTER} ${prev} && ${v6(`{{S}}cp -p ${AFTER6} ${prev6}`)}` },
     enable
-      ? { label: 'Add the DOCKER-USER rules (drop new outside → container connections)', cmd: `${STRIP_BLOCK} && echo ${b64('\n' + DOCKER_BLOCK)} | base64 -d | {{S}}tee -a ${AFTER} >/dev/null` }
-      : { label: 'Remove the DOCKER-USER rules', cmd: STRIP_BLOCK },
+      ? { label: 'Add the DOCKER-USER rules, IPv4 + IPv6 (drop new outside → container connections)', cmd: `${STRIP_BLOCK} && echo ${b64('\n' + DOCKER_BLOCK)} | base64 -d | {{S}}tee -a ${AFTER} >/dev/null && ${v6(`${stripBlock(AFTER6)} && echo ${b64('\n' + DOCKER_BLOCK6)} | base64 -d | {{S}}tee -a ${AFTER6} >/dev/null`)}` }
+      : { label: 'Remove the DOCKER-USER rules (IPv4 + IPv6)', cmd: `${STRIP_BLOCK} && ${v6(stripBlock(AFTER6))}` },
     { label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, restoreRoot) },
   ];
   if (enable && keepPublic.length) {
+    // `ufw route allow` adds the IPv4 and the IPv6 rule (when UFW manages IPv6)
     steps.push({ label: `Keep public: ${keepPublic.map(k => `${k.port}/${k.proto}`).join(', ')}`, cmd: keepPublic.map(k => `{{S}}ufw route allow proto ${P.assertProto(k.proto)} from any to any port ${P.assertPort(k.port)} >/dev/null`).join(' && ') });
   }
   steps.push({ label: 'Reload UFW', cmd: '{{S}}ufw reload >/dev/null', rollbackOnFail: true });
   steps.push({ label: 'Open a NEW SSH connection to test', test, rollbackOnFail: true });
-  steps.push({ label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; {{S}}rm -f ${prev}; true` });
+  steps.push({ label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; {{S}}rm -f ${prev} ${prev6}; true` });
   return { steps, rollback: rollbackNow(id) };
 }
 
@@ -298,7 +325,7 @@ function addRuleCmd({ port, proto, from, action }) {
 const REBOOT = `{{S}}sh -c ${shq('nohup sh -c "sleep 2; systemctl reboot 2>/dev/null || reboot" >/dev/null 2>&1 &')}`;
 
 module.exports = {
-  DROPIN, DOCKER_BLOCK, READ_ACCESS, READ_FIREWALL, READ_USERS, READ_POSTURE, readKeysScript, SSHD_RELOAD_ROOT,
+  DROPIN, DOCKER_BLOCK, DOCKER_BLOCK6, READ_ACCESS, READ_FIREWALL, READ_USERS, READ_POSTURE, readKeysScript, SSHD_RELOAD_ROOT,
   accessPlan, deployUserPlan, createUserPlan, setPermsPlan, lockPlan, deleteUserPlan, addKeysPlan, writeKeysPlan,
   isolationPlan, exposeCmd, deleteRulesCmd, addRuleCmd, REBOOT, b64, shq,
 };

@@ -207,6 +207,22 @@ test('plans: Docker isolation block = DOCKER-USER rules + ufw-user-forward; keep
   assert.ok(plan.steps.some(s => s.test && s.rollbackOnFail));
 });
 
+test('plans: Docker isolation covers IPv6 (after6.rules) when UFW manages it, and rollback restores both files', () => {
+  assert.match(plans.DOCKER_BLOCK6, /-A DOCKER-USER -j ufw6-user-forward/);
+  assert.match(plans.DOCKER_BLOCK6, /fc00::\/7/);
+  assert.doesNotMatch(plans.DOCKER_BLOCK6, /\b10\.0\.0\.0|192\.168/, 'no IPv4 ranges in the v6 table');
+  const on = plans.isolationPlan({ id: 'i6', enable: true, keepPublic: [], test: { username: 'deploy' } });
+  const all = on.steps.map(s => s.cmd || '').join('\n');
+  assert.match(all, /if \{\{S\}\}test -f \/etc\/ufw\/after6\.rules; then/, 'v6 step is guarded by file existence');
+  assert.match(all, /tee -a \/etc\/ufw\/after6\.rules/);
+  assert.match(all, /cp -p \/etc\/ufw\/after6\.rules \/etc\/ufw\/after6\.rules\.dockgate-prev/);
+  const decoded = all.match(/echo ([A-Za-z0-9+/=]{20,}) \| base64 -d/g).map(m => Buffer.from(m.split(' ')[1], 'base64').toString()).join('\n');
+  assert.match(decoded, /mv -f \/etc\/ufw\/after6\.rules\.dockgate-prev \/etc\/ufw\/after6\.rules/, 'rollback restores after6.rules');
+  assert.match(decoded, /mv -f \/etc\/ufw\/after\.rules\.dockgate-prev \/etc\/ufw\/after\.rules/, 'rollback restores after.rules');
+  const off = plans.isolationPlan({ id: 'i7', enable: false, keepPublic: [], test: { username: 'deploy' } });
+  assert.ok(off.steps.some(s => /after6\.rules/.test(s.cmd || '') && /sed -i/.test(s.cmd)), 'turning off strips the v6 block too');
+});
+
 // ---------------------------------------------------------------- host keys
 test('ssh-hostkey: fingerprints, strict verifier and known_hosts line', () => {
   const blob = blobOf();
