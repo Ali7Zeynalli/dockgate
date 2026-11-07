@@ -69,9 +69,18 @@ function buildCliEnv(activeServerId, subdir) {
   const realSsh = ['/usr/bin/ssh', '/bin/ssh', '/usr/local/bin/ssh'].find(p => fs.existsSync(p)) || 'ssh';
   const binDir = path.join(DATA_DIR, subdir, '.ssh-wrap', activeServerId);
   fs.mkdirSync(binDir, { recursive: true });
+  // Host key: when DockGate has pinned this server's key, the CLI must match it exactly (known_hosts +
+  // StrictHostKeyChecking=yes). Before the first pin, fall back to accept-new.
+  const khLine = require('./ssh-hostkey').knownHostsLine(s);
+  let hostKeyOpts = '-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null';
+  if (khLine) {
+    const kh = path.join(binDir, 'known_hosts');
+    fs.writeFileSync(kh, khLine + '\n', { mode: 0o600 });
+    hostKeyOpts = `-o StrictHostKeyChecking=yes -o UserKnownHostsFile=${kh}`;
+  }
   fs.writeFileSync(
     path.join(binDir, 'ssh'),
-    `#!/bin/sh\nexec ${realSsh} -i ${keyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o BatchMode=yes "$@"\n`,
+    `#!/bin/sh\nexec ${realSsh} -i ${keyPath} -o IdentitiesOnly=yes ${hostKeyOpts} -o BatchMode=yes "$@"\n`,
     { mode: 0o755 }
   );
   env.PATH = `${binDir}:${env.PATH || ''}`;

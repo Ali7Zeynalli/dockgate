@@ -19,7 +19,7 @@ const CONNECT_OPTS = { readyTimeout: 20000, keepaliveInterval: 15000, keepaliveC
 // Build ssh2 connect options from a server row (same auth as host-terminal.js/docker.js). Throws (sync) on a
 // missing key file or a decrypt failure — callers wrap this so the throw rejects the borrower, never escapes.
 function authFor(s) {
-  const opts = { host: s.host, port: s.port || 22, username: s.username, ...CONNECT_OPTS };
+  const opts = { host: s.host, port: s.port || 22, username: s.username, ...CONNECT_OPTS, hostVerifier: require('./ssh-hostkey').verifierFor(s) };
   if (s.key_path) {
     const keyPath = path.isAbsolute(s.key_path) ? s.key_path : path.join(SSH_KEYS_DIR, s.key_path);
     if (!fs.existsSync(keyPath)) throw new Error(`SSH key not found: ${keyPath}`);

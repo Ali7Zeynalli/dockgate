@@ -7,6 +7,35 @@
 // (it only toggles item ids). Lockout-risky items (firewall, ssh-hardening) carry risk:'high' and are
 // guarded by the runner (key-present check, SSH-allow bundle, explicit confirm).
 
+// apt waits up to 5 min for the dpkg lock instead of failing — on a fresh cloud VPS, cloud-init and
+// unattended-upgrades hold it for the first minutes. DEBIAN_FRONTEND keeps every install non-interactive.
+const APT = 'sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300';
+// Keep locally modified config files on upgrade instead of stopping at dpkg's "keep or replace?" prompt.
+const APT_KEEP_CONF = '-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold';
+// RHEL: EPEL via the epel-release package (Rocky/Alma/CentOS), or the upstream RPM on real RHEL.
+const EPEL = 'sudo dnf -y install epel-release || sudo dnf -y install "https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(rpm -E %rhel).noarch.rpm"';
+// Amazon Linux shares the rhel family but has no EPEL / get.docker.com support — steps branch on this.
+const IS_AMZN = '[ "$(. /etc/os-release; echo $ID)" = amzn ]';
+
+
+// Swap sized to the machine; refuses when the root disk lacks room (size + 1 GB headroom). A leftover
+// /swapfile from an interrupted run is removed first so fallocate never fails on it.
+const SWAP_INSTALL = 'M=$(awk \'/MemTotal/{print int($2/1024)}\' /proc/meminfo); if [ "$M" -lt 2048 ]; then S=2048; elif [ "$M" -lt 4096 ]; then S=$M; else S=4096; fi; ' +
+  'F=$(df -Pm / | awk \'NR==2{print $4}\'); if [ "$F" -le $((S+1024)) ]; then echo "Not enough free disk for a ${S} MB swap file (${F} MB free)"; false; fi && ' +
+  '{ sudo swapoff /swapfile 2>/dev/null; sudo rm -f /swapfile; true; } && (sudo fallocate -l ${S}M /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=$S status=none) && ' +
+  'sudo chmod 600 /swapfile && sudo mkswap /swapfile >/dev/null && sudo swapon /swapfile && (grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null)';
+
+// Docker daemon.json: log rotation + live-restore. Fresh file → written; existing file → merged with
+// python3 (a backup is kept); no python3 → refuse rather than clobber the admin's config. live-restore is
+// incompatible with swarm mode, so it is left out there. With no running containers dockerd restarts;
+// otherwise it reloads (the new defaults apply to containers created afterwards either way).
+const DOCKER_CFG_DETECT = 'sudo grep -q \'"max-size"\' /etc/docker/daemon.json 2>/dev/null';
+const DOCKER_CFG_INSTALL = 'LR=true; [ "$(sudo docker info --format \'{{.Swarm.LocalNodeState}}\' 2>/dev/null)" = active ] && LR=false; sudo mkdir -p /etc/docker && ' +
+  'if [ ! -s /etc/docker/daemon.json ]; then printf \'{\\n  "log-driver": "json-file",\\n  "log-opts": { "max-size": "10m", "max-file": "3" },\\n  "live-restore": %s\\n}\\n\' "$LR" | sudo tee /etc/docker/daemon.json >/dev/null; ' +
+  'elif command -v python3 >/dev/null; then sudo cp -p /etc/docker/daemon.json /etc/docker/daemon.json.dockgate.bak && sudo python3 -c "import json,sys;p=\'/etc/docker/daemon.json\';d=json.load(open(p));d.setdefault(\'log-driver\',\'json-file\');o=d.setdefault(\'log-opts\',{});o.setdefault(\'max-size\',\'10m\');o.setdefault(\'max-file\',\'3\');d.setdefault(\'live-restore\',sys.argv[1]==\'true\');json.dump(d,open(p,\'w\'),indent=2)" "$LR"; ' +
+  'else echo "/etc/docker/daemon.json already exists and python3 is missing — add log-opts by hand"; false; fi && ' +
+  'if [ -z "$(sudo docker ps -q 2>/dev/null)" ]; then sudo systemctl restart docker; else sudo systemctl reload docker; fi';
+
 // Canonical order (lower seq runs first): base → identity → perimeter → service.
 const ITEMS = [
   {
@@ -16,7 +45,7 @@ const ITEMS = [
     alwaysRun: true,
     description: 'Refresh the package index and apply available upgrades — closes known CVEs before anything else is installed.',
     distro: {
-      debian: { detect: 'false', install: 'sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y upgrade', verify: 'true' },
+      debian: { detect: 'false', install: `${APT} update && ${APT} -y ${APT_KEEP_CONF} upgrade`, verify: 'true' },
       rhel:   { detect: 'false', install: 'sudo dnf -y upgrade --refresh', verify: 'true' },
       alpine: { detect: 'false', install: 'sudo apk update && sudo apk upgrade --available', verify: 'true' },
     },
@@ -25,8 +54,8 @@ const ITEMS = [
     id: 'base-utils', seq: 20, label: 'Base utilities', group: 'base', risk: 'low', needsSudo: true,
     description: 'curl, ca-certificates, gnupg, git — prerequisites for the Docker repo and most setup steps.',
     distro: {
-      debian: { detect: 'command -v curl && command -v git && command -v gpg', install: 'sudo apt-get install -y curl ca-certificates gnupg git', verify: 'command -v curl && command -v git' },
-      rhel:   { detect: 'command -v curl && command -v git', install: 'sudo dnf -y install curl ca-certificates gnupg2 git', verify: 'command -v curl && command -v git' },
+      debian: { detect: 'command -v curl && command -v git && command -v gpg && command -v sudo', install: `${APT} update && ${APT} install -y curl ca-certificates gnupg git sudo`, verify: 'command -v curl && command -v git && command -v sudo' },
+      rhel:   { detect: 'command -v curl && command -v git && command -v sudo', install: 'sudo dnf -y install curl ca-certificates gnupg2 git sudo', verify: 'command -v curl && command -v git' },
       alpine: { detect: 'command -v curl && command -v git', install: 'sudo apk add curl ca-certificates gnupg git', verify: 'command -v curl && command -v git' },
     },
   },
@@ -34,7 +63,7 @@ const ITEMS = [
     id: 'timesync', seq: 30, label: 'Time sync (chrony)', group: 'system', risk: 'low', needsSudo: true,
     description: 'Accurate clock — TLS, logs and 2FA all depend on it.',
     distro: {
-      debian: { detect: 'command -v chronyd || timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -qx yes', install: 'sudo apt-get install -y chrony && sudo systemctl enable --now chrony 2>/dev/null || sudo systemctl enable --now chronyd', verify: 'timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -qx yes || systemctl is-active chronyd' },
+      debian: { detect: 'command -v chronyd || timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -qx yes', install: `${APT} install -y chrony && (sudo systemctl enable --now chrony 2>/dev/null || sudo systemctl enable --now chronyd)`, verify: 'timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -qx yes || systemctl is-active chronyd' },
       rhel:   { detect: 'command -v chronyd', install: 'sudo dnf -y install chrony && sudo systemctl enable --now chronyd', verify: 'systemctl is-active chronyd' },
       alpine: { detect: 'command -v chronyd', install: 'sudo apk add chrony && sudo rc-update add chronyd default && sudo rc-service chronyd start', verify: 'rc-service chronyd status' },
     },
@@ -46,12 +75,13 @@ const ITEMS = [
       // Allow the port we're actually connected on (SSH_CONNECTION server port) before enabling — lockout guard.
       debian: {
         detect: 'sudo ufw status 2>/dev/null | grep -qi "Status: active"',
-        install: 'sudo apt-get install -y ufw && P=$(echo "$SSH_CONNECTION" | awk "{print \\$4}") && sudo ufw allow "${P:-22}"/tcp && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw --force enable',
+        install: `${APT} install -y ufw && P=$(echo "$SSH_CONNECTION" | awk "{print \\$4}") && sudo ufw allow "\${P:-22}"/tcp && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw --force enable`,
         verify: 'sudo ufw status | grep -qi "Status: active"',
       },
       rhel: {
         detect: 'sudo firewall-cmd --state 2>/dev/null | grep -qx running',
-        install: 'sudo dnf -y install firewalld && sudo systemctl enable --now firewalld && sudo firewall-cmd --permanent --add-service=ssh && sudo firewall-cmd --permanent --add-service=http && sudo firewall-cmd --permanent --add-service=https && sudo firewall-cmd --reload',
+        // The port we're connected on is opened too (sshd may not be on 22) — otherwise enabling locks you out.
+        install: 'sudo dnf -y install firewalld && sudo systemctl enable --now firewalld && P=$(echo "$SSH_CONNECTION" | awk "{print \\$4}") && sudo firewall-cmd --permanent --add-port="${P:-22}"/tcp && sudo firewall-cmd --permanent --add-service=ssh && sudo firewall-cmd --permanent --add-service=http && sudo firewall-cmd --permanent --add-service=https && sudo firewall-cmd --reload',
         verify: 'sudo firewall-cmd --state | grep -qx running',
       },
     },
@@ -78,36 +108,59 @@ const ITEMS = [
   },
   {
     id: 'fail2ban', seq: 60, label: 'Fail2ban', group: 'security', risk: 'low', needsSudo: true,
-    description: 'Bans IPs after repeated failed SSH logins — reduces brute-force noise.',
+    description: 'Bans IPs after repeated failed SSH logins — reduces brute-force noise. Writes its own /etc/fail2ban/jail.d/dockgate.conf; an existing jail.local is left untouched.',
     distro: {
-      debian: { detect: 'command -v fail2ban-client', install: 'sudo apt-get install -y fail2ban && printf "[sshd]\\nenabled = true\\nbackend = systemd\\n" | sudo tee /etc/fail2ban/jail.local >/dev/null && sudo systemctl enable --now fail2ban', verify: 'systemctl is-active fail2ban' },
-      rhel:   { detect: 'command -v fail2ban-client', install: 'sudo dnf -y install epel-release && sudo dnf -y install fail2ban && printf "[sshd]\\nenabled = true\\nbackend = systemd\\n" | sudo tee /etc/fail2ban/jail.local >/dev/null && sudo systemctl enable --now fail2ban', verify: 'systemctl is-active fail2ban' },
+      debian: { detect: 'systemctl is-active --quiet fail2ban', install: `${APT} install -y fail2ban python3-systemd && sudo mkdir -p /etc/fail2ban/jail.d && printf "[sshd]\\nenabled = true\\nbackend = systemd\\n" | sudo tee /etc/fail2ban/jail.d/dockgate.conf >/dev/null && sudo systemctl enable fail2ban && sudo systemctl restart fail2ban`, verify: 'systemctl is-active --quiet fail2ban' },
+      rhel:   { detect: 'systemctl is-active --quiet fail2ban', install: `if ${IS_AMZN}; then echo "fail2ban is not packaged for Amazon Linux"; false; fi && (${EPEL}) && sudo dnf -y install fail2ban && sudo mkdir -p /etc/fail2ban/jail.d && printf "[sshd]\\nenabled = true\\nbackend = systemd\\n" | sudo tee /etc/fail2ban/jail.d/dockgate.conf >/dev/null && sudo systemctl enable fail2ban && sudo systemctl restart fail2ban`, verify: 'systemctl is-active --quiet fail2ban' },
     },
   },
   {
     id: 'unattended-upgrades', seq: 70, label: 'Automatic security updates', group: 'security', risk: 'low', needsSudo: true,
     description: 'Applies security patches automatically going forward.',
     distro: {
-      debian: { detect: 'dpkg -l unattended-upgrades 2>/dev/null | grep -q "^ii"', install: 'sudo apt-get install -y unattended-upgrades && printf "APT::Periodic::Update-Package-Lists \\"1\\";\\nAPT::Periodic::Unattended-Upgrade \\"1\\";\\n" | sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null', verify: 'dpkg -l unattended-upgrades | grep -q "^ii"' },
+      debian: { detect: 'dpkg -l unattended-upgrades 2>/dev/null | grep -q "^ii"', install: `${APT} install -y unattended-upgrades` + ' && printf "APT::Periodic::Update-Package-Lists \\"1\\";\\nAPT::Periodic::Unattended-Upgrade \\"1\\";\\n" | sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null', verify: 'dpkg -l unattended-upgrades | grep -q "^ii"' },
       rhel:   { detect: 'rpm -q dnf-automatic', install: 'sudo dnf -y install dnf-automatic && sudo sed -i "s/^apply_updates =.*/apply_updates = yes/" /etc/dnf/automatic.conf && sudo systemctl enable --now dnf-automatic.timer', verify: 'systemctl is-enabled dnf-automatic.timer' },
     },
   },
   {
     id: 'swap', seq: 80, label: 'Swap file', group: 'system', risk: 'low', needsSudo: true, optional: true,
-    description: 'A 2GB swap file + low swappiness — an OOM safety net for Docker build/run on small VPSes.',
+    description: 'A swap file sized to the machine (2 GB under 2 GB RAM, otherwise equal to RAM up to 4 GB) + low swappiness — an OOM safety net for Docker builds on small VPSes. Skipped if the disk lacks room.',
     distro: {
-      debian: { detect: 'swapon --show | grep -q .', install: 'sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && (grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null) && echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swappiness.conf >/dev/null && sudo sysctl --system >/dev/null', verify: 'swapon --show | grep -q .' },
-      rhel:   { detect: 'swapon --show | grep -q .', install: 'sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && (grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null)', verify: 'swapon --show | grep -q .' },
+      debian: { detect: 'swapon --show | grep -q .', install: SWAP_INSTALL + ' && echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swappiness.conf >/dev/null && sudo sysctl --system >/dev/null', verify: 'swapon --show | grep -q .' },
+      rhel:   { detect: 'swapon --show | grep -q .', install: SWAP_INSTALL + ' && echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swappiness.conf >/dev/null && sudo sysctl --system >/dev/null', verify: 'swapon --show | grep -q .' },
     },
   },
   {
     id: 'docker', seq: 90, label: 'Docker Engine + Compose', group: 'base', risk: 'medium', needsSudo: true,
-    description: 'Docker Engine, CLI, containerd, buildx and the compose v2 plugin from Docker\'s official repository.',
+    description: 'Docker Engine, CLI, containerd, buildx and the compose v2 plugin from Docker\'s official repository (Amazon Linux: the distro package + the compose plugin).',
     distro: {
       // get.docker.com is fine for first install when detect-gated (we never re-run it); compose plugin comes with it.
       debian: { detect: 'command -v docker && docker compose version', install: 'curl -fsSL https://get.docker.com | sudo sh && sudo systemctl enable --now docker', verify: 'sudo docker info >/dev/null 2>&1 && docker compose version' },
-      rhel:   { detect: 'command -v docker && docker compose version', install: 'curl -fsSL https://get.docker.com | sudo sh && sudo systemctl enable --now docker', verify: 'sudo docker info >/dev/null 2>&1 && docker compose version' },
+      rhel:   { detect: 'command -v docker && docker compose version', install: `if ${IS_AMZN}; then sudo dnf -y install docker && sudo mkdir -p /usr/local/lib/docker/cli-plugins && sudo curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose && sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; else curl -fsSL https://get.docker.com | sudo sh; fi && sudo systemctl enable --now docker`, verify: 'sudo docker info >/dev/null 2>&1 && docker compose version' },
       alpine: { detect: 'command -v docker && docker compose version', install: 'sudo apk add docker docker-cli-compose && sudo rc-update add docker default && sudo rc-service docker start', verify: 'sudo docker info >/dev/null 2>&1' },
+    },
+  },
+  {
+    id: 'docker-config', seq: 92, label: 'Docker log limits', group: 'base', risk: 'low', needsSudo: true,
+    description: 'Caps container logs (json-file, 10 MB × 3 per container) so they cannot fill the disk, and turns on live-restore (containers keep running while dockerd restarts; skipped in swarm mode). Merges into an existing /etc/docker/daemon.json. Applies to containers created afterwards.',
+    dependsOn: ['docker'],
+    distro: {
+      debian: { detect: DOCKER_CFG_DETECT, install: DOCKER_CFG_INSTALL, verify: DOCKER_CFG_DETECT },
+      rhel:   { detect: DOCKER_CFG_DETECT, install: DOCKER_CFG_INSTALL, verify: DOCKER_CFG_DETECT },
+      alpine: { detect: DOCKER_CFG_DETECT, install: DOCKER_CFG_INSTALL.replace('sudo systemctl restart docker', 'sudo rc-service docker restart').replace('sudo systemctl reload docker', 'sudo rc-service docker reload'), verify: DOCKER_CFG_DETECT },
+    },
+  },
+  {
+    id: 'deploy-user', seq: 95, label: 'Deploy user (non-root + SSH key)', group: 'security', risk: 'medium', needsSudo: true,
+    // Not a shell step: the provisioning runner hands it to the guarded deploy-user job (server/security),
+    // which creates "deploy", tests a NEW key login and only then switches DockGate's connection.
+    special: 'deploy-user',
+    description: 'Creates a non-root user "deploy" with passwordless sudo and Docker access, generates an SSH key for it, proves the key login works, then switches DockGate to that user. Password login is NOT turned off here — that is a separate, confirmed step in Access & SSH. (Use Overview → Create deploy user to pick another name or add your own key.)',
+    dependsOn: ['base-utils'],
+    distro: {
+      debian: { detect: "sudo sh -c 'ls /etc/sudoers.d/90-dockgate-*' >/dev/null 2>&1", install: 'true', verify: 'true' },
+      rhel:   { detect: "sudo sh -c 'ls /etc/sudoers.d/90-dockgate-*' >/dev/null 2>&1", install: 'true', verify: 'true' },
+      alpine: { detect: "sudo sh -c 'ls /etc/sudoers.d/90-dockgate-*' >/dev/null 2>&1", install: 'true', verify: 'true' },
     },
   },
   {
@@ -124,8 +177,8 @@ const ITEMS = [
 
 // Preset → ordered item ids. 'custom' is supplied by the UI via the `only` list.
 const PRESETS = {
-  'just-docker': ['update', 'docker', 'docker-group'],
-  'secure-baseline': ['update', 'base-utils', 'firewall', 'ssh-hardening', 'fail2ban', 'docker', 'docker-group'],
+  'just-docker': ['update', 'docker', 'docker-config', 'docker-group'],
+  'secure-baseline': ['update', 'base-utils', 'firewall', 'ssh-hardening', 'fail2ban', 'docker', 'docker-config', 'deploy-user', 'docker-group'],
   'full': ITEMS.map(i => i.id),
 };
 
@@ -169,7 +222,7 @@ function buildPlanForDistro(itemIds, osId) {
     if (!item) continue;
     const cmds = item.distro[family];
     if (!cmds) { plan.push({ id, seq: item.seq, label: item.label, risk: item.risk, requiresKey: !!item.requiresKey, na: true, reason: `not available on ${family}` }); continue; }
-    plan.push({ id, seq: item.seq, label: item.label, risk: item.risk, requiresKey: !!item.requiresKey, detect: cmds.detect, install: cmds.install, verify: cmds.verify });
+    plan.push({ id, seq: item.seq, label: item.label, risk: item.risk, requiresKey: !!item.requiresKey, special: item.special || null, detect: cmds.detect, install: cmds.install, verify: cmds.verify });
   }
   return plan;
 }
@@ -230,8 +283,8 @@ const SERVICE = {
   fail2ban: {
     risk: 'low',
     family: {
-      debian: { manager: 'systemd', unit: 'fail2ban', configPaths: ['/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
-      rhel:   { manager: 'systemd', unit: 'fail2ban', configPaths: ['/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
+      debian: { manager: 'systemd', unit: 'fail2ban', configPaths: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
+      rhel:   { manager: 'systemd', unit: 'fail2ban', configPaths: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/jail.local'], validate: 'sudo fail2ban-client -t' },
     },
   },
   'unattended-upgrades': {

@@ -33,7 +33,7 @@ function renderProvisionForm(serverId, catalog, scan, container) {
 
   const presets = [
     ['just-docker', 'Just Docker', '🐳', 'Docker Engine + compose plugin'],
-    ['secure-baseline', 'Secure baseline', '🛡', 'update · firewall · SSH hardening · fail2ban · Docker'],
+    ['secure-baseline', 'Secure baseline', '🛡', 'update · firewall · SSH hardening · fail2ban · Docker · deploy user'],
     ['full', 'Full', '🏭', 'Everything — also swap, time sync, auto-updates'],
     ['custom', 'Custom', '⚙️', 'Pick individual items'],
   ];
@@ -164,7 +164,8 @@ function renderProvisionForm(serverId, catalog, scan, container) {
       streamProvisionJob(serverId, r.jobId, container);
     } catch (e) {
       runBtn.disabled = false; runBtn.textContent = '▶ Run provisioning';
-      if (/confirm/i.test(e.message || '')) { container.querySelector('#pv-confirm-wrap').style.display = 'block'; showToast('Tick the risky-steps confirmation first', 'warning', 6000); }
+      if (/already running/i.test(e.message || '')) showToast(e.message, 'warning', 8000);
+      else if (/confirm/i.test(e.message || '')) { container.querySelector('#pv-confirm-wrap').style.display = 'block'; showToast('Tick the risky-steps confirmation first', 'warning', 6000); }
       else showToast(e.message, 'error', 8000);
     }
   });
@@ -283,7 +284,7 @@ function streamProvisionJob(serverId, jobId, container) {
       <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div><div style="font-weight:700" id="pv-title">Provisioning ${escapeHtml(serverId)}…</div>
           <div class="text-xs text-muted">Runs on the server even if you leave this page.</div></div>
-        <button class="btn btn-secondary btn-sm" id="pv-rescan" style="display:none">↻ Re-scan</button>
+        <div class="flex gap-1"><button class="btn btn-secondary btn-sm" id="pv-cancel">■ Cancel</button><button class="btn btn-secondary btn-sm" id="pv-rescan" style="display:none">↻ Re-scan</button></div>
       </div>
       <div id="pv-steps" style="display:flex;flex-direction:column;gap:8px"></div>
       <details class="card"><summary class="text-sm" style="cursor:pointer;font-weight:600">Show full log</summary>
@@ -295,6 +296,11 @@ function streamProvisionJob(serverId, jobId, container) {
   const titleEl = container.querySelector('#pv-title');
   const rescan = container.querySelector('#pv-rescan');
   rescan.addEventListener('click', () => renderProvisionPanel(serverId, container));
+  const cancelBtn = container.querySelector('#pv-cancel');
+  cancelBtn.addEventListener('click', () => showConfirm('Cancel provisioning', 'The item that is installing now finishes first (stopping a package manager halfway can break it); nothing after it runs.', async () => {
+    try { await API.post(`/servers/provision/job/${jobId}/cancel`); cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling…'; }
+    catch (e) { showToast(e.message, 'error', 6000); }
+  }, true));
 
   const sm = {
     verified: { ic: '✓', c: 'var(--success)' }, present: { ic: '✓', c: 'var(--success)' }, installed: { ic: '✓', c: 'var(--success)' },
@@ -326,6 +332,16 @@ function streamProvisionJob(serverId, jobId, container) {
     if (job.status && job.status !== 'running') {
       clearInterval(timer);
       rescan.style.display = '';
+      cancelBtn.style.display = 'none';
+      if (job.rebootRequired && !container.querySelector('#pv-reboot')) {
+        const rb = document.createElement('div');
+        rb.id = 'pv-reboot'; rb.className = 'insight-card warning'; rb.style.justifyContent = 'space-between';
+        rb.innerHTML = '<span>Updates need a reboot to take effect.</span><button class="btn btn-sm btn-secondary">Reboot server</button>';
+        rb.querySelector('button').addEventListener('click', () => showConfirm('Reboot server', 'The server restarts now and is unreachable for a minute or two.', async () => {
+          try { await API.post(`/servers/${serverId}/reboot`, { confirm: true }); showToast('Reboot started', 'info', 6000); } catch (e) { showToast(e.message, 'error', 8000); }
+        }, true));
+        stepsEl.parentNode.insertBefore(rb, stepsEl);
+      }
       const ok = (job.items || []).filter(i => ['verified', 'present'].includes(i.state)).length;
       const failed = (job.items || []).filter(i => i.state === 'failed').length;
       titleEl.textContent = `${failed ? '⚠' : '✓'} Provisioning ${job.status} — ${ok} ok, ${failed} failed`;

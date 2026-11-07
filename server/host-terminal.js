@@ -60,7 +60,7 @@ function attachHostTerminal(socket, { dockerService, stmts, logAction }) {
       // ---- Remote: an interactive SSH shell on the selected host ----
       const s = stmts.getServer.get(serverId);
       if (!s) { socket.emit('hostterm:error', { error: 'Active server not found', slot }); return; }
-      const opts = { host: s.host, port: s.port || 22, username: s.username, readyTimeout: 20000, keepaliveInterval: 15000 };
+      const opts = { host: s.host, port: s.port || 22, username: s.username, readyTimeout: 20000, keepaliveInterval: 15000, hostVerifier: require('./ssh-hostkey').verifierFor(s) };
       if (s.key_path) {
         const keyPath = path.isAbsolute(s.key_path) ? s.key_path : path.join(SSH_KEYS_DIR, s.key_path);
         if (!fs.existsSync(keyPath)) { socket.emit('hostterm:error', { error: `SSH key not found: ${keyPath}`, slot }); return; }

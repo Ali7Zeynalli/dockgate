@@ -2,6 +2,33 @@
 
 ---
 
+## [2.5.0] - 2026-11-07
+
+### Added
+- **Deploy user** (Server Console → Overview → *Create deploy user*, and the *Deploy user* item in Setup): creates a non-root user with passwordless sudo (`/etc/sudoers.d/90-dockgate-<user>`, checked with `visudo`) and Docker group membership, generates an ed25519 key pair (optionally also installs your own public key), proves the key login works with a **new** SSH connection, and only then switches DockGate's connection to that user. Password login is not touched here.
+- **Access & SSH** tab: root SSH login (allowed / key only / blocked), password login, SSH port and hardening (MaxAuthTries, idle timeout, X11), written to DockGate's own `/etc/ssh/sshd_config.d/10-dockgate-access.conf` (loaded before cloud/distro drop-ins, so its values win). Each change runs as a **lifeline job**: `sshd -t` → automatic 120 s rollback armed on the server (systemd-run, or a detached loop without systemd) → reload → a NEW SSH login is tested → keep, or restore immediately. A port change opens the new port in UFW / firewalld (and SELinux) first and closes the old one only after the test. Restricting root or password login is refused until DockGate connects as a non-root user with a key.
+- **Users** tab: list human accounts with sudo / docker / keys / password-login / locked state; add, lock / unlock (account expiry, blocks key logins too), delete (optionally with home), change sudo and docker membership, add / remove SSH keys (paste or generate) and download a DockGate-generated private key after re-entering the admin password. Server-side guards: DockGate's own user and key cannot be locked, deleted or removed; the last sudo user keeps sudo; the last key cannot be removed while password login is off.
+- **Firewall** tab: every listening port with where it is reachable from (public / one IP / internal only / this server only / bypasses UFW); **Docker port isolation** (DOCKER-USER rules in `/etc/ufw/after.rules`) so published container ports stop bypassing UFW, asking which ports stay public (80/443 pre-selected); open a port to everyone or one IP, close it, add / delete UFW rules (with their IPv6 twin). The SSH port can never be closed or denied here.
+- **Security status** card on the Server Console Overview (deploy user, password login, root login, firewall, Docker ports, host key) with links to the fix, plus a **Reboot required** notice and a Reboot button.
+- **SSH host key pinning** (trust on first use) for every connection to a managed server — panel, pooled SFTP, terminal, Docker client, event monitor, all forked workers, and the Docker CLI (`known_hosts` + `StrictHostKeyChecking=yes`). A different key is refused with a clear message; *Re-trust* in Access & SSH after a rebuild. Changing a server's host clears its pin.
+- **Docker log limits** provisioning item: json-file logs capped at 10 MB × 3 and `live-restore` (skipped in swarm mode), merged into an existing `daemon.json` (backup kept).
+- Provisioning **Cancel** (stops before the next item) and **reboot-required** detection.
+
+### Fixed
+- **Security:** `GET /api/meta/settings` returned the session signing secret and the admin password hash + salt to the browser. They are now never returned.
+- Provisioning on a root login without `sudo` installed (minimal Debian images) failed every step — commands now drop `sudo` as root and use `sudo -n` otherwise, with a clear pre-flight error when passwordless sudo is missing.
+- Provisioning on a fresh cloud VPS failed on the dpkg lock held by cloud-init / unattended-upgrades — the run now waits for cloud-init and apt waits up to 5 minutes for the lock.
+- `apt-get upgrade` could stop at the "keep or replace this config file?" prompt — locally modified files are kept (`--force-confdef --force-confold`).
+- Two provisioning runs on the same server could start in parallel — a second run is refused (409).
+- RHEL / firewalld only opened the `ssh` service (port 22) before enabling the firewall — a server on another SSH port was locked out. The current SSH port is opened first.
+- Fail2ban overwrote `/etc/fail2ban/jail.local`; it now writes `/etc/fail2ban/jail.d/dockgate.conf` and counts as installed only when the service is active.
+- Fail2ban on RHEL (EPEL via the upstream RPM when `epel-release` is unavailable) and Docker on Amazon Linux (distro package + compose plugin).
+- Swap: sized to RAM (2 GB under 2 GB RAM, otherwise RAM up to 4 GB), refuses when the disk lacks room, and removes a leftover `/swapfile` first.
+- Services tab commands on a root login without `sudo` installed.
+- `package-lock.json` root package version was stale (2.3.1).
+
+---
+
 ## [2.4.5] - 2026-08-28
 
 ### Added

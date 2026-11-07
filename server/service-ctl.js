@@ -8,7 +8,7 @@ function runWorker(cfg, op, extra = {}) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
       host: cfg.host, port: cfg.port, username: cfg.username,
-      keyPath: cfg.keyPath || null, password: cfg.password || null, passphrase: cfg.passphrase || null,
+      keyPath: cfg.keyPath || null, password: cfg.password || null, passphrase: cfg.passphrase || null, hostKey: cfg.host_key || cfg.hostKey || null,
       op, ...extra,
     });
     const child = execFile(process.execPath, [path.join(__dirname, 'service-ctl-worker.js'), payload], { maxBuffer: 4 * 1024 * 1024 });

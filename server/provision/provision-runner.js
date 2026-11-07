@@ -26,16 +26,29 @@ function planItems(server, { preset, only, confirm } = {}) {
 
 // server: a prepared config { id, host, port, username, key_path, keyPath, password, passphrase } —
 // keyPath absolute + secrets decrypted by the caller (route).
+// The running job for a server, if any (one provisioning run per server at a time — two parallel runs
+// would fight over the package manager lock).
+function runningJobFor(serverId) {
+  for (const j of provisionJobs.values()) if (j.serverId === serverId && j.status === 'running') return j;
+  return null;
+}
+
 function startProvision(server, opts = {}) {
-  const { itemIds, skipped } = planItems(server, opts); // may throw 409
+  const busy = runningJobFor(server.id);
+  if (busy) { const e = new Error('Provisioning is already running on this server — wait for it to finish or cancel it.'); e.statusCode = 409; e.jobId = busy.id; throw e; }
+  const planned = planItems(server, opts); // may throw 409
+  const skipped = planned.skipped;
+  // Special items run after the shell steps, as their own guarded jobs (see runSpecialItems).
+  const specials = planned.itemIds.filter(id => catalog.byId[id] && catalog.byId[id].special);
+  const itemIds = planned.itemIds.filter(id => !specials.includes(id));
   const jobId = crypto.randomBytes(8).toString('hex');
-  const job = { id: jobId, serverId: server.id, preset: opts.preset, status: 'running', phase: 'starting', distro: null, log: '', items: [], startedAt: Date.now(), finishedAt: null, dbInserted: false, _skipped: skipped, _ip: opts.sourceIp || null, error: null };
+  const job = { id: jobId, serverId: server.id, preset: opts.preset, status: 'running', phase: 'starting', distro: null, log: '', items: [], startedAt: Date.now(), finishedAt: null, dbInserted: false, _skipped: skipped, _ip: opts.sourceIp || null, error: null, rebootRequired: false, cancelled: false, _child: null, _specials: specials };
   provisionJobs.set(jobId, job);
   gc();
 
   const cfg = {
     host: server.host, port: server.port, username: server.username,
-    keyPath: server.keyPath || null, password: server.password || null, passphrase: server.passphrase || null,
+    keyPath: server.keyPath || null, password: server.password || null, passphrase: server.passphrase || null, hostKey: server.host_key || null,
     itemIds,
   };
 
@@ -49,8 +62,9 @@ function startProvision(server, opts = {}) {
       if (line.trim()) { try { handleEvent(job, JSON.parse(line)); } catch (e) { /* ignore non-JSON */ } }
     }
   });
+  job._child = child;
   child.stderr.on('data', () => {});
-  child.on('close', (code) => finalize(job));
+  child.on('close', () => runSpecialItems(job).then(() => finalize(job), () => finalize(job)));
   child.on('error', (err) => { jobLog(job, 'worker error: ' + err.message); job.error = job.error || err.message; finalize(job); });
 
   return { jobId, runId: jobId };
@@ -81,6 +95,39 @@ function handleEvent(job, evt) {
     } catch (e) { jobLog(job, '[db] ' + e.message); }
   }
   else if (evt.type === 'fatal') { job.error = evt.error; jobLog(job, '✗ ' + evt.error); }
+  else if (evt.type === 'reboot-required') { job.rebootRequired = true; jobLog(job, '⚠ A reboot is required to finish applying updates'); }
+  else if (evt.type === 'cancelled') { job.cancelled = true; }
+}
+
+// Deploy user (and future special items): runs after the shell steps succeeded. Skipped when DockGate
+// already connects as a non-root user with a key — there is nothing to create.
+async function runSpecialItems(job) {
+  if (!job._specials || !job._specials.includes('deploy-user')) return;
+  const label = catalog.byId['deploy-user'].label;
+  const record = (state, extra = {}) => {
+    job.items.push({ id: 'deploy-user', label, state, error: extra.error || null });
+    try { stmts.insertProvisionItem.run(job.id, job.serverId, 'deploy-user', catalog.byId['deploy-user'].seq, label, state, null, null, null, extra.log || '', extra.durationMs || 0, extra.error || null, extra.reason || null); } catch (e) {}
+  };
+  if (job.error || job.cancelled || job.items.some(i => i.state === 'failed')) { record('skipped', { reason: 'earlier steps did not complete' }); return; }
+  const row = stmts.getServer.get(job.serverId);
+  if (!row) return;
+  if (row.username !== 'root' && row.key_path) { record('present', { log: `DockGate already connects as ${row.username} with a key` }); jobLog(job, `▶ ${label}\n  ✓ already present — DockGate connects as ${row.username}`); return; }
+  const t0 = Date.now();
+  job.phase = 'deploy-user';
+  jobLog(job, `▶ ${label}`);
+  let secJobId;
+  try { secJobId = require('../security/service').startDeployUser(row, { username: 'deploy' }, { sourceIp: job._ip }); }
+  catch (e) { record('failed', { error: e.message }); jobLog(job, '  ✗ ' + e.message); return; }
+  const runner = require('../security/runner');
+  let sj;
+  for (;;) {
+    await new Promise(r => setTimeout(r, 500));
+    sj = runner.getJob(secJobId);
+    if (!sj || sj.status !== 'running') break;
+  }
+  for (const st of (sj ? sj.steps : [])) jobLog(job, `  ${st.state === 'done' ? '✓' : st.state === 'failed' ? '✗' : '·'} ${st.label}`);
+  if (sj && sj.status === 'done') { record('verified', { durationMs: Date.now() - t0 }); jobLog(job, '  ✓ DockGate now connects as deploy (SSH key)'); }
+  else record('failed', { error: (sj && sj.error) || 'deploy user failed', durationMs: Date.now() - t0 });
 }
 
 function finalize(job) {
@@ -88,14 +135,31 @@ function finalize(job) {
   ensureRun(job, job.distro, 0);
   const ok = job.items.filter(i => i.state === 'verified' || i.state === 'present').length;
   const failed = job.items.filter(i => i.state === 'failed').length;
-  job.status = job.error ? 'error' : (failed ? 'partial' : 'done');
+  job.status = job.error ? 'error' : (job.cancelled ? 'cancelled' : (failed ? 'partial' : 'done'));
   job.finishedAt = Date.now();
+  job._child = null;
   try { stmts.updateProvisionRunStatus.run(job.status, ok, failed, job.error || null, job.id); } catch (e) {}
   try { stmts.appendProvisionRunLog.run(job.log, job.id); } catch (e) {}
   logAction({ server: 'local', resourceType: 'server', resourceId: job.serverId, resourceName: job.serverId, action: 'provision-finish', sourceIp: job._ip, details: { status: job.status, ok, failed } });
 }
 
-function getJob(id) { return provisionJobs.get(id); }
+// Public view of a job (no child-process handle).
+function getJob(id) {
+  const j = provisionJobs.get(id);
+  if (!j) return null;
+  const { _child, _skipped, _ip, _specials, ...pub } = j;
+  return pub;
+}
+
+// Ask a running job to stop before its next item (the current install finishes first).
+function cancelJob(id) {
+  const j = provisionJobs.get(id);
+  if (!j) { const e = new Error('Job not found'); e.statusCode = 404; throw e; }
+  if (j.status !== 'running' || !j._child) return { status: j.status };
+  try { j._child.kill('SIGTERM'); } catch (e) {}
+  jobLog(j, '■ Cancel requested — stopping after the current item');
+  return { status: 'cancelling' };
+}
 
 // Read-only live scan — runs every catalog item's detect over SSH (isolated worker, no install, no DB).
 // Resolves { distro, items:[{id,label,present,na,reason}] }. Used when the Setup UI opens.
@@ -103,7 +167,7 @@ function scanServer(server) {
   return new Promise((resolve, reject) => {
     const cfg = {
       host: server.host, port: server.port, username: server.username,
-      keyPath: server.keyPath || null, password: server.password || null, passphrase: server.passphrase || null,
+      keyPath: server.keyPath || null, password: server.password || null, passphrase: server.passphrase || null, hostKey: server.host_key || null,
       mode: 'scan', itemIds: catalog.ITEMS.map(i => i.id),
     };
     const child = execFile(process.execPath, [path.join(__dirname, 'provision-worker.js'), JSON.stringify(cfg)], { maxBuffer: 8 * 1024 * 1024 });
@@ -128,4 +192,4 @@ function scanServer(server) {
   });
 }
 
-module.exports = { startProvision, planItems, getJob, scanServer };
+module.exports = { startProvision, planItems, getJob, cancelJob, runningJobFor, scanServer };

@@ -33,7 +33,7 @@ function runWorkerCmd(server, cmd) {
   }
 
   return new Promise((resolve, reject) => {
-    const cfg = { host: server.host, port: server.port, username: server.username, keyPath: server.keyPath || null, password: server.password || null, passphrase: server.passphrase || null, cmd };
+    const cfg = { host: server.host, port: server.port, username: server.username, keyPath: server.keyPath || null, password: server.password || null, passphrase: server.passphrase || null, hostKey: server.host_key || null, cmd };
     const child = execFile(process.execPath, [path.join(__dirname, 'host-logs-worker.js'), JSON.stringify(cfg)], { maxBuffer: 8 * 1024 * 1024 });
     const to = setTimeout(() => { try { child.kill(); } catch (e) {} reject(new Error('host logs timed out')); }, 25000);
     let buf = '', err = '';

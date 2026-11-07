@@ -17,19 +17,21 @@ const catalog = require('./provision/catalog');
 
 const cfg = JSON.parse(process.argv[2] || '{}');
 const conn = new Client();
-const opts = { host: cfg.host, port: cfg.port || 22, username: cfg.username, readyTimeout: 20000, agent: false, tryKeyboard: false };
-if (cfg.keyPath) { opts.privateKey = fs.readFileSync(cfg.keyPath); if (cfg.passphrase) opts.passphrase = cfg.passphrase; }
-else if (cfg.password) opts.password = cfg.password;
+const opts = require('./ssh-connect').workerConnectOpts(cfg); // auth + pinned host key
 
 let done = false;
 const fail = (m) => { if (done) return; done = true; process.stderr.write(String(m) + '\n'); try { conn.end(); } catch (e) {} process.exit(1); };
 const ok = (obj) => { if (done) return; done = true; try { conn.end(); } catch (e) {} process.stdout.write(JSON.stringify(obj)); process.exit(0); };
 const wd = setTimeout(() => fail('service-ctl timed out'), 25000);
 
+// Catalog commands use `sudo`; as root it is dropped (minimal images may have no sudo binary).
+let isRoot = false;
+const { adaptSudo } = require('./provision/provision-worker');
+
 // Run one command; resolve { code, out } (stdout+stderr merged). Never rejects.
 function run(cmd) {
   return new Promise((resolve) => {
-    conn.exec(cmd, (err, stream) => {
+    conn.exec(adaptSudo(cmd, isRoot), (err, stream) => {
       if (err) return resolve({ code: 1, out: String(err.message || err) });
       let out = '';
       stream.on('data', d => { out += d.toString(); });
@@ -197,6 +199,7 @@ async function doOp() {
 
 conn.on('ready', async () => {
   try {
+    isRoot = lastLine((await run('id -u')).out) === '0';
     if (cfg.op === 'status') return await doStatus();
     if (cfg.op === 'readconfig') return await doReadConfig();
     if (cfg.op === 'action') return await doAction();
