@@ -117,7 +117,7 @@ Router.register('containers', async (content) => {
 
       bindEvents(containers);
     } catch (err) {
-      content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`;
+      content.innerHTML = `${UI.errorState(err)}`;
     }
   }
 

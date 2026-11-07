@@ -185,7 +185,7 @@ Router.register('terminal', async (content, params) => {
         rBtn?.addEventListener('click', doConnect);
       }
     } catch (err) {
-      content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`;
+      content.innerHTML = `${UI.errorState(err)}`;
     }
   }
 

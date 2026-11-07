@@ -286,3 +286,35 @@
   display: flex;
   gap: 8px;
 }
+
+/* ============ NARROW SCREENS (phones, small windows) ============ */
+/* The sidebar becomes a drawer opened with ☰; header and content get compact spacing. */
+.nav-toggle { display: none; }
+.nav-backdrop { position: fixed; inset: 0; background: rgba(5, 9, 18, .55); z-index: 900; }
+.nav-backdrop[hidden] { display: none; }
+
+@media (max-width: 900px) {
+  .mac-sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 1000;
+    width: min(280px, 84vw); height: 100%; margin: 0; border-radius: 0;
+    padding-top: env(safe-area-inset-top, 0px); padding-left: env(safe-area-inset-left, 0px);
+    transform: translateX(-105%); transition: transform .2s ease;
+    background: var(--bg-sidebar);
+  }
+  .mac-layout.nav-open .mac-sidebar { transform: none; }
+  .mac-main-wrapper { padding: 8px; min-width: 0; }
+  .nav-toggle {
+    display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex: none;
+    border: 1px solid var(--border); border-radius: var(--radius-md); background: transparent; color: var(--text-primary); cursor: pointer;
+  }
+  .mac-header { height: auto; min-height: 56px; padding: 8px 10px; margin-bottom: 10px; gap: 8px; border-radius: var(--radius-lg); }
+  .mac-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .mac-header-left .header-title { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mac-header-right { gap: 8px; min-width: 0; }
+  .header-search, .connection-status #connection-text, .btn-quick-term span, .btn-quick-term .shortcut-kbd, #server-switcher > span:first-child { display: none; }
+  #server-select { min-width: 0 !important; max-width: 140px !important; }
+  .content { padding: 12px 4px; }
+  .page-header { flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  .page-title { font-size: 19px; }
+}
+@media (prefers-reduced-motion: reduce) { .mac-sidebar { transition: none; } }

@@ -526,7 +526,7 @@ Router.register('compose', async (content) => {
           } catch (e) { showToast(e.message, 'error'); }
         });
       });
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
   // Global Git Management Hub — view & pull all git projects across the server

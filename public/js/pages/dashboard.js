@@ -423,7 +423,7 @@ Router.register('dashboard', async (content) => {
       }
 
     } catch (err) {
-      content.innerHTML = `<div class="empty-state"><h3>Cannot connect to Docker</h3><p>${escapeHtml(err.message)}</p><button class="btn btn-primary mt-2" onclick="Router.navigate('dashboard')">Retry</button></div>`;
+      content.innerHTML = UI.errorState(err);
     }
   }
 

@@ -612,14 +612,14 @@ Router.register('settings', async (content, params) => {
               ${changes.length > 0 ? `
                 <div class="card" style="padding:16px 20px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);">
                   <div style="font-weight:700;font-size:14px;color:var(--text-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
-                    <span>📋</span> What's New in DockGate (Release Notes)
+                    What's new in DockGate
                   </div>
                   <div style="max-height:220px;overflow-y:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;font-size:12px;line-height:1.7;">
                     ${changes.map(c => {
                       const isHeader = c.startsWith('📌');
                       return isHeader
-                        ? `<div style="font-weight:700;color:var(--text-primary);margin-top:8px;margin-bottom:4px;">${escapeHtml(c)}</div>`
-                        : `<div style="color:var(--text-secondary);padding-left:8px;">&bull; ${escapeHtml(c)}</div>`;
+                        ? `<div style="font-weight:700;color:var(--text-primary);margin-top:8px;margin-bottom:4px;">${mdInline(c.replace(/^📌\s*/, ''))}</div>`
+                        : `<div style="color:var(--text-secondary);padding-left:8px;">&bull; ${mdInline(c)}</div>`;
                     }).join('')}
                   </div>
                 </div>
@@ -758,7 +758,7 @@ Router.register('settings', async (content, params) => {
       // Initial tab render — honour the restored activeTab (not always General)
       renderTab(activeTab);
 
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
   await render();

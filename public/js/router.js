@@ -59,7 +59,7 @@ const Router = {
       builds: 'Builds',
       audit: 'Audit Log',
       infra: 'Servers',
-      monitoring: 'Monitoring & Observability',
+      monitoring: 'Monitoring',
       'server-console': 'Server Console',
       settings: 'Settings',
     };

@@ -88,6 +88,19 @@ function initMacSidebar() {
     }
   };
 
+  // Phones / narrow windows: the sidebar is a drawer (☰). It closes after a navigation, on Esc and when
+  // the dimmed page behind it is tapped.
+  const app = document.getElementById('app'), toggle = document.getElementById('nav-toggle'), backdrop = document.getElementById('nav-backdrop');
+  const setNav = (open) => {
+    app.classList.toggle('nav-open', open);
+    if (backdrop) backdrop.hidden = !open;
+    if (toggle) { toggle.setAttribute('aria-expanded', open); toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu'); }
+  };
+  toggle?.addEventListener('click', () => setNav(!app.classList.contains('nav-open')));
+  backdrop?.addEventListener('click', () => setNav(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && app.classList.contains('nav-open')) setNav(false); });
+  sidebarNav.addEventListener('click', (e) => { if (e.target.closest('.nav-item, .nav-subitem')) setTimeout(() => setNav(false), 0); });
+
   sidebarNav.addEventListener('click', (e) => {
     // A sidebar sub-item (a section's tab) → navigate straight to that tab.
     const subitem = e.target.closest('.nav-subitem');

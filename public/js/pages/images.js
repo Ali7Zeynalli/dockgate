@@ -260,7 +260,7 @@ Router.register('images', async (content) => {
         } });
       });
 
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
   // Tag management — list current tags, add a new one, untag (I4)

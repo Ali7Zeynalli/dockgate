@@ -51,7 +51,7 @@ Router.register('files', async (content) => {
         <div class="empty-state" style="padding:50px;text-align:center">
           <span class="nav-item-icon" style="width:48px;height:48px;opacity:.3;margin:0 auto 12px">${Icons.folder}</span>
           <h3>No remote server selected</h3>
-          <p>The file manager works on a <strong>remote SSH server</strong>. Switch to one in the header (or add a server in <strong>Settings → Servers</strong>). Local host browsing is not enabled.</p>
+          <p>The file manager works on a <strong>remote SSH server</strong>. Switch to one with the server picker in the header (or add one under <strong>Servers</strong>). Local host browsing is not enabled.</p>
         </div>`;
       return;
     }

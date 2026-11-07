@@ -40,5 +40,5 @@ async function renderSystemInfo(content) {
         </div>
       `;
 
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
 }

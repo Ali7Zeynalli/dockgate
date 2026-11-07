@@ -102,7 +102,7 @@ Router.register('events', async (content) => {
     // Handle connection errors / Bağlantı xətalarını idarə et
     const onEventError = ({ error }) => {
       if (empty) {
-        empty.textContent = `Error: ${error}`;
+        empty.innerHTML = UI.errorState(error, { compact: true });
         empty.style.display = 'block';
       }
     };

@@ -176,7 +176,7 @@ Router.register('volumes', async (content) => {
         } });
       });
 
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
   // File browser (V3) — navigate directories and download files (read-only helper container).

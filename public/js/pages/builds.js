@@ -287,7 +287,7 @@ Router.register('builds', async (content) => {
       }
 
     } catch (err) {
-      tabContent.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`;
+      tabContent.innerHTML = `${UI.errorState(err)}`;
     }
   }
 
@@ -727,7 +727,7 @@ Router.register('builds', async (content) => {
         } });
       });
     } catch (err) {
-      tabContent.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`;
+      tabContent.innerHTML = `${UI.errorState(err)}`;
     }
   }
 
@@ -763,7 +763,7 @@ Router.register('builds', async (content) => {
         </div>
       `;
     } catch (err) {
-      tabContent.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`;
+      tabContent.innerHTML = `${UI.errorState(err)}`;
     }
   }
 

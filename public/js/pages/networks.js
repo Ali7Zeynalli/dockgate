@@ -123,7 +123,7 @@ Router.register('networks', async (content) => {
         } });
       });
 
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
   // Suggest a free private subnet (+ gateway + IP range) avoiding the ones already in use.
   // `used` is the list of existing subnets; `extra` lets the Suggest button advance past the current value.

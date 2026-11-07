@@ -7,7 +7,7 @@ const UI = {
 
   /** Page section header: title, one line of description, actions on the right. */
   header(title, desc, actions = '') {
-    return `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">${title}</div>${desc ? `<div class="ui-ph-desc">${desc}</div>` : ''}</div>${actions ? `<div class="ui-ph-actions">${actions}</div>` : ''}</div>`;
+    return `<div class="ui-ph"><div class="ui-ph-text">${title ? `<div class="ui-ph-title">${title}</div>` : ''}${desc ? `<div class="ui-ph-desc">${desc}</div>` : ''}</div>${actions ? `<div class="ui-ph-actions">${actions}</div>` : ''}</div>`;
   },
 
   /** One-line summary bar: [html, html, …] with optional actions on the right. */
@@ -64,8 +64,70 @@ const UI = {
     return { overlay: m.overlay, close: m.close, save };
   },
 
+  /**
+   * A failure explained for people: what happened, the likely reason, the next step (Retry, switch
+   * server, open Setup / Settings) and the technical message folded under "Details".
+   */
+  errorState(err, { title, compact = false } = {}) {
+    const msg = String((err && err.message) || err || '');
+    const srv = (typeof Store !== 'undefined' && Store.get('activeServer')) || {};
+    const remote = !!srv.id && srv.id !== 'local' && srv.type !== 'local';
+    const name = UI.esc(srv.name || srv.id || 'this server');
+    let head, cause, acts = [['retry', 'Retry', 'btn-primary']];
+    if (/host key/i.test(msg)) {
+      head = "The server's identity changed";
+      cause = `The SSH host key of ${name} is not the one DockGate pinned. If you rebuilt or reinstalled the server, re-trust the key in its Settings; otherwise someone may be intercepting the connection.`;
+      acts.push(['settings', 'Open server Settings']);
+    } else if (/docker\.sock|ENOENT|Cannot connect to the Docker daemon|docker daemon|Docker is not (installed|running)|permission denied.*docker/i.test(msg)) {
+      head = 'Docker is not reachable';
+      cause = remote
+        ? `Docker is not running on ${name}, or the SSH user may not use it. Setup can install Docker and grant the user access.`
+        : 'DockGate cannot reach the local Docker socket (/var/run/docker.sock). Mount it into the DockGate container, or switch to a remote server.';
+      acts.push(remote ? ['setup', 'Open Setup'] : ['servers', 'Switch server']);
+    } else if (/authentication|auth failed|all configured authentication|incorrect password/i.test(msg)) {
+      head = 'DockGate could not log in';
+      cause = `${name} refused the SSH login. Check the user and the key or password in the server's Settings.`;
+      acts.push(['settings', 'Open server Settings']);
+    } else if (/timed? ?out|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|unreachable|not found — check the server address/i.test(msg)) {
+      head = 'The server is not reachable';
+      cause = `${name} did not answer. Check that it is running and that DockGate can reach it (address, port, firewall).`;
+      acts.push(['servers', 'Switch server']);
+    } else {
+      head = title || 'Something went wrong';
+      cause = 'The request failed. Retry, or open the details below.';
+    }
+    if (remote && !acts.some(a => a[0] === 'servers')) acts.push(['servers', 'Switch server']);
+    return `<div class="ui-error${compact ? ' ui-error-compact' : ''}" role="alert">
+      <div class="ui-error-title">${head}</div>
+      <p class="ui-error-cause">${cause}</p>
+      <div class="ui-error-actions">${acts.map(([k, l, c]) => `<button type="button" class="btn btn-sm ${c || 'btn-secondary'}" data-err-act="${k}">${l}</button>`).join('')}</div>
+      ${msg ? `<details class="ui-error-details"><summary>Details</summary><pre>${UI.esc(msg)}</pre></details>` : ''}
+    </div>`;
+  },
+
   /** "What changes / what protects you" box used inside dialogs. */
   explain(change, protects) {
     return `<div class="ui-explain"><div><b>What changes</b> ${change}</div>${protects ? `<div><b>What protects you</b> ${protects}</div>` : ''}</div>`;
   },
 };
+
+// Buttons of UI.errorState work on every page (delegated once).
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-err-act]');
+  if (!b) return;
+  const srv = (typeof Store !== 'undefined' && Store.get('activeServer')) || {};
+  const act = b.dataset.errAct;
+  if (act === 'retry') Router.navigate(Store.get('currentPage') || 'dashboard', Store.get('currentParams') || {});
+  else if (act === 'servers') Router.navigate('infra', { tab: 'servers' });
+  else if (act === 'setup' && srv.id) Router.navigate('server-console', { id: srv.id, tab: 'setup' });
+  else if (act === 'settings' && srv.id) Router.navigate('server-console', { id: srv.id, tab: 'settings' });
+});
+
+/** Release-note text → HTML: escaped first, then **bold**, `code` and [text](https://link). */
+function mdInline(text) {
+  return escapeHtml(String(text || ''))
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\((https:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:]|$)/g, '$1<i>$2</i>');
+}
