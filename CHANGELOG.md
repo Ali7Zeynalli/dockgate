@@ -2,6 +2,30 @@
 
 ---
 
+## [2.10.0] - 2026-11-07
+
+### Added
+- **Who can reach each port.** The Firewall tab's port table now shows the sources of every port in one row: *Anyone (internet)*, IP lists, single addresses and ranges, IPv4 and IPv6 together, with an *IPv4 + IPv6 / IPv4 only / IPv6 only* label. UFW's separate "(v6)" rules are merged into that one row.
+- **Edit sources.** *Edit* (or *Allow…*) opens one dialog: choose *Anyone* or *Only these sources*, paste many addresses at once (one per line, spaces or commas; IPv4 and IPv6 mixed), add lists with one click. Before anything runs it shows the exact change: rules added, removed, unchanged, and the commands. Only the difference is applied: new sources are added first, removed ones deleted after, so a source that stays is never interrupted. Addresses are normalised (`10.0.0.5/24` → `10.0.0.0/24`, compact IPv6).
+- **Add port rule** for a port nothing listens on yet.
+- **IP lists:** Cloudflare (15 IPv4 + 7 IPv6), GitHub webhooks and UptimeRobot as official lists, plus your own named lists (*Office*, *VPN*…). Official lists are fetched only when you press *Check for updates*; the difference is shown and saved only after you confirm. Ports that still hold the older version show *an older version is applied here* with an *update* link. Pasting exactly a list's ranges offers to use the list instead.
+- **DockGate's IP** as a source (the address the server sees DockGate connect from).
+- UFW rules carry a comment naming their list (`dockgate:cloudflare`, `dockgate:manual`).
+- Works with firewalld too: one rich rule per source, a plain port for *Anyone*.
+
+### Safety
+- The SSH port can be restricted only if DockGate's own IP (or a range containing it) stays allowed. The change runs as a lifeline job: rules backed up, rollback armed, a new SSH login tested, restored automatically on failure.
+- When UFW has IPv6 switched off (`IPV6=no`), IPv6 sources are refused with an explanation instead of half-applying a list.
+- Ports opened by a range, an app profile or a firewalld service are not edited as sources; the dialog explains which rule to delete first.
+
+### Changed
+- The full rule list moved under *All UFW rules (n)* (collapsed when long). Specific IPv6 rules can be deleted there individually.
+
+### Not tested on a live server
+- Fetching the official lists could not be tried from the development environment (outbound access blocked); it is covered by tests with a stubbed download. The UptimeRobot address list URL is the one UptimeRobot documents; if it moves, *Check for updates* shows the error and nothing changes.
+
+---
+
 ## [2.9.0] - 2026-11-07
 
 ### Added
