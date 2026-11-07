@@ -12,6 +12,10 @@ const { buildCliEnv } = require('../remote-cli-env');
 const remoteCompose = require('../remote-compose');
 const fileManager = require('../file-manager');
 const sshKeys = require('../ssh-keys');
+const {
+  COMPOSE_DIR, COMPOSE_FILENAMES, validateProjectName, managedDir, safeRelPath, findComposeFile, findComposeFiles,
+  readDeployMeta, writeDeployMeta, remoteProjectCtx,
+} = require('./compose-shared');
 
 // ---- Git deploy (#2-B) helpers ----
 // Non-interactive git (no credential/host prompts); a token (if any) is embedded into the https URL.
@@ -63,56 +67,6 @@ async function gitWithKey(keyId, args, opts) {
 }
 
 // DockGate-managed compose projects live here (created/edited from the UI).
-// Respects DATA_DIR (same as db.js) so tests/custom deploys use an isolated location.
-const COMPOSE_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data'), 'compose');
-
-// Validate compose project name — only safe characters (also prevents path traversal in COMPOSE_DIR)
-function validateProjectName(name) {
-  return /^[a-zA-Z0-9_-]+$/.test(name);
-}
-
-// Absolute path to a managed project's directory (project name already validated by caller)
-function managedDir(project) {
-  return path.join(COMPOSE_DIR, project);
-}
-
-// Sanitize an uploaded relative file path: drop leading slashes and any "../" so it can't escape the dir.
-function safeRelPath(p) {
-  const norm = path.normalize(String(p || '')).replace(/^([/\\]|\.\.([/\\]|$))+/, '');
-  if (norm === '.' || norm.includes('..')) return '';
-  return norm;
-}
-
-// Standard compose filenames docker compose auto-detects.
-const COMPOSE_FILENAMES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'];
-
-// The managed project's compose file — ANY of the standard names (.yml AND .yaml). A folder/git deploy
-// may bring docker-compose.yaml, so nothing may hardcode docker-compose.yml.
-function findComposeFile(dir) {
-  return COMPOSE_FILENAMES.find(n => fs.existsSync(path.join(dir, n))) || null;
-}
-
-// Find ALL compose files in a staged tree (recursive, NAME-AGNOSTIC): any *.yml/*.yaml whose top level
-// declares `services:`. Catches docker-compose.app.yml, stack.yml, infra/*.yml, etc. — not just the 4
-// standard names. Returns POSIX-relative paths, shallowest first. Skips obvious junk dirs.
-function findComposeFiles(dir) {
-  const out = [];
-  const SKIP = new Set(['.git', 'node_modules', '.next', 'dist', 'build', '.dockgate']);
-  const walk = (cur, rel) => {
-    let entries; try { entries = fs.readdirSync(cur, { withFileTypes: true }); } catch (e) { return; }
-    for (const e of entries) {
-      const r = rel ? rel + '/' + e.name : e.name;
-      if (e.isDirectory()) { if (!SKIP.has(e.name)) walk(path.join(cur, e.name), r); continue; }
-      if (!/\.ya?ml$/i.test(e.name)) continue;
-      try { if (/^services:/m.test(fs.readFileSync(path.join(cur, e.name), 'utf8').slice(0, 65536))) out.push(r); } catch (e2) { }
-      if (out.length >= 50) return; // sanity cap
-    }
-  };
-  walk(dir, '');
-  out.sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b));
-  return out;
-}
-
 // Best-effort extraction of services / external networks / build-flag from one compose file, via
 // `docker compose config --format json`. Resilient: a parse failure (e.g. missing ${VAR}) is reported,
 // not thrown, so the user can still pick the file.
@@ -132,32 +86,6 @@ async function scanComposeFile(baseDir, relPath) {
     info.parseError = (e.stderr || e.message || 'parse failed').toString().split('\n')[0].slice(0, 200);
   }
   return info;
-}
-
-// Local pointer for a REMOTE-deployed project: the files live on the remote, but DockGate remembers
-// which server + folder so it can drive up/down/rebuild even when the project is fully down (no labels).
-function deployMetaPath(project) { return path.join(managedDir(project), '.dockgate-deploy.json'); }
-function readDeployMeta(project) { try { return JSON.parse(fs.readFileSync(deployMetaPath(project), 'utf8')); } catch (e) { return null; } }
-
-// If the project lives on the active remote host (folder-deployed), return its SFTP context; else null.
-// Used to make the Files browser read/write the REMOTE folder instead of DockGate's local pointer dir.
-function remoteProjectCtx(project) {
-  const meta = readDeployMeta(project);
-  if (!meta || meta.mode !== 'remote' || meta.serverId !== dockerService.getActiveServerId()) return null;
-  const server = remoteCompose.getActiveRemoteServer();
-  if (!server) return null;
-  return { server, remotePath: meta.remotePath, composeFile: meta.composeFile };
-}
-// Build a safe absolute remote path under the project's remote folder (traversal guard).
-function safeRemoteProjectPath(remotePath, relPath) {
-  const rel = safeRelPath(relPath);
-  if (!rel || isProtectedProjectFile(rel)) return null;
-  return remotePath.replace(/\/$/, '') + '/' + rel;
-}
-function writeDeployMeta(project, meta) {
-  const d = managedDir(project);
-  fs.mkdirSync(d, { recursive: true });
-  fs.writeFileSync(deployMetaPath(project), JSON.stringify(meta, null, 2), { mode: 0o600 });
 }
 
 // Validate a compose file with `docker compose config -q` (throws with stderr if invalid)
@@ -614,166 +542,8 @@ router.put('/:project/file', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// ---- Managed project file tree (Phase 1): browse/edit ALL files of a project, not just the compose YAML
-// (Dockerfile, .dockerignore, .env, configs…). Files live in COMPOSE_DIR/<project>/ on DockGate. ----
-
-// Files that must never be read/written/deleted via the file API (token leak / git internals).
-function isProtectedProjectFile(rel) {
-  return rel === '.dockgate-git.json' || rel === '.dockgate-deploy.json' || rel === '.git' || rel.startsWith('.git/');
-}
-
-// Resolve a project-relative path to an absolute path INSIDE the managed dir, or null if it escapes
-// (traversal or symlink). Used for read/write/delete of individual project files.
-function safeProjectFile(project, relPath) {
-  const dir = managedDir(project);
-  const rel = safeRelPath(relPath);
-  if (!rel || isProtectedProjectFile(rel)) return null;
-  const abs = path.join(dir, rel);
-  if (abs !== dir && !abs.startsWith(dir + path.sep)) return null;
-  try { // symlink-escape guard (only meaningful for existing paths)
-    const realDir = fs.realpathSync(dir);
-    const real = fs.realpathSync(abs);
-    if (real !== realDir && !real.startsWith(realDir + path.sep)) return null;
-  } catch (e) { /* path may not exist yet (new file) — prefix check above already guards */ }
-  return abs;
-}
-
-// Treat a file as binary (non-editable) if it's large or contains a NUL byte in its head.
-function isBinaryFile(abs, size) {
-  if (size > 2 * 1024 * 1024) return true;
-  try {
-    const fd = fs.openSync(abs, 'r');
-    const n = Math.min(size, 8000);
-    const buf = Buffer.alloc(n);
-    fs.readSync(fd, buf, 0, n, 0);
-    fs.closeSync(fd);
-    return buf.includes(0);
-  } catch (e) { return false; }
-}
-
-// GET file tree (flat, sorted). Remote folder-deployed project → browse the REMOTE folder over SFTP;
-// otherwise the local managed dir. Skips .git internals + the git-secret file.
-router.get('/:project/tree', async (req, res) => {
-  try {
-    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const rc = remoteProjectCtx(req.params.project);
-    if (rc) {
-      const files = (await fileManager.listTree(rc.server, rc.remotePath)).filter(f => !isProtectedProjectFile(f.path));
-      return res.json({ project: req.params.project, files, composeFile: rc.composeFile, remote: true, remotePath: rc.remotePath });
-    }
-    const dir = managedDir(req.params.project);
-    if (!fs.existsSync(dir)) return res.status(404).json({ error: 'No DockGate-managed files for this project' });
-    const out = [];
-    const walk = (cur, rel) => {
-      for (const name of fs.readdirSync(cur).sort()) {
-        const r = rel ? rel + '/' + name : name;
-        if (isProtectedProjectFile(r)) continue;
-        let st; try { st = fs.statSync(path.join(cur, name)); } catch (e) { continue; }
-        if (st.isDirectory()) { out.push({ path: r, type: 'dir', size: 0 }); walk(path.join(cur, name), r); }
-        else out.push({ path: r, type: 'file', size: st.size });
-      }
-    };
-    walk(dir, '');
-    res.json({ project: req.params.project, files: out, composeFile: findComposeFile(dir) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// Lazy, ONE-folder listing for the project Files browser (fast: a single readdir, no recursive walk).
-// `sub` is a project-relative folder path (jailed). Mirrors the standalone File Manager's listDir speed.
-router.get('/:project/dir', async (req, res) => {
-  try {
-    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const sub = (req.query.sub || '').toString();
-    const relSub = sub ? safeRelPath(sub) : '';
-    if (sub && !relSub) return res.status(400).json({ error: 'Invalid path' });
-    const rc = remoteProjectCtx(req.params.project);
-    if (rc) {
-      const abs = rc.remotePath.replace(/\/+$/, '') + (relSub ? '/' + relSub : '');
-      const { entries } = await fileManager.listDir(rc.server, abs);
-      const out = entries.filter(e => !isProtectedProjectFile(relSub ? relSub + '/' + e.name : e.name))
-        .map(e => ({ name: e.name, type: e.type, size: e.size }));
-      return res.json({ project: req.params.project, sub: relSub, entries: out, composeFile: rc.composeFile, remote: true });
-    }
-    const base = managedDir(req.params.project);
-    if (!fs.existsSync(base)) return res.status(404).json({ error: 'No DockGate-managed files for this project' });
-    const dir = relSub ? path.join(base, relSub) : base;
-    if (dir !== base && !dir.startsWith(base + path.sep)) return res.status(400).json({ error: 'Invalid path' });
-    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return res.status(404).json({ error: 'Not a folder' });
-    const out = fs.readdirSync(dir).map(name => {
-      const rel = relSub ? relSub + '/' + name : name;
-      if (isProtectedProjectFile(rel)) return null;
-      let st; try { st = fs.statSync(path.join(dir, name)); } catch (e) { return null; }
-      return { name, type: st.isDirectory() ? 'dir' : 'file', size: st.isDirectory() ? 0 : st.size };
-    }).filter(Boolean).sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : (a.type === 'dir' ? -1 : 1));
-    res.json({ project: req.params.project, sub: relSub, entries: out, composeFile: findComposeFile(base) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// GET a single file's content (text). Binary/oversized → metadata only. Remote project → SFTP read.
-router.get('/:project/filecontent', async (req, res) => {
-  try {
-    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const rc = remoteProjectCtx(req.params.project);
-    if (rc) {
-      const abs = safeRemoteProjectPath(rc.remotePath, req.query.path);
-      if (!abs) return res.status(400).json({ error: 'Invalid or protected path' });
-      const r = await fileManager.readFileText(rc.server, abs);
-      return res.json({ path: req.query.path, ...r });
-    }
-    const abs = safeProjectFile(req.params.project, req.query.path);
-    if (!abs) return res.status(400).json({ error: 'Invalid or protected path' });
-    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return res.status(404).json({ error: 'File not found' });
-    const size = fs.statSync(abs).size;
-    if (isBinaryFile(abs, size)) return res.json({ path: req.query.path, isBinary: true, size });
-    res.json({ path: req.query.path, isBinary: false, size, content: fs.readFileSync(abs, 'utf8') });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// PUT a single file's content (create or overwrite). Remote project → SFTP write.
-router.put('/:project/filecontent', async (req, res) => {
-  try {
-    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const { path: rel, content } = req.body || {};
-    if (typeof content !== 'string') return res.status(400).json({ error: 'content (string) required' });
-    const rc = remoteProjectCtx(req.params.project);
-    if (rc) {
-      const abs = safeRemoteProjectPath(rc.remotePath, rel);
-      if (!abs) return res.status(400).json({ error: 'Invalid or protected path' });
-      await fileManager.writeFileText(rc.server, abs, content);
-      logAction({ req, server: dockerService.getActiveServerId(), resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'file-edit', details: { file: safeRelPath(rel), remote: true } });
-      return res.json({ success: true });
-    }
-    const abs = safeProjectFile(req.params.project, rel);
-    if (!abs) return res.status(400).json({ error: 'Invalid or protected path' });
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, content, 'utf8');
-    logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'file-edit', details: { file: safeRelPath(rel) } });
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// DELETE a single project file (not the compose file, not protected). Remote project → SFTP unlink.
-router.delete('/:project/filecontent', async (req, res) => {
-  try {
-    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
-    const rel = safeRelPath(req.query.path);
-    if (COMPOSE_FILENAMES.includes(rel)) return res.status(400).json({ error: 'Cannot delete the compose file itself' });
-    const rc = remoteProjectCtx(req.params.project);
-    if (rc) {
-      const abs = safeRemoteProjectPath(rc.remotePath, req.query.path);
-      if (!abs) return res.status(400).json({ error: 'Invalid or protected path' });
-      await fileManager.remove(rc.server, abs, false);
-      logAction({ req, server: dockerService.getActiveServerId(), resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'file-delete', details: { file: rel, remote: true } });
-      return res.json({ success: true });
-    }
-    const abs = safeProjectFile(req.params.project, req.query.path);
-    if (!abs) return res.status(400).json({ error: 'Invalid or protected path' });
-    if (!fs.existsSync(abs)) return res.status(404).json({ error: 'File not found' });
-    fs.rmSync(abs, { recursive: true, force: true });
-    logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'file-delete', details: { file: rel } });
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+// ---- Managed project file tree: see compose-files.js (mounted here, same route order) ----
+router.use(require('./compose-files'));
 
 // Deploy a whole project FOLDER (uploaded from the browser as base64 files) → write to the managed
 // dir → up. Works on the active daemon (local or remote via DOCKER_HOST=ssh, #2-A). Image-based
