@@ -2,6 +2,46 @@
 
 ---
 
+## [2.11.0] - 2026-11-07
+
+Every server page now follows the layout cloud panels use (Hetzner, DigitalOcean, GCP, AWS, Cockpit): a header with one line and the main action, standard tables with row actions, settings rows with their own Edit, and one dialog style. All earlier functions are kept.
+
+### Firewall
+- **Inbound and Outbound rule tables** (Hetzner / GCP): Description · Sources/Destinations · Protocol · Port · Action, each rule edited on its own. Sources show as **Any IPv4 / Any IPv6**, IP lists and addresses; one rule is all its UFW entries (v4 and v6) together.
+- **Outbound rules** (UFW): allow or deny traffic leaving the server, optionally also for Docker containers (needs Docker port isolation). Outbound route rules are marked so they are never mistaken for container port rules.
+- **Port ranges** (`8000-8100`), **any port**, **TCP / UDP / any**, and a **description** per rule (stored by DockGate).
+- **Default policies** shown as the last row of each table (as in Azure NSGs) and changeable; blocking incoming traffic is refused unless a rule keeps SSH reachable for DockGate.
+- Rule changes run only the difference; changes touching the SSH port run as a lifeline job with rollback. Entries that do not fit the table (app profiles, interface or source-port rules, firewalld services) are listed under **Advanced** with the reason and can be deleted there.
+- IP lists shown as a table (like AWS prefix lists).
+
+### Servers
+- **Servers list** like DigitalOcean / Hetzner: name, in use, address, login (root / password flagged), setup state, CPU · RAM · disk.
+- **Add server** is a 4-step wizard: connection → login → **verify** (shows the server's host key fingerprint to compare) → details. The confirmed host key is pinned when the server is added.
+- **Server Console → Settings**: name, description, connection, login (tested before saving), connection test, Docker access, host key (re-trust), access password, alerts, and a **Danger zone** to remove the server. Replaces the old Edit-server modal.
+- **Server Console → Monitoring**: CPU, memory, disk and network graphs with a time range, the live view (processes, disks, open ports) and the alerts that apply to this server (mute per server).
+
+### Server Console
+- **Overview**: setup and Docker summary, then **Security recommendations** sorted by importance, each linking to the fix.
+- **Setup**: a components table (installed / missing / failed with the error / not available, last run), presets, a run plan before anything starts, step-by-step progress, and **run history** with each run's log.
+- **Access & SSH**: one settings row per option (root login, password login, port, attempts, login time, dead/idle timeouts, X11, host key), each with its own dialog.
+- **Users & keys**: users table plus an **SSH keys** table across all users (download keys DockGate generated, remove with confirmation, add a key for any user).
+- **Fail2ban**: Banned IPs, Allowlist and Jails tables (each jail edited in its own dialog with the ban-length preview); history folded away.
+- **Services**: one table (state, start at boot, start/stop/restart) — select a service for its settings, config file and log.
+- **Logs**: level filter (warnings / errors) and search.
+
+### Other
+- **SSH keys** page: table with the Git projects each key is used by; deleting names them.
+- **Edge agent**: fleet table.
+
+### Fixed
+- The servers list never sent `notifications_enabled`, so muted servers showed as unmuted and the edit dialog always showed alerts on.
+- Removed an unused copy of the old server management code from the Settings page.
+
+### Not tested on a live server
+- Outbound rules, default-policy changes and the new rule editing were checked with route tests and `ufw --dry-run` against UFW 0.36 only.
+
+---
+
 ## [2.10.0] - 2026-11-07
 
 ### Added
