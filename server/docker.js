@@ -1114,10 +1114,11 @@ async function testServerConnection(serverConfig) {
   // STEP 1 — verify the SSH connection + auth on its OWN (raw ssh2, no Docker). This is the real
   // "can I log in?" check. Late require to avoid the circular dep (remote-compose requires this module).
   const { execRemote } = require('./remote-compose');
+  let hostKey = null;
   try {
-    await execRemote(serverConfig, 'echo dockgate-ssh-ok');
+    await execRemote({ ...serverConfig, onHostKey: (k) => { hostKey = k; } }, 'echo dockgate-ssh-ok');
   } catch (err) {
-    return { success: false, stage: 'ssh', ssh: false, error: friendlySshError(err) };
+    return { success: false, stage: 'ssh', ssh: false, error: friendlySshError(err), hostKey };
   }
 
   // STEP 2 — SSH works; now see whether Docker is reachable over it (a separate, non-fatal signal).
@@ -1125,10 +1126,10 @@ async function testServerConnection(serverConfig) {
     const client = createSshClient(serverConfig);
     const version = await client.version();
     const info = await client.info();
-    return { success: true, ssh: true, docker: true, version: version.Version, apiVersion: version.ApiVersion, os: info.OperatingSystem, containers: info.Containers, images: info.Images };
+    return { success: true, ssh: true, docker: true, version: version.Version, apiVersion: version.ApiVersion, os: info.OperatingSystem, containers: info.Containers, images: info.Images, hostKey };
   } catch (err) {
     return {
-      success: true, ssh: true, docker: false,
+      success: true, ssh: true, docker: false, hostKey,
       dockerError: (err && err.message) || String(err),
       message: 'SSH connection OK — Docker is not installed/running on this server yet. Add it, then install Docker from Setup.',
     };

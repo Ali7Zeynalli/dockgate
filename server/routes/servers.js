@@ -78,6 +78,8 @@ router.get('/', (req, res) => {
         hasPassword: !!s.password,
         hasPassphrase: !!s.passphrase,
         authMode: s.key_path ? 'key' : (s.password ? 'password' : 'agent'),
+        notifications_enabled: s.notifications_enabled === 0 ? 0 : 1,
+        hostKey: s.host_key || null, hostKeyAt: s.host_key_at || null, // public fingerprint, for Settings
         created: s.created_at,
         isActive: activeId === s.id,
       })),
@@ -141,6 +143,13 @@ router.post('/', (req, res) => {
 
     stmts.insertServer.run(id, 'ssh', host, parseInt(port) || 22, username, keyPath, encrypt(pwdToStore), encrypt(passphraseToStore), description, (name && String(name).trim()) || null, notifEnabled);
     if (accessPassword && String(accessPassword).trim()) stmts.setServerAccessPass.run(makeAccessPass(String(accessPassword)), id); // optional 2nd gate
+    // The host key the user saw and confirmed in the Add-server wizard is pinned right away (instead of
+    // trusting whatever the first later connection presents).
+    const { hostKeyBlob } = req.body || {};
+    if (hostKeyBlob && /^[A-Za-z0-9+/=]{40,2000}$/.test(String(hostKeyBlob))) {
+      const hk = require('../ssh-hostkey');
+      try { stmts.setServerHostKey.run(hk.fingerprint(Buffer.from(hostKeyBlob, 'base64')), hostKeyBlob, id); } catch (e) { /* pinned on first connect instead */ }
+    }
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'add', details: { host, username, auth: keyPath ? 'key' : (pwdToStore ? 'password' : 'agent'), gated: !!(accessPassword && String(accessPassword).trim()), notifications_enabled: notifEnabled } });
 
     // Start dedicated monitor so notifications from this host start flowing immediately

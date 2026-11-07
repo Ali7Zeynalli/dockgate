@@ -46,8 +46,8 @@ const UI = {
    * Form dialog built on showModal. body: html; onSave(overlay) may return a promise; throwing keeps the
    * dialog open and shows the message. Returns { overlay, close }.
    */
-  dialog({ title, body, saveLabel = 'Save', danger = false, onSave, onOpen, wide = false }) {
-    const m = showModal(title, `${typeof serverContextBanner === 'function' ? serverContextBanner() : ''}<div class="ui-dlg">${body}</div><div class="ui-dlg-err" data-ui-err></div>`, []);
+  dialog({ title, body, saveLabel = 'Save', danger = false, onSave, onOpen, wide = false, context = true }) {
+    const m = showModal(title, `${context && typeof serverContextBanner === 'function' ? serverContextBanner() : ''}<div class="ui-dlg">${body}</div><div class="ui-dlg-err" data-ui-err></div>`, []);
     if (wide) m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     const footer = m.overlay.querySelector('.modal-footer');
     const cancel = document.createElement('button'); cancel.className = 'btn btn-secondary'; cancel.textContent = 'Cancel'; cancel.onclick = () => m.close();
