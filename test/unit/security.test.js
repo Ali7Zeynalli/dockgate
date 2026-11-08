@@ -132,7 +132,7 @@ test('security: ufw status numbered parsing (IN / FWD / v6 / restricted source)'
   const u = P.parseUfwNumbered(UFW);
   assert.equal(u.active, true);
   assert.equal(u.rules.length, 5);
-  assert.deepEqual(u.rules[2], { n: 3, to: '80/tcp', action: 'ALLOW', dir: 'FWD', from: 'Anywhere', v6: false, note: '' });
+  assert.deepEqual(u.rules[2], { n: 3, to: '80/tcp', action: 'ALLOW', dir: 'FWD', from: 'Anywhere', v6: false, note: '', attrs: '' });
   assert.equal(u.rules[4].v6, true);
   assert.equal(u.rules[3].from, '198.51.100.24');
   assert.equal(P.parseUfwNumbered('Status: inactive').active, false);

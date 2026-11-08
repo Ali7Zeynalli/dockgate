@@ -1,330 +1,309 @@
-// Server Console → Firewall tab (UFW or firewalld). Split out of server-security.js; uses its shared
-// helpers (secConfirm, secError, runLifelineJob) and service-pages.js (renderServiceBar, renderRawConfig).
+// Server Console → Firewall, laid out like cloud firewalls (Hetzner / GCP): an Inbound and an Outbound
+// table, one row per rule (Description · Sources/Destinations · Protocol · Port · Action), each rule
+// edited on its own; the default policy is the last row of each table (as in Azure NSGs); IP lists work
+// like AWS prefix lists. The backend (server/routes/firewall.js) enforces every safety rule; this file
+// renders and explains. Uses ui-kit.js, server-security.js (secConfirm, secError, runLifelineJob) and
+// service-pages.js (renderServiceBar, renderRawConfig).
 
 async function renderFirewallPanel(serverId, container) {
   container.innerHTML = `<div class="card"><div class="skeleton" style="width:100%;height:160px"></div></div>`;
-  let f;
-  try { f = await API.get(`/servers/${serverId}/firewall`); }
+  let f, lists;
+  try { [f, lists] = await Promise.all([API.get(`/servers/${serverId}/firewall`), API.get('/firewall-lists').then(r => r.lists || []).catch(() => [])]); }
   catch (e) { return secError(container, "Couldn't read the firewall", e, () => renderFirewallPanel(serverId, container)); }
   const reload = () => renderFirewallPanel(serverId, container);
-  const lists = (await API.get('/firewall-lists').catch(() => ({ lists: [] }))).lists || [];
-  const bypass = f.ports.filter(p => p.exposure === 'bypass');
+  const warnToast = (r) => (r && r.warnings || []).forEach(w => showToast(w, 'warning', 12000));
   const isFwd = f.backend === 'firewalld';
-  const fwName = isFwd ? 'firewalld' : 'UFW';
-  const EXPO = {
-    public:     ['var(--warning)', 'Public'],
-    restricted: ['var(--accent)', 'Restricted'],
-    internal:   ['var(--success)', 'Internal only'],
-    local:      ['var(--text-muted)', 'This server only'],
-    bypass:     ['var(--danger)', `Public · bypasses ${fwName}`],
-  };
-  const statCard = (label, value, sub) => `<div class="card"><div class="text-xs text-muted" style="text-transform:uppercase;font-weight:600;letter-spacing:.04em">${label}</div><div style="font-weight:700;margin-top:4px">${value}</div><div class="text-xs text-muted">${sub}</div></div>`;
-  const sshRule = (r) => { const m = /^(\d+)(\/tcp)?$/.exec(r.to); return m && Number(m[1]) === f.sshPort && r.dir === 'IN' && r.action !== 'DENY' && !r.v6; };
+  const ctx = { serverId, f, lists, reload, warnToast };
 
+  // ---------- banners: firewall off · Docker ports skip the firewall · firewalld note
   let banner = '';
   if (!f.active) {
-    banner = `<div class="card" style="border-left:3px solid var(--danger);margin-bottom:16px"><div class="flex justify-between items-center" style="gap:12px;flex-wrap:wrap"><div style="min-width:0;flex:1"><div style="font-weight:700;font-size:15px;color:var(--danger)">The firewall is off — every listening port is reachable from the internet</div><div class="text-sm text-muted" style="margin-top:4px">Turning it on blocks all incoming traffic except SSH (${f.sshPort}/tcp) and, if you keep them, 80 and 443. DockGate tests a new SSH login and switches it off again by itself if that fails.</div></div><button class="btn btn-danger" data-ufwon>Turn the firewall on</button></div></div>`;
+    banner = `<div class="card" style="border-left:3px solid var(--danger);margin-bottom:14px"><div class="flex justify-between items-center" style="gap:12px;flex-wrap:wrap"><div style="min-width:0;flex:1"><div style="font-weight:700;font-size:15px;color:var(--danger)">The firewall is off — every listening port is reachable from the internet</div><div class="text-sm text-muted" style="margin-top:4px">Turning it on blocks all incoming traffic except SSH (${f.sshPort}/tcp) and, if you keep them, 80 and 443. DockGate tests a new SSH login and switches it off again by itself if that fails.</div></div><button class="btn btn-danger" data-ufwon>Turn the firewall on</button></div></div>`;
+  } else if (f.bypass.length && !isFwd) {
+    banner = `<div class="card" style="border-left:3px solid var(--danger);margin-bottom:14px"><div class="flex justify-between items-center" style="flex-wrap:wrap;gap:12px"><div style="min-width:0;flex:1"><div style="font-weight:700;font-size:15px;color:var(--danger)">${f.bypass.length} container port${f.bypass.length === 1 ? ' is' : 's are'} open to the internet despite UFW</div><div class="text-sm text-muted" style="margin-top:4px;max-width:72ch">Docker writes its own iptables rules, so ports published with <span class="td-mono">-p</span> skip UFW. Turn on Docker port isolation: containers keep talking to each other and to this server, but only the ports you allow are reachable from outside.</div></div><button class="btn btn-danger" data-iso>Turn on Docker port isolation</button></div></div>`;
   } else if (isFwd) {
-    banner = `<div class="insight-card ${bypass.length ? 'warning' : 'info'}" style="margin-bottom:16px"><div>This server uses firewalld (zone <b>${escapeHtml(f.zone || '?')}</b>). Ports and rules below are managed in that zone; every change is saved permanently and applied with a reload.${bypass.length ? ` <b>${bypass.length} container port${bypass.length === 1 ? '' : 's'}</b> published by Docker skip${bypass.length === 1 ? 's' : ''} firewalld — publish them on 127.0.0.1 in the compose file if they should stay private. Docker port isolation is available with UFW only.` : ''}</div></div>`;
-  } else if (!f.dockerIsolation && bypass.length) {
-    banner = `
-    <div class="card" style="border-left:3px solid var(--danger);margin-bottom:16px">
-      <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:12px">
-        <div style="min-width:0;flex:1">
-          <div style="font-weight:700;font-size:15px;color:var(--danger)">${bypass.length} container port${bypass.length === 1 ? ' is' : 's are'} open to the internet despite UFW</div>
-          <div class="text-sm text-muted" style="margin-top:4px;max-width:72ch">Docker writes its own iptables rules, so ports published with <span class="td-mono">-p</span> skip UFW entirely. Turn on Docker port isolation: containers keep talking to each other and to this server, but only the ports you choose are reachable from outside.</div>
-        </div>
-        <button class="btn btn-danger" data-iso>Turn on Docker port isolation</button>
-      </div>
-    </div>`;
+    banner = `<div class="insight-card ${f.bypass.length ? 'warning' : 'info'}" style="margin-bottom:14px"><div>This server uses firewalld (zone <b>${UI.esc(f.zone || '?')}</b>). Inbound rules are managed in that zone and saved permanently; outbound rules and Docker port isolation need UFW.${f.bypass.length ? ` <b>${f.bypass.length} container port${f.bypass.length === 1 ? '' : 's'}</b> published by Docker skip firewalld — publish them on 127.0.0.1 if they should stay private.` : ''}</div></div>`;
   }
 
+  // ---------- status line
+  const status = f.active ? UI.statusLine([
+    UI.pill('ok', `● ${isFwd ? 'firewalld' : 'UFW'} on`),
+    !isFwd ? `<b>Docker ports</b> <span class="text-muted">${f.dockerIsolation ? 'behind the firewall' : 'skip the firewall'}</span>${f.dockerIsolation ? ` · <a href="#" data-iso-off style="color:var(--text-secondary)">turn off isolation</a>` : ''}` : '',
+    `<b>IPv6</b> <span class="text-muted">${f.ipv6 ? 'managed' : 'off in /etc/default/ufw'}</span>`,
+    `<b>SSH</b> <span class="text-muted">${f.sshPort}/tcp${f.dockgateIp ? ` · DockGate connects from <span class="td-mono">${UI.esc(f.dockgateIp)}</span>` : ''}</span>`,
+  ], `${UI.btn('Reload', 'data-ufwreload', 'btn-ghost')}${f.ufwActive ? UI.btn('Turn off…', 'data-ufwoff', 'btn-ghost') : ''}`) : '';
+
+  const cols = (addrLabel) => [{ label: 'Description' }, { label: addrLabel }, { label: 'Protocol' }, { label: 'Port' }, { label: 'Action' }, { label: '', align: 'right' }];
+  const ruleRows = (list, dir) => list.map((g, i) => ({ cells: [
+    `<b>${UI.esc(g.description || fwAutoName(g))}</b><div class="ui-sub">${[g.usedBy ? UI.esc(g.usedBy) : '', g.container ? `container port ${g.container}${g.hostPort && g.hostPort !== g.container ? ` · host ${g.hostPort}` : ''}` : '', g.containers ? 'also containers' : '', g.isSsh ? 'SSH · DockGate keeps itself allowed' : ''].filter(Boolean).join(' · ')}</div>`,
+    `<div class="ui-chips">${g.sources.map(s => fwChip(s, lists, f.dockgateIp)).join('')}</div>${g.outdated && g.outdated.length ? `<div class="ui-sub" style="color:var(--warning)">${g.outdated.map(id => UI.esc((lists.find(l => l.id === id) || {}).name || id)).join(', ')} changed — <a href="#" data-edit="${dir}:${i}">update this rule</a></div>` : ''}<div class="ui-sub">${g.family || ''}${g.addressCount ? ` · ${g.addressCount} address${g.addressCount === 1 ? '' : 'es'}` : ''}</div>`,
+    (g.proto || 'any').toUpperCase(),
+    `<span class="td-mono">${g.port || 'any'}</span>`,
+    fwAction(g.action),
+    `${UI.btn('Edit', `data-edit="${dir}:${i}"`)}${UI.btn('Delete', `data-del="${dir}:${i}"`, 'btn-danger')}`,
+  ] }));
+  const defaultRow = (dir) => ({ cls: 'ui-row-default', cells: [
+    'Default <div class="ui-sub">everything no rule above matches</div>',
+    `<div class="ui-chips">${UI.chip('Any IPv4')}${UI.chip('Any IPv6')}</div>`, 'ALL', '<span class="td-mono">any</span>',
+    fwAction(f.defaults[dir === 'in' ? 'incoming' : 'outgoing']),
+    f.ufwActive ? UI.btn('Change', `data-default="${dir === 'in' ? 'incoming' : 'outgoing'}"`) : '<span class="ui-sub">zone default</span>',
+  ] });
+
   container.innerHTML = `
-    <div class="flex gap-1 items-start" style="margin-bottom:12px;flex-wrap:wrap"><div data-ufwbar style="flex:1;min-width:280px"></div>${f.managed ? '<button class="btn btn-sm btn-secondary" data-ufwreload style="margin-top:6px">Reload rules</button>' : ''}</div>
-    ${banner}
-    <div class="grid-4" style="margin-bottom:16px">
-      ${statCard('Firewall', f.active ? '<span style="color:var(--success)">● Active</span>' : '<span style="color:var(--danger)">○ Inactive</span>', escapeHtml(f.backend === 'none' ? 'not installed' : f.backend.toUpperCase()) + (f.ufwActive ? ' · <a href="#" data-ufwoff style="color:var(--danger)">turn off</a>' : ''))}
-      ${statCard('Incoming', f.active ? 'Deny by default' : 'Allow all', 'Outgoing: allow')}
-      ${statCard('Docker ports', f.dockerIsolation ? '<span style="color:var(--success)">● Isolated</span>' : (f.managed ? `<span style="color:var(--danger)">● Bypass ${fwName}</span>` : '—'), f.dockerIsolation ? `DOCKER-USER chain · <a href="#" data-iso-off style="color:var(--accent)">turn off</a>` : (isFwd ? 'isolation needs UFW' : 'DOCKER-USER chain'))}
-      ${statCard('SSH', `${f.sshPort}/tcp`, 'Always kept open')}
-    </div>
-
-    <div class="flex justify-between items-center mb-2" style="gap:10px;flex-wrap:wrap"><div><div style="font-size:15px;font-weight:700">Ports</div><div class="text-xs text-muted">Who can reach each port from outside · IPv4 and IPv6 together</div></div>${f.managed ? '<button class="btn btn-sm btn-primary" data-addport>Add port rule</button>' : ''}</div>
-    <div class="table-wrapper" style="margin-bottom:20px"><table>
-      <thead><tr><th>Port</th><th>Used by</th><th>Who can reach it</th><th>Family</th><th style="text-align:right">Actions</th></tr></thead>
-      <tbody>${f.ports.length ? f.ports.map((p, i) => {
-        const [col, lbl] = EXPO[p.exposure] || ['var(--text-muted)', p.exposure];
-        let act = '';
-        if (p.exposure === 'local') act = '<span class="text-xs text-muted">bound to localhost</span>';
-        else if (!f.managed) act = '<span class="text-xs text-muted">turn the firewall on first</span>';
-        else if (p.exposure === 'bypass') act = `<span class="text-xs text-muted">${isFwd ? 'Docker skips firewalld' : 'turn on isolation first'}</span>`;
-        else if (p.locked) act = `<span class="text-xs text-muted" title="${escapeHtml(p.locked)}">edit in the rules list</span>`;
-        else act = `<button class="btn btn-xs ${p.sources && p.sources.length ? 'btn-secondary' : 'btn-primary'}" data-src="${i}">${p.sources && p.sources.length ? 'Edit' : 'Allow…'}</button>${p.sources && p.sources.length && !p.isSsh ? ` <button class="btn btn-xs btn-danger" data-closeport="${i}">Close</button>` : ''}`;
-        const reach = p.sources && p.exposure !== 'bypass' && p.exposure !== 'local'
-          ? (p.sources.length ? `<div class="flex gap-1" style="flex-wrap:wrap">${p.sources.map(x => fwSourceChip(x, lists, f.dockgateIp)).join('')}</div>${p.outdated && p.outdated.length ? `<div class="text-xs" style="color:var(--warning);margin-top:4px">${p.outdated.map(id => escapeHtml((lists.find(l => l.id === id) || {}).name || id)).join(', ')}: an older version is applied here — <a href="#" data-src="${i}">update</a></div>` : ''}${p.sourceCount ? `<div class="text-xs text-muted" style="margin-top:3px">${p.sourceCount} address${p.sourceCount === 1 ? '' : 'es'}</div>` : ''}`
-            : '<span style="color:var(--success);font-weight:600;font-size:13px">● Internal only</span><div class="text-xs text-muted">containers and this server only</div>')
-          : `<span style="color:${col};font-weight:600;font-size:13px">● ${lbl}</span>`;
-        return `<tr>
-          <td class="td-mono" style="font-weight:600;white-space:nowrap">${p.port}/${p.proto}${p.isSsh ? ' <span class="text-xs text-muted">SSH</span>' : ''}</td>
-          <td><div>${escapeHtml(p.usedBy)}</div><div class="text-xs text-muted">${p.noListener ? 'nothing listens yet' : (p.kind === 'container' ? 'container · ' + escapeHtml(p.container) + (p.containerPort && p.containerPort !== p.port ? ' · inside :' + p.containerPort : '') : 'host · ' + escapeHtml(p.bind))}</div></td>
-          <td style="min-width:0">${reach}</td>
-          <td>${p.family ? `<span class="text-xs" style="border:1px solid var(--border);border-radius:6px;padding:1px 6px;white-space:nowrap">${p.family}</span>` : '<span class="text-xs text-muted">—</span>'}</td>
-          <td style="text-align:right;white-space:nowrap">${act}</td>
-        </tr>`; }).join('') : '<tr><td colspan="5" class="text-sm text-muted">No listening ports found (ss / netstat unavailable?)</td></tr>'}</tbody>
-    </table></div>
-    <div data-iplists style="margin-bottom:20px"></div>
-
+    <div data-svcbar style="margin-bottom:12px"></div>
+    ${banner}${status}
     ${f.managed ? `
-    <details ${f.rules.length <= 12 ? 'open' : ''} style="margin-bottom:8px"><summary style="cursor:pointer;font-size:15px;font-weight:700;margin-bottom:8px">All ${isFwd ? 'firewalld' : 'UFW'} rules (${f.rules.length}) <span class="text-xs text-muted" style="font-weight:400">· one rule per source, as the firewall stores them</span></summary>
-    <div class="grid-2">
-      <div>
-        <div style="font-size:15px;font-weight:700;margin-bottom:8px">${isFwd ? `firewalld rules · zone ${escapeHtml(f.zone || '')}` : 'UFW rules'}</div>
-        <div class="table-wrapper"><table>
-          <thead><tr><th>#</th><th>To</th><th>Action</th><th>From</th><th></th></tr></thead>
-          <tbody>${f.rules.length ? f.rules.map(r => `<tr>
-            <td class="text-muted">${r.n}</td><td class="td-mono">${escapeHtml(r.to)}${r.v6 ? ' <span class="text-xs text-muted">v6</span>' : ''}</td>
-            <td><span style="color:${r.action === 'ALLOW' || r.action === 'LIMIT' ? 'var(--success)' : 'var(--danger)'};font-weight:600;font-size:12px">${escapeHtml(r.action + ' ' + r.dir)}</span></td>
-            <td class="text-sm">${escapeHtml(r.from)}${r.note ? ` <span class="text-xs text-muted">· ${escapeHtml(r.note)}</span>` : ''}</td>
-            <td style="text-align:right">${sshRule(r) ? '<span class="text-xs text-muted" title="Keeps SSH reachable">locked</span>' : (r.v6 && !isFwd && r.from === 'Anywhere' ? '' : `<button class="btn btn-xs btn-danger" data-delrule="${r.n}">Delete</button>`)}</td>
-          </tr>`).join('') : '<tr><td colspan="5" class="text-sm text-muted">No rules</td></tr>'}</tbody>
-        </table></div>
-        <div class="text-xs text-muted" style="margin-top:6px">${isFwd ? 'Deleting a service removes all of its ports. A rule from one IP is a rich rule.' : 'Deleting an "Anywhere" rule also deletes its IPv6 twin. To change who can reach a port, use Edit in the Ports table.'}</div>
-      </div>
-      <div class="card" style="align-self:start">
-        <div style="font-size:15px;font-weight:700;margin-bottom:8px">Add rule</div>
-        <form data-rule style="display:grid;gap:10px">
-          <div class="flex gap-1"><input class="input" id="fw-port" type="number" min="1" max="65535" placeholder="Port, e.g. 8443" style="flex:1"><select class="select" id="fw-proto" style="width:90px"><option>tcp</option><option>udp</option></select></div>
-          <input class="input" id="fw-from" placeholder="From: any, or 198.51.100.24 / 10.0.0.0/24" value="any">
-          <div class="tab-bar" id="fw-act"><button class="tab-btn active" type="button" data-a="allow">Allow</button><button class="tab-btn" type="button" data-a="deny">Deny</button></div>
-          <button class="btn btn-sm btn-primary" type="submit">Add rule</button>
-          <div data-err></div>
-        </form>
-      </div>
-    </div></details>` : ''}`;
+      ${UI.header('Inbound rules', 'Traffic coming to this server. Anything not allowed here is blocked.', UI.primary('Add rule', 'data-add="in"'))}
+      ${UI.table(cols('Sources'), [...ruleRows(f.inbound, 'in'), defaultRow('in')], { minWidth: 760 })}
+      ${f.idle.length ? `<div class="ui-sub" style="margin-top:8px">Listening with no rule — reachable only inside the server: ${f.idle.map((p, i) => `<span class="td-mono">${p.port}/${p.proto}</span> ${UI.esc(p.usedBy)} <a href="#" data-idle="${i}">allow…</a>`).join(' · ')}</div>` : ''}
+      ${UI.header('Outbound rules', isFwd ? 'Outbound filtering needs UFW.' : 'Traffic leaving this server. Allowed unless a rule here denies it.', isFwd ? '' : UI.primary('Add rule', 'data-add="out"'))}
+      ${isFwd ? '' : UI.table(cols('Destinations'), [...ruleRows(f.outbound, 'out'), defaultRow('out')], { minWidth: 760 })}
+      <div data-iplists></div>
+      <details class="card" style="padding:0;margin-top:20px"><summary style="cursor:pointer;padding:12px 16px;font-weight:600">Advanced <span class="text-xs text-muted" style="font-weight:400">· raw ${isFwd ? 'firewalld' : 'UFW'} entries${f.locked.length ? ` · ${f.locked.length} DockGate cannot show as rules` : ''}</span></summary>
+        <div style="padding:0 16px 16px">
+          ${f.locked.length ? `<div class="text-sm" style="margin-bottom:8px">These entries do not fit the rule table (${[...new Set(f.locked.map(l => l.reason))].map(UI.esc).join('; ')}). They still work; delete them here if they are not needed.</div>` : ''}
+          ${UI.table([{ label: '#' }, { label: 'To' }, { label: 'Action' }, { label: 'From' }, { label: '', align: 'right' }], f.rules.map(r => ({ cells: [
+            `<span class="text-muted">${r.n}</span>`, `<span class="td-mono">${UI.esc(r.to)}</span>${r.v6 ? ' <span class="ui-sub">v6</span>' : ''}`, UI.esc(`${r.action} ${r.dir || ''}`), `${UI.esc(r.from)}${r.note ? ` <span class="ui-sub">· ${UI.esc(r.note)}</span>` : ''}`,
+            UI.btn('Delete', `data-delraw="${r.n}"`, 'btn-danger'),
+          ] })), { minWidth: 560, empty: 'No entries' })}
+          <div data-rawcfg style="margin-top:12px"></div>
+        </div></details>` : ''}`;
 
-  renderServiceBar(serverId, 'firewall', container.querySelector('[data-ufwbar]'), { label: 'Firewall service', onChange: reload });
-  if (f.backend === 'ufw') { const rawEl = document.createElement('div'); rawEl.style.marginTop = '16px'; container.appendChild(rawEl); renderRawConfig(serverId, 'firewall', '/etc/default/ufw', rawEl, { label: '/etc/default/ufw', high: true }); }
-  // Warnings when a firewall change touched something it should not have (fail2ban bans, containers).
-  const warnToast = (r) => (r && r.warnings || []).forEach(w => showToast(w, 'warning', 12000));
+  renderServiceBar(serverId, 'firewall', container.querySelector('[data-svcbar]'), { label: 'Firewall service', onChange: reload });
+  if (f.backend === 'ufw' && f.managed) renderRawConfig(serverId, 'firewall', '/etc/default/ufw', container.querySelector('[data-rawcfg]'), { label: '/etc/default/ufw', high: true });
+  if (f.managed) renderIpLists(container.querySelector('[data-iplists]'), lists, reload);
+
+  const pick = (v) => { const [dir, i] = v.split(':'); return (dir === 'in' ? f.inbound : f.outbound)[Number(i)]; };
+  container.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', (e) => { e.preventDefault(); openFwRuleDialog(ctx, pick(b.dataset.edit)); }));
+  container.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => openFwRuleDialog(ctx, null, { dir: b.dataset.add })));
+  container.querySelectorAll('[data-idle]').forEach(b => b.addEventListener('click', (e) => {
+    e.preventDefault(); const p = f.idle[Number(b.dataset.idle)];
+    openFwRuleDialog(ctx, null, { dir: 'in', proto: p.proto, port: String(p.container ? p.containerPort : p.port), container: p.container ? p.containerPort : null, description: p.usedBy.replace(/ \(container\)$/, '') });
+  }));
+  container.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+    const g = pick(b.dataset.del);
+    secConfirm({
+      title: `Delete ${g.dir === 'in' ? 'inbound' : 'outbound'} rule`, danger: true, confirmLabel: 'Delete rule',
+      change: `"${UI.esc(g.description || fwAutoName(g))}" is removed — ${g.addressCount || g.sources.length} firewall entr${(g.addressCount || g.sources.length) === 1 ? 'y' : 'ies'}.${g.dir === 'in' ? ' The port stays reachable inside the server.' : ''}`,
+      protects: g.isSsh ? 'DockGate refuses the change if it would lose SSH, and tests a new login afterwards.' : 'fail2ban bans and running containers are checked afterwards.',
+      undo: 'Add the rule again.',
+      onConfirm: () => fwSave(ctx, { original: g.key, sources: [] }, 'Rule deleted'),
+    });
+  }));
+  container.querySelectorAll('[data-default]').forEach(b => b.addEventListener('click', () => openFwDefaultDialog(ctx, b.dataset.default)));
+  container.querySelectorAll('[data-delraw]').forEach(b => b.addEventListener('click', () => secConfirm({
+    title: `Delete entry #${b.dataset.delraw}`, danger: true, confirmLabel: 'Delete entry',
+    change: isFwd ? 'The entry is removed from the permanent firewalld configuration and firewalld is reloaded.' : 'This one UFW entry is removed (its IPv6 twin is a separate entry).',
+    protects: 'DockGate refuses to delete an entry it needs for SSH. fail2ban bans and running containers are checked afterwards.',
+    undo: 'Add the rule again in the tables above.',
+    onConfirm: async () => { try { const r = await API.del(`/servers/${serverId}/firewall/rules/${b.dataset.delraw}`); showToast('Entry deleted'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); } },
+  })));
+
+  // ---------- firewall on/off, reload, Docker isolation (unchanged behaviour)
   container.querySelector('[data-ufwreload]')?.addEventListener('click', () => secConfirm({
     title: 'Reload firewall rules', confirmLabel: 'Reload',
     change: isFwd ? 'firewalld re-reads its permanent configuration. Rules added only at runtime (not with --permanent) are dropped.' : 'UFW re-reads its saved rules (including the Docker isolation rules).',
     protects: 'Open connections, including SSH, stay up. Afterwards DockGate checks that fail2ban still holds its bans and that no container stopped.',
     undo: 'Nothing to undo — the saved rules are applied as they are.',
-    onConfirm: async () => {
-      try { const r = await API.post(`/servers/${serverId}/firewall/reload`, { confirm: true }); showToast('Firewall reloaded'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
+    onConfirm: async () => { try { const r = await API.post(`/servers/${serverId}/firewall/reload`, { confirm: true }); showToast('Firewall reloaded'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); } },
+  }));
+  container.querySelector('[data-ufwon]')?.addEventListener('click', () => UI.dialog({
+    title: 'Turn the firewall on', saveLabel: 'Turn on', danger: true,
+    body: `${UI.explain('UFW is switched on: incoming connections are blocked unless a rule allows them. Outgoing traffic is not affected.', `SSH (${f.sshPort}/tcp) is allowed before switching on. DockGate then opens a new SSH login; if it fails, the firewall is switched off again (and on the server itself after 120 s if DockGate loses contact).`)}
+      <label class="flex items-center gap-2"><input type="checkbox" id="ufw-web" checked> Keep web traffic open (80/tcp, 443/tcp)</label>`,
+    onSave: async (ov) => {
+      const { jobId } = await API.post(`/servers/${serverId}/firewall/ufw`, { enable: true, allowWeb: ov.querySelector('#ufw-web').checked, confirm: true });
+      setTimeout(async () => { if (jobId && await runLifelineJob(serverId, jobId, 'Switch the firewall on')) showToast('Firewall on'); reload(); }, 0);
     },
   }));
-  container.querySelector('[data-ufwon]')?.addEventListener('click', () => {
-    const m = showModal('Turn the firewall on', `
-      ${serverContextBanner()}
-      <div class="detail-grid" style="grid-template-columns:1fr;gap:10px">
-        <div class="detail-item"><div class="detail-label">What changes</div><div class="detail-value" style="white-space:normal;word-break:normal">UFW is switched on: incoming connections are blocked unless a rule allows them. Outgoing traffic is not affected.</div></div>
-        <div class="detail-item"><div class="detail-label">What protects you</div><div class="detail-value" style="white-space:normal;word-break:normal">SSH (${f.sshPort}/tcp) is allowed before switching on. DockGate then opens a new SSH login; if it fails, the firewall is switched off again (and on the server itself after 120 s if DockGate loses contact).</div></div>
-        <div class="detail-item"><div class="detail-label">How to undo</div><div class="detail-value" style="white-space:normal;word-break:normal">"turn off" next to the firewall state on this page.</div></div>
-      </div>
-      <label class="flex items-center gap-2" style="margin-top:12px"><input type="checkbox" id="ufw-web" checked> Keep web traffic open (80/tcp, 443/tcp)</label>`, []);
-    const footer = m.overlay.querySelector('.modal-footer');
-    const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
-    const ok = document.createElement('button'); ok.className = 'btn btn-danger'; ok.textContent = 'Turn on';
-    footer.append(c, ok);
-    ok.onclick = async () => {
-      const allowWeb = m.overlay.querySelector('#ufw-web').checked;
-      m.close();
-      try {
-        const { jobId } = await API.post(`/servers/${serverId}/firewall/ufw`, { enable: true, allowWeb, confirm: true });
-        if (jobId) { const okk = await runLifelineJob(serverId, jobId, 'Switch the firewall on'); if (okk) showToast('Firewall on'); }
-        reload();
-      } catch (e) { showToast(e.message, 'error', 8000); }
-    };
-  });
-  container.querySelector('[data-ufwoff]')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    secConfirm({
-      title: 'Turn the firewall off', danger: true, confirmLabel: 'Turn off',
-      change: 'UFW is switched off. Every listening port becomes reachable from the internet; Docker port isolation stops working.',
-      protects: 'Nothing is locked out by this — SSH stays reachable. fail2ban bans and running containers are checked afterwards.',
-      undo: 'Turn the firewall on again here; your rules are kept.',
-      onConfirm: async () => {
-        try { const r = await API.post(`/servers/${serverId}/firewall/ufw`, { enable: false, confirm: true }); showToast('Firewall off', 'warning'); warnToast(r); reload(); }
-        catch (er) { showToast(er.message, 'error', 8000); }
-      },
-    });
-  });
+  container.querySelector('[data-ufwoff]')?.addEventListener('click', () => secConfirm({
+    title: 'Turn the firewall off', danger: true, confirmLabel: 'Turn off',
+    change: 'UFW is switched off. Every listening port becomes reachable from the internet; Docker port isolation stops working.',
+    protects: 'Nothing is locked out by this — SSH stays reachable. fail2ban bans and running containers are checked afterwards.',
+    undo: 'Turn the firewall on again here; your rules are kept.',
+    onConfirm: async () => { try { const r = await API.post(`/servers/${serverId}/firewall/ufw`, { enable: false, confirm: true }); showToast('Firewall off', 'warning'); warnToast(r); reload(); } catch (er) { showToast(er.message, 'error', 8000); } },
+  }));
   const runIsolation = async (enable, keepPublic) => {
     try {
       const { jobId } = await API.post(`/servers/${serverId}/firewall/docker-isolation`, { enable, keepPublic, confirm: true });
-      const okk = await runLifelineJob(serverId, jobId, enable ? 'Docker port isolation' : 'Turn off Docker port isolation');
-      if (okk) showToast(enable ? 'Docker port isolation on' : 'Docker port isolation off');
+      if (await runLifelineJob(serverId, jobId, enable ? 'Docker port isolation' : 'Turn off Docker port isolation')) showToast(enable ? 'Docker port isolation on' : 'Docker port isolation off');
       reload();
     } catch (e) { showToast(e.message, 'error', 8000); }
   };
-  // Isolation: list current bypassing ports and ask which stay public (default closed; web ports pre-ticked).
-  container.querySelector('[data-iso]')?.addEventListener('click', () => {
-    const m = showModal('Turn on Docker port isolation', `
-      ${serverContextBanner()}
-      <p class="text-sm" style="color:var(--text-secondary);margin-bottom:10px">After this, container ports are closed to the internet unless you open them. Inside the server nothing changes. Choose which of these currently public ports should <b>stay</b> public:</p>
-      <div style="display:grid;gap:6px;margin-bottom:12px">${bypass.map(p => `<label class="flex items-center gap-2" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="checkbox" value="${p.port}/${p.proto}" ${[80, 443].includes(p.port) ? 'checked' : ''}><span class="td-mono" style="font-weight:600;min-width:72px">${p.port}/${p.proto}</span><span class="text-sm">${escapeHtml(p.usedBy)}</span>${p.containerPort !== p.port ? `<span class="text-xs text-muted">→ :${p.containerPort}</span>` : ''}</label>`).join('')}</div>
-      <div class="text-xs text-muted">Web traffic (80/443) is ticked by default. Databases and dashboards should usually stay closed. When UFW manages IPv6 (IPV6=yes), the same rules are written for IPv6 too.</div>`, []);
-    const footer = m.overlay.querySelector('.modal-footer');
-    const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
-    const ok = document.createElement('button'); ok.className = 'btn btn-danger'; ok.textContent = 'Turn on isolation';
-    footer.append(c, ok);
-    ok.onclick = () => { const keep = [...m.overlay.querySelectorAll('input[type=checkbox]:checked')].map(x => x.value); m.close(); runIsolation(true, keep); };
-  });
+  container.querySelector('[data-iso]')?.addEventListener('click', () => UI.dialog({
+    title: 'Turn on Docker port isolation', saveLabel: 'Turn on isolation', danger: true,
+    body: `<div class="text-sm" style="color:var(--text-secondary)">After this, container ports are closed to the internet unless a rule allows them. Inside the server nothing changes. Choose which of these currently public ports should <b>stay</b> public:</div>
+      <div style="display:grid;gap:6px">${f.bypass.map(p => `<label class="flex items-center gap-2" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="checkbox" value="${p.port}/${p.proto}" ${[80, 443].includes(p.port) ? 'checked' : ''}><span class="td-mono" style="font-weight:600;min-width:72px">${p.port}/${p.proto}</span><span class="text-sm">${UI.esc(p.usedBy)}</span>${p.containerPort !== p.port ? `<span class="ui-sub">→ :${p.containerPort}</span>` : ''}</label>`).join('')}</div>
+      <div class="ui-sub">Web traffic (80/443) is ticked by default. When UFW manages IPv6, the same rules are written for IPv6 too.</div>`,
+    onSave: (ov) => { const keep = [...ov.querySelectorAll('input[type=checkbox]:checked')].map(x => x.value); setTimeout(() => runIsolation(true, keep), 0); },
+  }));
   container.querySelector('[data-iso-off]')?.addEventListener('click', (e) => {
     e.preventDefault();
     secConfirm({ title: 'Turn off Docker port isolation', change: 'The DOCKER-USER rules are removed. Every published container port becomes reachable from the internet again.', protects: 'SSH is tested with a new connection; on failure the previous rules come back.', undo: 'Turn isolation on again here.', danger: true, confirmLabel: 'Turn off', onConfirm: () => runIsolation(false, []) });
   });
-
-  container.querySelectorAll('[data-src]').forEach(b => b.addEventListener('click', (e) => { e.preventDefault(); openSourcesDialog(serverId, f, lists, f.ports[Number(b.dataset.src)], reload); }));
-  container.querySelector('[data-addport]')?.addEventListener('click', () => openSourcesDialog(serverId, f, lists, null, reload));
-  container.querySelectorAll('[data-closeport]').forEach(b => b.addEventListener('click', () => {
-    const p = f.ports[Number(b.dataset.closeport)];
-    secConfirm({
-      title: `Close ${p.port}/${p.proto}`, danger: true, confirmLabel: 'Close',
-      change: `Every rule that opens this port is removed (${p.sourceCount || (p.sources.includes('any') ? 'anyone' : 0)}${p.sourceCount ? ' addresses' : ''}). It stays reachable inside the server, but not from outside.`,
-      protects: 'The SSH port cannot be closed. fail2ban bans and running containers are checked afterwards.',
-      undo: '"Allow…" on the same row.',
-      onConfirm: async () => {
-        try { const r = await API.post(`/servers/${serverId}/firewall/ports/sources`, { port: p.port, proto: p.proto, sources: [] }); showToast(`${p.port}/${p.proto} closed`); warnToast(r); reload(); }
-        catch (er) { showToast(er.message, 'error', 8000); }
-      },
-    });
-  }));
-  if (f.managed) renderIpLists(container.querySelector('[data-iplists]'), lists, reload);
-  container.querySelectorAll('[data-delrule]').forEach(b => b.addEventListener('click', () => secConfirm({
-    title: `Delete rule #${b.dataset.delrule}`, danger: true, confirmLabel: 'Delete rule',
-    change: isFwd ? 'The rule is removed from the permanent firewalld configuration and firewalld is reloaded. For a service, all of its ports go.' : 'The rule (and its IPv6 twin) is removed from UFW immediately.',
-    protects: 'The rule that keeps SSH reachable cannot be deleted. fail2ban bans and running containers are checked afterwards.',
-    undo: 'Add the same rule again with "Add rule".',
-    onConfirm: async () => {
-      try { const r = await API.del(`/servers/${serverId}/firewall/rules/${b.dataset.delrule}`); showToast('Rule deleted'); warnToast(r); reload(); } catch (e) { showToast(e.message, 'error', 8000); }
-    },
-  })));
-  let action = 'allow';
-  container.querySelector('#fw-act')?.addEventListener('click', (e) => { const b = e.target.closest('.tab-btn'); if (!b) return; action = b.dataset.a; container.querySelectorAll('#fw-act .tab-btn').forEach(x => x.classList.toggle('active', x === b)); });
-  container.querySelector('[data-rule]')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const body = { port: Number(container.querySelector('#fw-port').value), proto: container.querySelector('#fw-proto').value, from: container.querySelector('#fw-from').value.trim() || 'any', action };
-    try { const r = await API.post(`/servers/${serverId}/firewall/rules`, body); showToast('Rule added'); warnToast(r); reload(); }
-    catch (er) { container.querySelector('[data-rule] [data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(er.message)}</div>`; }
-  });
 }
 
-// ---------------------------------------------------------------- port sources
-function fwSourceChip(s, lists, dockgateIp, removable) {
-  const x = removable ? ` <button type="button" data-rm="${escapeHtml(s)}" aria-label="Remove" style="all:unset;cursor:pointer;color:var(--text-muted);padding:0 2px">×</button>` : '';
-  const base = 'display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:999px;padding:1px 9px;font-size:12px;white-space:nowrap;';
-  if (s === 'any') return `<span style="${base}color:var(--warning)">Anyone (internet)${x}</span>`;
-  if (s === '@dockgate') return `<span style="${base}color:var(--accent)" title="${escapeHtml(dockgateIp || '')}">DockGate's IP${x}</span>`;
-  if (s[0] === '@') { const l = lists.find(y => y.id === s.slice(1)); return `<span style="${base}color:${s === '@cloudflare' ? '#f38020' : '#a78bfa'}">${escapeHtml(l ? l.name : s.slice(1))}${l ? ' · ' + l.items.length : ''}${x}</span>`; }
-  return `<span style="${base}" class="td-mono">${escapeHtml(s)}${x}</span>`;
+// ---------------------------------------------------------------- shared bits
+const FW_PORT_NAMES = { 22: 'SSH', 25: 'SMTP', 53: 'DNS', 80: 'HTTP', 443: 'HTTPS', 3306: 'MySQL', 5432: 'PostgreSQL', 6379: 'Redis', 27017: 'MongoDB', 8080: 'HTTP alt', 9100: 'Node exporter' };
+function fwAutoName(g) {
+  const svc = g.port && !g.port.includes('-') ? FW_PORT_NAMES[Number(g.port)] : null;
+  const what = svc || (g.port ? `Port ${g.port}` : 'All ports');
+  return g.dir === 'out' ? `${g.action === 'deny' ? 'Block' : 'Allow'} ${what} out` : what;
+}
+function fwAction(a) {
+  return a === 'deny' ? '<span style="color:var(--danger);font-weight:700;font-size:12.5px">Deny</span>'
+    : a === 'limit' ? '<span style="color:var(--warning);font-weight:700;font-size:12.5px" title="Allowed, at most 6 new connections per 30 s per address">Limit</span>'
+    : '<span style="color:var(--success);font-weight:700;font-size:12.5px">Allow</span>';
+}
+function fwChip(s, lists, dockgateIp, removable) {
+  const rm = removable ? s : null;
+  if (s === 'any4') return UI.chip('Any IPv4', { tone: 'any', remove: rm });
+  if (s === 'any6') return UI.chip('Any IPv6', { tone: 'any', remove: rm });
+  if (s === '@dockgate') return UI.chip("DockGate's IP", { tone: 'me', title: dockgateIp || '', remove: rm });
+  if (s[0] === '@') { const l = lists.find(y => y.id === s.slice(1)); return UI.chip(`${UI.esc(l ? l.name : s.slice(1))}${l ? ' · ' + l.items.length : ''}`, { tone: s === '@cloudflare' ? 'cf' : 'list', remove: rm }); }
+  return UI.chip(UI.esc(s), { mono: true, remove: rm });
+}
+async function fwSave(ctx, body, okText) {
+  try {
+    const r = await API.post(`/servers/${ctx.serverId}/firewall/rule`, body);
+    if (r.jobId) { if (await runLifelineJob(ctx.serverId, r.jobId, 'Firewall rule')) showToast(okText); }
+    else { showToast(okText); ctx.warnToast(r); }
+    ctx.reload();
+  } catch (e) { showToast(e.message, 'error', 9000); }
 }
 
-/** Add a port rule (p = null) or edit who can reach a port. Shows the exact change before applying. */
-function openSourcesDialog(serverId, f, lists, p, reload) {
-  const isNew = !p;
-  let mode = p && p.sources && p.sources.includes('any') ? 'any' : 'list';
-  let sources = p && p.sources ? p.sources.filter(s => s !== 'any') : [];
-  // an outdated list on this port: keep it selected, saving applies the current version
-  let note = '', hint = null, previewSeq = 0;
-  const m = showModal(isNew ? 'Add port rule' : `Who can reach ${p.port}/${p.proto}`, `${serverContextBanner()}<div data-body style="display:grid;gap:12px"></div>`, []);
-  const body = m.overlay.querySelector('[data-body]');
-  const footer = m.overlay.querySelector('.modal-footer');
-  const cancel = document.createElement('button'); cancel.className = 'btn btn-secondary'; cancel.textContent = 'Cancel'; cancel.onclick = () => m.close();
-  const save = document.createElement('button'); save.className = 'btn btn-primary'; save.textContent = isNew ? 'Add rule' : 'Apply changes';
-  footer.append(cancel, save);
-  const portOf = () => isNew ? { port: Number(body.querySelector('#src-port')?.value), proto: body.querySelector('#src-proto')?.value || 'tcp' } : { port: p.port, proto: p.proto };
-  const wanted = () => (mode === 'any' ? ['any'] : sources);
+// ---------------------------------------------------------------- one rule (add / edit)
+function openFwRuleDialog(ctx, g, preset = {}) {
+  const { f, lists } = ctx;
+  const editing = !!g;
+  const r = editing
+    ? { dir: g.dir, action: g.action, proto: g.proto || 'any', port: g.port || '', containers: !!g.containers, container: g.container, description: g.description || '' }
+    : { dir: 'in', action: 'allow', proto: 'tcp', port: '', containers: false, container: null, description: '', ...preset };
+  if (!editing && r.dir === 'out') r.action = preset.action || 'deny';
+  let sources = editing ? g.sources.slice() : (r.dir === 'out' ? ['any4', 'any6'] : []);
+  let note = '', hint = null, seq = 0;
+  const isIn = () => r.dir === 'in';
   const official = lists.filter(l => l.kind === 'official');
+  const d = UI.dialog({
+    title: `${editing ? 'Edit' : 'Add'} ${r.dir === 'in' ? 'inbound' : 'outbound'} rule`, saveLabel: editing ? 'Save rule' : 'Add rule', wide: true,
+    body: '<div data-form style="display:grid;gap:14px"></div><div data-preview></div>',
+    onSave: async () => {
+      const res = await API.post(`/servers/${ctx.serverId}/firewall/rule`, payload(false));
+      setTimeout(async () => {
+        if (res.jobId) { if (await runLifelineJob(ctx.serverId, res.jobId, 'Firewall rule')) showToast('Rule saved'); }
+        else { showToast(res.applied ? 'Rule saved' : 'No change'); ctx.warnToast(res); }
+        ctx.reload();
+      }, 0);
+    },
+  });
+  const ov = d.overlay, form = ov.querySelector('[data-form]'), prev = ov.querySelector('[data-preview]');
+  const payload = (dryRun) => {
+    const desc = form.querySelector('#fr-desc'), port = form.querySelector('#fr-port');
+    if (desc) r.description = desc.value;
+    if (port) r.port = port.value.trim();
+    return { original: editing ? g.key : null, rule: { ...r, proto: r.proto === 'any' ? null : r.proto }, sources, dryRun };
+  };
   const preview = async () => {
-    const seq = ++previewSeq; const box = body.querySelector('[data-preview]'); if (!box) return;
-    const { port, proto } = portOf();
-    if (!(port >= 1 && port <= 65535)) { box.innerHTML = '<span class="text-xs text-muted">Enter a port to see the change.</span>'; save.disabled = true; return; }
-    box.innerHTML = '<span class="text-xs text-muted">Checking…</span>';
+    const my = ++seq;
+    if (!sources.length && !editing) { prev.innerHTML = `<div class="ui-sub">Add at least one ${isIn() ? 'source' : 'destination'}.</div>`; d.save.disabled = true; return; }
+    prev.innerHTML = '<div class="ui-sub">Checking…</div>';
     try {
-      const r = await API.post(`/servers/${serverId}/firewall/ports/sources`, { port, proto, sources: wanted(), dryRun: true });
-      if (seq !== previewSeq) return;
-      save.disabled = !r.commands.length;
-      box.innerHTML = `<div class="text-xs">${r.commands.length ? `<b style="color:var(--success)">+${r.add.length}</b> rule${r.add.length === 1 ? '' : 's'} · <b style="color:var(--danger)">−${r.remove.length}</b> · ${r.keep} unchanged${r.family ? ' · ' + r.family : ''}${r.ssh ? ' · SSH: a new login is tested, rollback after 120 s if it fails' : ''}` : 'No change.'}</div>
-        ${r.commands.length ? `<details style="margin-top:6px"><summary class="text-xs text-muted" style="cursor:pointer">Commands (${r.commands.length})</summary><pre class="td-mono" style="font-size:11.5px;max-height:200px;overflow:auto;margin:6px 0 0;padding:8px;background:var(--bg-secondary,rgba(0,0,0,.2));border-radius:8px;white-space:pre-wrap">${escapeHtml(r.commands.map(c => c.replace(/\{\{S\}\}/g, '').replace(/ >\/dev\/null$/, '')).join('\n'))}</pre></details>` : ''}`;
-    } catch (e) { if (seq !== previewSeq) return; save.disabled = true; box.innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
+      const res = await API.post(`/servers/${ctx.serverId}/firewall/rule`, payload(true));
+      if (my !== seq) return;
+      d.save.disabled = !res.commands.length && !editing;
+      prev.innerHTML = `<div class="text-xs">${res.commands.length ? `<b style="color:var(--success)">+${res.add.length}</b> · <b style="color:var(--danger)">−${res.remove.length}</b> firewall entries${res.family ? ' · ' + res.family : ''}${res.ssh ? ' · SSH rule: a new login is tested, rollback after 120 s if it fails' : ''}` : 'No firewall change' + (editing ? ' (the description is saved)' : '')}</div>
+        ${res.commands.length ? `<details style="margin-top:6px"><summary class="text-xs text-muted" style="cursor:pointer">Commands (${res.commands.length})</summary><pre class="td-mono" style="font-size:11.5px;max-height:200px;overflow:auto;margin:6px 0 0;padding:8px;background:var(--bg-input);border-radius:8px;white-space:pre-wrap">${UI.esc(res.commands.map(c => c.replace(/\{\{S\}\}/g, '').replace(/ >\/dev\/null$/, '')).join('\n'))}</pre></details>` : ''}`;
+    } catch (e) { if (my !== seq) return; d.save.disabled = true; prev.innerHTML = `<div class="insight-card danger"><div>${UI.esc(e.message)}</div></div>`; }
   };
   const draw = () => {
-    body.innerHTML = `
-      ${isNew ? `<div class="flex gap-1" style="flex-wrap:wrap"><div style="display:grid;gap:4px"><label class="text-sm" for="src-port" style="font-weight:600">Port</label><input class="input" id="src-port" type="number" min="1" max="65535" placeholder="8443" style="width:120px" value="${escapeHtml(body.dataset.port || '')}"></div><div style="display:grid;gap:4px"><label class="text-sm" for="src-proto" style="font-weight:600">Protocol</label><select class="select" id="src-proto" style="width:90px"><option ${body.dataset.proto !== 'udp' ? 'selected' : ''}>tcp</option><option ${body.dataset.proto === 'udp' ? 'selected' : ''}>udp</option></select></div></div>` : ''}
-      <div style="display:grid;gap:6px"><div class="text-sm" style="font-weight:600">Who can reach this port</div>
-        <div class="tab-bar" style="width:max-content;max-width:100%"><button type="button" class="tab-btn ${mode === 'any' ? 'active' : ''}" data-mode="any">Anyone (internet)</button><button type="button" class="tab-btn ${mode === 'list' ? 'active' : ''}" data-mode="list">Only these sources</button></div></div>
-      ${mode === 'list' ? `
-        <div style="display:grid;gap:6px"><div class="text-sm" style="font-weight:600">Sources <span class="text-xs text-muted" style="font-weight:400">· IPv4 and IPv6 together</span></div>
-          <div class="flex gap-1" style="flex-wrap:wrap">${sources.length ? sources.map(s => fwSourceChip(s, lists, f.dockgateIp, true)).join('') : '<span class="text-xs text-muted">No sources: the port is closed to the outside.</span>'}</div></div>
-        ${note ? `<div class="insight-card info" style="font-size:13px"><div>${note}</div></div>` : ''}
-        ${hint ? `<div class="insight-card warning" style="font-size:13px"><div>These are exactly <b>${escapeHtml(hint.name)}</b>'s official ranges. Use the ${escapeHtml(hint.name)} list instead: when it changes, every port is updated with one click.<div class="flex gap-1" style="margin-top:8px;flex-wrap:wrap"><button type="button" class="btn btn-xs btn-primary" data-uselist="${hint.id}">Use the ${escapeHtml(hint.name)} list</button><button type="button" class="btn btn-xs btn-secondary" data-keepips>Keep separate addresses</button></div></div></div>` : ''}
-        <div style="display:grid;gap:4px"><label class="text-sm" for="src-paste" style="font-weight:600">Add addresses or ranges</label>
-          <textarea class="input" id="src-paste" rows="3" placeholder="Paste here: one per line, or separated by spaces or commas. IPv4 and IPv6 can be mixed." style="font-family:var(--font-mono);font-size:12.5px;width:100%;resize:vertical"></textarea>
-          <div class="flex justify-between items-center" style="gap:8px;flex-wrap:wrap"><span class="text-xs text-muted">Ctrl+Enter adds</span><button type="button" class="btn btn-xs btn-secondary" data-paste>Add</button></div><div data-perr class="text-xs" style="color:var(--danger)"></div></div>
-        <div style="display:grid;gap:6px"><div class="text-sm" style="font-weight:600">Lists</div><div class="flex gap-1" style="flex-wrap:wrap">
-          ${f.dockgateIp ? `<button type="button" class="btn btn-xs btn-secondary" data-preset="@dockgate" ${sources.includes('@dockgate') ? 'disabled' : ''}>+ DockGate's IP (${escapeHtml(f.dockgateIp)})</button>` : ''}
-          ${lists.filter(l => l.items.length).map(l => `<button type="button" class="btn btn-xs btn-secondary" data-preset="@${l.id}" ${sources.includes('@' + l.id) ? 'disabled' : ''}>+ ${escapeHtml(l.name)} (${l.items.length})</button>`).join('')}
-        </div></div>` : ''}
-      <div data-preview></div>`;
-    body.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { mode = b.dataset.mode; draw(); });
-    body.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { sources = sources.filter(s => s !== b.dataset.rm); hint = null; draw(); });
-    body.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => { sources.push(b.dataset.preset); draw(); });
-    body.querySelector('[data-uselist]')?.addEventListener('click', () => { const l = hint; sources = sources.filter(s => !l.items.includes(s)); if (!sources.includes('@' + l.id)) sources.push('@' + l.id); note = `Replaced ${l.items.length} addresses with the ${escapeHtml(l.name)} list.`; hint = null; draw(); });
-    body.querySelector('[data-keepips]')?.addEventListener('click', () => { hint = null; draw(); });
+    const portLocked = editing && r.container;
+    form.innerHTML = `
+      <div class="ui-field"><label for="fr-desc">Description</label><input class="input" id="fr-desc" maxlength="80" placeholder="${isIn() ? 'Web (HTTPS)' : 'Block outgoing mail'}" value="${UI.esc(r.description)}"></div>
+      <div class="ui-field"><span class="ui-label">${isIn() ? 'Sources' : 'Destinations'} <span class="ui-sub" style="font-weight:400">· IPv4 and IPv6</span></span>
+        <div class="ui-chips">${sources.length ? sources.map(s => fwChip(s, lists, f.dockgateIp, true)).join('') : `<span class="ui-sub">${isIn() ? 'No sources yet — the port stays closed to the outside.' : 'No destinations yet.'}</span>`}</div>
+        <div class="flex gap-1" style="flex-wrap:wrap">
+          ${['any4', 'any6'].map(a => UI.btn(`+ ${a === 'any4' ? 'Any IPv4' : 'Any IPv6'}`, `data-addsrc="${a}" ${sources.includes(a) ? 'disabled' : ''}`)).join('')}
+          ${f.dockgateIp ? UI.btn("+ DockGate's IP", `data-addsrc="@dockgate" ${sources.includes('@dockgate') ? 'disabled' : ''}`) : ''}
+          ${lists.filter(l => l.items.length).map(l => UI.btn(`+ ${UI.esc(l.name)}`, `data-addsrc="@${l.id}" ${sources.includes('@' + l.id) ? 'disabled' : ''}`)).join('')}
+        </div>
+        ${note ? `<div class="ui-sub" style="color:var(--info)">${note}</div>` : ''}
+        ${hint ? `<div class="insight-card warning" style="font-size:13px"><div>These are exactly <b>${UI.esc(hint.name)}</b>'s official ranges. Use the ${UI.esc(hint.name)} list instead: when it changes, the rule is updated with one click.<div class="flex gap-1" style="margin-top:8px;flex-wrap:wrap">${UI.btn(`Use the ${UI.esc(hint.name)} list`, `data-uselist="${hint.id}"`, 'btn-primary')}${UI.btn('Keep separate addresses', 'data-keepips')}</div></div></div>` : ''}
+        <textarea class="input" id="fr-paste" rows="2" placeholder="Paste IP addresses or ranges — one per line, or separated by spaces or commas." style="font-family:var(--font-mono);font-size:12.5px;width:100%;resize:vertical"></textarea>
+        <div class="flex justify-between items-center" style="gap:8px;flex-wrap:wrap"><span class="ui-sub">Ctrl+Enter adds</span>${UI.btn('Add addresses', 'data-paste')}</div><div data-perr class="text-xs" style="color:var(--danger)"></div></div>
+      <div class="ui-row">
+        <div class="ui-field"><label for="fr-proto">Protocol</label><select class="select" id="fr-proto" ${portLocked ? 'disabled' : ''}>${['tcp', 'udp', 'any'].map(p => `<option value="${p}" ${r.proto === p ? 'selected' : ''}>${p === 'any' ? 'Any' : p.toUpperCase()}</option>`).join('')}</select></div>
+        <div class="ui-field"><label for="fr-port">Port</label><input class="input" id="fr-port" style="width:150px" placeholder="443 or 8000-8100" value="${UI.esc(r.port)}" ${portLocked ? 'disabled' : ''}><span class="ui-help">${r.container ? 'container port' : 'empty = every port'}</span></div>
+        <div class="ui-field"><span class="ui-label">Action</span><div class="ui-seg">${['allow', 'deny'].concat(r.action === 'limit' ? ['limit'] : []).map(a => `<button type="button" data-act="${a}" aria-pressed="${r.action === a}">${a[0].toUpperCase() + a.slice(1)}</button>`).join('')}</div></div>
+      </div>
+      ${!isIn() ? `<label class="flex items-center gap-2 text-sm"><input type="checkbox" id="fr-cont" ${r.containers ? 'checked' : ''} ${f.dockerIsolation ? '' : 'disabled'}> Containers too <span class="ui-sub">${f.dockerIsolation ? '— Docker traffic leaves through a separate path; this adds the same rule for it' : '— needs Docker port isolation'}</span></label>` : ''}
+      ${!isIn() && r.action === 'allow' && f.defaults.outgoing === 'allow' ? '<div class="insight-card info" style="font-size:13px"><div>Outgoing traffic is already allowed by default. An Allow rule only matters as an exception to a Deny rule.</div></div>' : ''}
+      ${!isIn() && r.action === 'deny' && !r.port && sources.includes('any4') ? '<div class="insight-card warning" style="font-size:13px"><div>This blocks every outgoing connection: updates, Docker image pulls, DNS, time sync, certificates and DockGate alerts stop. Incoming SSH keeps working.</div></div>' : ''}`;
+    const keep = () => { r.description = form.querySelector('#fr-desc').value; r.port = form.querySelector('#fr-port').value.trim(); };
+    form.querySelectorAll('[data-addsrc]').forEach(b => b.onclick = () => { keep(); sources.push(b.dataset.addsrc); hint = null; draw(); });
+    form.querySelectorAll('[data-chip-remove]').forEach(b => b.onclick = () => { keep(); sources = sources.filter(s => s !== b.dataset.chipRemove); hint = null; draw(); });
+    form.querySelectorAll('[data-act]').forEach(b => b.onclick = () => { keep(); r.action = b.dataset.act; draw(); });
+    form.querySelector('#fr-proto').onchange = (e) => { keep(); r.proto = e.target.value; draw(); };
+    form.querySelector('#fr-port').onchange = () => { keep(); draw(); };
+    form.querySelector('#fr-desc').oninput = () => { r.description = form.querySelector('#fr-desc').value; };
+    const cont = form.querySelector('#fr-cont'); if (cont) cont.onchange = () => { r.containers = cont.checked; preview(); };
+    form.querySelector('[data-uselist]')?.addEventListener('click', () => { keep(); const l = hint; sources = sources.filter(s => !l.items.includes(s)); if (!sources.includes('@' + l.id)) sources.push('@' + l.id); note = `Replaced ${l.items.length} addresses with the ${UI.esc(l.name)} list.`; hint = null; draw(); });
+    form.querySelector('[data-keepips]')?.addEventListener('click', () => { hint = null; draw(); });
     const paste = async () => {
-      const ta = body.querySelector('#src-paste');
+      keep();
       try {
-        const r = await API.post('/firewall-lists/parse', { text: ta.value });
-        if (r.invalid.length) { body.querySelector('[data-perr]').textContent = `Not an IP address or range: ${r.invalid.slice(0, 6).join(', ')}${r.invalid.length > 6 ? ' …' : ''}`; return; }
-        if (r.valid.some(v => v === '0.0.0.0/0' || v === '::/0')) { body.querySelector('[data-perr]').textContent = 'Use "Anyone (internet)" instead of 0.0.0.0/0 or ::/0'; return; }
-        const fresh = r.valid.filter(v => !sources.includes(v)); fresh.forEach(v => sources.push(v));
-        const n6 = fresh.filter(v => v.includes(':')).length;
-        note = fresh.length ? `Added ${fresh.length} address${fresh.length === 1 ? '' : 'es'}: ${fresh.length - n6} IPv4 + ${n6} IPv6.${r.valid.length > fresh.length ? ` ${r.valid.length - fresh.length} were already there.` : ''}` : 'All of these are already in the sources.';
+        const res = await API.post('/firewall-lists/parse', { text: form.querySelector('#fr-paste').value });
+        if (res.invalid.length) { form.querySelector('[data-perr]').textContent = `Not an IP address or range: ${res.invalid.slice(0, 6).join(', ')}${res.invalid.length > 6 ? ' …' : ''}`; return; }
+        const fresh = [];
+        for (const v of res.valid) { const s = v === '0.0.0.0/0' ? 'any4' : v === '::/0' ? 'any6' : v; if (!sources.includes(s)) { sources.push(s); fresh.push(s); } }
+        const n6 = fresh.filter(v => v === 'any6' || (v !== 'any4' && v.includes(':'))).length;
+        note = fresh.length ? `Added ${fresh.length}: ${fresh.length - n6} IPv4 + ${n6} IPv6.${res.valid.length > fresh.length ? ` ${res.valid.length - fresh.length} were already there.` : ''}` : 'All of these are already there.';
         hint = official.find(l => l.items.length && l.items.every(x => sources.includes(x))) || null;
         draw();
-      } catch (e) { body.querySelector('[data-perr]').textContent = e.message; }
+      } catch (e) { form.querySelector('[data-perr]').textContent = e.message; }
     };
-    body.querySelector('[data-paste]')?.addEventListener('click', paste);
-    body.querySelector('#src-paste')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); paste(); } });
-    body.querySelector('#src-port')?.addEventListener('change', (e) => { body.dataset.port = e.target.value; preview(); });
-    body.querySelector('#src-proto')?.addEventListener('change', (e) => { body.dataset.proto = e.target.value; preview(); });
+    form.querySelector('[data-paste]').onclick = paste;
+    form.querySelector('#fr-paste').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); paste(); } });
     preview();
-  };
-  save.onclick = async () => {
-    const { port, proto } = portOf();
-    save.disabled = true;
-    try {
-      const r = await API.post(`/servers/${serverId}/firewall/ports/sources`, { port, proto, sources: wanted() });
-      m.close();
-      if (r.jobId) { const ok = await runLifelineJob(serverId, r.jobId, `Sources for ${port}/${proto}`); if (ok) showToast(`${port}/${proto} updated`); }
-      else { showToast(`${port}/${proto}: +${r.add.length} −${r.remove.length} rules`); (r.warnings || []).forEach(w => showToast(w, 'warning', 12000)); }
-      reload();
-    } catch (e) { save.disabled = false; const box = body.querySelector('[data-preview]'); if (box) box.innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
   };
   draw();
 }
 
-// ---------------------------------------------------------------- IP lists
+// ---------------------------------------------------------------- default policy
+function openFwDefaultDialog(ctx, direction) {
+  const cur = ctx.f.defaults[direction];
+  let policy = cur;
+  UI.dialog({
+    title: `Default for ${direction} traffic`, saveLabel: 'Save', danger: true,
+    body: `<div class="ui-field"><span class="ui-label">Traffic no rule matches is</span><div class="ui-seg" data-seg><button type="button" data-p="deny" aria-pressed="${cur === 'deny'}">Denied</button><button type="button" data-p="allow" aria-pressed="${cur === 'allow'}">Allowed</button></div></div>
+      ${direction === 'incoming'
+        ? UI.explain('Allowing incoming by default opens every listening port to the internet. Denying is the safe default.', 'Denying is refused unless a rule keeps SSH reachable for DockGate.')
+        : UI.explain('Denying outgoing by default stops updates, Docker image pulls, DNS, time sync, certificates and DockGate alerts unless you add Allow rules for them.', 'Incoming SSH keeps working either way.')}`,
+    onOpen: (ov) => ov.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { policy = b.dataset.p; ov.querySelectorAll('[data-p]').forEach(x => x.setAttribute('aria-pressed', x === b)); }),
+    onSave: async () => {
+      if (policy === cur) return;
+      const r = await API.post(`/servers/${ctx.serverId}/firewall/default`, { direction, policy, confirm: true });
+      showToast(`Default ${direction}: ${policy}`); ctx.warnToast(r); ctx.reload();
+    },
+  });
+}
+
+// ---------------------------------------------------------------- IP lists (like AWS prefix lists)
 function renderIpLists(el, lists, reloadPanel) {
-  const kindLabel = { official: 'official', custom: 'yours' };
-  el.innerHTML = `
-    <div class="flex justify-between items-center mb-2" style="gap:10px;flex-wrap:wrap"><div><div style="font-size:15px;font-weight:700">IP lists</div><div class="text-xs text-muted">Use a list as a port source. Official lists change only when you check and confirm.</div></div><button class="btn btn-sm btn-secondary" data-newlist>New list</button></div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px">${lists.map(l => `
-      <div class="card" style="display:grid;gap:6px;align-content:start">
-        <div class="flex justify-between items-center"><b>${escapeHtml(l.name)}</b><span class="text-xs text-muted">${kindLabel[l.kind] || l.kind}</span></div>
-        <div class="text-xs text-muted">${l.items.length ? `${l.v4} IPv4 · ${l.v6} IPv6` : 'Not loaded yet — "Check for updates" loads it'}${l.source ? ' · ' + escapeHtml(l.source) : ''}${l.fetchedAt ? ' · fetched ' + escapeHtml(l.fetchedAt) : (l.kind === 'official' && l.items.length ? ' · built-in copy' : '')}</div>
-        <div class="flex gap-1" style="flex-wrap:wrap;margin-top:2px">${l.kind === 'official' ? `<button class="btn btn-xs btn-secondary" data-check="${l.id}">Check for updates</button>` : `<button class="btn btn-xs btn-secondary" data-editlist="${l.id}">Edit</button><button class="btn btn-xs btn-danger" data-dellist="${l.id}">Delete</button>`}</div>
-      </div>`).join('')}</div>`;
+  el.innerHTML = UI.header('IP lists', 'Named address sets to use as sources or destinations. Official lists change only when you check and confirm.', UI.btn('New list', 'data-newlist')) +
+    UI.table([{ label: 'Name' }, { label: 'Addresses' }, { label: 'Kind' }, { label: 'Updated' }, { label: '', align: 'right' }], lists.map(l => ({ cells: [
+      `<b>${UI.esc(l.name)}</b>${l.source ? `<div class="ui-sub">${UI.esc(l.source)}</div>` : ''}`,
+      l.items.length ? `${l.items.length} <span class="ui-sub">(${l.v4} IPv4 · ${l.v6} IPv6)</span>` : '<span class="ui-sub">not loaded yet</span>',
+      l.kind === 'official' ? 'Official' : 'Yours',
+      `<span class="ui-sub">${l.fetchedAt ? UI.esc(l.fetchedAt) : (l.kind === 'official' ? (l.items.length ? 'built-in copy' : '—') : UI.esc(l.updatedAt || ''))}</span>`,
+      l.kind === 'official' ? UI.btn('Check for updates', `data-check="${l.id}"`) : `${UI.btn('Edit', `data-editlist="${l.id}"`)}${UI.btn('Delete', `data-dellist="${l.id}"`, 'btn-danger')}`,
+    ] })), { minWidth: 600 });
   el.querySelector('[data-newlist]').onclick = () => openListDialog(null, reloadPanel);
   el.querySelectorAll('[data-editlist]').forEach(b => b.onclick = () => openListDialog(lists.find(l => l.id === b.dataset.editlist), reloadPanel));
   el.querySelectorAll('[data-dellist]').forEach(b => b.onclick = () => {
     const l = lists.find(x => x.id === b.dataset.dellist);
-    secConfirm({ title: `Delete list "${escapeHtml(l.name)}"`, danger: true, confirmLabel: 'Delete list',
+    secConfirm({ title: `Delete list "${UI.esc(l.name)}"`, danger: true, confirmLabel: 'Delete list',
       change: 'The list is removed from DockGate. Firewall rules already on servers stay — they show as separate addresses.',
-      protects: 'No server is changed.', undo: 'Create the list again with the same addresses; ports are recognised again.',
+      protects: 'No server is changed.', undo: 'Create the list again with the same addresses; rules are recognised again.',
       onConfirm: async () => { try { await API.del(`/firewall-lists/${l.id}`); showToast('List deleted'); reloadPanel(); } catch (e) { showToast(e.message, 'error', 8000); } } });
   });
   el.querySelectorAll('[data-check]').forEach(b => b.onclick = async () => {
@@ -335,33 +314,26 @@ function renderIpLists(el, lists, reloadPanel) {
     catch (e) { showToast(e.message, 'error', 10000); b.disabled = false; b.textContent = 'Check for updates'; return; }
     b.disabled = false; b.textContent = 'Check for updates';
     if (!r.add.length && !r.remove.length) { showToast(`${l.name} is up to date`); return; }
-    const m = showModal(`${escapeHtml(l.name)} · update`, `
-      <div class="text-sm" style="margin-bottom:8px">${r.add.length} new range${r.add.length === 1 ? '' : 's'}, ${r.remove.length} removed.</div>
-      <pre class="td-mono" style="font-size:12px;max-height:240px;overflow:auto;padding:8px;border-radius:8px;background:var(--bg-secondary,rgba(0,0,0,.2))">${r.add.map(x => `<span style="color:var(--success)">+ ${escapeHtml(x)}</span>`).join('\n')}${r.add.length && r.remove.length ? '\n' : ''}${r.remove.map(x => `<span style="color:var(--danger)">− ${escapeHtml(x)}</span>`).join('\n')}</pre>
-      <div class="text-xs text-muted">Saving updates the list in DockGate. Servers are not changed yet: ports that use the list then show "an older version is applied here" with an <b>update</b> link, so you apply it per port and see the exact rules first.</div>`, []);
-    const footer = m.overlay.querySelector('.modal-footer');
-    const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
-    const ok = document.createElement('button'); ok.className = 'btn btn-primary'; ok.textContent = 'Save the new version';
-    footer.append(c, ok);
-    ok.onclick = async () => { try { await API.post(`/firewall-lists/${l.id}/update`, { items: r.upstream }); m.close(); showToast(`${l.name} saved`); reloadPanel(); } catch (e) { showToast(e.message, 'error', 8000); } };
+    UI.dialog({
+      title: `${UI.esc(l.name)} · update`, saveLabel: 'Save the new version',
+      body: `<div class="text-sm">${r.add.length} new range${r.add.length === 1 ? '' : 's'}, ${r.remove.length} removed.</div>
+        <pre class="td-mono" style="font-size:12px;max-height:240px;overflow:auto;padding:8px;border-radius:8px;background:var(--bg-input);margin:0">${r.add.map(x => `<span style="color:var(--success)">+ ${UI.esc(x)}</span>`).join('\n')}${r.add.length && r.remove.length ? '\n' : ''}${r.remove.map(x => `<span style="color:var(--danger)">− ${UI.esc(x)}</span>`).join('\n')}</pre>
+        <div class="ui-sub">Saving updates the list in DockGate. Servers are not changed yet: rules that use the list then show "changed — update this rule", so you apply it per rule and see the exact entries first.</div>`,
+      onSave: async () => { await API.post(`/firewall-lists/${l.id}/update`, { items: r.upstream }); showToast(`${l.name} saved`); reloadPanel(); },
+    });
   });
 }
 
 function openListDialog(l, reloadPanel) {
-  const m = showModal(l ? `Edit list · ${escapeHtml(l.name)}` : 'New IP list', `
-    <div style="display:grid;gap:10px">
-      <div style="display:grid;gap:4px"><label class="text-sm" for="ipl-name" style="font-weight:600">Name</label><input class="input" id="ipl-name" value="${escapeHtml(l ? l.name : '')}" placeholder="Office, VPN, Partner API…" maxlength="40"></div>
-      <div style="display:grid;gap:4px"><label class="text-sm" for="ipl-items" style="font-weight:600">Addresses <span class="text-xs text-muted" style="font-weight:400">· one per line, IPv4 and IPv6</span></label><textarea class="input" id="ipl-items" rows="8" style="font-family:var(--font-mono);font-size:12.5px;width:100%;resize:vertical">${escapeHtml(l ? l.items.join('\n') : '')}</textarea></div>
-      ${l ? '<div class="text-xs text-muted">Ports that use this list then show "an older version is applied here" until you update them.</div>' : ''}
-      <div data-err></div>
-    </div>`, []);
-  const footer = m.overlay.querySelector('.modal-footer');
-  const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();
-  const ok = document.createElement('button'); ok.className = 'btn btn-primary'; ok.textContent = 'Save list';
-  footer.append(c, ok);
-  ok.onclick = async () => {
-    const body = { name: m.overlay.querySelector('#ipl-name').value, items: m.overlay.querySelector('#ipl-items').value };
-    try { if (l) await API.put(`/firewall-lists/${l.id}`, body); else await API.post('/firewall-lists', body); m.close(); showToast('List saved'); reloadPanel(); }
-    catch (e) { m.overlay.querySelector('[data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
-  };
+  UI.dialog({
+    title: l ? `Edit list · ${UI.esc(l.name)}` : 'New IP list', saveLabel: 'Save list',
+    body: `<div class="ui-field"><label for="ipl-name">Name</label><input class="input" id="ipl-name" value="${UI.esc(l ? l.name : '')}" placeholder="Office, VPN, Partner API…" maxlength="40"></div>
+      <div class="ui-field"><label for="ipl-items">Addresses <span class="ui-sub" style="font-weight:400">· one per line, IPv4 and IPv6</span></label><textarea class="input" id="ipl-items" rows="8" style="font-family:var(--font-mono);font-size:12.5px;width:100%;resize:vertical">${UI.esc(l ? l.items.join('\n') : '')}</textarea></div>
+      ${l ? '<div class="ui-sub">Rules that use this list then show "changed — update this rule" until you update them.</div>' : ''}`,
+    onSave: async (ov) => {
+      const body = { name: ov.querySelector('#ipl-name').value, items: ov.querySelector('#ipl-items').value };
+      if (l) await API.put(`/firewall-lists/${l.id}`, body); else await API.post('/firewall-lists', body);
+      showToast('List saved'); reloadPanel();
+    },
+  });
 }

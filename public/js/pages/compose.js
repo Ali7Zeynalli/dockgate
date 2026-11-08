@@ -8,6 +8,37 @@ Router.register('compose', async (content) => {
   // The Compose editor (New Project / Edit YAML) now lives in the shared global openComposeEditor()
   // (public/js/compose-editor.js) so the Templates page can reuse it to deploy stack templates.
 
+  // "Deploy stack": pick where the stack comes from, then the existing flow for that source opens.
+  function openDeployWizard(remote) {
+    const opts = [
+      ['editor', 'Write a compose file', 'Paste or write docker-compose.yml in the editor.'],
+      ['git', 'Git repository', 'Clone a repository and keep it in sync.'],
+      ['folder', 'Upload a folder', 'A folder with a compose file and its build context.'],
+      ...(remote ? [['adopt', 'Existing on the server', 'Take over a compose folder already on this server.']] : []),
+      ['template', 'App template', 'Pick one of the ready-made stacks.'],
+    ];
+    let choice = 'git';
+    const d = UI.dialog({
+      title: 'Deploy stack', saveLabel: 'Continue', wide: true,
+      body: `<p class="text-sm text-muted" style="margin:0 0 10px">Where does the stack come from?</p>
+        <div class="ui-choice">${opts.map(([k, t, desc]) => `<button type="button" class="ui-choice-opt" data-src="${k}" aria-pressed="${k === choice}"><b>${t}</b><span>${desc}</span></button>`).join('')}</div>`,
+      onOpen: (ov) => ov.querySelectorAll('[data-src]').forEach(b => b.addEventListener('click', () => {
+        choice = b.dataset.src;
+        ov.querySelectorAll('[data-src]').forEach(x => x.setAttribute('aria-pressed', x === b));
+      })),
+      onSave: () => {
+        setTimeout(() => {
+          if (choice === 'editor') openComposeEditor(null);
+          else if (choice === 'git') openGitDeploy();
+          else if (choice === 'folder') openFolderDeploy();
+          else if (choice === 'adopt') openAdoptFromServer();
+          else Router.navigate('deploy', { tab: 'templates' });
+        }, 0);
+      },
+    });
+    return d;
+  }
+
   async function render() {
     try {
       const projects = await API.get('/compose');
@@ -21,77 +52,60 @@ Router.register('compose', async (content) => {
       const dis = '';
       const gitProjects = (projects || []).filter(p => p.isGit || p.deploySource === 'git');
       content.innerHTML = `
-        <div class="page-header">
-          <div>
-            <div class="page-title">Compose Projects</div>
-            <div class="page-subtitle">${projects.length} project(s)${gitProjects.length ? ` · <span style="color:var(--accent);font-weight:600">● ${gitProjects.length} Git-connected</span>` : ''}</div>
-          </div>
-          <div class="page-actions" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <div class="row-menu" style="position:relative;display:inline-block">
-              <button class="btn btn-primary row-menu-toggle" id="compose-deploy-toggle">${Icons.compose} + Deploy ▾</button>
-              <div class="row-menu-pop">
-                <button class="rmi" id="compose-new" ${dis}>${Icons.compose} New compose project</button>
-                <button class="rmi" id="compose-git">${Icons.registry || Icons.compose} Deploy from Git</button>
-                <button class="rmi" id="compose-folder">${Icons.arrowUp || Icons.compose} Deploy from folder</button>
-                ${remote ? `<button class="rmi" id="compose-adopt">${Icons.folder || Icons.compose} Adopt from server (existing folder)</button>` : ''}
-                </div>
-            </div>
-
-            <button class="btn btn-danger" id="compose-bulk-delete" style="display:none;align-items:center;gap:6px">${Icons.trash} Delete (<span id="bulk-count">0</span>)</button>
-
-            <!-- Global Git Pull / Sync dropdown right next to Deploy -->
-            <div class="row-menu" style="position:relative;display:inline-block">
-              <button class="btn btn-secondary row-menu-toggle" id="global-git-btn" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;${gitProjects.length ? 'border-color:var(--accent);color:var(--accent)' : ''}" title="Global Git operations across server directories">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
-                <span>⤓ Git Pull / Sync ▾</span>
-                ${gitProjects.length ? `<span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px;padding:1px 6px">${gitProjects.length}</span>` : ''}
-              </button>
-              <div class="row-menu-pop" style="min-width:250px">
-                <button class="rmi" id="global-git-sync-all">⚡ Sync &amp; Deploy All Git Projects</button>
-                <button class="rmi" id="global-git-pull-all">⤓ Pull All (Files only, no restart)</button>
-                <div style="border-top:1px solid var(--border);margin:4px 0"></div>
-                <button class="rmi" id="global-git-manage-btn">📋 Manage &amp; View All Git Repos…</button>
-                <button class="rmi" id="global-git-pull-custom">📁 Pull &amp; Deploy specific server path…</button>
-              </div>
-            </div>
-
-            <button class="btn btn-secondary" id="compose-refresh" title="Refresh">${Icons.refresh}</button>
-          </div>
-        </div>
+        ${UI.header('Compose stacks', `${projects.length} stack${projects.length === 1 ? '' : 's'} on this server${gitProjects.length ? ` · ${gitProjects.length} from Git` : ''}. Open a stack's ⋯ menu for its files, YAML, terminal and Git actions.`,
+          `<button class="btn btn-secondary btn-sm" id="compose-refresh" title="Refresh">${Icons.refresh}</button>
+           <button class="btn btn-secondary btn-sm" id="compose-bulk-delete" style="display:none;color:var(--danger)">${Icons.trash} Delete <span id="bulk-count">0</span>…</button>
+           <div class="row-menu" style="position:relative;display:inline-block">
+             <button class="btn btn-secondary btn-sm row-menu-toggle" id="global-git-btn" title="Git actions for every Git stack on this server">
+               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+               Git${gitProjects.length ? ` (${gitProjects.length})` : ''} ▾
+             </button>
+             <div class="row-menu-pop" style="min-width:260px">
+               <button class="rmi" id="global-git-sync-all">Sync and deploy all Git stacks</button>
+               <button class="rmi" id="global-git-pull-all">Pull all (files only, no restart)</button>
+               <div style="border-top:1px solid var(--border);margin:4px 0"></div>
+               <button class="rmi" id="global-git-manage-btn">Manage Git repositories…</button>
+               <button class="rmi" id="global-git-pull-custom">Pull and deploy a server path…</button>
+             </div>
+           </div>
+           <button class="btn btn-primary btn-sm" id="compose-deploy-wizard">${Icons.compose} Deploy stack</button>`)}
         <div id="deploy-banner"></div>
         ${remote ? '<div class="card mb-3" style="border-left:3px solid var(--accent);padding:10px 14px;font-size:13px;color:var(--text-secondary)">Remote host active — only <strong>DockGate-managed</strong> projects can be deployed (the compose file lives on DockGate). Needs a key-based SSH server without a passphrase; bind-mount paths resolve on the remote host.</div>' : ''}
-        ${projects.length === 0 ? '<div class="empty-state"><h3>No Compose Projects</h3></div>' : `
+        ${projects.length === 0 ? `<div class="empty-state"><h3>No stacks yet</h3><p>Deploy one from a compose file, a Git repository, a folder or a template.</p></div>` : `
           <div class="table-wrapper">
             <table>
-              <thead><tr><th style="width:36px;text-align:center"><input type="checkbox" class="bulk-all"></th><th>Project Name</th><th>Status</th><th>Services</th><th>Path</th><th style="text-align:right">Actions</th></tr></thead>
+              <thead><tr><th style="width:36px;text-align:center"><input type="checkbox" class="bulk-all" aria-label="Select all"></th><th>Stack</th><th>Source</th><th>State</th><th>Services</th><th style="text-align:right">Actions</th></tr></thead>
               <tbody>
                 ${projects.map(p => {
                   const isGit = !!(p.isGit || p.deploySource === 'git');
                   const gitBranch = p.gitInfo?.branch || '';
                   return `<tr${isGit ? ` data-gitproj="${escapeHtml(p.name)}"` : ''}>
                   <td style="text-align:center"><input type="checkbox" class="bulk-item" data-proj="${escapeHtml(p.name)}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"></td>
-                  <td class="td-name">
-                    ${isGit ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:.8;color:var(--accent)"><title>Git-managed project</title><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>' : ''}${escapeHtml(p.name)}${isGit && gitBranch ? ` <span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px;vertical-align:1px;margin-left:4px" title="${escapeHtml(p.gitInfo?.repoUrl || 'Git branch')}">git:${escapeHtml(gitBranch)}</span>` : ''}${p.deploySource === 'adopt' && !isGit ? ' <span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:10px;vertical-align:1px" title="Adopted in place — the compose file lives on the server; DockGate stops &amp; untracks it on delete but never removes your folder">adopted</span>' : ''}
-                  </td>
-                  <td><span class="badge ${p.running === p.total ? 'badge-running' : p.running > 0 ? 'badge-restarting' : 'badge-stopped'}">${p.running}/${p.total} Running</span></td>
-                  <td class="text-sm">${p.services.join(', ') || '—'}</td>
-                  <td class="td-mono text-xs" title="${escapeHtml(p.workingDir)}">${escapeHtml(p.workingDir) || '—'}</td>
-                  <td><div class="td-actions">
-                    <button class="btn-sm btn-primary" data-action="up" data-project="${p.name}" ${dis}>${Icons.play} Up</button>
-                    <button class="btn-sm btn-secondary" data-action="down" data-project="${p.name}" ${dis}>${Icons.stop} Down</button>
-                    <button class="btn-sm btn-secondary" data-action="restart" data-project="${p.name}" ${dis} title="Restart">${Icons.restart}</button>
-                    <button class="btn-sm btn-secondary" data-action="rebuild" data-project="${p.name}" data-services="${escapeHtml((p.services || []).join(','))}" ${dis} title="Rebuild images from source + up (pick which services)">${Icons.layers} Rebuild</button>
-                    ${isGit ? `
-                      <button class="btn-sm btn-secondary" data-git-pull="${escapeHtml(p.name)}" title="⤓ Git Pull: Pull latest code changes (files only, containers untouched)">⤓ Pull</button>
-                      <button class="btn-sm btn-primary" data-git-sync="${escapeHtml(p.name)}" title="⚡ Git Sync &amp; Deploy: Pull latest code &amp; rebuild/restart containers immediately" style="background:var(--accent);border-color:var(--accent)">⚡ Sync</button>
-                    ` : ''}
-                    ${p.deploySource === 'folder' ? `<button class="btn-sm btn-secondary" data-update="${p.name}" data-rpath="${escapeHtml(p.workingDir || '')}" data-services="${escapeHtml((p.services || []).join(','))}" title="Re-upload the (updated) folder & rebuild (pick which services)">${Icons.refresh} Update</button>` : ''}
-                    <button class="btn-icon" title="Edit YAML" data-edit="${p.name}" ${dis}>${Icons.settings}</button>
-                    <button class="btn-icon" title="Project files (Dockerfile, .env…)" data-files="${p.name}">${Icons.folder || Icons.compose}</button>
-                    ${isGit ? `<button class="btn-icon text-warning" title="⚠️ Force Pull: Discard uncommitted changes on server and reset to origin/<branch> + rebuild" data-git-force="${escapeHtml(p.name)}">⚠️</button>` : ''}
-                    <button class="btn-icon" title="Open a terminal in this project's folder" data-term="${p.name}" data-cwd="${escapeHtml(p.workingDir || '')}">🖥</button>
-                    <button class="btn-icon" title="View Services &amp; Git details" data-detail="${p.name}">${Icons.eye}</button>
-                    <button class="btn-icon text-danger" title="Delete project (containers + files)" data-delproj="${p.name}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}">${Icons.trash}</button>
+                  <td class="td-name">${escapeHtml(p.name)}${p.workingDir ? `<div class="td-mono text-xs text-muted" title="${escapeHtml(p.workingDir)}" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.workingDir)}</div>` : ''}</td>
+                  <td>${isGit ? UI.chip(`git${gitBranch ? ' · ' + escapeHtml(gitBranch) : ''}`, { title: p.gitInfo?.repoUrl || 'Git' }) : p.deploySource === 'adopt' ? UI.chip('adopted', { title: 'Adopted in place: the compose file lives on the server. Deleting stops and untracks it but never removes your folder.' }) : p.deploySource ? UI.chip(escapeHtml(p.deploySource)) : UI.chip('external', { title: 'Started outside DockGate (docker compose up on the server)' })}</td>
+                  <td>${p.total === 0 ? UI.pill('off', 'not deployed') : p.running === p.total ? UI.pill('ok', `${p.running}/${p.total} running`) : p.running > 0 ? UI.pill('warn', `${p.running}/${p.total} running`) : UI.pill('off', 'stopped')}</td>
+                  <td class="text-sm">${(p.services || []).map(x => escapeHtml(x)).join(', ') || '—'}</td>
+                  <td><div class="td-actions" style="justify-content:flex-end">
+                    ${p.running > 0 && p.running === p.total
+                      ? (isGit ? `<button class="btn btn-xs btn-secondary" data-git-sync="${escapeHtml(p.name)}" title="Pull the latest code and rebuild / restart">Sync</button>` : `<button class="btn btn-xs btn-secondary" data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.restart} Restart</button>`)
+                      : `<button class="btn btn-xs btn-secondary" data-action="up" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.play} Up</button>`}
+                    ${UI.menu([
+                      { label: `${Icons.eye} Services and details`, attrs: `data-detail="${escapeHtml(p.name)}"` },
+                      { label: `${Icons.settings} Edit YAML`, attrs: `data-edit="${escapeHtml(p.name)}" ${dis}` },
+                      { label: `${Icons.folder || Icons.compose} Files (Dockerfile, .env…)`, attrs: `data-files="${escapeHtml(p.name)}"` },
+                      { label: `${Icons.terminal} Terminal in this folder`, attrs: `data-term="${escapeHtml(p.name)}" data-cwd="${escapeHtml(p.workingDir || '')}"` },
+                      '-',
+                      { label: `${Icons.play} Up`, attrs: `data-action="up" data-project="${escapeHtml(p.name)}" ${dis}` },
+                      { label: `${Icons.restart} Restart`, attrs: `data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}` },
+                      { label: `${Icons.layers} Rebuild…`, attrs: `data-action="rebuild" data-project="${escapeHtml(p.name)}" data-services="${escapeHtml((p.services || []).join(','))}" ${dis}` },
+                      p.deploySource === 'folder' ? { label: `${Icons.refresh} Update from folder…`, attrs: `data-update="${escapeHtml(p.name)}" data-rpath="${escapeHtml(p.workingDir || '')}" data-services="${escapeHtml((p.services || []).join(','))}"` } : null,
+                      isGit ? { label: 'Git pull (files only)', attrs: `data-git-pull="${escapeHtml(p.name)}"` } : null,
+                      isGit ? { label: 'Git sync and deploy', attrs: `data-git-sync="${escapeHtml(p.name)}"` } : null,
+                      { label: `${Icons.stop} Down`, attrs: `data-action="down" data-project="${escapeHtml(p.name)}" ${dis}` },
+                      '-',
+                      isGit ? { label: 'Force pull (discard server changes)…', attrs: `data-git-force="${escapeHtml(p.name)}"`, danger: true } : null,
+                      { label: `${Icons.trash} Delete stack…`, attrs: `data-delproj="${escapeHtml(p.name)}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"`, danger: true },
+                    ])}
                   </div></td>
                 </tr>`;
                 }).join('')}
@@ -104,10 +118,7 @@ Router.register('compose', async (content) => {
 
       renderDeploys();
       document.getElementById('compose-refresh')?.addEventListener('click', render);
-      document.getElementById('compose-new')?.addEventListener('click', () => openComposeEditor(null));
-      document.getElementById('compose-folder')?.addEventListener('click', openFolderDeploy);
-      document.getElementById('compose-adopt')?.addEventListener('click', openAdoptFromServer);
-      document.getElementById('compose-git')?.addEventListener('click', openGitDeploy);
+      document.getElementById('compose-deploy-wizard')?.addEventListener('click', () => openDeployWizard(remote));
 
       // Global Git header action handlers
       document.getElementById('global-git-sync-all')?.addEventListener('click', async () => {
@@ -526,7 +537,7 @@ Router.register('compose', async (content) => {
           } catch (e) { showToast(e.message, 'error'); }
         });
       });
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
   // Global Git Management Hub — view & pull all git projects across the server

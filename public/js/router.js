@@ -17,7 +17,44 @@ const Router = {
     return this._navId === navId;
   },
 
+  // Pages that moved keep their old links working: #/activity?tab=logs, #/infra?tab=registries, a bare
+  // #/containers, #/cleanup … are rewritten to the section that now holds them.
+  resolve(path, params = {}) {
+    const p = { ...(params || {}) };
+    const SECTION_OF = {
+      containers: 'resources', images: 'resources', volumes: 'resources', networks: 'resources', builds: 'resources', prune: 'resources', cleanup: 'resources',
+      compose: 'deploy', templates: 'deploy', registries: 'deploy',
+      logs: 'observe', events: 'observe', audit: 'observe',
+      terminal: 'tools', files: 'tools',
+    };
+    const TAB = { cleanup: 'prune' };
+    if (path === 'activity') { const t = p.tab || 'logs'; return { path: SECTION_OF[t] || 'observe', params: { ...p, tab: TAB[t] || t } }; }
+    if (path === 'infra' && p.tab === 'registries') return { path: 'deploy', params: p };
+    if ((path === 'resources' || path === 'deploy') && TAB[p.tab]) return { path, params: { ...p, tab: TAB[p.tab] } };
+    if (SECTION_OF[path]) { delete p.tab; return { path: SECTION_OF[path], params: { ...p, tab: TAB[path] || path } }; }
+    if (path === 'settings' && p.tab === 'agent') return { path: 'infra', params: { tab: 'agent' } };
+    return { path, params: p };
+  },
+
+  // Top bar: "Section / Page" for pages inside a section, else the page name.
+  setTitle(path, params = {}) {
+    const el = document.getElementById('header-title');
+    if (!el) return;
+    const item = typeof navItems !== 'undefined' ? navItems[path] : null;
+    const extra = { 'container-detail': ['Resources', 'Container'], 'server-console': null };
+    const crumb = (parent, page) => `<span class="crumb-parent">${escapeHtml(parent)}</span><span class="crumb-sep">/</span><span class="crumb-page">${escapeHtml(page)}</span>`;
+    if (item && item.tabs) {
+      const t = item.tabs.find(([k]) => k === (params.tab || item.default));
+      el.innerHTML = t ? crumb(item.label, t[1]) : escapeHtml(item.label);
+    } else if (extra[path]) el.innerHTML = crumb(...extra[path]);
+    else el.textContent = (item && item.label) || this.titles[path] || path;
+    if (typeof syncSidebarTabs === 'function') setTimeout(syncSidebarTabs, 0); // redirects use replaceState (no hashchange)
+    document.title = `${el.textContent.replace(/\s*\/\s*/g, ' / ')} · DockGate`;
+  },
+  titles: { 'container-detail': 'Container', system: 'System' },
+
   async navigate(path, params = {}, opts = {}) {
+    ({ path, params } = this.resolve(path, params));
     // Increment navigation ID — invalidates any in-flight async from previous page
     // Naviqasiya ID-ni artır — əvvəlki səhifənin davam edən async əməliyyatlarını ləğv edir
     const navId = ++this._navId;
@@ -40,31 +77,7 @@ const Router = {
       return;
     }
 
-    // Update header title
-    const titles = {
-      dashboard: 'Dashboard',
-      resources: 'Resources',
-      deploy: 'Deploy',
-      activity: 'Activity',
-      containers: 'Containers',
-      'container-detail': 'Container Details',
-      images: 'Images',
-      volumes: 'Volumes',
-      networks: 'Networks',
-      compose: 'Compose Projects',
-      logs: 'Logs',
-      events: 'Events',
-      system: 'System',
-      cleanup: 'Cleanup',
-      builds: 'Builds',
-      audit: 'Audit Log',
-      infra: 'Servers',
-      monitoring: 'Monitoring & Observability',
-      'server-console': 'Server Console',
-      settings: 'Settings',
-    };
-
-    document.getElementById('header-title').textContent = titles[path] || path;
+    this.setTitle(path, params);
     this.currentPage = path;
     Store.set('currentPage', path);
     Store.set('currentParams', params);
@@ -107,7 +120,7 @@ const Router = {
     } catch (err) {
       // Only show error if this navigation is still active / Yalnız bu naviqasiya hələ aktivdirsə xətanı göstər
       if (this.isActiveNav(navId)) {
-        content.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg><h3>Error loading page</h3><p>${escapeHtml(err.message)}</p></div>`;
+        content.innerHTML = UI.errorState(err);
       }
     }
   },
@@ -160,6 +173,7 @@ const Router = {
   // previous sub-state and a refresh restores it.
   updateParams(params = {}) {
     Store.set('currentParams', params);
+    this.setTitle(this.currentPage, params);
     localStorage.setItem('dcc_last_params', JSON.stringify(params));
     this._writeHash(this.currentPage, params, false);
   },
@@ -171,7 +185,9 @@ const Router = {
       if (this._suppressHash) { this._suppressHash = false; return; }
       const parsed = this._parseHash();
       if (parsed && this.routes[parsed.path]) {
-        this.navigate(parsed.path, parsed.params, { fromHash: true });
+        const r = this.resolve(parsed.path, parsed.params);
+        const moved = r.path !== parsed.path || r.params.tab !== parsed.params.tab;
+        this.navigate(r.path, r.params, { fromHash: !moved, replace: moved });
       }
     });
   }

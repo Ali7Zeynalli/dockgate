@@ -53,12 +53,12 @@ Router.register('audit', async (content) => {
     try {
       const rows = await API.get('/meta/activity?' + buildQuery());
       currentRows = rows;
-      tbody.innerHTML = rows.map(r => {
+      tbody.innerHTML = rows.map((r, i) => {
         const det = r.details ? escapeHtml(String(r.details)) : '';
         return `
-          <tr>
+          <tr data-row="${i}" style="cursor:pointer" title="Open details">
             <td class="text-sm text-muted" style="white-space:nowrap">${fmtTime(r.created_at)}</td>
-            <td>${r.server && r.server !== 'local' ? `<span class="badge badge-created">🔐 ${escapeHtml(r.server)}</span>` : '<span class="text-muted text-sm">🖥 local</span>'}</td>
+            <td>${r.server && r.server !== 'local' ? `${UI.chip(escapeHtml(r.server))}` : '<span class="text-muted text-sm">local</span>'}</td>
             <td class="td-mono text-sm">${escapeHtml(r.resource_type || '')}</td>
             <td><span class="badge ${actionClass(r.action)}">${escapeHtml(r.action || '')}</span></td>
             <td class="td-name text-sm">${escapeHtml(r.resource_name || r.resource_id || '—')}</td>
@@ -68,7 +68,7 @@ Router.register('audit', async (content) => {
       }).join('');
       if (empty) empty.style.display = rows.length ? 'none' : 'block';
     } catch (err) {
-      showToast('Failed to load audit log: ' + err.message, 'error');
+      if (empty) { empty.innerHTML = UI.errorState(err, { compact: true, title: 'The audit log could not be loaded' }); empty.style.display = 'block'; }
     }
   }
 
@@ -80,20 +80,16 @@ Router.register('audit', async (content) => {
     const opt = (v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`;
 
     content.innerHTML = `
-      <div class="page-header">
-        <div>
-          <div class="page-title">Audit Log</div>
-          <div class="page-subtitle">Operations performed on DockGate — what, on which host, from where (IP)</div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary" id="audit-refresh">${Icons.refresh} Refresh</button>
-          <button class="btn btn-secondary" id="audit-export">${Icons.download} Export CSV</button>
-          <button class="btn btn-danger" id="audit-clear">${Icons.trash} Clear</button>
-        </div>
-      </div>
+      ${UI.header('Audit log', 'Every change made through DockGate: what, on which server, and from which IP address. Click a row for its details.',
+        `<button class="btn btn-secondary btn-sm" id="audit-export">${Icons.download} Export CSV</button>
+         ${UI.menu([
+           { label: `${Icons.refresh} Refresh`, attrs: 'id="audit-refresh"' },
+           '-',
+           { label: `${Icons.trash} Clear the log…`, attrs: 'id="audit-clear"', danger: true },
+         ])}`)}
 
-      <div class="filter-bar" style="flex-wrap:wrap;gap:8px;align-items:center">
-        <div class="search-input" style="flex:1;min-width:200px">${Icons.search}<input id="audit-search" placeholder="Search — resource, action, details, IP..."></div>
+      <div class="ui-toolbar">
+        <div class="search-input">${Icons.search}<input id="audit-search" placeholder="Search resource, action, details or IP" aria-label="Search the audit log"></div>
         <div class="select-wrapper"><select class="select" id="audit-server"><option value="">All servers</option>${facets.servers.map(opt).join('')}</select></div>
         <div class="select-wrapper"><select class="select" id="audit-type"><option value="">All types</option>${facets.types.map(opt).join('')}</select></div>
         <div class="select-wrapper"><select class="select" id="audit-action"><option value="">All actions</option>${facets.actions.map(opt).join('')}</select></div>
@@ -105,7 +101,7 @@ Router.register('audit', async (content) => {
           <thead><tr><th>Time</th><th>Server</th><th>Type</th><th>Action</th><th>Resource</th><th>Source IP</th><th>Details</th></tr></thead>
           <tbody id="audit-tbody"></tbody>
         </table>
-        <div id="audit-empty" class="empty-state" style="padding:40px;display:none">No audit records</div>
+        <div id="audit-empty" class="empty-state" style="padding:40px;display:none">Nothing recorded yet, or nothing matches the filters.</div>
       </div>
     `;
 
@@ -121,6 +117,19 @@ Router.register('audit', async (content) => {
     });
 
     document.getElementById('audit-refresh')?.addEventListener('click', load);
+    document.getElementById('audit-tbody')?.addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-row]'); if (!tr) return;
+      const r = currentRows[Number(tr.dataset.row)]; if (!r) return;
+      let det = r.details || '';
+      try { det = JSON.stringify(JSON.parse(det), null, 2); } catch (x) { /* plain text */ }
+      showModal('Audit entry', `${UI.settings([
+        { label: 'Time', value: escapeHtml(fmtTime(r.created_at)) },
+        { label: 'Server', value: escapeHtml(r.server || 'local') },
+        { label: 'Action', value: `${escapeHtml(r.resource_type || '')} · <b>${escapeHtml(r.action || '')}</b>` },
+        { label: 'Resource', value: escapeHtml(r.resource_name || r.resource_id || '—') },
+        { label: 'Source IP', value: `<span class="td-mono">${escapeHtml(r.source_ip || '—')}</span>` },
+      ])}${det ? `<pre class="td-mono text-xs" style="margin-top:12px;white-space:pre-wrap;word-break:break-all;max-height:320px;overflow:auto;background:var(--bg-primary);padding:10px;border-radius:8px">${escapeHtml(det)}</pre>` : ''}`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    });
 
     document.getElementById('audit-export')?.addEventListener('click', () => {
       if (!currentRows.length) { showToast('No records to export', 'warning'); return; }

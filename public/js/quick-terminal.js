@@ -462,7 +462,7 @@ const QuickTerminal = (function() {
     document.getElementById('qt-btn-fullscreen-page')?.addEventListener('click', () => {
       minimize();
       if (typeof Router !== 'undefined') {
-        Router.navigate('activity', { tab: 'terminal', id: panels[0].selectedContainerId });
+        Router.navigate('tools', { tab: 'terminal', id: panels[0].selectedContainerId });
       }
     });
 

@@ -90,19 +90,16 @@ Router.register('templates', async (content) => {
       ? `<img src="${logoUrl}" alt="" loading="lazy" style="width:40px;height:40px;object-fit:contain;border-radius:6px;background:var(--bg-primary)" onerror="this.style.visibility='hidden'">`
       : `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">${Icons.template}</div>`;
     return `
-      <div class="card" data-tpldetail="${idx}" style="display:flex;flex-direction:column;gap:8px;padding:14px;cursor:pointer" title="Click for details">
+      <div class="card tpl-card" data-tpldetail="${idx}" role="button" tabindex="0" style="display:flex;flex-direction:column;gap:8px;padding:14px;cursor:pointer" title="Open to see ports and settings, then deploy">
         <div style="display:flex;gap:10px;align-items:center">
           ${logo}
           <div style="min-width:0">
             <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.title || t.image || 'App')}</div>
-            <div class="text-xs text-muted">${isStack ? '🧩 Stack' : '📦 Container'}${t.image ? ' · ' + escapeHtml(t.image) : ''}</div>
+            <div class="text-xs text-muted">${isStack ? 'Stack' : 'Container'}${t.image ? ' · ' + escapeHtml(t.image) : ''}</div>
           </div>
         </div>
-        <div class="text-sm text-muted" style="flex:1;min-height:34px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(t.description || '')}</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">${cats}</div>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-primary btn-sm" data-deploy="${idx}" style="flex:1">${Icons.play} Deploy</button>
-        </div>
+        <div class="text-sm text-muted tpl-desc" style="min-height:34px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(t.description || '')}</div>
+        <div class="tpl-cats" style="display:flex;gap:4px;flex-wrap:wrap">${cats}</div>
       </div>`;
   }
 
@@ -128,7 +125,7 @@ Router.register('templates', async (content) => {
         ${logoSrc(t.logo) ? `<img src="${logoSrc(t.logo)}" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:var(--bg-primary)" onerror="this.style.display='none'">` : ''}
         <div style="min-width:0">
           <div style="font-weight:700;font-size:16px">${escapeHtml(t.title || t.image || 'App')}</div>
-          <div class="text-xs text-muted">${isStack ? '🧩 Stack' : '📦 Container'}${t.image ? ' · <code>' + escapeHtml(t.image) + '</code>' : ''}${t.platform ? ' · ' + escapeHtml(t.platform) : ''}</div>
+          <div class="text-xs text-muted">${isStack ? 'Stack' : 'Container'}${t.image ? ' · <code>' + escapeHtml(t.image) + '</code>' : ''}${t.platform ? ' · ' + escapeHtml(t.platform) : ''}</div>
           <div id="tpl-hub" class="text-xs text-muted" style="margin-top:3px">Loading popularity…</div>
         </div>
       </div>
@@ -223,30 +220,26 @@ Router.register('templates', async (content) => {
       source = data.source || '';
       render(data);
     } catch (err) {
-      content.innerHTML = `<div class="empty-state" style="padding:40px"><h3>Failed to load templates</h3><div class="text-muted">${escapeHtml(err.message)}</div></div>`;
+      content.innerHTML = UI.errorState(err, { title: 'Templates could not be loaded' });
     }
   }
 
   function render(data) {
     const cats = [...new Set(all.flatMap(t => t.categories || []))].sort();
-    const srcLabel = source === 'remote' ? `remote (${all.length})`
+    // The most common categories as chips; the select still lists every category.
+    const freq = {}; all.forEach(t => (t.categories || []).forEach(c => { freq[c] = (freq[c] || 0) + 1; }));
+    const topCats = Object.keys(freq).sort((a, b) => freq[b] - freq[a]).slice(0, 6);
+    const srcLabel = source === 'remote' ? 'remote list'
       : source === 'bundled-fallback' ? `bundled — remote failed: ${escapeHtml(data.error || '')}`
-      : `bundled (${all.length})`;
+      : 'bundled list';
     content.innerHTML = `
-      <div class="page-header">
-        <div>
-          <div class="page-title">App Templates</div>
-          <div class="page-subtitle">Deploy ready-made apps — source: ${srcLabel}</div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary" id="tpl-source">${Icons.settings} Source</button>
-          <button class="btn btn-secondary" id="tpl-refresh">${Icons.refresh} Refresh</button>
-        </div>
-      </div>
-
-      <div class="filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
-        <div class="search-input" style="flex:1;min-width:200px">${Icons.search}<input id="tpl-search" placeholder="Search templates…"></div>
-        <div class="select-wrapper"><select class="select" id="tpl-cat"><option value="">All categories</option>${cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select></div>
+      ${UI.header('App templates', `${all.length} ready-made apps (source: ${srcLabel}). Open one to see its ports and settings before you deploy.`,
+        `<button class="btn btn-secondary btn-sm" id="tpl-refresh" title="Reload the list">${Icons.refresh}</button>
+         <button class="btn btn-secondary btn-sm" id="tpl-source">${Icons.settings} Source…</button>`)}
+      <div class="ui-toolbar">
+        <div class="search-input">${Icons.search}<input id="tpl-search" placeholder="Search templates" aria-label="Search templates"></div>
+        ${UI.chips([['', 'All'], ...topCats.map(c => [c, escapeHtml(c)])], '', 'data-tcat')}
+        <div class="select-wrapper"><select class="select" id="tpl-cat" aria-label="Category"><option value="">All categories</option>${cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select></div>
       </div>
 
       <div id="tpl-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px"></div>
@@ -256,7 +249,14 @@ Router.register('templates', async (content) => {
     document.getElementById('tpl-refresh')?.addEventListener('click', load);
     document.getElementById('tpl-source')?.addEventListener('click', openSourceModal);
     document.getElementById('tpl-search')?.addEventListener('input', applyFilters);
-    document.getElementById('tpl-cat')?.addEventListener('change', applyFilters);
+    const syncChips = () => { const v = document.getElementById('tpl-cat').value; content.querySelectorAll('[data-tcat]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tcat === v)); };
+    document.getElementById('tpl-cat')?.addEventListener('change', () => { syncChips(); applyFilters(); });
+    content.querySelectorAll('[data-tcat]').forEach(b => b.addEventListener('click', () => { document.getElementById('tpl-cat').value = b.dataset.tcat; syncChips(); applyFilters(); }));
+    document.getElementById('tpl-grid')?.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const card = e.target.closest('[data-tpldetail]');
+      if (card) { e.preventDefault(); const t = all[parseInt(card.dataset.tpldetail, 10)]; if (t) openTemplateDetail(t); }
+    });
     document.getElementById('tpl-grid')?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-deploy]');
       if (btn) { const t = all[parseInt(btn.dataset.deploy, 10)]; if (t) deploy(t); return; }

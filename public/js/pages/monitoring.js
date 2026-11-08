@@ -15,36 +15,19 @@ const MonitoringPage = {
     container.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:18px;max-width:1400px;margin:0 auto;">
         
-        <!-- Header Toolbar -->
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:12px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <div style="display:flex;align-items:center;gap:6px;">
-              <span style="font-size:18px;">📊</span>
-              <span style="font-weight:700;font-size:15px;">Monitoring &amp; Observability</span>
-            </div>
-            <span id="mon-agent-badge" class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:11px;padding:2px 8px;">Connecting…</span>
-          </div>
+        ${UI.header('Monitoring', 'Every server at a glance, then live host and container metrics for the server picked in the header. Open a server for its full graphs and alert policies.',
+          `${UI.seg([['1h', '1h'], ['6h', '6h'], ['24h', '24h'], ['7d', '7d']], this.currentRange, 'data-range')}
+           <select id="mon-refresh-sel" class="select" aria-label="Auto refresh" style="padding:4px 8px;font-size:12px;">
+             <option value="5000">Refresh: 5s</option>
+             <option value="10000" selected>Refresh: 10s</option>
+             <option value="30000">Refresh: 30s</option>
+             <option value="0">Refresh: off</option>
+           </select>
+           <button id="mon-refresh-btn" class="btn btn-secondary btn-sm" title="Refresh now">${Icons.refresh}</button>`)}
 
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <!-- Range Selector -->
-            <div class="segmented-control" style="display:flex;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:2px;">
-              <button type="button" class="btn btn-sm ${this.currentRange === '1h' ? 'btn-primary' : 'btn-ghost'}" data-range="1h" style="padding:3px 10px;font-size:12px;">1h</button>
-              <button type="button" class="btn btn-sm ${this.currentRange === '6h' ? 'btn-primary' : 'btn-ghost'}" data-range="6h" style="padding:3px 10px;font-size:12px;">6h</button>
-              <button type="button" class="btn btn-sm ${this.currentRange === '24h' ? 'btn-primary' : 'btn-ghost'}" data-range="24h" style="padding:3px 10px;font-size:12px;">24h</button>
-              <button type="button" class="btn btn-sm ${this.currentRange === '7d' ? 'btn-primary' : 'btn-ghost'}" data-range="7d" style="padding:3px 10px;font-size:12px;">7d</button>
-            </div>
+        <div id="mon-fleet"></div>
 
-            <!-- Auto-Refresh Selector -->
-            <select id="mon-refresh-sel" class="select" style="padding:4px 8px;font-size:12px;background:var(--bg-primary);">
-              <option value="5000">Auto: 5s</option>
-              <option value="10000" selected>Auto: 10s</option>
-              <option value="30000">Auto: 30s</option>
-              <option value="0">Off</option>
-            </select>
-
-            <button id="mon-refresh-btn" class="btn btn-secondary btn-sm" title="Refresh now" style="padding:4px 10px;">🔄</button>
-          </div>
-        </div>
+        <div class="ui-ph" style="margin:6px 0 -6px"><div class="ui-ph-text"><div class="ui-ph-title">${escapeHtml(activeServer.name || activeServer.label || serverId)} <span id="mon-agent-badge" class="ui-pill ui-pill-off" style="margin-left:6px">connecting…</span></div><div class="ui-ph-desc">Live metrics of the server picked in the header.</div></div></div>
 
         <!-- Metric Stat Cards -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:14px;">
@@ -101,7 +84,7 @@ const MonitoringPage = {
           <!-- Chart 1: CPU Utilization -->
           <div class="card" style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-              <div style="font-weight:700;font-size:14px;">📈 CPU Utilization History (%)</div>
+              <div style="font-weight:700;font-size:14px;">CPU (%)</div>
               <span class="text-xs text-muted" id="chart-cpu-legend">Host CPU</span>
             </div>
             <div style="height:220px;position:relative;">
@@ -112,7 +95,7 @@ const MonitoringPage = {
           <!-- Chart 2: Memory & Swap Usage -->
           <div class="card" style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-              <div style="font-weight:700;font-size:14px;">🧠 Memory Allocation History (%)</div>
+              <div style="font-weight:700;font-size:14px;">Memory (%)</div>
               <span class="text-xs text-muted">RAM Utilization</span>
             </div>
             <div style="height:220px;position:relative;">
@@ -123,7 +106,7 @@ const MonitoringPage = {
           <!-- Chart 3: Network Bandwidth -->
           <div class="card" style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-              <div style="font-weight:700;font-size:14px;">🌐 Network Throughput (KB/s)</div>
+              <div style="font-weight:700;font-size:14px;">Network (KB/s)</div>
               <span class="text-xs text-muted">Download (RX) vs Upload (TX)</span>
             </div>
             <div style="height:220px;position:relative;">
@@ -148,7 +131,7 @@ const MonitoringPage = {
         <div class="card" style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
             <div>
-              <div style="font-weight:700;font-size:15px;">📦 Container Resource Matrix</div>
+              <div style="font-weight:700;font-size:15px;">Containers</div>
               <div class="text-xs text-muted">Real-time resource breakdown per container</div>
             </div>
           </div>
@@ -177,8 +160,7 @@ const MonitoringPage = {
     // Event Listeners
     container.querySelectorAll('[data-range]').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        container.querySelectorAll('[data-range]').forEach(b => { b.className = 'btn btn-sm btn-ghost'; });
-        btn.className = 'btn btn-sm btn-primary';
+        container.querySelectorAll('[data-range]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
         this.currentRange = btn.dataset.range;
         this.fetchData(serverId);
       });
@@ -191,10 +173,12 @@ const MonitoringPage = {
     });
 
     container.querySelector('#mon-refresh-btn').addEventListener('click', () => {
+      this.fetchFleet();
       this.fetchData(serverId);
     });
 
     // Initial Fetch & Timer
+    this.fetchFleet();
     this.fetchData(serverId);
     this.resetTimer(serverId);
 
@@ -206,10 +190,55 @@ const MonitoringPage = {
     };
   },
 
+  // All servers in one table: state, CPU / memory sparklines, disk bar. Data: /servers + /servers/overview.
+  async fetchFleet() {
+    const el = document.getElementById('mon-fleet');
+    if (!el) return;
+    try {
+      const [list, ov] = await Promise.all([API.get('/servers'), API.get('/servers/overview?history=40')]);
+      if (!document.getElementById('mon-fleet')) return;
+      const servers = list.servers || [];
+      const spark = (vals, color) => {
+        const v = vals.filter(x => x != null);
+        if (v.length < 2) return '<span class="text-muted text-xs">not enough data yet</span>';
+        const w = 120, h = 28, step = w / (v.length - 1);
+        const pts = v.map((x, i) => `${(i * step).toFixed(1)},${(h - 2 - Math.min(100, Math.max(0, x)) / 100 * (h - 4)).toFixed(1)}`);
+        const lastY = pts[pts.length - 1].split(',')[1];
+        return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true" style="display:block"><polyline points="0,${h} ${pts.join(' ')} ${w},${h}" fill="${color}" fill-opacity=".14" stroke="none"/><polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5"/><circle cx="${w}" cy="${lastY}" r="2.4" fill="${color}"/></svg>`;
+      };
+      const pct = (x) => x == null ? '—' : `${Math.round(x)}%`;
+      const rows = servers.map(s => {
+        const o = (ov.servers || {})[s.id] || {}, last = o.lastStat, series = o.series || [];
+        const ageMin = last && last.ts ? (Date.now() - new Date(String(last.ts).replace(' ', 'T') + (String(last.ts).includes('Z') ? '' : 'Z')).getTime()) / 60000 : null;
+        if (!last) return { cells: [
+          `<b>${escapeHtml(s.name || s.id)}</b><div class="ui-sub">${s.id === 'local' ? 'this machine' : escapeHtml(s.host || '')}</div>`,
+          s.id === 'local' ? UI.pill('info', 'live below') : UI.pill('off', 'no data yet'),
+          `<span class="text-muted text-xs" style="grid-column:span 3">${s.id === 'local' ? 'DockGate shows this machine live below; it keeps no history for it.' : 'No metrics recorded yet. They appear after DockGate or the edge agent has polled this server.'}</span>`, '', '',
+          s.id === 'local' ? '' : UI.btn('Open', `data-mon-open="${escapeHtml(s.id)}"`),
+        ] };
+        const state = !last ? UI.pill('off', 'no data yet') : ageMin != null && ageMin > 10 ? UI.pill('warn', `last seen ${Math.round(ageMin)} min ago`) : UI.pill('ok', 'reporting');
+        const diskCls = last && last.disk >= 90 ? 'red' : last && last.disk >= 80 ? 'yellow' : 'green';
+        const name = escapeHtml(s.name || s.id);
+        return { cells: [
+          `<b>${name}</b><div class="ui-sub">${s.id === 'local' ? 'this machine' : escapeHtml(s.host || '')}</div>`,
+          state,
+          `${spark(series.map(x => x.cpu), '#3b82f6')}<span class="ui-sub">${pct(last && last.cpu)}</span>`,
+          `${spark(series.map(x => x.mem), '#a78bfa')}<span class="ui-sub">${pct(last && last.mem)}</span>`,
+          last && last.disk != null ? `<div class="disk-bar" style="height:6px;margin:0;width:120px"><div class="disk-bar-fill ${diskCls}" style="width:${Math.min(100, last.disk)}%"></div></div><span class="ui-sub">${pct(last.disk)}</span>` : '<span class="text-muted">—</span>',
+          s.id === 'local' ? '' : UI.btn('Open', `data-mon-open="${escapeHtml(s.id)}"`),
+        ] };
+      });
+      el.innerHTML = UI.table([{ label: 'Server' }, { label: 'State' }, { label: 'CPU' }, { label: 'Memory' }, { label: 'Disk' }, { label: '', align: 'right' }], rows, { empty: 'No servers yet.', minWidth: 760 });
+      el.querySelectorAll('[data-mon-open]').forEach(b => b.addEventListener('click', () => Router.navigate('server-console', { id: b.dataset.monOpen, tab: 'monitoring' })));
+    } catch (e) {
+      el.innerHTML = UI.errorState(e, { compact: true, title: 'The server list could not be loaded' });
+    }
+  },
+
   resetTimer(serverId) {
     if (this.refreshTimer) clearInterval(this.refreshTimer);
     if (this.refreshInterval > 0) {
-      this.refreshTimer = setInterval(() => this.fetchData(serverId), this.refreshInterval);
+      this.refreshTimer = setInterval(() => { this.fetchData(serverId); this.fetchFleet(); }, this.refreshInterval);
     }
   },
 
@@ -257,15 +286,10 @@ const MonitoringPage = {
   updateUI(data) {
     const badge = document.getElementById('mon-agent-badge');
     if (badge) {
-      if (data.source === 'agent') {
-        badge.innerHTML = '🟢 Agent Live (All-in-One)';
-        badge.style.background = 'var(--accent-dim)';
-        badge.style.color = 'var(--accent)';
-      } else {
-        badge.innerHTML = '🟡 Host Live (Polling)';
-        badge.style.background = 'rgba(245, 158, 11, 0.15)';
-        badge.style.color = '#f59e0b';
-      }
+      const agent = data.source === 'agent';
+      badge.className = `ui-pill ui-pill-${agent ? 'ok' : 'info'}`;
+      badge.textContent = agent ? 'edge agent · live' : 'polled by DockGate';
+      badge.title = agent ? 'Metrics come from the edge agent on the server.' : 'DockGate reads these metrics over SSH (or the local socket) every few seconds.';
     }
 
     const host = data.host || {};
@@ -345,7 +369,7 @@ const MonitoringPage = {
               <td style="padding:10px 12px;font-family:var(--font-mono);">${memMb} MB</td>
               <td style="padding:10px 12px;font-family:var(--font-mono);">${typeof memP === 'number' ? memP.toFixed(1) + '%' : memP}</td>
               <td style="padding:10px 12px;">
-                <button class="btn btn-secondary btn-sm" onclick="Router.navigate('activity', { tab: 'logs', container: '${escapeHtml(name)}' })" style="padding:2px 8px;font-size:11px;">
+                <button class="btn btn-secondary btn-sm" onclick="Router.navigate('observe', { tab: 'logs', container: '${escapeHtml(name)}' })" style="padding:2px 8px;font-size:11px;">
                   📜 Logs
                 </button>
               </td>

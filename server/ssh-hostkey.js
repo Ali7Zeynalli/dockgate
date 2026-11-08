@@ -45,6 +45,8 @@ const MISMATCH_MESSAGE = 'Host key mismatch — this server presented a differen
 function verifierFor(server, onMismatch) {
   return (key) => {
     const fp = fingerprint(key);
+    // a connection test can ask to see the key it was offered (shown to the user before the server is added)
+    if (server && typeof server.onHostKey === 'function') { try { server.onHostKey({ fingerprint: fp, type: keyTypeLabel(keyType(key)), blob: key.toString('base64') }); } catch (e) {} }
     if (!server || !server.id || server.id === 'local') return true;
     let row;
     try { row = require('./db').stmts.getServer.get(server.id); } catch (e) { return true; }

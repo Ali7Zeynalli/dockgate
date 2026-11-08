@@ -10,12 +10,19 @@ Router.register('images', async (content) => {
 
   async function render() {
     try {
-      let images = await API.get('/images');
+      const [imgList, ctrs] = await Promise.all([API.get('/images'), API.get('/containers').catch(() => [])]);
+      let images = imgList;
+      // Which containers use each image ("Used by"), by image ID.
+      const usedBy = {};
+      for (const c of ctrs) (usedBy[c.imageId] = usedBy[c.imageId] || []).push(c.name);
 
       // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
       if (!Router.isActiveNav(pageNavId)) return;
 
       const allCount = images.length;
+      const counts = { inuse: images.filter(i => i.inUse).length, unused: images.filter(i => !i.inUse).length, dangling: images.filter(i => i.isDangling).length };
+      const totalSize = images.reduce((a, i) => a + (i.size || 0), 0);
+      const unusedSize = images.filter(i => !i.inUse).reduce((a, i) => a + (i.size || 0), 0);
       if (currentFilter === 'inuse') images = images.filter(i => i.inUse);
       else if (currentFilter === 'unused') images = images.filter(i => !i.inUse);
       else if (currentFilter === 'dangling') images = images.filter(i => i.isDangling);
@@ -35,40 +42,33 @@ Router.register('images', async (content) => {
       }
 
       content.innerHTML = `
-        <div class="page-header">
-          <div><div class="page-title">Images</div><div class="page-subtitle">${images.length} image(s)</div></div>
-          <div class="page-actions">
-            <button class="btn btn-primary" id="pull-image-btn">${Icons.download} Pull Image</button>
-            <button class="btn btn-secondary" id="load-image-btn" title="Load an image from a .tar">${Icons.layers} Load</button>
-            <button class="btn btn-secondary" id="images-refresh">${Icons.refresh}</button>
-          </div>
-        </div>
-        <div class="filter-bar">
-          <button class="filter-btn ${currentFilter === 'all' ? 'active' : ''}" data-filter="all">All (${allCount})</button>
-          <button class="filter-btn ${currentFilter === 'inuse' ? 'active' : ''}" data-filter="inuse">In Use</button>
-          <button class="filter-btn ${currentFilter === 'unused' ? 'active' : ''}" data-filter="unused">Unused</button>
-          <button class="filter-btn ${currentFilter === 'dangling' ? 'active' : ''}" data-filter="dangling">Dangling</button>
-          <div style="flex:1"></div>
+        ${UI.header('Images', `${allCount} image${allCount === 1 ? '' : 's'} · ${formatBytes(totalSize)} on this server.`,
+          `<button class="btn btn-secondary btn-sm" id="images-refresh" title="Refresh">${Icons.refresh}</button>
+           ${counts.unused ? `<button class="btn btn-secondary btn-sm" id="remove-unused-btn" style="color:var(--danger)">${Icons.trash} Remove unused (${formatBytes(unusedSize)})…</button>` : ''}
+           <button class="btn btn-secondary btn-sm" id="load-image-btn" title="Load an image from a .tar file">${Icons.layers} Load .tar</button>
+           <button class="btn btn-primary btn-sm" id="pull-image-btn">${Icons.download} Pull image</button>`)}
+        <div class="ui-toolbar">
           <div class="search-input">
             <span class="nav-item-icon">${Icons.search}</span>
-            <input type="text" placeholder="Search images..." value="${escapeHtml(currentSearch)}" id="image-search">
+            <input type="text" placeholder="Search repository, tag or ID" value="${escapeHtml(currentSearch)}" id="image-search" aria-label="Search images">
           </div>
+          ${UI.chips([['all', 'All', allCount], ['inuse', 'In use', counts.inuse], ['unused', 'Unused', counts.unused], ['dangling', 'Dangling', counts.dangling]], currentFilter, 'data-filter')}
         </div>
 
         ${selectedIds.size > 0 ? `
-        <div class="card mb-2" style="padding:12px 18px;display:flex;align-items:center;gap:12px;background:var(--accent-dim)">
-          <span class="text-sm font-bold">${selectedIds.size} selected</span>
-          <button class="btn btn-sm btn-danger" id="bulk-remove">${Icons.trash} Remove</button>
-          <button class="btn btn-sm btn-danger" id="bulk-force-remove">${Icons.trash} Force Remove</button>
-          <div style="flex:1"></div>
-          <button class="btn btn-sm btn-ghost" id="bulk-clear">Clear</button>
+        <div class="ui-bulk">
+          <b>${selectedIds.size} selected</b>
+          <span style="flex:1"></span>
+          <button class="btn btn-xs btn-ghost" id="bulk-clear">Clear selection</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove…</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-force-remove" style="color:var(--danger)">${Icons.trash} Force remove…</button>
         </div>` : ''}
 
         <div class="table-wrapper">
           <table>
             <thead><tr>
               <th style="width:40px"><div class="checkbox ${images.length > 0 && selectedIds.size === images.length ? 'checked' : ''}" id="select-all"></div></th>
-              <th>Repository</th><th>Tag</th><th>Image ID</th><th>Size</th><th>Created</th><th>Containers</th><th style="text-align:right">Actions</th>
+              <th>Repository</th><th>Tag</th><th>Image ID</th><th>Size</th><th>Used by</th><th>Created</th><th style="text-align:right">Actions</th>
             </tr></thead>
             <tbody>
               ${images.map(img => {
@@ -83,18 +83,21 @@ Router.register('images', async (content) => {
                   <td><span class="badge badge-created">${escapeHtml(tag || 'latest')}</span></td>
                   <td class="td-mono">${img.shortId}</td>
                   <td class="text-sm">${formatBytes(img.size)}</td>
+                  <td>${(usedBy[img.id] || []).length ? (usedBy[img.id]).slice(0, 3).map(n => UI.chip(escapeHtml(n))).join('') + (usedBy[img.id].length > 3 ? ` <span class="text-xs text-muted">+${usedBy[img.id].length - 3}</span>` : '') : img.inUse ? UI.chip(String(img.containers)) : UI.pill('off', 'unused')}</td>
                   <td class="text-muted text-sm">${timeAgo(img.created)}</td>
-                  <td><span class="badge ${img.inUse ? 'badge-running' : 'badge-dead'}">${img.containers}</span></td>
                   <td>
-                    <div class="td-actions">
-                      <button class="btn-icon" title="Run container" data-run="${escapeHtml(full)}">${Icons.play}</button>
-                      <button class="btn-icon" title="Layers / history" data-layers="${img.id}">${Icons.layers}</button>
-                      <button class="btn-icon" title="Tags" data-tags="${img.id}">${Icons.tag}</button>
-                      <button class="btn-icon" title="Save (download tar)" data-save="${img.id}">${Icons.download}</button>
-                      ${repo !== '<none>' ? `<button class="btn-icon" title="Push to registry" data-push="${escapeHtml(full)}" data-pushid="${img.id}">${Icons.arrowUp}</button>` : ''}
-                      <button class="btn-icon" title="Build from this (FROM)" data-buildfrom="${escapeHtml(full)}">${Icons.compose}</button>
-                      <button class="btn-icon" title="Inspect" data-inspect="${img.id}">${Icons.eye}</button>
-                      <button class="btn-icon" title="Remove" data-remove="${img.id}" data-name="${escapeHtml(full)}" style="color:var(--danger)">${Icons.trash}</button>
+                    <div class="td-actions" style="justify-content:flex-end">
+                      <button class="btn btn-xs btn-secondary" data-run="${escapeHtml(full)}">${Icons.play} Run</button>
+                      ${UI.menu([
+                        { label: `${Icons.eye} Inspect`, attrs: `data-inspect="${img.id}"` },
+                        { label: `${Icons.layers} Layers and history`, attrs: `data-layers="${img.id}"` },
+                        { label: `${Icons.tag} Tags…`, attrs: `data-tags="${img.id}"` },
+                        repo !== '<none>' ? { label: `${Icons.arrowUp} Push to registry…`, attrs: `data-push="${escapeHtml(full)}" data-pushid="${img.id}"` } : null,
+                        { label: `${Icons.compose} Build from this (FROM)…`, attrs: `data-buildfrom="${escapeHtml(full)}"` },
+                        { label: `${Icons.download} Save as .tar`, attrs: `data-save="${img.id}"` },
+                        '-',
+                        { label: `${Icons.trash} Remove…`, attrs: `data-remove="${img.id}" data-name="${escapeHtml(full)}"`, danger: true },
+                      ])}
                     </div>
                   </td>
                 </tr>`;
@@ -105,7 +108,14 @@ Router.register('images', async (content) => {
       `;
 
       // Filter buttons
-      content.querySelectorAll('.filter-btn').forEach(btn => btn.addEventListener('click', () => { currentFilter = btn.dataset.filter; render(); }));
+      content.querySelectorAll('[data-filter]').forEach(btn => btn.addEventListener('click', () => { currentFilter = btn.dataset.filter; render(); }));
+      // Unused images: the same prune as Resources → Prune, offered where the images are.
+      document.getElementById('remove-unused-btn')?.addEventListener('click', () => {
+        showDeleteConfirm('Remove unused images', { message: `${counts.unused} image${counts.unused === 1 ? '' : 's'} not used by any container (${formatBytes(unusedSize)}) will be deleted. Containers and volumes are not touched.`, phrase: 'delete', onConfirm: async () => {
+          try { const r = await API.post('/cleanup/images'); showToast(`Removed unused images${r.SpaceReclaimed ? ` · ${formatBytes(r.SpaceReclaimed)} freed` : ''}`); render(); }
+          catch (e) { showToast(e.message, 'error'); }
+        } });
+      });
       document.getElementById('images-refresh')?.addEventListener('click', render);
 
       // Search
@@ -260,7 +270,7 @@ Router.register('images', async (content) => {
         } });
       });
 
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
   // Tag management — list current tags, add a new one, untag (I4)
@@ -349,7 +359,7 @@ async function openPushModal(repoTag, imageId) {
         <input class="input" id="push-ref" value="${escapeHtml(repoTag)}" placeholder="ghcr.io/owner/app:tag" spellcheck="false">
       </div>
       <div id="push-reg" class="text-xs" style="min-height:16px"></div>
-      <div class="text-xs text-muted">The credential is matched automatically by registry host — add it under <strong>Servers → Registries</strong> first, with <strong>write/push</strong> access. To push a local image, change the reference to a full registry path: DockGate re-tags it for you, then pushes.</div>
+      <div class="text-xs text-muted">The credential is matched automatically by registry host — add it under <strong>Deploy → Registries</strong> first, with <strong>write/push</strong> access. To push a local image, change the reference to a full registry path: DockGate re-tags it for you, then pushes.</div>
       <pre id="push-log" style="display:none;background:var(--bg-primary,#0d1117);border:1px solid var(--border);border-radius:8px;padding:10px;height:280px;overflow:auto;font-family:var(--font-mono,monospace);font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
       <div id="push-result" style="display:none"></div>
     </div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
@@ -372,7 +382,7 @@ async function openPushModal(repoTag, imageId) {
     const reg = matchRegistry(host, registries);
     regEl.innerHTML = reg
       ? `<span style="color:var(--success,#22c55e)">✓ Will authenticate as <strong>${escapeHtml(reg.name || reg.server_address)}</strong> (${escapeHtml(host)})</span>`
-      : `<span style="color:var(--warning,#f59e0b)">⚠ No stored credential for <strong>${escapeHtml(host)}</strong> — push is anonymous (fails for private). Add it under Servers → Registries.</span>`;
+      : `<span style="color:var(--warning,#f59e0b)">⚠ No stored credential for <strong>${escapeHtml(host)}</strong> — push is anonymous (fails for private). Add it under Deploy → Registries.</span>`;
   };
   refEl.addEventListener('input', updateBadge);
   API.get('/registries').then(rows => { registries = rows || []; updateBadge(); }).catch(() => {});

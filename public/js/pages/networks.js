@@ -8,7 +8,9 @@ Router.register('networks', async (content) => {
 
   async function render() {
     try {
-      const networks = await API.get('/networks');
+      const [networks, ctrs] = await Promise.all([API.get('/networks'), API.get('/containers').catch(() => [])]);
+      const usedBy = {};
+      for (const c of ctrs) for (const n of (c.networks || [])) (usedBy[n] = usedBy[n] || []).push(c.name);
 
       // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
       if (!Router.isActiveNav(pageNavId)) return;
@@ -23,44 +25,40 @@ Router.register('networks', async (content) => {
       const removableNetworks = networks.filter(n => !['bridge', 'host', 'none'].includes(n.name) && n.containers === 0);
 
       content.innerHTML = `
-        <div class="page-header">
-          <div><div class="page-title">Networks</div><div class="page-subtitle">${networks.length} network(s)</div></div>
-          <div class="page-actions">
-            <button class="btn btn-primary" id="net-new">${Icons.network} New Network</button>
-            <button class="btn btn-secondary" id="net-refresh">${Icons.refresh}</button>
-          </div>
-        </div>
+        ${UI.header('Networks', `${networks.length} network${networks.length === 1 ? '' : 's'} on this server. Docker's own networks (bridge, host, none) and networks with containers cannot be removed.`,
+          `<button class="btn btn-secondary btn-sm" id="net-refresh" title="Refresh">${Icons.refresh}</button>
+           <button class="btn btn-primary btn-sm" id="net-new">${Icons.network} Create network</button>`)}
 
         ${selectedIds.size > 0 ? `
-        <div class="card mb-2" style="padding:12px 18px;display:flex;align-items:center;gap:12px;background:var(--accent-dim)">
-          <span class="text-sm font-bold">${selectedIds.size} selected</span>
-          <button class="btn btn-sm btn-danger" id="bulk-remove">${Icons.trash} Remove</button>
-          <div style="flex:1"></div>
-          <button class="btn btn-sm btn-ghost" id="bulk-clear">Clear</button>
+        <div class="ui-bulk">
+          <b>${selectedIds.size} selected</b>
+          <span style="flex:1"></span>
+          <button class="btn btn-xs btn-ghost" id="bulk-clear">Clear selection</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove…</button>
         </div>` : ''}
 
         <div class="table-wrapper">
           <table>
             <thead><tr>
               <th style="width:40px"><div class="checkbox ${removableNetworks.length > 0 && selectedIds.size === removableNetworks.length ? 'checked' : ''}" id="select-all"></div></th>
-              <th>Name</th><th>Driver</th><th>Scope</th><th>Subnet</th><th>Gateway</th><th>Containers</th><th>Internal</th><th style="text-align:right">Actions</th>
+              <th>Name</th><th>Driver</th><th>Subnet</th><th>Gateway</th><th>Used by</th><th style="text-align:right">Actions</th>
             </tr></thead>
             <tbody>
               ${networks.map(n => {
                 const canRemove = !['bridge', 'host', 'none'].includes(n.name) && n.containers === 0;
                 return `<tr class="${selectedIds.has(n.id) ? 'selected' : ''}">
                   <td>${canRemove ? `<div class="checkbox ${selectedIds.has(n.id) ? 'checked' : ''}" data-select="${n.id}"></div>` : ''}</td>
-                  <td class="td-name">${escapeHtml(n.name)}</td>
-                  <td><span class="badge badge-created">${n.driver}</span></td>
-                  <td class="text-sm">${n.scope}</td>
+                  <td class="td-name">${escapeHtml(n.name)}${n.internal ? ' ' + UI.pill('info', 'internal') : ''}${['bridge', 'host', 'none'].includes(n.name) ? ' <span class="ui-sub">Docker default</span>' : ''}</td>
+                  <td class="text-sm">${escapeHtml(n.driver)} · ${escapeHtml(n.scope)}</td>
                   <td class="td-mono">${n.subnet || '—'}</td>
                   <td class="td-mono">${n.gateway || '—'}</td>
-                  <td><span class="badge ${n.containers > 0 ? 'badge-running' : 'badge-dead'}">${n.containers}</span></td>
-                  <td>${n.internal ? '<span class="badge badge-paused">Yes</span>' : '<span class="badge badge-dead">No</span>'}</td>
-                  <td><div class="td-actions">
-                    <button class="btn-icon" title="Inspect" data-inspect="${n.id}">${Icons.eye}</button>
-                    <button class="btn-icon" title="Clone" data-clone="${n.id}">${Icons.copy}</button>
-                    ${canRemove ? `<button class="btn-icon" title="Remove" data-remove="${n.id}" data-name="${escapeHtml(n.name)}" style="color:var(--danger)">${Icons.trash}</button>` : ''}
+                  <td>${(usedBy[n.name] || []).length ? usedBy[n.name].slice(0, 4).map(x => UI.chip(escapeHtml(x))).join('') + (usedBy[n.name].length > 4 ? ` <span class="text-xs text-muted">+${usedBy[n.name].length - 4}</span>` : '') : n.containers ? UI.chip(String(n.containers)) : '<span class="text-muted">—</span>'}</td>
+                  <td><div class="td-actions" style="justify-content:flex-end">
+                    ${UI.menu([
+                      { label: `${Icons.eye} Inspect`, attrs: `data-inspect="${n.id}"` },
+                      { label: `${Icons.copy} Clone…`, attrs: `data-clone="${n.id}"` },
+                      ...(canRemove ? ['-', { label: `${Icons.trash} Remove…`, attrs: `data-remove="${n.id}" data-name="${escapeHtml(n.name)}"`, danger: true }] : []),
+                    ])}
                   </div></td>
                 </tr>`;
               }).join('')}
@@ -123,7 +121,7 @@ Router.register('networks', async (content) => {
         } });
       });
 
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
   // Suggest a free private subnet (+ gateway + IP range) avoiding the ones already in use.
   // `used` is the list of existing subnets; `extra` lets the Suggest button advance past the current value.

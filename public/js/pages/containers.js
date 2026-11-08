@@ -1,4 +1,6 @@
 // Containers Page
+// Docker reports health inside the status text ("Up 3 hours (unhealthy)").
+const isUnhealthy = (c) => /\(unhealthy\)/i.test(c.status || '') || c.health === 'unhealthy';
 Router.register('containers', async (content) => {
   let currentFilter = 'all';
   let currentSearch = '';
@@ -27,6 +29,7 @@ Router.register('containers', async (content) => {
           if (currentFilter === 'stopped') return c.state === 'exited';
           if (currentFilter === 'restarting') return c.state === 'restarting';
           if (currentFilter === 'paused') return c.state === 'paused';
+          if (currentFilter === 'unhealthy') return isUnhealthy(c);
           return true;
         });
       }
@@ -55,41 +58,32 @@ Router.register('containers', async (content) => {
         all: allContainers.length,
         running: allContainers.filter(c => c.state === 'running').length,
         stopped: allContainers.filter(c => c.state === 'exited').length,
+        unhealthy: allContainers.filter(isUnhealthy).length,
+        restarting: allContainers.filter(c => c.state === 'restarting').length,
+        paused: allContainers.filter(c => c.state === 'paused').length,
       };
+      const chipList = [['all', 'All', counts.all], ['running', 'Running', counts.running], ['stopped', 'Stopped', counts.stopped], ['unhealthy', 'Unhealthy', counts.unhealthy], ['restarting', 'Restarting', counts.restarting], ['paused', 'Paused', counts.paused]]
+        .filter(([k, , n]) => n > 0 || k === 'all' || k === 'running' || k === 'stopped' || k === currentFilter);
+      const viewIcon = (v, title, icon) => `<button class="btn btn-ghost btn-sm ${currentView === v ? 'active' : ''}" id="view-${v}" title="${title}" aria-pressed="${currentView === v}">${icon}</button>`;
 
       content.innerHTML = `
-        <div class="page-header">
-          <div>
-            <div class="page-title">Containers</div>
-            <div class="page-subtitle">${containers.length} container(s)</div>
-          </div>
-          <div class="page-actions">
-            <button class="btn btn-primary" id="run-container-btn">${Icons.play} Run Container</button>
-            <button class="btn btn-ghost ${currentView === 'table' ? 'active' : ''}" id="view-table" title="Table View">${Icons.layers}</button>
-            <button class="btn btn-ghost ${currentView === 'card' ? 'active' : ''}" id="view-card" title="Card View">${Icons.dashboard}</button>
-            <button class="btn btn-ghost ${currentView === 'topology' ? 'active' : ''}" id="view-topology" title="Topology View (read-only)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="6" r="2.3"/><circle cx="19" cy="6" r="2.3"/><circle cx="12" cy="18" r="2.3"/><path d="M7 7.4 10.6 15.8M17 7.4 13.4 15.8M7.3 6h9.4"/></svg></button>
-            <button class="btn btn-secondary" id="containers-refresh">${Icons.refresh}</button>
-          </div>
-        </div>
+        ${UI.header('Containers', `${containers.length === counts.all ? counts.all : `${containers.length} of ${counts.all}`} container${counts.all === 1 ? '' : 's'} on this server. Select several to start, stop or restart them together.`,
+          `${viewIcon('table', 'Table view', Icons.layers)}${viewIcon('card', 'Card view', Icons.dashboard)}${viewIcon('topology', 'Topology view (read-only)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="6" r="2.3"/><circle cx="19" cy="6" r="2.3"/><circle cx="12" cy="18" r="2.3"/><path d="M7 7.4 10.6 15.8M17 7.4 13.4 15.8M7.3 6h9.4"/></svg>')}
+           <button class="btn btn-secondary btn-sm" id="containers-refresh" title="Refresh">${Icons.refresh}</button>
+           <button class="btn btn-primary btn-sm" id="run-container-btn">${Icons.play} Run container</button>`)}
 
-        <div class="filter-bar">
-          <button class="filter-btn ${currentFilter === 'all' ? 'active' : ''}" data-filter="all">All (${counts.all})</button>
-          <button class="filter-btn ${currentFilter === 'running' ? 'active' : ''}" data-filter="running">Running</button>
-          <button class="filter-btn ${currentFilter === 'stopped' ? 'active' : ''}" data-filter="stopped">Stopped</button>
-          <button class="filter-btn ${currentFilter === 'restarting' ? 'active' : ''}" data-filter="restarting">Restarting</button>
-          <button class="filter-btn ${currentFilter === 'paused' ? 'active' : ''}" data-filter="paused">Paused</button>
-          <div style="flex:1"></div>
-          
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-right:12px;" class="text-sm text-muted">
-            <input type="checkbox" id="group-toggle" ${groupByProject ? 'checked' : ''} style="width:14px;height:14px">
-            Group by Compose
-          </label>
-
+        <div class="ui-toolbar">
           <div class="search-input">
             <span class="nav-item-icon">${Icons.search}</span>
-            <input type="text" placeholder="Search containers..." value="${escapeHtml(currentSearch)}" id="container-search">
+            <input type="text" placeholder="Search name, image, ID or port" value="${escapeHtml(currentSearch)}" id="container-search" aria-label="Search containers">
           </div>
-          <select class="select" id="container-sort">
+          ${UI.chips(chipList, currentFilter, 'data-filter')}
+          <span class="ui-spacer"></span>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer" class="text-sm text-muted">
+            <input type="checkbox" id="group-toggle" ${groupByProject ? 'checked' : ''} style="width:14px;height:14px">
+            Group by stack
+          </label>
+          <select class="select" id="container-sort" aria-label="Sort">
             <option value="name" ${currentSort === 'name' ? 'selected' : ''}>Sort: Name</option>
             <option value="status" ${currentSort === 'status' ? 'selected' : ''}>Sort: Status</option>
             <option value="created" ${currentSort === 'created' ? 'selected' : ''}>Sort: Newest</option>
@@ -98,14 +92,14 @@ Router.register('containers', async (content) => {
         </div>
 
         ${selectedIds.size > 0 ? `
-        <div class="card mb-2" style="padding:12px 18px;display:flex;align-items:center;gap:12px;background:var(--accent-dim)">
-          <span class="text-sm font-bold">${selectedIds.size} selected</span>
-          <button class="btn btn-sm btn-secondary" id="bulk-start">${Icons.play} Start</button>
-          <button class="btn btn-sm btn-secondary" id="bulk-stop">${Icons.stop} Stop</button>
-          <button class="btn btn-sm btn-secondary" id="bulk-restart">${Icons.restart} Restart</button>
-          <button class="btn btn-sm btn-danger" id="bulk-remove">${Icons.trash} Remove</button>
-          <div style="flex:1"></div>
-          <button class="btn btn-sm btn-ghost" id="bulk-clear">Clear</button>
+        <div class="ui-bulk">
+          <b>${selectedIds.size} selected</b>
+          <button class="btn btn-xs btn-secondary" id="bulk-start">${Icons.play} Start</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-stop">${Icons.stop} Stop</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-restart">${Icons.restart} Restart</button>
+          <span class="ui-spacer" style="flex:1"></span>
+          <button class="btn btn-xs btn-ghost" id="bulk-clear">Clear selection</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove…</button>
         </div>` : ''}
 
         <div id="containers-content">
@@ -117,7 +111,7 @@ Router.register('containers', async (content) => {
 
       bindEvents(containers);
     } catch (err) {
-      content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`;
+      content.innerHTML = `${UI.errorState(err)}`;
     }
   }
 
@@ -152,7 +146,7 @@ Router.register('containers', async (content) => {
           <div class="td-mono text-xs" style="margin-top:2px">${c.shortId}</div>
         </td>
         <td><span class="td-mono">${escapeHtml(c.image)}</span></td>
-        <td><span class="badge badge-${c.state}"><span class="badge-dot"></span> ${c.state}</span></td>
+        <td><span class="badge badge-${c.state}"><span class="badge-dot"></span> ${c.state}</span>${isUnhealthy(c) ? ' ' + UI.pill('bad', 'unhealthy') : ''}</td>
         <td class="text-sm">
           ${[...new Map(c.ports.filter(p => p.PublicPort).map(p => [`${p.PublicPort}:${p.PrivatePort}`, p])).values()].map(p =>
             `<a href="${dockerHostUrl(p.PublicPort)}" target="_blank" style="margin-right:6px">${p.PublicPort}→${p.PrivatePort}</a>`
@@ -160,17 +154,19 @@ Router.register('containers', async (content) => {
         </td>
         <td class="text-muted text-sm">${timeAgo(c.created)}</td>
         <td>
-          <div class="td-actions">
-            ${c.state === 'running' ? `
-              <button class="btn-icon" title="Stop" data-action="stop" data-id="${c.id}">${Icons.stop}</button>
-              <button class="btn-icon" title="Restart" data-action="restart" data-id="${c.id}">${Icons.restart}</button>
-            ` : `
-              <button class="btn-icon" title="Start" data-action="start" data-id="${c.id}">${Icons.play}</button>
-            `}
-            <button class="btn-icon" title="Logs" data-action="logs" data-id="${c.id}">${Icons.logs}</button>
-            ${c.state === 'running' ? `<button class="btn-icon" title="Terminal" data-action="terminal" data-id="${c.id}">${Icons.terminal}</button>` : ''}
-            <button class="btn-icon" title="Inspect" data-detail="${c.id}">${Icons.eye}</button>
-            <button class="btn-icon" title="Remove" data-action="remove" data-id="${c.id}" style="color:var(--danger)">${Icons.trash}</button>
+          <div class="td-actions" style="justify-content:flex-end">
+            ${c.state === 'running'
+              ? `<button class="btn btn-xs btn-secondary" data-action="logs" data-id="${c.id}">${Icons.logs} Logs</button>`
+              : `<button class="btn btn-xs btn-secondary" data-action="start" data-id="${c.id}">${Icons.play} Start</button>`}
+            ${UI.menu([
+              { label: `${Icons.eye} Open details`, attrs: `data-detail="${c.id}"` },
+              c.state !== 'running' ? { label: `${Icons.logs} Logs`, attrs: `data-action="logs" data-id="${c.id}"` } : null,
+              c.state === 'running' ? { label: `${Icons.terminal} Terminal`, attrs: `data-action="terminal" data-id="${c.id}"` } : null,
+              c.state === 'running' ? { label: `${Icons.restart} Restart`, attrs: `data-action="restart" data-id="${c.id}"` } : null,
+              c.state === 'running' ? { label: `${Icons.stop} Stop`, attrs: `data-action="stop" data-id="${c.id}"` } : null,
+              '-',
+              { label: `${Icons.trash} Remove…`, attrs: `data-action="remove" data-id="${c.id}"`, danger: true },
+            ])}
           </div>
         </td>
       </tr>
@@ -191,7 +187,7 @@ Router.register('containers', async (content) => {
           <div style="display:flex;align-items:center;gap:12px">
             <div class="checkbox ${groupSelected ? 'checked' : ''}" data-group-select="${escapeHtml(k)}"></div>
             <div>
-              ${k ? `📦 Compose Project: <span class="text-accent">${escapeHtml(k)}</span>` : `🔸 Standalone Containers`}
+              ${k ? `Stack <span class="text-accent">${escapeHtml(k)}</span>` : `Not in a stack`}
               <span class="badge badge-created" style="margin-left:8px;font-size:11px">${groups[k].length}</span>
             </div>
           </div>
@@ -245,7 +241,7 @@ Router.register('containers', async (content) => {
           `}
           <button class="btn btn-xs btn-secondary" data-action="logs" data-id="${c.id}">${Icons.logs} Logs</button>
           <div style="flex:1"></div>
-          <button class="btn btn-xs btn-ghost" data-action="remove" data-id="${c.id}" style="color:var(--danger)">${Icons.trash}</button>
+          ${UI.menu([{ label: `${Icons.eye} Open details`, attrs: `data-detail="${c.id}"` }, '-', { label: `${Icons.trash} Remove…`, attrs: `data-action="remove" data-id="${c.id}"`, danger: true }])}
         </div>
       </div>
     `).join('');
@@ -262,7 +258,7 @@ Router.register('containers', async (content) => {
       for (const k of keys) {
         html += `
           <div style="font-weight:600;font-size:14px;margin:24px 0 12px 0;border-bottom:1px solid var(--border);padding-bottom:6px">
-             ${k ? `📦 Compose Project: <span class="text-accent">${escapeHtml(k)}</span>` : `🔸 Standalone Containers`}
+             ${k ? `Stack <span class="text-accent">${escapeHtml(k)}</span>` : `Not in a stack`}
              <span class="badge badge-created" style="margin-left:8px">${groups[k].length}</span>
           </div>
           <div class="container-grid">
@@ -340,7 +336,7 @@ Router.register('containers', async (content) => {
       const list = groups[k];
       const tiers = { proxy: [], app: [], data: [] };
       list.forEach(c => tiers[topoRole(c)].push(c));
-      zones.push({ label: k ? ('📦 ' + k) : '🔸 Standalone', x: PADX, y: bandTop });
+      zones.push({ label: k ? ('Stack ' + k) : 'Not in a stack', x: PADX, y: bandTop });
       const bodyTop = bandTop + LABELH;
       let maxRows = 0;
       ['proxy', 'app', 'data'].forEach(t => {
@@ -428,7 +424,7 @@ Router.register('containers', async (content) => {
     });
 
     // Filter buttons
-    content.querySelectorAll('.filter-btn').forEach(btn => {
+    content.querySelectorAll('[data-filter]').forEach(btn => {
       btn.addEventListener('click', () => { currentFilter = btn.dataset.filter; render(); });
     });
 

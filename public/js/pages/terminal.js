@@ -100,8 +100,7 @@ Router.register('terminal', async (content, params) => {
   }
 
   function tabBar() {
-    const t = (id, icon, label) => `<button class="btn ${activeTab === id ? 'btn-primary' : 'btn-secondary'}" data-tab="${id}">${icon} ${label}</button>`;
-    return `<div style="display:flex;gap:8px;margin-bottom:14px">${t('container', '🐳', 'Container')}${t('system', '💻', 'System')}</div>`;
+    return UI.seg([['container', 'Container'], ['system', 'Server']], activeTab, 'data-tab');
   }
 
   function renderContainerTab() {
@@ -142,12 +141,11 @@ Router.register('terminal', async (content, params) => {
       if (!Router.isActiveNav(pageNavId)) return;
 
       const subtitle = activeTab === 'container'
-        ? 'Interactive shell into a running container'
-        : 'A shell on the server itself (the active one from the header)';
+        ? 'A shell inside a running container. Ctrl+` opens the quick terminal from any page.'
+        : 'A shell on the server itself (the one picked in the header). Ctrl+` opens the quick terminal from any page.';
 
       content.innerHTML = `
-        <div class="page-header mb-3"><div><div class="page-title">Terminal</div><div class="page-subtitle">${subtitle}</div></div></div>
-        ${tabBar()}
+        ${UI.header('Terminal', subtitle, tabBar())}
         ${activeTab === 'container' ? renderContainerTab() : renderSystemTab()}
         <div class="card" style="padding:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#000;flex:1;display:flex;flex-direction:column;min-height:500px;max-height:calc(100vh - 220px)">
           <div id="terminal-area" style="flex:1;padding:12px;overflow:hidden"></div>
@@ -185,7 +183,7 @@ Router.register('terminal', async (content, params) => {
         rBtn?.addEventListener('click', doConnect);
       }
     } catch (err) {
-      content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`;
+      content.innerHTML = `${UI.errorState(err)}`;
     }
   }
 

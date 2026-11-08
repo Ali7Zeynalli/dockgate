@@ -2,43 +2,22 @@
 // Renders a per-server table with Install / Start-Stop / Update / Channel / Remove, an "Install on all"
 // fan-out, and a re-openable deploy-log modal. All actions hit /api/agent/* (DockGate-initiated outbound).
 (function () {
+  // Status pill + version (used by the install picker and the fleet table).
   function pill(st) {
-    const map = {
-      running:     ['Running', 'badge-running'],
-      stopped:     ['Stopped', 'badge-created'],
-      absent:      ['Not installed', 'badge-dead'],
-      unreachable: ['Unreachable', 'badge-dead'],
-    };
-    const [label, cls] = map[st.state] || map.absent;
-    const ver = st.version ? ` <span class="text-xs text-muted">v${escapeHtml(st.version)}</span>` : '';
-    return `<span class="badge ${cls}">${label}</span>${ver}`;
+    const [lv, txt] = { running: ['ok', 'Running'], stopped: ['warn', 'Stopped'], absent: ['off', 'Not installed'], unreachable: ['bad', 'Unreachable'] }[st.state] || ['off', 'Not installed'];
+    return UI.pill(lv, txt) + (st.version ? ` <span class="ui-sub">v${escapeHtml(st.version)}</span>` : '');
   }
 
-  function rowHtml(s, st) {
+  // Fleet table (DigitalOcean metrics agent / Datadog Fleet style): one row per server.
+  function agentCells(s, st) {
     const sid = escapeHtml(s.id);
-    const host = escapeHtml(s.host || '');
     const state = st.state || 'absent';
     const installed = state === 'running' || state === 'stopped';
-    let actions;
-    if (!installed) {
-      actions = `<button class="btn btn-primary btn-sm" data-act="install" data-sid="${sid}">Install</button>
-        <button class="btn btn-secondary btn-sm" data-act="channel" data-sid="${sid}" data-installed="0">Channel</button>`;
-    } else {
-      const power = state === 'running'
-        ? `<button class="btn btn-ghost btn-sm" data-act="stop" data-sid="${sid}">Stop</button>`
-        : `<button class="btn btn-ghost btn-sm" data-act="start" data-sid="${sid}">Start</button>`;
-      actions = `${power}
-        <button class="btn btn-secondary btn-sm" data-act="channel" data-sid="${sid}" data-installed="1">Channel</button>
-        <button class="btn btn-secondary btn-sm" data-act="update" data-sid="${sid}">Update</button>
-        <button class="btn btn-ghost btn-sm" data-act="remove" data-sid="${sid}">Remove</button>`;
-    }
-    return `<div class="settings-row" style="padding:8px 0;">
-      <div>
-        <div class="settings-row-label" style="margin:0;">${sid}</div>
-        <div class="settings-row-desc">${host} · ${pill(st)}</div>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">${actions}</div>
-    </div>`;
+    const pillOf = { running: ['ok', 'Running'], stopped: ['warn', 'Stopped'], absent: ['off', 'Not installed'], unreachable: ['bad', 'Unreachable'] }[state] || ['off', 'Not installed'];
+    const actions = !installed
+      ? `${UI.btn('Install', `data-act="install" data-sid="${sid}"`, 'btn-primary')}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="0"`)}`
+      : `${UI.btn(state === 'running' ? 'Stop' : 'Start', `data-act="${state === 'running' ? 'stop' : 'start'}" data-sid="${sid}"`)}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="1"`)}${UI.btn('Update', `data-act="update" data-sid="${sid}"`)}${UI.btn('Remove', `data-act="remove" data-sid="${sid}"`, 'btn-danger')}`;
+    return [`<b>${escapeHtml(s.name || s.id)}</b>${s.name ? `<div class="ui-sub td-mono">${sid}</div>` : ''}`, `<span class="td-mono text-xs">${escapeHtml(s.host || '')}</span>`, UI.pill(...pillOf), st.version ? `<span class="ui-sub">v${escapeHtml(st.version)}</span>` : '<span class="ui-sub">—</span>', actions];
   }
 
   // Live deploy-log modal. Polls the job; stops cleanly when the job ends or the modal is closed.
@@ -187,22 +166,12 @@
     if (footer) footer.appendChild(go);
   }
 
-  // ---- public entry points used by settings.js renderNotifications ----
+  // ---- public entry points used by the Servers → Edge agent page ----
 
   window.edgeAgentSectionHtml = function (channelConfigured) {
-    const warningHtml = !channelConfigured ? 
-      `<div class="text-xs text-warning" style="margin-bottom:10px; font-weight:600;">⚠ No notification channel configured above — agent will install in metrics-only mode.</div>` : '';
-    
-    return `<div class="settings-section" style="margin-top:20px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap;">
-        <div class="settings-section-title" style="margin:0;">Edge Agent (observability)</div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost btn-sm" id="edge-refresh">↻ Refresh</button>
-          <button class="btn btn-primary btn-sm" id="edge-install-all">Install on servers…</button>
-        </div>
-      </div>
-      <div class="settings-row-desc" style="margin-bottom:10px;">A tiny <strong>outbound-only</strong> container on each server collects metrics, aggregates logs, watches Docker events, and sends alerts through configured channels — no inbound ports, works behind NAT, keeps monitoring if DockGate is offline. Installing it stops DockGate's central monitor for that host (no duplicate alerts); removing it resumes the monitor.</div>
-      ${warningHtml}
+    return `<div class="ui-page">
+      ${UI.header('', 'A small outbound-only container on each server collects metrics and logs, watches Docker events and sends alerts through your notification channels. It needs no inbound port, works behind NAT and keeps watching when DockGate is offline. While it runs, DockGate\'s own monitor for that server pauses so you get no duplicate alerts.', `${UI.btn('Refresh', 'id="edge-refresh"')} ${UI.primary('Install on servers…', 'id="edge-install-all"')}`)}
+      ${channelConfigured ? '' : `<div class="insight-card warning" style="margin-bottom:12px"><span>No notification channel is set up yet, so the agent installs in metrics-only mode. <a href="#/settings?tab=notifications">Set up a channel</a></span></div>`}
       <div id="edge-agent-table"><div class="text-xs text-muted">Loading servers…</div></div>
     </div>`;
   };
@@ -217,10 +186,10 @@
         const [serversResp, status] = await Promise.all([API.get('/servers'), API.get('/agent/status')]);
         const servers = (serversResp.servers || serversResp || []).filter(s => s.id !== 'local' && s.type !== 'local');
         if (!servers.length) {
-          el.innerHTML = `<div class="text-xs text-muted">No remote servers yet. Add one under Infrastructure to deploy the agent.</div>`;
+          el.innerHTML = `<div class="text-xs text-muted">No remote servers yet. Add one in Servers to install the agent on it.</div>`;
           return;
         }
-        el.innerHTML = servers.map(s => rowHtml(s, status[s.id] || {})).join('');
+        el.innerHTML = UI.table([{ label: 'Server' }, { label: 'Address' }, { label: 'Agent' }, { label: 'Version' }, { label: '', align: 'right' }], servers.map(s => ({ cells: agentCells(s, status[s.id] || {}) })), { minWidth: 640 });
         el.querySelectorAll('[data-act]').forEach(btn => {
           btn.addEventListener('click', async () => {
             const sid = btn.dataset.sid, act = btn.dataset.act;

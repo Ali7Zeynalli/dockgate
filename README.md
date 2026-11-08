@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.10.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.12.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.10.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.12.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -142,12 +142,12 @@ The sidebar is grouped into **Overview · Docker · Server · System**.
 
 ### 📊 Overview — Dashboard
 
-At-a-glance view of the **active** server: count cards (containers/running/stopped/images/volumes/networks/compose), **Quick Actions** (start-all / stop-all / restart-all), top-5 CPU & memory bars, network I/O, health doughnut, uptime & restart counts, disk-usage breakdown, port map, top images by size, and **Smart Insights** (old stopped containers, unused/dangling images, detached volumes → click through to Cleanup). For a **remote** server it also embeds a live host-metrics block (CPU/RAM/disk/trend/ports/procs). Auto-refreshes every 30 s.
+At-a-glance view of the **active** server: count cards (containers/running/stopped/images/volumes/networks/compose), **Quick Actions** (start-all / stop-all / restart-all), top-5 CPU & memory bars, network I/O, health doughnut, uptime & restart counts, disk-usage breakdown, port map, top images by size, and **Smart Insights** (old stopped containers, unused/dangling images, detached volumes → click through to Prune). For a **remote** server it also embeds a live host-metrics block (CPU/RAM/disk/trend/ports/procs). Auto-refreshes every 30 s.
 
 ### 🐳 Docker
 
 <details open>
-<summary><strong>Resources</strong> — Containers · Images · Builds · Volumes · Networks</summary>
+<summary><strong>Resources</strong> — Containers · Images · Volumes · Networks · Builds · Prune</summary>
 
 - **Containers** — table/card/**topology** views, filters (All/Running/Stopped/Restarting/Paused), search & sort, **group-by-compose**, favorites/notes/tags, per-row **start/stop/restart/logs/terminal/inspect/remove**, multi-select **bulk** actions, and the guided **Run Container** modal (image w/ Hub search, ports, volumes w/ presets, env w/ "paste .env", restart policy, network, CPU/memory). The **Topology** view is a read-only graph drawn live from the running containers — grouped by Compose project, edges from `depends_on` (falling back to shared networks), published ports flagged public; click a node to open its detail.
 - **Container detail** — lifecycle (start/stop/restart/pause/unpause/remove), **live update** CPU/memory/restart-policy, **Recreate** (new image, keep config), **Commit**, **Export** to tar; tabs: Overview (+health), Logs, Terminal, Stats (live charts), Processes (+one-off exec), Environment, Ports, Volumes, Network (connect/disconnect), Files (browse/download/upload), Inspect (raw JSON), History.
@@ -155,17 +155,19 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 - **Builds** — build from Dockerfile / inline / Git with **live streaming log**, build history, build cache (grouped) & prune, buildx builders.
 - **Volumes** — create (driver/opts/labels), **backup/restore** (.tar.gz), **clone**, browse files, remove.
 - **Networks** — create (bridge/macvlan/ipvlan/overlay, subnet/gateway/internal/attachable/IPv6), inspect, **clone**, connect/disconnect containers, remove.
+- **Prune** — one table of unused data (stopped containers, unused images, build cache, unused networks, unused volumes) with what each removes and how much space it frees; pick rows and prune them together, or run a full system prune from the danger zone. Volumes are never pre-selected.
 </details>
 
 <details>
-<summary><strong>Deploy</strong> — Compose · App Templates</summary>
+<summary><strong>Deploy</strong> — Compose stacks · App templates · Registries</summary>
 
 - **Compose** — auto-discovers projects via the `com.docker.compose.project` label (incl. remote, and DOWN managed projects); **create & edit** in a browser YAML editor + guided "add service"; **up / down / restart / pull**; deploy to a remote host (`DOCKER_HOST=ssh://`); **deploy-from-folder**; a re-openable **Deploys console** with live job logs.
 - **App Templates** — a searchable, category-filtered marketplace (Portainer App-Templates format). Deploy a **container** template → prefilled Run modal; a **stack** template → prefilled Compose editor. Bundled catalog offline, or a configurable remote URL (500+); template **detail** view with Docker Hub popularity; logos served through a same-origin proxy.
+- **Registries** — store private-registry credentials (encrypted); auto-matched by host so private **pull/push** "just works" from Images, Run and Compose. Includes a pre-save **login test**.
 </details>
 
 <details>
-<summary><strong>Activity</strong> — Logs · Terminal · Events · Files · Audit</summary>
+<summary><strong>Observe</strong> — Logs · Events · Audit log &nbsp;·&nbsp; <strong>Tools</strong> — Terminal · Files</summary>
 
 - **Logs** — live-tail any running container's stdout/stderr (tail 200, follow), pause/resume, clear, in-browser search, timestamps.
 - **Terminal** — interactive **container exec** (sh/bash/zsh, full xterm.js PTY) **and** a **host shell** (PTY or SSH login shell), plus a **Global Quick Terminal** accessible from any page via header shortcut or `Ctrl+\`` / `Alt+T` with **minimize to floating widget**, **maximize**, and **side-by-side split screen (dual terminals)**.
@@ -177,11 +179,9 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 ### 🖥 Server
 
 <details open>
-<summary><strong>Infrastructure</strong> — Servers · Registries · Cleanup · Provisioning · Host monitoring</summary>
+<summary><strong>Servers</strong> — Servers · SSH keys · Edge agent · Provisioning · Host monitoring</summary>
 
 - **Servers** — add/edit/remove SSH hosts (host/port/user; **key** with optional passphrase, **password**, or SSH-agent — precedence key > password > agent), **test connection**, switch the active server, and **grant the docker group** (passwordless `docker`). SSH passwords/passphrases are **encrypted at rest** (AES-256-GCM).
-- **Registries** — store private-registry credentials (encrypted); auto-matched by host so private **pull/push** "just works" from Images, Run and Compose. Includes a pre-save **login test**.
-- **Cleanup** — preview-before-prune for stopped containers, unused/dangling images, unused volumes, unused networks, build cache, or a full system prune.
 - **Provisioning** — point DockGate at a **fresh SSH server** and it runs **detect → install → verify** for a chosen preset (**Full / Secure-baseline / Just-Docker / Custom**): system update, **Docker Engine**, **Docker log limits** (`daemon.json`), **fail2ban**, swap (sized to RAM), docker-group, **deploy user**, **safe SSH-hardening** (never disables password/root login — no lockout), and a **firewall** (current SSH port + 80 + 443). A **pre-flight** checks root / passwordless sudo and waits for cloud-init; apt waits for the dpkg lock and keeps modified config files. One run per server at a time, **cancel** between items, and a **reboot-required** notice after kernel updates. Every item's commands come from one central catalog; a per-server **history + state matrix** records what's done / missing / failed. Runs in isolated forked SSH workers.
 - **Host monitoring** — beyond Docker: the host's **CPU / load / RAM / swap / disk / disk-IO / net / uptime / top processes**, plus a **host-log viewer** (journald / auth / syslog / kernel / boot, any systemd unit, any `/var/log` file) over SSH. Samples opportunistically on read (no background SSH storm), stores a SQLite time-series, and draws trend charts; refreshes in place every 5 s.
 </details>
@@ -193,7 +193,7 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 - **Deploy user** — one wizard creates a non-root user with passwordless sudo + Docker access, generates an ed25519 key (optionally adds your own public key), **proves a new key login works**, and only then switches DockGate's connection to it. Password login stays on until you turn it off yourself.
 - **Access &amp; SSH** — root login (allowed / key only / blocked), password login, SSH port and hardening (auth tries, login grace time, dead-connection timeout, real idle-session timeout on OpenSSH 9.2+), all in DockGate's **one** `sshd_config.d` drop-in. A port change also moves fail2ban's sshd jail to the new port. Every change is a **lifeline job**: validate (`sshd -t`) → arm an automatic **120 s rollback** on the server → reload → **open a NEW SSH connection** → keep, or restore immediately. Restricting root/password login is refused until DockGate itself uses a non-root key login.
 - **Users** — create / delete / lock users, sudo and docker membership, SSH keys (paste or generate; download a generated private key after re-entering the admin password). DockGate never lets you lock out its own user/key, remove the last sudo user, or remove the last key while password login is off.
-- **Firewall** — switch UFW **on/off** (SSH allowed first, new-login test, automatic switch-off on failure), UFW service state and **reload**, every port with **who can reach it** — *Anyone*, IP lists (**Cloudflare**, GitHub webhooks, UptimeRobot, your own) and addresses, IPv4 and IPv6 in one row; paste many addresses at once, see the exact rules added/removed before applying; the SSH port can only be restricted while DockGate's own IP stays allowed (tested with a new login); **Docker port isolation** (DOCKER-USER rules) so published container ports no longer bypass UFW — you choose which stay public; open a port to everyone or one IP; add/delete UFW rules. After each change DockGate checks that fail2ban kept its bans and no container stopped. The SSH port is always kept open.
+- **Firewall** — **Inbound and Outbound rule tables** like cloud firewalls (Description · Sources/Destinations · Protocol · Port/range · Action), each rule edited on its own; sources as Any IPv4 / Any IPv6, **IP lists** (Cloudflare, GitHub webhooks, UptimeRobot, your own) and addresses; outbound rules for the server and its containers; default policies; switch UFW **on/off** (SSH allowed first, new-login test, automatic switch-off on failure); **Docker port isolation** (DOCKER-USER rules) so published container ports no longer bypass UFW. Changes to the SSH port can never cut DockGate off (lifeline job with rollback); fail2ban bans and running containers are checked after each change.
 - **Fail2ban** — banned IPs with ban/expiry times (unban, unban + whitelist, manual ban), whitelist (`ignoreip`), a settings form with a live preview of the real ban lengths, and ban history. Settings go to DockGate's own `jail.d`/`fail2ban.d` files, are tested with `fail2ban-client -t` and applied with a **reload** (current bans are kept). DockGate flags settings that cannot work: a recidive jail that can never trigger, a jail watching the wrong SSH port, a short ban memory, its own IP being banned.
 - **Services** — sub-pages for **Docker** (log size limits, live-restore, engine details), **Time sync** (choose NTP sources or go back to the distro's, sync state) and **Auto updates** (on/off, automatic reboot and time, pending updates, last run). Each page has the service's state and actions, the raw config file as an advanced, guarded editor (backup → validate → auto-restore), and its recent log. SSH, UFW and fail2ban are managed in their own tabs.
 - **Host key pinning** — every SSH connection (panel, workers, Docker CLI) pins the server's host key on first use and refuses a different one; re-trust it here after a rebuild.
@@ -317,7 +317,7 @@ All under `/api`, JSON, **session-gated** (except `/api/auth/{status,setup,login
 **Compose** — list/detail · up/down/restart/pull · `POST /compose/create` · `GET|PUT /compose/:p/file` *(local host)*
 **Builds / Cleanup / System** — build history & cache · prune (containers/images/volumes/networks/cache/system) · system info/version/df
 **Servers** — `GET /servers` · `POST /servers` · `PUT /servers/:id` · `POST /servers/test` · `POST /servers/active` · `DELETE /servers/:id` · provisioning (`POST /servers/provision/job/:id/cancel`) + host metrics/logs + service ops
-**Server security** — `GET /servers/:id/fail2ban` · `POST /servers/:id/fail2ban/{settings,ban,unban}` · `GET /servers/:id/services/:item/info` · `POST /servers/:id/services/{docker,timesync,unattended-upgrades}/settings` · `POST /servers/:id/firewall/{ufw,reload}` · `GET /servers/:id/security/posture` · `GET|POST /servers/:id/access` · `POST /servers/:id/access/retrust-host-key` · `POST /servers/:id/deploy-user` · `GET /servers/:id/jobs/:jobId` · `GET|POST /servers/:id/users` · `PUT|DELETE /servers/:id/users/:name` · `POST|DELETE /servers/:id/users/:name/keys` · `POST /servers/:id/users/:name/keys/private` · `GET /servers/:id/firewall` · `POST /servers/:id/firewall/{docker-isolation,expose,rules,ports/sources}` · `GET|POST /firewall-lists` · `PUT|DELETE /firewall-lists/:id` · `POST /firewall-lists/{parse,:id/check,:id/update}` · `DELETE /servers/:id/firewall/rules/:n` · `POST /servers/:id/reboot`
+**Server security** — `GET /servers/:id/fail2ban` · `POST /servers/:id/fail2ban/{settings,ban,unban}` · `GET /servers/:id/services/:item/info` · `POST /servers/:id/services/{docker,timesync,unattended-upgrades}/settings` · `POST /servers/:id/firewall/{ufw,reload}` · `GET /servers/:id/security/posture` · `GET|POST /servers/:id/access` · `POST /servers/:id/access/retrust-host-key` · `POST /servers/:id/deploy-user` · `GET /servers/:id/jobs/:jobId` · `GET|POST /servers/:id/users` · `PUT|DELETE /servers/:id/users/:name` · `POST|DELETE /servers/:id/users/:name/keys` · `POST /servers/:id/users/:name/keys/private` · `GET /servers/:id/firewall` · `POST /servers/:id/firewall/{rule,default,docker-isolation}` · `GET|POST /firewall-lists` · `PUT|DELETE /firewall-lists/:id` · `POST /firewall-lists/{parse,:id/check,:id/update}` · `DELETE /servers/:id/firewall/rules/:n` · `POST /servers/:id/reboot`
 **Registries** — CRUD + `POST /registries/test`
 **Templates** — `GET /templates` · `GET /templates/stackfile?url=` · `GET /templates/logo?url=`
 **Agent (Edge Notifier)** — `GET /agent/status` · `POST /agent/{install,update,reconfigure,install-all,remove,power,sync}` · `GET /agent/job/:id` · `GET|POST|DELETE /agent/channel/:serverId`

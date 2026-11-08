@@ -20,47 +20,12 @@ Router.register('settings', async (content, params) => {
       Store.set('settings', settings);
       let isAutoStart = autostartRes.enabled;
 
-      content.innerHTML = `
-        <div class="page-header">
-          <div><div class="page-title">Settings</div><div class="page-subtitle">Configure DockGate Control</div></div>
-          <div class="page-actions"><button class="btn btn-primary" id="save-settings">Save Settings</button></div>
-        </div>
-
-        <div class="tab-bar" id="settings-tabs">
-          <button class="tab-btn active" data-tab="general">General</button>
-          <button class="tab-btn" data-tab="notifications">Notifications</button>
-          <button class="tab-btn" data-tab="log">Notification Log</button>
-          <button class="tab-btn" data-tab="update">Software Update</button>
-          <button class="tab-btn" data-tab="system">System</button>
-          <button class="tab-btn" data-tab="security">Security</button>
-        </div>
-
-        <div id="settings-tab-content" style="padding-top:20px;">
-          <!-- Tab content rendered here -->
-        </div>
-      `;
+      // The sidebar lists the Settings pages, so there is no tab bar here. Changes save as you make them.
+      content.innerHTML = `<div id="settings-tab-content"></div>`;
 
       const tabContent = document.getElementById('settings-tab-content');
-      // Restore the active tab from the URL params (deep-link / refresh / Back), default General.
       const validTabs = ['general', 'notifications', 'log', 'update', 'system', 'security'];
       let activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'general';
-
-      // Reflect the restored tab in the tab-bar highlight (default markup highlights General).
-      document.querySelectorAll('#settings-tabs .tab-btn').forEach(b => {
-        b.classList.toggle('active', b.dataset.tab === activeTab);
-      });
-
-      // Tab switching
-      document.getElementById('settings-tabs').addEventListener('click', (e) => {
-        const btn = e.target.closest('.tab-btn');
-        if (!btn) return;
-        document.querySelectorAll('#settings-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        activeTab = btn.dataset.tab;
-        renderTab(activeTab);
-        // Sync the tab into the URL hash so Back/Forward + refresh land on this tab.
-        Router.updateParams({ tab: activeTab });
-      });
 
       function renderTab(tab) {
         if (tab === 'general') renderGeneral();
@@ -74,46 +39,38 @@ Router.register('settings', async (content, params) => {
       // ==================== SECURITY TAB ====================
       function renderSecurity() {
         tabContent.innerHTML = `
-          <div class="settings-section" style="max-width:520px;">
-            <div class="settings-section-title">Change Password</div>
-            <div class="settings-row-desc" style="margin-bottom:14px;">Update the admin password used to sign in to DockGate. You stay logged in on this device; every other browser or device is signed out.</div>
-            <form id="sec-form" autocomplete="on">
-              <input type="text" id="sec-user" name="username" autocomplete="username" value="admin" readonly aria-hidden="true" tabindex="-1" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
-              <div style="display:flex;flex-direction:column;gap:10px;">
-                <input class="input" id="sec-cur" type="password" placeholder="Current password" autocomplete="current-password">
-                <input class="input" id="sec-new" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password">
-                <input class="input" id="sec-new2" type="password" placeholder="Confirm new password" autocomplete="new-password">
-              </div>
-              <div style="margin-top:14px;">
-                <button class="btn btn-primary btn-sm" id="sec-save" type="submit">Change Password</button>
-              </div>
-            </form>
-          </div>
-          <div class="settings-section" style="max-width:520px;">
-            <div class="settings-section-title">Sessions</div>
-            <div class="settings-row-desc" style="margin-bottom:14px;">Signs out every browser and device that is logged in to DockGate — this one too. Use it if you logged in on a machine you do not trust or think your session was copied.</div>
-            <button class="btn btn-danger btn-sm" id="sec-logout-all" type="button">Sign out everywhere</button>
+          ${UI.header('Security', 'Who can open DockGate.')}
+          ${UI.settings([
+            { label: 'Admin password', desc: 'Needed to sign in to DockGate. Changing it keeps you signed in here and signs out every other browser and device.', value: '<span class="text-muted">••••••••</span>', action: UI.btn('Change…', 'id="sec-change"') },
+          ])}
+          <div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title" style="color:var(--danger)">Danger zone</div></div></div>
+          <div style="border:1px solid var(--danger);border-radius:var(--radius-lg);overflow:hidden">
+            ${UI.settings([{ label: 'Sign out everywhere', desc: 'Ends every DockGate session, this one too. Use it if you signed in on a machine you do not trust or think a session was copied.', action: `<button class="btn btn-xs btn-secondary" id="sec-logout-all" style="color:var(--danger)">Sign out everywhere…</button>` }])}
           </div>
         `;
         document.getElementById('sec-logout-all')?.addEventListener('click', () => showConfirm('Sign out everywhere', 'Every DockGate session ends now, including this one. You will need the admin password to log in again.', async () => {
           try { await API.post('/auth/logout-all'); location.reload(); } catch (e) { showToast(e.message, 'error'); }
         }, true));
-        // Password fields wrapped in a <form> (+ a hidden username field) so the browser/password-manager
-        // is happy ("password field not in a form" gone); submit is handled in JS, never reloads the page.
-        document.getElementById('sec-form')?.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const cur = document.getElementById('sec-cur').value;
-          const nw = document.getElementById('sec-new').value;
-          const nw2 = document.getElementById('sec-new2').value;
-          if (!cur || !nw) { showToast('Fill in all fields', 'warning'); return; }
-          if (nw !== nw2) { showToast('New passwords do not match', 'warning'); return; }
-          if (nw.length < 8) { showToast('New password must be at least 8 characters', 'warning'); return; }
-          try {
+        // Password fields sit in a <form> with a hidden username so password managers recognise them.
+        document.getElementById('sec-change')?.addEventListener('click', () => UI.dialog({
+          title: 'Change admin password', saveLabel: 'Change password', context: false,
+          body: `<form id="sec-form" autocomplete="on" onsubmit="return false">
+              <input type="text" name="username" autocomplete="username" value="admin" readonly aria-hidden="true" tabindex="-1" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+              <div style="display:flex;flex-direction:column;gap:10px;">
+                <input class="input" id="sec-cur" type="password" placeholder="Current password" autocomplete="current-password" aria-label="Current password">
+                <input class="input" id="sec-new" type="password" placeholder="New password (at least 8 characters)" autocomplete="new-password" aria-label="New password">
+                <input class="input" id="sec-new2" type="password" placeholder="New password again" autocomplete="new-password" aria-label="Confirm new password">
+              </div>
+            </form>`,
+          onSave: async (ov) => {
+            const cur = ov.querySelector('#sec-cur').value, nw = ov.querySelector('#sec-new').value, nw2 = ov.querySelector('#sec-new2').value;
+            if (!cur || !nw) throw new Error('Fill in all three fields.');
+            if (nw !== nw2) throw new Error('The two new passwords are different.');
+            if (nw.length < 8) throw new Error('The new password needs at least 8 characters.');
             await API.post('/auth/change-password', { currentPassword: cur, newPassword: nw });
             showToast('Password changed');
-            ['sec-cur', 'sec-new', 'sec-new2'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-          } catch (e) { showToast(e.message, 'error'); }
-        });
+          },
+        }));
       }
 
       // ==================== GENERAL TAB ====================
@@ -124,420 +81,54 @@ Router.register('settings', async (content, params) => {
         const tzOptions = [`<option value="auto"${curTz === 'auto' ? ' selected' : ''}>Auto (browser)</option>`]
           .concat(zones.map(z => `<option value="${z}"${z === curTz ? ' selected' : ''}>${z}</option>`))
           .join('');
+        const sel = (id, opts, cur) => `<select class="select" id="${id}" aria-label="${id}">${opts.map(([v, l]) => `<option value="${v}"${String(cur) === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
         tabContent.innerHTML = `
-          <div class="grid-2">
-            <div class="settings-section">
-              <div class="settings-section-title">Appearance</div>
-              <div class="settings-row">
-                <div>
-                  <div class="settings-row-label">Theme</div>
-                  <div class="settings-row-desc">Application visual style</div>
-                </div>
-                <select class="select" id="set-theme">
-                  <option value="dark" ${settings.theme === 'dark' ? 'selected' : ''}>Dark</option>
-                  <option value="light" ${settings.theme === 'light' ? 'selected' : ''}>Light</option>
-                </select>
-              </div>
-              <div class="settings-row">
-                <div>
-                  <div class="settings-row-label">Default View</div>
-                  <div class="settings-row-desc">Container list default layout</div>
-                </div>
-                <select class="select" id="set-view">
-                  <option value="table" ${settings.defaultView === 'table' ? 'selected' : ''}>Table</option>
-                  <option value="card" ${settings.defaultView === 'card' ? 'selected' : ''}>Card</option>
-                </select>
-              </div>
-              <div class="settings-row">
-                <div>
-                  <div class="settings-row-label">Timezone</div>
-                  <div class="settings-row-desc">Timezone for displayed dates &amp; notifications</div>
-                </div>
-                <select class="select" id="set-timezone">${tzOptions}</select>
-              </div>
-            </div>
-
-            <div class="settings-section">
-              <div class="settings-section-title">Terminal & Logs</div>
-              <div class="settings-row">
-                <div>
-                  <div class="settings-row-label">Default Shell</div>
-                  <div class="settings-row-desc">Shell to use when opening terminal</div>
-                </div>
-                <select class="select" id="set-shell">
-                  <option value="/bin/sh" ${settings.terminalShell === '/bin/sh' ? 'selected' : ''}>/bin/sh</option>
-                  <option value="/bin/bash" ${settings.terminalShell === '/bin/bash' ? 'selected' : ''}>/bin/bash</option>
-                  <option value="/bin/zsh" ${settings.terminalShell === '/bin/zsh' ? 'selected' : ''}>/bin/zsh</option>
-                </select>
-              </div>
-              <div class="settings-row">
-                <div>
-                  <div class="settings-row-label">Log Timestamps</div>
-                  <div class="settings-row-desc">Show timestamp for each log line</div>
-                </div>
-                <div class="toggle ${settings.logTimestamps === 'true' ? 'active' : ''}" id="set-logtimes"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-section" style="margin-top:20px;">
-            <div class="settings-section-title">System</div>
-            <div class="settings-row">
-              <div>
-                <div class="settings-row-label">Auto-Start Service</div>
-                <div class="settings-row-desc">Automatically run panel when Docker daemon boots</div>
-              </div>
-              <div class="toggle ${isAutoStart ? 'active' : ''}" id="set-autostart"></div>
-            </div>
-          </div>
+          ${UI.header('General', 'How DockGate looks and behaves. Changes are saved as soon as you make them.')}
+          <div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Appearance</div></div></div>
+          ${UI.settings([
+            { label: 'Theme', desc: 'Light or dark.', value: sel('set-theme', [['dark', 'Dark'], ['light', 'Light']], settings.theme || 'dark') },
+            { label: 'Container list', desc: 'How Resources → Containers opens.', value: sel('set-view', [['table', 'Table'], ['card', 'Cards']], settings.defaultView || 'table') },
+            { label: 'Timezone', desc: 'Used for dates on every page and in notifications.', value: `<select class="select" id="set-timezone" aria-label="Timezone">${tzOptions}</select>` },
+          ])}
+          <div class="ui-ph"><div class="ui-ph-title">Terminal and logs</div></div>
+          ${UI.settings([
+            { label: 'Default shell', desc: 'Shell opened by Tools → Terminal and the quick terminal.', value: sel('set-shell', [['/bin/sh', '/bin/sh'], ['/bin/bash', '/bin/bash'], ['/bin/zsh', '/bin/zsh']], settings.terminalShell || '/bin/sh') },
+            { label: 'Log timestamps', desc: 'Show the time on every log line.', action: `<div class="toggle ${settings.logTimestamps === 'true' ? 'active' : ''}" id="set-logtimes" role="switch" tabindex="0" aria-checked="${settings.logTimestamps === 'true'}" aria-label="Log timestamps"></div>` },
+          ])}
+          <div class="ui-ph"><div class="ui-ph-title">DockGate service</div></div>
+          ${UI.settings([
+            { label: 'Start with Docker', desc: 'Start the DockGate container whenever Docker starts on this machine (restart policy “unless-stopped”). Off means you start it by hand after a reboot.', action: `<div class="toggle ${isAutoStart ? 'active' : ''}" id="set-autostart" role="switch" tabindex="0" aria-checked="${!!isAutoStart}" aria-label="Start with Docker"></div>` },
+          ])}
         `;
 
-        document.getElementById('set-logtimes')?.addEventListener('click', function() { this.classList.toggle('active'); });
-        document.getElementById('set-autostart')?.addEventListener('click', function() { this.classList.toggle('active'); });
-      }
-
-      // ==================== SERVERS TAB — MOVED to Infrastructure (pages/infrastructure.js) ====================
-      // DEAD CODE: no tab button / validTab / renderTab branch references these anymore. Kept temporarily
-      // to avoid an untested 340-line cut; delete this whole block (down to NOTIFICATIONS) once the
-      // Infrastructure refactor is verified in a browser. (P1.11 — deferred.)
-      // eslint-disable-next-line no-unused-vars
-      async function renderServers() {
-        // Yükleme — DOM API
-        const loading = document.createElement('div');
-        loading.className = 'text-muted text-sm';
-        loading.textContent = 'Loading servers...';
-        tabContent.replaceChildren(loading);
-        try {
-          const data = await API.get('/servers');
-          renderServersList(data);
-        } catch (e) {
-          const err = document.createElement('div');
-          err.className = 'text-xs text-danger';
-          err.textContent = e.message;
-          tabContent.replaceChildren(err);
-        }
-      }
-
-      function renderServersList(data) {
-        const rowsHtml = data.servers.map(s => {
-          const isLocal = s.id === 'local';
-          const activeBadge = s.isActive ? '<span class="badge badge-running">active</span>' : '';
-          const hostStr = s.host ? `${escapeHtml(s.username || '')}@${escapeHtml(s.host)}:${s.port || 22}` : '—';
-          let authBadge = '';
-          if (s.hasKey) authBadge = '<span class="text-xs text-muted">🔑 key</span>';
-          else if (s.hasPassword) authBadge = '<span class="text-xs text-muted">🔒 password</span>';
-          else if (!isLocal) authBadge = '<span class="text-xs text-muted">📡 agent</span>';
-          return `<tr>
-              <td class="td-mono">${isLocal ? '🖥' : '🔐'} ${escapeHtml(s.id)}</td>
-              <td class="text-xs">${escapeHtml(s.type)}</td>
-              <td class="td-mono text-xs">${hostStr}</td>
-              <td>${authBadge}</td>
-              <td>${activeBadge}</td>
-              <td>
-                ${!s.isActive ? `<button class="btn btn-xs btn-secondary" data-action="activate" data-id="${escapeHtml(s.id)}">Use</button>` : ''}
-                <button class="btn btn-xs btn-secondary" data-action="test" data-id="${escapeHtml(s.id)}">Test</button>
-                ${!isLocal ? `<button class="btn btn-xs btn-secondary" data-action="grant" data-id="${escapeHtml(s.id)}" title="Run sudo usermod -aG docker on the server (needs passwordless sudo)">Grant Docker</button>` : ''}
-                ${!isLocal ? `<button class="btn btn-xs btn-secondary" data-action="edit" data-id="${escapeHtml(s.id)}">Edit</button>` : ''}
-                ${!isLocal ? `<button class="btn btn-xs btn-ghost text-danger" data-action="delete" data-id="${escapeHtml(s.id)}">${Icons.trash}</button>` : ''}
-              </td>
-            </tr>`;
-        }).join('');
-
-        const html = `
-          <div class="settings-section">
-            <div class="settings-section-title">Docker Servers</div>
-            <div class="text-muted text-sm" style="margin-bottom:12px;">
-              Local Docker socket + uzaq SSH server-lər. Header-dəki SRV dropdown ilə dəyişir.
-            </div>
-            <div class="table-wrapper"><table>
-              <thead><tr><th>ID</th><th>Type</th><th>Host</th><th>Auth</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody>${rowsHtml}</tbody>
-            </table></div>
-          </div>
-          <div class="settings-section" style="margin-top:20px;">
-            <div class="settings-section-title">Add SSH Server</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
-              <input class="input" id="srv-id" placeholder="ID (e.g. prod-1)" />
-              <input class="input" id="srv-host" placeholder="Host (e.g. 1.2.3.4 or server.example.com)" />
-              <input class="input" id="srv-user" placeholder="SSH user" value="root" />
-              <input class="input" id="srv-port" type="number" placeholder="Port" value="22" />
-            </div>
-
-            <div class="tab-bar" id="auth-tabs" style="margin-bottom:8px;">
-              <button class="tab-btn active" data-auth="key" type="button">🔑 Private Key</button>
-              <button class="tab-btn" data-auth="password" type="button">🔒 Password</button>
-              <button class="tab-btn" data-auth="agent" type="button">📡 SSH Agent <span style="font-size:10px;opacity:0.7;">· Coming Soon</span></button>
-            </div>
-
-            <div id="auth-key" class="auth-pane">
-              <label class="text-xs text-muted" for="srv-key">Private key (paste OpenSSH format):</label>
-              <textarea class="input" id="srv-key" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="font-family:var(--font-mono);font-size:11px;width:100%;margin-top:4px;"></textarea>
-              <label class="text-xs text-muted" style="display:block;margin-top:8px;" for="srv-passphrase">Key passphrase (only if the key is encrypted — leave blank otherwise):</label>
-              <input class="input" id="srv-passphrase" type="password" placeholder="passphrase (optional)" autocomplete="new-password" style="margin-top:4px;width:100%;" />
-            </div>
-
-            <div id="auth-password" class="auth-pane" style="display:none;">
-              <label class="text-xs text-muted">SSH user şifrəsi (DB-də plain-text saxlanılır — yalnız trust edilən şəbəkədə):</label>
-              <input class="input" id="srv-password" type="password" placeholder="••••••••" style="margin-top:4px;width:100%;" />
-              <div class="text-xs text-muted" style="margin-top:6px;">⚠ Daha təhlükəsiz: Private Key istifadə edin</div>
-            </div>
-
-            <div id="auth-agent" class="auth-pane" style="display:none;">
-              <div style="padding:12px 16px;background:var(--bg-primary);border:1px dashed var(--border);border-radius:var(--radius-md);">
-                <div style="font-weight:600;margin-bottom:6px;">⏳ Coming Soon</div>
-                <div class="text-xs text-muted" style="line-height:1.6;">
-                  SSH agent forwarding requires mounting <code>SSH_AUTH_SOCK</code> from the host into the DockGate container.
-                  Out-of-the-box this is not wired up yet — for now use <strong>Private Key</strong> or <strong>Password</strong>.
-                </div>
-              </div>
-            </div>
-
-            <input class="input" id="srv-desc" placeholder="Description (optional)" style="margin:8px 0;width:100%;" />
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:4px 0 8px;cursor:pointer;color:var(--text-secondary)">
-              <input type="checkbox" id="srv-grant-docker"> Grant Docker access after adding (runs <code style="margin:0 3px">sudo usermod -aG docker</code> — needs passwordless sudo)
-            </label>
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-secondary btn-sm" id="srv-test-new">Test Connection</button>
-              <button class="btn btn-primary btn-sm" id="srv-add">Add Server</button>
-              <div id="srv-test-result" style="align-self:center;"></div>
-            </div>
-          </div>
-        `;
-        // setHTML helper — escapeHtml() artıq tətbiq olunub yuxarıda
-        Object.assign(tabContent, { innerHTML: html });
-
-        attachServerHandlers(data.servers);
-      }
-
-      // Stage-1 SSH auth failures get a actionable hint (usermod fixes stage 2, not this).
-      function sshErrorHint(msg) {
-        return /authentication methods failed/i.test(String(msg))
-          ? `${msg} → SSH login itself failed: check the user (Coolify → usually root), that the public key is in that user's authorized_keys, and the key passphrase. ("usermod -aG docker" does NOT fix this — it's for the docker-permission stage after login.)`
-          : msg;
-      }
-
-      function attachServerHandlers(servers = []) {
-        // Auth tabs (key / password / agent)
-        let authMode = 'key';
-        tabContent.querySelectorAll('#auth-tabs .tab-btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-            authMode = btn.dataset.auth;
-            tabContent.querySelectorAll('#auth-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            tabContent.querySelectorAll('.auth-pane').forEach(p => p.style.display = 'none');
-            const pane = document.getElementById(`auth-${authMode}`);
-            if (pane) pane.style.display = '';
-          });
-        });
-
-        tabContent.querySelectorAll('[data-action]').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const { action, id } = btn.dataset;
-            try {
-              if (action === 'activate') {
-                await API.post('/servers/active', { id });
-                showToast(`Activated: ${id}`);
-                if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
-                renderServers();
-              } else if (action === 'test') {
-                const r = await API.post('/servers/test', { id });
-                if (r.success) {
-                  showToast(`✓ ${r.version} (${r.containers} containers, ${r.images} images)`, 'success', 6000);
-                } else {
-                  showToast(`✗ ${sshErrorHint(r.error)}`, 'error', 12000);
-                }
-              } else if (action === 'grant') {
-                showConfirm('Grant Docker access', `Run <code>sudo usermod -aG docker</code> on <strong>${escapeHtml(id)}</strong>? Requires that the SSH user has passwordless sudo. Takes effect on the next connection.`, async () => {
-                  try {
-                    const r = await API.post(`/servers/${id}/grant-docker`, {});
-                    showToast(r.message || 'Docker access granted', 'success', 7000);
-                  } catch (e) { showToast(sshErrorHint(e.message), 'error', 10000); }
-                });
-              } else if (action === 'edit') {
-                const s = servers.find(x => x.id === id);
-                if (s) openServerEditModal(s);
-              } else if (action === 'delete') {
-                showDeleteConfirm('Delete Server', { message: `Server "${id}" silinsin? SSH key faylı da silinir.`, phrase: id, onConfirm: async () => {
-                  await API.del(`/servers/${id}`);
-                  showToast('Silindi');
-                  if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
-                  renderServers();
-                } });
-              }
-            } catch (e) { showToast(e.message, 'error'); }
-          });
-        });
-
-        function buildAuthBody() {
-          const base = {
-            host: document.getElementById('srv-host').value.trim(),
-            port: parseInt(document.getElementById('srv-port').value) || 22,
-            username: document.getElementById('srv-user').value.trim(),
-          };
-          if (authMode === 'key') {
-            const k = document.getElementById('srv-key').value;
-            if (k && k.trim()) base.privateKey = k;
-            const ph = document.getElementById('srv-passphrase')?.value;
-            if (ph) base.passphrase = ph;
-          } else if (authMode === 'password') {
-            const p = document.getElementById('srv-password').value;
-            if (p) base.password = p;
-          }
-          // 'agent' — heç biri əlavə edilmir, server-side agent fallback işləyir
-          return base;
-        }
-
-        document.getElementById('srv-test-new')?.addEventListener('click', async () => {
-          const result = document.getElementById('srv-test-result');
-          result.replaceChildren();
-          const status = document.createElement('span');
-          status.className = 'text-xs text-muted';
-          status.textContent = 'Testing...';
-          result.appendChild(status);
+        // Each control saves on its own (no page-wide Save button), then confirms with a toast.
+        const save = async (patch, label) => {
           try {
-            const body = buildAuthBody();
-            const r = await API.post('/servers/test', body);
-            result.replaceChildren();
-            const out = document.createElement('span');
-            out.className = 'text-xs';
-            if (r.success) {
-              out.style.color = 'var(--success)';
-              out.textContent = `✓ ${r.version} — ${r.containers} containers`;
-            } else {
-              out.style.color = 'var(--danger)';
-              out.textContent = `✗ ${sshErrorHint(r.error)}`;
-            }
-            result.appendChild(out);
-          } catch (e) {
-            result.replaceChildren();
-            const out = document.createElement('span');
-            out.className = 'text-xs';
-            out.style.color = 'var(--danger)';
-            out.textContent = `✗ ${sshErrorHint(e.message)}`;
-            result.appendChild(out);
-          }
-        });
-
-        document.getElementById('srv-add')?.addEventListener('click', async () => {
-          const id = document.getElementById('srv-id').value.trim();
-          const description = document.getElementById('srv-desc').value.trim();
-          const auth = buildAuthBody();
-          if (!id || !auth.host || !auth.username) {
-            showToast('ID, host və username tələb olunur', 'warning');
-            return;
-          }
-          try {
-            await API.post('/servers', { id, ...auth, description });
-            showToast(`Server "${id}" (${authMode}) əlavə olundu`);
-            // Opt-in: grant docker access right after adding
-            if (document.getElementById('srv-grant-docker')?.checked) {
-              try {
-                const g = await API.post(`/servers/${id}/grant-docker`, {});
-                showToast(g.message || 'Docker access granted', 'success', 7000);
-              } catch (ge) { showToast('Added, but granting Docker access failed: ' + sshErrorHint(ge.message), 'warning', 10000); }
-            }
-            if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
-            renderServers();
+            await API.post('/meta/settings', patch);
+            Object.assign(settings, patch);
+            Store.set('settings', { ...settings });
+            if (patch.theme) { applyTheme(patch.theme); localStorage.setItem('dcc_theme', patch.theme); }
+            if (patch.timezone) localStorage.setItem('dcc_timezone', patch.timezone);
+            showToast(`Saved · ${label}`);
           } catch (e) { showToast(e.message, 'error'); }
-        });
-      }
-
-      // Edit an existing SSH server in a modal. ID is immutable (it's the PK / URL param).
-      // Key and password are never returned by the API, so leaving them blank keeps the current secret;
-      // entering a new one replaces it (PUT /servers/:id only updates the fields that are sent).
-      function openServerEditModal(s) {
-        const body = `
-          <div style="display:flex;flex-direction:column;gap:10px">
-            <div class="text-xs text-muted">Editing <b>${escapeHtml(s.id)}</b> — the ID cannot be changed.</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-              <input class="input" id="esrv-host" placeholder="Host" value="${escapeHtml(s.host || '')}" />
-              <input class="input" id="esrv-port" type="number" placeholder="Port" value="${s.port || 22}" />
-              <input class="input" id="esrv-user" placeholder="SSH user" value="${escapeHtml(s.username || '')}" />
-              <input class="input" id="esrv-desc" placeholder="Description" value="${escapeHtml(s.description || '')}" />
-            </div>
-            <div class="tab-bar" id="esrv-auth-tabs">
-              <button class="tab-btn ${s.authMode !== 'password' ? 'active' : ''}" data-auth="key" type="button">🔑 Private Key</button>
-              <button class="tab-btn ${s.authMode === 'password' ? 'active' : ''}" data-auth="password" type="button">🔒 Password</button>
-            </div>
-            <div id="esrv-pane-key" class="esrv-pane" style="display:${s.authMode !== 'password' ? 'block' : 'none'}">
-              <label class="text-xs text-muted">New private key — leave blank to keep the current ${s.hasKey ? 'key' : 'auth'}:</label>
-              <textarea class="input" id="esrv-key" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="font-family:var(--font-mono);font-size:11px;width:100%;margin-top:4px;"></textarea>
-            </div>
-            <div id="esrv-pane-password" class="esrv-pane" style="display:${s.authMode === 'password' ? 'block' : 'none'}">
-              <label class="text-xs text-muted">New password — leave blank to keep the current one:</label>
-              <input class="input" id="esrv-pass" type="password" placeholder="••••••••" style="width:100%;margin-top:4px;" />
-            </div>
-            <div style="display:flex;gap:8px;align-items:center">
-              <button class="btn btn-secondary btn-sm" id="esrv-test" type="button">Test Connection</button>
-              <span id="esrv-test-result" class="text-xs"></span>
-            </div>
-            <div class="text-xs text-muted">Test verifies the saved server unless you enter a new key/password above.</div>
-          </div>`;
-
-        const m = showModal(`Edit server: ${escapeHtml(s.id)}`, body, []);
-        const root = document.getElementById('modal-root');
-        let authMode = s.authMode === 'password' ? 'password' : 'key';
-
-        root.querySelectorAll('#esrv-auth-tabs .tab-btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-            authMode = btn.dataset.auth;
-            root.querySelectorAll('#esrv-auth-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            root.querySelector('#esrv-pane-key').style.display = authMode === 'key' ? 'block' : 'none';
-            root.querySelector('#esrv-pane-password').style.display = authMode === 'password' ? 'block' : 'none';
-          });
-        });
-
-        // Build the PUT body — only include a secret if a new one was actually entered.
-        function buildEditBody() {
-          const b = {
-            host: root.querySelector('#esrv-host').value.trim(),
-            port: parseInt(root.querySelector('#esrv-port').value) || 22,
-            username: root.querySelector('#esrv-user').value.trim(),
-            description: root.querySelector('#esrv-desc').value.trim(),
-          };
-          if (authMode === 'key') {
-            const k = root.querySelector('#esrv-key').value;
-            if (k && k.trim()) b.privateKey = k;
-          } else {
-            const p = root.querySelector('#esrv-pass').value;
-            if (p) b.password = p;
-          }
-          return b;
-        }
-
-        root.querySelector('#esrv-test').addEventListener('click', async () => {
-          const r = root.querySelector('#esrv-test-result');
-          r.textContent = 'Testing…'; r.style.color = 'var(--text-secondary)';
+        };
+        document.getElementById('set-theme')?.addEventListener('change', (e) => save({ theme: e.target.value }, 'theme'));
+        document.getElementById('set-view')?.addEventListener('change', (e) => save({ defaultView: e.target.value }, 'container list'));
+        document.getElementById('set-timezone')?.addEventListener('change', (e) => save({ timezone: e.target.value }, 'timezone'));
+        document.getElementById('set-shell')?.addEventListener('change', (e) => save({ terminalShell: e.target.value }, 'default shell'));
+        const toggle = (el, fn) => {
+          if (!el) return;
+          const flip = () => { const on = !el.classList.contains('active'); el.classList.toggle('active', on); el.setAttribute('aria-checked', on); fn(on, el); };
+          el.addEventListener('click', flip);
+          el.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
+        };
+        toggle(document.getElementById('set-logtimes'), (on) => save({ logTimestamps: on ? 'true' : 'false' }, `log timestamps ${on ? 'on' : 'off'}`));
+        toggle(document.getElementById('set-autostart'), async (on, el) => {
           try {
-            const b = buildEditBody();
-            // No new secret entered → test the saved server by id (uses stored credentials)
-            const payload = (b.privateKey || b.password) ? b : { id: s.id };
-            const res = await API.post('/servers/test', payload);
-            if (res.success) { r.textContent = `✓ ${res.version} — ${res.containers} containers`; r.style.color = 'var(--success)'; }
-            else { r.textContent = `✗ ${res.error}`; r.style.color = 'var(--danger)'; }
-          } catch (e) { r.textContent = '✗ ' + e.message; r.style.color = 'var(--danger)'; }
-        });
-
-        const footer = root.querySelector('#modal-footer');
-        const saveBtn = document.createElement('button');
-        saveBtn.className = 'btn btn-primary';
-        saveBtn.textContent = 'Save Changes';
-        footer.appendChild(saveBtn);
-        saveBtn.addEventListener('click', async () => {
-          const b = buildEditBody();
-          if (!b.host || !b.username) { showToast('Host and username are required', 'warning'); return; }
-          saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
-          try {
-            await API.put('/servers/' + s.id, b);
-            showToast(`Server "${s.id}" updated`);
-            m.close();
-            if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
-            renderServers();
-          } catch (e) {
-            showToast(e.message, 'error', 8000);
-            saveBtn.disabled = false; saveBtn.textContent = 'Save Changes';
-          }
+            const r = await API.post('/meta/autostart', { enabled: on });
+            isAutoStart = r.policy !== 'no';
+            showToast(`Saved · start with Docker ${isAutoStart ? 'on' : 'off'}`);
+          } catch (e) { el.classList.toggle('active', !on); el.setAttribute('aria-checked', !on); showToast(e.message, 'error'); }
         });
       }
 
@@ -569,6 +160,7 @@ Router.register('settings', async (content, params) => {
           const tgConfigured = !!(tgConfig.tg_chat_id);
 
           tabContent.innerHTML = `
+            ${UI.header('Notifications', 'Where alerts go (channels), which servers send them, and which events trigger them (rules).')}
             <!-- Channels -->
             <div class="settings-section">
               <div class="settings-section-title">Channels</div>
@@ -656,7 +248,7 @@ Router.register('settings', async (content, params) => {
 
             <!-- Monitored Hosts / Server Muting -->
             <div class="settings-section" style="margin-top:20px;">
-              <div class="settings-section-title">Monitored Hosts &amp; Server Muting</div>
+              <div class="settings-section-title">Muted servers</div>
               <div class="text-xs text-muted" style="margin-bottom:12px;">Enable or mute alerts per server. Muting a host suppresses its emails and Telegram alerts while all containers, deployments, and metrics continue running normally.</div>
               
               <!-- Local Daemon -->
@@ -688,7 +280,7 @@ Router.register('settings', async (content, params) => {
 
             <!-- Rules -->
             <div class="settings-section" style="margin-top:20px;">
-              <div class="settings-section-title">Alert Rules</div>
+              <div class="settings-section-title">Rules</div>
               ${rules.map(r => `
                 <div class="settings-row" style="padding:8px 0;">
                   <div>
@@ -706,7 +298,9 @@ Router.register('settings', async (content, params) => {
               <button class="btn btn-primary btn-sm" id="save-rules" style="margin-top:8px;">Save Rules</button>
             </div>
 
-            ${typeof edgeAgentSectionHtml === 'function' ? edgeAgentSectionHtml(emailConfigured || tgConfigured) : ''}
+            <div class="settings-section" style="margin-top:20px;">
+              ${UI.settings([{ label: 'Edge agent', desc: 'Keeps watching a server and sends these alerts when DockGate cannot reach it. Installed per server, so it now lives under Servers.', action: UI.btn('Open Edge agent', 'id="open-edge-agent"') }])}
+            </div>
           `;
 
           // Accordion
@@ -830,7 +424,7 @@ Router.register('settings', async (content, params) => {
           });
 
           // Edge Agent (per-server observability) — always render; agent can install in metrics-only mode.
-          if (typeof attachEdgeAgentHandlers === 'function') attachEdgeAgentHandlers(tabContent, true);
+          document.getElementById('open-edge-agent')?.addEventListener('click', () => Router.navigate('infra', { tab: 'agent' }));
 
         } catch(e) {
           tabContent.innerHTML = '<div class="text-xs text-muted">Could not load notification settings.</div>';
@@ -846,21 +440,18 @@ Router.register('settings', async (content, params) => {
 
           if (notifLogs.length === 0) {
             tabContent.innerHTML = `
-              <div class="settings-section">
-                <div class="empty-state" style="padding:40px 0;">
-                  <div class="text-muted">No notifications sent yet</div>
-                </div>
+              ${UI.header('Notification log', 'Every alert DockGate sent, and whether it arrived.')}
+              <div class="empty-state" style="padding:40px 0;">
+                <h3>No alerts sent yet</h3>
+                <p>Set up a channel and rules in <a href="#/settings?tab=notifications">Notifications</a>; every alert sent will be listed here.</p>
               </div>
             `;
             return;
           }
 
           tabContent.innerHTML = `
+            ${UI.header('Notification log', 'Every alert DockGate sent, and whether it arrived.', UI.menu([{ label: `${Icons.trash} Clear the log…`, attrs: 'id="clear-notif-log"', danger: true }]))}
             <div class="settings-section">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                <div class="settings-section-title" style="margin:0;">Notification Log</div>
-                <button class="btn btn-ghost btn-sm" id="clear-notif-log">Clear Log</button>
-              </div>
               <div class="table-wrapper" style="max-height:400px;overflow-y:auto;">
                 <table>
                   <thead><tr><th>Time</th><th>Channel</th><th>Type</th><th>Subject</th><th>Status</th></tr></thead>
@@ -905,8 +496,9 @@ Router.register('settings', async (content, params) => {
           const checkedTime = updateInfo.checkedAt ? new Date(updateInfo.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Just now';
 
           tabContent.innerHTML = `
+            ${UI.header('Software update', 'Your DockGate version and what changed in newer ones.')}
             <div class="settings-section" style="display:flex;flex-direction:column;gap:16px;">
-              
+
               <!-- Status Hero Card -->
               <div class="card" style="padding:18px 20px;background:linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 41, 59, 0.8));border:1px solid ${isUpdate ? 'rgba(56, 189, 248, 0.4)' : 'rgba(16, 185, 129, 0.3)'};border-radius:var(--radius-lg);box-shadow:0 4px 20px rgba(0,0,0,0.15);">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
@@ -952,14 +544,14 @@ Router.register('settings', async (content, params) => {
               ${changes.length > 0 ? `
                 <div class="card" style="padding:16px 20px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);">
                   <div style="font-weight:700;font-size:14px;color:var(--text-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
-                    <span>📋</span> What's New in DockGate (Release Notes)
+                    What's new in DockGate
                   </div>
                   <div style="max-height:220px;overflow-y:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;font-size:12px;line-height:1.7;">
                     ${changes.map(c => {
                       const isHeader = c.startsWith('📌');
                       return isHeader
-                        ? `<div style="font-weight:700;color:var(--text-primary);margin-top:8px;margin-bottom:4px;">${escapeHtml(c)}</div>`
-                        : `<div style="color:var(--text-secondary);padding-left:8px;">&bull; ${escapeHtml(c)}</div>`;
+                        ? `<div style="font-weight:700;color:var(--text-primary);margin-top:8px;margin-bottom:4px;">${mdInline(c.replace(/^📌\s*/, ''))}</div>`
+                        : `<div style="color:var(--text-secondary);padding-left:8px;">&bull; ${mdInline(c)}</div>`;
                     }).join('')}
                   </div>
                 </div>
@@ -1059,46 +651,10 @@ Router.register('settings', async (content, params) => {
         }
       }
 
-      // ==================== SAVE SETTINGS ====================
-      document.getElementById('save-settings')?.addEventListener('click', async () => {
-        // If not on General tab, switch to it first so fields exist
-        if (activeTab !== 'general') {
-          document.querySelector('#settings-tabs .tab-btn[data-tab="general"]')?.click();
-          await new Promise(r => setTimeout(r, 50));
-        }
-
-        const newSettings = {
-          theme: document.getElementById('set-theme')?.value || settings.theme,
-          defaultView: document.getElementById('set-view')?.value || settings.defaultView,
-          terminalShell: document.getElementById('set-shell')?.value || settings.terminalShell,
-          timezone: document.getElementById('set-timezone')?.value || settings.timezone || 'auto',
-          logTimestamps: document.getElementById('set-logtimes')?.classList.contains('active') ? 'true' : 'false',
-        };
-
-        const newAutoStart = document.getElementById('set-autostart')?.classList.contains('active') ?? isAutoStart;
-
-        try {
-          await API.post('/meta/settings', newSettings);
-
-          if (newAutoStart !== isAutoStart) {
-            const asRes = await API.post('/meta/autostart', { enabled: newAutoStart });
-            isAutoStart = asRes.policy !== 'no';
-          }
-
-          Store.set('settings', { ...settings, ...newSettings });
-          applyTheme(newSettings.theme);
-          localStorage.setItem('dcc_theme', newSettings.theme);
-          localStorage.setItem('dcc_timezone', newSettings.timezone);
-          showToast('Settings saved successfully');
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-
       // Initial tab render — honour the restored activeTab (not always General)
       renderTab(activeTab);
 
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
   await render();

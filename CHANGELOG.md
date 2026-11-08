@@ -2,6 +2,84 @@
 
 ---
 
+## [2.12.0] - 2026-11-08
+
+The rest of DockGate now follows the same layout as the server pages: a breadcrumb in the top bar, one header per page with its main action, standard tables with a ⋯ menu for rare and destructive actions, and settings that save as you change them. No function was removed; old links still work.
+
+### Navigation
+- **Activity is split**: **Observe** (Logs, Events, Audit log) and **Tools** (Terminal, Files).
+- **Moved**: Cleanup → **Resources → Prune**, Registries → **Deploy → Registries**, Edge agent → **Servers → Edge agent** (Notifications links to it).
+- The top bar shows where you are (`Resources / Containers`). Section pages are picked in the sidebar only, so the second tab bar on the page is gone.
+- Old links and bookmarks (`#/activity?tab=logs`, `#/infra?tab=registries`, `#/containers`, `#/cleanup` …) open the new place.
+
+### Docker pages
+- **Containers**: filter chips with counts (adds **Unhealthy**), bulk start / stop / restart / remove, Logs or Start on the row and the rest in ⋯ (details, terminal, restart, stop, remove).
+- **Images**: **Used by** column (container names), In use / Unused / Dangling chips, **Remove unused** with the space it frees.
+- **Volumes** and **Networks**: **Used by** columns, an Unused filter for volumes, Docker's own networks marked.
+- **Builds**: History · Cache · Builders as one switch in the header instead of a second tab bar.
+- **Prune**: one table — what each kind of unused data is, what exactly would be removed and how much space it frees; pick rows and prune them together. Volumes are never pre-selected. Full system prune is in a danger zone.
+- **Compose stacks**: source (git, folder, adopted, external) and state per stack; **Deploy stack** asks where the stack comes from (compose file, Git, folder, existing on the server, template) and opens that flow. Up / Restart / Sync on the row, everything else in ⋯.
+- **App templates**: the whole card opens the details (ports, environment, volumes) with Deploy there; the most common categories as chips.
+- **Logs**: one switch for Container · All containers · Host logs · Log Doctor.
+- **Events**: filter by type (containers, images, networks, volumes); errors shown above the table.
+- **Audit log**: click a row for its details; **Clear** moved into ⋯ and still asks to confirm.
+- Registries, Terminal and Files use the same header.
+
+### Settings and Monitoring
+- **Settings → General**: each option saves when you change it and confirms with a toast; the page-wide **Save Settings** button is gone. "Auto-Start Service" is now **Start with Docker**, with what it does.
+- **Settings → Security**: change the password in a dialog; **Sign out everywhere** in a danger zone.
+- **Monitoring** starts with **every server** in one table (state, CPU and memory sparklines, disk), then the live metrics of the server in use. `GET /api/servers/overview?history=N` returns the samples for it and now includes this machine.
+- **Dashboard** shows a card per server (state, CPU · memory · disk, setup) when there is more than one.
+
+---
+
+## [2.11.0] - 2026-11-07
+
+Every server page now follows the layout cloud panels use (Hetzner, DigitalOcean, GCP, AWS, Cockpit): a header with one line and the main action, standard tables with row actions, settings rows with their own Edit, and one dialog style. All earlier functions are kept.
+
+### Firewall
+- **Inbound and Outbound rule tables** (Hetzner / GCP): Description · Sources/Destinations · Protocol · Port · Action, each rule edited on its own. Sources show as **Any IPv4 / Any IPv6**, IP lists and addresses; one rule is all its UFW entries (v4 and v6) together.
+- **Outbound rules** (UFW): allow or deny traffic leaving the server, optionally also for Docker containers (needs Docker port isolation). Outbound route rules are marked so they are never mistaken for container port rules.
+- **Port ranges** (`8000-8100`), **any port**, **TCP / UDP / any**, and a **description** per rule (stored by DockGate).
+- **Default policies** shown as the last row of each table (as in Azure NSGs) and changeable; blocking incoming traffic is refused unless a rule keeps SSH reachable for DockGate.
+- Rule changes run only the difference; changes touching the SSH port run as a lifeline job with rollback. Entries that do not fit the table (app profiles, interface or source-port rules, firewalld services) are listed under **Advanced** with the reason and can be deleted there.
+- IP lists shown as a table (like AWS prefix lists).
+
+### Servers
+- **Servers list** like DigitalOcean / Hetzner: name, in use, address, login (root / password flagged), setup state, CPU · RAM · disk.
+- **Add server** is a 4-step wizard: connection → login → **verify** (shows the server's host key fingerprint to compare) → details. The confirmed host key is pinned when the server is added.
+- **Server Console → Settings**: name, description, connection, login (tested before saving), connection test, Docker access, host key (re-trust), access password, alerts, and a **Danger zone** to remove the server. Replaces the old Edit-server modal.
+- **Server Console → Monitoring**: CPU, memory, disk and network graphs with a time range, the live view (processes, disks, open ports) and the alerts that apply to this server (mute per server).
+
+### Server Console
+- **Overview**: setup and Docker summary, then **Security recommendations** sorted by importance, each linking to the fix.
+- **Setup**: a components table (installed / missing / failed with the error / not available, last run), presets, a run plan before anything starts, step-by-step progress, and **run history** with each run's log.
+- **Access & SSH**: one settings row per option (root login, password login, port, attempts, login time, dead/idle timeouts, X11, host key), each with its own dialog.
+- **Users & keys**: users table plus an **SSH keys** table across all users (download keys DockGate generated, remove with confirmation, add a key for any user).
+- **Fail2ban**: Banned IPs, Allowlist and Jails tables (each jail edited in its own dialog with the ban-length preview); history folded away.
+- **Services**: one table (state, start at boot, start/stop/restart) — select a service for its settings, config file and log.
+- **Logs**: level filter (warnings / errors) and search.
+
+### Other
+- **SSH keys** page: table with the Git projects each key is used by; deleting names them.
+- **Edge agent**: fleet table.
+
+### Fixed
+- The servers list never sent `notifications_enabled`, so muted servers showed as unmuted and the edit dialog always showed alerts on.
+- Removed an unused copy of the old server management code from the Settings page.
+- Kept from the old screens after a line-by-line check: Start for services whose state cannot be read (no systemd), the 30-second refresh of Docker counts on the Overview, and the agent status pill in "Install on servers…" (it would have stopped that dialog from opening).
+- The sidebar lists the new console tabs (Monitoring, Users & keys, Settings).
+- **Phones and narrow windows**: the sidebar was always open (260 px) and left about 70 px for the page. Below 900 px it is now a drawer opened with ☰ that closes after navigating, on Esc or when the page behind it is tapped; the header is compact.
+- **Errors explained**: 14 places showed only "Error · connect ENOENT /var/run/docker.sock". They now say what happened in plain words (Docker not reachable, login refused, server not answering, host key changed), why, and offer the next step (Retry, Switch server, Open Setup, Open server Settings), with the technical message under Details.
+- **Release notes** in Settings → Software Update showed `**bold**` markers literally; bold, code, italics and links are now rendered (escaped first).
+- The Files page pointed to "Settings → Servers", which no longer exists; it now points to Servers.
+- "Servers" no longer appears three times on the Servers page; the header says "Monitoring" instead of a title that wrapped onto two lines.
+
+### Not tested on a live server
+- Outbound rules, default-policy changes and the new rule editing were checked with route tests and `ufw --dry-run` against UFW 0.36 only.
+
+---
+
 ## [2.10.0] - 2026-11-07
 
 ### Added

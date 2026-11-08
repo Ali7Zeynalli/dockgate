@@ -4,9 +4,7 @@ async function renderSystemInfo(content) {
     try {
       const info = await API.get('/system/info');
       content.innerHTML = `
-        <div class="page-header">
-          <div><div class="page-title">System Information</div><div class="page-subtitle">Docker Engine & Host OS details</div></div>
-        </div>
+        ${UI.header('System', 'The Docker engine and operating system DockGate is connected to.')}
 
         <div class="grid-2">
           <div class="card">
@@ -40,5 +38,5 @@ async function renderSystemInfo(content) {
         </div>
       `;
 
-    } catch (err) { content.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`; }
+    } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
 }

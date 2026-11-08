@@ -1,22 +1,23 @@
 // Navigation setup
-// Related Docker pages are consolidated into tabbed sections (resources/deploy/activity — see
-// tabbed-section.js); the individual pages stay registered as routes but are reached via those tabs.
+// One list drives the sidebar, the section pages (tabbed-section.js) and the top-bar breadcrumb. A section's
+// pages are reached from the sidebar only; old links (#/activity?tab=…, #/infra?tab=registries) are sent to
+// the new place by Router.resolve.
 const navItems = {
   dashboard: { label: 'Dashboard', icon: Icons.dashboard },
   monitoring: { label: 'Monitoring', icon: Icons.chart },
-  resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['builds', 'Builds'], ['volumes', 'Volumes'], ['networks', 'Networks']], default: 'containers' },
-  deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose'], ['templates', 'App Templates']], default: 'compose' },
-  activity: { label: 'Activity', icon: Icons.events, tabs: [['logs', 'Logs'], ['terminal', 'Terminal'], ['events', 'Events'], ['files', 'Files'], ['audit', 'Audit Log'], ['cleanup', 'Cleanup']], default: 'logs' },
-  infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH Keys'], ['registries', 'Registries']], default: 'servers' },
-  'server-console': { label: 'Server Console', icon: Icons.terminal, tabs: [['overview', 'Overview'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users'], ['firewall', 'Firewall'], ['fail2ban', 'Fail2ban'], ['manage', 'Services'], ['logs', 'Logs']], default: 'overview' },
-  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification Log'], ['update', 'Software Update'], ['system', 'System'], ['security', 'Security']], default: 'general' }
+  resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['builds', 'Builds'], ['prune', 'Prune']], default: 'containers' },
+  deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose stacks'], ['templates', 'App templates'], ['registries', 'Registries']], default: 'compose' },
+  observe: { label: 'Observe', icon: Icons.events, tabs: [['logs', 'Logs'], ['events', 'Events'], ['audit', 'Audit log']], default: 'logs' },
+  tools: { label: 'Tools', icon: Icons.terminal, tabs: [['terminal', 'Terminal'], ['files', 'Files']], default: 'terminal' },
+  infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH keys'], ['agent', 'Edge agent']], default: 'servers' },
+  'server-console': { label: 'Server Console', icon: Icons.terminal, tabs: [['overview', 'Overview'], ['monitoring', 'Monitoring'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users & keys'], ['firewall', 'Firewall'], ['fail2ban', 'Fail2ban'], ['manage', 'Services'], ['logs', 'Logs'], ['settings', 'Settings']], default: 'overview' },
+  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification log'], ['update', 'Software update'], ['system', 'System'], ['security', 'Security']], default: 'general' }
 };
 
-// Two clear domains: DOCKER management (Resources / Deploy / Activity — each a tabbed section) vs
-// SERVER management (the host itself), then app System. 7 entries instead of 17.
+// DOCKER (what runs) · SERVER (the hosts) · SYSTEM (DockGate itself).
 const navGroups = [
   { label: 'Overview', items: ['dashboard', 'monitoring'] },
-  { label: 'Docker', items: ['resources', 'deploy', 'activity'] },
+  { label: 'Docker', items: ['resources', 'deploy', 'observe', 'tools'] },
   { label: 'Server', items: ['infra', 'server-console'] },
   { label: 'System', items: ['settings'] }
 ];
@@ -87,6 +88,19 @@ function initMacSidebar() {
       Router.navigate('infra', { tab: 'servers' });
     }
   };
+
+  // Phones / narrow windows: the sidebar is a drawer (☰). It closes after a navigation, on Esc and when
+  // the dimmed page behind it is tapped.
+  const app = document.getElementById('app'), toggle = document.getElementById('nav-toggle'), backdrop = document.getElementById('nav-backdrop');
+  const setNav = (open) => {
+    app.classList.toggle('nav-open', open);
+    if (backdrop) backdrop.hidden = !open;
+    if (toggle) { toggle.setAttribute('aria-expanded', open); toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu'); }
+  };
+  toggle?.addEventListener('click', () => setNav(!app.classList.contains('nav-open')));
+  backdrop?.addEventListener('click', () => setNav(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && app.classList.contains('nav-open')) setNav(false); });
+  sidebarNav.addEventListener('click', (e) => { if (e.target.closest('.nav-item, .nav-subitem')) setTimeout(() => setNav(false), 0); });
 
   sidebarNav.addEventListener('click', (e) => {
     // A sidebar sub-item (a section's tab) → navigate straight to that tab.
@@ -255,8 +269,7 @@ async function boot() {
       try { startParams = JSON.parse(localStorage.getItem('dcc_last_params')) || {}; } catch(e){ startParams = {}; }
     }
     // Remap a legacy/bookmarked sub-route (e.g. #/containers) onto its consolidated section tab.
-    const SECTION_OF = { containers: 'resources', images: 'resources', builds: 'resources', volumes: 'resources', networks: 'resources', compose: 'deploy', templates: 'deploy', logs: 'activity', terminal: 'activity', events: 'activity', files: 'activity', audit: 'activity', cleanup: 'activity' };
-    if (SECTION_OF[startPage]) { startParams = { tab: startPage }; startPage = SECTION_OF[startPage]; }
+    // Moved pages (#/containers, #/activity?tab=…) are rewritten inside Router.navigate (Router.resolve).
     // replace:true → set the initial hash without adding a spurious history entry
     await Router.navigate(startPage, startParams, { replace: true });
 

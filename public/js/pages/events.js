@@ -4,21 +4,22 @@ Router.register('events', async (content) => {
   
   async function render() {
     content.innerHTML = `
-      <div class="page-header">
-        <div><div class="page-title">Docker Events</div><div class="page-subtitle">Real-time system events stream</div></div>
-      </div>
-      
-      <div class="log-toolbar mb-3" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <select class="select" id="event-range" style="width:auto" title="Show past events from this range, then keep streaming live">
+      ${UI.header('Events', 'What Docker did on this server: containers starting and stopping, images pulled, networks and volumes changed. Past events from the chosen range, then live.')}
+
+      <div class="ui-toolbar">
+        ${UI.chips([['', 'All'], ['container', 'Containers'], ['image', 'Images'], ['network', 'Networks'], ['volume', 'Volumes']], '', 'data-etype')}
+        <span class="ui-spacer"></span>
+        <select class="select" id="event-range" style="width:auto" aria-label="Range" title="Show past events from this range, then keep streaming live">
           <option value="900">Last 15 min</option>
           <option value="3600" selected>Last 1 hour</option>
           <option value="86400">Last 24 hours</option>
           <option value="0">Live only</option>
         </select>
-        <button class="btn btn-secondary" id="event-pause">${Icons.pause} Pause</button>
-        <button class="btn btn-secondary" id="event-clear">Clear</button>
+        <button class="btn btn-secondary btn-sm" id="event-pause">${Icons.pause} Pause</button>
+        <button class="btn btn-secondary btn-sm" id="event-clear">Clear</button>
       </div>
-      
+      <div id="events-error"></div>
+
       <div class="table-wrapper">
         <table>
           <thead><tr><th>Time</th><th>Type</th><th>Action</th><th>Actor</th><th>Details</th></tr></thead>
@@ -31,6 +32,13 @@ Router.register('events', async (content) => {
     const tbody = document.getElementById('events-tbody');
     const empty = document.getElementById('empty-state');
     const pauseBtn = document.getElementById('event-pause');
+    let typeFilter = '';
+    const applyType = (tr) => { tr.hidden = !!typeFilter && tr.dataset.type !== typeFilter; };
+    content.querySelectorAll('[data-etype]').forEach(b => b.addEventListener('click', () => {
+      typeFilter = b.dataset.etype;
+      content.querySelectorAll('[data-etype]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      tbody.querySelectorAll('tr').forEach(applyType);
+    }));
     let isPaused = false;
     let eventCount = 0;
 
@@ -87,7 +95,10 @@ Router.register('events', async (content) => {
         <td class="text-xs text-muted" style="max-width: 300px; white-space: normal;">${escapeHtml(details)}</td>
       `;
       
+      tr.dataset.type = type;
+      applyType(tr);
       tbody.prepend(tr);
+      document.getElementById('events-error').innerHTML = '';
       eventCount++;
       
       // Keep only last 100 events
@@ -101,10 +112,9 @@ Router.register('events', async (content) => {
 
     // Handle connection errors / Bağlantı xətalarını idarə et
     const onEventError = ({ error }) => {
-      if (empty) {
-        empty.textContent = `Error: ${error}`;
-        empty.style.display = 'block';
-      }
+      const box = document.getElementById('events-error');
+      if (box) box.innerHTML = UI.errorState(error, { compact: true });
+      if (empty) empty.style.display = 'none';
     };
     socket.on('events:error', onEventError);
 

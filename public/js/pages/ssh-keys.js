@@ -72,7 +72,7 @@ function skImportModal(onDone) {
 async function renderSshKeysInto(content, { embedded = false } = {}) {
   const reload = () => renderSshKeysInto(content, { embedded });
   content.innerHTML = `
-    <div class="settings-section" style="max-width:760px;">
+    <div class="settings-section">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div>
           <div class="settings-section-title">SSH Keys</div>
@@ -114,25 +114,19 @@ async function renderSshKeysInto(content, { embedded = false } = {}) {
   let keys = [];
   try { keys = await API.get('/ssh-keys'); }
   catch (e) { el.innerHTML = `<div class="text-danger text-sm">${escapeHtml(e.message)}</div>`; return; }
-  if (!keys.length) { el.innerHTML = `<div class="text-muted text-sm" style="padding:14px 0">No SSH keys yet. Generate one, then add its public key to your Git host (a machine account for many repos, or a single repo's Deploy Keys).</div>`; return; }
-  el.innerHTML = keys.map(k => `
-    <div class="card" style="padding:12px;margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-        <div>
-          <span style="font-weight:600">${escapeHtml(k.name)}</span>
-          <span class="badge badge-running" style="font-size:10px;margin-left:6px">${escapeHtml(k.key_type)}</span>
-          ${k.description ? `<div class="text-xs text-muted">${escapeHtml(k.description)}</div>` : ''}
-          <div class="text-xs text-muted td-mono" style="margin-top:2px">${escapeHtml(k.fingerprint || '')}</div>
-        </div>
-        <div style="display:flex;gap:6px;flex:none">
-          <button class="btn btn-xs btn-secondary" data-skpub="${k.id}">Public key</button>
-          <button class="btn btn-xs btn-secondary text-danger" data-skdel="${k.id}" data-skname="${escapeHtml(k.name)}">Delete</button>
-        </div>
-      </div>
-    </div>`).join('');
+  // Hetzner / DigitalOcean "SSH keys" style: one table with what each key is used by.
+  el.innerHTML = UI.table([{ label: 'Name' }, { label: 'Type' }, { label: 'Fingerprint' }, { label: 'Used by' }, { label: 'Created' }, { label: '', align: 'right' }], keys.map(k => ({ cells: [
+    `<b>${escapeHtml(k.name)}</b>${k.description ? `<div class="ui-sub">${escapeHtml(k.description)}</div>` : ''}`,
+    `<span class="ui-sub">${escapeHtml(k.key_type)}</span>`,
+    `<span class="td-mono text-xs">${escapeHtml(k.fingerprint || '')}</span>`,
+    k.usedBy && k.usedBy.length ? k.usedBy.map(p => UI.chip(escapeHtml(p), { tone: 'list' })).join(' ') : '<span class="ui-sub">not used</span>',
+    `<span class="ui-sub">${escapeHtml(String(k.created_at || '').slice(0, 10))}</span>`,
+    `${UI.btn('Public key', `data-skpub="${k.id}"`)}${UI.btn('Delete', `data-skdel="${k.id}" data-skname="${escapeHtml(k.name)}"`, 'btn-danger')}`,
+  ] })), { minWidth: 760, empty: 'No SSH keys yet. Generate one, then add its public key to your Git host (a machine account for many repos, or a single repo\'s Deploy Keys).' });
   el.querySelectorAll('[data-skpub]').forEach(b => b.onclick = () => skShowPublic(keys.find(x => String(x.id) === b.dataset.skpub)));
   el.querySelectorAll('[data-skdel]').forEach(b => b.onclick = () => {
-    showDeleteConfirm('Delete SSH key', { message: `Delete "${b.dataset.skname}"? Any Git deploy using it will stop working.`, phrase: b.dataset.skname, onConfirm: async () => {
+    const used = (keys.find(x => String(x.id) === b.dataset.skdel) || {}).usedBy || [];
+    showDeleteConfirm('Delete SSH key', { message: `Delete "${escapeHtml(b.dataset.skname)}"? ${used.length ? `<b>${used.map(escapeHtml).join(', ')}</b> deploy${used.length === 1 ? 's' : ''} from Git with this key and will stop pulling.` : 'No Git deploy uses it.'}`, phrase: b.dataset.skname, onConfirm: async () => {
       try { await API.delete(`/ssh-keys/${b.dataset.skdel}`); showToast('Deleted'); reload(); }
       catch (e) { showToast(e.message, 'error'); }
     } });
