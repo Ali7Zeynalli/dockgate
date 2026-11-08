@@ -269,9 +269,9 @@ function mimeToKind(m) {
   if (/application\/x-xz/.test(m)) return 'txz';
   return null;
 }
-async function pickZipTool(server) {
+async function pickZipTool(server, run = remoteExec.execRemote) {
   // First available SANITIZING zip extractor (unzip refuses out-of-dir; python zipfile sanitizes; bsdtar rejects '..').
-  const r = await remoteExec.execRemote(server, `for t in unzip python3 bsdtar; do command -v "$t" >/dev/null 2>&1 && { echo "$t"; break; }; done`);
+  const r = await run(server, `for t in unzip python3 bsdtar; do command -v "$t" >/dev/null 2>&1 && { echo "$t"; break; }; done`);
   return (r.stdout || '').trim() || null;
 }
 
@@ -279,7 +279,7 @@ async function pickZipTool(server) {
  * Extract an archive on the remote host. opts: { here?, overwrite?, deleteAfter? }.
  * Default destination = a new subfolder named after the archive (safest). Returns { path: destDir }.
  */
-async function extract(server, archivePath, opts = {}) {
+async function extract(server, archivePath, opts = {}, run = remoteExec.execRemote) { // run: (server, cmd) → { code, stdout, stderr }; the local file manager passes its own
   const src = normRemote(archivePath);
   const cwd = src.replace(/\/[^/]+$/, '') || '/';
   const base = src.split('/').pop() || 'archive';
@@ -289,7 +289,7 @@ async function extract(server, archivePath, opts = {}) {
   // Classify by extension; fall back to magic bytes for unknown names.
   let kind = classifyArchive(base);
   if (!kind) {
-    try { const m = await remoteExec.execRemote(server, `file -b --mime-type ${A} 2>/dev/null`); kind = mimeToKind((m.stdout || '').trim()); } catch (e) {}
+    try { const m = await run(server, `file -b --mime-type ${A} 2>/dev/null`); kind = mimeToKind((m.stdout || '').trim()); } catch (e) {}
   }
   if (!kind) throw Object.assign(new Error('Not a recognized archive (.zip, .tar, .tar.gz, .tar.bz2, .tar.xz, .gz)'), { statusCode: 400 });
 
@@ -301,14 +301,14 @@ async function extract(server, archivePath, opts = {}) {
 
   // Subfolder mode: refuse a non-empty existing target unless overwrite was chosen.
   if (!opts.here && !opts.overwrite) {
-    const chk = await remoteExec.execRemote(server, `test -d ${D} && [ -n "$(ls -A ${D} 2>/dev/null)" ] && echo NONEMPTY || true`);
+    const chk = await run(server, `test -d ${D} && [ -n "$(ls -A ${D} 2>/dev/null)" ] && echo NONEMPTY || true`);
     if ((chk.stdout || '').includes('NONEMPTY')) throw Object.assign(new Error(`"${stem}" already exists and isn't empty — pick "overwrite" or a different archive name`), { statusCode: 409 });
   }
 
   const T = 600; // hard 10-min timeout (execRemote itself has no per-command timeout)
   let cmd;
   if (kind === 'zip') {
-    const tool = await pickZipTool(server);
+    const tool = await pickZipTool(server, run);
     if (!tool) throw Object.assign(new Error("No safe zip extractor on this server — install 'unzip' or 'python3', or upload a .tar.gz instead"), { statusCode: 422 });
     if (tool === 'unzip') cmd = `mkdir -p ${D} && timeout ${T} unzip ${opts.overwrite ? '-o' : '-n'} ${A} -d ${D} 2>&1`;
     else if (tool === 'python3') cmd = `mkdir -p ${D} && timeout ${T} python3 -m zipfile -e ${A} ${D} 2>&1`;
@@ -323,8 +323,8 @@ async function extract(server, archivePath, opts = {}) {
     cmd = `mkdir -p ${D} && timeout ${T} tar ${opts.overwrite ? '' : '-k'} -C ${D} -${flag} ${A} 2>&1`;
   }
 
-  const cleanup = async () => { if (!opts.here) await remoteExec.execRemote(server, `rm -rf ${D} 2>&1`).catch(() => {}); };
-  const r = await remoteExec.execRemote(server, cmd);
+  const cleanup = async () => { if (!opts.here) await run(server, `rm -rf ${D} 2>&1`).catch(() => {}); };
+  const r = await run(server, cmd);
   if (r.code !== 0) {
     await cleanup();
     throw Object.assign(new Error('Extract failed: ' + ((r.stdout || r.stderr || '').trim() || `exit ${r.code}`)), { statusCode: 500 });
@@ -332,13 +332,13 @@ async function extract(server, archivePath, opts = {}) {
 
   // Containment scan: reject if the archive left any symlink pointing OUTSIDE the destination (tar/zip
   // block writes through symlinks but can still materialize an attacker-chosen out-of-tree symlink).
-  const scan = await remoteExec.execRemote(server, `RD=$(readlink -f ${D}); find ${D} -type l 2>/dev/null | while IFS= read -r l; do t=$(readlink -f "$l" 2>/dev/null); case "$t" in "$RD"|"$RD"/*) ;; *) echo BAD ;; esac; done`);
+  const scan = await run(server, `RD=$(readlink -f ${D}); find ${D} -type l 2>/dev/null | while IFS= read -r l; do t=$(readlink -f "$l" 2>/dev/null); case "$t" in "$RD"|"$RD"/*) ;; *) echo BAD ;; esac; done`);
   if ((scan.stdout || '').includes('BAD')) {
     await cleanup();
     throw Object.assign(new Error('Extract blocked: the archive contains a symlink pointing outside the target folder (possible attack)'), { statusCode: 400 });
   }
 
-  if (opts.deleteAfter) await remoteExec.execRemote(server, `rm -f ${A} 2>&1`).catch(() => {});
+  if (opts.deleteAfter) await run(server, `rm -f ${A} 2>&1`).catch(() => {});
   return { path: dest, kind };
 }
 

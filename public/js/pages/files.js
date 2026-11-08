@@ -29,7 +29,7 @@ Router.register('files', async (content) => {
   function header() {
     const sub = ctx.remote
       ? `Browse, edit, upload and download files on <strong>${escapeHtml(ctx.host || ctx.serverId)}</strong> over SSH.`
-      : 'Files on the DockGate machine.';
+      : `Folders of this machine shared with DockGate (under <span class="td-mono">${escapeHtml(ctx.root || '/host')}</span>).`;
     return UI.header('Files', sub);
   }
 
@@ -46,12 +46,16 @@ Router.register('files', async (content) => {
     try { ctx = await API.get('/files/context'); } catch (e) { ctx = { remote: false }; }
     if (!Router.isActiveNav(pageNavId)) return;
 
-    if (!ctx.remote) {
+    if (!ctx.remote && !(ctx.local && ctx.available)) {
+      const root = escapeHtml(ctx.root || '/host');
       content.innerHTML = `${header()}
-        <div class="empty-state" style="padding:50px;text-align:center">
-          <span class="nav-item-icon" style="width:48px;height:48px;opacity:.3;margin:0 auto 12px">${Icons.folder}</span>
-          <h3>No remote server selected</h3>
-          <p>The file manager works on a <strong>remote SSH server</strong>. Switch to one with the server picker in the header (or add one under <strong>Servers</strong>). Local host browsing is not enabled.</p>
+        <div class="card" style="padding:18px 20px;display:grid;gap:10px;max-width:760px">
+          <div style="font-weight:700">No folder of this machine is shared with DockGate yet</div>
+          <div class="text-sm text-muted">DockGate runs as root in its container, so it does not open the whole machine. Share the folders you want to manage: add a line under <span class="td-mono">volumes:</span> of the DockGate service in its <span class="td-mono">docker-compose.yml</span>, then restart DockGate.</div>
+          <pre class="td-mono" style="margin:0;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;font-size:12.5px">    volumes:
+      - /srv:${root}/srv          # any folder you want to manage here</pre>
+          <div class="text-sm text-muted">The folders then appear here under <span class="td-mono">${root}/…</span>. Remote servers need nothing: switch to one in the header and Files works over SSH.</div>
+          <div><button class="btn btn-secondary btn-sm" data-err-act="servers">Switch server</button></div>
         </div>`;
       return;
     }
