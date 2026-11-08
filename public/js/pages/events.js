@@ -15,6 +15,10 @@ Router.register('events', async (content) => {
           <option value="86400">Last 24 hours</option>
           <option value="0">Live only</option>
         </select>
+        <select class="select" id="event-keep" style="width:auto" aria-label="Events kept on the page">
+          <option value="100">Keep 100</option><option value="500" selected>Keep 500</option><option value="2000">Keep 2000</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" id="event-export" title="Download the events on the page (after the type filter)">${Icons.download} Export CSV</button>
         <button class="btn btn-secondary btn-sm" id="event-pause">${Icons.pause} Pause</button>
         <button class="btn btn-secondary btn-sm" id="event-clear">Clear</button>
       </div>
@@ -87,6 +91,7 @@ Router.register('events', async (content) => {
         .map(([k,v]) => `${k}=${v}`)
         .join(', ');
 
+      tr._event = { time: new Date((event.time || 0) * 1000).toISOString(), type, action, actor: nameStr, details };
       tr.innerHTML = `
         <td class="text-sm text-muted">${time}</td>
         <td class="td-mono">${escapeHtml(type)}</td>
@@ -101,8 +106,9 @@ Router.register('events', async (content) => {
       document.getElementById('events-error').innerHTML = '';
       eventCount++;
       
-      // Keep only last 100 events
-      if (eventCount > 100 && tbody.lastChild) {
+      // Keep only the newest N events (Keep 100 / 500 / 2000)
+      const keep = parseInt(document.getElementById('event-keep')?.value, 10) || 500;
+      while (eventCount > keep && tbody.lastChild) {
         tbody.removeChild(tbody.lastChild);
         eventCount--;
       }
@@ -123,6 +129,21 @@ Router.register('events', async (content) => {
       socket.off('events:error', onEventError);
       window._activeResub = null;
       socket.emit('events:unsubscribe');
+    });
+
+    document.getElementById('event-export').addEventListener('click', () => {
+      const rows = [...tbody.querySelectorAll('tr')].filter(tr => !tr.hidden && tr._event).map(tr => tr._event).reverse();
+      if (!rows.length) { showToast('No events on the page to export', 'warning'); return; }
+      const q = (v) => { const x = String(v == null ? '' : v); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
+      const csv = ['time,type,action,actor,details', ...rows.map(r => [r.time, r.type, r.action, r.actor, r.details].map(q).join(','))].join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      a.download = `dockgate-events-${new Date().toISOString().slice(0, 16).replace(':', '')}.csv`;
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    });
+    document.getElementById('event-keep').addEventListener('change', (e) => {
+      const keep = parseInt(e.target.value, 10);
+      while (eventCount > keep && tbody.lastChild) { tbody.removeChild(tbody.lastChild); eventCount--; }
     });
 
     pauseBtn.addEventListener('click', () => {

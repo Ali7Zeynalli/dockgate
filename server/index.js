@@ -441,13 +441,17 @@ io.on('connection', (socket) => {
 
   // Container log streaming
   let logStream = null;
-  socket.on('logs:subscribe', async ({ containerId, tail = 100, timestamps = false }) => {
+  // since / until: unix seconds (Observe → Logs time range). With a range the whole range is sent
+  // (Docker applies tail to it too, capped at 20 000 lines); with an end time there is nothing to follow.
+  socket.on('logs:subscribe', async ({ containerId, tail = 100, timestamps = false, since, until }) => {
     if (logStream) { try { logStream.destroy(); } catch(e){} logStream = null; }
     try {
       const container = dockerService.docker.getContainer(containerId);
-      logStream = await container.logs({
-        stdout: true, stderr: true, tail, follow: true, timestamps
-      });
+      const opts = { stdout: true, stderr: true, tail, follow: true, timestamps };
+      const sec = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : null);
+      if (sec(since)) { opts.since = sec(since); opts.tail = 20000; }
+      if (sec(until)) { opts.until = sec(until); opts.follow = false; }
+      logStream = await container.logs(opts);
       logStream.on('data', (chunk) => {
         const text = dockerService.demuxLogs(chunk);
         socket.emit('logs:data', { containerId, data: text });

@@ -518,9 +518,12 @@ router.put('/:id/alerts/:type', (req, res) => {
 // GET /api/servers/:id/host/stats — one live snapshot: CPU/RAM/swap/disk/net/load/uptime/top procs/open ports.
 router.get('/:id/host/stats', async (req, res) => {
   try {
+    // The machine DockGate runs on is read directly (Dashboard / Monitoring of "Local"); its samples are
+    // stored by the 15 s local sampler in index.js, so nothing is stored here for it.
+    if (req.params.id === 'local') return res.json(await hostStats.collectLocalStats());
     const server = stmts.getServer.get(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
-    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Host stats target a remote SSH server' });
+    if (server.type === 'local') return res.status(400).json({ error: 'Host stats target a remote SSH server' });
     const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
     const s = await hostStats.collectHostStats(cfg);
     // Opportunistic time-series sample (best-effort; a DB hiccup must not fail the live view).
@@ -548,7 +551,7 @@ router.get('/:id/docker/summary', async (req, res) => {
 // GET /api/servers/:id/host/metrics?limit= — stored time-series samples (chronological) for trend charts.
 router.get('/:id/host/metrics', (req, res) => {
   try {
-    if (!stmts.getServer.get(req.params.id)) return res.status(404).json({ error: 'Server not found' });
+    if (req.params.id !== 'local' && !stmts.getServer.get(req.params.id)) return res.status(404).json({ error: 'Server not found' });
     const limit = Math.min(2000, Math.max(10, parseInt(req.query.limit, 10) || 240));
     res.json({ serverId: req.params.id, metrics: stmts.getHostMetrics.all(req.params.id, limit).reverse() });
   } catch (err) { res.status(500).json({ error: err.message }); }

@@ -79,8 +79,25 @@ Router.register('logs', async (content, params = {}) => {
           <button class="btn btn-secondary btn-sm" id="stream-download-btn" disabled style="padding:4px 10px;" title="Download raw logs">${Icons.download} Export</button>
 
           <div style="display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap;">
-            <!-- Lines selector -->
+            <!-- Time range (Docker --since / --until); "Latest lines" keeps the tail behaviour -->
             <div style="display:flex;align-items:center;gap:4px;">
+              <span style="font-size:11px;color:var(--text-muted);">Range:</span>
+              <select class="select" id="stream-range" style="padding:2px 6px;font-size:11px;" aria-label="Time range">
+                <option value="">Latest lines</option>
+                <option value="900">Last 15 min</option>
+                <option value="3600">Last 1 hour</option>
+                <option value="86400">Last 24 hours</option>
+                <option value="604800">Last 7 days</option>
+                <option value="custom">Custom…</option>
+              </select>
+              <span id="stream-custom" style="display:none;gap:4px;align-items:center">
+                <input class="input" type="datetime-local" id="stream-from" style="padding:2px 6px;font-size:11px" aria-label="From">
+                <span style="font-size:11px;color:var(--text-muted)">to</span>
+                <input class="input" type="datetime-local" id="stream-to" style="padding:2px 6px;font-size:11px" aria-label="To (empty = now, keep following)">
+              </span>
+            </div>
+            <!-- Lines selector -->
+            <div style="display:flex;align-items:center;gap:4px;" id="stream-tail-box">
               <span style="font-size:11px;color:var(--text-muted);">Tail:</span>
               <select class="select" id="stream-tail" style="padding:2px 6px;font-size:11px;">
                 <option value="100">100</option>
@@ -129,6 +146,12 @@ Router.register('logs', async (content, params = {}) => {
     const downloadBtn = viewRoot.querySelector('#stream-download-btn');
     const tailSelect = viewRoot.querySelector('#stream-tail');
     const tsCheckbox = viewRoot.querySelector('#stream-timestamps');
+    const rangeSel = viewRoot.querySelector('#stream-range');
+    rangeSel.addEventListener('change', () => {
+      viewRoot.querySelector('#stream-custom').style.display = rangeSel.value === 'custom' ? 'inline-flex' : 'none';
+      viewRoot.querySelector('#stream-tail-box').style.display = rangeSel.value ? 'none' : 'flex'; // a range replaces "Tail"
+      if (rangeSel.value !== 'custom' && connectBtn.textContent === 'Disconnect') { clearBtn.click(); subscribe(); } // apply at once while streaming
+    });
     const autoScrollCb = viewRoot.querySelector('#stream-autoscroll');
     const searchInput = viewRoot.querySelector('#stream-search');
     const logContent = viewRoot.querySelector('#stream-content');
@@ -225,7 +248,16 @@ Router.register('logs', async (content, params = {}) => {
       if (!activeCid) return;
       const tail = parseInt(tailSelect.value, 10) || 200;
       const timestamps = tsCheckbox.checked;
-      socket.emit('logs:subscribe', { containerId: activeCid, tail, timestamps });
+      const rv = rangeSel.value;
+      let since, until;
+      if (rv === 'custom') {
+        const f = viewRoot.querySelector('#stream-from').value, t = viewRoot.querySelector('#stream-to').value;
+        if (!f) { showToast('Choose where the range starts', 'warning'); return; }
+        since = Math.floor(new Date(f).getTime() / 1000);
+        if (t) until = Math.floor(new Date(t).getTime() / 1000);
+        if (until && until <= since) { showToast('The end of the range is before its start', 'warning'); return; }
+      } else if (rv) since = Math.floor(Date.now() / 1000) - Number(rv);
+      socket.emit('logs:subscribe', { containerId: activeCid, tail, timestamps, since, until });
       statusEl.textContent = `Streaming from ${activeCid.substring(0, 12)}…`;
       connectBtn.textContent = 'Disconnect';
       connectBtn.className = 'btn btn-danger btn-sm';
