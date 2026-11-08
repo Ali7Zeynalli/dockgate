@@ -1492,7 +1492,7 @@ tbody td {
 .tpl-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* A page's own header sits right under the top bar: no extra top margin on the first one. */
 .content > .ui-ph:first-child, #sec-content > .ui-ph:first-child, #sec-content > :first-child > .ui-ph:first-child,
-#infra-tab-content > .ui-ph:first-child, #infra-tab-content > .ui-page > .ui-ph:first-child, #tab-content > .ui-ph:first-child, #settings-tab-content > .ui-ph:first-child, #backup-box > .ui-ph:first-child { margin-top: 0; }
+#infra-tab-content > .ui-ph:first-child, #infra-tab-content > .ui-page > .ui-ph:first-child, #tab-content > .ui-ph:first-child, #settings-tab-content > .ui-ph:first-child { margin-top: 0; }
 .tpl-card .tpl-desc { flex: none; }
 .tpl-card .tpl-cats { margin-top: auto; }
 .tpl-card .text-xs { overflow-wrap: anywhere; }

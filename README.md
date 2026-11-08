@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.15.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.15.1-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.15.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.15.1-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -131,7 +131,7 @@ sudo systemctl restart docker
 | <img src="screenshots/14-audit.png" width="100%" alt="Audit"> | <img src="screenshots/15-infrastructure.png" width="100%" alt="Infrastructure"> |
 | **Server Console** — host services & host logs | **Notifications** — channels, rules, Edge Notifier |
 | <img src="screenshots/16-server-console.png" width="100%" alt="Server Console"> | <img src="screenshots/18-settings-notifications.png" width="100%" alt="Notifications"> |
-| **Security** — change the admin password | **System** — DockGate **backup & restore** (encrypted file, nightly copies) · Docker engine & host info |
+| **Security** — change the admin password | **System** — Docker engine & host info |
 | <img src="screenshots/22-settings-security.png" width="100%" alt="Security"> | <img src="screenshots/21-settings-system.png" width="100%" alt="System"> |
 
 ---
