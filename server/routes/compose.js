@@ -313,6 +313,32 @@ function startComposeActionJob(req, res, action, label) {
 }
 
 router.post('/:project/up', (req, res) => startComposeActionJob(req, res, ['up', '-d'], 'up'));
+// Newer image for one service: pull it, then recreate only that service. Recorded in the deploy history.
+router.post('/:project/update-service', (req, res) => {
+  const svc = String((req.body || {}).service || '');
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(svc)) return res.status(400).json({ error: 'Invalid service name' });
+  if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+  gcDeployJobs();
+  const project = req.params.project;
+  const job = { id: crypto.randomBytes(8).toString('hex'), project, kind: 'image update', status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
+  job.steps = [{ id: 'pull', label: `Pull the newer image for ${svc}`, status: 'pending' }, { id: 'up', label: `Recreate ${svc}`, status: 'pending' }];
+  deployJobs.set(job.id, job);
+  (async () => {
+    const stream = (c) => jobStream(job, c);
+    try {
+      setStep(job, 'pull', 'running'); jobLog(job, `$ docker compose pull ${svc}`);
+      await execComposeAction(project, ['pull', svc], stream);
+      setStep(job, 'pull', 'done'); setStep(job, 'up', 'running'); jobLog(job, `$ docker compose up -d ${svc}`);
+      await execComposeAction(project, ['up', '-d', svc], stream);
+      setStep(job, 'up', 'done'); job.status = 'done'; job.phase = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
+    } catch (err) {
+      (job.steps || []).forEach(st => { if (st.status === 'running') st.status = 'failed'; });
+      job.status = 'error'; job.phase = 'error'; job.error = (err.stderr || err.message || 'update failed').toString(); jobLog(job, '✗ ' + job.error); job.finishedAt = Date.now();
+    }
+  })();
+  logAction({ req, server: dockerService.getActiveServerId(), resourceId: project, resourceType: 'compose', resourceName: project, action: 'update_service', details: { service: svc } });
+  res.json({ jobId: job.id, project });
+});
 router.post('/:project/down', (req, res) => runComposeAction(req, res, ['down'], 'down'));
 router.post('/:project/restart', (req, res) => runComposeAction(req, res, ['restart'], 'restart'));
 router.post('/:project/pull', (req, res) => startComposeActionJob(req, res, ['pull'], 'pull'));

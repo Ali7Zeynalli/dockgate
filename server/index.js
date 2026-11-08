@@ -620,6 +620,31 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   monitorManager.startAll();
   // Server health: reachability, disk, memory and CPU alerts for every server, checked once a minute.
   if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
+  // Newer-image check for every server: 10 minutes after start, then once a day. New updates are announced
+  // once per new digest when the "Newer image available" rule is on (off by default).
+  if (process.env.NODE_ENV !== 'test') {
+    const runImageChecks = async () => {
+      const IU = require('./image-updates'), HM = require('./notifications/health-monitor');
+      const servers = [{ id: 'local', type: 'local' }, ...stmts.getServers.all().filter(x => x.id !== 'local' && x.type !== 'local')];
+      for (const srv of servers) {
+        try {
+          const client = srv.id === 'local' ? dockerService.createLocalClient() : dockerService.createSshClient(srv);
+          await IU.checkServer(srv.id, client);
+          const fresh = IU.unannounced(srv.id);
+          if (fresh.length) {
+            const name = HM.serverLabel(srv);
+            const list = fresh.map(r => r.image).join(', ');
+            const sent = await HM.deliver('image_update', srv, `${name}: newer image${fresh.length > 1 ? 's' : ''} available`,
+              `🔵 ${name}: newer image${fresh.length > 1 ? 's' : ''} available\n${list}\nUpdate them from Resources → Containers.`,
+              `<p>A newer version of the same tag is in the registry for: <b>${list.replace(/</g, '&lt;')}</b> on ${name.replace(/</g, '&lt;')}.</p><p>Update them from DockGate → Resources → Containers.</p>`);
+            if (sent || !stmts.getRule.get('image_update')?.enabled) IU.announce(srv.id, fresh);
+          }
+        } catch (e) { console.warn(`[image-updates] ${srv.id}:`, e.message); }
+      }
+    };
+    setTimeout(runImageChecks, 10 * 60 * 1000);
+    setInterval(runImageChecks, 24 * 60 * 60 * 1000);
+  }
 });
 
 // Close pooled SSH connections on shutdown so DockGate leaves no zombie sessions on remote hosts.

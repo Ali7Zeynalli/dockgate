@@ -15,6 +15,7 @@ function alertWhen(type, p) {
     case 'host_mem': return `above <b>${p.percent ?? 90}%</b> for <b>${p.minutes ?? 5} min</b>`;
     case 'host_cpu': return `above <b>${p.percent ?? 90}%</b> for <b>${p.minutes ?? 10} min</b>`;
     case 'disk_threshold': return `Docker uses more than <b>${p.gb ?? 50} GB</b>`;
+    case 'image_update': return 'the daily check finds a newer image for a container\'s tag';
     default: return 'when Docker reports it';
   }
 }

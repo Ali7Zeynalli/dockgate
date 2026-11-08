@@ -74,19 +74,28 @@ function message(type, s, data) {
 }
 
 async function send(type, s, data) {
+  const [subject, text, body] = message(type, s, data);
+  return deliver(type, s, subject, text, body, { always: ['server_down', 'server_up'].includes(type) });
+}
+
+/**
+ * Send one alert to every set-up channel (email, Telegram, webhook), respecting the server's mute and the
+ * rule's switch and quiet period. text: Telegram text (first line = title); body: email HTML.
+ */
+async function deliver(type, s, subject, text, body, { always = false } = {}) {
   if (!notificationsOn(s.id)) return false;
   const rule = stmts.getRule.get(type);
+  if (rule && !rule.enabled) return false;
   const key = `${s.id}:${type}`;
   const cd = rule && rule.cooldown_minutes != null ? Number(rule.cooldown_minutes) : 5;
-  // Down / up are state changes and always go out; the quiet period applies to repeating resource alerts.
-  if (!['server_down', 'server_up'].includes(type) && cd > 0 && lastSent.has(key) && Date.now() - lastSent.get(key) < cd * 60000) return false;
-  const [subject, text, body] = message(type, s, data);
+  // Down / up are state changes and always go out; the quiet period applies to repeating alerts.
+  if (!always && cd > 0 && lastSent.has(key) && Date.now() - lastSent.get(key) < cd * 60000) return false;
   let sent = false;
   try {
     if (mailer.isConfigured()) { const r = await mailer.sendEmail({ subject: `DockGate: ${subject}`, html: `<div style="font-family:system-ui,sans-serif;font-size:14px">${body}<p style="color:#888;font-size:12px">Sent by DockGate · rule "${esc(rule ? rule.description : type)}"</p></div>`, eventType: type }); if (r && r.success) sent = true; }
     if (telegram.isConfigured()) { const r = await telegram.sendMessage({ text, eventType: type }); if (r && r.success) sent = true; }
     if (webhook.isConfigured()) { const r = await webhook.sendMessage({ title: subject, text: text.split('\n').slice(1).join('\n'), eventType: type, server: s.id }); if (r && r.success) sent = true; }
-  } catch (e) { console.warn('[health] send failed:', e.message); }
+  } catch (e) { console.warn('[alerts] send failed:', e.message); }
   if (sent) lastSent.set(key, Date.now());
   return sent;
 }
@@ -157,4 +166,4 @@ function statusOf(serverId) {
 }
 function forget(serverId) { state.delete(serverId); for (const k of [...lastSent.keys()]) if (k.startsWith(serverId + ':')) lastSent.delete(k); }
 
-module.exports = { start, stop, tick, statusOf, forget, message, _state: state };
+module.exports = { start, stop, tick, statusOf, forget, message, deliver, serverLabel, _state: state };

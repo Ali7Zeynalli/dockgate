@@ -269,6 +269,7 @@ const defaultRules = [
   ['container_unhealthy', 'Container health check failing', 10],
   ['disk_threshold', 'Disk usage exceeds threshold', 30],
   ['build_failed', 'Image build failed', 5],
+  ['image_update', 'Newer image available', 1440],
   ['container_start', 'Container started', 5],
   ['container_pause', 'Container paused', 5],
   ['container_unpause', 'Container unpaused', 5],
@@ -313,6 +314,15 @@ const healthRules = [
 ];
 const insertHealthRule = db.prepare('INSERT OR IGNORE INTO notification_rules (event_type, description, cooldown_minutes, enabled, params) VALUES (?, ?, ?, ?, ?)');
 healthRules.forEach(([t, d, cd, en, pr]) => insertHealthRule.run(t, d, cd, en, JSON.stringify(pr)));
+// "Newer image available" is opt-in: it was just inserted by defaultRules (enabled = 1) on databases that
+// did not have it yet — turn it off once, then leave it to the user.
+try {
+  const seen = db.prepare("SELECT value FROM settings WHERE key = 'image_update_rule_init'").get();
+  if (!seen) {
+    db.prepare("UPDATE notification_rules SET enabled = 0 WHERE event_type = 'image_update'").run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('image_update_rule_init', '1')").run();
+  }
+} catch (e) { /* best effort */ }
 // The old "Disk usage exceeds threshold" rule measures how much space Docker uses (GB), not how full the
 // disk is — name it for what it does and store its limit (was a fixed 50 GB in code).
 try {
