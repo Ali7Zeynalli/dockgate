@@ -149,26 +149,8 @@ function syncSidebarTabs() {
   });
 }
 
-// Global Search
-function initGlobalSearch() {
-  const input = document.getElementById('search-input');
-  if (!input) return;
-  
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && input.value.trim() !== '') {
-      Router.navigate('resources',{tab:'containers'});
-      setTimeout(() => {
-        const pageSearch = document.getElementById('container-search');
-        if (pageSearch) {
-          pageSearch.value = input.value;
-          pageSearch.dispatchEvent(new Event('input'));
-        }
-        input.value = '';
-        input.blur();
-      }, 100);
-    }
-  });
-}
+// Global search lives in command-palette.js (⌘K / Ctrl+K and the header search box).
+function initGlobalSearch() {}
 
 // Apply theme to document / Temanı sənədə tətbiq et
 function applyTheme(theme) {

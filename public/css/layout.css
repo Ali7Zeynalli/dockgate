@@ -311,7 +311,7 @@
   .mac-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .mac-header-left .header-title { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mac-header-right { gap: 8px; min-width: 0; }
-  .header-search, .connection-status #connection-text, .btn-quick-term span, .btn-quick-term .shortcut-kbd, #server-switcher > span:first-child { display: none; }
+  .connection-status #connection-text, .btn-quick-term span, .btn-quick-term .shortcut-kbd, #server-switcher > span:first-child { display: none; }
   #server-select { min-width: 0 !important; max-width: 140px !important; }
   .content { padding: 12px 4px; }
   .page-header { flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
@@ -337,3 +337,8 @@
 @media (max-width: 1200px) { .header-search { width: 150px; } }
 .header-search input { min-width: 0; width: 100%; }
 .header-search { min-width: 0; flex-shrink: 1; }
+/* Phones: the search box shrinks to its icon; tapping it opens the ⌘K search window. */
+@media (max-width: 900px) {
+  .header-search { width: auto; padding: 7px 9px; cursor: pointer; }
+  .header-search input { display: none; }
+}
