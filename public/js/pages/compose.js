@@ -91,6 +91,7 @@ Router.register('compose', async (content) => {
                       : `<button class="btn btn-xs btn-secondary" data-action="up" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.play} Up</button>`}
                     ${UI.menu([
                       { label: `${Icons.eye} Services and details`, attrs: `data-detail="${escapeHtml(p.name)}"` },
+                      { label: `${Icons.refresh} Deploy history…`, attrs: `data-history="${escapeHtml(p.name)}"` },
                       { label: `${Icons.settings} Edit YAML`, attrs: `data-edit="${escapeHtml(p.name)}" ${dis}` },
                       { label: `${Icons.folder || Icons.compose} Files (Dockerfile, .env…)`, attrs: `data-files="${escapeHtml(p.name)}"` },
                       { label: `${Icons.terminal} Terminal in this folder`, attrs: `data-term="${escapeHtml(p.name)}" data-cwd="${escapeHtml(p.workingDir || '')}"` },
@@ -394,6 +395,8 @@ Router.register('compose', async (content) => {
           }
         });
       });
+
+      content.querySelectorAll('[data-history]').forEach(btn => btn.addEventListener('click', () => openDeployHistory(btn.dataset.history)));
 
       content.querySelectorAll('[data-detail]').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -1633,6 +1636,52 @@ Router.register('compose', async (content) => {
 
   // Re-openable live log for a deploy job — per-step status + a real terminal (xterm) so docker's
   // \r progress bars and ANSI colors render correctly. Poll until done; closing just stops polling.
+  // Deploy history: every deploy of the stack with the compose files it used. "Changes" compares a deploy with
+  // the one before it; "Redeploy this" puts its files back and runs `up -d` (volumes untouched).
+  async function openDeployHistory(project) {
+    let rows = [];
+    try { rows = (await API.get(`/compose/${encodeURIComponent(project)}/deploys`)).deploys || []; }
+    catch (e) { showToast(e.message, 'error'); return; }
+    const when = (ms) => (ms ? formatTime(new Date(ms).toISOString()) : '—'); // stored in milliseconds
+    const kindLabel = { editor: 'editor', redeploy: 'earlier version', up: 'Up', rebuild: 'rebuild', deploy: 'deploy' };
+    const srcText = (d) => d.source === 'git' ? `git${d.git_commit ? ` <span class="td-mono">${escapeHtml(d.git_commit.slice(0, 7))}</span>` : ''}` : escapeHtml(d.source || '');
+    const withFiles = rows.filter(d => d.has_files);
+    const current = withFiles[0];
+    const body = rows.length ? UI.table([{ label: 'When' }, { label: 'How' }, { label: 'Result' }, { label: '', align: 'right' }], rows.map((d, i) => {
+      const prev = withFiles.find(x => x.id < d.id);
+      const same = current && d.files_hash && d.files_hash === current.files_hash;
+      return { cells: [
+        `${when(d.finished_at || d.started_at)}${d.id === (current && current.id) ? '<div class="ui-sub">files in use now</div>' : ''}`,
+        `${escapeHtml(kindLabel[d.kind] || d.kind || 'deploy')} · ${srcText(d)}`,
+        d.status === 'done' ? UI.pill('ok', 'deployed') : `${UI.pill('bad', 'failed')}${d.error ? `<div class="ui-sub" title="${escapeHtml(d.error)}">${escapeHtml(d.error.slice(0, 80))}</div>` : ''}`,
+        `${d.has_files && prev ? UI.btn('Changes', `data-hdiff="${d.id}" data-hprev="${prev.id}"`) : ''} ${d.has_files && !same ? UI.btn('Redeploy this…', `data-hredeploy="${d.id}"`) : ''}`,
+      ] };
+    }), { minWidth: 0 }) : '<p class="text-sm text-muted">No deploys recorded yet. From now on every deploy of this stack is listed here with the compose files it used.</p>';
+    const m = showModal(`Deploys of ${project}`, `<p class="text-sm text-muted" style="margin:0 0 10px">The last 20 deploys on this server. Redeploying an older one restores its compose files and runs <span class="td-mono">up -d</span>; volumes are not touched.</p>${body}`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    m.overlay.querySelectorAll('[data-hdiff]').forEach(b => b.addEventListener('click', async () => {
+      try {
+        const [a, c] = await Promise.all([API.get(`/compose/${encodeURIComponent(project)}/deploys/${b.dataset.hprev}`), API.get(`/compose/${encodeURIComponent(project)}/deploys/${b.dataset.hdiff}`)]);
+        const names = [...new Set([...Object.keys(a.files || {}), ...Object.keys(c.files || {})])];
+        const html = names.map(n => `<div class="ui-sub td-mono" style="margin:8px 0 4px">${escapeHtml(n)}</div>${lineDiffHtml((a.files || {})[n] || '', (c.files || {})[n] || '')}`).join('');
+        showModal('Changes in this deploy', `<p class="text-sm text-muted" style="margin:0 0 6px">Compared with the deploy before it (${escapeHtml(when(a.finished_at))}).</p>${html || '<p class="text-sm">No file changes.</p>'}`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+      } catch (e) { showToast(e.message, 'error'); }
+    }));
+    m.overlay.querySelectorAll('[data-hredeploy]').forEach(b => b.addEventListener('click', () => {
+      const d = rows.find(x => String(x.id) === b.dataset.hredeploy);
+      secConfirm({
+        title: `Redeploy ${project} as of ${when(d.finished_at)}`,
+        change: `The compose files saved at that deploy${d.git_commit ? ` (git ${escapeHtml(d.git_commit.slice(0, 7))})` : ''} replace the current ones, then <span class="td-mono">docker compose up -d</span> recreates what changed.`,
+        protects: 'Volumes and their data stay. The current files are in this history too, so you can come back to them.' + (d.source === 'git' ? ' For a Git stack the next sync deploys the latest commit again.' : ''),
+        confirmLabel: 'Redeploy',
+        onConfirm: async () => {
+          try { const r = await API.post(`/compose/${encodeURIComponent(project)}/deploys/${d.id}/redeploy`, {}); m.close(); if (r.jobId) openDeployLog(r.jobId, project); }
+          catch (e) { showToast(e.message, 'error', 8000); }
+        },
+      });
+    }));
+  }
+
   function openDeployLog(jobId, project) {
     const modalRoot = document.getElementById('modal-root');
     const m = showModal(`Deploy — ${escapeHtml(project)}`, `

@@ -278,6 +278,23 @@ defaultRules.forEach(([type, desc, cd]) => insertRule.run(type, desc, cd));
 
 // Rule limits (JSON) and server-health rules. The health monitor (notifications/health-monitor.js) checks
 // every server once a minute; a server can use its own limits or turn a rule off (alert_overrides).
+// Compose deploy history: every deploy of a stack with the compose files it used (last 20 per stack).
+migrate(`CREATE TABLE IF NOT EXISTS compose_deploys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project TEXT NOT NULL,
+  server_id TEXT,
+  kind TEXT,
+  source TEXT,
+  git_commit TEXT,
+  status TEXT,
+  error TEXT,
+  files TEXT,
+  files_hash TEXT,
+  source_ip TEXT,
+  started_at INTEGER,
+  finished_at INTEGER
+)`);
+migrate('CREATE INDEX IF NOT EXISTS idx_compose_deploys_project ON compose_deploys (project, id)');
 migrate('ALTER TABLE notification_rules ADD COLUMN params TEXT');
 migrate(`CREATE TABLE IF NOT EXISTS alert_overrides (
   server_id TEXT NOT NULL,
@@ -404,6 +421,10 @@ const stmts = {
   setRuleEnabled: db.prepare('UPDATE notification_rules SET enabled = ? WHERE event_type = ?'),
   setRuleCooldown: db.prepare('UPDATE notification_rules SET cooldown_minutes = ? WHERE event_type = ?'),
   setRuleParams: db.prepare('UPDATE notification_rules SET params = ? WHERE event_type = ?'),
+  insertComposeDeploy: db.prepare('INSERT INTO compose_deploys (project, server_id, kind, source, git_commit, status, error, files, files_hash, source_ip, started_at, finished_at) VALUES (@project, @server_id, @kind, @source, @git_commit, @status, @error, @files, @files_hash, @source_ip, @started_at, @finished_at)'),
+  getComposeDeploys: db.prepare('SELECT id, project, server_id, kind, source, git_commit, status, error, files_hash, source_ip, started_at, finished_at, files IS NOT NULL AS has_files FROM compose_deploys WHERE project = ? AND (server_id = ? OR server_id IS NULL) ORDER BY id DESC LIMIT ?'),
+  getComposeDeploy: db.prepare('SELECT * FROM compose_deploys WHERE id = ? AND project = ?'),
+  trimComposeDeploys: db.prepare('DELETE FROM compose_deploys WHERE project = ? AND server_id IS ? AND id NOT IN (SELECT id FROM compose_deploys WHERE project = ? AND server_id IS ? ORDER BY id DESC LIMIT 20)'),
   getAlertOverrides: db.prepare('SELECT * FROM alert_overrides WHERE server_id = ?'),
   getAlertOverride: db.prepare('SELECT * FROM alert_overrides WHERE server_id = ? AND event_type = ?'),
   setAlertOverride: db.prepare('INSERT INTO alert_overrides (server_id, event_type, mode, params) VALUES (?, ?, ?, ?) ON CONFLICT(server_id, event_type) DO UPDATE SET mode = excluded.mode, params = excluded.params'),

@@ -174,3 +174,24 @@ function mdInline(text) {
     .replace(/\[([^\]]+)\]\((https:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
     .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:…!?]|$)/g, '$1<i>$2</i>');
 }
+
+/** Line diff of two texts as HTML (removed lines red, added green, a few unchanged lines of context). */
+function lineDiffHtml(oldText, newText, context = 2) {
+  const a = String(oldText).split('\n'), b = String(newText).split('\n');
+  if (a.length * b.length > 4e6) return '<div class="text-sm text-muted">The files are too large to compare here.</div>';
+  // Longest common subsequence table, then walk it to get keep / del / add operations.
+  const n = a.length, m = b.length, L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const ops = []; let i = 0, j = 0;
+  while (i < n && j < m) { if (a[i] === b[j]) { ops.push([' ', a[i]]); i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) ops.push(['-', a[i++]]); else ops.push(['+', b[j++]]); }
+  while (i < n) ops.push(['-', a[i++]]); while (j < m) ops.push(['+', b[j++]]);
+  if (!ops.some(o => o[0] !== ' ')) return '<div class="text-sm text-muted">No changes.</div>';
+  const show = ops.map((o, k) => o[0] !== ' ' || ops.slice(Math.max(0, k - context), k + context + 1).some(x => x[0] !== ' '));
+  let html = '', gap = false;
+  ops.forEach((o, k) => {
+    if (!show[k]) { if (!gap) { html += '<div class="ui-diff-gap">⋯</div>'; gap = true; } return; }
+    gap = false;
+    html += `<div class="ui-diff-${o[0] === '+' ? 'add' : o[0] === '-' ? 'del' : 'ctx'}">${o[0]} ${escapeHtml(o[1])}</div>`;
+  });
+  return `<div class="ui-diff">${html}</div>`;
+}

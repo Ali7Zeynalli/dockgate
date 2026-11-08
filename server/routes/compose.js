@@ -483,6 +483,7 @@ router.post('/create', async (req, res) => {
     catch (e) { return res.status(400).json({ error: 'Invalid compose file: ' + (e.stderr || e.message) }); }
     let output = '';
     if (up) output = await runCompose(project, ['up', '-d'], dir);
+    if (up) recordDeploy({ project, kind: 'editor', status: 'done', sourceIp: req.ip, startedAt: Date.now() });
     logAction({ req, resourceId: project, resourceType: 'compose', resourceName: project, action: 'create', details: { up } });
     res.json({ success: true, output });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
@@ -526,6 +527,7 @@ router.put('/:project/file', async (req, res) => {
       catch (e) { return res.status(400).json({ error: 'Invalid compose file: ' + (e.message || e) }); }
       let output = '';
       if (up) output = await remoteCompose.runComposeInRemoteDir(rc.server, rc.remotePath, req.params.project, ['-f', name, 'up', '-d']);
+      if (up) recordDeploy({ project: req.params.project, kind: 'editor', status: 'done', sourceIp: req.ip, startedAt: Date.now() });
       logAction({ req, server: dockerService.getActiveServerId(), resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'edit', details: { up, remote: true } });
       return res.json({ success: true, output });
     }
@@ -537,6 +539,7 @@ router.put('/:project/file', async (req, res) => {
     catch (e) { return res.status(400).json({ error: 'Invalid compose file: ' + (e.stderr || e.message) }); }
     let output = '';
     if (up) output = await runCompose(req.params.project, ['up', '-d'], dir);
+    if (up) recordDeploy({ project: req.params.project, kind: 'editor', status: 'done', sourceIp: req.ip, startedAt: Date.now() });
     logAction({ req, resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'edit', details: { up } });
     res.json({ success: true, output });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
@@ -613,6 +616,62 @@ function gcDeployJobs() {
   for (const [id, j] of deployJobs) { if (j.finishedAt && now - j.finishedAt > DEPLOY_JOB_TTL_MS) deployJobs.delete(id); }
 }
 function jobLog(job, line) { job.log += line + '\n'; }
+
+// ---- Deploy history ----
+// Every finished deploy of a stack is recorded with the compose files (and .env) it used, so a stack can be
+// compared with and brought back to an earlier version. Jobs are picked up from deployJobs when they
+// finish (all deploy paths: folder, Git, sync, Up, Rebuild); the editor's synchronous deploys call
+// recordDeploy directly. pull/build-only jobs change nothing that runs, so they are not recorded.
+const HISTORY_MAX_BYTES = 256 * 1024;
+async function captureComposeFiles(project) {
+  const r = await resolveComposeFiles(project).catch(() => null);
+  if (!r || !r.files || !r.files.length) return null;
+  const names = [...new Set([...r.files.map(f => path.posix.basename(f)), '.env'])];
+  const out = {}; let total = 0;
+  for (const name of names) {
+    let content = null;
+    try {
+      if (r.remote) {
+        const x = await remoteCompose.execRemote(r.server, `cat ${remoteCompose.shq(path.posix.join(r.cwd, name))} 2>/dev/null`);
+        if (x.code === 0) content = x.stdout;
+      } else {
+        const fp = path.join(r.cwd, name);
+        if (fs.existsSync(fp) && fs.statSync(fp).isFile()) content = fs.readFileSync(fp, 'utf8');
+      }
+    } catch (e) { content = null; }
+    if (content == null) continue;
+    total += Buffer.byteLength(content);
+    if (total > HISTORY_MAX_BYTES) return null; // too big to keep — the entry is stored without files
+    out[name] = content;
+  }
+  return Object.keys(out).length ? out : null;
+}
+async function recordDeploy({ project, kind, status, error, sourceIp, startedAt, finishedAt }) {
+  try {
+    if (!validateProjectName(project)) return;
+    const files = status === 'done' ? await captureComposeFiles(project) : null;
+    const git = readGitMeta(project), dm = readDeployMeta(project);
+    const source = git ? 'git' : (dm && dm.source) || kind || 'deploy';
+    const json = files ? JSON.stringify(files) : null;
+    const { stmts } = require('../db');
+    const serverId = dockerService.getActiveServerId() || 'local';
+    stmts.insertComposeDeploy.run({ project, server_id: serverId, kind: kind || 'deploy', source, git_commit: git && git.deployedCommit ? String(git.deployedCommit).slice(0, 40) : null,
+      status, error: error ? String(error).slice(0, 500) : null, files: json, files_hash: json ? crypto.createHash('sha256').update(json).digest('hex').slice(0, 16) : null,
+      source_ip: sourceIp || null, started_at: startedAt || null, finished_at: finishedAt || Date.now() });
+    stmts.trimComposeDeploys.run(project, serverId, project, serverId);
+  } catch (e) { console.warn('[deploy-history]', e.message); }
+}
+const SKIP_HISTORY = /^(pull|build)$/;
+setInterval(() => {
+  for (const job of deployJobs.values()) {
+    if (!job.finishedAt || job._recorded) continue;
+    job._recorded = true;
+    const label = job.kind || ((job.steps || []).length === 1 && job.steps[0].id === 'action' ? job.steps[0].label : 'deploy');
+    if (SKIP_HISTORY.test(label) || !job.project || job.project === 'all-git-projects') continue;
+    recordDeploy({ project: job.project, kind: label, status: job.status === 'done' ? 'done' : 'error', error: job.error, sourceIp: job.sourceIp, startedAt: job.startedAt, finishedAt: job.finishedAt });
+  }
+}, 2000).unref();
+
 // Append streamed command output verbatim (control chars like \r preserved for the terminal viewer).
 function jobStream(job, chunk) { job.log += chunk; }
 // Update one step's status in the job's per-step list (drives the UI status indicators).
@@ -1615,6 +1674,75 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
       diff: { fromSHA, toSHA, changedFiles, commits, affectedStacks, hasBaseline: !!fromSHA, baselineRecorded, upToDate: !!(fromSHA && toSHA && fromSHA === toSHA) }
     });
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.message || 'redeploy prepare failed').toString() }); }
+});
+
+// GET /api/compose/:project/deploys — the stack's deploy history on the active server (newest first).
+router.get('/:project/deploys', (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const { stmts } = require('../db');
+    res.json({ deploys: stmts.getComposeDeploys.all(req.params.project, dockerService.getActiveServerId() || 'local', 20) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+// GET /api/compose/:project/deploys/:id — the compose files that deploy used.
+router.get('/:project/deploys/:id', (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    const row = require('../db').stmts.getComposeDeploy.get(Number(req.params.id), req.params.project);
+    if (!row) return res.status(404).json({ error: 'Deploy not found' });
+    res.json({ ...row, files: row.files ? JSON.parse(row.files) : null });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+// POST /api/compose/:project/deploys/:id/redeploy — put that deploy's compose files back and `up -d`.
+// Volumes are untouched; for a Git stack the next sync deploys the latest commit again.
+router.post('/:project/deploys/:id/redeploy', async (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const row = require('../db').stmts.getComposeDeploy.get(Number(req.params.id), project);
+    if (!row || !row.files) return res.status(404).json({ error: 'This deploy has no saved files' });
+    const files = JSON.parse(row.files);
+    const r = await resolveComposeFiles(project);
+    if (!r.files.length) return res.status(400).json({ error: r.reason || 'Cannot find where this stack lives' });
+    gcDeployJobs();
+    const job = { id: crypto.randomBytes(8).toString('hex'), project, kind: 'redeploy', status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
+    job.steps = [{ id: 'files', label: 'Restore the compose files of that deploy', status: 'pending' }, { id: 'up', label: 'docker compose up -d', status: 'pending' }];
+    deployJobs.set(job.id, job);
+    (async () => {
+      const stream = (c) => jobStream(job, c);
+      const writeFile = async (base, content) => {
+        if (r.remote) {
+          const b64 = Buffer.from(content).toString('base64');
+          const x = await remoteCompose.execRemote(r.server, `printf %s ${remoteCompose.shq(b64)} | base64 -d > ${remoteCompose.shq(path.posix.join(r.cwd, base))}`);
+          if (x.code !== 0) throw new Error(`Writing ${base} on the server failed: ${x.stderr || x.code}`);
+        } else fs.writeFileSync(path.join(r.cwd, base), content);
+      };
+      // The files in use now, put back if the older version does not come up.
+      const before = await captureComposeFiles(project).catch(() => null);
+      try {
+        setStep(job, 'files', 'running');
+        for (const [name, content] of Object.entries(files)) {
+          const base = path.posix.basename(name);
+          if (base !== name || base.startsWith('..')) throw new Error(`Unsafe file name in history: ${name}`);
+          await writeFile(base, content);
+          jobLog(job, `restored ${base}`);
+        }
+        setStep(job, 'files', 'done'); setStep(job, 'up', 'running'); job.phase = 'up';
+        await execComposeAction(project, ['up', '-d', '--remove-orphans'], stream);
+        setStep(job, 'up', 'done'); job.status = 'done'; job.phase = 'done'; jobLog(job, '✓ Done'); job.finishedAt = Date.now();
+      } catch (err) {
+        (job.steps || []).forEach(st => { if (st.status === 'running') st.status = 'failed'; });
+        job.error = (err.stderr || err.message || 'redeploy failed').toString(); jobLog(job, '✗ ' + job.error);
+        if (before) {
+          try { for (const [n, c] of Object.entries(before)) await writeFile(n, c); jobLog(job, 'The previous compose files were put back; run Up to start them again if containers stopped.'); }
+          catch (e2) { jobLog(job, 'Could not put the previous files back: ' + e2.message); }
+        }
+        job.status = 'error'; job.phase = 'error'; job.finishedAt = Date.now();
+      }
+    })();
+    logAction({ req, server: dockerService.getActiveServerId(), resourceId: project, resourceType: 'compose', resourceName: project, action: 'redeploy_version', details: { deployId: row.id, commit: row.git_commit } });
+    res.json({ jobId: job.id, project });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
 // Manual re-deploy → live per-step console.
