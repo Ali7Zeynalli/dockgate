@@ -235,6 +235,50 @@ router.post('/smtp/test', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ============ WEBHOOK ============
+router.get('/webhook', (req, res) => {
+  try {
+    const { url, format } = require('../notifications/webhook').getWebhookSettings();
+    let shown = '';
+    if (url) { try { const u = new URL(url); shown = `${u.host}/…${url.slice(-4)}`; } catch (e) { shown = '••••' + url.slice(-4); } }
+    res.json({ configured: !!url, url: shown, format });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/webhook', (req, res) => {
+  try {
+    const W = require('../notifications/webhook');
+    const { encrypt } = require('../auth/secrets');
+    const { url, format } = req.body || {};
+    if (format !== undefined) {
+      if (!W.FORMATS.includes(format)) return res.status(400).json({ error: `format must be one of ${W.FORMATS.join(', ')}` });
+      stmts.setSmtpConfig.run('wh_format', format);
+    }
+    if (url) {
+      if (!W.validUrl(url)) return res.status(400).json({ error: 'Enter a full http:// or https:// URL' });
+      stmts.setSmtpConfig.run('wh_url', encrypt(String(url).trim()));
+    }
+    logAction({ req, server: 'local', resourceType: 'notification', resourceName: 'Webhook', action: 'webhook_update', details: { format } });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/webhook', (req, res) => {
+  try {
+    require('../db').db.prepare("DELETE FROM smtp_config WHERE key IN ('wh_url', 'wh_format')").run();
+    logAction({ req, server: 'local', resourceType: 'notification', resourceName: 'Webhook', action: 'webhook_clear' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/webhook/test', async (req, res) => {
+  try {
+    const result = await require('../notifications/webhook').sendTestMessage();
+    logAction({ req, server: 'local', resourceType: 'system', resourceName: 'webhook', action: 'webhook-test', details: { result: result.success ? 'success' : 'failed' } });
+    if (result.success) res.json({ success: true }); else res.status(400).json({ error: result.error });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ============ TELEGRAM ============
 router.get('/telegram', (req, res) => {
   try {

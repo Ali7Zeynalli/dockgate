@@ -137,12 +137,15 @@ Router.register('settings', async (content, params) => {
         tabContent.innerHTML = '<div class="text-muted text-sm">Loading notification settings...</div>';
 
         try {
-          const [smtpConfig, tgConfig, rules, hostNotifs] = await Promise.all([
+          const [smtpConfig, tgConfig, rules, hostNotifs, whConfig] = await Promise.all([
             API.get('/meta/smtp'),
             API.get('/meta/telegram'),
             API.get('/meta/notifications/rules'),
             API.get('/meta/notifications/hosts').catch(() => ({ local: { enabled: true }, servers: [] })),
+            API.get('/meta/webhook').catch(() => ({ configured: false, format: 'json' })),
           ]);
+          const WH_FORMATS = [['slack', 'Slack'], ['discord', 'Discord'], ['teams', 'Microsoft Teams'], ['ntfy', 'ntfy'], ['json', 'JSON (your own system)']];
+          const whLabel = (WH_FORMATS.find(f => f[0] === whConfig.format) || [, 'JSON'])[1];
 
 
           const emailConfigured = !!(smtpConfig.smtp_host);
@@ -233,6 +236,11 @@ Router.register('settings', async (content, params) => {
                   <button class="btn btn-ghost btn-sm" id="clear-telegram" style="margin-left:auto;">Clear</button>
                 </div>
               </div>
+
+              <!-- Webhook: Slack, Discord, Teams, ntfy or JSON -->
+              ${UI.settings([{ label: 'Webhook', desc: 'Sends every alert to one URL: Slack, Discord, Microsoft Teams, ntfy, or JSON for your own system.',
+                value: whConfig.configured ? `${UI.pill('ok', 'on')} <span class="ui-sub">${escapeHtml(whLabel)} · <span class="td-mono">${escapeHtml(whConfig.url)}</span></span>` : UI.pill('off', 'not set up'),
+                action: `${whConfig.configured ? UI.btn('Send test', 'id="test-webhook"') + ' ' : ''}${UI.btn(whConfig.configured ? 'Edit' : 'Set up…', 'id="edit-webhook"')}${whConfig.configured ? ' ' + UI.btn('Remove…', 'id="clear-webhook"') : ''}` }])}
             </div>
 
             <!-- Monitored Hosts / Server Muting -->
@@ -380,6 +388,29 @@ Router.register('settings', async (content, params) => {
 
           // Save Rules
           renderAlertRules(document.getElementById('alert-rules-box'));
+
+          document.getElementById('edit-webhook')?.addEventListener('click', () => UI.dialog({
+            title: 'Webhook channel', context: false,
+            body: `<div class="ui-field"><label for="wh-format">Format</label><select class="select" id="wh-format">${WH_FORMATS.map(([v, l]) => `<option value="${v}" ${v === whConfig.format ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+              <div class="ui-field"><label for="wh-url">URL</label><input class="input" id="wh-url" placeholder="${whConfig.configured ? 'Leave empty to keep the current URL' : 'https://hooks.slack.com/services/…'}" autocomplete="off"><span class="ui-help">The URL is stored encrypted. For ntfy use the topic URL, e.g. https://ntfy.sh/my-dockgate.</span></div>
+              ${UI.explain('Every alert of every enabled rule is also sent here.', 'JSON format sends <span class="td-mono">{ event, server, title, text, time }</span>.')}`,
+            onSave: async (ov) => {
+              const url = ov.querySelector('#wh-url').value.trim();
+              if (!url && !whConfig.configured) throw new Error('Enter the webhook URL');
+              await API.post('/meta/webhook', { format: ov.querySelector('#wh-format').value, ...(url ? { url } : {}) });
+              showToast('Webhook saved');
+              renderNotifications();
+            },
+          }));
+          document.getElementById('test-webhook')?.addEventListener('click', async (e) => {
+            e.target.disabled = true;
+            try { await API.post('/meta/webhook/test'); showToast('Test message sent to the webhook'); }
+            catch (er) { showToast(`Webhook failed: ${er.message}`, 'error', 9000); }
+            finally { e.target.disabled = false; }
+          });
+          document.getElementById('clear-webhook')?.addEventListener('click', () => showConfirm('Remove webhook', 'Alerts stop going to this webhook. Email and Telegram are not affected.', async () => {
+            try { await API.del('/meta/webhook'); showToast('Webhook removed'); renderNotifications(); } catch (er) { showToast(er.message, 'error'); }
+          }, true));
 
           // Edge Agent (per-server observability) — always render; agent can install in metrics-only mode.
           document.getElementById('open-edge-agent')?.addEventListener('click', () => Router.navigate('infra', { tab: 'agent' }));

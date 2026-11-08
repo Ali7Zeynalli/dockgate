@@ -12,6 +12,7 @@ const paths = require('../paths');
 const { decrypt } = require('../auth/secrets');
 const mailer = require('./mailer');
 const telegram = require('./telegram');
+const webhook = require('./webhook');
 const R = require('./alert-rules');
 
 const INTERVAL_MS = 60 * 1000;
@@ -84,6 +85,7 @@ async function send(type, s, data) {
   try {
     if (mailer.isConfigured()) { const r = await mailer.sendEmail({ subject: `DockGate: ${subject}`, html: `<div style="font-family:system-ui,sans-serif;font-size:14px">${body}<p style="color:#888;font-size:12px">Sent by DockGate · rule "${esc(rule ? rule.description : type)}"</p></div>`, eventType: type }); if (r && r.success) sent = true; }
     if (telegram.isConfigured()) { const r = await telegram.sendMessage({ text, eventType: type }); if (r && r.success) sent = true; }
+    if (webhook.isConfigured()) { const r = await webhook.sendMessage({ title: subject, text: text.split('\n').slice(1).join('\n'), eventType: type, server: s.id }); if (r && r.success) sent = true; }
   } catch (e) { console.warn('[health] send failed:', e.message); }
   if (sent) lastSent.set(key, Date.now());
   return sent;
