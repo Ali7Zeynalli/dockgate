@@ -17,26 +17,14 @@ Router.register('builds', async (content) => {
   // ============ ANA RENDER ============
   async function render() {
     content.innerHTML = `
-      <div class="page-header">
-        <div>
-          <div class="page-title">Builds</div>
-          <div class="page-subtitle">Build history, cache & builders</div>
-        </div>
-        <div class="page-actions">
-          <button class="btn btn-primary" id="new-build-btn">${Icons.play} New Build</button>
-          <button class="btn btn-secondary" id="builds-refresh">${Icons.refresh}</button>
-        </div>
-      </div>
-      <div class="tab-bar" style="margin-bottom: 16px;">
-        <button class="tab-btn ${activeTab === 'history' ? 'active' : ''}" data-tab="history">Build History</button>
-        <button class="tab-btn ${activeTab === 'cache' ? 'active' : ''}" data-tab="cache">Build Cache</button>
-        <button class="tab-btn ${activeTab === 'builders' ? 'active' : ''}" data-tab="builders">Builders</button>
-        ${activeBuild ? `<button class="tab-btn ${activeTab === 'live' ? 'active' : ''}" data-tab="live" style="color: var(--accent);">● Active Build</button>` : ''}
-      </div>
+      ${UI.header('Builds', 'Images built on this server: history, build cache and builders.',
+        `${UI.seg([['history', 'History'], ['cache', 'Cache'], ['builders', 'Builders'], ...(activeBuild ? [['live', '● Active build']] : [])], activeTab, 'data-btab')}
+         <button class="btn btn-secondary btn-sm" id="builds-refresh" title="Refresh">${Icons.refresh}</button>
+         <button class="btn btn-primary btn-sm" id="new-build-btn">${Icons.play} New build</button>`)}
       <div id="tab-content"></div>
     `;
-    content.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => { activeTab = btn.dataset.tab; selectedBuildId = null; selectedPanelIds.clear(); selectedDockerIds.clear(); render(); });
+    content.querySelectorAll('[data-btab]').forEach(btn => {
+      btn.addEventListener('click', () => { activeTab = btn.dataset.btab; selectedBuildId = null; selectedPanelIds.clear(); selectedDockerIds.clear(); render(); });
     });
     document.getElementById('new-build-btn')?.addEventListener('click', () => showNewBuildModal());
 

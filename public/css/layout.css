@@ -327,3 +327,13 @@
 /* Sections list their pages in the sidebar; the old in-page tab bar of Settings stays for scripts only. */
 #settings-tabs { display: none; }
 .mac-header-left .header-title { white-space: nowrap; }
+/* The breadcrumb can be long ("Server Console / Users & keys"): it shrinks with an ellipsis before the
+   right-hand controls do, and the search box narrows on mid-size windows. */
+.mac-header { gap: 16px; }
+.mac-header-left { min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 10px; }
+.mac-header-left .header-title { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mac-header-right { flex: 0 1 auto; min-width: 0; }
+@media (max-width: 1400px) { .header-search { width: 180px; } }
+@media (max-width: 1200px) { .header-search { width: 150px; } }
+.header-search input { min-width: 0; width: 100%; }
+.header-search { min-width: 0; flex-shrink: 1; }

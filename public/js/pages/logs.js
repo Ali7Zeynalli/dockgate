@@ -16,25 +16,8 @@ Router.register('logs', async (content, params = {}) => {
   content.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:14px;max-width:1400px;margin:0 auto;">
       
-      <!-- Top Header & Mode Switcher -->
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding:12px 18px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);">
-        <div>
-          <div style="font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px;">
-            <span>📜</span>
-            <span>Logs &amp; Diagnostic Explorer</span>
-            <span class="badge" style="font-size:10px;padding:1px 6px;background:var(--accent-dim);color:var(--accent);">${escapeHtml(activeServer.name || serverId)}</span>
-          </div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Real-time container streaming, Linux host logs &amp; autonomous Log Doctor</div>
-        </div>
-
-        <!-- Mode Switcher Tabs -->
-        <div class="segmented-control" id="logs-mode-nav" style="display:flex;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:2px;gap:2px;">
-          <button type="button" class="btn btn-sm ${currentMode === 'stream' ? 'btn-primary' : 'btn-ghost'}" data-mode="stream" style="padding:4px 10px;font-size:12px;">🐳 Container Stream</button>
-          <button type="button" class="btn btn-sm ${currentMode === 'host' ? 'btn-primary' : 'btn-ghost'}" data-mode="host" style="padding:4px 10px;font-size:12px;">🐧 Linux Host Logs</button>
-          <button type="button" class="btn btn-sm ${currentMode === 'doctor' ? 'btn-primary' : 'btn-ghost'}" data-mode="doctor" style="padding:4px 10px;font-size:12px;">🩺 Log Doctor</button>
-          <button type="button" class="btn btn-sm ${currentMode === 'search' ? 'btn-primary' : 'btn-ghost'}" data-mode="search" style="padding:4px 10px;font-size:12px;">🌐 All Containers</button>
-        </div>
-      </div>
+      ${UI.header('Logs', 'Follow one container live, search every container at once, read the server\'s own logs, or let Log Doctor point out errors.',
+        `<span class="ui-seg" id="logs-mode-nav">${[['stream', 'Container'], ['search', 'All containers'], ['host', 'Host logs'], ['doctor', 'Log Doctor']].map(([m, l]) => `<button type="button" data-mode="${m}" aria-pressed="${currentMode === m}">${l}</button>`).join('')}</span>`)}
 
       <!-- Mode View Container -->
       <div id="logs-view-root"></div>
@@ -49,9 +32,7 @@ Router.register('logs', async (content, params = {}) => {
     if (!Router.isActiveNav(pageNavId)) return;
     currentMode = mode;
 
-    modeNav.querySelectorAll('button').forEach(btn => {
-      btn.className = `btn btn-sm ${btn.dataset.mode === mode ? 'btn-primary' : 'btn-ghost'}`;
-    });
+    modeNav.querySelectorAll('button').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.mode === mode)));
 
     if (mode === 'stream') await renderContainerStreamView();
     else if (mode === 'host') await renderHostLogsView();
@@ -95,7 +76,7 @@ Router.register('logs', async (content, params = {}) => {
           <button class="btn btn-primary btn-sm" id="stream-connect-btn" style="padding:4px 12px;font-weight:600;">Connect</button>
           <button class="btn btn-secondary btn-sm" id="stream-pause-btn" disabled style="padding:4px 10px;">${Icons.pause} Pause</button>
           <button class="btn btn-secondary btn-sm" id="stream-clear-btn" style="padding:4px 10px;">Clear</button>
-          <button class="btn btn-secondary btn-sm" id="stream-download-btn" disabled style="padding:4px 10px;" title="Download raw logs">💾 Export</button>
+          <button class="btn btn-secondary btn-sm" id="stream-download-btn" disabled style="padding:4px 10px;" title="Download raw logs">${Icons.download} Export</button>
 
           <div style="display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap;">
             <!-- Lines selector -->

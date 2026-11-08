@@ -1,6 +1,7 @@
 // Volumes Page
 Router.register('volumes', async (content) => {
   let selectedNames = new Set();
+  let volFilter = 'all';
   let refreshTimer = null;
 
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
@@ -20,46 +21,46 @@ Router.register('volumes', async (content) => {
       }
 
       const removableVolumes = volumes.filter(v => !v.inUse);
+      const shown = volFilter === 'unused' ? removableVolumes : volumes;
 
       content.innerHTML = `
-        <div class="page-header">
-          <div><div class="page-title">Volumes</div><div class="page-subtitle">${volumes.length} volume(s)</div></div>
-          <div class="page-actions">
-            <button class="btn btn-primary" id="vol-new">${Icons.volume} New Volume</button>
-            <button class="btn btn-secondary" id="vol-refresh">${Icons.refresh}</button>
-          </div>
-        </div>
+        ${UI.header('Volumes', `${volumes.length} volume${volumes.length === 1 ? '' : 's'} on this server. A volume used by a container cannot be removed.`,
+          `<button class="btn btn-secondary btn-sm" id="vol-refresh" title="Refresh">${Icons.refresh}</button>
+           <button class="btn btn-primary btn-sm" id="vol-new">${Icons.volume} Create volume</button>`)}
+        <div class="ui-toolbar">${UI.chips([['all', 'All', volumes.length], ['unused', 'Unused', removableVolumes.length]], volFilter, 'data-vfilter')}</div>
 
         ${selectedNames.size > 0 ? `
-        <div class="card mb-2" style="padding:12px 18px;display:flex;align-items:center;gap:12px;background:var(--accent-dim)">
-          <span class="text-sm font-bold">${selectedNames.size} selected</span>
-          <button class="btn btn-sm btn-danger" id="bulk-remove">${Icons.trash} Remove</button>
-          <div style="flex:1"></div>
-          <button class="btn btn-sm btn-ghost" id="bulk-clear">Clear</button>
+        <div class="ui-bulk">
+          <b>${selectedNames.size} selected</b>
+          <span style="flex:1"></span>
+          <button class="btn btn-xs btn-ghost" id="bulk-clear">Clear selection</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove…</button>
         </div>` : ''}
 
         <div class="table-wrapper">
           <table>
             <thead><tr>
               <th style="width:40px"><div class="checkbox ${volumes.length > 0 && selectedNames.size === removableVolumes.length && removableVolumes.length > 0 ? 'checked' : ''}" id="select-all"></div></th>
-              <th>Name</th><th>Driver</th><th>Mountpoint</th><th>Created</th><th>Containers</th><th>Status</th><th style="text-align:right">Actions</th>
+              <th>Name</th><th>Driver</th><th>Used by</th><th>Mountpoint</th><th>Created</th><th style="text-align:right">Actions</th>
             </tr></thead>
             <tbody>
-              ${volumes.map(v => `<tr class="${selectedNames.has(v.name) ? 'selected' : ''}">
+              ${shown.length ? '' : `<tr><td colspan="7" class="text-sm text-muted">${volFilter === 'unused' ? 'Every volume is used by a container.' : 'No volumes yet.'}</td></tr>`}
+              ${shown.map(v => `<tr class="${selectedNames.has(v.name) ? 'selected' : ''}">
                 <td>${!v.inUse ? `<div class="checkbox ${selectedNames.has(v.name) ? 'checked' : ''}" data-select="${escapeHtml(v.name)}"></div>` : ''}</td>
                 <td class="td-name td-mono" style="max-width:200px">${escapeHtml(v.name)}</td>
-                <td class="text-sm">${v.driver}</td>
+                <td class="text-sm">${escapeHtml(v.driver)}</td>
+                <td>${v.inUse ? (v.containerNames || []).map(n => UI.chip(escapeHtml(n))).join('') || UI.chip(String(v.attachedContainers)) : UI.pill('off', 'unused')}</td>
                 <td class="td-mono text-xs" style="max-width:250px" title="${escapeHtml(v.mountpoint)}">${escapeHtml(v.mountpoint)}</td>
                 <td class="text-muted text-sm">${v.createdAt ? timeAgo(v.createdAt) : 'N/A'}</td>
-                <td><span class="badge ${v.inUse ? 'badge-running' : 'badge-dead'}">${v.attachedContainers}</span></td>
-                <td><span class="badge ${v.inUse ? 'badge-running' : 'badge-stopped'}">${v.inUse ? 'In Use' : 'Unused'}</span></td>
-                <td><div class="td-actions">
-                  <button class="btn-icon" title="Inspect" data-inspect="${escapeHtml(v.name)}">${Icons.eye}</button>
-                  <button class="btn-icon" title="Browse files" data-files="${escapeHtml(v.name)}">${Icons.logs}</button>
-                  <button class="btn-icon" title="Backup (download tar.gz)" data-backup="${escapeHtml(v.name)}">${Icons.download}</button>
-                  <button class="btn-icon" title="Restore (upload tar.gz)" data-restore="${escapeHtml(v.name)}">${Icons.arrowUp}</button>
-                  <button class="btn-icon" title="Clone" data-clone="${escapeHtml(v.name)}">${Icons.copy}</button>
-                  ${!v.inUse ? `<button class="btn-icon" title="Remove" data-remove="${escapeHtml(v.name)}" style="color:var(--danger)">${Icons.trash}</button>` : ''}
+                <td><div class="td-actions" style="justify-content:flex-end">
+                  <button class="btn btn-xs btn-secondary" data-files="${escapeHtml(v.name)}">${Icons.logs} Browse</button>
+                  ${UI.menu([
+                    { label: `${Icons.eye} Inspect`, attrs: `data-inspect="${escapeHtml(v.name)}"` },
+                    { label: `${Icons.download} Back up (.tar.gz)`, attrs: `data-backup="${escapeHtml(v.name)}"` },
+                    { label: `${Icons.arrowUp} Restore from .tar.gz…`, attrs: `data-restore="${escapeHtml(v.name)}"` },
+                    { label: `${Icons.copy} Clone…`, attrs: `data-clone="${escapeHtml(v.name)}"` },
+                    ...(!v.inUse ? ['-', { label: `${Icons.trash} Remove…`, attrs: `data-remove="${escapeHtml(v.name)}"`, danger: true }] : []),
+                  ])}
                 </div></td>
               </tr>`).join('')}
             </tbody>
@@ -68,6 +69,7 @@ Router.register('volumes', async (content) => {
       `;
 
       document.getElementById('vol-refresh')?.addEventListener('click', render);
+      content.querySelectorAll('[data-vfilter]').forEach(b => b.addEventListener('click', () => { volFilter = b.dataset.vfilter; render(); }));
       document.getElementById('vol-new')?.addEventListener('click', openVolumeCreate);
 
       // Backup → download tar.gz (V1)

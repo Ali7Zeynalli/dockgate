@@ -39,9 +39,8 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
           <td class="text-sm text-muted" style="white-space:nowrap">${formatTime(r.created_at)}</td>
           <td>
             <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
-            <button class="btn btn-secondary btn-sm" data-test="${r.id}" title="Test login">${Icons.refresh} Test</button>
-            <button class="btn btn-secondary btn-sm" data-edit="${r.id}" title="Edit">Edit</button>
-            <button class="btn btn-danger btn-sm" data-del="${r.id}" data-addr="${escapeHtml(r.server_address)}" title="Delete">${Icons.trash}</button>
+            <button class="btn btn-secondary btn-xs" data-test="${r.id}">${Icons.refresh} Test login</button>
+            ${UI.menu([{ label: 'Edit…', attrs: `data-edit="${r.id}"` }, '-', { label: `${Icons.trash} Remove…`, attrs: `data-del="${r.id}" data-addr="${escapeHtml(r.server_address)}"`, danger: true }])}
             </div>
           </td>
         </tr>`).join('');
@@ -215,19 +214,9 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
   }
 
   content.innerHTML = `
-    ${embedded ? `<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
-      <button class="btn btn-secondary" id="reg-refresh">${Icons.refresh} Refresh</button>
-      <button class="btn btn-primary" id="reg-add">${Icons.key} Add Registry</button>
-    </div>` : `<div class="page-header">
-      <div>
-        <div class="page-title">Registries</div>
-        <div class="page-subtitle">Private registry credentials — used automatically when pulling or pushing images</div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-secondary" id="reg-refresh">${Icons.refresh} Refresh</button>
-        <button class="btn btn-primary" id="reg-add">${Icons.key} Add Registry</button>
-      </div>
-    </div>`}
+    ${UI.header('Registries', 'Logins for private image registries. DockGate uses them automatically when it pulls or pushes images.',
+      `<button class="btn btn-secondary btn-sm" id="reg-refresh" title="Refresh">${Icons.refresh}</button>
+       <button class="btn btn-primary btn-sm" id="reg-add">${Icons.key} Add registry</button>`)}
 
     <div class="table-wrapper">
       <table>

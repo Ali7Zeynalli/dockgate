@@ -105,11 +105,54 @@ const UI = {
     </div>`;
   },
 
+  /**
+   * Row "⋯" menu. items: [{ label, attrs, danger }] — each item is a real button carrying the page's own
+   * data-* attributes, so the page binds it like any other button. Destructive actions go last, in red.
+   */
+  menu(items, { label = 'More actions' } = {}) {
+    const list = items.filter(Boolean);
+    if (!list.length) return '';
+    return `<span class="ui-menu"><button type="button" class="btn btn-xs btn-secondary ui-menu-btn" aria-haspopup="menu" aria-expanded="false" aria-label="${UI.esc(label)}" title="${UI.esc(label)}">⋯</button><span class="ui-menu-pop" role="menu" hidden>${list.map(i => i === '-' ? '<span class="ui-menu-sep"></span>' : `<button type="button" role="menuitem" class="ui-menu-item${i.danger ? ' danger' : ''}" ${i.attrs || ''}>${i.label}</button>`).join('')}</span></span>`;
+  },
+
+  /** Filter chips with counts: [[value, label, count]] → one pressed. Pages bind [data-chip]. */
+  chips(list, active, attr = 'data-chip') {
+    return `<div class="ui-chips">${list.map(([v, l, n]) => `<button type="button" class="ui-fchip" ${attr}="${UI.esc(v)}" aria-pressed="${v === active}">${l}${n != null ? `<span>${n}</span>` : ''}</button>`).join('')}</div>`;
+  },
+
+  /** Segmented control: [[value, label]] → one pressed. Pages bind [data-seg]. */
+  seg(list, active, attr = 'data-seg') {
+    return `<span class="ui-seg">${list.map(([v, l]) => `<button type="button" ${attr}="${UI.esc(v)}" aria-pressed="${v === active}">${l}</button>`).join('')}</span>`;
+  },
+
   /** "What changes / what protects you" box used inside dialogs. */
   explain(change, protects) {
     return `<div class="ui-explain"><div><b>What changes</b> ${change}</div>${protects ? `<div><b>What protects you</b> ${protects}</div>` : ''}</div>`;
   },
 };
+
+// Row menus (UI.menu): open on click, positioned against the viewport so a scrolling table cannot clip them;
+// close on an item click, an outside click, Esc or scroll.
+const closeUiMenus = (except) => document.querySelectorAll('.ui-menu-pop:not([hidden])').forEach(p => { if (p !== except) { p.hidden = true; p.previousElementSibling?.setAttribute('aria-expanded', 'false'); } });
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.ui-menu-btn');
+  if (!btn) { closeUiMenus(); return; }
+  e.stopPropagation();
+  const pop = btn.nextElementSibling;
+  closeUiMenus(pop);
+  pop.hidden = !pop.hidden;
+  btn.setAttribute('aria-expanded', String(!pop.hidden));
+  if (!pop.hidden) {
+    const r = btn.getBoundingClientRect();
+    const h = pop.offsetHeight, w = pop.offsetWidth;
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+    pop.style.top = (r.bottom + h + 8 > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
+    pop.querySelector('.ui-menu-item')?.focus();
+  }
+}, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeUiMenus(); });
+window.addEventListener('scroll', () => closeUiMenus(), true);
+window.addEventListener('resize', () => closeUiMenus());
 
 // Buttons of UI.errorState work on every page (delegated once).
 document.addEventListener('click', (e) => {

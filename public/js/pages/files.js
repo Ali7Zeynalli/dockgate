@@ -28,9 +28,9 @@ Router.register('files', async (content) => {
 
   function header() {
     const sub = ctx.remote
-      ? `Browse & manage files on <strong>${escapeHtml(ctx.host || ctx.serverId)}</strong> over SSH`
-      : 'Server file manager';
-    return `<div class="page-header mb-3"><div><div class="page-title">Files</div><div class="page-subtitle">${sub}</div></div></div>`;
+      ? `Browse, edit, upload and download files on <strong>${escapeHtml(ctx.host || ctx.serverId)}</strong> over SSH.`
+      : 'Files on the DockGate machine.';
+    return UI.header('Files', sub);
   }
 
   // Clickable breadcrumb for the current path.
