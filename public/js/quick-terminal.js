@@ -345,9 +345,7 @@ const QuickTerminal = (function() {
             ${containers.map(c => `<option value="${c.id}" ${p.selectedContainerId === c.id ? 'selected' : ''}>${escapeHtml(c.name)} (${c.shortId})</option>`).join('')}
           </select>
           <select class="select qt-select" id="qt-shell-${slot}" style="width:95px;">
-            <option value="/bin/sh">/bin/sh</option>
-            <option value="/bin/bash">/bin/bash</option>
-            <option value="/bin/zsh">/bin/zsh</option>
+            ${['/bin/sh', '/bin/bash', '/bin/zsh'].map(sh => `<option value="${sh}" ${sh === (p.shell || appSetting('terminalShell', '/bin/sh')) ? 'selected' : ''}>${sh}</option>`).join('')}
           </select>
           <button class="btn btn-primary btn-sm" id="qt-btn-connect-${slot}" ${!p.selectedContainerId ? 'disabled' : ''}>Connect</button>
           <button class="btn btn-secondary btn-sm" id="qt-btn-reconnect-${slot}" style="display:none;">${Icons.refresh} Reconnect</button>

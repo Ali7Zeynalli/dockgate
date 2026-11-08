@@ -152,6 +152,20 @@ function syncSidebarTabs() {
 // Global search lives in command-palette.js (⌘K / Ctrl+K and the header search box).
 function initGlobalSearch() {}
 
+// DockGate settings for pages that need them before Settings was opened (default shell, container list
+// layout, log timestamps). Kept in the Store and in localStorage so a hard refresh has them at once.
+function rememberSettings(s) {
+  Store.set('settings', { ...(Store.get('settings') || {}), ...s });
+  try { localStorage.setItem('dcc_settings', JSON.stringify(Store.get('settings'))); } catch (e) { /* private mode */ }
+}
+function appSetting(key, fallback) {
+  let s = Store.get('settings');
+  if (!s || !Object.keys(s).length) { try { s = JSON.parse(localStorage.getItem('dcc_settings') || '{}'); } catch (e) { s = {}; } }
+  return s && s[key] != null && s[key] !== '' ? s[key] : fallback;
+}
+window.rememberSettings = rememberSettings;
+window.appSetting = appSetting;
+
 // Apply theme to document / Temanı sənədə tətbiq et
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme || 'dark');
@@ -253,10 +267,13 @@ async function boot() {
     // Remap a legacy/bookmarked sub-route (e.g. #/containers) onto its consolidated section tab.
     // Moved pages (#/containers, #/activity?tab=…) are rewritten inside Router.navigate (Router.resolve).
     // replace:true → set the initial hash without adding a spurious history entry
+    // Settings first (one small request), so the first page already uses them (container layout, shell…).
+    try { rememberSettings(await API.get('/meta/settings')); } catch (e) { /* pages fall back to defaults */ }
     await Router.navigate(startPage, startParams, { replace: true });
 
     // Load theme + display timezone from server settings / Server settings-dən tema və timezone yüklə
     API.get('/meta/settings').then(s => {
+      if (s) rememberSettings(s);
       if (s && s.theme) {
         applyTheme(s.theme);
         localStorage.setItem('dcc_theme', s.theme);

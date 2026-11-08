@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.12.1-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.13.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.12.1-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.13.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -211,6 +211,8 @@ Tabbed: **General** (theme, default view, **timezone**, shell, log timestamps, a
 
 **Alert rules (8)** — `container_die` (split into **Stopped / Crashed / OOM**), `container_restart`, `container_unhealthy`, `container_start`, `container_pause`, `container_unpause`, `disk_threshold`, `build_failed`. Each has an **enable** toggle and a **cooldown** (minutes) — **`0` = alert on every occurrence**. A `docker restart` is debounced to a **single "Restarted"** alert (not Stopped-then-Restarted), and crash/OOM/unhealthy alerts attach the container's **recent logs** so you see *why*.
 
+**Server health (5 rules)** — `server_down` (no answer for N minutes), `server_up` (answers again, with how long it was down), `host_disk` (any disk above %), `host_mem` and `host_cpu` (above % for N minutes). DockGate checks every server once a minute over its SSH login and stores the samples as Monitoring history. Each server can keep the shared limits, use its own, or turn a rule off (**Server Console → Monitoring → Alerts**). The `disk_threshold` rule is now named **Docker uses a lot of disk space** and its GB limit is editable.
+
 **How it watches** — a central `EventMonitor` runs **per registered host** (local + every SSH server), so alerts arrive from **every** server, not just the active one.
 
 **Edge Notifier agent (optional)** — a tiny **outbound-only** container DockGate deploys onto each server. It watches *that host's* Docker events and sends alerts **directly** to your channel — so it:
@@ -219,7 +221,7 @@ Tabbed: **General** (theme, default view, **timezone**, shell, log timestamps, a
 - **keeps alerting even if DockGate is offline**,
 - installs with **zero manual steps** — DockGate auto-builds the image and ships it to the host (registry pull, or local `save`→`load` over SSH).
 
-Manage it under **Settings → Notifications → Edge Notifier**: **Install on servers…** (multi-select), Start/Stop, Update, Remove, a **per-server channel override** (a different bot/SMTP per host), a re-openable **deploy-log**, and **auto-sync** — saving rules/channels re-pushes them to installed agents. Installing an agent stops DockGate's central monitor for that host (no duplicate alerts).
+Manage it under **Servers → Edge agent**: **Install on servers…** (multi-select), Start/Stop, Update, Remove, a **per-server channel override** (a different bot/SMTP per host), a re-openable **deploy-log**, and **auto-sync** — saving rules/channels re-pushes them to installed agents. Installing an agent stops DockGate's central monitor for that host (no duplicate alerts).
 
 > The agent runs as root with a **read-only** docker-socket mount, `no-new-privileges`, memory/CPU caps and no published ports. A read-only socket is defense-in-depth, not a security boundary — use a dedicated alert-only bot / send-only SMTP credential, and pin the image by digest.
 

@@ -93,7 +93,7 @@ Router.register('logs', async (content, params = {}) => {
 
             <!-- Timestamps toggle -->
             <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;color:var(--text-muted);">
-              <input type="checkbox" id="stream-timestamps"> Timestamps
+              <input type="checkbox" id="stream-timestamps" ${appSetting('logTimestamps', 'false') === 'true' ? 'checked' : ''}> Timestamps
             </label>
 
             <!-- Auto scroll toggle -->

@@ -87,13 +87,13 @@ Router.register('settings', async (content, params) => {
           <div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Appearance</div></div></div>
           ${UI.settings([
             { label: 'Theme', desc: 'Light or dark.', value: sel('set-theme', [['dark', 'Dark'], ['light', 'Light']], settings.theme || 'dark') },
-            { label: 'Container list', desc: 'How Resources → Containers opens.', value: sel('set-view', [['table', 'Table'], ['card', 'Cards']], settings.defaultView || 'table') },
+            { label: 'Container list', desc: 'How Resources → Containers opens: table or cards.', value: sel('set-view', [['table', 'Table'], ['card', 'Cards']], settings.defaultView || 'table') },
             { label: 'Timezone', desc: 'Used for dates on every page and in notifications.', value: `<select class="select" id="set-timezone" aria-label="Timezone">${tzOptions}</select>` },
           ])}
           <div class="ui-ph"><div class="ui-ph-title">Terminal and logs</div></div>
           ${UI.settings([
-            { label: 'Default shell', desc: 'Shell opened by Tools → Terminal and the quick terminal.', value: sel('set-shell', [['/bin/sh', '/bin/sh'], ['/bin/bash', '/bin/bash'], ['/bin/zsh', '/bin/zsh']], settings.terminalShell || '/bin/sh') },
-            { label: 'Log timestamps', desc: 'Show the time on every log line.', action: `<div class="toggle ${settings.logTimestamps === 'true' ? 'active' : ''}" id="set-logtimes" role="switch" tabindex="0" aria-checked="${settings.logTimestamps === 'true'}" aria-label="Log timestamps"></div>` },
+            { label: 'Default shell', desc: 'Shell picked first in Tools → Terminal and the quick terminal. You can still change it there.', value: sel('set-shell', [['/bin/sh', '/bin/sh'], ['/bin/bash', '/bin/bash'], ['/bin/zsh', '/bin/zsh']], settings.terminalShell || '/bin/sh') },
+            { label: 'Log timestamps', desc: 'Start with timestamps on in Observe → Logs and in container logs.', action: `<div class="toggle ${settings.logTimestamps === 'true' ? 'active' : ''}" id="set-logtimes" role="switch" tabindex="0" aria-checked="${settings.logTimestamps === 'true'}" aria-label="Log timestamps"></div>` },
           ])}
           <div class="ui-ph"><div class="ui-ph-title">DockGate service</div></div>
           ${UI.settings([
@@ -106,7 +106,7 @@ Router.register('settings', async (content, params) => {
           try {
             await API.post('/meta/settings', patch);
             Object.assign(settings, patch);
-            Store.set('settings', { ...settings });
+            rememberSettings(settings);
             if (patch.theme) { applyTheme(patch.theme); localStorage.setItem('dcc_theme', patch.theme); }
             if (patch.timezone) localStorage.setItem('dcc_timezone', patch.timezone);
             showToast(`Saved · ${label}`);

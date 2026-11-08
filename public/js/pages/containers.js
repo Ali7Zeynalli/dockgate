@@ -5,7 +5,7 @@ Router.register('containers', async (content) => {
   let currentFilter = 'all';
   let currentSearch = '';
   let currentSort = 'name';
-  let currentView = 'table';
+  let currentView = appSetting('defaultView', 'table') === 'card' ? 'card' : 'table'; // Settings → General → Container list
   let selectedIds = new Set();
   let refreshTimer = null;
   let groupByProject = Store.get('groupByProject') ?? true; // Default to grouping

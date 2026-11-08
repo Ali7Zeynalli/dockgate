@@ -2,6 +2,31 @@
 
 ---
 
+## [2.13.0] - 2026-11-08
+
+### Server health alerts
+- **Server not reachable** after a server has not answered for 3 minutes (once per outage), and **Server is reachable again** with how long it was down.
+- **Disk almost full** (any disk above 85%), **Memory high** (above 90% for 5 min) and **CPU high** (above 90% for 10 min, off by default).
+- DockGate checks every server once a minute over its existing SSH login (the local machine directly). Remote samples are stored, so Monitoring history keeps filling while nobody has the page open.
+- **Per-server limits**: Server Console → Monitoring → Alerts — keep the shared limit, set this server's own, or turn the rule off here.
+- Telegram and email messages say what happened, since when, and what the server looked like last; times follow the timezone in Settings.
+
+### Notification rules
+- Rules are split into **Server** and **Docker**; a switch saves at once, limits and the quiet period are edited in a dialog (the "Save Rules" button is gone).
+- "Disk usage exceeds threshold" is now **Docker uses a lot of disk space**: it always measured Docker's own disk use in GB, not how full the disk is. Its limit (was a fixed 50 GB) can be changed and is passed to the edge agent.
+
+### Search
+- **Ctrl/Cmd+K** (or the search box in the header, an icon on phones) opens one search window for containers, images, volumes, networks and stacks on the server in use, every server, every page and common actions (Run container, Deploy stack, Pull image, Prune, Add server, quick terminal).
+
+### Fixed
+- **Default shell** now preselects the shell in Tools → Terminal and the quick terminal.
+- **Container list** (Table / Cards) now sets how Resources → Containers opens.
+- **Log timestamps** now also applies to Observe → Logs.
+- Settings load before the first page draws, so these apply right after a refresh too.
+- Removed six setting keys nothing used (log tail lines, auto-scroll, wrap lines, terminal font size, date format, confirm destructive); the API now rejects them.
+
+---
+
 ## [2.12.1] - 2026-11-08
 
 ### Fixed

@@ -288,7 +288,7 @@ Router.register('container-detail', async (content, params) => {
 
     // Subscribe to log stream (and re-subscribe on socket reconnect so it doesn't freeze)
     const subscribeLogs = () => {
-      const logSettings = Store.get('settings') || {};
+      const logSettings = { logTimestamps: appSetting('logTimestamps', 'false') };
       socket.emit('logs:subscribe', { containerId: id, tail: 200, timestamps: logSettings.logTimestamps === 'true' });
     };
     subscribeLogs();
