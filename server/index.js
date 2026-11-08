@@ -76,7 +76,6 @@ app.use('/api/agent', require('./routes/agent'));
 app.use('/api/monitoring', require('./routes/monitoring'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/meta', require('./routes/settings'));
-app.use('/api/backup', require('./routes/backup')); // DockGate's own backup and restore
 app.use('/api/schedules', require('./routes/schedules')); // Tools → Schedules
 
 // Startup-da saxlanmış aktiv server-i bərpa et (yalnız "local" olmadıqda)
@@ -649,11 +648,6 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
         } catch (e) { console.warn(`[image-updates] ${srv.id}:`, e.message); }
       }
     };
-    // Nightly copy of DockGate's data (backups/auto-YYYY-MM-DD.dgbak, newest 7 kept).
-    const runAutoBackup = () => require('./backup').autoBackup().then(n => console.log('[backup] nightly copy', n)).catch(e => console.warn('[backup] nightly copy failed:', e.message));
-    const msToNight = () => { const d = new Date(); d.setHours(3, 0, 0, 0); if (d <= new Date()) d.setDate(d.getDate() + 1); return d - new Date(); };
-    setTimeout(() => { runAutoBackup(); setInterval(runAutoBackup, 24 * 60 * 60 * 1000); }, msToNight());
-    if (!require('./backup').listAuto().length) setTimeout(runAutoBackup, 5 * 60 * 1000); // first copy soon after the first start
     setTimeout(runImageChecks, 10 * 60 * 1000);
     setInterval(runImageChecks, 24 * 60 * 60 * 1000);
   }

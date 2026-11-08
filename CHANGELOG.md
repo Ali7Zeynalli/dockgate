@@ -2,6 +2,14 @@
 
 ---
 
+## [2.15.1] - 2026-11-08
+
+### Removed
+- **DockGate backup** (Settings → System → Backup, nightly copies, restore) from 2.14.0 is taken out until a better design is chosen: it copied only some files of the data folder (database, master key, SSH keys and, optionally, compose folders without `.git`), so a restore could miss Git deploy keys, `.git` folders or stack metadata. Copies already written to `data/backups/` are left in place; nothing else in the data folder is changed.
+- Volume backups (Resources → Volumes and the volume backup task in Tools → Schedules) are not affected.
+
+---
+
 ## [2.15.0] - 2026-11-08
 
 ### Schedules
