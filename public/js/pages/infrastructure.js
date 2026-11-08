@@ -53,10 +53,9 @@ Router.register('infra', async (content, params) => {
     tabContent.querySelectorAll('[data-use]').forEach(b => b.onclick = async () => {
       const srv = data.servers.find(x => x.id === b.dataset.use);
       try {
-        const ok = await activateServer(srv.id, srv.name || srv.id);
+        const ok = await useServer(srv.id);
         if (!ok) return;
         showToast(`Now using ${srv.name || srv.id}`);
-        if (typeof refreshServerSwitcher === 'function') refreshServerSwitcher();
         renderServers();
       } catch (e) { showToast(e.message, 'error'); }
     });

@@ -2,6 +2,14 @@
 
 ---
 
+## [2.12.1] - 2026-11-08
+
+### Fixed
+- **Open** in Servers (and every other way into a server console: Dashboard cards, Monitoring, links) now makes that server the active one, so the server picker in the header always names the server on screen. A server with an access password asks for it first; cancelling keeps the console closed. Before, the console opened while the header still showed the previous server, and a server's access password could be skipped by opening its console.
+- Switching servers in the header while a console is open now opens the new server's console on the same tab (or the Servers list for the local machine). Before, the page stayed on the old server.
+
+---
+
 ## [2.12.0] - 2026-11-08
 
 The rest of DockGate now follows the same layout as the server pages: a breadcrumb in the top bar, one header per page with its main action, standard tables with a ⋯ menu for rare and destructive actions, and settings that save as you change them. No function was removed; old links still work.

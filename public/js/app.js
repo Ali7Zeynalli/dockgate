@@ -441,6 +441,24 @@ async function activateServer(id, label) {
 window.promptAccessPassword = promptAccessPassword;
 window.activateServer = activateServer;
 
+// Make a server the one DockGate works on (the header picker shows it): access-password gate, then the
+// Store, the remembered host and the header picker are updated. Returns true when the server is now active.
+async function useServer(id) {
+  const cur = Store.get('activeServer');
+  if (cur && cur.id === id) return true;
+  const data = await API.get('/servers');
+  const srv = (data.servers || []).find(s => s.id === id);
+  if (!srv) throw new Error(`Server "${id}" not found`);
+  const ok = srv.isActive || await activateServer(id, srv.name || srv.id); // already active (Store not filled yet on boot)
+  if (!ok) return false;
+  Store.set('activeServer', { ...srv, isActive: true });
+  localStorage.setItem('dcc_active_type', srv.type || 'local');
+  localStorage.setItem('dcc_active_host', srv.host || '');
+  await initServerSwitcher();
+  return true;
+}
+window.useServer = useServer;
+
 async function initServerSwitcher() {
   try {
     const data = await API.get('/servers');
@@ -496,7 +514,12 @@ async function initServerSwitcher() {
         }
         const currentPage = Store.get('currentPage') || 'dashboard';
         const currentParams = Store.get('currentParams') || {};
-        setTimeout(() => Router.navigate(currentPage, currentParams), 300);
+        // On a server console the page follows the picker: the new server's console (same tab), or the
+        // Servers list when switching to the local machine (it has no console).
+        if (currentPage === 'server-console') {
+          const remote = sel && sel.id !== 'local' && sel.type !== 'local';
+          setTimeout(() => remote ? Router.navigate('server-console', { id, tab: currentParams.tab }) : Router.navigate('infra', { tab: 'servers' }), 300);
+        } else setTimeout(() => Router.navigate(currentPage, currentParams), 300);
       } catch (err) {
         showToast(`Switch failed: ${err.message}`, 'error', 8000);
         revert();
