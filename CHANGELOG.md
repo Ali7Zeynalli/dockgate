@@ -2,6 +2,23 @@
 
 ---
 
+## [2.15.0] - 2026-11-08
+
+### Schedules
+- **Tools → Schedules**: tasks DockGate runs by itself on a chosen server — **prune** (build cache, unused images, stopped containers, unused networks; never volumes), **volume backup** (tar.gz into a folder on that server, default `/var/backups/dockgate`, newest N kept) and **Git sync** (DockGate-managed Git stacks are redeployed only when the branch has a new commit, checked with `git ls-remote`).
+- Every day, every week or every hour, in the timezone from Settings → General (correct across daylight-saving changes). Each row shows the last result and the next run; an On switch saves at once; **Run now**; Edit and Delete in ⋯.
+- New alert rule **Scheduled task failed** (on by default).
+
+### Files on the local machine
+- Tools → Files now works on **Local** for folders you share with DockGate under `/host` (for example `- /srv:/host/srv` under the DockGate service's volumes; `FILES_ROOT` changes the root). Every path is resolved with realpath and must stay inside, so `..` and symlinks cannot lead out; the shared folders themselves cannot be deleted. With nothing shared, the page shows how to share a folder. DockGate never opens the whole machine because it runs as root in its container.
+
+### Logs, Events, Dashboard
+- **Logs**: a time range next to Tail — last 15 min, 1 hour, 24 hours, 7 days, or from–to. With an end time the logs are shown without following.
+- **Events**: keep 100 / 500 / 2000 on the page and **Export CSV** (respects the type filter).
+- **Dashboard** shows the host metrics block for the local machine too (it was remote-only).
+
+---
+
 ## [2.14.0] - 2026-11-08
 
 ### DockGate backup

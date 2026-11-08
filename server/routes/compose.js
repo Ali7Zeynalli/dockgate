@@ -2564,4 +2564,31 @@ async function runAdoptRedeployJob(job, p) {
   }
 }
 
+// Scheduled Git sync (Tools → Schedules): for each DockGate-managed Git stack of one server, ask the remote
+// for the branch head (git ls-remote, with the stack's stored token or key) and redeploy only when it moved
+// past the deployed commit. Runs the same redeploy job as the Sync button and waits for it.
+async function scheduledGitSync(serverId, projects = []) {
+  const out = [];
+  if (!fs.existsSync(COMPOSE_DIR)) return out;
+  for (const project of fs.readdirSync(COMPOSE_DIR)) {
+    if (!validateProjectName(project) || (projects.length && !projects.includes(project))) continue;
+    const meta = readGitMeta(project);
+    if (!meta || !meta.repoUrl || (meta.serverId || 'local') !== serverId) continue;
+    try {
+      const url = meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token);
+      const ref = meta.branch ? `refs/heads/${meta.branch}` : 'HEAD';
+      const { stdout } = await gitWithKey(meta.keyId || null, ['ls-remote', url, ref]);
+      const head = String(stdout || '').trim().split(/\s+/)[0] || '';
+      if (!head) { out.push({ project, status: 'error', message: `branch ${meta.branch || 'HEAD'} not found` }); continue; }
+      if (meta.deployedCommit && meta.deployedCommit.length >= 7 && head.startsWith(meta.deployedCommit)) { out.push({ project, status: 'unchanged', commit: head.slice(0, 7) }); continue; }
+      const job = gitRedeployJob(project, null);
+      job.kind = 'scheduled sync';
+      for (let i = 0; i < 1800 && !job.finishedAt; i++) await new Promise(r => setTimeout(r, 1000)); // up to 30 min
+      out.push({ project, status: job.status === 'done' ? 'deployed' : 'error', commit: head.slice(0, 7), message: job.error ? String(job.error).slice(0, 200) : undefined });
+    } catch (e) { out.push({ project, status: 'error', message: redactToken(String(e.stderr || e.message || e), meta.token).slice(0, 200) }); }
+  }
+  return out;
+}
+router.scheduledGitSync = scheduledGitSync;
+
 module.exports = router;

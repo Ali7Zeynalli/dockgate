@@ -1518,3 +1518,6 @@ tbody td {
 .ui-diff-del { background: rgba(239, 68, 68, .12); color: var(--danger, #ef4444); }
 .ui-diff-ctx { color: var(--text-secondary); }
 .ui-diff-gap { color: var(--text-muted); }
+.sch-table td { white-space: normal; }
+.sch-table td .ui-sub { max-width: 280px; overflow-wrap: anywhere; }
+.sch-table td:last-child { white-space: nowrap; }

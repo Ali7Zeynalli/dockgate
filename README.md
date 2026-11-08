@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.14.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.15.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.14.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.15.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -167,12 +167,13 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 </details>
 
 <details>
-<summary><strong>Observe</strong> — Logs · Events · Audit log &nbsp;·&nbsp; <strong>Tools</strong> — Terminal · Files</summary>
+<summary><strong>Observe</strong> — Logs · Events · Audit log &nbsp;·&nbsp; <strong>Tools</strong> — Terminal · Files · Schedules</summary>
 
-- **Logs** — live-tail any running container's stdout/stderr (tail 200, follow), pause/resume, clear, in-browser search, timestamps.
+- **Logs** — live-tail any running container's stdout/stderr (tail 200, follow) or a **time range** (last 15 min … 7 days, or from–to), pause/resume, clear, in-browser search, timestamps.
 - **Terminal** — interactive **container exec** (sh/bash/zsh, full xterm.js PTY) **and** a **host shell** (PTY or SSH login shell), plus a **Global Quick Terminal** accessible from any page via header shortcut or `Ctrl+\`` / `Alt+T` with **minimize to floating widget**, **maximize**, and **side-by-side split screen (dual terminals)**.
-- **Events** — live Docker daemon event feed with history range (15 m / 1 h / 24 h / live), color-coded, pause/clear.
-- **Files** — an **SFTP file manager** for the active **remote** server: browse, mkdir, upload/download (streamed), rename, delete, **copy/move**, in-browser **edit**; path-traversal guarded. An opt-in **⇆ Explorer** mode adds a **two-pane, FileZilla-style transfer** between *your computer* and the server, from any **Windows / macOS / Linux** browser: **whole-folder upload** (directory structure preserved), **parallel transfers** (7 concurrent), **pre-upload conflict detection** (**Overwrite / Keep-both / Skip**), a **live transfer panel** — `active · done · failed · cancelled / total` — with **Retry-failed**, and **cancel** of in-flight uploads/downloads. The single-pane manager stays the default; Explorer opens only on demand.
+- **Events** — live Docker daemon event feed with history range (15 m / 1 h / 24 h / live), type filter, keep 100/500/2000, **CSV export**, pause/clear.
+- **Schedules** — tasks DockGate runs by itself on a chosen server: **prune** (build cache, unused images, stopped containers, unused networks — never volumes), **volume backup** (tar.gz into a folder on that server, newest N kept) and **Git sync** (redeploy a DockGate-managed Git stack only when its branch has a new commit). Daily, weekly or hourly in the timezone from Settings; Run now; a failed run sends the *Scheduled task failed* alert.
+- **Files** — an **SFTP file manager** for the active **remote** server (on **Local**: only folders you share with DockGate under `/host`, e.g. `- /srv:/host/srv` in its compose file; set `FILES_ROOT` to change the root): browse, mkdir, upload/download (streamed), rename, delete, **copy/move**, in-browser **edit**; path-traversal guarded. An opt-in **⇆ Explorer** mode adds a **two-pane, FileZilla-style transfer** between *your computer* and the server, from any **Windows / macOS / Linux** browser: **whole-folder upload** (directory structure preserved), **parallel transfers** (7 concurrent), **pre-upload conflict detection** (**Overwrite / Keep-both / Skip**), a **live transfer panel** — `active · done · failed · cancelled / total` — with **Retry-failed**, and **cancel** of in-flight uploads/downloads. The single-pane manager stays the default; Explorer opens only on demand.
 - **Audit** — searchable history of **every mutation** (what / which host / from which IP / when): filter by server/type/action, full-text search, **CSV export**, clear. Single-admin, so it's a "what + from where", not "who".
 </details>
 

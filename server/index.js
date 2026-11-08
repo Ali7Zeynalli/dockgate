@@ -77,6 +77,7 @@ app.use('/api/monitoring', require('./routes/monitoring'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/meta', require('./routes/settings'));
 app.use('/api/backup', require('./routes/backup')); // DockGate's own backup and restore
+app.use('/api/schedules', require('./routes/schedules')); // Tools → Schedules
 
 // Startup-da saxlanmış aktiv server-i bərpa et (yalnız "local" olmadıqda)
 try {
@@ -625,6 +626,7 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   monitorManager.startAll();
   // Server health: reachability, disk, memory and CPU alerts for every server, checked once a minute.
   if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
+  if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
   // Newer-image check for every server: 10 minutes after start, then once a day. New updates are announced
   // once per new digest when the "Newer image available" rule is on (off by default).
   if (process.env.NODE_ENV !== 'test') {

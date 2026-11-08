@@ -273,6 +273,7 @@ const defaultRules = [
   ['disk_threshold', 'Disk usage exceeds threshold', 30],
   ['build_failed', 'Image build failed', 5],
   ['image_update', 'Newer image available', 1440],
+  ['schedule_failed', 'Scheduled task failed', 60],
   ['container_start', 'Container started', 5],
   ['container_pause', 'Container paused', 5],
   ['container_unpause', 'Container unpaused', 5],

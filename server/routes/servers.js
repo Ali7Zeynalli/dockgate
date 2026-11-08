@@ -361,6 +361,7 @@ router.delete('/:id', (req, res) => {
     require('../ssh-pool').invalidate(id); // close any pooled SSH connection to the removed server
     try { stmts.deleteHostMetrics.run(id); } catch (e) { console.warn('[host-metrics] cleanup failed:', e.message); }
     try { stmts.deleteAlertOverrides.run(id); require('../notifications/health-monitor').forget(id); } catch (e) { /* best effort */ }
+    try { require('../schedules').q.delServer.run(id); } catch (e) { /* best effort */ }
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'delete' });
 
     // Stop the dedicated monitor for this server
