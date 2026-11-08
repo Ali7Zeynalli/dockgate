@@ -2,6 +2,75 @@
 
 ---
 
+## [2.15.0] - 2026-11-08
+
+### Schedules
+- **Tools → Schedules**: tasks DockGate runs by itself on a chosen server — **prune** (build cache, unused images, stopped containers, unused networks; never volumes), **volume backup** (tar.gz into a folder on that server, default `/var/backups/dockgate`, newest N kept) and **Git sync** (DockGate-managed Git stacks are redeployed only when the branch has a new commit, checked with `git ls-remote`).
+- Every day, every week or every hour, in the timezone from Settings → General (correct across daylight-saving changes). Each row shows the last result and the next run; an On switch saves at once; **Run now**; Edit and Delete in ⋯.
+- New alert rule **Scheduled task failed** (on by default).
+
+### Files on the local machine
+- Tools → Files now works on **Local** for folders you share with DockGate under `/host` (for example `- /srv:/host/srv` under the DockGate service's volumes; `FILES_ROOT` changes the root). Every path is resolved with realpath and must stay inside, so `..` and symlinks cannot lead out; the shared folders themselves cannot be deleted. With nothing shared, the page shows how to share a folder. DockGate never opens the whole machine because it runs as root in its container.
+
+### Logs, Events, Dashboard
+- **Logs**: a time range next to Tail — last 15 min, 1 hour, 24 hours, 7 days, or from–to. With an end time the logs are shown without following.
+- **Events**: keep 100 / 500 / 2000 on the page and **Export CSV** (respects the type filter).
+- **Dashboard** shows the host metrics block for the local machine too (it was remote-only).
+
+---
+
+## [2.14.0] - 2026-11-08
+
+### DockGate backup
+- **Settings → System → Backup**: download everything DockGate knows (servers and logins, SSH keys, registry logins, notification channels and rules, IP lists, firewall descriptions, audit log, settings and, optionally, the compose folders it manages) as one file encrypted with your password (AES-256-GCM, key from scrypt).
+- **Nightly copies** around 03:00 in the data folder; the newest 7 are kept and can be downloaded (encrypted) or restored.
+- **Restore** (danger zone): the file is checked first (password, contents), then staged and applied when DockGate starts, before the database opens. The current data is moved to `backups/pre-restore-…` so it can be put back by hand. DockGate restarts by itself when Docker restarts it; otherwise restart the container to finish.
+
+### Newer images
+- Each container's tag is compared with its registry (by digest, HEAD requests — Docker Hub does not count them) once a day and with **Check for updates** on Resources → Containers. Containers with a newer image show it and get **Update…**: pull and recreate with the same settings, or only that service in a stack. Stored registry logins are used for private images.
+- New opt-in rule **Newer image available** (off by default), announced once per new digest.
+
+### Deploy history
+- Every deploy of a stack (folder, Git, sync, Up, Rebuild, editor, image update) keeps the compose files and `.env` it used; the last 20 per stack and server. **Deploy history…** in a stack's ⋯ menu shows them, **Changes** compares a deploy with the one before, **Redeploy this…** puts its files back and runs `up -d` (volumes untouched). If that fails, the files in use before are put back.
+
+### Webhook channel
+- A third channel next to email and Telegram: one URL, body shaped for **Slack, Discord, Microsoft Teams, ntfy** or **JSON** (`event, server, title, text, time`). The URL is stored encrypted; every alert of every enabled rule goes there too; Send test and the notification log include it.
+
+---
+
+## [2.13.0] - 2026-11-08
+
+### Server health alerts
+- **Server not reachable** after a server has not answered for 3 minutes (once per outage), and **Server is reachable again** with how long it was down.
+- **Disk almost full** (any disk above 85%), **Memory high** (above 90% for 5 min) and **CPU high** (above 90% for 10 min, off by default).
+- DockGate checks every server once a minute over its existing SSH login (the local machine directly). Remote samples are stored, so Monitoring history keeps filling while nobody has the page open.
+- **Per-server limits**: Server Console → Monitoring → Alerts — keep the shared limit, set this server's own, or turn the rule off here.
+- Telegram and email messages say what happened, since when, and what the server looked like last; times follow the timezone in Settings.
+
+### Notification rules
+- Rules are split into **Server** and **Docker**; a switch saves at once, limits and the quiet period are edited in a dialog (the "Save Rules" button is gone).
+- "Disk usage exceeds threshold" is now **Docker uses a lot of disk space**: it always measured Docker's own disk use in GB, not how full the disk is. Its limit (was a fixed 50 GB) can be changed and is passed to the edge agent.
+
+### Search
+- **Ctrl/Cmd+K** (or the search box in the header, an icon on phones) opens one search window for containers, images, volumes, networks and stacks on the server in use, every server, every page and common actions (Run container, Deploy stack, Pull image, Prune, Add server, quick terminal).
+
+### Fixed
+- **Default shell** now preselects the shell in Tools → Terminal and the quick terminal.
+- **Container list** (Table / Cards) now sets how Resources → Containers opens.
+- **Log timestamps** now also applies to Observe → Logs.
+- Settings load before the first page draws, so these apply right after a refresh too.
+- Removed six setting keys nothing used (log tail lines, auto-scroll, wrap lines, terminal font size, date format, confirm destructive); the API now rejects them.
+
+---
+
+## [2.12.1] - 2026-11-08
+
+### Fixed
+- **Open** in Servers (and every other way into a server console: Dashboard cards, Monitoring, links) now makes that server the active one, so the server picker in the header always names the server on screen. A server with an access password asks for it first; cancelling keeps the console closed. Before, the console opened while the header still showed the previous server, and a server's access password could be skipped by opening its console.
+- Switching servers in the header while a console is open now opens the new server's console on the same tab (or the Servers list for the local machine). Before, the page stayed on the old server.
+
+---
+
 ## [2.12.0] - 2026-11-08
 
 The rest of DockGate now follows the same layout as the server pages: a breadcrumb in the top bar, one header per page with its main action, standard tables with a ⋯ menu for rare and destructive actions, and settings that save as you change them. No function was removed; old links still work.

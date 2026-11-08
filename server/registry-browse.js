@@ -48,11 +48,11 @@ function fetchT(url, opts = {}) {
 
 // A v2 GET with the token dance: try unauthenticated; on 401 read WWW-Authenticate, exchange the stored
 // Basic credential for a bearer token at the realm, then retry. `scope` overrides the default pull scope.
-async function v2Get(registry, path, { scope, accept } = {}) {
+async function v2Get(registry, path, { scope, accept, method = 'GET' } = {}) {
   const url = apiBase(registry.server_address) + path;
   const headers = {};
   if (accept) headers.Accept = accept;
-  let res = await fetchT(url, { headers });
+  let res = await fetchT(url, { method, headers });
   if (res.status === 401) {
     const wa = parseBearer(res.headers.get('www-authenticate'));
     if (wa && wa.realm) {
@@ -78,7 +78,7 @@ async function v2Get(registry, path, { scope, accept } = {}) {
       const tJson = await tRes.json().catch(() => ({}));
       const token = tJson.token || tJson.access_token;
       if (!token) throw new Error('No token returned by registry auth');
-      res = await fetchT(url, { headers: { ...headers, Authorization: 'Bearer ' + token } });
+      res = await fetchT(url, { method, headers: { ...headers, Authorization: 'Bearer ' + token } });
     }
   }
   return res;
@@ -125,4 +125,23 @@ async function getManifestInfo(registry, repoIn, ref) {
   return { digest, size };
 }
 
-module.exports = { listTags, getManifestInfo, apiBase };
+// Digest of repo:ref as the registry has it now, read with HEAD (Docker Hub does not count HEAD requests
+// against its pull limit). It is the digest `docker pull` records in the image's RepoDigests.
+async function getRemoteDigest(registry, repoIn, ref) {
+  const repo = normRepo(registry.server_address, repoIn);
+  const accept = [
+    'application/vnd.oci.image.index.v1+json',
+    'application/vnd.docker.distribution.manifest.list.v2+json',
+    'application/vnd.docker.distribution.manifest.v2+json',
+    'application/vnd.oci.image.manifest.v1+json',
+  ].join(', ');
+  const res = await v2Get(registry, `/v2/${repo}/manifests/${encodeURIComponent(ref)}`, { scope: `repository:${repo}:pull`, accept, method: 'HEAD' });
+  if (res.status === 401 || res.status === 403) throw new Error('not authorized — add a login in Deploy → Registries');
+  if (res.status === 404) throw new Error('tag not found in the registry');
+  if (!res.ok) throw new Error(`registry answered ${res.status}`);
+  const d = res.headers.get('docker-content-digest');
+  if (!d) throw new Error('registry did not send a digest');
+  return d;
+}
+
+module.exports = { listTags, getManifestInfo, getRemoteDigest, apiBase, normRepo, HUB_ALIASES };

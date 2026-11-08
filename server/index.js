@@ -76,6 +76,8 @@ app.use('/api/agent', require('./routes/agent'));
 app.use('/api/monitoring', require('./routes/monitoring'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/meta', require('./routes/settings'));
+app.use('/api/backup', require('./routes/backup')); // DockGate's own backup and restore
+app.use('/api/schedules', require('./routes/schedules')); // Tools → Schedules
 
 // Startup-da saxlanmış aktiv server-i bərpa et (yalnız "local" olmadıqda)
 try {
@@ -440,13 +442,17 @@ io.on('connection', (socket) => {
 
   // Container log streaming
   let logStream = null;
-  socket.on('logs:subscribe', async ({ containerId, tail = 100, timestamps = false }) => {
+  // since / until: unix seconds (Observe → Logs time range). With a range the whole range is sent
+  // (Docker applies tail to it too, capped at 20 000 lines); with an end time there is nothing to follow.
+  socket.on('logs:subscribe', async ({ containerId, tail = 100, timestamps = false, since, until }) => {
     if (logStream) { try { logStream.destroy(); } catch(e){} logStream = null; }
     try {
       const container = dockerService.docker.getContainer(containerId);
-      logStream = await container.logs({
-        stdout: true, stderr: true, tail, follow: true, timestamps
-      });
+      const opts = { stdout: true, stderr: true, tail, follow: true, timestamps };
+      const sec = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : null);
+      if (sec(since)) { opts.since = sec(since); opts.tail = 20000; }
+      if (sec(until)) { opts.until = sec(until); opts.follow = false; }
+      logStream = await container.logs(opts);
       logStream.on('data', (chunk) => {
         const text = dockerService.demuxLogs(chunk);
         socket.emit('logs:data', { containerId, data: text });
@@ -618,6 +624,39 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   // Start one event monitor per registered server (local + every SSH host).
   // Notifications fire from any server regardless of which one is active in the UI.
   monitorManager.startAll();
+  // Server health: reachability, disk, memory and CPU alerts for every server, checked once a minute.
+  if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
+  if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
+  // Newer-image check for every server: 10 minutes after start, then once a day. New updates are announced
+  // once per new digest when the "Newer image available" rule is on (off by default).
+  if (process.env.NODE_ENV !== 'test') {
+    const runImageChecks = async () => {
+      const IU = require('./image-updates'), HM = require('./notifications/health-monitor');
+      const servers = [{ id: 'local', type: 'local' }, ...stmts.getServers.all().filter(x => x.id !== 'local' && x.type !== 'local')];
+      for (const srv of servers) {
+        try {
+          const client = srv.id === 'local' ? dockerService.createLocalClient() : dockerService.createSshClient(srv);
+          await IU.checkServer(srv.id, client);
+          const fresh = IU.unannounced(srv.id);
+          if (fresh.length) {
+            const name = HM.serverLabel(srv);
+            const list = fresh.map(r => r.image).join(', ');
+            const sent = await HM.deliver('image_update', srv, `${name}: newer image${fresh.length > 1 ? 's' : ''} available`,
+              `🔵 ${name}: newer image${fresh.length > 1 ? 's' : ''} available\n${list}\nUpdate them from Resources → Containers.`,
+              `<p>A newer version of the same tag is in the registry for: <b>${list.replace(/</g, '&lt;')}</b> on ${name.replace(/</g, '&lt;')}.</p><p>Update them from DockGate → Resources → Containers.</p>`);
+            if (sent || !stmts.getRule.get('image_update')?.enabled) IU.announce(srv.id, fresh);
+          }
+        } catch (e) { console.warn(`[image-updates] ${srv.id}:`, e.message); }
+      }
+    };
+    // Nightly copy of DockGate's data (backups/auto-YYYY-MM-DD.dgbak, newest 7 kept).
+    const runAutoBackup = () => require('./backup').autoBackup().then(n => console.log('[backup] nightly copy', n)).catch(e => console.warn('[backup] nightly copy failed:', e.message));
+    const msToNight = () => { const d = new Date(); d.setHours(3, 0, 0, 0); if (d <= new Date()) d.setDate(d.getDate() + 1); return d - new Date(); };
+    setTimeout(() => { runAutoBackup(); setInterval(runAutoBackup, 24 * 60 * 60 * 1000); }, msToNight());
+    if (!require('./backup').listAuto().length) setTimeout(runAutoBackup, 5 * 60 * 1000); // first copy soon after the first start
+    setTimeout(runImageChecks, 10 * 60 * 1000);
+    setInterval(runImageChecks, 24 * 60 * 60 * 1000);
+  }
 });
 
 // Close pooled SSH connections on shutdown so DockGate leaves no zombie sessions on remote hosts.

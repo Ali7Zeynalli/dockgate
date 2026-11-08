@@ -61,7 +61,7 @@ Router.register('dashboard', async (content) => {
         ${fleetCards(srvData.servers || [], (fleetOv && fleetOv.servers) || {}, activeId)}
 
         <!-- Active remote server's host metrics (renderHostMonitoring owns its own 5s poll) -->
-        ${isRemote ? '<div id="dash-host" class="mb-3"></div>' : ''}
+        <div id="dash-host" class="mb-3"></div>
 
         <!-- Summary Cards / Xülasə Kartları -->
         <div class="summary-grid">
@@ -363,7 +363,7 @@ Router.register('dashboard', async (content) => {
       // the active server changed; otherwise we reattach the still-polling node. Local host metrics need the
       // /proc mount (deferred), so skipped.
       const dashHost = document.getElementById('dash-host');
-      if (isRemote && dashHost && typeof renderHostMonitoring === 'function') {
+      if (dashHost && typeof renderHostMonitoring === 'function') { // local too: the machine DockGate runs on
         if (hostNode && hostForServer === activeId) {
           dashHost.replaceWith(hostNode);            // reattach the live monitor — no teardown, no skeleton flash
         } else {

@@ -6,6 +6,9 @@ const fs = require('fs');
 const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
+// A restore staged by Settings → System is applied here, before the database is opened (server/backup.js).
+try { require('./backup').applyPending(dataDir); } catch (e) { console.error('[backup] restore could not be applied:', e.message); }
+
 const db = new Database(path.join(dataDir, 'docker-panel.db'));
 
 // Enable WAL mode for better performance
@@ -269,12 +272,67 @@ const defaultRules = [
   ['container_unhealthy', 'Container health check failing', 10],
   ['disk_threshold', 'Disk usage exceeds threshold', 30],
   ['build_failed', 'Image build failed', 5],
+  ['image_update', 'Newer image available', 1440],
+  ['schedule_failed', 'Scheduled task failed', 60],
   ['container_start', 'Container started', 5],
   ['container_pause', 'Container paused', 5],
   ['container_unpause', 'Container unpaused', 5],
 ];
 const insertRule = db.prepare('INSERT OR IGNORE INTO notification_rules (event_type, description, cooldown_minutes) VALUES (?, ?, ?)');
 defaultRules.forEach(([type, desc, cd]) => insertRule.run(type, desc, cd));
+
+// Rule limits (JSON) and server-health rules. The health monitor (notifications/health-monitor.js) checks
+// every server once a minute; a server can use its own limits or turn a rule off (alert_overrides).
+// Compose deploy history: every deploy of a stack with the compose files it used (last 20 per stack).
+migrate(`CREATE TABLE IF NOT EXISTS compose_deploys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project TEXT NOT NULL,
+  server_id TEXT,
+  kind TEXT,
+  source TEXT,
+  git_commit TEXT,
+  status TEXT,
+  error TEXT,
+  files TEXT,
+  files_hash TEXT,
+  source_ip TEXT,
+  started_at INTEGER,
+  finished_at INTEGER
+)`);
+migrate('CREATE INDEX IF NOT EXISTS idx_compose_deploys_project ON compose_deploys (project, id)');
+migrate('ALTER TABLE notification_rules ADD COLUMN params TEXT');
+migrate(`CREATE TABLE IF NOT EXISTS alert_overrides (
+  server_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'default',
+  params TEXT,
+  PRIMARY KEY (server_id, event_type)
+)`);
+const healthRules = [
+  // [type, description, cooldown, enabled, params]
+  ['server_down', 'Server not reachable', 30, 1, { minutes: 3 }],
+  ['server_up', 'Server is reachable again', 0, 1, {}],
+  ['host_disk', 'Disk almost full', 60, 1, { percent: 85 }],
+  ['host_mem', 'Memory high', 30, 1, { percent: 90, minutes: 5 }],
+  ['host_cpu', 'CPU high', 30, 0, { percent: 90, minutes: 10 }],
+];
+const insertHealthRule = db.prepare('INSERT OR IGNORE INTO notification_rules (event_type, description, cooldown_minutes, enabled, params) VALUES (?, ?, ?, ?, ?)');
+healthRules.forEach(([t, d, cd, en, pr]) => insertHealthRule.run(t, d, cd, en, JSON.stringify(pr)));
+// "Newer image available" is opt-in: it was just inserted by defaultRules (enabled = 1) on databases that
+// did not have it yet — turn it off once, then leave it to the user.
+try {
+  const seen = db.prepare("SELECT value FROM settings WHERE key = 'image_update_rule_init'").get();
+  if (!seen) {
+    db.prepare("UPDATE notification_rules SET enabled = 0 WHERE event_type = 'image_update'").run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('image_update_rule_init', '1')").run();
+  }
+} catch (e) { /* best effort */ }
+// The old "Disk usage exceeds threshold" rule measures how much space Docker uses (GB), not how full the
+// disk is — name it for what it does and store its limit (was a fixed 50 GB in code).
+try {
+  db.prepare("UPDATE notification_rules SET description = 'Docker uses a lot of disk space' WHERE event_type = 'disk_threshold' AND description = 'Disk usage exceeds threshold'").run();
+  db.prepare("UPDATE notification_rules SET params = ? WHERE event_type = 'disk_threshold' AND params IS NULL").run(JSON.stringify({ gb: 50 }));
+} catch (e) { /* best effort */ }
 
 // Indexes for frequently queried columns / Tez-tez sorğulanan sütunlar üçün indekslər
 migrate('CREATE INDEX IF NOT EXISTS idx_activity_resource ON activity (resource_id, resource_type)');
@@ -300,14 +358,8 @@ const defaultSettings = {
   refreshInterval: '5000',
   defaultView: 'table',
   sidebarCollapsed: 'false',
-  logTailLines: '200',
   logTimestamps: 'false',
-  logAutoScroll: 'true',
-  logWrapLines: 'true',
   terminalShell: '/bin/sh',
-  terminalFontSize: '14',
-  dateFormat: 'relative',
-  confirmDestructive: 'true',
   timezone: 'auto', // display timezone — 'auto' = browser/host; otherwise an IANA zone (e.g. Asia/Baku)
   active_server: 'local',
   // App Templates catalog source. Empty = the default community catalog (500+ apps, auto-loaded by
@@ -382,6 +434,15 @@ const stmts = {
   getRule: db.prepare('SELECT * FROM notification_rules WHERE event_type = ?'),
   setRuleEnabled: db.prepare('UPDATE notification_rules SET enabled = ? WHERE event_type = ?'),
   setRuleCooldown: db.prepare('UPDATE notification_rules SET cooldown_minutes = ? WHERE event_type = ?'),
+  setRuleParams: db.prepare('UPDATE notification_rules SET params = ? WHERE event_type = ?'),
+  insertComposeDeploy: db.prepare('INSERT INTO compose_deploys (project, server_id, kind, source, git_commit, status, error, files, files_hash, source_ip, started_at, finished_at) VALUES (@project, @server_id, @kind, @source, @git_commit, @status, @error, @files, @files_hash, @source_ip, @started_at, @finished_at)'),
+  getComposeDeploys: db.prepare('SELECT id, project, server_id, kind, source, git_commit, status, error, files_hash, source_ip, started_at, finished_at, files IS NOT NULL AS has_files FROM compose_deploys WHERE project = ? AND (server_id = ? OR server_id IS NULL) ORDER BY id DESC LIMIT ?'),
+  getComposeDeploy: db.prepare('SELECT * FROM compose_deploys WHERE id = ? AND project = ?'),
+  trimComposeDeploys: db.prepare('DELETE FROM compose_deploys WHERE project = ? AND server_id IS ? AND id NOT IN (SELECT id FROM compose_deploys WHERE project = ? AND server_id IS ? ORDER BY id DESC LIMIT 20)'),
+  getAlertOverrides: db.prepare('SELECT * FROM alert_overrides WHERE server_id = ?'),
+  getAlertOverride: db.prepare('SELECT * FROM alert_overrides WHERE server_id = ? AND event_type = ?'),
+  setAlertOverride: db.prepare('INSERT INTO alert_overrides (server_id, event_type, mode, params) VALUES (?, ?, ?, ?) ON CONFLICT(server_id, event_type) DO UPDATE SET mode = excluded.mode, params = excluded.params'),
+  deleteAlertOverrides: db.prepare('DELETE FROM alert_overrides WHERE server_id = ?'),
 
   // Notification Log
   insertNotificationLog: db.prepare('INSERT INTO notification_log (event_type, subject, recipient, status, error, channel) VALUES (?, ?, ?, ?, ?, ?)'),

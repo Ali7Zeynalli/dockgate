@@ -5,6 +5,7 @@
 const { stmts } = require('../db');
 const mailer = require('./mailer');
 const telegram = require('./telegram');
+const webhook = require('./webhook');
 const templates = require('./templates');
 
 // A `docker restart` emits die→…→restart. Hold a "Stopped/Crashed" alert this long so a following
@@ -137,7 +138,7 @@ class EventMonitor {
   }
 
   async _handleEvent(event) {
-    if (!mailer.isConfigured() && !telegram.isConfigured()) return;
+    if (!mailer.isConfigured() && !telegram.isConfigured() && !webhook.isConfigured()) return;
     if (!event.Type || !event.Action) return;
 
     const attrs = event.Actor?.Attributes || {};
@@ -271,7 +272,7 @@ class EventMonitor {
   // Periodic check for unhealthy containers (catches missed events)
   async _checkUnhealthy() {
     if (this.stopped) return;
-    if (!mailer.isConfigured() && !telegram.isConfigured()) return;
+    if (!mailer.isConfigured() && !telegram.isConfigured() && !webhook.isConfigured()) return;
     const rule = stmts.getRule.get('container_unhealthy');
     if (!rule || !rule.enabled) return;
 
@@ -344,6 +345,10 @@ class EventMonitor {
       const r = await telegram.sendMessage({ text: telegramText, eventType });
       if (r.success) sent = true;
     }
+    if (webhook.isConfigured()) {
+      const r = await webhook.sendMessage({ title: subject, text: String(telegramText || '').split('\n').slice(1).join('\n'), eventType, server: this.serverId }); // first Telegram line repeats the subject
+      if (r.success) sent = true;
+    }
 
     if (sent) this._markSent(eventType, resourceKey);
   }
@@ -351,7 +356,7 @@ class EventMonitor {
   // Build failure trigger — called from local build handler in server/index.js
   // Builds happen on local Docker, so this is local-only by design
   async triggerBuildFailed({ imageTag, buildId, error, duration }) {
-    if (!mailer.isConfigured() && !telegram.isConfigured()) return;
+    if (!mailer.isConfigured() && !telegram.isConfigured() && !webhook.isConfigured()) return;
 
     await this._sendNotification('build_failed', imageTag || 'untagged', {
       subject: `Build Failed: ${imageTag || 'untagged'}`,
@@ -363,7 +368,7 @@ class EventMonitor {
   // Periodic disk usage check
   async checkDiskThreshold() {
     if (this.stopped) return;
-    if (!mailer.isConfigured() && !telegram.isConfigured()) return;
+    if (!mailer.isConfigured() && !telegram.isConfigured() && !webhook.isConfigured()) return;
 
     const rule = stmts.getRule.get('disk_threshold');
     if (!rule || !rule.enabled) return;
@@ -380,7 +385,7 @@ class EventMonitor {
 
       // thresholdGB is an ABSOLUTE size limit on what Docker uses (NOT a disk-fullness percentage).
       // Previously the GB/50GB ratio was shown as a "percent" and was misleading — now it's in absolute GB.
-      const thresholdGB = 50;
+      const thresholdGB = Number(require('./alert-rules').parseJson(rule.params).gb) || 50; // rule limit (Settings → Notifications)
       const usedGB = totalUsed / (1024 * 1024 * 1024);
 
       if (usedGB > thresholdGB) {

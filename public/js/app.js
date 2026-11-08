@@ -8,7 +8,7 @@ const navItems = {
   resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['builds', 'Builds'], ['prune', 'Prune']], default: 'containers' },
   deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose stacks'], ['templates', 'App templates'], ['registries', 'Registries']], default: 'compose' },
   observe: { label: 'Observe', icon: Icons.events, tabs: [['logs', 'Logs'], ['events', 'Events'], ['audit', 'Audit log']], default: 'logs' },
-  tools: { label: 'Tools', icon: Icons.terminal, tabs: [['terminal', 'Terminal'], ['files', 'Files']], default: 'terminal' },
+  tools: { label: 'Tools', icon: Icons.terminal, tabs: [['terminal', 'Terminal'], ['files', 'Files'], ['schedules', 'Schedules']], default: 'terminal' },
   infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH keys'], ['agent', 'Edge agent']], default: 'servers' },
   'server-console': { label: 'Server Console', icon: Icons.terminal, tabs: [['overview', 'Overview'], ['monitoring', 'Monitoring'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users & keys'], ['firewall', 'Firewall'], ['fail2ban', 'Fail2ban'], ['manage', 'Services'], ['logs', 'Logs'], ['settings', 'Settings']], default: 'overview' },
   settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification log'], ['update', 'Software update'], ['system', 'System'], ['security', 'Security']], default: 'general' }
@@ -149,26 +149,22 @@ function syncSidebarTabs() {
   });
 }
 
-// Global Search
-function initGlobalSearch() {
-  const input = document.getElementById('search-input');
-  if (!input) return;
-  
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && input.value.trim() !== '') {
-      Router.navigate('resources',{tab:'containers'});
-      setTimeout(() => {
-        const pageSearch = document.getElementById('container-search');
-        if (pageSearch) {
-          pageSearch.value = input.value;
-          pageSearch.dispatchEvent(new Event('input'));
-        }
-        input.value = '';
-        input.blur();
-      }, 100);
-    }
-  });
+// Global search lives in command-palette.js (⌘K / Ctrl+K and the header search box).
+function initGlobalSearch() {}
+
+// DockGate settings for pages that need them before Settings was opened (default shell, container list
+// layout, log timestamps). Kept in the Store and in localStorage so a hard refresh has them at once.
+function rememberSettings(s) {
+  Store.set('settings', { ...(Store.get('settings') || {}), ...s });
+  try { localStorage.setItem('dcc_settings', JSON.stringify(Store.get('settings'))); } catch (e) { /* private mode */ }
 }
+function appSetting(key, fallback) {
+  let s = Store.get('settings');
+  if (!s || !Object.keys(s).length) { try { s = JSON.parse(localStorage.getItem('dcc_settings') || '{}'); } catch (e) { s = {}; } }
+  return s && s[key] != null && s[key] !== '' ? s[key] : fallback;
+}
+window.rememberSettings = rememberSettings;
+window.appSetting = appSetting;
 
 // Apply theme to document / Temanı sənədə tətbiq et
 function applyTheme(theme) {
@@ -271,10 +267,13 @@ async function boot() {
     // Remap a legacy/bookmarked sub-route (e.g. #/containers) onto its consolidated section tab.
     // Moved pages (#/containers, #/activity?tab=…) are rewritten inside Router.navigate (Router.resolve).
     // replace:true → set the initial hash without adding a spurious history entry
+    // Settings first (one small request), so the first page already uses them (container layout, shell…).
+    try { rememberSettings(await API.get('/meta/settings')); } catch (e) { /* pages fall back to defaults */ }
     await Router.navigate(startPage, startParams, { replace: true });
 
     // Load theme + display timezone from server settings / Server settings-dən tema və timezone yüklə
     API.get('/meta/settings').then(s => {
+      if (s) rememberSettings(s);
       if (s && s.theme) {
         applyTheme(s.theme);
         localStorage.setItem('dcc_theme', s.theme);
@@ -441,6 +440,24 @@ async function activateServer(id, label) {
 window.promptAccessPassword = promptAccessPassword;
 window.activateServer = activateServer;
 
+// Make a server the one DockGate works on (the header picker shows it): access-password gate, then the
+// Store, the remembered host and the header picker are updated. Returns true when the server is now active.
+async function useServer(id) {
+  const cur = Store.get('activeServer');
+  if (cur && cur.id === id) return true;
+  const data = await API.get('/servers');
+  const srv = (data.servers || []).find(s => s.id === id);
+  if (!srv) throw new Error(`Server "${id}" not found`);
+  const ok = srv.isActive || await activateServer(id, srv.name || srv.id); // already active (Store not filled yet on boot)
+  if (!ok) return false;
+  Store.set('activeServer', { ...srv, isActive: true });
+  localStorage.setItem('dcc_active_type', srv.type || 'local');
+  localStorage.setItem('dcc_active_host', srv.host || '');
+  await initServerSwitcher();
+  return true;
+}
+window.useServer = useServer;
+
 async function initServerSwitcher() {
   try {
     const data = await API.get('/servers');
@@ -496,7 +513,12 @@ async function initServerSwitcher() {
         }
         const currentPage = Store.get('currentPage') || 'dashboard';
         const currentParams = Store.get('currentParams') || {};
-        setTimeout(() => Router.navigate(currentPage, currentParams), 300);
+        // On a server console the page follows the picker: the new server's console (same tab), or the
+        // Servers list when switching to the local machine (it has no console).
+        if (currentPage === 'server-console') {
+          const remote = sel && sel.id !== 'local' && sel.type !== 'local';
+          setTimeout(() => remote ? Router.navigate('server-console', { id, tab: currentParams.tab }) : Router.navigate('infra', { tab: 'servers' }), 300);
+        } else setTimeout(() => Router.navigate(currentPage, currentParams), 300);
       } catch (err) {
         showToast(`Switch failed: ${err.message}`, 'error', 8000);
         revert();

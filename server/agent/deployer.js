@@ -49,7 +49,9 @@ function buildEnv(serverId) {
   const rules = {};
   for (const r of rulesRows) rules[r.event_type] = { enabled: !!r.enabled, cooldown_minutes: r.cooldown_minutes };
   const tz = stmts.getSetting.get('timezone')?.value || 'auto';
-  const diskGb = stmts.getSetting.get('disk_threshold_gb')?.value;
+  // The agent watches Docker's disk use with the same limit as the "Docker uses a lot of disk space" rule.
+  let diskGb = stmts.getSetting.get('disk_threshold_gb')?.value;
+  try { const r = stmts.getRule.get('disk_threshold'); const gb = r && JSON.parse(r.params || '{}').gb; if (gb) diskGb = String(gb); } catch (e) { /* keep the setting */ }
 
   const env = [
     `SERVER_LABEL=${serverId}`,

@@ -32,7 +32,11 @@ Router.register('settings', async (content, params) => {
         else if (tab === 'notifications') renderNotifications();
         else if (tab === 'log') renderLog();
         else if (tab === 'update') renderUpdate();
-        else if (tab === 'system') renderSystemInfo(tabContent); // System info now lives here (global from system.js)
+        else if (tab === 'system') { // backup (backup-panel.js) + Docker / OS info (system.js)
+          tabContent.innerHTML = '<div id="backup-box"></div><div id="sysinfo-box" style="margin-top:28px"></div>';
+          renderBackupInto(tabContent.querySelector('#backup-box'));
+          renderSystemInfo(tabContent.querySelector('#sysinfo-box'));
+        }
         else if (tab === 'security') renderSecurity();
       }
 
@@ -87,13 +91,13 @@ Router.register('settings', async (content, params) => {
           <div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Appearance</div></div></div>
           ${UI.settings([
             { label: 'Theme', desc: 'Light or dark.', value: sel('set-theme', [['dark', 'Dark'], ['light', 'Light']], settings.theme || 'dark') },
-            { label: 'Container list', desc: 'How Resources → Containers opens.', value: sel('set-view', [['table', 'Table'], ['card', 'Cards']], settings.defaultView || 'table') },
+            { label: 'Container list', desc: 'How Resources → Containers opens: table or cards.', value: sel('set-view', [['table', 'Table'], ['card', 'Cards']], settings.defaultView || 'table') },
             { label: 'Timezone', desc: 'Used for dates on every page and in notifications.', value: `<select class="select" id="set-timezone" aria-label="Timezone">${tzOptions}</select>` },
           ])}
           <div class="ui-ph"><div class="ui-ph-title">Terminal and logs</div></div>
           ${UI.settings([
-            { label: 'Default shell', desc: 'Shell opened by Tools → Terminal and the quick terminal.', value: sel('set-shell', [['/bin/sh', '/bin/sh'], ['/bin/bash', '/bin/bash'], ['/bin/zsh', '/bin/zsh']], settings.terminalShell || '/bin/sh') },
-            { label: 'Log timestamps', desc: 'Show the time on every log line.', action: `<div class="toggle ${settings.logTimestamps === 'true' ? 'active' : ''}" id="set-logtimes" role="switch" tabindex="0" aria-checked="${settings.logTimestamps === 'true'}" aria-label="Log timestamps"></div>` },
+            { label: 'Default shell', desc: 'Shell picked first in Tools → Terminal and the quick terminal. You can still change it there.', value: sel('set-shell', [['/bin/sh', '/bin/sh'], ['/bin/bash', '/bin/bash'], ['/bin/zsh', '/bin/zsh']], settings.terminalShell || '/bin/sh') },
+            { label: 'Log timestamps', desc: 'Start with timestamps on in Observe → Logs and in container logs.', action: `<div class="toggle ${settings.logTimestamps === 'true' ? 'active' : ''}" id="set-logtimes" role="switch" tabindex="0" aria-checked="${settings.logTimestamps === 'true'}" aria-label="Log timestamps"></div>` },
           ])}
           <div class="ui-ph"><div class="ui-ph-title">DockGate service</div></div>
           ${UI.settings([
@@ -106,7 +110,7 @@ Router.register('settings', async (content, params) => {
           try {
             await API.post('/meta/settings', patch);
             Object.assign(settings, patch);
-            Store.set('settings', { ...settings });
+            rememberSettings(settings);
             if (patch.theme) { applyTheme(patch.theme); localStorage.setItem('dcc_theme', patch.theme); }
             if (patch.timezone) localStorage.setItem('dcc_timezone', patch.timezone);
             showToast(`Saved · ${label}`);
@@ -137,24 +141,16 @@ Router.register('settings', async (content, params) => {
         tabContent.innerHTML = '<div class="text-muted text-sm">Loading notification settings...</div>';
 
         try {
-          const [smtpConfig, tgConfig, rules, hostNotifs] = await Promise.all([
+          const [smtpConfig, tgConfig, rules, hostNotifs, whConfig] = await Promise.all([
             API.get('/meta/smtp'),
             API.get('/meta/telegram'),
             API.get('/meta/notifications/rules'),
             API.get('/meta/notifications/hosts').catch(() => ({ local: { enabled: true }, servers: [] })),
+            API.get('/meta/webhook').catch(() => ({ configured: false, format: 'json' })),
           ]);
+          const WH_FORMATS = [['slack', 'Slack'], ['discord', 'Discord'], ['teams', 'Microsoft Teams'], ['ntfy', 'ntfy'], ['json', 'JSON (your own system)']];
+          const whLabel = (WH_FORMATS.find(f => f[0] === whConfig.format) || [, 'JSON'])[1];
 
-          const ruleLabels = {
-            container_die: 'Container Stopped/Died',
-            container_restart: 'Container Restarted',
-            container_oom: 'Container OOM Kill',
-            container_unhealthy: 'Container Unhealthy',
-            disk_threshold: 'Disk Usage Threshold',
-            build_failed: 'Build Failed',
-            container_start: 'Container Started',
-            container_pause: 'Container Paused',
-            container_unpause: 'Container Resumed',
-          };
 
           const emailConfigured = !!(smtpConfig.smtp_host);
           const tgConfigured = !!(tgConfig.tg_chat_id);
@@ -244,6 +240,11 @@ Router.register('settings', async (content, params) => {
                   <button class="btn btn-ghost btn-sm" id="clear-telegram" style="margin-left:auto;">Clear</button>
                 </div>
               </div>
+
+              <!-- Webhook: Slack, Discord, Teams, ntfy or JSON -->
+              ${UI.settings([{ label: 'Webhook', desc: 'Sends every alert to one URL: Slack, Discord, Microsoft Teams, ntfy, or JSON for your own system.',
+                value: whConfig.configured ? `${UI.pill('ok', 'on')} <span class="ui-sub">${escapeHtml(whLabel)} · <span class="td-mono">${escapeHtml(whConfig.url)}</span></span>` : UI.pill('off', 'not set up'),
+                action: `${whConfig.configured ? UI.btn('Send test', 'id="test-webhook"') + ' ' : ''}${UI.btn(whConfig.configured ? 'Edit' : 'Set up…', 'id="edit-webhook"')}${whConfig.configured ? ' ' + UI.btn('Remove…', 'id="clear-webhook"') : ''}` }])}
             </div>
 
             <!-- Monitored Hosts / Server Muting -->
@@ -278,25 +279,8 @@ Router.register('settings', async (content, params) => {
               `).join('')}
             </div>
 
-            <!-- Rules -->
-            <div class="settings-section" style="margin-top:20px;">
-              <div class="settings-section-title">Rules</div>
-              ${rules.map(r => `
-                <div class="settings-row" style="padding:8px 0;">
-                  <div>
-                    <div class="settings-row-label">${ruleLabels[r.event_type] || r.event_type}</div>
-                    <div class="settings-row-desc">${escapeHtml(r.description || '')}</div>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:12px;">
-                    <span class="text-xs text-muted">Cooldown:</span>
-                    <input class="input" style="width:60px;padding:4px 6px;font-size:12px;" type="number" min="0" max="1440" value="${r.cooldown_minutes}" data-rule="${r.event_type}" data-field="cooldown" title="0 = send every occurrence (no throttle)" />
-                    <span class="text-xs text-muted">min · 0 = every</span>
-                    <div class="toggle ${r.enabled ? 'active' : ''}" data-rule="${r.event_type}" data-field="enabled"></div>
-                  </div>
-                </div>
-              `).join('')}
-              <button class="btn btn-primary btn-sm" id="save-rules" style="margin-top:8px;">Save Rules</button>
-            </div>
+            <!-- Rules: shared alert rules (alert-rules-panel.js) -->
+            <div id="alert-rules-box" style="margin-top:20px"></div>
 
             <div class="settings-section" style="margin-top:20px;">
               ${UI.settings([{ label: 'Edge agent', desc: 'Keeps watching a server and sends these alerts when DockGate cannot reach it. Installed per server, so it now lives under Servers.', action: UI.btn('Open Edge agent', 'id="open-edge-agent"') }])}
@@ -407,21 +391,30 @@ Router.register('settings', async (content, params) => {
           });
 
           // Save Rules
-          document.getElementById('save-rules')?.addEventListener('click', async () => {
-            try {
-              const updates = [];
-              tabContent.querySelectorAll('.toggle[data-rule]').forEach(toggle => {
-                updates.push(API.put(`/meta/notifications/rules/${toggle.dataset.rule}`, { enabled: toggle.classList.contains('active') }));
-              });
-              tabContent.querySelectorAll('input[data-rule][data-field="cooldown"]').forEach(input => {
-                const cd = parseInt(input.value, 10);
-                updates.push(API.put(`/meta/notifications/rules/${input.dataset.rule}`, { cooldown_minutes: Number.isFinite(cd) && cd >= 0 ? cd : 5 }));
-              });
-              await Promise.all(updates);
-              showToast('Notification rules saved');
-              if (typeof edgeAgentSync === 'function') edgeAgentSync(true); // push new rules to installed agents
-            } catch(e) { showToast(e.message, 'error'); }
+          renderAlertRules(document.getElementById('alert-rules-box'));
+
+          document.getElementById('edit-webhook')?.addEventListener('click', () => UI.dialog({
+            title: 'Webhook channel', context: false,
+            body: `<div class="ui-field"><label for="wh-format">Format</label><select class="select" id="wh-format">${WH_FORMATS.map(([v, l]) => `<option value="${v}" ${v === whConfig.format ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+              <div class="ui-field"><label for="wh-url">URL</label><input class="input" id="wh-url" placeholder="${whConfig.configured ? 'Leave empty to keep the current URL' : 'https://hooks.slack.com/services/…'}" autocomplete="off"><span class="ui-help">The URL is stored encrypted. For ntfy use the topic URL, e.g. https://ntfy.sh/my-dockgate.</span></div>
+              ${UI.explain('Every alert of every enabled rule is also sent here.', 'JSON format sends <span class="td-mono">{ event, server, title, text, time }</span>.')}`,
+            onSave: async (ov) => {
+              const url = ov.querySelector('#wh-url').value.trim();
+              if (!url && !whConfig.configured) throw new Error('Enter the webhook URL');
+              await API.post('/meta/webhook', { format: ov.querySelector('#wh-format').value, ...(url ? { url } : {}) });
+              showToast('Webhook saved');
+              renderNotifications();
+            },
+          }));
+          document.getElementById('test-webhook')?.addEventListener('click', async (e) => {
+            e.target.disabled = true;
+            try { await API.post('/meta/webhook/test'); showToast('Test message sent to the webhook'); }
+            catch (er) { showToast(`Webhook failed: ${er.message}`, 'error', 9000); }
+            finally { e.target.disabled = false; }
           });
+          document.getElementById('clear-webhook')?.addEventListener('click', () => showConfirm('Remove webhook', 'Alerts stop going to this webhook. Email and Telegram are not affected.', async () => {
+            try { await API.del('/meta/webhook'); showToast('Webhook removed'); renderNotifications(); } catch (er) { showToast(er.message, 'error'); }
+          }, true));
 
           // Edge Agent (per-server observability) — always render; agent can install in metrics-only mode.
           document.getElementById('open-edge-agent')?.addEventListener('click', () => Router.navigate('infra', { tab: 'agent' }));

@@ -114,9 +114,7 @@ Router.register('terminal', async (content, params) => {
         <div style="flex:1"></div>
         <label class="text-sm font-bold">Shell:</label>
         <select class="select" id="terminal-shell" style="width:120px">
-          <option value="/bin/sh">/bin/sh</option>
-          <option value="/bin/bash">/bin/bash</option>
-          <option value="/bin/zsh">/bin/zsh</option>
+          ${['/bin/sh', '/bin/bash', '/bin/zsh'].map(sh => `<option value="${sh}" ${sh === appSetting('terminalShell', '/bin/sh') ? 'selected' : ''}>${sh}</option>`).join('')}
         </select>
         <button class="btn btn-primary" id="term-connect" ${!selectedContainerId ? 'disabled' : ''}>Connect</button>
         <button class="btn btn-secondary" id="term-reconnect" style="display:none">${Icons.refresh} Reconnect</button>

@@ -7,6 +7,18 @@ Router.register('server-console', async (content, params) => {
   const id = params && params.id;
   if (!id) { content.innerHTML = '<div class="empty-state"><p>No server selected.</p><button class="btn btn-primary mt-2" onclick="Router.navigate(\'infra\',{tab:\'servers\'})">Back to Servers</button></div>'; return; }
 
+  // Opening a server's console makes it the active server, so the header picker always names the server
+  // on screen (and a server with an access password asks for it here, as switching in the header does).
+  const navId = Router._navId;
+  const activeNow = Store.get('activeServer');
+  if (!activeNow || activeNow.id !== id) {
+    let ok = false;
+    try { ok = await useServer(id); }
+    catch (e) { content.innerHTML = UI.errorState(e, { title: 'This server could not be opened' }); return; }
+    if (!Router.isActiveNav(navId)) return;
+    if (!ok) { showToast('Not switched — the console stays closed', 'info'); Router.navigate('infra', { tab: 'servers' }, { replace: true }); return; }
+  }
+
   // Fetch the server row for the header (host / user). The list never exposes secrets.
   let server = { id };
   try { const data = await API.get('/servers'); server = (data.servers || []).find(s => s.id === id) || { id }; } catch (e) {}

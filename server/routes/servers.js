@@ -360,6 +360,8 @@ router.delete('/:id', (req, res) => {
     stmts.deleteServer.run(id);
     require('../ssh-pool').invalidate(id); // close any pooled SSH connection to the removed server
     try { stmts.deleteHostMetrics.run(id); } catch (e) { console.warn('[host-metrics] cleanup failed:', e.message); }
+    try { stmts.deleteAlertOverrides.run(id); require('../notifications/health-monitor').forget(id); } catch (e) { /* best effort */ }
+    try { require('../schedules').q.delServer.run(id); } catch (e) { /* best effort */ }
     logAction({ req, server: 'local', resourceId: id, resourceType: 'server', resourceName: id, action: 'delete' });
 
     // Stop the dedicated monitor for this server
@@ -477,12 +479,52 @@ router.post('/:id/provision', (req, res) => {
   }
 });
 
+// GET /api/servers/:id/alerts — server-health rules as they apply to this server: shared limits, this
+// server's own choice (default / custom / off) and what the health monitor saw last.
+router.get('/:id/alerts', (req, res) => {
+  try {
+    const id = req.params.id;
+    if (id !== 'local' && !stmts.getServer.get(id)) return res.status(404).json({ error: 'Server not found' });
+    const AR = require('../notifications/alert-rules');
+    const ov = {}; for (const o of stmts.getAlertOverrides.all(id)) ov[o.event_type] = o;
+    const rules = AR.HEALTH_TYPES.map(t => {
+      const r = stmts.getRule.get(t); if (!r) return null;
+      const o = ov[t];
+      return { event_type: t, description: r.description, enabled: !!r.enabled, cooldown_minutes: r.cooldown_minutes, shared: AR.parseJson(r.params), limits: AR.LIMITS[t], mode: o ? o.mode : 'default', own: o ? AR.parseJson(o.params) : null, effective: AR.effective(r, o) };
+    }).filter(Boolean);
+    res.json({ rules, status: require('../notifications/health-monitor').statusOf(id) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/servers/:id/alerts/:type { mode: 'default'|'custom'|'off', params? }
+router.put('/:id/alerts/:type', (req, res) => {
+  try {
+    const { id, type } = req.params;
+    const AR = require('../notifications/alert-rules');
+    if (id !== 'local' && !stmts.getServer.get(id)) return res.status(404).json({ error: 'Server not found' });
+    if (!AR.HEALTH_TYPES.includes(type)) return res.status(400).json({ error: 'Unknown rule' });
+    const mode = (req.body || {}).mode;
+    if (!AR.MODES.includes(mode)) return res.status(400).json({ error: 'mode must be default, custom or off' });
+    let params = null;
+    if (mode === 'custom') {
+      try { params = JSON.stringify(AR.validateParams(type, (req.body || {}).params)); }
+      catch (e) { return res.status(400).json({ error: e.message }); }
+    }
+    stmts.setAlertOverride.run(id, type, mode, params);
+    logAction({ req, server: id, resourceType: 'notification', resourceName: type, action: 'alert_override', details: { mode, params: params ? JSON.parse(params) : null } });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/servers/:id/host/stats — one live snapshot: CPU/RAM/swap/disk/net/load/uptime/top procs/open ports.
 router.get('/:id/host/stats', async (req, res) => {
   try {
+    // The machine DockGate runs on is read directly (Dashboard / Monitoring of "Local"); its samples are
+    // stored by the 15 s local sampler in index.js, so nothing is stored here for it.
+    if (req.params.id === 'local') return res.json(await hostStats.collectLocalStats());
     const server = stmts.getServer.get(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
-    if (server.id === 'local' || server.type === 'local') return res.status(400).json({ error: 'Host stats target a remote SSH server' });
+    if (server.type === 'local') return res.status(400).json({ error: 'Host stats target a remote SSH server' });
     const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
     const s = await hostStats.collectHostStats(cfg);
     // Opportunistic time-series sample (best-effort; a DB hiccup must not fail the live view).
@@ -510,7 +552,7 @@ router.get('/:id/docker/summary', async (req, res) => {
 // GET /api/servers/:id/host/metrics?limit= — stored time-series samples (chronological) for trend charts.
 router.get('/:id/host/metrics', (req, res) => {
   try {
-    if (!stmts.getServer.get(req.params.id)) return res.status(404).json({ error: 'Server not found' });
+    if (req.params.id !== 'local' && !stmts.getServer.get(req.params.id)) return res.status(404).json({ error: 'Server not found' });
     const limit = Math.min(2000, Math.max(10, parseInt(req.query.limit, 10) || 240));
     res.json({ serverId: req.params.id, metrics: stmts.getHostMetrics.all(req.params.id, limit).reverse() });
   } catch (err) { res.status(500).json({ error: err.message }); }

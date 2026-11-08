@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.12.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.15.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.12.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.15.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -131,7 +131,7 @@ sudo systemctl restart docker
 | <img src="screenshots/14-audit.png" width="100%" alt="Audit"> | <img src="screenshots/15-infrastructure.png" width="100%" alt="Infrastructure"> |
 | **Server Console** — host services & host logs | **Notifications** — channels, rules, Edge Notifier |
 | <img src="screenshots/16-server-console.png" width="100%" alt="Server Console"> | <img src="screenshots/18-settings-notifications.png" width="100%" alt="Notifications"> |
-| **Security** — change the admin password | **System** — Docker engine & host info |
+| **Security** — change the admin password | **System** — DockGate **backup & restore** (encrypted file, nightly copies) · Docker engine & host info |
 | <img src="screenshots/22-settings-security.png" width="100%" alt="Security"> | <img src="screenshots/21-settings-system.png" width="100%" alt="System"> |
 
 ---
@@ -149,7 +149,7 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 <details open>
 <summary><strong>Resources</strong> — Containers · Images · Volumes · Networks · Builds · Prune</summary>
 
-- **Containers** — table/card/**topology** views, filters (All/Running/Stopped/Restarting/Paused), search & sort, **group-by-compose**, favorites/notes/tags, per-row **start/stop/restart/logs/terminal/inspect/remove**, multi-select **bulk** actions, and the guided **Run Container** modal (image w/ Hub search, ports, volumes w/ presets, env w/ "paste .env", restart policy, network, CPU/memory). The **Topology** view is a read-only graph drawn live from the running containers — grouped by Compose project, edges from `depends_on` (falling back to shared networks), published ports flagged public; click a node to open its detail.
+- **Containers** — table/card/**topology** views, filters (All/Running/Stopped/Restarting/Paused), search & sort, **group-by-compose**, favorites/notes/tags, per-row **start/stop/restart/logs/terminal/inspect/remove**, multi-select **bulk** actions, and the guided **Run Container** modal (image w/ Hub search, ports, volumes w/ presets, env w/ "paste .env", restart policy, network, CPU/memory). The **Topology** view is a read-only graph drawn live from the running containers — grouped by Compose project, edges from `depends_on` (falling back to shared networks), published ports flagged public; click a node to open its detail. A **newer-image check** (daily and on demand) compares each container's tag with its registry and offers **Update** (pull and recreate; only the service in a stack).
 - **Container detail** — lifecycle (start/stop/restart/pause/unpause/remove), **live update** CPU/memory/restart-policy, **Recreate** (new image, keep config), **Commit**, **Export** to tar; tabs: Overview (+health), Logs, Terminal, Stats (live charts), Processes (+one-off exec), Environment, Ports, Volumes, Network (connect/disconnect), Files (browse/download/upload), Inspect (raw JSON), History.
 - **Images** — list (in-use/unused/dangling), **pull** (auto-auth via stored registry creds) & **Docker Hub search**, **push**, **layers/history**, **tags** (add/untag), **save** to tar, **build-from** (inline Dockerfile), remove.
 - **Builds** — build from Dockerfile / inline / Git with **live streaming log**, build history, build cache (grouped) & prune, buildx builders.
@@ -161,18 +161,19 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 <details>
 <summary><strong>Deploy</strong> — Compose stacks · App templates · Registries</summary>
 
-- **Compose** — auto-discovers projects via the `com.docker.compose.project` label (incl. remote, and DOWN managed projects); **create & edit** in a browser YAML editor + guided "add service"; **up / down / restart / pull**; deploy to a remote host (`DOCKER_HOST=ssh://`); **deploy-from-folder**; a re-openable **Deploys console** with live job logs.
+- **Compose** — auto-discovers projects via the `com.docker.compose.project` label (incl. remote, and DOWN managed projects); **create & edit** in a browser YAML editor + guided "add service"; **up / down / restart / pull**; deploy to a remote host (`DOCKER_HOST=ssh://`); **deploy-from-folder**; a re-openable **Deploys console** with live job logs; a **deploy history** per stack keeps the compose files of each deploy, shows what changed and can **redeploy an earlier version**.
 - **App Templates** — a searchable, category-filtered marketplace (Portainer App-Templates format). Deploy a **container** template → prefilled Run modal; a **stack** template → prefilled Compose editor. Bundled catalog offline, or a configurable remote URL (500+); template **detail** view with Docker Hub popularity; logos served through a same-origin proxy.
 - **Registries** — store private-registry credentials (encrypted); auto-matched by host so private **pull/push** "just works" from Images, Run and Compose. Includes a pre-save **login test**.
 </details>
 
 <details>
-<summary><strong>Observe</strong> — Logs · Events · Audit log &nbsp;·&nbsp; <strong>Tools</strong> — Terminal · Files</summary>
+<summary><strong>Observe</strong> — Logs · Events · Audit log &nbsp;·&nbsp; <strong>Tools</strong> — Terminal · Files · Schedules</summary>
 
-- **Logs** — live-tail any running container's stdout/stderr (tail 200, follow), pause/resume, clear, in-browser search, timestamps.
+- **Logs** — live-tail any running container's stdout/stderr (tail 200, follow) or a **time range** (last 15 min … 7 days, or from–to), pause/resume, clear, in-browser search, timestamps.
 - **Terminal** — interactive **container exec** (sh/bash/zsh, full xterm.js PTY) **and** a **host shell** (PTY or SSH login shell), plus a **Global Quick Terminal** accessible from any page via header shortcut or `Ctrl+\`` / `Alt+T` with **minimize to floating widget**, **maximize**, and **side-by-side split screen (dual terminals)**.
-- **Events** — live Docker daemon event feed with history range (15 m / 1 h / 24 h / live), color-coded, pause/clear.
-- **Files** — an **SFTP file manager** for the active **remote** server: browse, mkdir, upload/download (streamed), rename, delete, **copy/move**, in-browser **edit**; path-traversal guarded. An opt-in **⇆ Explorer** mode adds a **two-pane, FileZilla-style transfer** between *your computer* and the server, from any **Windows / macOS / Linux** browser: **whole-folder upload** (directory structure preserved), **parallel transfers** (7 concurrent), **pre-upload conflict detection** (**Overwrite / Keep-both / Skip**), a **live transfer panel** — `active · done · failed · cancelled / total` — with **Retry-failed**, and **cancel** of in-flight uploads/downloads. The single-pane manager stays the default; Explorer opens only on demand.
+- **Events** — live Docker daemon event feed with history range (15 m / 1 h / 24 h / live), type filter, keep 100/500/2000, **CSV export**, pause/clear.
+- **Schedules** — tasks DockGate runs by itself on a chosen server: **prune** (build cache, unused images, stopped containers, unused networks — never volumes), **volume backup** (tar.gz into a folder on that server, newest N kept) and **Git sync** (redeploy a DockGate-managed Git stack only when its branch has a new commit). Daily, weekly or hourly in the timezone from Settings; Run now; a failed run sends the *Scheduled task failed* alert.
+- **Files** — an **SFTP file manager** for the active **remote** server (on **Local**: only folders you share with DockGate under `/host`, e.g. `- /srv:/host/srv` in its compose file; set `FILES_ROOT` to change the root): browse, mkdir, upload/download (streamed), rename, delete, **copy/move**, in-browser **edit**; path-traversal guarded. An opt-in **⇆ Explorer** mode adds a **two-pane, FileZilla-style transfer** between *your computer* and the server, from any **Windows / macOS / Linux** browser: **whole-folder upload** (directory structure preserved), **parallel transfers** (7 concurrent), **pre-upload conflict detection** (**Overwrite / Keep-both / Skip**), a **live transfer panel** — `active · done · failed · cancelled / total` — with **Retry-failed**, and **cancel** of in-flight uploads/downloads. The single-pane manager stays the default; Explorer opens only on demand.
 - **Audit** — searchable history of **every mutation** (what / which host / from which IP / when): filter by server/type/action, full-text search, **CSV export**, clear. Single-admin, so it's a "what + from where", not "who".
 </details>
 
@@ -207,9 +208,11 @@ Tabbed: **General** (theme, default view, **timezone**, shell, log timestamps, a
 
 ## Notifications & Edge Agent
 
-**Channels** — **Telegram bot** and **SMTP email**. Configure/test/clear each; secrets are **encrypted at rest**. Both fire for every enabled rule.
+**Channels** — **Telegram bot**, **SMTP email** and a **webhook** (Slack, Discord, Microsoft Teams, ntfy or JSON). Configure/test/clear each; secrets are **encrypted at rest**. All fire for every enabled rule.
 
 **Alert rules (8)** — `container_die` (split into **Stopped / Crashed / OOM**), `container_restart`, `container_unhealthy`, `container_start`, `container_pause`, `container_unpause`, `disk_threshold`, `build_failed`. Each has an **enable** toggle and a **cooldown** (minutes) — **`0` = alert on every occurrence**. A `docker restart` is debounced to a **single "Restarted"** alert (not Stopped-then-Restarted), and crash/OOM/unhealthy alerts attach the container's **recent logs** so you see *why*.
+
+**Server health (5 rules)** — `server_down` (no answer for N minutes), `server_up` (answers again, with how long it was down), `host_disk` (any disk above %), `host_mem` and `host_cpu` (above % for N minutes). DockGate checks every server once a minute over its SSH login and stores the samples as Monitoring history. Each server can keep the shared limits, use its own, or turn a rule off (**Server Console → Monitoring → Alerts**). The `disk_threshold` rule is now named **Docker uses a lot of disk space** and its GB limit is editable.
 
 **How it watches** — a central `EventMonitor` runs **per registered host** (local + every SSH server), so alerts arrive from **every** server, not just the active one.
 
@@ -219,7 +222,7 @@ Tabbed: **General** (theme, default view, **timezone**, shell, log timestamps, a
 - **keeps alerting even if DockGate is offline**,
 - installs with **zero manual steps** — DockGate auto-builds the image and ships it to the host (registry pull, or local `save`→`load` over SSH).
 
-Manage it under **Settings → Notifications → Edge Notifier**: **Install on servers…** (multi-select), Start/Stop, Update, Remove, a **per-server channel override** (a different bot/SMTP per host), a re-openable **deploy-log**, and **auto-sync** — saving rules/channels re-pushes them to installed agents. Installing an agent stops DockGate's central monitor for that host (no duplicate alerts).
+Manage it under **Servers → Edge agent**: **Install on servers…** (multi-select), Start/Stop, Update, Remove, a **per-server channel override** (a different bot/SMTP per host), a re-openable **deploy-log**, and **auto-sync** — saving rules/channels re-pushes them to installed agents. Installing an agent stops DockGate's central monitor for that host (no duplicate alerts).
 
 > The agent runs as root with a **read-only** docker-socket mount, `no-new-privileges`, memory/CPU caps and no published ports. A read-only socket is defense-in-depth, not a security boundary — use a dedicated alert-only bot / send-only SMTP credential, and pin the image by digest.
 

@@ -3,6 +3,20 @@ const router = express.Router();
 const dockerService = require('../docker');
 const { logAction } = require('../audit');
 
+// ---- Newer-image check (server/image-updates.js) ----
+// GET /api/images/updates — last results for the server in use; POST /api/images/updates/check runs it now.
+router.get('/updates', (req, res) => {
+  try { res.json({ results: require('../image-updates').resultsFor(dockerService.getActiveServerId() || 'local') }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.post('/updates/check', async (req, res) => {
+  try {
+    const serverId = dockerService.getActiveServerId() || 'local';
+    const results = await require('../image-updates').checkServer(serverId, dockerService.docker);
+    res.json({ results });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/', async (req, res) => {
   try {
     const images = await dockerService.listImages();
