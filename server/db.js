@@ -6,6 +6,9 @@ const fs = require('fs');
 const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
+// A restore staged by Settings → System is applied here, before the database is opened (server/backup.js).
+try { require('./backup').applyPending(dataDir); } catch (e) { console.error('[backup] restore could not be applied:', e.message); }
+
 const db = new Database(path.join(dataDir, 'docker-panel.db'));
 
 // Enable WAL mode for better performance

@@ -2,6 +2,25 @@
 
 ---
 
+## [2.14.0] - 2026-11-08
+
+### DockGate backup
+- **Settings → System → Backup**: download everything DockGate knows (servers and logins, SSH keys, registry logins, notification channels and rules, IP lists, firewall descriptions, audit log, settings and, optionally, the compose folders it manages) as one file encrypted with your password (AES-256-GCM, key from scrypt).
+- **Nightly copies** around 03:00 in the data folder; the newest 7 are kept and can be downloaded (encrypted) or restored.
+- **Restore** (danger zone): the file is checked first (password, contents), then staged and applied when DockGate starts, before the database opens. The current data is moved to `backups/pre-restore-…` so it can be put back by hand. DockGate restarts by itself when Docker restarts it; otherwise restart the container to finish.
+
+### Newer images
+- Each container's tag is compared with its registry (by digest, HEAD requests — Docker Hub does not count them) once a day and with **Check for updates** on Resources → Containers. Containers with a newer image show it and get **Update…**: pull and recreate with the same settings, or only that service in a stack. Stored registry logins are used for private images.
+- New opt-in rule **Newer image available** (off by default), announced once per new digest.
+
+### Deploy history
+- Every deploy of a stack (folder, Git, sync, Up, Rebuild, editor, image update) keeps the compose files and `.env` it used; the last 20 per stack and server. **Deploy history…** in a stack's ⋯ menu shows them, **Changes** compares a deploy with the one before, **Redeploy this…** puts its files back and runs `up -d` (volumes untouched). If that fails, the files in use before are put back.
+
+### Webhook channel
+- A third channel next to email and Telegram: one URL, body shaped for **Slack, Discord, Microsoft Teams, ntfy** or **JSON** (`event, server, title, text, time`). The URL is stored encrypted; every alert of every enabled rule goes there too; Send test and the notification log include it.
+
+---
+
 ## [2.13.0] - 2026-11-08
 
 ### Server health alerts

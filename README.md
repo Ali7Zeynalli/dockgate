@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.13.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.14.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.13.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.14.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -131,7 +131,7 @@ sudo systemctl restart docker
 | <img src="screenshots/14-audit.png" width="100%" alt="Audit"> | <img src="screenshots/15-infrastructure.png" width="100%" alt="Infrastructure"> |
 | **Server Console** — host services & host logs | **Notifications** — channels, rules, Edge Notifier |
 | <img src="screenshots/16-server-console.png" width="100%" alt="Server Console"> | <img src="screenshots/18-settings-notifications.png" width="100%" alt="Notifications"> |
-| **Security** — change the admin password | **System** — Docker engine & host info |
+| **Security** — change the admin password | **System** — DockGate **backup & restore** (encrypted file, nightly copies) · Docker engine & host info |
 | <img src="screenshots/22-settings-security.png" width="100%" alt="Security"> | <img src="screenshots/21-settings-system.png" width="100%" alt="System"> |
 
 ---
@@ -149,7 +149,7 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 <details open>
 <summary><strong>Resources</strong> — Containers · Images · Volumes · Networks · Builds · Prune</summary>
 
-- **Containers** — table/card/**topology** views, filters (All/Running/Stopped/Restarting/Paused), search & sort, **group-by-compose**, favorites/notes/tags, per-row **start/stop/restart/logs/terminal/inspect/remove**, multi-select **bulk** actions, and the guided **Run Container** modal (image w/ Hub search, ports, volumes w/ presets, env w/ "paste .env", restart policy, network, CPU/memory). The **Topology** view is a read-only graph drawn live from the running containers — grouped by Compose project, edges from `depends_on` (falling back to shared networks), published ports flagged public; click a node to open its detail.
+- **Containers** — table/card/**topology** views, filters (All/Running/Stopped/Restarting/Paused), search & sort, **group-by-compose**, favorites/notes/tags, per-row **start/stop/restart/logs/terminal/inspect/remove**, multi-select **bulk** actions, and the guided **Run Container** modal (image w/ Hub search, ports, volumes w/ presets, env w/ "paste .env", restart policy, network, CPU/memory). The **Topology** view is a read-only graph drawn live from the running containers — grouped by Compose project, edges from `depends_on` (falling back to shared networks), published ports flagged public; click a node to open its detail. A **newer-image check** (daily and on demand) compares each container's tag with its registry and offers **Update** (pull and recreate; only the service in a stack).
 - **Container detail** — lifecycle (start/stop/restart/pause/unpause/remove), **live update** CPU/memory/restart-policy, **Recreate** (new image, keep config), **Commit**, **Export** to tar; tabs: Overview (+health), Logs, Terminal, Stats (live charts), Processes (+one-off exec), Environment, Ports, Volumes, Network (connect/disconnect), Files (browse/download/upload), Inspect (raw JSON), History.
 - **Images** — list (in-use/unused/dangling), **pull** (auto-auth via stored registry creds) & **Docker Hub search**, **push**, **layers/history**, **tags** (add/untag), **save** to tar, **build-from** (inline Dockerfile), remove.
 - **Builds** — build from Dockerfile / inline / Git with **live streaming log**, build history, build cache (grouped) & prune, buildx builders.
@@ -161,7 +161,7 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 <details>
 <summary><strong>Deploy</strong> — Compose stacks · App templates · Registries</summary>
 
-- **Compose** — auto-discovers projects via the `com.docker.compose.project` label (incl. remote, and DOWN managed projects); **create & edit** in a browser YAML editor + guided "add service"; **up / down / restart / pull**; deploy to a remote host (`DOCKER_HOST=ssh://`); **deploy-from-folder**; a re-openable **Deploys console** with live job logs.
+- **Compose** — auto-discovers projects via the `com.docker.compose.project` label (incl. remote, and DOWN managed projects); **create & edit** in a browser YAML editor + guided "add service"; **up / down / restart / pull**; deploy to a remote host (`DOCKER_HOST=ssh://`); **deploy-from-folder**; a re-openable **Deploys console** with live job logs; a **deploy history** per stack keeps the compose files of each deploy, shows what changed and can **redeploy an earlier version**.
 - **App Templates** — a searchable, category-filtered marketplace (Portainer App-Templates format). Deploy a **container** template → prefilled Run modal; a **stack** template → prefilled Compose editor. Bundled catalog offline, or a configurable remote URL (500+); template **detail** view with Docker Hub popularity; logos served through a same-origin proxy.
 - **Registries** — store private-registry credentials (encrypted); auto-matched by host so private **pull/push** "just works" from Images, Run and Compose. Includes a pre-save **login test**.
 </details>
@@ -207,7 +207,7 @@ Tabbed: **General** (theme, default view, **timezone**, shell, log timestamps, a
 
 ## Notifications & Edge Agent
 
-**Channels** — **Telegram bot** and **SMTP email**. Configure/test/clear each; secrets are **encrypted at rest**. Both fire for every enabled rule.
+**Channels** — **Telegram bot**, **SMTP email** and a **webhook** (Slack, Discord, Microsoft Teams, ntfy or JSON). Configure/test/clear each; secrets are **encrypted at rest**. All fire for every enabled rule.
 
 **Alert rules (8)** — `container_die` (split into **Stopped / Crashed / OOM**), `container_restart`, `container_unhealthy`, `container_start`, `container_pause`, `container_unpause`, `disk_threshold`, `build_failed`. Each has an **enable** toggle and a **cooldown** (minutes) — **`0` = alert on every occurrence**. A `docker restart` is debounced to a **single "Restarted"** alert (not Stopped-then-Restarted), and crash/OOM/unhealthy alerts attach the container's **recent logs** so you see *why*.
 

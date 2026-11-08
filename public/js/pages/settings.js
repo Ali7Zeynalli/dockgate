@@ -32,7 +32,11 @@ Router.register('settings', async (content, params) => {
         else if (tab === 'notifications') renderNotifications();
         else if (tab === 'log') renderLog();
         else if (tab === 'update') renderUpdate();
-        else if (tab === 'system') renderSystemInfo(tabContent); // System info now lives here (global from system.js)
+        else if (tab === 'system') { // backup (backup-panel.js) + Docker / OS info (system.js)
+          tabContent.innerHTML = '<div id="backup-box"></div><div id="sysinfo-box" style="margin-top:28px"></div>';
+          renderBackupInto(tabContent.querySelector('#backup-box'));
+          renderSystemInfo(tabContent.querySelector('#sysinfo-box'));
+        }
         else if (tab === 'security') renderSecurity();
       }
 
