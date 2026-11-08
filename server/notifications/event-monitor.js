@@ -380,7 +380,7 @@ class EventMonitor {
 
       // thresholdGB is an ABSOLUTE size limit on what Docker uses (NOT a disk-fullness percentage).
       // Previously the GB/50GB ratio was shown as a "percent" and was misleading — now it's in absolute GB.
-      const thresholdGB = 50;
+      const thresholdGB = Number(require('./alert-rules').parseJson(rule.params).gb) || 50; // rule limit (Settings → Notifications)
       const usedGB = totalUsed / (1024 * 1024 * 1024);
 
       if (usedGB > thresholdGB) {

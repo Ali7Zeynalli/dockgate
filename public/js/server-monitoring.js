@@ -13,7 +13,7 @@ async function renderServerMonitoring(serverId, container, range = '1h') {
   </div>`;
   container.querySelectorAll('[data-r]').forEach(b => b.onclick = () => renderServerMonitoring(serverId, container, b.dataset.r));
   if (typeof renderHostMonitoring === 'function') renderHostMonitoring(serverId, container.querySelector('[data-live]'));
-  renderMonitoringAlerts(serverId, container.querySelector('[data-alerts]'));
+  renderServerAlerts(serverId, container.querySelector('[data-alerts]')); // alert-rules-panel.js
 
   const chartsEl = container.querySelector('[data-charts]');
   let d;
@@ -64,24 +64,3 @@ function monChart(title, unit, values, fixedMax, color, ts) {
   </div>`;
 }
 
-async function renderMonitoringAlerts(serverId, el) {
-  let s, rules = [];
-  try {
-    const [list, r] = await Promise.all([API.get('/servers'), API.get('/meta/notifications/rules').catch(() => ({ rules: [] }))]);
-    s = (list.servers || []).find(x => x.id === serverId);
-    rules = r.rules || r || [];
-  } catch (e) { return; }
-  if (!s) return;
-  const muted = s.notifications_enabled === 0;
-  el.innerHTML = UI.header('Alerts', 'Notifications DockGate sends for this server. The rules are shared by all servers.', `${UI.btn(muted ? 'Turn on for this server' : 'Mute this server', 'data-mute')}${UI.btn('Edit rules', 'data-rules')}`) +
-    UI.table([{ label: 'Alert' }, { label: 'Status' }, { label: 'Quiet period' }], (Array.isArray(rules) ? rules : []).map(r => ({ cells: [
-      `<b>${escapeHtml(r.description || r.event_type)}</b><div class="ui-sub td-mono">${escapeHtml(r.event_type)}</div>`,
-      muted ? UI.pill('off', 'muted for this server') : (r.enabled ? UI.pill('ok', 'On') : UI.pill('off', 'Off')),
-      `<span class="ui-sub">${Number(r.cooldown_minutes) || 0} min</span>`,
-    ] })), { minWidth: 520, empty: 'No alert rules.' });
-  el.querySelector('[data-rules]').onclick = () => Router.navigate('settings', { tab: 'notifications' });
-  el.querySelector('[data-mute]').onclick = async () => {
-    try { await API.put(`/servers/${encodeURIComponent(serverId)}`, { notifications_enabled: muted ? 1 : 0 }); showToast(muted ? 'Alerts on for this server' : 'Alerts muted for this server'); renderMonitoringAlerts(serverId, el); }
-    catch (e) { showToast(e.message, 'error'); }
-  };
-}

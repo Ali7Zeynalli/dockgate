@@ -618,6 +618,8 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   // Start one event monitor per registered server (local + every SSH host).
   // Notifications fire from any server regardless of which one is active in the UI.
   monitorManager.startAll();
+  // Server health: reachability, disk, memory and CPU alerts for every server, checked once a minute.
+  if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
 });
 
 // Close pooled SSH connections on shutdown so DockGate leaves no zombie sessions on remote hosts.

@@ -144,17 +144,6 @@ Router.register('settings', async (content, params) => {
             API.get('/meta/notifications/hosts').catch(() => ({ local: { enabled: true }, servers: [] })),
           ]);
 
-          const ruleLabels = {
-            container_die: 'Container Stopped/Died',
-            container_restart: 'Container Restarted',
-            container_oom: 'Container OOM Kill',
-            container_unhealthy: 'Container Unhealthy',
-            disk_threshold: 'Disk Usage Threshold',
-            build_failed: 'Build Failed',
-            container_start: 'Container Started',
-            container_pause: 'Container Paused',
-            container_unpause: 'Container Resumed',
-          };
 
           const emailConfigured = !!(smtpConfig.smtp_host);
           const tgConfigured = !!(tgConfig.tg_chat_id);
@@ -278,25 +267,8 @@ Router.register('settings', async (content, params) => {
               `).join('')}
             </div>
 
-            <!-- Rules -->
-            <div class="settings-section" style="margin-top:20px;">
-              <div class="settings-section-title">Rules</div>
-              ${rules.map(r => `
-                <div class="settings-row" style="padding:8px 0;">
-                  <div>
-                    <div class="settings-row-label">${ruleLabels[r.event_type] || r.event_type}</div>
-                    <div class="settings-row-desc">${escapeHtml(r.description || '')}</div>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:12px;">
-                    <span class="text-xs text-muted">Cooldown:</span>
-                    <input class="input" style="width:60px;padding:4px 6px;font-size:12px;" type="number" min="0" max="1440" value="${r.cooldown_minutes}" data-rule="${r.event_type}" data-field="cooldown" title="0 = send every occurrence (no throttle)" />
-                    <span class="text-xs text-muted">min · 0 = every</span>
-                    <div class="toggle ${r.enabled ? 'active' : ''}" data-rule="${r.event_type}" data-field="enabled"></div>
-                  </div>
-                </div>
-              `).join('')}
-              <button class="btn btn-primary btn-sm" id="save-rules" style="margin-top:8px;">Save Rules</button>
-            </div>
+            <!-- Rules: shared alert rules (alert-rules-panel.js) -->
+            <div id="alert-rules-box" style="margin-top:20px"></div>
 
             <div class="settings-section" style="margin-top:20px;">
               ${UI.settings([{ label: 'Edge agent', desc: 'Keeps watching a server and sends these alerts when DockGate cannot reach it. Installed per server, so it now lives under Servers.', action: UI.btn('Open Edge agent', 'id="open-edge-agent"') }])}
@@ -407,21 +379,7 @@ Router.register('settings', async (content, params) => {
           });
 
           // Save Rules
-          document.getElementById('save-rules')?.addEventListener('click', async () => {
-            try {
-              const updates = [];
-              tabContent.querySelectorAll('.toggle[data-rule]').forEach(toggle => {
-                updates.push(API.put(`/meta/notifications/rules/${toggle.dataset.rule}`, { enabled: toggle.classList.contains('active') }));
-              });
-              tabContent.querySelectorAll('input[data-rule][data-field="cooldown"]').forEach(input => {
-                const cd = parseInt(input.value, 10);
-                updates.push(API.put(`/meta/notifications/rules/${input.dataset.rule}`, { cooldown_minutes: Number.isFinite(cd) && cd >= 0 ? cd : 5 }));
-              });
-              await Promise.all(updates);
-              showToast('Notification rules saved');
-              if (typeof edgeAgentSync === 'function') edgeAgentSync(true); // push new rules to installed agents
-            } catch(e) { showToast(e.message, 'error'); }
-          });
+          renderAlertRules(document.getElementById('alert-rules-box'));
 
           // Edge Agent (per-server observability) — always render; agent can install in metrics-only mode.
           document.getElementById('open-edge-agent')?.addEventListener('click', () => Router.navigate('infra', { tab: 'agent' }));

@@ -276,6 +276,33 @@ const defaultRules = [
 const insertRule = db.prepare('INSERT OR IGNORE INTO notification_rules (event_type, description, cooldown_minutes) VALUES (?, ?, ?)');
 defaultRules.forEach(([type, desc, cd]) => insertRule.run(type, desc, cd));
 
+// Rule limits (JSON) and server-health rules. The health monitor (notifications/health-monitor.js) checks
+// every server once a minute; a server can use its own limits or turn a rule off (alert_overrides).
+migrate('ALTER TABLE notification_rules ADD COLUMN params TEXT');
+migrate(`CREATE TABLE IF NOT EXISTS alert_overrides (
+  server_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'default',
+  params TEXT,
+  PRIMARY KEY (server_id, event_type)
+)`);
+const healthRules = [
+  // [type, description, cooldown, enabled, params]
+  ['server_down', 'Server not reachable', 30, 1, { minutes: 3 }],
+  ['server_up', 'Server is reachable again', 0, 1, {}],
+  ['host_disk', 'Disk almost full', 60, 1, { percent: 85 }],
+  ['host_mem', 'Memory high', 30, 1, { percent: 90, minutes: 5 }],
+  ['host_cpu', 'CPU high', 30, 0, { percent: 90, minutes: 10 }],
+];
+const insertHealthRule = db.prepare('INSERT OR IGNORE INTO notification_rules (event_type, description, cooldown_minutes, enabled, params) VALUES (?, ?, ?, ?, ?)');
+healthRules.forEach(([t, d, cd, en, pr]) => insertHealthRule.run(t, d, cd, en, JSON.stringify(pr)));
+// The old "Disk usage exceeds threshold" rule measures how much space Docker uses (GB), not how full the
+// disk is — name it for what it does and store its limit (was a fixed 50 GB in code).
+try {
+  db.prepare("UPDATE notification_rules SET description = 'Docker uses a lot of disk space' WHERE event_type = 'disk_threshold' AND description = 'Disk usage exceeds threshold'").run();
+  db.prepare("UPDATE notification_rules SET params = ? WHERE event_type = 'disk_threshold' AND params IS NULL").run(JSON.stringify({ gb: 50 }));
+} catch (e) { /* best effort */ }
+
 // Indexes for frequently queried columns / Tez-tez sorğulanan sütunlar üçün indekslər
 migrate('CREATE INDEX IF NOT EXISTS idx_activity_resource ON activity (resource_id, resource_type)');
 migrate('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity (created_at)');
@@ -300,14 +327,8 @@ const defaultSettings = {
   refreshInterval: '5000',
   defaultView: 'table',
   sidebarCollapsed: 'false',
-  logTailLines: '200',
   logTimestamps: 'false',
-  logAutoScroll: 'true',
-  logWrapLines: 'true',
   terminalShell: '/bin/sh',
-  terminalFontSize: '14',
-  dateFormat: 'relative',
-  confirmDestructive: 'true',
   timezone: 'auto', // display timezone — 'auto' = browser/host; otherwise an IANA zone (e.g. Asia/Baku)
   active_server: 'local',
   // App Templates catalog source. Empty = the default community catalog (500+ apps, auto-loaded by
@@ -382,6 +403,11 @@ const stmts = {
   getRule: db.prepare('SELECT * FROM notification_rules WHERE event_type = ?'),
   setRuleEnabled: db.prepare('UPDATE notification_rules SET enabled = ? WHERE event_type = ?'),
   setRuleCooldown: db.prepare('UPDATE notification_rules SET cooldown_minutes = ? WHERE event_type = ?'),
+  setRuleParams: db.prepare('UPDATE notification_rules SET params = ? WHERE event_type = ?'),
+  getAlertOverrides: db.prepare('SELECT * FROM alert_overrides WHERE server_id = ?'),
+  getAlertOverride: db.prepare('SELECT * FROM alert_overrides WHERE server_id = ? AND event_type = ?'),
+  setAlertOverride: db.prepare('INSERT INTO alert_overrides (server_id, event_type, mode, params) VALUES (?, ?, ?, ?) ON CONFLICT(server_id, event_type) DO UPDATE SET mode = excluded.mode, params = excluded.params'),
+  deleteAlertOverrides: db.prepare('DELETE FROM alert_overrides WHERE server_id = ?'),
 
   // Notification Log
   insertNotificationLog: db.prepare('INSERT INTO notification_log (event_type, subject, recipient, status, error, channel) VALUES (?, ?, ?, ?, ?, ?)'),
