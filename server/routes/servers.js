@@ -96,7 +96,11 @@ router.get('/', (req, res) => {
 router.get('/overview', (req, res) => {
   try {
     const out = {};
-    for (const srv of stmts.getServers.all()) {
+    // ?history=N adds the last N samples (oldest first) for the fleet sparklines on Monitoring.
+    const hist = Math.min(Math.max(parseInt(req.query.history, 10) || 0, 0), 240);
+    const all = stmts.getServers.all();
+    if (!all.some(x => x.id === 'local')) all.unshift({ id: 'local' }); // the DockGate machine itself
+    for (const srv of all) {
       const items = stmts.getLatestItemsPerServer.all(srv.id);
       const present = items.filter(i => i.state === 'present' || i.state === 'verified').length;
       const dockerRow = items.find(i => i.item_id === 'docker');
@@ -105,6 +109,7 @@ router.get('/overview', (req, res) => {
         readiness: { scanned: items.length > 0, present, total: items.length, dockerReady: !!(dockerRow && (dockerRow.state === 'present' || dockerRow.state === 'verified')) },
         lastStat: last ? { cpu: last.cpu, mem: last.mem_pct, disk: last.disk_pct, ts: last.ts } : null,
       };
+      if (hist) out[srv.id].series = stmts.getHostMetrics.all(srv.id, hist).reverse().map(r => ({ ts: r.ts, cpu: r.cpu, mem: r.mem_pct, disk: r.disk_pct }));
     }
     res.json({ servers: out });
   } catch (err) { res.status(500).json({ error: err.message }); }

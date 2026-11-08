@@ -8,11 +8,34 @@ Router.register('dashboard', async (content) => {
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
 
+  // All servers at a glance (only when there is more than one): state, CPU · memory · disk, open the console.
+  function fleetCards(servers, ov, activeId) {
+    if (servers.length < 2) return '';
+    const cards = servers.map(sv => {
+      const o = ov[sv.id] || {}, last = o.lastStat;
+      const ts = last && last.ts ? new Date(String(last.ts).replace(' ', 'T') + (String(last.ts).includes('Z') ? '' : 'Z')).getTime() : null;
+      const ageMin = ts ? (Date.now() - ts) / 60000 : null;
+      const state = !last ? (sv.id === 'local' ? UI.pill('info', 'details below') : UI.pill('off', 'no data')) : ageMin > 10 ? UI.pill('warn', 'not reporting') : UI.pill('ok', 'online');
+      const r = (o.readiness || {});
+      const setup = sv.id === 'local' ? '' : !r.scanned ? 'Setup not checked yet' : r.dockerReady ? `Setup ${r.present}/${r.total} components` : 'Docker not installed';
+      const dcls = last && last.disk >= 90 ? 'red' : last && last.disk >= 80 ? 'yellow' : 'green';
+      const go = sv.id === 'local' ? '' : `onclick="Router.navigate('server-console',{id:'${escapeHtml(sv.id)}',tab:'overview'})" style="cursor:pointer" title="Open the console"`;
+      return `<div class="card" ${go}>
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${escapeHtml(sv.name || sv.id)}${sv.id === activeId ? ' <span class="ui-sub">in use</span>' : ''}</b>${state}</div>
+        ${last ? `<div class="ui-sub" style="margin-top:6px">CPU ${Math.round(last.cpu || 0)}% · memory ${Math.round(last.mem || 0)}% · disk ${Math.round(last.disk || 0)}%</div>
+        <div class="disk-bar" style="height:5px;margin:6px 0 0"><div class="disk-bar-fill ${dcls}" style="width:${Math.min(100, last.disk || 0)}%"></div></div>` : `<div class="ui-sub" style="margin-top:6px">${sv.id === 'local' ? 'The machine DockGate runs on. Its Docker summary is below.' : 'No metrics recorded yet.'}</div>`}
+        ${setup ? `<div class="ui-sub" style="margin-top:6px">${setup}</div>` : ''}
+      </div>`;
+    }).join('');
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:18px">${cards}</div>`;
+  }
+
   async function render() {
     try {
-      const [data, srvData] = await Promise.all([
+      const [data, srvData, fleetOv] = await Promise.all([
         API.get('/dashboard'),
         API.get('/servers').catch(() => ({ servers: [], activeId: 'local' })),
+        API.get('/servers/overview').catch(() => ({ servers: {} })),
       ]);
 
       // Abort if user navigated away during API call / API çağırışı zamanı istifadəçi başqa səhifəyə keçibsə dayandır
@@ -31,16 +54,11 @@ Router.register('dashboard', async (content) => {
       if (healthChart) { healthChart.destroy(); healthChart = null; }
 
       content.innerHTML = `
-        <div class="page-header">
-          <div>
-            <div class="page-title">Dashboard</div>
-            <div class="page-subtitle">${isRemote ? '🔐 ' + escapeHtml(activeId) + ' — host &amp; Docker' : '🖥 Local — Docker environment'}</div>
-          </div>
-          <div class="page-actions">
-            <button class="btn btn-secondary" onclick="Router.navigate('resources', {tab:'prune'})">${Icons.cleanup} Cleanup</button>
-            <button class="btn btn-primary" id="dash-refresh">${Icons.refresh} Refresh</button>
-          </div>
-        </div>
+        ${UI.header('Dashboard', (srvData.servers || []).length > 1 ? `All servers first, then the Docker host you are working on (${escapeHtml(activeSrv?.name || activeId)}).` : `Docker on ${isRemote ? escapeHtml(activeSrv?.name || activeId) : 'this machine'}.`,
+          `<button class="btn btn-secondary btn-sm" onclick="Router.navigate('resources', {tab:'prune'})">${Icons.cleanup} Prune…</button>
+           <button class="btn btn-secondary btn-sm" id="dash-refresh" title="Refresh">${Icons.refresh}</button>`)}
+
+        ${fleetCards(srvData.servers || [], (fleetOv && fleetOv.servers) || {}, activeId)}
 
         <!-- Active remote server's host metrics (renderHostMonitoring owns its own 5s poll) -->
         ${isRemote ? '<div id="dash-host" class="mb-3"></div>' : ''}

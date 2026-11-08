@@ -2,6 +2,37 @@
 
 ---
 
+## [2.12.0] - 2026-11-08
+
+The rest of DockGate now follows the same layout as the server pages: a breadcrumb in the top bar, one header per page with its main action, standard tables with a ⋯ menu for rare and destructive actions, and settings that save as you change them. No function was removed; old links still work.
+
+### Navigation
+- **Activity is split**: **Observe** (Logs, Events, Audit log) and **Tools** (Terminal, Files).
+- **Moved**: Cleanup → **Resources → Prune**, Registries → **Deploy → Registries**, Edge agent → **Servers → Edge agent** (Notifications links to it).
+- The top bar shows where you are (`Resources / Containers`). Section pages are picked in the sidebar only, so the second tab bar on the page is gone.
+- Old links and bookmarks (`#/activity?tab=logs`, `#/infra?tab=registries`, `#/containers`, `#/cleanup` …) open the new place.
+
+### Docker pages
+- **Containers**: filter chips with counts (adds **Unhealthy**), bulk start / stop / restart / remove, Logs or Start on the row and the rest in ⋯ (details, terminal, restart, stop, remove).
+- **Images**: **Used by** column (container names), In use / Unused / Dangling chips, **Remove unused** with the space it frees.
+- **Volumes** and **Networks**: **Used by** columns, an Unused filter for volumes, Docker's own networks marked.
+- **Builds**: History · Cache · Builders as one switch in the header instead of a second tab bar.
+- **Prune**: one table — what each kind of unused data is, what exactly would be removed and how much space it frees; pick rows and prune them together. Volumes are never pre-selected. Full system prune is in a danger zone.
+- **Compose stacks**: source (git, folder, adopted, external) and state per stack; **Deploy stack** asks where the stack comes from (compose file, Git, folder, existing on the server, template) and opens that flow. Up / Restart / Sync on the row, everything else in ⋯.
+- **App templates**: the whole card opens the details (ports, environment, volumes) with Deploy there; the most common categories as chips.
+- **Logs**: one switch for Container · All containers · Host logs · Log Doctor.
+- **Events**: filter by type (containers, images, networks, volumes); errors shown above the table.
+- **Audit log**: click a row for its details; **Clear** moved into ⋯ and still asks to confirm.
+- Registries, Terminal and Files use the same header.
+
+### Settings and Monitoring
+- **Settings → General**: each option saves when you change it and confirms with a toast; the page-wide **Save Settings** button is gone. "Auto-Start Service" is now **Start with Docker**, with what it does.
+- **Settings → Security**: change the password in a dialog; **Sign out everywhere** in a danger zone.
+- **Monitoring** starts with **every server** in one table (state, CPU and memory sparklines, disk), then the live metrics of the server in use. `GET /api/servers/overview?history=N` returns the samples for it and now includes this machine.
+- **Dashboard** shows a card per server (state, CPU · memory · disk, setup) when there is more than one.
+
+---
+
 ## [2.11.0] - 2026-11-07
 
 Every server page now follows the layout cloud panels use (Hetzner, DigitalOcean, GCP, AWS, Cockpit): a header with one line and the main action, standard tables with row actions, settings rows with their own Edit, and one dialog style. All earlier functions are kept.
