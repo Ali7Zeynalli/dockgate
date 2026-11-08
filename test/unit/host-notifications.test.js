@@ -21,6 +21,7 @@ require.cache[require.resolve('../../server/db')] = {
       getServers: { all: () => [...mockServers.values()] },
       setServerNotifications: { run: (enabled, id) => { const s = mockServers.get(id); if (s) s.notifications_enabled = enabled; } },
       getRule: { get: (t) => mockRules.get(t) || null },
+      getSmtpConfig: { all: () => [] }, // channel settings (webhook not set up)
     }
   }
 };
