@@ -1,163 +1,69 @@
-// Docker Events Page
+// Docker Events page: past events from the chosen range, then live, in the shared LogViewer.
+// Source = event type (container, image, network, volume …); level from the action (OOM / failed exit = error,
+// stop / kill / remove = warning).
 Router.register('events', async (content) => {
-  let cleanupFns = [];
-  
-  async function render() {
-    content.innerHTML = `
-      ${UI.header('Events', 'What Docker did on this server: containers starting and stopping, images pulled, networks and volumes changed. Past events from the chosen range, then live.')}
+  const cleanupFns = [];
+  content.innerHTML = `
+    ${UI.header('Events', 'What Docker did on this server: containers starting and stopping, images pulled, networks and volumes changed. Past events from the chosen range, then live.')}
+    <div id="events-error"></div>
+    <div data-lvroot></div>`;
 
-      <div class="ui-toolbar">
-        ${UI.chips([['', 'All'], ['container', 'Containers'], ['image', 'Images'], ['network', 'Networks'], ['volume', 'Volumes']], '', 'data-etype')}
-        <span class="ui-spacer"></span>
-        <select class="select" id="event-range" style="width:auto" aria-label="Range" title="Show past events from this range, then keep streaming live">
-          <option value="900">Last 15 min</option>
-          <option value="3600" selected>Last 1 hour</option>
-          <option value="86400">Last 24 hours</option>
-          <option value="0">Live only</option>
-        </select>
-        <select class="select" id="event-keep" style="width:auto" aria-label="Events kept on the page">
-          <option value="100">Keep 100</option><option value="500" selected>Keep 500</option><option value="2000">Keep 2000</option>
-        </select>
-        <button class="btn btn-secondary btn-sm" id="event-export" title="Download the events on the page (after the type filter)">${Icons.download} Export CSV</button>
-        <button class="btn btn-secondary btn-sm" id="event-pause">${Icons.pause} Pause</button>
-        <button class="btn btn-secondary btn-sm" id="event-clear">Clear</button>
-      </div>
-      <div id="events-error"></div>
-
-      <div class="table-wrapper">
-        <table>
-          <thead><tr><th>Time</th><th>Type</th><th>Action</th><th>Actor</th><th>Details</th></tr></thead>
-          <tbody id="events-tbody"></tbody>
-        </table>
-         <div id="empty-state" class="empty-state" style="padding: 40px">Waiting for events...</div>
-      </div>
-    `;
-
-    const tbody = document.getElementById('events-tbody');
-    const empty = document.getElementById('empty-state');
-    const pauseBtn = document.getElementById('event-pause');
-    let typeFilter = '';
-    const applyType = (tr) => { tr.hidden = !!typeFilter && tr.dataset.type !== typeFilter; };
-    content.querySelectorAll('[data-etype]').forEach(b => b.addEventListener('click', () => {
-      typeFilter = b.dataset.etype;
-      content.querySelectorAll('[data-etype]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-      tbody.querySelectorAll('tr').forEach(applyType);
-    }));
-    let isPaused = false;
-    let eventCount = 0;
-
-    // Subscribe with the selected history range: Docker replays past events (since), then streams live.
-    // Re-subscribed on socket reconnect (server drops the stream on disconnect).
-    const rangeSel = document.getElementById('event-range');
-    const subscribe = () => {
-      const secs = parseInt(rangeSel.value, 10) || 0;
-      socket.emit('events:subscribe', secs > 0 ? { since: Math.floor(Date.now() / 1000) - secs } : {});
-    };
-    subscribe();
-    window._activeResub = subscribe;
-    rangeSel.addEventListener('change', () => {
-      tbody.innerHTML = '';
-      eventCount = 0;
-      if (empty) { empty.textContent = 'Waiting for events...'; empty.style.display = 'block'; }
-      subscribe(); // server replaces the old stream with the new range
-    });
-
-    const onEventData = (event) => {
-      if (isPaused) return;
-      if (empty) empty.style.display = 'none';
-
-      const tr = document.createElement('tr');
-      const time = formatTime(event.time, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const type = event.Type || 'unknown';
-      const action = event.Action || '';
-      
-      // Determine color based on action
-      let actionClass = 'badge-created';
-      if (action.includes('start') || action.includes('connect')) actionClass = 'badge-running';
-      if (action.includes('die') || action.includes('stop') || action.includes('disconnect')) actionClass = 'badge-stopped';
-      if (action.includes('destroy') || action.includes('remove')) actionClass = 'badge-dead';
-      
-      // Format actor name
-      let nameStr = '—';
-      const attrs = event.Actor?.Attributes;
-      if (attrs) {
-        if (attrs.name) nameStr = attrs.name;
-        else if (event.Actor.ID) nameStr = event.Actor.ID.substring(0, 12);
-      }
-      
-      // Format details
-      const details = Object.entries(attrs || {})
-        .filter(([k]) => k !== 'name' && k !== 'image')
-        .map(([k,v]) => `${k}=${v}`)
-        .join(', ');
-
-      tr._event = { time: new Date((event.time || 0) * 1000).toISOString(), type, action, actor: nameStr, details };
-      tr.innerHTML = `
-        <td class="text-sm text-muted">${time}</td>
-        <td class="td-mono">${escapeHtml(type)}</td>
-        <td><span class="badge ${actionClass}">${escapeHtml(action)}</span></td>
-        <td class="td-name">${escapeHtml(nameStr)}</td>
-        <td class="text-xs text-muted" style="max-width: 300px; white-space: normal;">${escapeHtml(details)}</td>
-      `;
-      
-      tr.dataset.type = type;
-      applyType(tr);
-      tbody.prepend(tr);
-      document.getElementById('events-error').innerHTML = '';
-      eventCount++;
-      
-      // Keep only the newest N events (Keep 100 / 500 / 2000)
-      const keep = parseInt(document.getElementById('event-keep')?.value, 10) || 500;
-      while (eventCount > keep && tbody.lastChild) {
-        tbody.removeChild(tbody.lastChild);
-        eventCount--;
-      }
-    };
-
-    socket.on('events:data', onEventData);
-
-    // Handle connection errors / Bağlantı xətalarını idarə et
-    const onEventError = ({ error }) => {
-      const box = document.getElementById('events-error');
-      if (box) box.innerHTML = UI.errorState(error, { compact: true });
-      if (empty) empty.style.display = 'none';
-    };
-    socket.on('events:error', onEventError);
-
-    cleanupFns.push(() => {
-      socket.off('events:data', onEventData);
-      socket.off('events:error', onEventError);
-      window._activeResub = null;
-      socket.emit('events:unsubscribe');
-    });
-
-    document.getElementById('event-export').addEventListener('click', () => {
-      const rows = [...tbody.querySelectorAll('tr')].filter(tr => !tr.hidden && tr._event).map(tr => tr._event).reverse();
-      if (!rows.length) { showToast('No events on the page to export', 'warning'); return; }
-      const q = (v) => { const x = String(v == null ? '' : v); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
-      const csv = ['time,type,action,actor,details', ...rows.map(r => [r.time, r.type, r.action, r.actor, r.details].map(q).join(','))].join('\n');
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-      a.download = `dockgate-events-${new Date().toISOString().slice(0, 16).replace(':', '')}.csv`;
-      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-    });
-    document.getElementById('event-keep').addEventListener('change', (e) => {
-      const keep = parseInt(e.target.value, 10);
-      while (eventCount > keep && tbody.lastChild) { tbody.removeChild(tbody.lastChild); eventCount--; }
-    });
-
-    pauseBtn.addEventListener('click', () => {
-      isPaused = !isPaused;
-      pauseBtn.innerHTML = isPaused ? `${Icons.play} Resume` : `${Icons.pause} Pause`;
-    });
-
-    document.getElementById('event-clear').addEventListener('click', () => {
-      tbody.innerHTML = '';
-      eventCount = 0;
-      if (empty) empty.style.display = 'block';
-    });
+  const tools = `<select class="select" data-erange aria-label="Past events to load" title="Past events Docker replays before the live stream">
+      <option value="900">From the last 15 min</option><option value="3600" selected>From the last hour</option><option value="86400">From the last 24 h</option><option value="604800">From the last 7 days</option><option value="0">Live only</option>
+    </select>
+    <button type="button" class="btn btn-sm btn-secondary" data-csv title="Download the loaded events as CSV">CSV</button>`;
+  let rangeSel;
+  const levelOf = (action, attrs) => {
+    if (/oom/.test(action) || (action === 'die' && attrs.exitCode && attrs.exitCode !== '0') || /unhealthy/.test(action)) return 'E';
+    if (/^(kill|stop|die|destroy|remove|delete|disconnect|pause)/.test(action)) return 'W';
+    return 'I';
+  };
+  const toRow = (ev) => {
+    const attrs = ev.Actor?.Attributes || {};
+    const type = ev.Type || 'unknown', action = ev.Action || '';
+    const actor = attrs.name || (ev.Actor?.ID || '').slice(0, 12) || '—';
+    const details = Object.entries(attrs).filter(([k]) => k !== 'name').map(([k, v]) => `${k}=${v}`).join(', ');
+    const t = ev.timeNano ? Math.floor(Number(ev.timeNano) / 1e6) : (ev.time ? ev.time * 1000 : Date.now());
+    return { t, l: levelOf(action, attrs), src: type, msg: `${action}  ${actor}${details ? '  · ' + details : ''}`, meta: { Type: type, Action: action, Actor: actor, ID: ev.Actor?.ID || '', Details: details, _csv: [new Date(t).toISOString(), type, action, actor, details] } };
+  };
+  const shown = [];
+  const viewer = LogViewer.mount(content.querySelector('[data-lvroot]'), {
+    key: 'events', fileName: 'docker-events', tools, live: true,
+    retention: 'Docker keeps only its recent events in memory; a Docker restart clears them',
+    empty: 'No events yet. They appear here as Docker reports them.',
+    onTools(el) {
+      rangeSel = el.querySelector('[data-erange]');
+      rangeSel.addEventListener('change', subscribe);
+      el.querySelector('[data-csv]').addEventListener('click', () => {
+        if (!shown.length) { showToast('No events to export', 'warning'); return; }
+        const q = (v) => { const x = String(v == null ? '' : v); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
+        const csv = ['time,type,action,actor,details', ...shown.map(r => r.meta._csv.map(q).join(','))].join('\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+        a.download = `dockgate-events-${new Date().toISOString().slice(0, 16).replace(':', '')}.csv`;
+        a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+      });
+    },
+  });
+  function subscribe() {
+    viewer.clear(); shown.length = 0;
+    const secs = parseInt(rangeSel.value, 10) || 0;
+    socket.emit('events:subscribe', secs > 0 ? { since: Math.floor(Date.now() / 1000) - secs } : {}); // the server replaces the old stream
   }
-  
-  await render();
-  return () => { cleanupFns.forEach(fn => { try { fn(); } catch(e){} }); };
+  const onEventData = (ev) => {
+    const r = toRow(ev);
+    shown.push(r); if (shown.length > (viewer.limit || 10000)) shown.shift();
+    viewer.push([r]);
+    const box = document.getElementById('events-error'); if (box) box.innerHTML = '';
+  };
+  const onEventError = ({ error }) => { const box = document.getElementById('events-error'); if (box) box.innerHTML = UI.errorState(error, { compact: true }); };
+  socket.on('events:data', onEventData);
+  socket.on('events:error', onEventError);
+  subscribe();
+  window._activeResub = subscribe;
+  cleanupFns.push(() => {
+    socket.off('events:data', onEventData); socket.off('events:error', onEventError);
+    window._activeResub = null; socket.emit('events:unsubscribe'); viewer.destroy();
+  });
+  return () => { cleanupFns.forEach(fn => { try { fn(); } catch (e) { /* page gone */ } }); };
 });

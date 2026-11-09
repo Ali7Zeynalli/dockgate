@@ -96,8 +96,18 @@ function renderRawConfig(serverId, itemId, path, el, { label, high, hint } = {})
   }));
 }
 
-function renderServiceLogs(text, el) {
-  el.innerHTML = `<details class="card" style="padding:12px 14px"><summary class="text-sm" style="cursor:pointer;font-weight:600">Recent log</summary><div style="margin-top:10px">${svcPre(text, '(no journal entries)')}</div></details>`;
+// Recent log of a service: its systemd journal in the shared LogViewer, loaded when the section is opened.
+function renderServiceLogs(serverId, info, el) {
+  el.innerHTML = `<details class="card" style="padding:12px 14px"><summary class="text-sm" style="cursor:pointer;font-weight:600">Recent log${info.unit ? ` <span class="ui-sub">· ${escapeHtml(info.unit)}</span>` : ''}</summary><div data-lv style="margin-top:10px"></div></details>`;
+  const det = el.querySelector('details');
+  det.addEventListener('toggle', () => {
+    if (!det.open || det._lv) return;
+    det._lv = LogViewer.mount(det.querySelector('[data-lv]'), {
+      key: 'service-log', fileName: `${info.item}-journal`, height: '45vh', compact: true,
+      retention: 'The server keeps the journal (journald)', empty: 'No journal entries.',
+      load: async (limit) => info.unit ? { text: (await API.get(`/servers/${serverId}/host/logs?unit=${encodeURIComponent(info.unit)}&lines=${limit}`)).text || '' } : { text: info.logs || '' },
+    });
+  });
 }
 
 // ---------- Services tab — Cockpit "Services" style: one table, select a row for its details ----------
@@ -185,7 +195,7 @@ async function renderServicePage(serverId, item, el) {
   if (item === 'docker') renderDockerPage(serverId, info, body, reload);
   else if (item === 'timesync') renderTimesyncPage(serverId, info, body, reload);
   else renderAutoUpdatesPage(serverId, info, body, reload);
-  renderServiceLogs(info.logs, el.querySelector('[data-logs]'));
+  renderServiceLogs(serverId, info, el.querySelector('[data-logs]'));
 }
 
 const svcKv = (pairs) => `<div class="detail-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">${pairs.map(([k, v]) => `<div class="detail-item"><div class="detail-label">${k}</div><div class="detail-value" style="word-break:normal">${v}</div></div>`).join('')}</div>`;

@@ -1,19 +1,8 @@
-// Audit Log Page — history of all operations performed on DockGate
-// Filter (server / type / action / search / limit) + CSV export + clearing.
+// Audit Log page: every operation done through DockGate, in the shared LogViewer
+// (search, type = source, server, level, up to 10,000 entries) + CSV export + clearing.
 // Since there is no auth, this is a "what was done + from where (IP)" audit, not "who did it".
 Router.register('audit', async (content) => {
   let currentRows = [];
-
-  // SQLite UTC datetime → readable in the user's selected timezone (global formatTime helper)
-  const fmtTime = (s) => formatTime(s);
-
-  function actionClass(action = '') {
-    const a = action.toLowerCase();
-    if (/(start|create|add|unpause|build_success|switch)/.test(a)) return 'badge-running';
-    if (/(stop|die|pause|restart|terminal)/.test(a)) return 'badge-created';
-    if (/(remove|delete|destroy|prune|clear|kill|build_failed|cleared)/.test(a)) return 'badge-dead';
-    return 'badge-created';
-  }
 
   function rowsToCsv(rows) {
     const esc = (v) => {
@@ -31,129 +20,53 @@ Router.register('audit', async (content) => {
     return lines.join('\n');
   }
 
-  function buildQuery() {
-    const p = new URLSearchParams();
-    const server = document.getElementById('audit-server')?.value;
-    const type = document.getElementById('audit-type')?.value;
-    const action = document.getElementById('audit-action')?.value;
-    const q = document.getElementById('audit-search')?.value.trim();
-    const limit = document.getElementById('audit-limit')?.value || '200';
-    if (server) p.set('server', server);
-    if (type) p.set('type', type);
-    if (action) p.set('action', action);
-    if (q) p.set('q', q);
-    p.set('limit', limit);
-    return p.toString();
-  }
-
-  async function load() {
-    const tbody = document.getElementById('audit-tbody');
-    const empty = document.getElementById('audit-empty');
-    if (!tbody) return;
-    try {
-      const rows = await API.get('/meta/activity?' + buildQuery());
-      currentRows = rows;
-      tbody.innerHTML = rows.map((r, i) => {
-        const det = r.details ? escapeHtml(String(r.details)) : '';
-        return `
-          <tr data-row="${i}" style="cursor:pointer" title="Open details">
-            <td class="text-sm text-muted" style="white-space:nowrap">${fmtTime(r.created_at)}</td>
-            <td>${r.server && r.server !== 'local' ? `${UI.chip(escapeHtml(r.server))}` : '<span class="text-muted text-sm">local</span>'}</td>
-            <td class="td-mono text-sm">${escapeHtml(r.resource_type || '')}</td>
-            <td><span class="badge ${actionClass(r.action)}">${escapeHtml(r.action || '')}</span></td>
-            <td class="td-name text-sm">${escapeHtml(r.resource_name || r.resource_id || '—')}</td>
-            <td class="td-mono text-xs text-muted">${escapeHtml(r.source_ip || '—')}</td>
-            <td class="text-xs text-muted" style="max-width:280px;white-space:normal;word-break:break-all" title="${det}">${det.length > 120 ? det.slice(0, 120) + '…' : det}</td>
-          </tr>`;
-      }).join('');
-      if (empty) empty.style.display = rows.length ? 'none' : 'block';
-    } catch (err) {
-      if (empty) { empty.innerHTML = UI.errorState(err, { compact: true, title: 'The audit log could not be loaded' }); empty.style.display = 'block'; }
-    }
-  }
+  // SQLite stores UTC "YYYY-MM-DD HH:MM:SS"
+  const toMs = (s) => { const t = Date.parse(String(s || '').replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(String(s)) ? '' : 'Z')); return Number.isFinite(t) ? t : null; };
+  const levelOf = (action = '') => /(fail|error|denied|refused)/i.test(action) ? 'E' : /(remove|delete|destroy|prune|clear|kill|stop|revoke|ban)/i.test(action) ? 'W' : 'I';
+  let viewer = null, serverSel = null;
 
   async function render() {
-    // Distinct values for the filter dropdowns
     let facets = { types: [], actions: [], servers: [] };
-    try { facets = await API.get('/meta/activity/facets'); } catch (e) {}
-
-    const opt = (v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`;
-
+    try { facets = await API.get('/meta/activity/facets'); } catch (e) { /* filters stay empty */ }
     content.innerHTML = `
-      ${UI.header('Audit log', 'Every change made through DockGate: what, on which server, and from which IP address. Click a row for its details.',
+      ${UI.header('Audit log', 'Every change made through DockGate: what, on which server, and from which IP address. Click a line for its details.',
         `<button class="btn btn-secondary btn-sm" id="audit-export">${Icons.download} Export CSV</button>
-         ${UI.menu([
-           { label: `${Icons.refresh} Refresh`, attrs: 'id="audit-refresh"' },
-           '-',
-           { label: `${Icons.trash} Clear the log…`, attrs: 'id="audit-clear"', danger: true },
-         ])}`)}
-
-      <div class="ui-toolbar">
-        <div class="search-input">${Icons.search}<input id="audit-search" placeholder="Search resource, action, details or IP" aria-label="Search the audit log"></div>
-        <div class="select-wrapper"><select class="select" id="audit-server"><option value="">All servers</option>${facets.servers.map(opt).join('')}</select></div>
-        <div class="select-wrapper"><select class="select" id="audit-type"><option value="">All types</option>${facets.types.map(opt).join('')}</select></div>
-        <div class="select-wrapper"><select class="select" id="audit-action"><option value="">All actions</option>${facets.actions.map(opt).join('')}</select></div>
-        <div class="select-wrapper"><select class="select" id="audit-limit"><option>200</option><option>500</option><option>1000</option></select></div>
-      </div>
-
-      <div class="table-wrapper">
-        <table>
-          <thead><tr><th>Time</th><th>Server</th><th>Type</th><th>Action</th><th>Resource</th><th>Source IP</th><th>Details</th></tr></thead>
-          <tbody id="audit-tbody"></tbody>
-        </table>
-        <div id="audit-empty" class="empty-state" style="padding:40px;display:none">Nothing recorded yet, or nothing matches the filters.</div>
-      </div>
-    `;
-
-    // Filter changes → reload
-    ['audit-server', 'audit-type', 'audit-action', 'audit-limit'].forEach(id => {
-      document.getElementById(id)?.addEventListener('change', load);
-    });
-    // Search — debounce
-    let searchTimer = null;
-    document.getElementById('audit-search')?.addEventListener('input', () => {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(load, 300);
-    });
-
-    document.getElementById('audit-refresh')?.addEventListener('click', load);
-    document.getElementById('audit-tbody')?.addEventListener('click', (e) => {
-      const tr = e.target.closest('tr[data-row]'); if (!tr) return;
-      const r = currentRows[Number(tr.dataset.row)]; if (!r) return;
-      let det = r.details || '';
-      try { det = JSON.stringify(JSON.parse(det), null, 2); } catch (x) { /* plain text */ }
-      showModal('Audit entry', `${UI.settings([
-        { label: 'Time', value: escapeHtml(fmtTime(r.created_at)) },
-        { label: 'Server', value: escapeHtml(r.server || 'local') },
-        { label: 'Action', value: `${escapeHtml(r.resource_type || '')} · <b>${escapeHtml(r.action || '')}</b>` },
-        { label: 'Resource', value: escapeHtml(r.resource_name || r.resource_id || '—') },
-        { label: 'Source IP', value: `<span class="td-mono">${escapeHtml(r.source_ip || '—')}</span>` },
-      ])}${det ? `<pre class="td-mono text-xs" style="margin-top:12px;white-space:pre-wrap;word-break:break-all;max-height:320px;overflow:auto;background:var(--bg-primary);padding:10px;border-radius:8px">${escapeHtml(det)}</pre>` : ''}`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+         ${UI.menu([{ label: `${Icons.trash} Clear the log…`, attrs: 'id="audit-clear"', danger: true }])}`)}
+      <div data-lvroot></div>`;
+    const tools = facets.servers.length > 1 ? `<select class="select" data-aserver aria-label="Server"><option value="">All servers</option>${facets.servers.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>` : '';
+    viewer = LogViewer.mount(content.querySelector('[data-lvroot]'), {
+      key: 'audit', fileName: 'dockgate-audit', tools,
+      retention: 'DockGate keeps the newest 10,000 entries',
+      empty: 'Nothing recorded yet.',
+      onTools(el) { serverSel = el.querySelector('[data-aserver]'); serverSel?.addEventListener('change', () => viewer.reload()); },
+      async load(limit) {
+        const p = new URLSearchParams({ limit: String(limit) });
+        if (serverSel && serverSel.value) p.set('server', serverSel.value);
+        const rows = await API.get('/meta/activity?' + p.toString());
+        currentRows = rows.slice().reverse(); // oldest first, like every log
+        return { rows: currentRows.map(r => {
+          let det = r.details || '';
+          try { det = JSON.stringify(JSON.parse(det)); } catch (x) { /* plain text */ }
+          const server = r.server || 'local';
+          return { t: toMs(r.created_at), l: levelOf(r.action), src: r.resource_type || '',
+            msg: `${r.action || ''}  ${r.resource_name || r.resource_id || '—'}${server !== 'local' ? `  @${server}` : ''}${r.source_ip ? `  from ${r.source_ip}` : ''}${det ? `  · ${det.length > 300 ? det.slice(0, 300) + '…' : det}` : ''}`,
+            meta: { Server: server, Action: r.action, Resource: r.resource_name || r.resource_id || '', 'Source IP': r.source_ip || '', Details: r.details || '' } };
+        }) };
+      },
     });
 
     document.getElementById('audit-export')?.addEventListener('click', () => {
       if (!currentRows.length) { showToast('No records to export', 'warning'); return; }
-      const csv = rowsToCsv(currentRows);
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = URL.createObjectURL(new Blob([rowsToCsv(currentRows)], { type: 'text/csv;charset=utf-8' }));
       a.download = `dockgate-audit-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
     });
-
     document.getElementById('audit-clear')?.addEventListener('click', () => {
       showDeleteConfirm('Clear audit log', { message: 'All audit records will be deleted. Continue?', phrase: 'delete', onConfirm: async () => {
-        try {
-          await API.del('/meta/activity');
-          showToast('Audit log cleared');
-          render();
-        } catch (err) { showToast(err.message, 'error'); }
+        try { await API.del('/meta/activity'); showToast('Audit log cleared'); viewer.reload(); } catch (err) { showToast(err.message, 'error'); }
       } });
     });
-
-    await load();
   }
 
   await render();

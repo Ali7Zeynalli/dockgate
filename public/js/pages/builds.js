@@ -514,9 +514,18 @@ Router.register('builds', async (content) => {
   }
 
   // ---- LOGS TAB — collapsible steps + plain text toggle ----
+  // Build log: "Full log" in the shared LogViewer (search, levels, step as source) or the collapsible "Steps" view.
+  function buildLogRows(text) {
+    let step = '';
+    return String(text || '').split('\n').filter(l => l.trim()).map(l => {
+      const m = /^(Step \d+\/\d+)\b/.exec(l) || /^#(\d+)\s/.exec(l);
+      if (m) step = m[1].startsWith('Step') ? m[1] : '#' + m[1];
+      return { t: null, src: step, msg: l };
+    });
+  }
   function renderLogsTab(el, build) {
     const logText = build.log || '';
-    let viewMode = 'list'; // list or plain
+    let viewMode = 'full'; // full (LogViewer) or list (steps)
 
     function renderLogView() {
       const coloredLog = colorizeBuildLog(logText);
@@ -526,8 +535,8 @@ Router.register('builds', async (content) => {
         <div class="build-log-container">
           <div class="build-log-toolbar">
             <div style="display:flex;gap:4px;">
-              <button class="btn btn-xs ${viewMode === 'list' ? 'btn-primary' : 'btn-secondary'}" id="log-list-view">List</button>
-              <button class="btn btn-xs ${viewMode === 'plain' ? 'btn-primary' : 'btn-secondary'}" id="log-plain-view">Plain text</button>
+              <button class="btn btn-xs ${viewMode === 'full' ? 'btn-primary' : 'btn-secondary'}" id="log-plain-view">Full log</button>
+              <button class="btn btn-xs ${viewMode === 'list' ? 'btn-primary' : 'btn-secondary'}" id="log-list-view">Steps</button>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
               <span class="text-sm text-muted">${steps.length} step(s)</span>
@@ -540,8 +549,9 @@ Router.register('builds', async (content) => {
 
       const logContent = document.getElementById('log-content');
 
-      if (viewMode === 'plain') {
-        logContent.innerHTML = `<div class="build-log-viewer">${coloredLog}</div>`;
+      if (viewMode === 'full') {
+        LogViewer.mount(logContent, { key: 'build-log', fileName: `build-${build.image_tag || build.id || ''}`, limits: null, compact: true, height: '520px',
+          retention: 'DockGate keeps the newest 100 builds', empty: 'This build has no log.', load: async () => ({ rows: buildLogRows(logText) }) });
       } else {
         // List view — collapsible steps
         if (steps.length === 0) {
@@ -584,7 +594,7 @@ Router.register('builds', async (content) => {
       }
 
       document.getElementById('log-list-view')?.addEventListener('click', () => { viewMode = 'list'; renderLogView(); });
-      document.getElementById('log-plain-view')?.addEventListener('click', () => { viewMode = 'plain'; renderLogView(); });
+      document.getElementById('log-plain-view')?.addEventListener('click', () => { viewMode = 'full'; renderLogView(); });
       document.getElementById('copy-log')?.addEventListener('click', () => {
         navigator.clipboard?.writeText(logText)
           .then(() => showToast('Copied', 'success'))

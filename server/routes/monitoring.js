@@ -238,38 +238,31 @@ router.get('/:serverId/logs', async (req, res) => {
         }
       }
     } else {
-      // Fallback: Collect logs from Docker directly
+      // Fallback: read the containers' own logs from Docker, with Docker's real timestamps.
+      // The newest `limit` lines in total (at most 10,000), shared across the running containers.
       const runningContainers = await dockerService.listContainers(false).catch(() => []);
       availableContainers = runningContainers.map(c => c.name || c.shortId || c.id);
-
       const containersToRead = container
         ? runningContainers.filter(c => c.name === container || c.id === container || c.shortId === container)
-        : runningContainers.slice(0, 8); // Top 8 containers
-
-      for (const c of containersToRead) {
+        : runningContainers;
+      const want = Math.min(10000, Math.max(1, Number(limit) || 100));
+      const per = Math.max(50, Math.ceil(want / Math.max(1, containersToRead.length)));
+      const q = String(search || '').toLowerCase();
+      await Promise.all(containersToRead.map(async (c) => {
         const cName = c.name || c.shortId || c.id.substring(0, 12);
-        const tailCount = container ? Math.min(Number(limit) || 100, 300) : 30;
-        const lines = await dockerService.getContainerLogs(c.id, { tail: tailCount }).catch(() => []);
-        for (let i = 0; i < lines.length; i++) {
-          const msg = lines[i];
-          const isErr = /error|fatal|fail|panic|exception/i.test(msg);
-          const isWrn = /warn/i.test(msg);
-          const lvl = isErr ? 'error' : (isWrn ? 'warn' : 'info');
-
-          if (level && lvl !== level) continue;
-          if (search && !msg.toLowerCase().includes(search.toLowerCase())) continue;
-
-          logs.push({
-            id: `c_${cName}_${i}`,
-            timestamp: Date.now() - (lines.length - i) * 1000,
-            containerName: cName,
-            source: 'container',
-            stream: 'stdout',
-            message: msg,
-            level: lvl,
-          });
-        }
-      }
+        const text = await dockerService.getContainerLogs(c.id, { tail: per, timestamps: true }).catch(() => '');
+        String(text || '').split('\n').forEach((raw, i) => {
+          const m = /^(\d{4}-\d\d-\d\dT\S+)\s(.*)$/.exec(raw);
+          const msg = (m ? m[2] : raw).replace(/\r$/, '');
+          if (!msg.trim()) return;
+          const lvl = /error|fatal|fail|panic|exception/i.test(msg) ? 'error' : (/warn/i.test(msg) ? 'warn' : 'info');
+          if (level && lvl !== level) return;
+          if (q && !msg.toLowerCase().includes(q)) return;
+          const t = m ? Date.parse(m[1]) : NaN;
+          logs.push({ id: `c_${cName}_${i}`, timestamp: Number.isFinite(t) ? t : null, containerName: cName, source: 'container', stream: 'stdout', message: msg, level: lvl });
+        });
+      }));
+      logs = logs.filter(l => l.timestamp != null).sort((a, b) => a.timestamp - b.timestamp).slice(-want);
     }
 
     // Sort chronologically

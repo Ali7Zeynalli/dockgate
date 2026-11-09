@@ -7,11 +7,11 @@ const navItems = {
   monitoring: { label: 'Monitoring', icon: Icons.chart },
   resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['builds', 'Builds'], ['prune', 'Prune']], default: 'containers' },
   deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose stacks'], ['templates', 'App templates'], ['registries', 'Registries']], default: 'compose' },
-  observe: { label: 'Observe', icon: Icons.events, tabs: [['logs', 'Logs'], ['events', 'Events'], ['audit', 'Audit log']], default: 'logs' },
+  observe: { label: 'Observe', icon: Icons.events, tabs: [['logs', 'Logs'], ['events', 'Events'], ['audit', 'Audit log'], ['notification-log', 'Notifications sent']], default: 'logs' },
   tools: { label: 'Tools', icon: Icons.terminal, tabs: [['terminal', 'Terminal'], ['files', 'Files'], ['schedules', 'Schedules']], default: 'terminal' },
   infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH keys'], ['agent', 'Edge agent']], default: 'servers' },
   'server-console': { label: 'Server Console', icon: Icons.terminal, tabs: [['overview', 'Overview'], ['monitoring', 'Monitoring'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users & keys'], ['firewall', 'Firewall'], ['fail2ban', 'Fail2ban'], ['manage', 'Services'], ['logs', 'Logs'], ['settings', 'Settings']], default: 'overview' },
-  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['log', 'Notification log'], ['update', 'Software update'], ['system', 'System'], ['security', 'Security']], default: 'general' }
+  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['update', 'Software update'], ['system', 'System'], ['security', 'Security']], default: 'general' }
 };
 
 // DOCKER (what runs) · SERVER (the hosts) · SYSTEM (DockGate itself).

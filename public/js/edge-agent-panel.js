@@ -23,7 +23,7 @@
   // Live deploy-log modal. Polls the job; stops cleanly when the job ends or the modal is closed.
   // Always shows a Close button, and a prominent status that turns green/red when the job finishes.
   function openJobModal(jobId, onDone) {
-    const body = `<pre id="edge-job-log" style="max-height:340px;overflow:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;">Starting…</pre>
+    const body = `<div id="edge-job-log"></div>
       <div id="edge-job-status" style="margin-top:10px;font-size:13px;font-weight:600;color:var(--text-muted);">⏳ Working…</div>`;
     const m = showModal('DockGate Agent — deploy', body, []);
     const footer = m.overlay.querySelector('#modal-footer');
@@ -33,13 +33,18 @@
     closeBtn.onclick = () => m.close();
     if (footer) footer.appendChild(closeBtn);
 
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    // The job log in the shared LogViewer: new complete lines are appended as the job writes them.
+    const viewer = LogViewer.mount(m.overlay.querySelector('#edge-job-log'), { key: 'agent-job', fileName: `agent-job-${jobId}`, live: true, limits: null, compact: true, height: '340px',
+      retention: 'DockGate keeps the newest 200 agent jobs', empty: 'Starting…' });
+    let sent = 0;
+    const feed = (log, all) => { const lines = String(log || '').split('\n'); const upto = all ? lines.length : lines.length - 1; if (upto > sent) { viewer.push(lines.slice(sent, upto).join('\n')); sent = upto; } };
     let timer = null, finished = false;
     async function poll() {
       if (!m.overlay || !m.overlay.isConnected) { if (timer) clearTimeout(timer); return; }
       try {
         const j = await API.get('/agent/job/' + jobId);
-        const le = m.overlay.querySelector('#edge-job-log');
-        if (le) { le.textContent = j.log || '(no output yet)'; le.scrollTop = le.scrollHeight; }
+        feed(j.log, j.status !== 'running');
         const se = m.overlay.querySelector('#edge-job-status');
         const per = (j.servers || []).map(s => `${s.id}: ${s.state}${s.message ? ' — ' + s.message : ''}`).join('   ·   ');
         if (j.status === 'running') {

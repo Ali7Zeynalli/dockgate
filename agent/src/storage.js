@@ -241,7 +241,7 @@ class Storage {
 
   getLogs({ container = '', source = '', level = '', search = '', limit = 100, since = 0 } = {}) {
     const term = search ? search.toLowerCase() : '';
-    const lim = Math.max(1, Math.min(1000, Number(limit) || 100));
+    const lim = Math.max(1, Math.min(this.maxLogs, Number(limit) || 100)); // the viewer asks for up to 10,000
 
     let matched = this.logs;
 
