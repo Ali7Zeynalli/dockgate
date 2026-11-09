@@ -96,7 +96,7 @@ async function renderServerAlerts(serverId, el) {
   const muted = s.notifications_enabled === 0;
   const st = data.status, last = st && st.last;
   const now = {
-    server_down: !st ? '<span class="ui-sub">first check pending</span>' : st.reachable ? UI.pill('ok', 'reachable') : UI.pill('bad', `no answer since ${formatTime(st.since)}`),
+    server_down: !st ? '<span class="ui-sub">first check pending</span>' : st.reachable ? UI.pill('ok', 'reachable') : UI.pill('bad', `no answer since ${formatTime(new Date(st.since).toISOString())}`),
     host_disk: last && last.diskPct != null ? `<span class="ui-sub">fullest disk ${Math.round(last.diskPct)}%</span>` : '',
     host_mem: last && last.memPct != null ? `<span class="ui-sub">${Math.round(last.memPct)}%</span>` : '',
     host_cpu: last && last.cpu != null ? `<span class="ui-sub">${Math.round(last.cpu)}%</span>` : '',

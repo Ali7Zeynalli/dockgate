@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.19.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.20.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.19.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.20.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-<256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -184,7 +184,7 @@ At-a-glance view of the **active** server: count cards (containers/running/stopp
 
 - **Servers** — add/edit/remove SSH hosts (host/port/user; **key** with optional passphrase, **password**, or SSH-agent — precedence key > password > agent), **test connection**, switch the active server, and **grant the docker group** (passwordless `docker`). SSH passwords/passphrases are **encrypted at rest** (AES-256-GCM).
 - **Provisioning** — point DockGate at a **fresh SSH server** and it runs **detect → install → verify** for a chosen preset (**Full / Secure-baseline / Just-Docker / Custom**): system update, **Docker Engine**, **Docker log limits** (`daemon.json`), **fail2ban**, swap (sized to RAM), docker-group, **deploy user**, **safe SSH-hardening** (never disables password/root login — no lockout), and a **firewall** (current SSH port + 80 + 443). A **pre-flight** checks root / passwordless sudo and waits for cloud-init; apt waits for the dpkg lock and keeps modified config files. One run per server at a time, **cancel** between items, and a **reboot-required** notice after kernel updates. Every item's commands come from one central catalog; a per-server **history + state matrix** records what's done / missing / failed. Runs in isolated forked SSH workers.
-- **Host monitoring** — beyond Docker: the host's **CPU / load / RAM / swap / disk / disk-IO / net / uptime / top processes**, plus a **host-log viewer** (journald / auth / syslog / kernel / boot, any systemd unit, any `/var/log` file) over SSH. Samples opportunistically on read (no background SSH storm), stores a SQLite time-series, and draws trend charts; refreshes in place every 5 s.
+- **Host monitoring** — beyond Docker: the host's **CPU / load / RAM / swap / disk / disk-IO / net / uptime / top processes**, plus a **host-log viewer** (journald / auth / syslog / kernel / boot, any systemd unit, any `/var/log` file) over SSH. Monitoring has two views: **Live** (refreshes every few seconds, a rolling 15-minute trend, nothing stored) and **Last 48 hours** (DockGate stores one sample a minute per server in its own database and shows 5-minute averages with the peak of each 5 minutes; the same with or without the Edge agent, and it survives reboots).
 </details>
 
 <details>
@@ -259,7 +259,7 @@ Browser (vanilla JS + xterm.js + Chart.js)
 
 - **One active Docker client.** A `docker` Proxy forwards every call to the current client — the local Unix socket or an SSH-transport dockerode client — so the whole app re-scopes to the active server instantly.
 - **Isolated workers for host ops.** Host metrics, host logs, provisioning and service-control run in **forked one-shot SSH workers** (own process, agent-socket dropped) so a slow SSH host never blocks the event loop or contends with live monitoring.
-- **Opportunistic sampling.** Host metrics are sampled when you read them (stored to a SQLite time-series), not polled in the background — no SSH storm.
+- **One light sample a minute.** The health monitor reads each server once a minute over SSH (one short command) for its alerts; the same sample is Monitoring's 48-hour history. The Live view reads directly and stores nothing; samples older than 48 hours are deleted.
 - **Secrets at rest.** SSH passwords/passphrases, registry passwords and notification-channel tokens are AES-256-GCM encrypted (`DG_MASTER_KEY` or a generated `data/.master.key`).
 
 ---

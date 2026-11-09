@@ -120,7 +120,7 @@ async function sampleServer(s) {
       const swapPct = x.mem && x.mem.swapTotal ? Math.round(x.mem.swapUsed / x.mem.swapTotal * 100) : 0;
       const root = (x.disks || []).find(d => d.mount === '/') || (x.disks || [])[0];
       stmts.insertHostMetric.run(s.id, x.cpu ?? null, smp.memPct, root ? root.usePct : null, swapPct, x.load ? x.load.load1 : null, x.net ? Math.round(x.net.rxBytesSec) : null, x.net ? Math.round(x.net.txBytesSec) : null, x.load ? x.load.procsRunning : null);
-      stmts.trimHostMetrics.run(s.id, s.id, 2000);
+      stmts.trimHostMetricsAge.run(s.id, s.id);
     } catch (e) { /* history is best effort */ }
     return { ok: true, ...smp };
   } catch (e) {
@@ -133,7 +133,7 @@ function toSample(x) {
 
 async function checkOne(s) {
   const rules = rulesFor(s.id);
-  if (!Object.values(rules).some(r => r.on) && !state.get(s.id)?.down) return; // nothing to watch
+  // Sampled even when every alert rule is off: the sample is also Monitoring's 48-hour history.
   const sample = await sampleServer(s).catch(e => (s.id === 'local' ? null : { ok: false, error: e.message }));
   if (!sample) return; // local read failed (no /proc) — never report the DockGate host itself as down
   const { state: next, alerts } = R.evaluate(state.get(s.id), sample, Date.now(), rules);

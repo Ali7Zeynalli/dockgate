@@ -666,8 +666,8 @@ setInterval(() => {
   try { stmts.trimNotificationLogs.run(); } catch(e) {}
 }, 6 * 60 * 60 * 1000);
 
-// Background local host metrics sampler — collect & persist every 15s so the monitoring
-// dashboard has historical time-series data for the local daemon (not just single-point live).
+// Background local host metrics sampler — one sample a minute, kept 48 hours (Monitoring → Last 48 hours).
+// The Live view reads the machine directly, so it does not depend on this.
 const hostStats = require('./host-stats');
 setInterval(async () => {
   try {
@@ -678,6 +678,6 @@ setInterval(async () => {
     const rootDisk = (s.disks || []).find(d => d.mount === '/') || (s.disks || [])[0];
     stmts.insertHostMetric.run('local', s.cpu ?? null, memPct, rootDisk ? rootDisk.usePct : null, swapPct,
       s.load ? s.load.load1 : null, s.net ? Math.round(s.net.rxBytesSec) : null, s.net ? Math.round(s.net.txBytesSec) : null, s.load ? s.load.procsRunning : null);
-    stmts.trimHostMetrics.run('local', 'local', 2000);
+    stmts.trimHostMetricsAge.run('local', 'local');
   } catch (e) { /* best-effort — never crash the main process */ }
-}, 15000);
+}, 60000);

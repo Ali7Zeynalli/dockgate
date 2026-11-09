@@ -2,7 +2,7 @@
 // Zero external libraries — pure HTML5 Canvas & SVG with smooth bezier curves and tooltips.
 
 const MonitoringPage = {
-  currentRange: '1h',
+  currentRange: 'live', // 'live' (rolling 15 minutes) or '48h' (DockGate's store)
   refreshInterval: 10000,
   refreshTimer: null,
   activeContainer: '',
@@ -16,7 +16,7 @@ const MonitoringPage = {
       <div style="display:flex;flex-direction:column;gap:18px;max-width:1400px;margin:0 auto;">
         
         ${UI.header('Monitoring', 'Every server at a glance, then live host and container metrics for the server picked in the header. Open a server for its full graphs and alert policies.',
-          `${UI.seg([['1h', '1h'], ['6h', '6h'], ['24h', '24h'], ['7d', '7d']], this.currentRange, 'data-range')}
+          `${UI.seg([['live', 'Live'], ['48h', 'Last 48 hours']], this.currentRange, 'data-range')}
            <select id="mon-refresh-sel" class="select" aria-label="Auto refresh" style="padding:4px 8px;font-size:12px;">
              <option value="5000">Refresh: 5s</option>
              <option value="10000" selected>Refresh: 10s</option>
@@ -26,8 +26,9 @@ const MonitoringPage = {
            <button id="mon-refresh-btn" class="btn btn-secondary btn-sm" title="Refresh now">${Icons.refresh}</button>`)}
 
         <div id="mon-fleet"></div>
+        <div class="ui-sub" id="mon-range-note" style="margin:-6px 0 -8px"></div>
 
-        <div class="ui-ph" style="margin:6px 0 -6px"><div class="ui-ph-text"><div class="ui-ph-title">${escapeHtml(activeServer.name || activeServer.label || serverId)} <span id="mon-agent-badge" class="ui-pill ui-pill-off" style="margin-left:6px">connecting…</span></div><div class="ui-ph-desc">Live metrics of the server picked in the header.</div></div></div>
+        <div class="ui-ph" style="margin:6px 0 -6px"><div class="ui-ph-text"><div class="ui-ph-title">${escapeHtml(activeServer.name || activeServer.label || serverId)} <span id="mon-agent-badge" class="ui-pill ui-pill-off" style="margin-left:6px">connecting…</span></div><div class="ui-ph-desc">Metrics of the server picked in the header — live, or the last 48 hours, as chosen above.</div></div></div>
 
         <!-- Metric Stat Cards -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:14px;">
@@ -162,6 +163,7 @@ const MonitoringPage = {
       btn.addEventListener('click', (e) => {
         container.querySelectorAll('[data-range]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
         this.currentRange = btn.dataset.range;
+        this._clientHistory = null; // a new window starts empty
         this.fetchData(serverId);
       });
     });
@@ -249,27 +251,25 @@ const MonitoringPage = {
         API.get(`/monitoring/${serverId}/summary`).catch(() => null)
       ]);
 
-      // If polling mode with 1 sample, accumulate client-side history so chart draws live graphs!
-      if (metrics.count === 1 && metrics.timestamps && metrics.timestamps.length === 1 && metrics.host && metrics.host.cpu) {
-        if (!this._clientHistory) this._clientHistory = { timestamps: [], cpu: [], mem: [], netRx: [], netTx: [] };
+      // Live without the agent: one sample per refresh → keep a rolling 15-minute window here (host + containers).
+      if (this.currentRange === 'live' && metrics.count === 1 && metrics.timestamps && metrics.timestamps.length === 1 && metrics.host && metrics.host.cpu) {
+        if (!this._clientHistory) this._clientHistory = { timestamps: [], cpu: [], mem: [], netRx: [], netTx: [], containers: {} };
         const h = this._clientHistory;
         h.timestamps.push(metrics.timestamps[0]);
         h.cpu.push(metrics.host.cpu[0]);
         h.mem.push(metrics.host.memPercent[0]);
         h.netRx.push(metrics.host.netRxBytesSec[0]);
         h.netTx.push(metrics.host.netTxBytesSec[0]);
-        if (h.timestamps.length > 60) {
-          h.timestamps.shift();
-          h.cpu.shift();
-          h.mem.shift();
-          h.netRx.shift();
-          h.netTx.shift();
-        }
+        for (const [name, c] of Object.entries(metrics.latestContainers || {})) (h.containers[name] = h.containers[name] || []).push({ t: metrics.timestamps[0], cpuPercent: c.cpuPercent || 0 });
+        const cutoff = Date.now() - 15 * 60 * 1000;
+        while (h.timestamps.length && h.timestamps[0] < cutoff) { h.timestamps.shift(); h.cpu.shift(); h.mem.shift(); h.netRx.shift(); h.netTx.shift(); }
+        for (const name of Object.keys(h.containers)) { h.containers[name] = h.containers[name].filter(p => p.t >= cutoff); if (!h.containers[name].length) delete h.containers[name]; }
         metrics.timestamps = [...h.timestamps];
         metrics.host.cpu = [...h.cpu];
         metrics.host.memPercent = [...h.mem];
         metrics.host.netRxBytesSec = [...h.netRx];
         metrics.host.netTxBytesSec = [...h.netTx];
+        metrics.containers = Object.fromEntries(Object.entries(h.containers).map(([k, v]) => [k, v.map(p => ({ cpuPercent: p.cpuPercent }))]));
       }
 
       if (summary && summary.breakdown) {
@@ -284,6 +284,13 @@ const MonitoringPage = {
   },
 
   updateUI(data) {
+    const note = document.getElementById('mon-range-note');
+    if (note) {
+      if (data.range === '48h') {
+        const hrs = data.storedSince ? (Date.now() - data.storedSince) / 3600000 : 0;
+        note.textContent = data.storedSince ? `Last 48 hours from DockGate's own store: 5-minute averages of one sample a minute${hrs < 47 ? ` · stored since ${new Date(data.storedSince).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} (${hrs < 1 ? Math.max(1, Math.round(hrs * 60)) + ' min' : Math.round(hrs) + ' h'})` : ''}. Kept across reboots.` : 'No stored samples yet — DockGate stores one a minute and keeps 48 hours.';
+      } else note.textContent = `Live · the last 15 minutes${data.source === 'agent' ? ' from the edge agent' : ', read by DockGate on each refresh'}.`;
+    }
     const badge = document.getElementById('mon-agent-badge');
     if (badge) {
       const agent = data.source === 'agent';
@@ -336,12 +343,13 @@ const MonitoringPage = {
     for (const [cName, cPoints] of Object.entries(data.containers || {})) {
       containerLines.push({
         label: cName,
-        data: (cPoints || []).map(p => p.cpuPercent || 0),
+        // points [{cpuPercent}] (DockGate) or { cpu: [...] } (Edge agent)
+        data: Array.isArray(cPoints) ? cPoints.map(p => p.cpuPercent || 0) : ((cPoints && cPoints.cpu) || []),
         color: colors[cIndex % colors.length],
       });
       cIndex++;
     }
-    this.drawChart('chart-containers', timestamps, containerLines, '%');
+    this.drawChart('chart-containers', timestamps, containerLines, '%', data.range === '48h' ? 'Container graphs are live only — switch to Live.' : null);
 
     // 3. Render Containers Table
     const tbody = document.getElementById('mon-containers-tbody');
@@ -381,7 +389,7 @@ const MonitoringPage = {
   },
 
   // High-performance smooth Canvas Chart Renderer
-  drawChart(canvasId, timestamps, seriesList, unit = '') {
+  drawChart(canvasId, timestamps, seriesList, unit = '', emptyText = null) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
@@ -404,7 +412,7 @@ const MonitoringPage = {
       ctx.fillStyle = '#64748b';
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Collecting time-series data points…', w / 2, h / 2);
+      ctx.fillText(emptyText || (this.currentRange === '48h' ? 'No stored samples yet — DockGate stores one a minute.' : 'Collecting live samples…'), w / 2, h / 2);
       return;
     }
 
@@ -467,8 +475,10 @@ const MonitoringPage = {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.font = '10px monospace';
     ctx.textAlign = 'left';
-    const firstTime = new Date(timestamps[0]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const lastTime = new Date(timestamps[timestamps.length - 1]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const longSpan = timestamps[timestamps.length - 1] - timestamps[0] > 20 * 3600000;
+    const fmtT = (t) => new Date(t).toLocaleString([], { hour: '2-digit', minute: '2-digit', ...(longSpan ? { day: '2-digit', month: 'short' } : {}) });
+    const firstTime = fmtT(timestamps[0]);
+    const lastTime = fmtT(timestamps[timestamps.length - 1]);
     ctx.fillText(firstTime, padX, h - 6);
     ctx.textAlign = 'right';
     ctx.fillText(lastTime, w - 10, h - 6);

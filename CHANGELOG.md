@@ -2,6 +2,23 @@
 
 ---
 
+## [2.20.0] - 2026-11-09
+
+### Changed
+- **Monitoring: Live and Last 48 hours** replace the 1h / 6h / 24h / 7d buttons, on the Monitoring page and in Server Console → Monitoring. Those buttons looked like they worked, but without the Edge agent every one showed the same last 300 stored samples: about 5 hours on a server, about 75 minutes on this machine.
+  - **Live** (the default) refreshes every few seconds and shows a rolling 15-minute window. It comes from the Edge agent when one runs, otherwise from DockGate reading the server. Nothing is stored.
+  - **Last 48 hours** comes from DockGate's own database: one sample a minute per server, drawn as 5-minute averages, with a thin line for the peak inside each 5 minutes. It works the same with or without the agent and survives reboots. While less than 48 hours is stored, the page says since when.
+- **Stored history is kept by time (48 hours), not by row count (2000).** It used to be about 33 hours for a server and about 8 hours for this machine.
+- This machine is now sampled once a minute instead of every 15 seconds; Live reads it directly.
+- **Servers are sampled every minute even when every server-health alert is off.** Before, no history was collected in that case.
+- Opening a server's live view no longer adds a stored sample every few seconds.
+
+### Fixed
+- **Server Console → Monitoring → Alerts** showed a nonsense date for an unreachable server (for example "no answer since 11/22/58827"). A time in milliseconds was read as seconds.
+- **The Monitoring page's container graph** could not read the Edge agent's format. Without the agent, the container graph now also fills while the page is open.
+
+---
+
 ## [2.19.0] - 2026-11-09
 
 ### Added
