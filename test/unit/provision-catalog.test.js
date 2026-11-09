@@ -125,3 +125,13 @@ test('provision-worker.adaptSudo: root drops sudo; a normal user gets non-intera
   assert.equal(adaptSudo('curl x | sudo sh && sudo -n true', true), 'curl x | sh && true');
   assert.equal(adaptSudo('curl x | sudo sh && sudo -n true', false), 'curl x | sudo -n sh && sudo -n true');
 });
+
+test('every Setup component says what it changes (summary, installs, writes, sets)', () => {
+  const C = require('../../server/provision/catalog');
+  for (const it of C.ITEMS) {
+    const ch = C.CHANGES[it.id];
+    assert.ok(ch, `${it.id} has no CHANGES entry`);
+    assert.ok(ch.short && ch.short.length <= 60, `${it.id}: short summary missing or too long`);
+    for (const k of ['installs', 'writes', 'sets']) assert.ok(Array.isArray(ch[k]), `${it.id}.${k} is not a list`);
+  }
+});

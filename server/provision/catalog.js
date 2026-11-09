@@ -61,6 +61,24 @@ const F2B_WRITE = (() => {
     'sudo fail2ban-client -t >/dev/null && sudo systemctl enable fail2ban && sudo systemctl restart fail2ban';
 })();
 
+// What each component does to the server, for the Setup table's expandable rows: a one-line summary
+// (`short`), what it installs, writes and sets, and where it is changed later. Kept next to ITEMS so the
+// text follows the commands above; per-distro differences are spelled out (Debian/Ubuntu · RHEL family).
+const CHANGES = {
+  update: { short: 'Package index + available upgrades', installs: ['Available package upgrades (apt upgrade · dnf upgrade · apk upgrade)'], writes: [], sets: [], editIn: 'Runs every time; nothing to change later.' },
+  'base-utils': { short: 'curl, ca-certificates, gnupg, git', installs: ['curl', 'ca-certificates', 'gnupg (gnupg2 on RHEL)', 'git', 'sudo (RHEL)'], writes: [], sets: [], editIn: '' },
+  timesync: { short: 'Accurate clock (chrony)', installs: ['chrony'], writes: [], sets: ['chrony service enabled and started, with the distro\'s default time sources'], editIn: 'Server Console → Services → Time sync' },
+  firewall: { short: 'Deny incoming; allow SSH, 80, 443', installs: ['ufw (Debian/Ubuntu) · firewalld (RHEL)'], writes: ['Firewall rules'], sets: ['allow the SSH port DockGate is connected on (before enabling)', 'allow 80/tcp and 443/tcp', 'firewall enabled — everything else incoming is denied'], editIn: 'Server Console → Firewall' },
+  'ssh-hardening': { short: '3 auth tries, 30 s grace, idle drop ~10 min', installs: [], writes: ['/etc/ssh/sshd_config.d/10-dockgate-access.conf'], sets: ['MaxAuthTries 3', 'LoginGraceTime 30', 'PermitEmptyPasswords no', 'X11Forwarding no', 'ClientAliveInterval 300', 'ClientAliveCountMax 2', 'a value already set in the file is kept; checked with sshd -t, restored if rejected'], editIn: 'Server Console → Access & SSH' },
+  fail2ban: { short: 'Bans IPs after failed SSH logins', installs: ['fail2ban', 'python3-systemd (RHEL, from EPEL)'], writes: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/fail2ban.d/dockgate.conf'], sets: ['sshd: 3 failures within 1d → 24h ban, doubling up to 30d', 'recidive: 3 bans within 30d → 1w on every port', 'ban history kept 30d'], editIn: 'Server Console → Fail2ban' },
+  'unattended-upgrades': { short: 'Security patches applied automatically', installs: ['unattended-upgrades (Debian/Ubuntu) · dnf-automatic (RHEL)'], writes: ['/etc/apt/apt.conf.d/20auto-upgrades (Debian/Ubuntu)', '/etc/dnf/automatic.conf (RHEL)'], sets: ['daily package list update and unattended upgrade (Debian/Ubuntu)', 'apply_updates = yes and the dnf-automatic timer on (RHEL)'], editIn: 'Server Console → Services → Auto updates' },
+  swap: { short: 'Swap sized to RAM, swappiness 10', installs: [], writes: ['/swapfile', '/etc/fstab (one line)', '/etc/sysctl.d/99-swappiness.conf'], sets: ['2 GB under 2 GB RAM, otherwise equal to RAM up to 4 GB', 'vm.swappiness=10'], editIn: '' },
+  docker: { short: 'Engine, CLI, containerd, buildx, compose v2', installs: ['Docker Engine, CLI, containerd, buildx, compose v2 plugin', 'from Docker\'s official repository (Amazon Linux: distro package + compose plugin)'], writes: ["Docker's package repository and signing key"], sets: ['docker service enabled and started'], editIn: 'Server Console → Services → Docker' },
+  'docker-config': { short: 'Logs 10 MB × 3 per container, live-restore', installs: [], writes: ['/etc/docker/daemon.json (merged into an existing file, a copy kept as daemon.json.dockgate.bak)'], sets: ['log-driver json-file', 'max-size 10m, max-file 3', 'live-restore true (false in swarm mode)', 'only containers created afterwards get the limits'], editIn: 'Server Console → Services → Docker' },
+  'deploy-user': { short: 'Non-root user with sudo, Docker and its own SSH key', installs: [], writes: ['/etc/sudoers.d/90-dockgate-<user>', '~<user>/.ssh/authorized_keys'], sets: ['user name asked when you run it (default "deploy")', 'passwordless sudo and the docker group', 'DockGate switches to this user after the key login is proven', 'password login stays on (turned off separately in Access & SSH)'], editIn: 'Server Console → Users & keys' },
+  'docker-group': { short: 'docker without sudo for the SSH user', installs: [], writes: [], sets: ['the SSH user is added to the docker group (root-equivalent)'], editIn: 'Server Console → Users & keys' },
+};
+
 // Canonical order (lower seq runs first): base → identity → perimeter → service.
 const ITEMS = [
   {
@@ -564,6 +582,7 @@ function serviceOpListPlan(itemId, osId) {
 }
 
 module.exports = {
+  CHANGES,
   ITEMS, PRESETS, byId, distroFamily, resolveItems, buildPlanForDistro, guardedResolve,
   // PHASE 5 service control
   SERVICE, SERVICE_ACTIONS, serviceVerbs, manageableItems, serviceFor, serviceAction, isConfigPathAllowed, guardedServiceAction,

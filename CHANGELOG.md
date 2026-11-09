@@ -2,6 +2,16 @@
 
 ---
 
+## [2.16.0] - 2026-11-09
+
+### Changed
+- **Server Console → Setup**: the components table says what each run does. A new **This run** column shows *Will install*, *Will retry*, *Will run*, *Skip · installed* or *Not selected*, and the line under the presets names the components that will run. The ticks stay clickable with a preset chosen: changing one turns the preset into your own list (Custom). Text in the table wraps instead of being cut off.
+- **Setup rows open** to show what the component does to the server: the packages it installs, the files it writes, the values it sets (for example `MaxAuthTries 3` for SSH hardening) and the page where it is changed later.
+- **Fail2ban → Jails → Edit** shows the file Save will write: **What changes** (the changed lines against the file on the server, updated as you type), **Full file** (with the jail's lines marked) and **On the server now**. The preview is built by the same code that writes the file. Saving still tests the configuration and puts the previous files back if the test fails.
+- **Fail2ban → View files**: a read-only view of DockGate's `jail.d/dockgate.conf` and `fail2ban.d/dockgate.conf` as they are on the server.
+
+---
+
 ## [2.15.2] - 2026-11-09
 
 ### Changed

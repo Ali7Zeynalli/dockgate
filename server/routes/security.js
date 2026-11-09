@@ -388,6 +388,8 @@ async function fail2banOf(row) {
   return {
     installed, active, version: (sec.version || '').trim(), jails, settings, managed: !!managed, runtime, sshPort, dockgateIp,
     jailLocal: (sec.jaillocal || '').trim() || null,
+    // DockGate's own files as they are on the server now (empty text = not written yet).
+    files: [{ path: F2B.JAIL_FILE, text: sec.dockgate || '' }, { path: F2B.DAEMON_FILE, text: sec.daemon || '' }].map(x => ({ ...x, text: x.text.replace(/\n+$/, x.text.trim() ? '\n' : '') })),
     history: F2B.parseHistory(sec.history).slice(0, 100),
     sequence: F2B.banSequence(settings.sshd, 6).map(F2B.human),
     memory: F2B.human(F2B.memoryAfterBan(F2B.toSeconds(settings.sshd.bantime), runtime.dbpurgeage != null ? runtime.dbpurgeage : F2B.toSeconds(settings.dbpurgeage))),
@@ -399,6 +401,15 @@ const assertJail = (j) => { if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(String(j || '')))
 const assertIp = (ip) => { const v = String(ip || '').trim(); if (!require('../provision/catalog').isIpOrCidr(v)) throw P.httpError(400, 'Enter an IP address or CIDR'); return v; };
 
 router.get('/:id/fail2ban', send(async (req) => fail2banOf(loadServer(req))));
+
+// POST /api/servers/:id/fail2ban/preview — the files Save would write for these settings, built by the same
+// functions the save plan uses (nothing runs on the server). Invalid settings → 400 with the reason.
+router.post('/:id/fail2ban/preview', send(async (req) => {
+  loadServer(req);
+  const settings = F2B.normalizeSettings((req.body || {}).settings);
+  const sshPort = Number((req.body || {}).sshPort) || 22;
+  return { files: [{ path: F2B.JAIL_FILE, text: F2B.buildJailConf(settings, sshPort) }, { path: F2B.DAEMON_FILE, text: F2B.buildDaemonConf(settings) }] };
+}));
 
 router.post('/:id/fail2ban/settings', send(async (req) => {
   const row = loadServer(req);
