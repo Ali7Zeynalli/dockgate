@@ -2,6 +2,13 @@
 
 ---
 
+## [2.15.2] - 2026-11-09
+
+### Changed
+- **Dashboard**: the server cards show 🔒 next to a server that has an access password, the same as the header picker and Servers.
+
+---
+
 ## [2.15.1] - 2026-11-08
 
 ### Removed
