@@ -2,6 +2,14 @@
 
 ---
 
+## [2.20.1] - 2026-11-09
+
+### Changed
+- **Dashboard → Host Metrics** follows Monitoring → Live. Its trend starts empty and keeps a rolling 15 minutes of live samples. Before, it mixed up to 120 stored one-minute samples with 5-second live ones on one time axis.
+- **Monitoring → server table:** the small CPU and memory graphs say what they show ("last 40 min").
+
+---
+
 ## [2.20.0] - 2026-11-09
 
 ### Changed

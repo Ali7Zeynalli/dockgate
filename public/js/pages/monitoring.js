@@ -230,7 +230,7 @@ const MonitoringPage = {
           s.id === 'local' ? '' : UI.btn('Open', `data-mon-open="${escapeHtml(s.id)}"`),
         ] };
       });
-      el.innerHTML = UI.table([{ label: 'Server' }, { label: 'State' }, { label: 'CPU' }, { label: 'Memory' }, { label: 'Disk' }, { label: '', align: 'right' }], rows, { empty: 'No servers yet.', minWidth: 760 });
+      el.innerHTML = UI.table([{ label: 'Server' }, { label: 'State' }, { label: 'CPU · last 40 min' }, { label: 'Memory · last 40 min' }, { label: 'Disk' }, { label: '', align: 'right' }], rows, { empty: 'No servers yet.', minWidth: 760 });
       el.querySelectorAll('[data-mon-open]').forEach(b => b.addEventListener('click', () => Router.navigate('server-console', { id: b.dataset.monOpen, tab: 'monitoring' })));
     } catch (e) {
       el.innerHTML = UI.errorState(e, { compact: true, title: 'The server list could not be loaded' });
