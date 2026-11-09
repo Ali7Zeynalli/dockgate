@@ -519,23 +519,14 @@ router.put('/:id/alerts/:type', (req, res) => {
 // GET /api/servers/:id/host/stats — one live snapshot: CPU/RAM/swap/disk/net/load/uptime/top procs/open ports.
 router.get('/:id/host/stats', async (req, res) => {
   try {
-    // The machine DockGate runs on is read directly (Dashboard / Monitoring of "Local"); its samples are
-    // stored by the 15 s local sampler in index.js, so nothing is stored here for it.
+    // The machine DockGate runs on is read directly (Dashboard / Monitoring of "Local").
     if (req.params.id === 'local') return res.json(await hostStats.collectLocalStats());
     const server = stmts.getServer.get(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
     if (server.type === 'local') return res.status(400).json({ error: 'Host stats target a remote SSH server' });
     const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
     const s = await hostStats.collectHostStats(cfg);
-    // Opportunistic time-series sample (best-effort; a DB hiccup must not fail the live view).
-    try {
-      const memPct = s.mem && s.mem.total ? Math.round(s.mem.used / s.mem.total * 100) : null;
-      const swapPct = s.mem && s.mem.swapTotal ? Math.round(s.mem.swapUsed / s.mem.swapTotal * 100) : 0;
-      const rootDisk = (s.disks || []).find(d => d.mount === '/') || (s.disks || [])[0];
-      stmts.insertHostMetric.run(req.params.id, s.cpu ?? null, memPct, rootDisk ? rootDisk.usePct : null, swapPct,
-        s.load ? s.load.load1 : null, s.net ? Math.round(s.net.rxBytesSec) : null, s.net ? Math.round(s.net.txBytesSec) : null, s.load ? s.load.procsRunning : null);
-      stmts.trimHostMetrics.run(req.params.id, req.params.id, 2000);
-    } catch (e) { console.warn('[host-metrics] persist failed:', e.message); }
+    // Not stored here: the health monitor stores one sample a minute (Monitoring → Last 48 hours).
     res.json(s);
   } catch (err) { res.status(502).json({ error: err.message }); }
 });

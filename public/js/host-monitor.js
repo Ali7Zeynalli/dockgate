@@ -3,14 +3,16 @@
 // (summary-grid · summary-card · card · grid-2 · disk-bar · detail-grid) so the console matches the app.
 // Polls GET /api/servers/:id/host/stats every 5s; stops when the container leaves the DOM (tab/navigation).
 // Global: renderHostMonitoring(serverId, container).
-function renderHostMonitoring(serverId, container) {
+function renderHostMonitoring(serverId, container, opts = {}) {
+  // opts.live: Monitoring's Live view — the trend starts empty and keeps a rolling 15 minutes of live samples.
+  const CAP = opts.live ? 180 : 120;
   container.innerHTML = `
     <div class="flex justify-between items-center mb-2">
       <div style="font-size:15px;font-weight:700">Host Metrics</div>
       <span class="badge badge-restarting" id="hm-status"><span class="badge-dot"></span> connecting…</span>
     </div>
     <div class="card" id="hm-trend-card" style="margin-bottom:16px;display:none">
-      <div style="font-size:15px;font-weight:700;margin-bottom:12px">Trend — CPU / Memory / Disk (%)</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:12px">${opts.live ? 'Live — CPU / Memory / Disk (%), last 15 minutes' : 'Trend — CPU / Memory / Disk (%)'}</div>
       <div style="height:180px"><canvas id="hm-trend-canvas"></canvas></div>
     </div>
     <div id="hm-body">
@@ -50,17 +52,18 @@ function renderHostMonitoring(serverId, container) {
   }
   async function seedTrend() {
     if (seeded) return; seeded = true;
+    if (opts.live) return; // Live: only what is measured while the page is open
     try {
       const r = await API.get(`/servers/${serverId}/host/metrics?limit=120`);
       for (const m of (r.metrics || [])) buf.push({ cpu: m.cpu || 0, mem: m.mem_pct || 0, disk: m.disk_pct || 0 });
-      if (buf.length > 120) buf.splice(0, buf.length - 120);
+      if (buf.length > CAP) buf.splice(0, buf.length - CAP);
     } catch (e) { /* no history yet — chart fills from live samples */ }
   }
   function pushSample(s) {
     const memPct = s.mem && s.mem.total ? Math.round(s.mem.used / s.mem.total * 100) : 0;
     const rootDisk = (s.disks || []).find(d => d.mount === '/') || (s.disks || [])[0] || { usePct: 0 };
     buf.push({ cpu: s.cpu || 0, mem: memPct, disk: rootDisk.usePct || 0 });
-    if (buf.length > 120) buf.shift();
+    if (buf.length > CAP) buf.shift();
     ensureChart(); applyBuf();
   }
 

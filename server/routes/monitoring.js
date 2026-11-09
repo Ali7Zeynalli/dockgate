@@ -69,73 +69,62 @@ router.get('/servers', async (req, res) => {
   }
 });
 
-// GET /api/monitoring/:serverId/metrics?range=1h|6h|24h|7d&container=<name>
+// GET /api/monitoring/:serverId/metrics?range=live|48h&container=<name>
+//   live (default) — the last 15 minutes from the Edge agent when it runs, otherwise one fresh sample (the page
+//                    keeps a rolling 15-minute window itself).
+//   48h            — DockGate's own store: one sample a minute per server, 5-minute buckets (average + peak).
+//                    The same with or without the agent, and it survives reboots.
+// Keep the agent's last `ms` of samples. host.* arrays line up with timestamps; a container's arrays may be
+// shorter (it started later), so each keeps at most the same number of newest points.
+function liveCut(data, ms) {
+  const ts = data.timestamps || [];
+  const from = ts.findIndex(t => t >= Date.now() - ms);
+  if (from <= 0) return data;
+  const keep = ts.length - from;
+  const host = {};
+  for (const [k, v] of Object.entries(data.host || {})) host[k] = Array.isArray(v) ? v.slice(-keep) : v;
+  const containers = {};
+  for (const [name, m] of Object.entries(data.containers || {})) { containers[name] = {}; for (const [k, v] of Object.entries(m || {})) containers[name][k] = Array.isArray(v) ? v.slice(-keep) : v; }
+  return { ...data, count: keep, timestamps: ts.slice(from), host, containers };
+}
 router.get('/:serverId/metrics', async (req, res) => {
   const { serverId } = req.params;
-  const { range = '1h', container = '' } = req.query;
+  const { container = '' } = req.query;
+  const range = req.query.range === '48h' ? '48h' : 'live';
 
   try {
-    // 1. Try querying the dockgate-agent on the server first
-    try {
-      const qs = `?range=${encodeURIComponent(range)}${container ? `&container=${encodeURIComponent(container)}` : ''}`;
-      const data = await queryAgent(serverId, `/metrics${qs}`);
-      return res.json({ source: 'agent', ...data });
-    } catch (agentErr) {
-      // Fallback: Agent not installed -> live sample or DB metrics
+    if (range === 'live') {
+      try {
+        const data = await queryAgent(serverId, `/metrics?range=1h${container ? `&container=${encodeURIComponent(container)}` : ''}`);
+        return res.json({ source: 'agent', range, ...liveCut(data, 15 * 60 * 1000) });
+      } catch (agentErr) { /* no agent → one fresh sample below */ }
     }
 
-    // 2. Query historical DB metrics (works for both local and remote servers)
-    {
-      const dbMetrics = stmts.getHostMetrics ? stmts.getHostMetrics.all(serverId, 300) : [];
-      if (dbMetrics.length > 1) {
-        const timestamps = dbMetrics.map(m => new Date(m.ts).getTime()).reverse();
-        const cpu = dbMetrics.map(m => m.cpu || 0).reverse();
-        const memPercent = dbMetrics.map(m => m.mem_pct || 0).reverse();
-        const diskPercent = dbMetrics.map(m => m.disk_pct || 0).reverse();
-        const netRx = dbMetrics.map(m => m.net_rx || 0).reverse();
-        const netTx = dbMetrics.map(m => m.net_tx || 0).reverse();
-
-        // Also collect live container stats for the container chart/table
-        let liveContainers = {};
-        let latestContainers = {};
-        try {
-          const running = (await dockerService.listContainers(false)).filter(c => c.state === 'running');
-          const statResults = await Promise.all(running.map(c =>
-            dockerService.getContainerStats(c.id).then(s => ({ name: c.name || c.id.substring(0, 12), stats: s })).catch(() => null)
-          ));
-          for (const r of statResults) {
-            if (!r) continue;
-            liveContainers[r.name] = [{ cpuPercent: r.stats.cpuPercent, memPercent: r.stats.memoryPercent }];
-            latestContainers[r.name] = { cpuPercent: r.stats.cpuPercent, memPercent: r.stats.memoryPercent, memUsageBytes: r.stats.memoryUsage };
-          }
-        } catch (e) { /* container stats are best-effort */ }
-
-        return res.json({
-          source: 'db-fallback',
-          range,
-          count: timestamps.length,
-          timestamps,
-          host: {
-            cpu,
-            memPercent,
-            diskPercent,
-            netRxBytesSec: netRx,
-            netTxBytesSec: netTx,
-            latest: {
-              cpu: cpu[cpu.length - 1] || 0,
-              memPercent: memPercent[memPercent.length - 1] || 0,
-              diskPercent: diskPercent[diskPercent.length - 1] || 0,
-              netRxBytesSec: netRx[netRx.length - 1] || 0,
-              netTxBytesSec: netTx[netTx.length - 1] || 0,
-            }
-          },
-          containers: liveContainers,
-          latestContainers,
-        });
-      }
+    if (range === '48h') {
+      const rows = stmts.getHostHistory.all(serverId);
+      const first = stmts.getHostHistoryFirst.get(serverId) || {};
+      const col = (k) => rows.map(r => (r[k] == null ? null : Math.round(r[k] * 10) / 10));
+      const last = rows[rows.length - 1] || {};
+      let latestContainers = {};
+      try {
+        const running = (await dockerService.listContainers(false)).filter(c => c.state === 'running');
+        const statResults = await Promise.all(running.map(c => dockerService.getContainerStats(c.id).then(s => ({ name: c.name || c.id.substring(0, 12), stats: s })).catch(() => null)));
+        for (const r of statResults) if (r) latestContainers[r.name] = { cpuPercent: r.stats.cpuPercent, memPercent: r.stats.memoryPercent, memUsageBytes: r.stats.memoryUsage };
+      } catch (e) { /* container stats are best-effort */ }
+      return res.json({
+        source: 'stored', range, bucketSeconds: 300, count: rows.length,
+        storedSince: first.first ? new Date(String(first.first).replace(' ', 'T') + 'Z').getTime() : null, samples: first.n || 0,
+        timestamps: rows.map(r => r.b * 1000),
+        host: {
+          cpu: col('cpu'), memPercent: col('mem'), diskPercent: col('disk'), netRxBytesSec: col('rx'), netTxBytesSec: col('tx'), load1: col('load1'),
+          max: { cpu: col('cpu_max'), memPercent: col('mem_max'), diskPercent: col('disk_max'), netRxBytesSec: col('rx_max'), netTxBytesSec: col('tx_max'), load1: col('load1_max') },
+          latest: { cpu: last.cpu || 0, memPercent: last.mem || 0, diskPercent: last.disk || 0, netRxBytesSec: last.rx || 0, netTxBytesSec: last.tx || 0 },
+        },
+        containers: {}, latestContainers,
+      });
     }
 
-    // 3. Fallback: Collect live host & container metrics (single sample)
+    // Live without the agent: one fresh host + container sample (the page keeps the rolling window).
     let stats = null;
     if (serverId === 'local') {
       stats = await hostStats.collectLocalStats().catch(() => null);

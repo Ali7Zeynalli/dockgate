@@ -367,7 +367,7 @@ Router.register('dashboard', async (content) => {
         if (hostNode && hostForServer === activeId) {
           dashHost.replaceWith(hostNode);            // reattach the live monitor — no teardown, no skeleton flash
         } else {
-          renderHostMonitoring(activeId, dashHost);  // first mount, or active server changed → fresh monitor
+          renderHostMonitoring(activeId, dashHost, { live: true });  // first mount / server changed → fresh live monitor (rolling 15 min, like Monitoring → Live)
           hostNode = dashHost;
           hostForServer = activeId;
         }

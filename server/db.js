@@ -507,6 +507,14 @@ const stmts = {
   getHostMetrics: db.prepare('SELECT ts, cpu, mem_pct, disk_pct, swap_pct, load1, net_rx, net_tx, procs FROM host_metrics WHERE server_id = ? ORDER BY id DESC LIMIT ?'),
   trimHostMetrics: db.prepare('DELETE FROM host_metrics WHERE server_id = ? AND id NOT IN (SELECT id FROM host_metrics WHERE server_id = ? ORDER BY id DESC LIMIT ?)'),
   deleteHostMetrics: db.prepare('DELETE FROM host_metrics WHERE server_id = ?'),
+  // Monitoring keeps 48 hours per server (one sample a minute); a row cap guards against a wrong clock.
+  trimHostMetricsAge: db.prepare("DELETE FROM host_metrics WHERE server_id = ? AND (ts < datetime('now', '-48 hours') OR id NOT IN (SELECT id FROM host_metrics WHERE server_id = ? ORDER BY id DESC LIMIT 6000))"),
+  // Last 48 hours in 5-minute buckets: average + peak per metric (Monitoring → Last 48 hours).
+  getHostHistory: db.prepare(`SELECT CAST(strftime('%s', ts) AS INTEGER) / 300 * 300 AS b, COUNT(*) AS n,
+    AVG(cpu) AS cpu, MAX(cpu) AS cpu_max, AVG(mem_pct) AS mem, MAX(mem_pct) AS mem_max, AVG(disk_pct) AS disk, MAX(disk_pct) AS disk_max,
+    AVG(net_rx) AS rx, MAX(net_rx) AS rx_max, AVG(net_tx) AS tx, MAX(net_tx) AS tx_max, AVG(load1) AS load1, MAX(load1) AS load1_max
+    FROM host_metrics WHERE server_id = ? AND ts >= datetime('now', '-48 hours') GROUP BY b ORDER BY b`),
+  getHostHistoryFirst: db.prepare("SELECT MIN(ts) AS first, COUNT(*) AS n FROM host_metrics WHERE server_id = ? AND ts >= datetime('now', '-48 hours')"),
 
   // Per-server notification-channel overrides (edge notifier agent). Secrets encrypted at rest.
   getServerChannel: db.prepare('SELECT * FROM server_channels WHERE server_id = ?'),
