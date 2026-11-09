@@ -535,7 +535,7 @@ function detectProblems(ctx) {
       const shown = diff.map(k => `${k} ${k === 'maxretry' ? got[k] : human(got[k])} (DockGate's file: ${k === 'maxretry' ? w[k] : human(w[k])})`).join(', ');
       const o = later(jail, diff);
       p.push(o.length
-        ? { level: 'warn', text: `${jail} runs with ${shown}: ${named(o)}, and that file wins over DockGate's. The Jails table shows DockGate's values, not these. Move the settings to DockGate to use one set of values.`, fix: takeoverFix(o) }
+        ? { level: 'warn', text: `${jail} runs with ${shown}: ${named(o)}, and that file wins over DockGate's. Configuration → Settings shows both, row by row. Move the settings to DockGate to use one set of values.`, fix: takeoverFix(o) }
         : { level: 'warn', text: `${jail} runs with ${shown} — fail2ban was not reloaded after DockGate's file changed. Fix now writes it again and reloads (bans are kept).`, fix: 'save' });
     }
   }
