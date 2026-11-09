@@ -56,7 +56,7 @@ async function renderFail2banPanel(serverId, container) {
   container.innerHTML = `
     <div data-bar style="margin-bottom:12px"></div>
     ${f.problems.length ? `<div style="display:grid;gap:8px;margin-bottom:12px">${f.problems.map((p, i) => `
-      <div class="insight-card ${LV[p.level]}" style="justify-content:space-between;margin:0"><span>${escapeHtml(p.text)}</span>${p.fix ? `<button class="btn btn-xs btn-secondary" data-fix="${i}" style="flex:none">${p.fix === 'start' ? 'Start fail2ban' : 'Fix now'}</button>` : ''}</div>`).join('')}</div>` : ''}
+      <div class="insight-card ${LV[p.level]}" style="justify-content:space-between;margin:0"><span>${escapeHtml(p.text)}</span>${p.fix ? `<button class="btn btn-xs btn-secondary" data-fix="${i}" style="flex:none">${p.fix === 'start' ? 'Start fail2ban' : p.fix === 'editlocal' ? 'Edit jail.local' : 'Fix now'}</button>` : ''}</div>`).join('')}</div>` : ''}
     ${UI.statusLine([
       `<b>${totalBanned}</b> <span class="text-muted">banned now</span>`,
       `<b>${f.jails.length}</b> <span class="text-muted">jails running</span>`,
@@ -92,6 +92,7 @@ async function renderFail2banPanel(serverId, container) {
   container.querySelectorAll('[data-fix]').forEach(b => b.addEventListener('click', async () => {
     const p = f.problems[Number(b.dataset.fix)];
     try {
+      if (p.fix === 'editlocal') { const el = container.querySelector('[data-raw]'); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.querySelector('button')?.focus(); return; }
       if (p.fix === 'start') { await API.post(`/servers/${serverId}/services/fail2ban/action`, { action: 'start', confirm: true }); showToast('fail2ban started'); reload(); }
       else await saveSettings(f.settings, 'Fix fail2ban settings');
     } catch (e) { showToast(e.message, 'error', 8000); }

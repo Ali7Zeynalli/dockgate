@@ -2,6 +2,22 @@
 
 ---
 
+## [2.16.1] - 2026-11-09
+
+### Fixed
+- **Fail2ban: "recidive is not reading /var/log/fail2ban.log" now names the real cause.** The warning always said "Save the settings to fix it", but Save cannot help when another file wins. DockGate now reads which files set `[sshd]` / `[recidive]` options and says which of three cases it is:
+  - a file read after DockGate's (`jail.local`, `jail.d/*.local`, or a later `jail.d/*.conf`) sets `backend` or `logpath`. The warning names the file and the line, and offers **Edit jail.local** instead of Fix now;
+  - DockGate's file does not set `backend = auto` and `logpath = /var/log/fail2ban.log` yet. Fix now writes them, tests and reloads;
+  - DockGate's file is right but fail2ban was not reloaded. Fix now reloads it.
+  On Ubuntu and Debian, `jail.d/defaults-debian.conf` sets `backend = systemd` for every jail, so a recidive jail without its own `backend` line reads the journal. fail2ban never writes its ban lines there.
+- **Fail2ban: recidive on in DockGate's settings but not running** is reported, with the file that switches it off or breaks it, or the reload it needs.
+- **Fail2ban: running values that differ from DockGate's file** (maxretry, findtime, bantime of sshd and recidive) are reported with the file that sets them. Until now the Jails table could show DockGate's values while fail2ban ran others.
+- The "jail.local also sets options" note names every file that does.
+
+Checked against a real fail2ban 1.0.2 (the Ubuntu 24.04 version): the overriding `jail.local`, the missing lines, the missing reload and the jail that cannot start each give the matching message. After Fix now, recidive reads `/var/log/fail2ban.log` and banned an IP after three sshd bans.
+
+---
+
 ## [2.16.0] - 2026-11-09
 
 ### Changed

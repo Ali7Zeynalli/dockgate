@@ -379,9 +379,14 @@ async function fail2banOf(row) {
   const dockgateIp = (sec.myip || '').trim() || null;
   const sshdJail = jails.find(j => j.name === 'sshd');
   const recidive = jails.find(j => j.name === 'recidive');
-  const runtime = { dbpurgeage: (sec.dbpurgeage || '').trim() ? Number(sec.dbpurgeage) : null, jails: jailNames, recidiveLogpath: recidive ? recidive.logpath : null };
+  const runtime = {
+    dbpurgeage: (sec.dbpurgeage || '').trim() ? Number(sec.dbpurgeage) : null, jails: jailNames, recidiveLogpath: recidive ? recidive.logpath : null,
+    jailOpts: Object.fromEntries(jails.filter(j => j.name === 'sshd' || j.name === 'recidive').map(j => [j.name, { maxretry: j.maxretry, findtime: j.findtime, bantime: j.bantime }])),
+  };
+  const sources = F2B.parseSources(sec.f2bsrc);
   const problems = installed && active ? F2B.detectProblems({
-    settings, runtime, sshPort, jailPort: sshdJail && sshdJail.port, jailLocal: !!(sec.jaillocal || '').trim(), dockgateIp,
+    settings, runtime, sshPort, jailPort: sshdJail && sshdJail.port, jailLocal: (sec.jaillocal || '').trim() || null, dockgateIp,
+    managed: !!managed, jailFileText: sec.dockgate || '', sources, active,
     banned: jails.flatMap(j => j.banned.map(b => b.ip)),
   }) : [];
   if (installed && !active) problems.unshift({ level: 'crit', text: 'fail2ban is installed but not running — nothing is being banned.', fix: 'start' });

@@ -393,6 +393,10 @@ const READ_FAIL2BAN = [
   `echo @@dockgate; {{S}}cat ${F2B.JAIL_FILE} 2>/dev/null`,
   `echo @@daemon; {{S}}cat ${F2B.DAEMON_FILE} 2>/dev/null`,
   "echo @@jaillocal; {{S}}grep -lE '^\\[(sshd|recidive)\\]' /etc/fail2ban/jail.local /etc/fail2ban/jail.d/*.local 2>/dev/null",
+  // Every option a jail file sets under [sshd] / [recidive], as "file|jail|line", in fail2ban's read order —
+  // tells WHICH file wins when the running value is not the one in DockGate's file.
+  `echo @@f2bsrc; for f in /etc/fail2ban/jail.d/*.conf /etc/fail2ban/jail.local /etc/fail2ban/jail.d/*.local; do [ -f "$f" ] || continue; ` +
+    `{{S}}awk -v F="$f" '/^[ \\t]*\\[/{s=$0; gsub(/[][ \\t]/,"",s)} (s=="sshd"||s=="recidive") && /^[ \\t]*[A-Za-z][A-Za-z.]*[ \\t]*=/{print F"|"s"|"$0}' "$f" 2>/dev/null; done`,
   `echo @@history; {{S}}grep -hE '\\] (Ban|Unban|Increase Ban|Restore Ban) ' ${F2B.LOG_FILE} 2>/dev/null | tail -n 150`,
   "echo @@myip; echo \"$SSH_CONNECTION\" | awk '{print $1}'",
   "echo @@sshport; {{S}}sshd -T 2>/dev/null | awk '$1==\"port\"{print $2; exit}'",

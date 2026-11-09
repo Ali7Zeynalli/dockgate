@@ -208,10 +208,46 @@ function parseKv(out) {
   return r;
 }
 
+
+// ---------------------------------------------------------------- where a jail option comes from
+/** "file|jail|key = value" lines (READ_FAIL2BAN @@f2bsrc) → [{ file, jail, key, value }]. */
+function parseSources(out) {
+  const res = [];
+  for (const line of String(out || '').split('\n')) {
+    const m = /^([^|]+)\|(sshd|recidive)\|\s*([A-Za-z][A-Za-z.]*)\s*=\s*(.*?)\s*$/.exec(line);
+    if (m && !m[4].startsWith('#')) res.push({ file: m[1], jail: m[2], key: m[3].toLowerCase(), value: m[4] });
+  }
+  return res;
+}
+/** fail2ban reads jail.conf, jail.d/*.conf (sorted), jail.local, jail.d/*.local (sorted); a later file wins. */
+function readAfterDockgate(file) {
+  if (file === JAIL_FILE) return false;
+  if (file.endsWith('.local')) return true;
+  const dir = file.slice(0, file.lastIndexOf('/') + 1), base = file.slice(file.lastIndexOf('/') + 1);
+  return dir === '/etc/fail2ban/jail.d/' && base.endsWith('.conf') && base > 'dockgate.conf';
+}
+/** Files read after DockGate's that set one of `keys` for `jail` — they override DockGate's value. */
+function overridesOf(sources, jail, keys) {
+  return (sources || []).filter(x => x.jail === jail && keys.includes(x.key) && readAfterDockgate(x.file));
+}
+const named = (list) => [...new Map(list.map(x => [x.file + x.key, x])).values()].map(x => `${x.file} sets "${x.key} = ${x.value}"`).join('; ');
+/** One jail section of an INI text as { key: value }. */
+function sectionOf(text, name) {
+  const out = {}; let cur = null;
+  for (const raw of String(text || '').split('\n')) {
+    const l = raw.trim(); if (!l || l.startsWith('#')) continue;
+    const h = /^\[([^\]]+)\]$/.exec(l); if (h) { cur = h[1].trim(); continue; }
+    const kv = /^([A-Za-z][A-Za-z.]*)\s*=\s*(.*)$/.exec(l);
+    if (kv && cur === name) out[kv[1].toLowerCase()] = kv[2].trim();
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- problems
 /**
  * Settings that look right but cannot do what they say — computed from the EFFECTIVE runtime values.
- * ctx: { settings, runtime: { dbpurgeage (s), jails:[names], recidiveLogpath }, sshPort, jailPort, jailLocal, dockgateIp, banned:[ip] }
+ * ctx: { settings, runtime: { dbpurgeage (s), jails:[names], recidiveLogpath, jailOpts:{sshd,recidive} }, sshPort, jailPort,
+ *        jailLocal (files), dockgateIp, banned:[ip], managed, jailFileText (DockGate's jail file), sources (parseSources), active }
  */
 function detectProblems(ctx) {
   const p = [];
@@ -236,16 +272,60 @@ function detectProblems(ctx) {
     if (needed >= toSeconds(s.recidive.findtime)) {
       p.push({ level: 'crit', text: `recidive can never trigger: ${s.recidive.maxretry} sshd bans of one IP take at least ${human(needed)} (each ban must expire first), but its window is ${human(toSeconds(s.recidive.findtime))}. Make the window longer than ${human(needed)} or lower "bans before".`, fix: 'save' });
     }
-    if (ctx.runtime && ctx.runtime.jails && ctx.runtime.jails.includes('recidive') && ctx.runtime.recidiveLogpath != null && !/fail2ban\.log/.test(ctx.runtime.recidiveLogpath)) {
-      p.push({ level: 'crit', text: 'recidive is not reading /var/log/fail2ban.log (it was set to the systemd journal, where fail2ban does not write its ban lines). Save the settings to fix it.', fix: 'save' });
+    const running = ctx.runtime && ctx.runtime.jails && ctx.runtime.jails.includes('recidive');
+    if (running && ctx.runtime.recidiveLogpath != null && !/fail2ban\.log/.test(ctx.runtime.recidiveLogpath)) {
+      // recidive counts fail2ban's own "Ban" lines, which only go to /var/log/fail2ban.log. Say why it reads
+      // something else: a file read after DockGate's wins, DockGate's file lacks the line, or no reload yet.
+      const now = String(ctx.runtime.recidiveLogpath).replace(/^[`|\-\s]+/, '').trim();
+      const head = `recidive ${!now || /no file/i.test(now) ? 'reads the systemd journal, not a log file,' : `reads ${now}`} instead of /var/log/fail2ban.log, so it never sees a ban and never triggers.`;
+      const later = overridesOf(ctx.sources, 'recidive', ['backend', 'logpath']);
+      const own = sectionOf(ctx.jailFileText, 'recidive');
+      if (later.length) {
+        const local = later.some(x => x.file === '/etc/fail2ban/jail.local');
+        p.push({ level: 'crit', text: `${head} Cause: ${named(later)} under [recidive]. fail2ban reads that file after DockGate's, so it wins and Save cannot fix it. Remove the backend and logpath lines from [recidive] in that file${local ? ' (jail.local can be edited at the bottom of this page)' : ''}, then reload fail2ban.`, fix: local ? 'editlocal' : undefined });
+      } else if (!/fail2ban\.log/.test(own.logpath || '')) {
+        p.push({ level: 'crit', text: `${head} DockGate's file does not set it yet. Fix now writes backend = auto and logpath = /var/log/fail2ban.log for recidive, tests the configuration and reloads (bans are kept).`, fix: 'save' });
+      } else {
+        p.push({ level: 'crit', text: `${head} DockGate's file already sets it, but fail2ban is still running older settings (it was not reloaded after the file changed). Fix now writes the file again and reloads (bans are kept).`, fix: 'save' });
+      }
+    }
+    if (ctx.managed && ctx.runtime && ctx.runtime.jails && ctx.active !== false && !running) {
+      const off = overridesOf(ctx.sources, 'recidive', ['enabled']).filter(x => /^(false|no|0)$/i.test(x.value));
+      const other = overridesOf(ctx.sources, 'recidive', ['backend', 'logpath']);
+      const local = (l) => l.some(x => x.file === '/etc/fail2ban/jail.local') ? 'editlocal' : undefined;
+      p.push(off.length
+        ? { level: 'warn', text: `recidive is on in DockGate's settings but not running: ${named(off)} under [recidive], and that file wins over DockGate's. Remove the line there to use recidive.`, fix: local(off) }
+        : other.length
+          ? { level: 'crit', text: `recidive is on in DockGate's settings but not running: ${named(other)} under [recidive], that file wins over DockGate's, and fail2ban could not start recidive with it. Remove the backend and logpath lines from [recidive] there, then reload fail2ban.`, fix: local(other) }
+          : { level: 'warn', text: 'recidive is on in DockGate\'s settings but not running: fail2ban was not reloaded after the file changed, or the jail failed to start (its reason is in the fail2ban log under Services). Fix now writes the file again, tests it and reloads.', fix: 'save' });
     }
   }
-  if (ctx.jailLocal) p.push({ level: 'info', text: '/etc/fail2ban/jail.local also sets sshd/recidive options — it is read after DockGate\'s file and wins where both set the same option.' });
+  // Running values that differ from DockGate's file: another file wins, or fail2ban was not reloaded.
+  if (s && ctx.managed && ctx.runtime && ctx.runtime.jailOpts) {
+    const want = { sshd: { maxretry: s.sshd.maxretry, findtime: toSeconds(s.sshd.findtime), bantime: toSeconds(s.sshd.bantime) } };
+    if (s.recidive.enabled) want.recidive = { maxretry: s.recidive.maxretry, findtime: toSeconds(s.recidive.findtime), bantime: toSeconds(s.recidive.bantime) };
+    for (const [jail, w] of Object.entries(want)) {
+      const got = ctx.runtime.jailOpts[jail];
+      if (!got) continue;
+      const diff = Object.keys(w).filter(k => got[k] != null && w[k] != null && Number(got[k]) !== Number(w[k]));
+      if (!diff.length) continue;
+      const shown = diff.map(k => `${k} ${k === 'maxretry' ? got[k] : human(got[k])} (DockGate's file: ${k === 'maxretry' ? w[k] : human(w[k])})`).join(', ');
+      const later = overridesOf(ctx.sources, jail, diff);
+      p.push(later.length
+        ? { level: 'warn', text: `${jail} runs with ${shown}: ${named(later)}, and that file wins over DockGate's. The Jails table shows DockGate's values, not these.`, fix: later.some(x => x.file === '/etc/fail2ban/jail.local') ? 'editlocal' : undefined }
+        : { level: 'warn', text: `${jail} runs with ${shown} — fail2ban was not reloaded after DockGate's file changed. Fix now writes it again and reloads (bans are kept).`, fix: 'save' });
+    }
+  }
+  if (ctx.jailLocal) {
+    const files = typeof ctx.jailLocal === 'string' ? ctx.jailLocal.trim().split(/\s+/) : ['/etc/fail2ban/jail.local'];
+    p.push({ level: 'info', text: `${files.join(', ')} also set${files.length > 1 ? '' : 's'} sshd/recidive options — read after DockGate's file, so ${files.length > 1 ? 'they win' : 'it wins'} where both set the same option.` });
+  }
   return p;
 }
 
 module.exports = {
   JAIL_FILE, DAEMON_FILE, LOG_FILE, DEFAULTS, MODES,
+  parseSources, overridesOf, readAfterDockgate, sectionOf,
   toSeconds, human, banSequence, memoryAfterBan, normalizeSettings, buildJailConf, buildDaemonConf, parseJailConf, parseDaemonConf,
   parseJailList, parseJailStatus, parseBanList, parseHistory, parseKv, detectProblems,
 };
