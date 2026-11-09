@@ -398,8 +398,9 @@ async function fail2banOf(row) {
     installed, active, version: (sec.version || '').trim(), jails, settings, managed: !!managed, runtime, sshPort, dockgateIp,
     jailLocal: (sec.jaillocal || '').trim() || null,
     overriding: F2B.overridingFiles(sources), // files that take precedence over DockGate's for what it manages
+    origin: F2B.originsOf(sources), // which file sets each option fail2ban runs
     // DockGate's own files as they are on the server now (empty text = not written yet).
-    files: [{ path: F2B.JAIL_FILE, text: sec.dockgate || '' }, { path: F2B.DAEMON_FILE, text: sec.daemon || '' }].map(x => ({ ...x, text: x.text.replace(/\n+$/, x.text.trim() ? '\n' : '') })),
+    files: [{ path: F2B.JAIL_FILE, text: sec.dockgate || '' }, { path: F2B.DAEMON_FILE, text: sec.daemon || '' }].map(x => ({ ...x, text: x.text.trim() ? x.text.replace(/\s*$/, '\n') : '' })),
     history: F2B.parseHistory(sec.history).slice(0, 100),
     sequence: F2B.banSequence(settings.sshd, 6).map(F2B.human),
     memory: F2B.human(F2B.memoryAfterBan(F2B.toSeconds(settings.sshd.bantime), runtime.dbpurgeage != null ? runtime.dbpurgeage : F2B.toSeconds(settings.dbpurgeage))),
@@ -445,6 +446,45 @@ router.post('/:id/fail2ban/takeover', send(async (req) => {
     title: 'Move fail2ban settings to DockGate',
     successText: `Done — DockGate's files now hold the settings; backups: ${t.files.map(f => f.path + '.dockgate-backup').join(', ')}. Current bans were kept.`,
     onSuccess: () => audit(req, row, 'fail2ban-takeover', { files: t.files.map(f => f.path), adopted: t.adopted, corrected: t.corrected }),
+  });
+  return { jobId };
+}));
+
+// Configuration → Files: every fail2ban config file under jail.d / fail2ban.d plus jail.local / fail2ban.local.
+router.get('/:id/fail2ban/files', send(async (req) => {
+  const sec = await readState(loadServer(req), plans.READ_F2B_FILES);
+  const files = Object.keys(sec).filter(k => k.startsWith('file ')).map(k => { const path = k.slice(5); return { path, text: sec[k] ? sec[k].replace(/\s*$/, '\n') : '', ...F2B.fileRole(path) }; });
+  const order = (p) => p === F2B.JAIL_FILE ? 0 : p === F2B.DAEMON_FILE ? 1 : p.endsWith('/jail.local') ? 2 : p.includes('/jail.d/') ? 3 : 4;
+  files.sort((a, b) => order(a.path) - order(b.path) || a.path.localeCompare(b.path));
+  return { files, jailFile: F2B.JAIL_FILE, daemonFile: F2B.DAEMON_FILE };
+}));
+// Save one file from Configuration → Files: backup, write, test, reload, restore on failure. DockGate's own files
+// must stay something DockGate can read back (its sections only, valid values, the log file recidive needs).
+router.post('/:id/fail2ban/file', send(async (req) => {
+  const row = loadServer(req);
+  requireConfirm(req.body);
+  const { path, content } = req.body || {};
+  if (typeof content !== 'string' || content.length > 200000) throw P.httpError(400, 'content (text) is required');
+  const sec = await readState(row, plans.READ_F2B_FILES);
+  const known = Object.keys(sec).filter(k => k.startsWith('file ')).map(k => k.slice(5));
+  const isOwn = path === F2B.JAIL_FILE || path === F2B.DAEMON_FILE;
+  if (!known.includes(path) && !isOwn) throw P.httpError(400, 'Not a fail2ban file DockGate shows');
+  if (!F2B.fileRole(path).editable) throw P.httpError(400, `${path} ships with fail2ban and is not edited here — put your change in jail.local`);
+  if (path === F2B.JAIL_FILE) {
+    const bad = F2B.sectionNames(content).filter(n => !['DEFAULT', 'sshd', 'recidive'].includes(n));
+    if (bad.length) throw P.httpError(400, `DockGate's file holds [DEFAULT], [sshd] and [recidive] only — put [${bad.join('], [')}] in /etc/fail2ban/jail.local`);
+    const parsed = F2B.parseJailConf(content);
+    if (!parsed) throw P.httpError(400, "DockGate's file cannot be empty");
+    F2B.normalizeSettings({ ...parsed, dbpurgeage: F2B.DEFAULTS.dbpurgeage }); // 400 with the field when a value is wrong
+  }
+  if (path === F2B.DAEMON_FILE) {
+    const lt = /^\s*logtarget\s*=\s*(.+)$/m.exec(content);
+    if (lt && lt[1].trim() !== F2B.LOG_FILE) throw P.httpError(400, `logtarget must stay ${F2B.LOG_FILE} — recidive reads that file`);
+  }
+  const jobId = runner.startPlan(cfgOf(row), plans.fail2banWritePlan([{ path, text: content.replace(/\s*$/, '\n') }], { label: `Write ${path}` }), {
+    title: `Save ${path}`,
+    successText: 'Saved, tested and reloaded — current bans were kept.',
+    onSuccess: () => audit(req, row, 'fail2ban-file', { path, bytes: content.length }),
   });
   return { jobId };
 }));

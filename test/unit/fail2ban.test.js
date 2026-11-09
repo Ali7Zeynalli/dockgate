@@ -185,7 +185,10 @@ test('fail2ban takeover: the user\'s jail.local is carried over, corrected and s
   assert.ok(t.corrected.some(c => c.what === 'recidive'));
   assert.deepEqual(t.settings.ignoreip, ['198.51.100.10', '192.0.2.44']);
   // removed with a reason: port, backend, logpath, filter, banaction, rndtime
-  for (const k of ['port', 'backend', 'logpath', 'filter', 'banaction', 'bantime.rndtime']) assert.ok(t.removed.some(r => r.key === k), `${k} listed as removed`);
+  for (const k of ['port', 'backend', 'logpath', 'filter', 'banaction']) assert.ok(t.removed.some(r => r.key === k), `${k} listed as removed`);
+  // an option DockGate has no field for moves into DockGate's file as an "other option"
+  assert.deepEqual(t.settings.extra.sshd, ['bantime.rndtime = 30m']);
+  assert.match(t.dockgate[0].text, /\[sshd\][\s\S]*bantime\.rndtime = 30m\n\n\[recidive\]/);
   // left in place: [DEFAULT] options other than ignoreip
   assert.ok(t.kept.some(r => r.key === 'usedns') && t.kept.some(r => r.key === 'bantime.overalljails'));
   // the new jail.local: no [sshd] / [recidive] / ignoreip, the rest untouched
@@ -227,4 +230,25 @@ test('fail2ban: allowlist not in effect, DockGate\'s IP missing, impossible reci
   // recidive increment is validated and written explicitly even when off
   assert.match(F.buildJailConf(set, 22), /\[recidive\][\s\S]*bantime\.increment = false/);
   assert.throws(() => F.normalizeSettings({ ...F.DEFAULTS, recidive: { ...F.DEFAULTS.recidive, factor: 50 } }), /recidive growth factor/);
+});
+
+test('fail2ban: other options survive a save, cannot shadow DockGate fields, and file roles are right', () => {
+  const s0 = F.normalizeSettings({ ...F.DEFAULTS, extra: { DEFAULT: ['usedns=no'], sshd: ['bantime.rndtime = 30m'] } });
+  const text = F.buildJailConf(s0, 22);
+  const back = F.parseJailConf(text);
+  assert.deepEqual(back.extra, { DEFAULT: ['usedns = no'], sshd: ['bantime.rndtime = 30m'], recidive: [] });
+  // a form save (settings from the parsed file) writes them again
+  assert.equal(F.buildJailConf(F.normalizeSettings(back), 22), text);
+  // a hand-edited DockGate file: new option kept, managed value read into the form
+  const edited = text.replace('maxretry = 3\nfindtime = 1d', 'maxretry = 4\nfindtime = 1d\nignorecommand = /bin/true');
+  const p = F.parseJailConf(edited);
+  assert.equal(p.sshd.maxretry, 4); assert.ok(p.extra.sshd.includes('ignorecommand = /bin/true'));
+  assert.throws(() => F.normalizeSettings({ ...F.DEFAULTS, extra: { recidive: ['logpath = /tmp/x'] } }), /set with DockGate's own field/);
+  assert.throws(() => F.normalizeSettings({ ...F.DEFAULTS, extra: { DEFAULT: ['not an option'] } }), /option = value/);
+  assert.equal(F.fileRole(F.JAIL_FILE).role, 'dockgate');
+  assert.equal(F.fileRole('/etc/fail2ban/jail.d/defaults-debian.conf').editable, false);
+  assert.equal(F.fileRole('/etc/fail2ban/jail.local').editable, true);
+  assert.deepEqual(F.sectionNames('[DEFAULT]\n[sshd]\n [nginx-x]\n'), ['DEFAULT', 'sshd', 'nginx-x']);
+  const o = F.originsOf(F.parseSources(`${F.JAIL_FILE}|sshd|maxretry = 3\n/etc/fail2ban/jail.local|sshd|maxretry = 5`));
+  assert.equal(o['sshd.maxretry'], '/etc/fail2ban/jail.local');
 });

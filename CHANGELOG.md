@@ -2,6 +2,25 @@
 
 ---
 
+## [2.18.0] - 2026-11-09
+
+### Changed
+- **Fail2ban → Configuration** replaces the Jails table, the Allowlist table, "View files" and the "Advanced: edit jail.local" box. The Advanced box showed an empty editor when `jail.local` did not exist, which is the usual case: DockGate keeps its settings in `jail.d/dockgate.conf`. The new section has two tabs:
+  - **Settings:** cards in a fixed order (Allowlist → SSH jail → Repeat offenders → History & log → Other options). Each card has a one-line summary, for example "3 failures within 1d · bans 1d → 4d → 8d → 16d → 30d · aggressive mode · port 22". Opened, every setting shows DockGate's value, **what fail2ban really runs** (in red when different) and **which file sets it** (DockGate, `jail.local`, a distro file or the default). Each card edits in place with a live "what one IP gets" preview, and Save shows the lines that change before it applies.
+  - **Files:** every fail2ban file under `jail.d` and `fail2ban.d`, plus `jail.local` and `fail2ban.local`, each with what it is. It has an editor with line numbers. DockGate's files and yours can be edited; files shipped with fail2ban are read-only. Save shows the change, then backup → `fail2ban-client -t` → reload, and the file is put back if the test fails.
+- **Other options:** fail2ban options DockGate has no field for (`bantime.rndtime`, `usedns`, `ignorecommand` …) are kept exactly as written. Add or remove them in the Other options card, or by hand in Files. Until now, saving the form rewrote DockGate's file and dropped them. **Move to DockGate** carries such options over instead of removing them.
+- DockGate's own file accepts `[DEFAULT]`, `[sshd]` and `[recidive]` only. Other jails belong in `jail.local`, and the editor says so. Its values are checked like the form's. `logtarget` must stay `/var/log/fail2ban.log`, because recidive reads that file.
+
+Checked against a real fail2ban 1.0.2:
+- the file list and roles;
+- refused saves: a foreign section, an invalid value, a distro file, a path outside `/etc/fail2ban`;
+- a broken `jail.local`: rejected by `fail2ban-client -t` and put back;
+- Move to DockGate carrying `bantime.rndtime` over;
+- a hand edit of DockGate's file read back into the form;
+- a later form save keeping the hand-written options.
+
+---
+
 ## [2.17.0] - 2026-11-09
 
 ### Added

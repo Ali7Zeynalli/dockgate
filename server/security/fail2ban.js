@@ -20,6 +20,8 @@ const DEFAULTS = {
   recidive: { enabled: true, maxretry: 3, findtime: '30d', bantime: '1w', increment: false, factor: 2, maxtime: '90d' },
   ignoreip: [],
   dbpurgeage: '30d',
+  // Options DockGate has no field for, kept exactly as written ("Other options"): { DEFAULT: ['usedns = no'], sshd: [], recidive: [] }
+  extra: { DEFAULT: [], sshd: [], recidive: [] },
 };
 
 // ---------------------------------------------------------------- durations
@@ -105,19 +107,48 @@ function normalizeSettings(input) {
     if (!out.ignoreip.includes(v)) out.ignoreip.push(v);
   }
   if (out.ignoreip.length > 50) throw httpError(400, 'Whitelist: at most 50 entries');
+  out.extra = normalizeExtra(s.extra);
+  return out;
+}
+
+// Keys DockGate writes itself, per section — an "other option" may not set them (use the form instead).
+const MANAGED_KEYS = {
+  DEFAULT: ['ignoreip'],
+  sshd: ['enabled', 'backend', 'port', 'mode', 'maxretry', 'findtime', 'bantime', 'bantime.increment', 'bantime.factor', 'bantime.maxtime'],
+  recidive: ['enabled', 'backend', 'logpath', 'maxretry', 'findtime', 'bantime', 'bantime.increment', 'bantime.factor', 'bantime.maxtime'],
+};
+/** "key = value" lines per section, validated: one line each, no key DockGate manages, sane length. */
+function normalizeExtra(input) {
+  const out = { DEFAULT: [], sshd: [], recidive: [] };
+  for (const sec of Object.keys(out)) {
+    const list = (input && Array.isArray(input[sec])) ? input[sec] : [];
+    for (const raw of list) {
+      const line = String(raw).trim();
+      if (!line) continue;
+      const m = /^([A-Za-z][\w.]*)\s*=\s*(.*)$/.exec(line);
+      if (!m || /[\r\n]/.test(line) || line.length > 300) throw httpError(400, `Other options [${sec}]: write one "option = value" per line ("${line.slice(0, 40)}")`);
+      const key = m[1].toLowerCase();
+      if (MANAGED_KEYS[sec].includes(key)) throw httpError(400, `Other options [${sec}]: ${m[1]} is set with DockGate's own field — change it there`);
+      const norm = `${m[1]} = ${m[2].trim()}`;
+      if (out[sec].some(x => x.split('=')[0].trim().toLowerCase() === key)) throw httpError(400, `Other options [${sec}]: ${m[1]} is written twice`);
+      out[sec].push(norm);
+    }
+    if (out[sec].length > 30) throw httpError(400, `Other options [${sec}]: at most 30 lines`);
+  }
   return out;
 }
 
 /** /etc/fail2ban/jail.d/dockgate.conf from settings. `sshPort` keeps the jail on sshd's real port. */
 function buildJailConf(s, sshPort) {
-  const L = ['# Managed by DockGate (Server Console → Fail2ban). Edit there, not by hand.',
+  const L = ['# Managed by DockGate (Server Console → Fail2ban → Configuration: Settings or Files).',
     '# /etc/fail2ban/jail.local and jail.d/*.local are read after this file and override it.', ''];
-  L.push('[DEFAULT]', `ignoreip = ${['127.0.0.1/8', '::1', ...s.ignoreip].join(' ')}`, '');
+  const ex = s.extra || {};
+  L.push('[DEFAULT]', `ignoreip = ${['127.0.0.1/8', '::1', ...s.ignoreip].join(' ')}`, ...(ex.DEFAULT || []), '');
   L.push('[sshd]', 'enabled = true', 'backend = systemd', `port = ${Number(sshPort) || 22}`, `mode = ${s.sshd.mode}`,
     `maxretry = ${s.sshd.maxretry}`, `findtime = ${s.sshd.findtime}`, `bantime = ${s.sshd.bantime}`,
     `bantime.increment = ${s.sshd.increment ? 'true' : 'false'}`);
   if (s.sshd.increment) L.push(`bantime.factor = ${s.sshd.factor}`, `bantime.maxtime = ${s.sshd.maxtime}`);
-  L.push('');
+  L.push(...(ex.sshd || []), '');
   L.push('[recidive]', `enabled = ${s.recidive.enabled ? 'true' : 'false'}`);
   if (s.recidive.enabled) {
     // recidive reads fail2ban's own log FILE — never the journal (fail2ban does not log there by default).
@@ -126,6 +157,7 @@ function buildJailConf(s, sshPort) {
     L.push(`bantime.increment = ${s.recidive.increment ? 'true' : 'false'}`);
     if (s.recidive.increment) L.push(`bantime.factor = ${s.recidive.factor}`, `bantime.maxtime = ${s.recidive.maxtime}`);
   }
+  L.push(...(ex.recidive || []));
   return L.join('\n') + '\n';
 }
 
@@ -148,6 +180,7 @@ function parseJailConf(text) {
     const m = /^([\w.]+)\s*=\s*(.*)$/.exec(line);
     if (!m) continue;
     const k = m[1], v = m[2].trim();
+    if (s.extra[sec] && !MANAGED_KEYS[sec].includes(k.toLowerCase())) { s.extra[sec].push(`${k} = ${v}`); continue; }
     if (sec === 'DEFAULT' && k === 'ignoreip') s.ignoreip = v.split(/\s+/).filter(x => x && x !== '127.0.0.1/8' && x !== '::1');
     if (sec === 'sshd') {
       if (k === 'maxretry') s.sshd.maxretry = Number(v);
@@ -168,6 +201,7 @@ function parseJailConf(text) {
       if (k === 'bantime.maxtime') s.recidive.maxtime = v;
     }
   }
+  s.extra = JSON.parse(JSON.stringify(s.extra));
   return s;
 }
 function parseDaemonConf(text) {
@@ -288,6 +322,23 @@ function coveredBy(ip, list) {
   });
 }
 
+/** Which file sets each option fail2ban runs: { 'sshd.maxretry': '/etc/fail2ban/jail.d/dockgate.conf', … } (last in read order wins). */
+function originsOf(sources) {
+  const o = {};
+  for (const x of sources || []) if (['sshd', 'recidive', 'DEFAULT', 'Definition'].includes(x.jail)) o[`${x.jail}.${x.key}`] = x.file;
+  return o;
+}
+/** Configuration → Files: what a file is and whether DockGate lets you edit it. */
+function fileRole(path) {
+  const base = path.slice(path.lastIndexOf('/') + 1);
+  if (path === JAIL_FILE) return { role: 'dockgate', editable: true, note: "DockGate's jail settings — the same values as the Settings tab" };
+  if (path === DAEMON_FILE) return { role: 'dockgate', editable: true, note: "DockGate's history and log settings" };
+  if (/^(defaults-|00-)/.test(base)) return { role: 'distro', editable: false, note: 'shipped with the fail2ban package — DockGate does not change it' };
+  return { role: 'yours', editable: true, note: readAfterDockgate(path) ? "yours — read after DockGate's file, so it wins where both set an option" : "yours — read before DockGate's file" };
+}
+/** Sections in a jail file (lower-case names kept as written). */
+const sectionNames = (text) => [...String(text).matchAll(/^\s*\[([^\]]+)\]/gm)].map(m => m[1].trim());
+
 // ---------------------------------------------------------------- take over [sshd] / [recidive] from other files
 const LOCALHOST = ['127.0.0.1/8', '::1', '127.0.0.0/8'];
 /** Files read after DockGate's that change what DockGate manages: [sshd], [recidive], the [DEFAULT] ignoreip, the daemon's dbpurgeage / logtarget. */
@@ -362,8 +413,11 @@ function planTakeover({ settings, sources, texts, dockgateIp, sshPort }) {
       tryApply(n => { n.dbpurgeage = x.value; }, item);
     } else if (x.jail === 'DEFAULT') {
       kept.push(item); // other [DEFAULT] options stay where they are (they also apply to the user's other jails)
+    } else if ((x.jail === 'sshd' || x.jail === 'recidive') && !WHY_NOT[x.key]) {
+      // An option DockGate has no field for (bantime.rndtime, …) moves into DockGate's file as an "other option".
+      tryApply(n => { n.extra = n.extra || { DEFAULT: [], sshd: [], recidive: [] }; n.extra[x.jail] = (n.extra[x.jail] || []).filter(l => l.split('=')[0].trim().toLowerCase() !== x.key).concat(`${x.key} = ${x.value}`); }, { ...item, other: true });
     } else {
-      removed.push({ ...item, reason: WHY_NOT[x.key] || 'DockGate does not manage this option; it goes with the section' });
+      removed.push({ ...item, reason: WHY_NOT[x.key] || 'DockGate does not manage this option' });
     }
   }
   if (dockgateIp && !coveredBy(dockgateIp, cur.ignoreip) && cur.ignoreip.length < 50) {
@@ -494,6 +548,7 @@ function detectProblems(ctx) {
 
 module.exports = {
   JAIL_FILE, DAEMON_FILE, LOG_FILE, DEFAULTS, MODES,
+  originsOf, fileRole, sectionNames, MANAGED_KEYS, normalizeExtra,
   parseSources, overridesOf, readAfterDockgate, sectionOf, effectiveOf, recidiveNeeds, coveredBy, overridingFiles, stripTakenOver, planTakeover, isDaemonFile,
   toSeconds, human, banSequence, memoryAfterBan, normalizeSettings, buildJailConf, buildDaemonConf, parseJailConf, parseDaemonConf,
   parseJailList, parseJailStatus, parseBanList, parseHistory, parseKv, detectProblems,
