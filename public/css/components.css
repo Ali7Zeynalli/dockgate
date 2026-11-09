@@ -1523,6 +1523,8 @@ tr.pv-open .pv-chev { transform: rotate(90deg); }
 #search-input[readonly] { cursor: pointer; }
 .ui-diff { font-family: var(--font-mono, monospace); font-size: 12px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 0; overflow-x: auto; white-space: pre; max-height: 50vh; overflow-y: auto; }
 .ui-diff > div { padding: 0 12px; }
+.f2b-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 18px; }
+.f2b-list { margin: 0; padding-left: 16px; display: grid; gap: 4px; font-size: 13px; }
 .ui-file { font-family: var(--font-mono, monospace); font-size: 12px; line-height: 1.6; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 0; overflow-x: auto; white-space: pre; max-height: 50vh; overflow-y: auto; }
 .ui-file > div { padding: 0 12px; min-height: 1.6em; }
 .ui-file-c { color: var(--text-muted); }

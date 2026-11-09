@@ -56,7 +56,7 @@ async function renderFail2banPanel(serverId, container) {
   container.innerHTML = `
     <div data-bar style="margin-bottom:12px"></div>
     ${f.problems.length ? `<div style="display:grid;gap:8px;margin-bottom:12px">${f.problems.map((p, i) => `
-      <div class="insight-card ${LV[p.level]}" style="justify-content:space-between;margin:0"><span>${escapeHtml(p.text)}</span>${p.fix ? `<button class="btn btn-xs btn-secondary" data-fix="${i}" style="flex:none">${p.fix === 'start' ? 'Start fail2ban' : p.fix === 'editlocal' ? 'Edit jail.local' : 'Fix now'}</button>` : ''}</div>`).join('')}</div>` : ''}
+      <div class="insight-card ${LV[p.level]}" style="justify-content:space-between;margin:0"><span>${escapeHtml(p.text)}</span>${p.fix ? `<button class="btn btn-xs btn-secondary" data-fix="${i}" style="flex:none">${p.fix === 'start' ? 'Start fail2ban' : p.fix === 'editlocal' ? 'Edit jail.local' : p.fix === 'takeover' ? 'Move to DockGate…' : p.fix === 'allowdg' ? "Add DockGate's IP" : 'Fix now'}</button>` : ''}</div>`).join('')}</div>` : ''}
     ${UI.statusLine([
       `<b>${totalBanned}</b> <span class="text-muted">banned now</span>`,
       `<b>${f.jails.length}</b> <span class="text-muted">jails running</span>`,
@@ -92,6 +92,8 @@ async function renderFail2banPanel(serverId, container) {
   container.querySelectorAll('[data-fix]').forEach(b => b.addEventListener('click', async () => {
     const p = f.problems[Number(b.dataset.fix)];
     try {
+      if (p.fix === 'takeover') { f2bTakeoverDialog(serverId, f, reload); return; }
+      if (p.fix === 'allowdg') { if (f.dockgateIp && !allow.includes(f.dockgateIp)) await saveSettings({ ...f.settings, ignoreip: [...allow, f.dockgateIp] }, "Allow DockGate's IP"); return; }
       if (p.fix === 'editlocal') { const el = container.querySelector('[data-raw]'); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.querySelector('button')?.focus(); return; }
       if (p.fix === 'start') { await API.post(`/servers/${serverId}/services/fail2ban/action`, { action: 'start', confirm: true }); showToast('fail2ban started'); reload(); }
       else await saveSettings(f.settings, 'Fix fail2ban settings');
@@ -146,6 +148,10 @@ function f2bPreviewHtml(x) {
     rec = win != null && need >= win
       ? `<div class="insight-card danger" style="margin-top:8px"><div>recidive can never trigger: ${x.recidive.maxretry} bans take at least ${f2bHuman(need)}, the window is ${f2bHuman(win)}.</div></div>`
       : `<div class="text-xs" style="color:var(--success);margin-top:8px">✓ recidive can trigger: the ${x.recidive.maxretry}th ban comes after at least ${f2bHuman(need)} — inside the ${f2bHuman(win)} window.</div>`;
+    if (x.recidive.increment) {
+      const rs = f2bSequence({ bantime: x.recidive.bantime, increment: true, factor: x.recidive.factor, maxtime: x.recidive.maxtime }, 4);
+      if (!rs.some(t => t == null)) rec += `<div class="text-xs text-muted" style="margin-top:4px">All-port bans for one IP: ${rs.map(f2bHuman).join(' → ')}.</div>`;
+    }
   }
   return `<div class="ui-explain"><div><b>What one IP gets</b> ${seq.map((t, i) => `${i + 1}. ${f2bHuman(t)}`).join(' → ')}</div><div>A first ban is remembered for about ${f2bHuman(purge + 3 * seq[0])}; after that the IP starts again at ${f2bHuman(seq[0])}.</div></div>${rec}`;
 }
@@ -156,6 +162,39 @@ function f2bFileHtml(text, mark) {
   const lines = String(text || '').replace(/\n$/, '').split('\n');
   return `<div class="ui-file">${lines.map(l => { const h = /^\[([^\]]+)\]\s*$/.exec(l.trim()); if (h) sec = h[1];
     return `<div class="${l.trim().startsWith('#') ? 'ui-file-c' : ''} ${mark && sec === mark ? 'ui-file-hl' : ''}">${escapeHtml(l) || ' '}</div>`; }).join('')}</div>`;
+}
+
+/**
+ * Move fail2ban's sshd / recidive / allowlist / history settings out of jail.local (and any other file read after
+ * DockGate's) into DockGate's own files. Shows exactly what moves, what is corrected, what goes and what stays,
+ * and every file before → after; one job applies it (backup, test, reload, restore on failure).
+ */
+async function f2bTakeoverDialog(serverId, f, reload) {
+  let t;
+  try { t = await API.post(`/servers/${serverId}/fail2ban/takeover/preview`, {}); }
+  catch (e) { showToast(e.message, 'error', 9000); return; }
+  const li = (rows, fmt) => rows.length ? `<ul class="f2b-list">${rows.map(r => `<li>${fmt(r)}</li>`).join('')}</ul>` : '<div class="ui-sub">—</div>';
+  const many = t.files.length > 1;
+  const recFixed = t.corrected.some(c => c.what === 'recidive');
+  const kv = (r) => `<span class="td-mono">[${escapeHtml(r.jail)}] ${escapeHtml(r.key)} = ${escapeHtml(r.value)}</span>${many ? ` <span class="ui-sub">· ${escapeHtml(r.file)}</span>` : ''}`;
+  const kvA = (r) => kv(r) + (recFixed && r.jail === 'recidive' && (r.key === 'maxretry' || r.key === 'findtime') ? ' <span class="ui-sub">→ corrected</span>' : '');
+  const cur = Object.fromEntries((f.files || []).map(x => [x.path, x.text || '']));
+  UI.dialog({
+    title: 'Move fail2ban settings to DockGate', saveLabel: 'Move & reload', wide: true,
+    body: `<div class="ui-sub">${t.files.map(x => `<span class="td-mono">${escapeHtml(x.path)}</span>`).join(', ')} ${t.files.length > 1 ? 'are' : 'is'} read after DockGate's file and override${t.files.length > 1 ? '' : 's'} it. DockGate takes over what it manages and leaves everything else in ${t.files.length > 1 ? 'those files' : 'that file'} as it is. A backup is kept next to each file (<span class="td-mono">.dockgate-backup</span>); the configuration is tested before it is applied and everything is put back if the test or the reload fails. Current bans are kept.</div>
+      <div class="f2b-cols">
+        <div><div class="pv-k">Carried over to DockGate</div>${li(t.adopted, kvA)}</div>
+        <div><div class="pv-k">Corrected</div>${li(t.corrected, r => `<b>${escapeHtml(r.what)}</b>: ${escapeHtml(r.from)} → <b>${escapeHtml(r.to)}</b><div class="ui-sub">${escapeHtml(r.why)}</div>`)}</div>
+        <div><div class="pv-k">Removed — not needed</div>${li(t.removed, r => `${kv(r)}<div class="ui-sub">${escapeHtml(r.reason)}</div>`)}</div>
+        <div><div class="pv-k">Left in place</div>${li(t.kept, r => `${kv(r)}<div class="ui-sub">a [DEFAULT] option — it also applies to your other jails</div>`)}</div>
+      </div>
+      ${t.files.map(x => `<div style="display:grid;gap:4px"><span class="td-mono text-sm">${escapeHtml(x.path)}</span>${lineDiffHtml(x.before, x.after)}</div>`).join('')}
+      ${t.dockgate.map(x => `<div style="display:grid;gap:4px"><span class="td-mono text-sm">${escapeHtml(x.path)}</span>${(cur[x.path] || '') === x.text ? '<div class="ui-sub">No change.</div>' : lineDiffHtml(cur[x.path] || '', x.text)}</div>`).join('')}`,
+    onSave: async () => {
+      const { jobId } = await API.post(`/servers/${serverId}/fail2ban/takeover`, { confirm: true });
+      setTimeout(async () => { if (await runLifelineJob(serverId, jobId, 'Move fail2ban settings to DockGate')) reload(); }, 0);
+    },
+  });
 }
 
 /** Read-only view of DockGate's two fail2ban files as they are on the server now. */
@@ -178,7 +217,9 @@ function f2bJailDialog(f, name, saveSettings, serverId) {
       <div class="ui-field"><label for="s-mode">Detection mode</label><select class="select" id="s-mode">${['normal', 'aggressive', 'ddos', 'extra'].map(m => `<option ${m === s.sshd.mode ? 'selected' : ''}>${m}</option>`).join('')}</select><span class="ui-help">aggressive also counts key probes and pre-auth disconnects — useful when password login is off. The jail always bans the port SSH listens on (${escapeHtml(String(f.sshPort))}).</span></div>`
     : `
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="r-en" ${s.recidive.enabled ? 'checked' : ''}> Enabled — when one IP is banned this many times inside the window, it is blocked on every port</label>
-      <div class="ui-row">${inp('r-maxretry', s.recidive.maxretry, 'Bans before', 'maxretry')}${inp('r-findtime', s.recidive.findtime, 'Window', 'findtime — longer than those bans take')}${inp('r-bantime', s.recidive.bantime, 'Ban on all ports', 'bantime')}</div>`;
+      <div class="ui-row">${inp('r-maxretry', s.recidive.maxretry, 'Bans before', 'maxretry')}${inp('r-findtime', s.recidive.findtime, 'Window', 'findtime — longer than those bans take')}${inp('r-bantime', s.recidive.bantime, 'Ban on all ports', 'bantime')}</div>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="r-inc" ${s.recidive.increment ? 'checked' : ''}> Longer all-port bans when the same IP comes back <span class="ui-sub">bantime.increment</span></label>
+      <div class="ui-row">${inp('r-factor', s.recidive.factor ?? 2, 'Growth factor', 'ban × 2^n × factor')}${inp('r-maxtime', s.recidive.maxtime || '90d', 'Longest ban', 'e.g. 90d')}</div>`;
   UI.dialog({
     title: `Jail · ${name}`, saveLabel: 'Test & save', wide: true,
     body: `${body}<div data-preview></div>
@@ -223,7 +264,8 @@ function f2bJailDialog(f, name, saveSettings, serverId) {
     const on = (id, d) => { const el = ov.querySelector('#' + id); return el ? el.checked : d; };
     return {
       sshd: { maxretry: Number(v('s-maxretry', s.sshd.maxretry)), findtime: v('s-findtime', s.sshd.findtime), bantime: v('s-bantime', s.sshd.bantime), increment: on('s-inc', s.sshd.increment), factor: Number(v('s-factor', s.sshd.factor)), maxtime: v('s-maxtime', s.sshd.maxtime), mode: v('s-mode', s.sshd.mode) },
-      recidive: { enabled: on('r-en', s.recidive.enabled), maxretry: Number(v('r-maxretry', s.recidive.maxretry)), findtime: v('r-findtime', s.recidive.findtime), bantime: v('r-bantime', s.recidive.bantime) },
+      recidive: { enabled: on('r-en', s.recidive.enabled), maxretry: Number(v('r-maxretry', s.recidive.maxretry)), findtime: v('r-findtime', s.recidive.findtime), bantime: v('r-bantime', s.recidive.bantime),
+        increment: on('r-inc', !!s.recidive.increment), factor: Number(v('r-factor', s.recidive.factor ?? 2)), maxtime: v('r-maxtime', s.recidive.maxtime || '90d') },
       ignoreip: s.ignoreip || [], dbpurgeage: v('s-purge', s.dbpurgeage),
     };
   }

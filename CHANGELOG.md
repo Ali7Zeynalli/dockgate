@@ -2,6 +2,29 @@
 
 ---
 
+## [2.17.0] - 2026-11-09
+
+### Added
+- **Fail2ban → Move to DockGate.** When `jail.local` (or `jail.d/*.local`, a later `jail.d/*.conf`, `fail2ban.local`) overrides what DockGate manages, one button moves those settings into DockGate's files:
+  - values DockGate manages are carried over: sshd failures, window, ban, increment, mode; recidive; allowlist IPs; history kept;
+  - a recidive that could never trigger is corrected (for example 5 bans within 1d → 3 within 30d), with the reason;
+  - DockGate's own address is added to the allowlist;
+  - lines DockGate writes itself (port, backend, logpath, filter, banaction) are removed with a note;
+  - other jails and other `[DEFAULT]` options stay as they are.
+  The dialog shows every list and every file before → after. One job backs up each file (`*.dockgate-backup`), rewrites it, tests with `fail2ban-client -t`, reloads, and puts everything back if the test or the reload fails. Current bans are kept.
+- **Fail2ban: longer recidive bans for repeat offenders** (recidive → Edit, off by default): factor and longest ban, with the resulting sequence (for example 7d → 28d → 56d → 90d). DockGate's file now always writes recidive's `bantime.increment`, so a `bantime.*` line under `[DEFAULT]` elsewhere cannot change recidive.
+- **Setup puts DockGate's own address in the fail2ban allowlist**, so fail2ban never bans the connection that manages the server.
+
+### Fixed
+- **Fail2ban checks use the values fail2ban runs with**, not only DockGate's file. "recidive can never trigger" is now also found when the values come from `jail.local`.
+- **Allowlist not in effect**: a `[DEFAULT] ignoreip` in `jail.local` replaces DockGate's allowlist, so IPs added in DockGate could still be banned. This is now reported with the file that causes it.
+- **DockGate's address missing from the allowlist** is reported, with an **Add DockGate's IP** button.
+- **`fail2ban.local` overriding History kept or the log target** (recidive needs `/var/log/fail2ban.log`) is reported.
+
+Checked against a real fail2ban 1.0.2 with the jail.local sent in chat. Before: 4 problems, each with its cause. After Move to DockGate: no problems, the allowlist in effect, recidive 3 bans / 30d, and recidive banned an IP after three sshd bans. The rest of jail.local was left in place and the backup matches the original.
+
+---
+
 ## [2.16.1] - 2026-11-09
 
 ### Fixed
