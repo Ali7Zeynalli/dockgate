@@ -2,6 +2,16 @@
 
 ---
 
+## [2.18.1] - 2026-11-09
+
+### Changed
+- **Fail2ban → Banned IPs** is a collapsible card, like the rest of the tab. The header shows how many IPs are banned and holds **Ban an IP**. The card opens by default when something is banned, and the open/closed choice is remembered in the browser. The list shows 25 IPs per page, and the search (IP or jail) covers every banned IP, not just the visible page. Unban and Unban & allow work on every page.
+- **Ban history** also shows 25 events per page, newest first.
+- New `UI.pager` (shared pager: "26–50 of 340 · ‹ Prev · Page 2 of 14 · Next ›").
+- A fail2ban warning still pointed to the old Jails table; it now points to Configuration → Settings.
+
+---
+
 ## [2.18.0] - 2026-11-09
 
 ### Changed

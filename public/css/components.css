@@ -1523,8 +1523,9 @@ tr.pv-open .pv-chev { transform: rotate(90deg); }
 #search-input[readonly] { cursor: pointer; }
 .ui-diff { font-family: var(--font-mono, monospace); font-size: 12px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 0; overflow-x: auto; white-space: pre; max-height: 50vh; overflow-y: auto; }
 .ui-diff > div { padding: 0 12px; }
+.ui-pager { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 2px 0; }
 .f2b-card { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-card); overflow: hidden; }
-.f2b-card > summary { list-style: none; display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: center; padding: 12px 14px; cursor: pointer; }
+.f2b-card > summary { list-style: none; display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: center; padding: 12px 14px; cursor: pointer; }
 .f2b-card > summary::-webkit-details-marker { display: none; }
 .f2b-card[open] > summary { border-bottom: 1px solid var(--border); background: var(--bg-primary); }
 .f2b-chev { color: var(--text-muted); transition: transform .15s; }

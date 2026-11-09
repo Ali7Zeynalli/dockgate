@@ -37,6 +37,17 @@ const UI = {
     return `<div class="table-wrapper ui-table"><table style="min-width:${minWidth}px"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   },
 
+  /** Pager under a table: "26–50 of 340 · ‹ Prev · Page 2 of 14 · Next ›". Buttons carry data-page="n" (1-based). Empty when one page is enough. */
+  pager(page, total, per = 25) {
+    const pages = Math.max(1, Math.ceil(total / per));
+    if (total <= per) return '';
+    const p = Math.min(Math.max(1, page), pages), from = (p - 1) * per + 1, to = Math.min(total, p * per);
+    return `<div class="ui-pager"><span class="ui-sub">${from}–${to} of ${total}</span><span class="flex gap-1" style="align-items:center">`
+      + `<button type="button" class="btn btn-sm btn-secondary" data-page="${p - 1}" ${p <= 1 ? 'disabled' : ''}>‹ Prev</button>`
+      + `<span class="ui-sub">Page ${p} of ${pages}</span>`
+      + `<button type="button" class="btn btn-sm btn-secondary" data-page="${p + 1}" ${p >= pages ? 'disabled' : ''}>Next ›</button></span></div>`;
+  },
+
   /** Settings list: [{ label, desc, value, action }] — one row per setting with its own Edit. */
   settings(rows) {
     return `<div class="ui-settings">${rows.map(r => `<div class="ui-set${r.cls ? ' ' + r.cls : ''}"><div class="ui-set-l"><b>${r.label}</b>${r.desc ? `<span>${r.desc}</span>` : ''}</div><div class="ui-set-v">${r.value == null ? '' : r.value}</div><div class="ui-set-a">${r.action || ''}</div></div>`).join('')}</div>`;
