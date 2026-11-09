@@ -379,15 +379,22 @@ async function fail2banOf(row) {
   const dockgateIp = (sec.myip || '').trim() || null;
   const sshdJail = jails.find(j => j.name === 'sshd');
   const recidive = jails.find(j => j.name === 'recidive');
-  const runtime = { dbpurgeage: (sec.dbpurgeage || '').trim() ? Number(sec.dbpurgeage) : null, jails: jailNames, recidiveLogpath: recidive ? recidive.logpath : null };
+  const runtime = {
+    dbpurgeage: (sec.dbpurgeage || '').trim() ? Number(sec.dbpurgeage) : null, jails: jailNames, recidiveLogpath: recidive ? recidive.logpath : null,
+    jailOpts: Object.fromEntries(jails.filter(j => j.name === 'sshd' || j.name === 'recidive').map(j => [j.name, { maxretry: j.maxretry, findtime: j.findtime, bantime: j.bantime }])),
+  };
+  const sources = F2B.parseSources(sec.f2bsrc);
   const problems = installed && active ? F2B.detectProblems({
-    settings, runtime, sshPort, jailPort: sshdJail && sshdJail.port, jailLocal: !!(sec.jaillocal || '').trim(), dockgateIp,
+    settings, runtime, sshPort, jailPort: sshdJail && sshdJail.port, jailLocal: (sec.jaillocal || '').trim() || null, dockgateIp,
+    managed: !!managed, jailFileText: sec.dockgate || '', sources, active,
     banned: jails.flatMap(j => j.banned.map(b => b.ip)),
   }) : [];
   if (installed && !active) problems.unshift({ level: 'crit', text: 'fail2ban is installed but not running — nothing is being banned.', fix: 'start' });
   return {
     installed, active, version: (sec.version || '').trim(), jails, settings, managed: !!managed, runtime, sshPort, dockgateIp,
     jailLocal: (sec.jaillocal || '').trim() || null,
+    // DockGate's own files as they are on the server now (empty text = not written yet).
+    files: [{ path: F2B.JAIL_FILE, text: sec.dockgate || '' }, { path: F2B.DAEMON_FILE, text: sec.daemon || '' }].map(x => ({ ...x, text: x.text.replace(/\n+$/, x.text.trim() ? '\n' : '') })),
     history: F2B.parseHistory(sec.history).slice(0, 100),
     sequence: F2B.banSequence(settings.sshd, 6).map(F2B.human),
     memory: F2B.human(F2B.memoryAfterBan(F2B.toSeconds(settings.sshd.bantime), runtime.dbpurgeage != null ? runtime.dbpurgeage : F2B.toSeconds(settings.dbpurgeage))),
@@ -399,6 +406,15 @@ const assertJail = (j) => { if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(String(j || '')))
 const assertIp = (ip) => { const v = String(ip || '').trim(); if (!require('../provision/catalog').isIpOrCidr(v)) throw P.httpError(400, 'Enter an IP address or CIDR'); return v; };
 
 router.get('/:id/fail2ban', send(async (req) => fail2banOf(loadServer(req))));
+
+// POST /api/servers/:id/fail2ban/preview — the files Save would write for these settings, built by the same
+// functions the save plan uses (nothing runs on the server). Invalid settings → 400 with the reason.
+router.post('/:id/fail2ban/preview', send(async (req) => {
+  loadServer(req);
+  const settings = F2B.normalizeSettings((req.body || {}).settings);
+  const sshPort = Number((req.body || {}).sshPort) || 22;
+  return { files: [{ path: F2B.JAIL_FILE, text: F2B.buildJailConf(settings, sshPort) }, { path: F2B.DAEMON_FILE, text: F2B.buildDaemonConf(settings) }] };
+}));
 
 router.post('/:id/fail2ban/settings', send(async (req) => {
   const row = loadServer(req);

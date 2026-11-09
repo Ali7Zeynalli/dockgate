@@ -2,6 +2,32 @@
 
 ---
 
+## [2.16.1] - 2026-11-09
+
+### Fixed
+- **Fail2ban: "recidive is not reading /var/log/fail2ban.log" now names the real cause.** The warning always said "Save the settings to fix it", but Save cannot help when another file wins. DockGate now reads which files set `[sshd]` / `[recidive]` options and says which of three cases it is:
+  - a file read after DockGate's (`jail.local`, `jail.d/*.local`, or a later `jail.d/*.conf`) sets `backend` or `logpath`. The warning names the file and the line, and offers **Edit jail.local** instead of Fix now;
+  - DockGate's file does not set `backend = auto` and `logpath = /var/log/fail2ban.log` yet. Fix now writes them, tests and reloads;
+  - DockGate's file is right but fail2ban was not reloaded. Fix now reloads it.
+  On Ubuntu and Debian, `jail.d/defaults-debian.conf` sets `backend = systemd` for every jail, so a recidive jail without its own `backend` line reads the journal. fail2ban never writes its ban lines there.
+- **Fail2ban: recidive on in DockGate's settings but not running** is reported, with the file that switches it off or breaks it, or the reload it needs.
+- **Fail2ban: running values that differ from DockGate's file** (maxretry, findtime, bantime of sshd and recidive) are reported with the file that sets them. Until now the Jails table could show DockGate's values while fail2ban ran others.
+- The "jail.local also sets options" note names every file that does.
+
+Checked against a real fail2ban 1.0.2 (the Ubuntu 24.04 version): the overriding `jail.local`, the missing lines, the missing reload and the jail that cannot start each give the matching message. After Fix now, recidive reads `/var/log/fail2ban.log` and banned an IP after three sshd bans.
+
+---
+
+## [2.16.0] - 2026-11-09
+
+### Changed
+- **Server Console → Setup**: the components table says what each run does. A new **This run** column shows *Will install*, *Will retry*, *Will run*, *Skip · installed* or *Not selected*, and the line under the presets names the components that will run. The ticks stay clickable with a preset chosen: changing one turns the preset into your own list (Custom). Text in the table wraps instead of being cut off.
+- **Setup rows open** to show what the component does to the server: the packages it installs, the files it writes, the values it sets (for example `MaxAuthTries 3` for SSH hardening) and the page where it is changed later.
+- **Fail2ban → Jails → Edit** shows the file Save will write: **What changes** (the changed lines against the file on the server, updated as you type), **Full file** (with the jail's lines marked) and **On the server now**. The preview is built by the same code that writes the file. Saving still tests the configuration and puts the previous files back if the test fails.
+- **Fail2ban → View files**: a read-only view of DockGate's `jail.d/dockgate.conf` and `fail2ban.d/dockgate.conf` as they are on the server.
+
+---
+
 ## [2.15.2] - 2026-11-09
 
 ### Changed

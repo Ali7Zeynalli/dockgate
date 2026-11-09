@@ -54,7 +54,7 @@ test('fail2ban: problems — impossible recidive, wrong port, short memory, bann
   assert.match(text, /DockGate's own IP/);
   assert.match(text, /bans port 22, but SSH listens on 2222/);
   assert.match(text, /recidive can never trigger/);
-  assert.match(text, /not reading \/var\/log\/fail2ban\.log/);
+  assert.match(text, /recidive reads the systemd journal, not a log file, instead of \/var\/log\/fail2ban\.log/);
   assert.match(text, /Ban history is kept only about 4d/);
   const good = F.detectProblems({ settings: F.normalizeSettings(F.DEFAULTS), runtime: { dbpurgeage: 2592000, jails: ['sshd', 'recidive'], recidiveLogpath: '`- /var/log/fail2ban.log' }, sshPort: 22, jailPort: '22', dockgateIp: '192.0.2.1', banned: [] });
   assert.deepEqual(good, [], 'DockGate defaults raise no problem');
@@ -69,4 +69,50 @@ test('fail2ban: parses status, bans with time and the ban log', () => {
   const h = F.parseHistory('2026-11-07 02:20:27,387 fail2ban.actions        [17984]: NOTICE  [sshd] Ban 203.0.113.9\n2026-11-07 02:20:27,824 fail2ban.actions        [17984]: NOTICE  [sshd] Unban 198.51.100.7');
   assert.deepEqual(h[0], { time: '2026-11-07 02:20:27', jail: 'sshd', action: 'Unban', ip: '198.51.100.7' });
   assert.equal(h[1].action, 'Ban');
+});
+
+test('fail2ban: recidive on the journal — names the file that wins, or says Save / reload fixes it', () => {
+  const set = F.normalizeSettings(F.DEFAULTS);
+  const jailFile = F.buildJailConf(set, 22);
+  const rt = { dbpurgeage: 2592000, jails: ['sshd', 'recidive'], recidiveLogpath: 'No file is currently monitored' };
+  const base = { settings: set, runtime: rt, sshPort: 22, jailPort: '22', managed: true, jailFileText: jailFile, active: true };
+  const src = F.parseSources([
+    `${F.JAIL_FILE}|recidive|backend = auto`, `${F.JAIL_FILE}|recidive|logpath = /var/log/fail2ban.log`,
+    '/etc/fail2ban/jail.d/defaults-debian.conf|sshd|backend = systemd',
+    '/etc/fail2ban/jail.local|recidive|backend = systemd', '/etc/fail2ban/jail.local|recidive|# logpath = x',
+  ].join('\n'));
+  // 1) jail.local wins: named, Save is not offered, the jail.local editor is
+  let p = F.detectProblems({ ...base, sources: src }).find(x => /recidive reads/.test(x.text));
+  assert.match(p.text, /\/etc\/fail2ban\/jail\.local sets "backend = systemd" under \[recidive\]/);
+  assert.match(p.text, /Save cannot fix it/);
+  assert.equal(p.fix, 'editlocal');
+  // a later jail.d/*.conf wins too; an earlier one does not
+  assert.equal(F.readAfterDockgate('/etc/fail2ban/jail.d/zz-mine.conf'), true);
+  assert.equal(F.readAfterDockgate('/etc/fail2ban/jail.d/defaults-debian.conf'), false);
+  assert.equal(F.readAfterDockgate('/etc/fail2ban/jail.d/custom.local'), true);
+  // 2) nothing overrides, DockGate's file lacks the logpath → Save fixes it
+  p = F.detectProblems({ ...base, sources: [], jailFileText: '[recidive]\nenabled = true\nbackend = systemd\n' }).find(x => /recidive reads/.test(x.text));
+  assert.match(p.text, /does not set it yet/); assert.equal(p.fix, 'save');
+  // 3) the file is right but fail2ban was not reloaded
+  p = F.detectProblems({ ...base, sources: [] }).find(x => /recidive reads/.test(x.text));
+  assert.match(p.text, /not reloaded/); assert.equal(p.fix, 'save');
+  // fixed: reads the log file → no recidive problem
+  assert.equal(F.detectProblems({ ...base, sources: src, runtime: { ...rt, recidiveLogpath: '`- /var/log/fail2ban.log' } }).filter(x => /recidive/.test(x.text)).length, 0);
+});
+
+test('fail2ban: running values that differ from DockGate\'s file are reported with their source', () => {
+  const set = F.normalizeSettings(F.DEFAULTS);
+  const rt = { dbpurgeage: 2592000, jails: ['sshd', 'recidive'], recidiveLogpath: '/var/log/fail2ban.log',
+    jailOpts: { sshd: { maxretry: 5, findtime: 86400, bantime: 86400 }, recidive: { maxretry: 3, findtime: 2592000, bantime: 604800 } } };
+  const base = { settings: set, runtime: rt, sshPort: 22, jailPort: '22', managed: true, jailFileText: F.buildJailConf(set, 22), active: true };
+  let p = F.detectProblems({ ...base, sources: F.parseSources('/etc/fail2ban/jail.local|sshd|maxretry = 5') });
+  assert.equal(p.length, 1);
+  assert.match(p[0].text, /sshd runs with maxretry 5 \(DockGate's file: 3\): \/etc\/fail2ban\/jail\.local sets "maxretry = 5"/);
+  p = F.detectProblems({ ...base, sources: [] });
+  assert.match(p[0].text, /not reloaded/); assert.equal(p[0].fix, 'save');
+  // recidive enabled in DockGate's file but switched off by a later file
+  p = F.detectProblems({ ...base, runtime: { ...rt, jails: ['sshd'], jailOpts: { sshd: rt.jailOpts.sshd } }, sources: F.parseSources('/etc/fail2ban/jail.local|recidive|enabled = false\n/etc/fail2ban/jail.local|sshd|maxretry = 5') });
+  assert.ok(p.some(x => /recidive is on in DockGate's settings but not running: \/etc\/fail2ban\/jail\.local sets "enabled = false"/.test(x.text)));
+  // all equal → nothing
+  assert.deepEqual(F.detectProblems({ ...base, runtime: { ...rt, jailOpts: { ...rt.jailOpts, sshd: { maxretry: 3, findtime: 86400, bantime: 86400 } } }, sources: [] }), []);
 });

@@ -38,6 +38,7 @@ function renderProvisionForm(serverId, catalog, scan, container, { matrix = [], 
   const last = Object.fromEntries(matrix.map(m => [m.id, m]));
   let preset = startPreset || 'secure-baseline';
   let custom = new Set(items.filter(it => stateOf(it.id) === 'missing' && !it.optional && !it.alwaysRun).map(it => it.id));
+  const openRows = new Set(); // components whose row is opened (what it changes)
   const statusOf = (it) => {
     const st = stateOf(it.id);
     if (st === 'na') return ['off', 'Not available', 'na'];
@@ -69,22 +70,33 @@ function renderProvisionForm(serverId, catalog, scan, container, { matrix = [], 
       ${UI.header('Setup', 'What is installed on this server. Each component is checked before it is installed and verified after.', `${UI.btn('Scan again', 'data-rescan', 'btn-ghost')}<button type="button" class="btn btn-sm btn-primary" data-run ${todo.length ? '' : 'disabled'}>${todo.length ? `Run setup (${todo.length})…` : 'Nothing to install'}</button>`)}
       <div class="ui-field" style="margin-bottom:10px"><span class="ui-label">Preset</span>
         <div class="ui-seg">${PV_PRESETS.map(([v, l]) => `<button type="button" data-preset="${v}" aria-pressed="${preset === v}">${l}</button>`).join('')}</div>
-        <span class="ui-help">${escapeHtml(PV_PRESETS.find(x => x[0] === preset)[2])} · ${sel.length} components, ${todo.length} to run${preset === 'custom' ? ' · tick the components below' : ''}</span></div>
-      ${UI.table([{ label: '', width: '34px' }, { label: 'Component' }, { label: 'Group' }, { label: 'Status' }, { label: 'Details' }, { label: 'Last run' }, { label: '', align: 'right' }], sorted.map(it => {
+        <span class="ui-help">${escapeHtml(PV_PRESETS.find(x => x[0] === preset)[2])} · ${sel.length} selected · <b>${todo.length} will run</b>${todo.length ? ': ' + todo.map(it => escapeHtml(it.label)).join(', ') : ''}${preset === 'custom' ? '' : ' · tick or untick a row to make your own list'} · click a row to see what it changes</span></div>
+      <div class="pv-table">${UI.table([{ label: '', width: '34px' }, { label: 'Component' }, { label: 'Status' }, { label: 'This run' }, { label: 'Details' }, { label: 'Last run' }, { label: '', align: 'right' }], sorted.flatMap(it => {
         const [lv, txt, key] = statusOf(it), m = last[it.id];
-        const on = sel.includes(it.id);
+        const on = sel.includes(it.id), isOpen = openRows.has(it.id), ch = it.changes || {};
+        const runs = on && ['missing', 'failed', 'optional', 'action'].includes(key);
+        const run = key === 'na' ? '<span class="ui-sub">—</span>' : !on ? '<span class="ui-sub">Not selected</span>'
+          : runs ? `<span class="pv-run">${key === 'action' ? 'Will run' : key === 'failed' ? 'Will retry' : 'Will install'}</span>` : '<span class="ui-sub">Skip · installed</span>';
         const detail = key === 'failed' && m && (m.error || m.reason) ? `<span style="color:var(--danger)">${escapeHtml(String(m.error || m.reason).split('\n').slice(-1)[0].slice(0, 140))}</span>`
-          : key === 'na' ? escapeHtml((scan.items.find(x => x.id === it.id) || {}).reason || 'not on this OS') : escapeHtml(it.description || '');
-        return { cls: on ? 'ui-row-selected' : '', cells: [
-          `<input type="checkbox" data-comp="${escapeHtml(it.id)}" aria-label="Include ${escapeHtml(it.label)}" ${on ? 'checked' : ''} ${preset === 'custom' && key !== 'na' ? '' : 'disabled'} style="accent-color:var(--accent)">`,
-          `<b>${escapeHtml(it.label)}</b>${it.risk === 'high' ? '<div class="ui-sub" style="color:var(--warning)">risky · tested with a new SSH login</div>' : ''}`,
-          `<span class="ui-sub">${groupLabel(it.group)}</span>`,
-          UI.pill(lv, txt),
-          `<span class="ui-sub" title="${escapeHtml(key === 'failed' && m ? (m.error || m.reason || '') : (it.description || ''))}">${detail}</span>`,
-          `<span class="ui-sub">${fmtWhen(m && m.lastAt)}</span>`,
-          ['missing', 'failed', 'optional'].includes(key) ? UI.btn(key === 'failed' ? 'Retry' : 'Install', `data-one="${escapeHtml(it.id)}"`) : '',
-        ] };
-      }), { minWidth: 820 })}
+          : key === 'na' ? escapeHtml((scan.items.find(x => x.id === it.id) || {}).reason || 'not on this OS') : escapeHtml(ch.short || it.description || '');
+        const row = `<tr class="pv-row${on ? ' ui-row-selected' : ''}${isOpen ? ' pv-open' : ''}" data-row="${escapeHtml(it.id)}" aria-expanded="${isOpen}">
+          <td><input type="checkbox" data-comp="${escapeHtml(it.id)}" aria-label="Include ${escapeHtml(it.label)}" ${on ? 'checked' : ''} ${key === 'na' ? 'disabled' : ''} style="accent-color:var(--accent)"></td>
+          <td><span class="pv-chev" aria-hidden="true">›</span> <b>${escapeHtml(it.label)}</b> <span class="ui-sub">· ${groupLabel(it.group)}</span>${it.risk === 'high' ? '<div class="ui-sub" style="color:var(--warning);padding-left:16px">risky · tested with a new SSH login</div>' : ''}</td>
+          <td>${UI.pill(lv, txt)}</td><td>${run}</td>
+          <td><span class="ui-sub">${detail}</span></td>
+          <td><span class="ui-sub">${fmtWhen(m && m.lastAt)}</span></td>
+          <td class="ui-td-actions">${['missing', 'failed', 'optional'].includes(key) ? UI.btn(key === 'failed' ? 'Retry' : 'Install', `data-one="${escapeHtml(it.id)}"`) : ''}</td></tr>`;
+        if (!isOpen) return [row];
+        const list = (a, empty) => a && a.length ? `<ul>${a.map(x => `<li>${/^[\/~]/.test(x) ? `<span class="td-mono">${escapeHtml(x)}</span>` : escapeHtml(x)}</li>`).join('')}</ul>` : `<span class="ui-sub">${empty}</span>`;
+        return [row, `<tr class="pv-detail"><td colspan="7"><div style="display:grid;gap:10px">
+          <div class="text-sm">${escapeHtml(it.description || '')}</div>
+          <div class="pv-dgrid">
+            <div><div class="pv-k">Installs</div>${list(ch.installs, 'no packages')}</div>
+            <div><div class="pv-k">Writes</div>${list(ch.writes, 'no files')}</div>
+            <div><div class="pv-k">Sets</div>${list(ch.sets, 'nothing else')}</div>
+            <div><div class="pv-k">Change it later in</div><span class="text-sm">${escapeHtml(ch.editIn || '—')}</span></div>
+          </div></div></td></tr>`];
+      }), { minWidth: 880 })}</div>
       ${UI.header('Run history', 'Every setup run with its full log.')}
       ${UI.table([{ label: 'Started' }, { label: 'Preset' }, { label: 'Result' }, { label: 'Duration' }, { label: '', align: 'right' }], runs.map(r => ({ cells: [
         `<span class="ui-sub">${fmtWhen(r.started_at)}</span>`,
@@ -96,7 +108,16 @@ function renderProvisionForm(serverId, catalog, scan, container, { matrix = [], 
 
     container.querySelector('[data-rescan]').onclick = () => renderProvisionPanel(serverId, container, { preset });
     container.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => { preset = b.dataset.preset; draw(); });
-    container.querySelectorAll('[data-comp]').forEach(cb => cb.onchange = () => { if (cb.checked) custom.add(cb.dataset.comp); else custom.delete(cb.dataset.comp); draw(); });
+    container.querySelectorAll('[data-comp]').forEach(cb => cb.onchange = () => {
+      if (preset !== 'custom') { custom = new Set(selected()); preset = 'custom'; } // a tick turns the preset into your own list
+      if (cb.checked) custom.add(cb.dataset.comp); else custom.delete(cb.dataset.comp);
+      draw();
+    });
+    container.querySelectorAll('[data-row]').forEach(tr => tr.addEventListener('click', (e) => {
+      if (e.target.closest('input,button,a')) return;
+      const id = tr.dataset.row; if (openRows.has(id)) openRows.delete(id); else openRows.add(id);
+      draw();
+    }));
     container.querySelector('[data-run]').onclick = () => openRunSetup(todoOf(selected()), preset === 'custom' ? [...custom] : undefined, preset, selected());
     container.querySelectorAll('[data-one]').forEach(b => b.onclick = () => { const it = items.find(x => x.id === b.dataset.one); openRunSetup([it], [it.id], 'custom', [it.id]); });
     container.querySelectorAll('[data-log]').forEach(b => b.onclick = () => openRunLog(b.dataset.log));

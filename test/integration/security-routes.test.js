@@ -212,3 +212,21 @@ test('auto updates: RHEL family goes to dnf-automatic, choices validated', async
   assert.strictEqual((await request(app).post('/api/servers/srv/services/unattended-upgrades/settings').send({ family: 'rhel', enabled: true, upgradeType: 'x', reboot: 'never' })).status, 400);
   assert.strictEqual((await request(app).post('/api/servers/srv/services/unattended-upgrades/settings').send({ enabled: true, autoReboot: true, rebootTime: '25:00' })).status, 400);
 });
+
+test('fail2ban: the files on the server are returned; preview builds what Save would write, bad values refused', async () => {
+  const F2B = require('../../server/security/fail2ban');
+  const s = F2B.normalizeSettings(F2B.DEFAULTS);
+  fixture = { installed: 'yes', active: 'active', status: 'Jail list:\tsshd', sshport: '2222', dockgate: F2B.buildJailConf(s, 2222), daemon: F2B.buildDaemonConf(s) };
+  const r = await request(app).get('/api/servers/srv/fail2ban');
+  assert.strictEqual(r.status, 200);
+  assert.deepStrictEqual(r.body.files.map(x => x.path), [F2B.JAIL_FILE, F2B.DAEMON_FILE]);
+  assert.match(r.body.files[0].text, /\[sshd\][\s\S]*port = 2222/);
+  const before = started.length + ran.length;
+  const p = await request(app).post('/api/servers/srv/fail2ban/preview').send({ settings: { ...s, sshd: { ...s.sshd, maxretry: 5 } }, sshPort: 2222 });
+  assert.strictEqual(p.status, 200);
+  assert.match(p.body.files[0].text, /maxretry = 5/);
+  assert.strictEqual(p.body.files[0].text, F2B.buildJailConf({ ...s, sshd: { ...s.sshd, maxretry: 5 } }, 2222));
+  assert.strictEqual(started.length + ran.length, before); // preview runs nothing on the server
+  const bad = await request(app).post('/api/servers/srv/fail2ban/preview').send({ settings: { ...s, sshd: { ...s.sshd, maxretry: 0 } } });
+  assert.strictEqual(bad.status, 400);
+});
