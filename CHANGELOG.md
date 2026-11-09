@@ -2,6 +2,19 @@
 
 ---
 
+## [2.19.0] - 2026-11-09
+
+### Added
+- **Fail2ban → Configuration: apply everything at once.** Changes are drafts until you apply them:
+  - **Edit all** opens every card for editing; one card still has its own Edit.
+  - Changed rows turn amber and show the old value ("was ~~24h~~"); each card header counts its changes. A new allowlist IP shows as an amber chip; a removed one is struck through and can be kept again.
+  - A bar at the bottom collects every pending change: **N fail2ban changes not applied yet · Discard · Review & apply all**. Review lists the changes and shows the change to both files. One job then writes, tests (`fail2ban-client -t`) and reloads once, and puts both files back if anything fails. Current bans are kept.
+  - **Save this card** applies only that card; the other cards stay pending.
+  - A value that cannot work (for example `maxretry = 0`) turns the field red with the allowed range, marks the card "fix the red field", and disables applying until it is fixed.
+  - Pending changes survive leaving the tab or the page and coming back, until applied or discarded. They are stored as "what you changed", so a value changed elsewhere meanwhile is not reverted. Closing the browser tab with pending changes asks first.
+
+---
+
 ## [2.18.1] - 2026-11-09
 
 ### Changed
