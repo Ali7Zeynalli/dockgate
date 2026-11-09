@@ -21,7 +21,7 @@ Router.register('dashboard', async (content) => {
       const dcls = last && last.disk >= 90 ? 'red' : last && last.disk >= 80 ? 'yellow' : 'green';
       const go = sv.id === 'local' ? '' : `onclick="Router.navigate('server-console',{id:'${escapeHtml(sv.id)}',tab:'overview'})" style="cursor:pointer" title="Open the console"`;
       return `<div class="card" ${go}>
-        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${escapeHtml(sv.name || sv.id)}${sv.id === activeId ? ' <span class="ui-sub">in use</span>' : ''}</b>${state}</div>
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${escapeHtml(sv.name || sv.id)}${sv.hasAccessPassword ? ' <span title="An access password is needed to switch to this server">🔒</span>' : ''}${sv.id === activeId ? ' <span class="ui-sub">in use</span>' : ''}</b>${state}</div>
         ${last ? `<div class="ui-sub" style="margin-top:6px">CPU ${Math.round(last.cpu || 0)}% · memory ${Math.round(last.mem || 0)}% · disk ${Math.round(last.disk || 0)}%</div>
         <div class="disk-bar" style="height:5px;margin:6px 0 0"><div class="disk-bar-fill ${dcls}" style="width:${Math.min(100, last.disk || 0)}%"></div></div>` : `<div class="ui-sub" style="margin-top:6px">${sv.id === 'local' ? 'The machine DockGate runs on. Its Docker summary is below.' : 'No metrics recorded yet.'}</div>`}
         ${setup ? `<div class="ui-sub" style="margin-top:6px">${setup}</div>` : ''}
