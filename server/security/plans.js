@@ -366,6 +366,7 @@ function addRuleCmd({ port, proto, from, action }) {
 const REBOOT = `{{S}}sh -c ${shq('nohup sh -c "sleep 2; systemctl reboot 2>/dev/null || reboot" >/dev/null 2>&1 &')}`;
 
 module.exports = {
+  readFilesScript, fail2banWritePlan,
   DROPIN, DOCKER_BLOCK, DOCKER_BLOCK6, READ_ACCESS, READ_FIREWALL, READ_USERS, READ_POSTURE, readKeysScript, SSHD_RELOAD_ROOT,
   accessPlan, deployUserPlan, createUserPlan, setPermsPlan, lockPlan, deleteUserPlan, addKeysPlan, writeKeysPlan,
   isolationPlan, exposeCmd, deleteRulesCmd, addRuleCmd, REBOOT, b64, shq,
@@ -384,7 +385,7 @@ const READ_FAIL2BAN = [
   `for j in $({{S}}fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:[[:space:]]*//p' | tr ',' ' '); do ` +
     'echo "@@jail $j"; {{S}}fail2ban-client status "$j" 2>/dev/null; ' +
     'echo "@@bans $j"; {{S}}fail2ban-client get "$j" banip --with-time 2>/dev/null; ' +
-    'echo "@@opts $j"; for k in maxretry findtime bantime; do printf "%s=" $k; {{S}}fail2ban-client get "$j" $k 2>/dev/null | tail -1; done; ' +
+    'echo "@@opts $j"; for k in maxretry findtime bantime bantime.increment bantime.factor bantime.maxtime; do printf "%s=" $k; {{S}}fail2ban-client get "$j" $k 2>/dev/null | tail -1; done; ' +
     'printf "logpath="; {{S}}fail2ban-client get "$j" logpath 2>/dev/null | tr "\\n" " "; echo; ' +
     'printf "ignoreip="; {{S}}fail2ban-client get "$j" ignoreip 2>/dev/null | tr "\\n" " "; echo; ' +
     `printf "port="; {{S}}fail2ban-client -d 2>/dev/null | grep "'$j', 'action'" | grep -o "\\['port', '[^']*'\\]" | head -1; echo; ` +
@@ -396,26 +397,51 @@ const READ_FAIL2BAN = [
   // Every option a jail file sets under [sshd] / [recidive], as "file|jail|line", in fail2ban's read order —
   // tells WHICH file wins when the running value is not the one in DockGate's file.
   `echo @@f2bsrc; for f in /etc/fail2ban/jail.d/*.conf /etc/fail2ban/jail.local /etc/fail2ban/jail.d/*.local; do [ -f "$f" ] || continue; ` +
-    `{{S}}awk -v F="$f" '/^[ \\t]*\\[/{s=$0; gsub(/[][ \\t]/,"",s)} (s=="sshd"||s=="recidive") && /^[ \\t]*[A-Za-z][A-Za-z.]*[ \\t]*=/{print F"|"s"|"$0}' "$f" 2>/dev/null; done`,
+    `{{S}}awk -v F="$f" '/^[ \\t]*\\[/{s=$0; gsub(/[][ \\t]/,"",s)} (s=="sshd"||s=="recidive"||s=="DEFAULT") && /^[ \\t]*[A-Za-z][A-Za-z.]*[ \\t]*=/{print F"|"s"|"$0}' "$f" 2>/dev/null; done; ` +
+    // fail2ban.local / fail2ban.d/*.local can replace DockGate's dbpurgeage and logtarget.
+    `for f in /etc/fail2ban/fail2ban.d/*.conf /etc/fail2ban/fail2ban.local /etc/fail2ban/fail2ban.d/*.local; do [ -f "$f" ] || continue; ` +
+    `{{S}}awk -v F="$f" '/^[ \\t]*\\[/{s=$0; gsub(/[][ \\t]/,"",s)} s=="Definition" && /^[ \\t]*(dbpurgeage|logtarget)[ \\t]*=/{print F"|"s"|"$0}' "$f" 2>/dev/null; done`,
   `echo @@history; {{S}}grep -hE '\\] (Ban|Unban|Increase Ban|Restore Ban) ' ${F2B.LOG_FILE} 2>/dev/null | tail -n 150`,
   "echo @@myip; echo \"$SSH_CONNECTION\" | awk '{print $1}'",
   "echo @@sshport; {{S}}sshd -T 2>/dev/null | awk '$1==\"port\"{print $2; exit}'",
 ].join('; ');
 
 /** Write DockGate's fail2ban files, test the whole config, reload (bans are kept). Restore on failure. */
-function fail2banSettingsPlan(settings, sshPort) {
-  const jail = F2B.buildJailConf(settings, sshPort), daemon = F2B.buildDaemonConf(settings);
-  const restore = `for f in ${F2B.JAIL_FILE} ${F2B.DAEMON_FILE}; do if {{S}}test -f "$f.dockgate-prev"; then {{S}}mv -f "$f.dockgate-prev" "$f"; else {{S}}rm -f "$f"; fi; done`;
+// Write fail2ban files in one job: back up every file, write them, test the whole configuration, reload (bans
+// are kept), and put every file back if the test or the reload fails. `files`: [{ path, text, mode? }].
+// Files other than DockGate's keep a copy as <file>.dockgate-backup (fail2ban only reads *.conf / *.local).
+const F2B_PATH = /^\/etc\/fail2ban\/(jail\.d\/|fail2ban\.d\/)?[\w.-]+\.(conf|local)$/;
+function fail2banWritePlan(files, { label } = {}) {
+  for (const o of files) if (!F2B_PATH.test(o.path) || o.path.includes('..')) throw new Error(`Refusing to write ${o.path}`);
+  const own = new Set([F2B.JAIL_FILE, F2B.DAEMON_FILE]);
+  const paths = files.map(o => o.path).join(' ');
+  const restore = `for f in ${paths}; do if {{S}}test -f "$f.dockgate-prev"; then {{S}}mv -f "$f.dockgate-prev" "$f"; else {{S}}rm -f "$f"; fi; done`;
+  const others = files.filter(o => !own.has(o.path));
   return {
     steps: [
-      { label: 'Back up the current DockGate fail2ban files', cmd: `command -v fail2ban-client >/dev/null 2>&1 || { echo "fail2ban is not installed — install it in Setup first"; exit 1; }; {{S}}mkdir -p /etc/fail2ban/jail.d /etc/fail2ban/fail2ban.d && for f in ${F2B.JAIL_FILE} ${F2B.DAEMON_FILE}; do if {{S}}test -f "$f"; then {{S}}cp -p "$f" "$f.dockgate-prev"; else {{S}}rm -f "$f.dockgate-prev"; fi; done` },
+      { label: 'Back up the fail2ban files that change', cmd: `command -v fail2ban-client >/dev/null 2>&1 || { echo "fail2ban is not installed — install it in Setup first"; exit 1; }; {{S}}mkdir -p /etc/fail2ban/jail.d /etc/fail2ban/fail2ban.d && for f in ${paths}; do if {{S}}test -f "$f"; then {{S}}cp -p "$f" "$f.dockgate-prev"; else {{S}}rm -f "$f.dockgate-prev"; fi; done` },
+      // tee into an existing file keeps its owner and mode; DockGate's own files are 0644.
+      ...files.map(o => ({ label: label && files.length === 1 ? label : `Write ${o.path}`, cmd: own.has(o.path) ? writeFile(o.path, o.text, '0644') : `echo ${b64(o.text)} | base64 -d | {{S}}tee ${o.path} >/dev/null` })),
       // recidive needs its log file to exist, or fail2ban refuses to start at all.
-      { label: 'Write jail.d/dockgate.conf and fail2ban.d/dockgate.conf', cmd: `${writeFile(F2B.JAIL_FILE, jail, '0644')} && ${writeFile(F2B.DAEMON_FILE, daemon, '0644')} && {{S}}touch ${F2B.LOG_FILE}` },
-      { label: 'Test the whole configuration (fail2ban-client -t)', cmd: `{{S}}fail2ban-client -t >/dev/null 2>&1 || { out=$({{S}}fail2ban-client -t 2>&1 | tail -5); ${restore}; echo "fail2ban rejected the configuration — nothing was applied:"; echo "$out"; exit 1; }` },
+      { label: 'Test the whole configuration (fail2ban-client -t)', cmd: `{{S}}touch ${F2B.LOG_FILE}; {{S}}fail2ban-client -t >/dev/null 2>&1 || { out=$({{S}}fail2ban-client -t 2>&1 | tail -5); ${restore}; echo "fail2ban rejected the configuration — nothing was applied:"; echo "$out"; exit 1; }` },
       { label: 'Reload fail2ban (current bans are kept)', cmd: `if {{S}}fail2ban-client ping >/dev/null 2>&1; then {{S}}fail2ban-client reload >/dev/null; else {{S}}systemctl enable --now fail2ban; fi || { ${restore}; {{S}}fail2ban-client reload >/dev/null 2>&1; echo "reload failed — previous files restored"; exit 1; }` },
-      { label: 'Clean up', cmd: `{{S}}rm -f ${F2B.JAIL_FILE}.dockgate-prev ${F2B.DAEMON_FILE}.dockgate-prev; true` },
+      { label: others.length ? 'Clean up (a copy of each other file is kept as *.dockgate-backup)' : 'Clean up', cmd: `${others.map(o => `{ {{S}}test -f ${o.path}.dockgate-prev && {{S}}cp -p ${o.path}.dockgate-prev ${o.path}.dockgate-backup; true; } && `).join('')}for f in ${paths}; do {{S}}rm -f "$f.dockgate-prev"; done; true` },
     ],
   };
+}
+// DockGate's two files from settings, plus `others` ([{ path, text }]) rewritten in the same job (taking settings
+// over from jail.local and friends).
+function fail2banSettingsPlan(settings, sshPort, others = []) {
+  return fail2banWritePlan([{ path: F2B.JAIL_FILE, text: F2B.buildJailConf(settings, sshPort) }, { path: F2B.DAEMON_FILE, text: F2B.buildDaemonConf(settings) }, ...others]);
+}
+/** Every fail2ban config file DockGate shows in Configuration → Files (sections "file <path>"). */
+const READ_F2B_FILES = 'for f in /etc/fail2ban/jail.d/* /etc/fail2ban/jail.local /etc/fail2ban/fail2ban.d/* /etc/fail2ban/fail2ban.local; do ' +
+  '[ -f "$f" ] || continue; case "$f" in *" "*) continue;; *.conf|*.local) echo "@@file $f"; {{S}}cat "$f" 2>/dev/null;; esac; done';
+
+/** Read several fail2ban files at once (sections "file0", "file1", …). */
+function readFilesScript(paths) {
+  for (const p of paths) if (!/^\/etc\/fail2ban\/[\w.\/-]+$/.test(p) || p.includes('..')) throw new Error(`Refusing to read ${p}`);
+  return paths.map((p, i) => `echo @@file${i}; {{S}}cat ${p} 2>/dev/null`).join('; ');
 }
 
 const f2bBanCmd = (jail, ip) => `{{S}}fail2ban-client set ${jail} banip ${ip}`;
@@ -642,3 +668,4 @@ function sourcesLifelinePlan({ id, backend, zone, cmds, test }) {
 }
 Object.assign(module.exports, { sourcesCmds, sourcesLifelinePlan });
 module.exports.UFW_DISABLE = UFW_DISABLE;
+module.exports.READ_F2B_FILES = READ_F2B_FILES;
