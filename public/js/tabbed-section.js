@@ -1,7 +1,7 @@
 // Tabbed section wrapper — hosts several existing routes as the pages of one section (Resources, Deploy,
 // Observe, Tools). The sidebar lists the pages, so there is no second tab bar on the page itself. It invokes
-// the existing Router handler for the active page into a sub-container, manages that handler's cleanup, and
-// bumps Router._navId so the previous page's in-flight async / pollers self-invalidate.
+// the existing Router handler for the active page into a sub-container and manages that handler's cleanup.
+// Router.navigate already bumps Router._navId, so the previous page's in-flight async / pollers self-invalidate.
 //
 // renderTabbedSection(content, params, { tabs: [[routeKey,label],...], default: routeKey })
 function renderTabbedSection(content, params, config) {
@@ -16,8 +16,10 @@ function renderTabbedSection(content, params, config) {
     if (subCleanup) { try { subCleanup(); } catch (e) {} subCleanup = null; }
     const handler = Router.routes[tab];
     if (!handler) { sub.innerHTML = '<div class="empty-state"><p>Not found</p></div>'; return; }
-    // Bump the nav id so any in-flight async from the previous tab discards itself (isActiveNav).
-    const navId = ++Router._navId;
+    // Use the navigation id Router.navigate gave this page. (Bumping it here made Router think another
+    // navigation had happened, so it ran the cleanup of the page it had just opened: a page whose handler
+    // returned at once, like Events, lost its live stream right after opening.)
+    const navId = Router._navId;
     sub.innerHTML = '<div class="empty-state"><div class="skeleton" style="width:200px;height:24px;margin-bottom:16px"></div><div class="skeleton" style="width:300px;height:16px"></div></div>';
     try {
       const cleanup = await handler(sub, params);

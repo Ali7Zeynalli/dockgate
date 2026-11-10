@@ -447,9 +447,11 @@ io.on('connection', (socket) => {
     if (logStream) { try { logStream.destroy(); } catch(e){} logStream = null; }
     try {
       const container = dockerService.docker.getContainer(containerId);
-      const opts = { stdout: true, stderr: true, tail, follow: true, timestamps };
+      // The log viewer loads at most 10,000 of the newest lines (also inside a time range).
+      const n = Math.min(10000, Math.max(1, parseInt(tail, 10) || 100));
+      const opts = { stdout: true, stderr: true, tail: n, follow: true, timestamps: !!timestamps };
       const sec = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : null);
-      if (sec(since)) { opts.since = sec(since); opts.tail = 20000; }
+      if (sec(since)) { opts.since = sec(since); opts.tail = Math.max(n, 10000); }
       if (sec(until)) { opts.until = sec(until); opts.follow = false; }
       logStream = await container.logs(opts);
       logStream.on('data', (chunk) => {
@@ -509,11 +511,16 @@ io.on('connection', (socket) => {
           else resolve(stream);
         });
       });
+      // Docker sends one JSON object per line, but one chunk can carry several (a replayed range) or half of one.
+      let pending = '';
       eventStream.on('data', (chunk) => {
-        try {
-          const event = JSON.parse(chunk.toString());
-          socket.emit('events:data', event);
-        } catch (e) { /* ignore parse errors */ }
+        pending += chunk.toString();
+        const lines = pending.split('\n'); pending = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try { socket.emit('events:data', JSON.parse(line)); } catch (e) { /* ignore parse errors */ }
+        }
+        if (pending.trim().startsWith('{') && pending.trim().endsWith('}')) { try { socket.emit('events:data', JSON.parse(pending)); pending = ''; } catch (e) { /* not complete yet */ } }
       });
       eventStream.on('error', (err) => {
         socket.emit('events:error', { error: err.message });

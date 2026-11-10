@@ -60,11 +60,11 @@ async function renderFail2banPanel(serverId, container) {
     <details class="f2b-card" data-banned-card style="margin-top:4px"><summary><span class="f2b-chev" aria-hidden="true">›</span><span><b>Banned IPs</b> ${UI.pill(totalBanned ? 'bad' : 'off', `${rows.length} banned`)}<div class="ui-sub">Blocked right now. They are released automatically when their time runs out.</div></span><span>${UI.primary('Ban an IP', 'data-ban')}</span></summary>
       <div style="padding:12px 14px;display:grid;gap:8px"><input class="input" id="f2b-q" placeholder="Search IP or jail…" style="width:220px;max-width:100%"><div data-banned></div></div></details>
     <div data-config style="margin-top:20px"></div>
-    <details class="f2b-card" style="margin-top:20px"><summary><span class="f2b-chev" aria-hidden="true">›</span><span><b>Ban history</b><div class="ui-sub">${f.history.length} events from /var/log/fail2ban.log, newest first</div></span><span></span></summary><div style="padding:12px 14px" data-history></div></details>
+    <details class="f2b-card" style="margin-top:20px"><summary><span class="f2b-chev" aria-hidden="true">›</span><span><b>Ban history</b><div class="ui-sub">fail2ban's own log (/var/log/fail2ban.log): bans, unbans and the failed logins it counted</div></span><span></span></summary><div style="padding:12px 14px" data-history></div></details>
 `;
 
   renderServiceBar(serverId, 'fail2ban', container.querySelector('[data-bar]'), { label: 'fail2ban', note: f.version ? escapeHtml(f.version) + ' · Reload keeps current bans' : 'Reload keeps current bans', onChange: reload });
-  f2bHistory(f, container.querySelector('[data-history]'));
+  f2bHistory(serverId, container.querySelector('[data-history]'));
 
   const saveSettings = async (settings, title) => {
     const { jobId } = await API.post(`/servers/${serverId}/fail2ban/settings`, { settings, confirm: true });
@@ -445,10 +445,20 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
   draw();
 }
 
-function f2bHistory(f, body, page = 1) {
-  const pages = Math.max(1, Math.ceil(f.history.length / 25)); page = Math.min(Math.max(1, page), pages);
-  body.onclick = (e) => { const pg = e.target.closest('[data-page]'); if (pg && !pg.disabled) f2bHistory(f, body, Number(pg.dataset.page)); };
-  body.innerHTML = UI.table([{ label: 'Time' }, { label: 'Jail' }, { label: 'Event' }, { label: 'IP' }], f.history.slice((page - 1) * 25, page * 25).map(h => ({ cells: [
-    `<span class="ui-sub">${escapeHtml(h.time)}</span>`, escapeHtml(h.jail), `<span style="color:${/Unban/.test(h.action) ? 'var(--success)' : 'var(--danger)'};font-weight:600;font-size:12px">${escapeHtml(h.action)}</span>`, `<span class="td-mono">${escapeHtml(h.ip)}</span>`,
-  ] })), { minWidth: 520, empty: 'No ban events in /var/log/fail2ban.log' }) + UI.pager(page, f.history.length, 25);
+// Ban history: fail2ban's log in the shared LogViewer (jail = source, Ban = warning, errors = error),
+// loaded when the card is opened. "Bans only" puts a preset in the search box.
+function f2bHistory(serverId, body) {
+  const card = body.closest('details');
+  const mount = () => {
+    if (body._lv) return;
+    body._lv = LogViewer.mount(body, {
+      key: 'f2b-log', fileName: `fail2ban-${serverId}`, height: '50vh',
+      retention: 'The server keeps this log (logrotate)', empty: 'No lines in /var/log/fail2ban.log.',
+      tools: '<button type="button" class="btn btn-sm btn-secondary" data-bans aria-pressed="false" title="Show only Ban / Unban lines">Bans only</button>',
+      onTools(el, v) { el.querySelector('[data-bans]').addEventListener('click', (e) => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', String(on)); v.setQuery(on ? '\\b(Ban|Unban)\\b' : '', on); }); },
+      load: async (limit) => ({ text: (await API.get(`/servers/${serverId}/host/logs?file=${encodeURIComponent('/var/log/fail2ban.log')}&lines=${limit}`)).text || '' }),
+    });
+  };
+  if (!card || card.open) mount();
+  else card.addEventListener('toggle', () => { if (card.open) mount(); });
 }

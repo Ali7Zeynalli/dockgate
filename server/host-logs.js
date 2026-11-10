@@ -25,7 +25,7 @@ function runWorkerCmd(server, cmd) {
   if (server && (server.id === 'local' || server.host === 'local')) {
     const { exec } = require('child_process');
     return new Promise((resolve, reject) => {
-      exec(cmd, { timeout: 15000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+      exec(cmd, { timeout: 15000, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
         if (err && !stdout) return reject(new Error((stderr || err.message || 'local log read failed').toString().trim()));
         resolve(stdout || stderr || '');
       });
@@ -34,7 +34,7 @@ function runWorkerCmd(server, cmd) {
 
   return new Promise((resolve, reject) => {
     const cfg = { host: server.host, port: server.port, username: server.username, keyPath: server.keyPath || null, password: server.password || null, passphrase: server.passphrase || null, hostKey: server.host_key || null, cmd };
-    const child = execFile(process.execPath, [path.join(__dirname, 'host-logs-worker.js'), JSON.stringify(cfg)], { maxBuffer: 8 * 1024 * 1024 });
+    const child = execFile(process.execPath, [path.join(__dirname, 'host-logs-worker.js'), JSON.stringify(cfg)], { maxBuffer: 32 * 1024 * 1024 });
     const to = setTimeout(() => { try { child.kill(); } catch (e) {} reject(new Error('host logs timed out')); }, 25000);
     let buf = '', err = '';
     child.stdout.on('data', d => { buf += d.toString(); });
@@ -58,10 +58,15 @@ async function discoverLogSources(server) {
   return { units, files };
 }
 
+// The log viewer loads up to 10,000 of the newest lines. Text is cut by lines (not characters), so a
+// long line never pushes the newest lines out.
+const MAX_LINES = 10000;
+const lastLines = (text, n) => { const a = String(text || '').split('\n'); if (a.length && a[a.length - 1] === '') a.pop(); return a.slice(-n).join('\n'); };
+
 // opts: { source } | { unit } | { file }. Builds the validated read command.
 function collectHostLogs(server, opts, lines) {
   return new Promise((resolve, reject) => {
-    const n = Math.min(2000, Math.max(10, parseInt(lines, 10) || 200));
+    const n = Math.min(MAX_LINES, Math.max(10, parseInt(lines, 10) || 200));
     let cmd, label;
     if (opts && opts.unit) {
       if (!VALID_UNIT.test(opts.unit)) return reject(new Error('invalid unit name'));
@@ -77,8 +82,8 @@ function collectHostLogs(server, opts, lines) {
       label = opts.source;
       cmd = tpl.replace(/%N/g, String(n));
     }
-    runWorkerCmd(server, cmd).then(text => resolve({ label, lines: n, text: text.slice(-200000) })).catch(reject);
+    runWorkerCmd(server, cmd).then(text => resolve({ label, lines: n, text: lastLines(text, n) })).catch(reject);
   });
 }
 
-module.exports = { SOURCES, discoverLogSources, collectHostLogs, isValidUnit, isLogFile };
+module.exports = { SOURCES, discoverLogSources, collectHostLogs, isValidUnit, isLogFile, lastLines, MAX_LINES };

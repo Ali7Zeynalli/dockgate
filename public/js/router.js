@@ -24,7 +24,7 @@ const Router = {
     const SECTION_OF = {
       containers: 'resources', images: 'resources', volumes: 'resources', networks: 'resources', builds: 'resources', prune: 'resources', cleanup: 'resources',
       compose: 'deploy', templates: 'deploy', registries: 'deploy',
-      logs: 'observe', events: 'observe', audit: 'observe',
+      logs: 'observe', events: 'observe', audit: 'observe', 'notification-log': 'observe',
       terminal: 'tools', files: 'tools', schedules: 'tools',
     };
     const TAB = { cleanup: 'prune' };
@@ -33,6 +33,7 @@ const Router = {
     if ((path === 'resources' || path === 'deploy') && TAB[p.tab]) return { path, params: { ...p, tab: TAB[p.tab] } };
     if (SECTION_OF[path]) { delete p.tab; return { path: SECTION_OF[path], params: { ...p, tab: TAB[path] || path } }; }
     if (path === 'settings' && p.tab === 'agent') return { path: 'infra', params: { tab: 'agent' } };
+    if (path === 'settings' && p.tab === 'log') return { path: 'observe', params: { tab: 'notification-log' } }; // the log moved to Observe
     return { path, params: p };
   },
 

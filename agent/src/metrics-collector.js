@@ -13,6 +13,7 @@ class MetricsCollector {
     this.prevCpu = null;
     this.prevNet = null;
     this.prevNetTime = 0;
+    this.prevContainerNet = new Map(); // containerId -> { rx, tx, t } for per-second network rates
   }
 
   start() {
@@ -115,7 +116,10 @@ class MetricsCollector {
       }
 
       // 5. Disk df
-      exec('df -B1 / 2>/dev/null', (err, stdout) => {
+      // The host's disk, not the agent container's own layer: /host/var/log is bind-mounted from the host and sits on
+      // its root filesystem on a normal install (a separate /var/log partition would be measured instead).
+      const diskPath = fs.existsSync('/host/var/log') ? '/host/var/log' : '/';
+      exec(`df -B1 ${diskPath} 2>/dev/null`, (err, stdout) => {
         let diskTotalBytes = 0, diskUsedBytes = 0, diskPercent = 0;
         if (!err && stdout) {
           const lines = stdout.trim().split('\n');
@@ -146,7 +150,7 @@ class MetricsCollector {
   // ---- PER-CONTAINER METRICS VIA DOCKERODE ----
 
   async getContainerStats() {
-    const out = {};
+    const out = {}, seen = new Set();
     try {
       const containers = await this.docker.listContainers({ all: false });
       const fetches = containers.map(async (c) => {
@@ -166,8 +170,12 @@ class MetricsCollector {
             cpuPercent = Math.round(((cpuDelta / systemDelta) * numCpus * 100) * 10) / 10;
           }
 
-          // Calculate Memory
-          const memUsed = Math.max(0, (stats.memory_stats?.usage || 0) - (stats.memory_stats?.stats?.cache || 0));
+          // Memory the way `docker stats` shows it: usage minus the page cache that can be dropped.
+          // cgroup v2 (Ubuntu 22.04+, Debian 12+) reports it as inactive_file, cgroup v1 as total_inactive_file
+          // (older daemons: cache). Subtracting only `cache` counted the file cache as used memory on cgroup v2.
+          const ms = stats.memory_stats || {}, mst = ms.stats || {};
+          const reclaim = mst.inactive_file ?? mst.total_inactive_file ?? mst.cache ?? 0;
+          const memUsed = Math.max(0, (ms.usage || 0) - (reclaim < (ms.usage || 0) ? reclaim : 0));
           const memLimit = stats.memory_stats?.limit || 1;
           const memPercent = Math.round((memUsed / memLimit) * 1000) / 10;
 
@@ -180,13 +188,23 @@ class MetricsCollector {
             }
           }
 
+          // Bytes per second from the change since the previous sample (Docker reports totals since start).
+          const now = Date.now(), prev = this.prevContainerNet.get(c.Id);
+          let rxSec = 0, txSec = 0;
+          if (prev && now > prev.t && netRx >= prev.rx && netTx >= prev.tx) {
+            const dt = (now - prev.t) / 1000;
+            rxSec = Math.round((netRx - prev.rx) / dt); txSec = Math.round((netTx - prev.tx) / dt);
+          }
+          this.prevContainerNet.set(c.Id, { rx: netRx, tx: netTx, t: now });
+          seen.add(c.Id);
+
           out[name] = {
             id: c.Id.slice(0, 12),
             cpuPercent: Math.min(100 * numCpus, Math.max(0, cpuPercent)),
             memUsedBytes: memUsed,
             memPercent: Math.min(100, Math.max(0, memPercent)),
-            netRxSec: netRx,
-            netTxSec: netTx,
+            netRxSec: rxSec,
+            netTxSec: txSec,
           };
         } catch (e) {
           // Individual container stats read timeout / container stopping
@@ -194,6 +212,7 @@ class MetricsCollector {
       });
 
       await Promise.all(fetches);
+      for (const id of this.prevContainerNet.keys()) if (!seen.has(id)) this.prevContainerNet.delete(id);
     } catch (e) {
       // List containers error
     }

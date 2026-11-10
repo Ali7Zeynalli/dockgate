@@ -24,13 +24,12 @@ Router.register('settings', async (content, params) => {
       content.innerHTML = `<div id="settings-tab-content"></div>`;
 
       const tabContent = document.getElementById('settings-tab-content');
-      const validTabs = ['general', 'notifications', 'log', 'update', 'system', 'security'];
+      const validTabs = ['general', 'notifications', 'update', 'system', 'security'];
       let activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'general';
 
       function renderTab(tab) {
         if (tab === 'general') renderGeneral();
         else if (tab === 'notifications') renderNotifications();
-        else if (tab === 'log') renderLog();
         else if (tab === 'update') renderUpdate();
         else if (tab === 'system') renderSystemInfo(tabContent); // Docker / OS info (system.js)
         else if (tab === 'security') renderSecurity();
@@ -93,7 +92,7 @@ Router.register('settings', async (content, params) => {
           <div class="ui-ph"><div class="ui-ph-title">Terminal and logs</div></div>
           ${UI.settings([
             { label: 'Default shell', desc: 'Shell picked first in Tools → Terminal and the quick terminal. You can still change it there.', value: sel('set-shell', [['/bin/sh', '/bin/sh'], ['/bin/bash', '/bin/bash'], ['/bin/zsh', '/bin/zsh']], settings.terminalShell || '/bin/sh') },
-            { label: 'Log timestamps', desc: 'Start with timestamps on in Observe → Logs and in container logs.', action: `<div class="toggle ${settings.logTimestamps === 'true' ? 'active' : ''}" id="set-logtimes" role="switch" tabindex="0" aria-checked="${settings.logTimestamps === 'true'}" aria-label="Log timestamps"></div>` },
+            { label: 'Log timestamps', desc: 'Show the time column in container logs (Observe → Logs and the container page). Time filters work either way.', action: `<div class="toggle ${settings.logTimestamps === 'true' ? 'active' : ''}" id="set-logtimes" role="switch" tabindex="0" aria-checked="${settings.logTimestamps === 'true'}" aria-label="Log timestamps"></div>` },
           ])}
           <div class="ui-ph"><div class="ui-ph-title">DockGate service</div></div>
           ${UI.settings([
@@ -152,7 +151,7 @@ Router.register('settings', async (content, params) => {
           const tgConfigured = !!(tgConfig.tg_chat_id);
 
           tabContent.innerHTML = `
-            ${UI.header('Notifications', 'Where alerts go (channels), which servers send them, and which events trigger them (rules).')}
+            ${UI.header('Notifications', 'Where alerts go (channels), which servers send them, and which events trigger them (rules).', `<button class="btn btn-secondary btn-sm" onclick="Router.navigate('observe',{tab:'notification-log'})">See what was sent</button>`)}
             <!-- Channels -->
             <div class="settings-section">
               <div class="settings-section-title">Channels</div>
@@ -417,57 +416,6 @@ Router.register('settings', async (content, params) => {
 
         } catch(e) {
           tabContent.innerHTML = '<div class="text-xs text-muted">Could not load notification settings.</div>';
-        }
-      }
-
-      // ==================== NOTIFICATION LOG TAB ====================
-      async function renderLog() {
-        tabContent.innerHTML = '<div class="text-muted text-sm">Loading notification log...</div>';
-
-        try {
-          const notifLogs = await API.get('/meta/notifications/log?limit=50');
-
-          if (notifLogs.length === 0) {
-            tabContent.innerHTML = `
-              ${UI.header('Notification log', 'Every alert DockGate sent, and whether it arrived.')}
-              <div class="empty-state" style="padding:40px 0;">
-                <h3>No alerts sent yet</h3>
-                <p>Set up a channel and rules in <a href="#/settings?tab=notifications">Notifications</a>; every alert sent will be listed here.</p>
-              </div>
-            `;
-            return;
-          }
-
-          tabContent.innerHTML = `
-            ${UI.header('Notification log', 'Every alert DockGate sent, and whether it arrived.', UI.menu([{ label: `${Icons.trash} Clear the log…`, attrs: 'id="clear-notif-log"', danger: true }]))}
-            <div class="settings-section">
-              <div class="table-wrapper" style="max-height:400px;overflow-y:auto;">
-                <table>
-                  <thead><tr><th>Time</th><th>Channel</th><th>Type</th><th>Subject</th><th>Status</th></tr></thead>
-                  <tbody>
-                    ${notifLogs.map(l => `
-                      <tr>
-                        <td class="text-xs text-muted" style="white-space:nowrap;">${formatTime(l.created_at)}</td>
-                        <td class="td-mono text-xs" style="text-align:center;">${l.channel === 'telegram' ? '📱 TG' : '📧 Email'}</td>
-                        <td class="td-mono text-xs">${escapeHtml(l.event_type)}</td>
-                        <td class="text-sm">${escapeHtml(l.subject)}</td>
-                        <td><span class="badge ${l.status === 'sent' ? 'badge-running' : 'badge-stopped'}">${l.status}</span></td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          `;
-
-          document.getElementById('clear-notif-log')?.addEventListener('click', () => {
-            showDeleteConfirm('Clear notification log', { message: 'Permanently clear the entire notification history log?', phrase: 'delete', confirmLabel: 'Clear', onConfirm: async () => {
-              try { await API.delete('/meta/notifications/log'); showToast('Log cleared'); renderLog(); }
-              catch(e) { showToast(e.message, 'error'); }
-            }});
-          });
-        } catch(e) {
-          tabContent.innerHTML = '<div class="text-xs text-muted">Could not load notification log.</div>';
         }
       }
 

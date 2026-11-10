@@ -16,14 +16,15 @@
     const pillOf = { running: ['ok', 'Running'], stopped: ['warn', 'Stopped'], absent: ['off', 'Not installed'], unreachable: ['bad', 'Unreachable'] }[state] || ['off', 'Not installed'];
     const actions = !installed
       ? `${UI.btn('Install', `data-act="install" data-sid="${sid}"`, 'btn-primary')}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="0"`)}`
-      : `${UI.btn(state === 'running' ? 'Stop' : 'Start', `data-act="${state === 'running' ? 'stop' : 'start'}" data-sid="${sid}"`)}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="1"`)}${UI.btn('Update', `data-act="update" data-sid="${sid}"`)}${UI.btn('Remove', `data-act="remove" data-sid="${sid}"`, 'btn-danger')}`;
-    return [`<b>${escapeHtml(s.name || s.id)}</b>${s.name ? `<div class="ui-sub td-mono">${sid}</div>` : ''}`, `<span class="td-mono text-xs">${escapeHtml(s.host || '')}</span>`, UI.pill(...pillOf), st.version ? `<span class="ui-sub">v${escapeHtml(st.version)}</span>` : '<span class="ui-sub">—</span>', actions];
+      : `${UI.btn(state === 'running' ? 'Stop' : 'Start', `data-act="${state === 'running' ? 'stop' : 'start'}" data-sid="${sid}"`)}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="1"`)}${UI.btn('Update', `data-act="update" data-sid="${sid}"`, st.updateAvailable ? 'btn-primary' : '')}${UI.btn('Remove', `data-act="remove" data-sid="${sid}"`, 'btn-danger')}`;
+    const ver = installed ? `<span class="ui-sub">v${escapeHtml(st.version || '?')}${st.build ? ` · <span class="td-mono">${escapeHtml(st.build.slice(0, 7))}</span>` : ''}</span>${st.updateAvailable ? ` ${UI.pill('warn', 'Update available')}` : ` ${UI.pill('ok', 'Up to date')}`}` : '<span class="ui-sub">—</span>';
+    return [`<b>${escapeHtml(s.name || s.id)}</b>${s.name ? `<div class="ui-sub td-mono">${sid}</div>` : ''}`, `<span class="td-mono text-xs">${escapeHtml(s.host || '')}</span>`, UI.pill(...pillOf), ver, actions];
   }
 
   // Live deploy-log modal. Polls the job; stops cleanly when the job ends or the modal is closed.
   // Always shows a Close button, and a prominent status that turns green/red when the job finishes.
   function openJobModal(jobId, onDone) {
-    const body = `<pre id="edge-job-log" style="max-height:340px;overflow:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;">Starting…</pre>
+    const body = `<div id="edge-job-log"></div>
       <div id="edge-job-status" style="margin-top:10px;font-size:13px;font-weight:600;color:var(--text-muted);">⏳ Working…</div>`;
     const m = showModal('DockGate Agent — deploy', body, []);
     const footer = m.overlay.querySelector('#modal-footer');
@@ -33,13 +34,18 @@
     closeBtn.onclick = () => m.close();
     if (footer) footer.appendChild(closeBtn);
 
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    // The job log in the shared LogViewer: new complete lines are appended as the job writes them.
+    const viewer = LogViewer.mount(m.overlay.querySelector('#edge-job-log'), { key: 'agent-job', fileName: `agent-job-${jobId}`, live: true, limits: null, compact: true, height: '340px',
+      retention: 'DockGate keeps the newest 200 agent jobs', empty: 'Starting…' });
+    let sent = 0;
+    const feed = (log, all) => { const lines = String(log || '').split('\n'); const upto = all ? lines.length : lines.length - 1; if (upto > sent) { viewer.push(lines.slice(sent, upto).join('\n')); sent = upto; } };
     let timer = null, finished = false;
     async function poll() {
       if (!m.overlay || !m.overlay.isConnected) { if (timer) clearTimeout(timer); return; }
       try {
         const j = await API.get('/agent/job/' + jobId);
-        const le = m.overlay.querySelector('#edge-job-log');
-        if (le) { le.textContent = j.log || '(no output yet)'; le.scrollTop = le.scrollHeight; }
+        feed(j.log, j.status !== 'running');
         const se = m.overlay.querySelector('#edge-job-status');
         const per = (j.servers || []).map(s => `${s.id}: ${s.state}${s.message ? ' — ' + s.message : ''}`).join('   ·   ');
         if (j.status === 'running') {
@@ -172,19 +178,40 @@
     return `<div class="ui-page">
       ${UI.header('', 'A small outbound-only container on each server collects metrics and logs, watches Docker events and sends alerts through your notification channels. It needs no inbound port, works behind NAT and keeps watching when DockGate is offline. While it runs, DockGate\'s own monitor for that server pauses so you get no duplicate alerts.', `${UI.btn('Refresh', 'id="edge-refresh"')} ${UI.primary('Install on servers…', 'id="edge-install-all"')}`)}
       ${channelConfigured ? '' : `<div class="insight-card warning" style="margin-bottom:12px"><span>No notification channel is set up yet, so the agent installs in metrics-only mode. <a href="#/settings?tab=notifications">Set up a channel</a></span></div>`}
+      <div id="edge-agent-update"></div>
       <div id="edge-agent-table"><div class="text-xs text-muted">Loading servers…</div></div>
     </div>`;
   };
 
+  // Without a notification channel the agent still installs (metrics-only), so the table loads either way.
+  // (It used to return here, leaving "Loading servers…" for good.)
   window.attachEdgeAgentHandlers = function (root, channelConfigured) {
-    if (!channelConfigured) return;
 
     async function load() {
       const el = document.getElementById('edge-agent-table');
       if (!el) return;
       try {
-        const [serversResp, status] = await Promise.all([API.get('/servers'), API.get('/agent/status')]);
+        const [serversResp, status, cur] = await Promise.all([API.get('/servers'), API.get('/agent/status'), API.get('/agent/current').catch(() => null)]);
         const servers = (serversResp.servers || serversResp || []).filter(s => s.id !== 'local' && s.type !== 'local');
+        // "Update all servers" banner: DockGate carries a newer agent build than some servers run.
+        const behind = servers.filter(s => (status[s.id] || {}).updateAvailable);
+        const ub = document.getElementById('edge-agent-update');
+        if (ub) {
+          ub.innerHTML = behind.length ? `<div class="insight-card warning" style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <span style="flex:1;min-width:220px"><b>A newer agent is available${cur ? ` (v${escapeHtml(cur.version)}${cur.build ? ', build <span class="td-mono">' + escapeHtml(cur.build.slice(0, 7)) + '</span>' : ''})` : ''}.</b>
+              ${behind.length === 1 ? '1 server runs' : behind.length + ' servers run'} an older one: ${behind.map(s => escapeHtml(s.name || s.id)).join(', ')}. Updating restarts the agent (a few seconds); containers are not touched.</span>
+              ${UI.primary(`Update all servers (${behind.length})`, 'id="edge-update-all"')}</div>` : '';
+          ub.querySelector('#edge-update-all')?.addEventListener('click', () => secConfirm({
+            title: `Update the agent on ${behind.length} server${behind.length === 1 ? '' : 's'}`,
+            change: `DockGate copies the new agent image to ${behind.map(s => '<b>' + escapeHtml(s.name || s.id) + '</b>').join(', ')} and recreates the agent there, one server after another.`,
+            protects: 'The new image is on the server before the old agent stops. If the new agent does not start, the previous one is put back. Your containers keep running.',
+            confirmLabel: 'Update all',
+            onConfirm: async () => {
+              try { const r = await API.post('/agent/update-all', {}); if (r.jobId) openJobModal(r.jobId, load); else { showToast('All agents are up to date'); load(); } }
+              catch (e) { showToast(e.message, 'error'); }
+            },
+          }));
+        }
         if (!servers.length) {
           el.innerHTML = `<div class="text-xs text-muted">No remote servers yet. Add one in Servers to install the agent on it.</div>`;
           return;
@@ -225,6 +252,26 @@
     document.getElementById('edge-install-all')?.addEventListener('click', () => openInstallPicker(load));
 
     load();
+  };
+
+  // Once per browser session, shortly after sign-in: if some servers run an older agent build than DockGate carries,
+  // say so in a notice that opens Servers → Edge agent (where "Update all servers" is). Nothing updates by itself.
+  window.edgeAgentUpdateCheck = function () {
+    try { if (sessionStorage.getItem('dg_agent_update_checked')) return; sessionStorage.setItem('dg_agent_update_checked', '1'); } catch (e) { /* storage off: check anyway */ }
+    setTimeout(async () => {
+      let st;
+      try { st = await API.get('/agent/status'); } catch (e) { return; }
+      const behind = Object.keys(st || {}).filter(id => st[id] && st[id].installed && st[id].updateAvailable);
+      if (!behind.length) return;
+      const box = document.getElementById('toast-container'); if (!box) return;
+      const t = document.createElement('div');
+      t.className = 'toast toast-info'; t.style.cursor = 'pointer'; t.setAttribute('role', 'button'); t.tabIndex = 0;
+      t.innerHTML = `<span><b>A newer Edge agent is available.</b> ${behind.length === 1 ? '1 server runs' : behind.length + ' servers run'} an older one. Open Edge agent to update all servers.</span>`;
+      const go = () => { t.remove(); Router.navigate('infra', { tab: 'agent' }); };
+      t.addEventListener('click', go); t.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      box.appendChild(t);
+      setTimeout(() => t.remove(), 20000);
+    }, 6000);
   };
 
   // Push the current rules + channel settings to every installed agent (called after the user

@@ -104,7 +104,7 @@ router.delete('/tags/:id/:tag', (req, res) => {
 router.get('/activity', (req, res) => {
   try {
     const { type, action, server, q } = req.query;
-    const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
+    const limit = Math.min(parseInt(req.query.limit) || 100, 10000); // the audit log keeps the newest 10,000
     const where = [];
     const params = [];
     if (type)   { where.push('resource_type = ?'); params.push(type); }
@@ -416,7 +416,7 @@ router.put('/notifications/hosts/:id', async (req, res) => {
 // ============ NOTIFICATION LOG ============
 router.get('/notifications/log', (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 50;
+    const limit = Math.min(10000, Math.max(1, parseInt(req.query.limit) || 50)); // the log keeps the newest 10,000
     res.json(stmts.getNotificationLogs.all(limit));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

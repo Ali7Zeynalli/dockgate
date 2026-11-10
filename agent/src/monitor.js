@@ -72,12 +72,19 @@ class Monitor {
 
       this.stream = stream;
 
+      // One JSON object per line; a chunk can carry several events (two containers dying together) or half of one.
+      // Parsing the whole chunk dropped all of them, so their alerts were never sent.
+      let pending = '';
       stream.on('data', (chunk) => {
         this.lastEventAt = Date.now();
-        try {
-          const event = JSON.parse(chunk.toString());
-          this._handleEvent(event);
-        } catch (e) { /* ignore parse errors */ }
+        pending += chunk.toString();
+        const lines = pending.split('\n'); pending = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try { this._handleEvent(JSON.parse(line)); } catch (e) { /* ignore parse errors */ }
+        }
+        if (pending.trim().endsWith('}')) { try { this._handleEvent(JSON.parse(pending)); pending = ''; } catch (e) { /* not complete yet */ } }
+        if (pending.length > 1e6) pending = ''; // never grow without end on garbage
       });
 
       stream.on('error', (e) => {

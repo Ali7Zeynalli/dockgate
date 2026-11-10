@@ -346,7 +346,7 @@ migrate('DELETE FROM provision_items WHERE run_id NOT IN (SELECT id FROM provisi
 
 // Retention — keep only last 1000 activity records and 100 builds
 // Saxlama — yalnız son 1000 fəaliyyət qeydi və 100 build saxla
-migrate('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 1000)');
+migrate('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 10000)');
 migrate('DELETE FROM build_history WHERE id NOT IN (SELECT id FROM build_history ORDER BY started_at DESC LIMIT 100)');
 
 // Default settings
@@ -398,7 +398,7 @@ const stmts = {
   logActivityFull: db.prepare('INSERT INTO activity (resource_id, resource_type, resource_name, action, details, server, source_ip) VALUES (?, ?, ?, ?, ?, ?, ?)'),
   clearActivity: db.prepare('DELETE FROM activity'),
   // Retention — keep only last N records / Saxlama — yalnız son N qeydi saxla
-  trimActivity: db.prepare('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 1000)'),
+  trimActivity: db.prepare('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 10000)'),
   trimBuilds: db.prepare('DELETE FROM build_history WHERE id NOT IN (SELECT id FROM build_history ORDER BY started_at DESC LIMIT 100)'),
 
   // Settings
@@ -446,7 +446,7 @@ const stmts = {
   getNotificationLogs: db.prepare('SELECT * FROM notification_log ORDER BY created_at DESC LIMIT ?'),
   getLastNotification: db.prepare('SELECT * FROM notification_log WHERE event_type = ? AND status = ? ORDER BY created_at DESC LIMIT 1'),
   clearNotificationLogs: db.prepare('DELETE FROM notification_log'),
-  trimNotificationLogs: db.prepare('DELETE FROM notification_log WHERE id NOT IN (SELECT id FROM notification_log ORDER BY created_at DESC LIMIT 500)'),
+  trimNotificationLogs: db.prepare('DELETE FROM notification_log WHERE id NOT IN (SELECT id FROM notification_log ORDER BY created_at DESC LIMIT 10000)'),
 
   // Servers (SSH multi-host)
   getServers: db.prepare('SELECT * FROM servers ORDER BY id'),

@@ -15,10 +15,31 @@ const telegram = require('../notifications/telegram');
 const mailer = require('../notifications/mailer');
 const monitorManager = require('../notifications/monitor-manager');
 
-const IMAGE_REF = process.env.AGENT_IMAGE || 'dockgate/agent:1.0.0';
+const fs = require('fs');
+
+// The agent image is built from the agent/ folder that ships inside DockGate. Its tag carries the agent's version
+// and a hash of its code, so any change to the agent gives a new tag: "Update" then really ships new code, and
+// DockGate can tell which servers run an older build. (Before, the tag was a fixed dockgate/agent:1.0.0: Update
+// re-shipped the image built at the first install, and tried to pull that name from Docker Hub first.)
+// AGENT_IMAGE (env) keeps the old behaviour of pulling a ready image from a registry you trust.
+const AGENT_DIR = path.join(__dirname, '..', '..', 'agent');
+function agentBuildInfo(dir = AGENT_DIR) {
+  const h = crypto.createHash('sha256');
+  const files = ['package.json', 'package-lock.json', 'Dockerfile'].map(f => path.join(dir, f))
+    .concat(fs.readdirSync(path.join(dir, 'src')).filter(f => f.endsWith('.js')).sort().map(f => path.join(dir, 'src', f)));
+  for (const f of files) { if (!fs.existsSync(f)) continue; h.update(path.relative(dir, f) + '\0'); h.update(fs.readFileSync(f)); h.update('\0'); }
+  let version = '0.0.0';
+  try { version = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version || version; } catch (e) { /* keep 0.0.0 */ }
+  return { version, build: h.digest('hex').slice(0, 10) };
+}
+const { version: AGENT_VERSION, build: AGENT_BUILD } = agentBuildInfo();
+const REGISTRY_IMAGE = process.env.AGENT_IMAGE || '';
+const IMAGE_REPO = 'dockgate-agent';
+const IMAGE_REF = REGISTRY_IMAGE || `${IMAGE_REPO}:${AGENT_VERSION}-${AGENT_BUILD}`;
 const AGENT_NAME = 'dockgate-agent';
-const AGENT_VERSION = '1.0.0';
 const LABEL_FILTER = ['dockgate.role=agent'];
+// Agent images DockGate made earlier (old fixed tag, or an older build): removed after an update.
+const isOldAgentTag = (t) => t !== IMAGE_REF && (t.startsWith(IMAGE_REPO + ':') || t.startsWith('dockgate/agent:'));
 
 // ---- channel resolution (global smtp_config, overridden per-server) ----
 
@@ -72,12 +93,12 @@ function envHasChannel(env) {
   return env.some(e => e.startsWith('TG_TOKEN=')) || env.some(e => e.startsWith('SMTP_HOST='));
 }
 
-function containerSpec(env) {
+function containerSpec(env, image = IMAGE_REF, labels = { version: AGENT_VERSION, build: REGISTRY_IMAGE ? '' : AGENT_BUILD }) {
   return {
-    Image: IMAGE_REF,
+    Image: image,
     name: AGENT_NAME,
     Env: env,
-    Labels: { 'dockgate.role': 'agent', 'dockgate.version': AGENT_VERSION },
+    Labels: { 'dockgate.role': 'agent', 'dockgate.version': labels.version || '', 'dockgate.build': labels.build || '' },
     HostConfig: {
       Binds: [
         '/var/run/docker.sock:/var/run/docker.sock:ro',
@@ -112,51 +133,62 @@ function pullOn(client, ref) {
   });
 }
 
-// Build the agent image on DockGate's LOCAL daemon from the bundled agent/ context.
-// Uses the host `docker` CLI (same assumption as compose/stack deploy). So the operator never has
-// to run `docker build` by hand — the first install builds it automatically.
+// Build the agent image on DockGate's LOCAL daemon from the bundled agent/ context (host `docker` CLI, the same
+// assumption as compose deploys). One build at a time; a second caller waits for the first.
+let building = null;
 function buildAgentImage(log) {
-  return new Promise((resolve, reject) => {
-    const ctx = path.join(__dirname, '..', '..', 'agent');
-    execFile('docker', ['build', '-t', IMAGE_REF, ctx], { maxBuffer: 16 * 1024 * 1024, timeout: 300000 }, (err, stdout, stderr) => {
+  if (building) return building;
+  building = new Promise((resolve, reject) => {
+    log(`building ${IMAGE_REF} on DockGate's host …\n`);
+    execFile('docker', ['build', '-t', IMAGE_REF, '--label', 'dockgate.role=agent-image', AGENT_DIR], { maxBuffer: 16 * 1024 * 1024, timeout: 600000 }, (err, stdout, stderr) => {
       if (err) return reject(new Error('agent image build failed: ' + String(stderr || err.message).trim().slice(-400)));
-      log('built agent image locally\n');
+      log('built the agent image\n');
       resolve();
     });
-  });
+  }).finally(() => { building = null; });
+  return building;
 }
 
-// Make sure IMAGE_REF exists on the target. Order: already present → pull → (airgapped) save from
-// DockGate's local daemon and load onto the target. forcePull skips the present-check (used by Update).
-async function ensureImage(client, log, forcePull) {
-  if (!forcePull) {
-    try { await client.getImage(IMAGE_REF).inspect(); log(`image present: ${IMAGE_REF}\n`); return; }
-    catch (e) { /* not present — pull */ }
-  }
-  log(`pulling ${IMAGE_REF} ...\n`);
-  try {
+async function hasImage(client, ref) { try { await client.getImage(ref).inspect(); return true; } catch (e) { return false; } }
+
+// Make sure IMAGE_REF is on the target.
+//   default: present → done; else build it on DockGate's host if needed and copy it over (docker save | load).
+//   AGENT_IMAGE set: present → done (Update pulls again); else pull it from that registry.
+async function ensureImage(client, log, forcePull, isLocal) {
+  if (REGISTRY_IMAGE) {
+    if (!forcePull && await hasImage(client, IMAGE_REF)) { log(`image present: ${IMAGE_REF}\n`); return; }
+    log(`pulling ${IMAGE_REF} …\n`);
     await pullOn(client, IMAGE_REF);
     log('pull complete\n');
     return;
-  } catch (pErr) {
-    log(`pull unavailable (${pErr.message}); shipping the locally-built image instead ...\n`);
-    const local = createLocalClient();
-    let localHas = false;
-    try { await local.getImage(IMAGE_REF).inspect(); localHas = true; } catch (e) {}
-    if (!localHas) {
-      // Not on DockGate's daemon either → build it from the bundled context (automatic, one-time).
-      log(`agent image not built yet — building ${IMAGE_REF} on DockGate's host ...\n`);
-      await buildAgentImage(log);
-    }
-    const tar = await new Promise((res, rej) => local.getImage(IMAGE_REF).get((err, stream) => (err ? rej(err) : res(stream))));
-    await new Promise((res, rej) => {
-      client.loadImage(tar, {}, (err, stream) => {
-        if (err) return rej(err);
-        client.modem.followProgress(stream, (e) => (e ? rej(e) : res()));
-      });
-    });
-    log('loaded image onto target\n');
   }
+  if (await hasImage(client, IMAGE_REF)) { log(`image present: ${IMAGE_REF}\n`); return; }
+  const local = isLocal ? client : createLocalClient();
+  if (!await hasImage(local, IMAGE_REF)) await buildAgentImage(log);
+  if (isLocal) return;
+  log(`copying ${IMAGE_REF} to the server …\n`);
+  const tar = await new Promise((res, rej) => local.getImage(IMAGE_REF).get((err, stream) => (err ? rej(err) : res(stream))));
+  await new Promise((res, rej) => {
+    client.loadImage(tar, {}, (err, stream) => {
+      if (err) return rej(err);
+      client.modem.followProgress(stream, (e) => (e ? rej(e) : res()));
+    });
+  });
+  if (!await hasImage(client, IMAGE_REF)) throw new Error('the image did not arrive on the server');
+  log('image copied\n');
+}
+
+// Remove agent images DockGate made earlier that no container uses any more (best effort, never fails a job).
+async function removeOldImages(client, log) {
+  try {
+    const imgs = await client.listImages();
+    for (const im of imgs) {
+      const old = (im.RepoTags || []).filter(isOldAgentTag);
+      for (const t of old) {
+        try { await client.getImage(t).remove(); log(`removed old agent image ${t}\n`); } catch (e) { /* still in use */ }
+      }
+    }
+  } catch (e) { /* listing failed: leave them */ }
 }
 
 async function removeExisting(client, log) {
@@ -174,19 +206,52 @@ async function removeExisting(client, log) {
 
 // ---- operations ----
 
-async function installOne(serverId, log, onPhase, forcePull) {
+// Install / update / reconfigure one host. The new image is in place before the old agent is touched; the old
+// container is renamed (not deleted) until the new one runs, and comes back if the new one fails to start.
+// reconfigure keeps the image the agent runs now (settings change, code does not); install and update use the
+// current build.
+async function installOne(serverId, log, onPhase, kind = 'install') {
   const env = buildEnv(serverId);
   if (!envHasChannel(env)) {
     log('⚠ No notification channel configured — agent will run in metrics-only mode (Telegram/SMTP can be added later via reconfigure)\n');
   }
+  const isLocal = serverId === 'local';
   const client = clientFor(serverId);
-  onPhase('pulling');
-  await ensureImage(client, log, forcePull);
+  let existing = [];
+  try { existing = await client.listContainers({ all: true, filters: { label: LABEL_FILTER } }); } catch (e) { /* none */ }
+  let image = IMAGE_REF, labels;
+  if (kind === 'reconfigure' && existing[0]) {
+    image = existing[0].Image; labels = { version: existing[0].Labels?.['dockgate.version'], build: existing[0].Labels?.['dockgate.build'] };
+    log(`keeping the agent's current image (${image})\n`);
+  } else {
+    onPhase('pulling');
+    await ensureImage(client, log, kind === 'update', isLocal);
+  }
   onPhase('creating');
-  await removeExisting(client, log);
-  const cont = await client.createContainer(containerSpec(env));
-  await cont.start();
-  log(`started ${AGENT_NAME}\n`);
+  const backups = [];
+  for (const c of existing) {
+    const cont = client.getContainer(c.Id);
+    const wasRunning = c.State === 'running';
+    try { await cont.stop({ t: 5 }); } catch (e) { /* already stopped */ }
+    try { await cont.rename({ name: `${AGENT_NAME}-old-${Date.now()}-${backups.length}` }); backups.push({ cont, wasRunning }); log(`stopped the current agent ${c.Id.substring(0, 12)}\n`); }
+    catch (e) { try { await cont.remove({ force: true }); } catch (e2) { /* gone */ } }
+  }
+  try { await client.getContainer(AGENT_NAME).remove({ force: true }); } catch (e) { /* no leftover with the fixed name */ }
+  let cont;
+  try {
+    cont = await client.createContainer(containerSpec(env, image, labels));
+    await cont.start();
+  } catch (e) {
+    log(`the new agent did not start (${e.message}); putting the previous one back\n`);
+    if (cont) { try { await cont.remove({ force: true }); } catch (e2) { /* gone */ } }
+    for (const b of backups) {
+      try { await b.cont.rename({ name: AGENT_NAME }); if (b.wasRunning) await b.cont.start(); log('previous agent restored\n'); break; } catch (e2) { log(`could not restore the previous agent: ${e2.message}\n`); }
+    }
+    throw e;
+  }
+  for (const b of backups) { try { await b.cont.remove({ force: true }); } catch (e) { /* leave it */ } }
+  log(`started ${AGENT_NAME}${labels ? '' : ` (v${AGENT_VERSION}${REGISTRY_IMAGE ? '' : ', build ' + AGENT_BUILD})`}\n`);
+  if (kind !== 'reconfigure') await removeOldImages(client, log);
   onPhase('done');
   // Double-send guard: the on-host agent now covers this host, so stop the central monitor for it.
   try { monitorManager.stopMonitor(serverId); log('central monitor stopped for this host\n'); } catch (e) {}
@@ -223,7 +288,10 @@ async function statusOne(serverId) {
     if (!list.length) return { installed: false, running: false, state: 'absent', version: null };
     const c = list[0];
     const running = c.State === 'running';
-    return { installed: true, running, state: running ? 'running' : 'stopped', version: c.Labels?.['dockgate.version'] || null };
+    const version = c.Labels?.['dockgate.version'] || null, build = c.Labels?.['dockgate.build'] || null;
+    // An agent without a build label predates build tags (1.0.0): it is older than any current build.
+    const updateAvailable = REGISTRY_IMAGE ? (c.Image !== IMAGE_REF) : build !== AGENT_BUILD;
+    return { installed: true, running, state: running ? 'running' : 'stopped', version, build, updateAvailable };
   } catch (e) {
     return { installed: false, running: false, state: 'unreachable', version: null, error: e.message };
   }
@@ -248,8 +316,6 @@ function runJob(kind, serverIds, sourceIp) {
   const perServer = serverIds.map(sid => ({ id: sid, state: 'pending', message: '' }));
   stmts.setAgentJobServers.run(JSON.stringify(perServer), id);
 
-  const forcePull = (kind === 'update');
-
   (async () => {
     let ok = 0, failed = 0;
     const appendLog = (s) => { try { stmts.appendAgentJobLog.run(s, id); } catch (e) {} };
@@ -262,7 +328,7 @@ function runJob(kind, serverIds, sourceIp) {
       try {
         appendLog(`\n=== ${sid} ===\n`);
         if (kind === 'remove') await removeOne(sid, appendLog);
-        else await installOne(sid, appendLog, onPhase, forcePull);
+        else await installOne(sid, appendLog, onPhase, kind === 'install-all' ? 'install' : kind);
         perServer[i].state = 'done'; ok++;
       } catch (e) {
         perServer[i].state = 'failed'; perServer[i].message = e.message; failed++;
@@ -280,7 +346,10 @@ function runJob(kind, serverIds, sourceIp) {
   return id;
 }
 
+/** What DockGate would install now: shown on the Edge agent page next to each server's running build. */
+const current = () => ({ version: AGENT_VERSION, build: REGISTRY_IMAGE ? null : AGENT_BUILD, image: IMAGE_REF });
+
 module.exports = {
-  IMAGE_REF, AGENT_NAME, AGENT_VERSION,
+  IMAGE_REF, AGENT_NAME, AGENT_VERSION, AGENT_BUILD, agentBuildInfo, current, isOldAgentTag,
   installOne, removeOne, powerOne, statusOne, statusAll, runJob,
 };

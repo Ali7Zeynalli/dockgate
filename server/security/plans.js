@@ -477,7 +477,7 @@ Object.assign(module.exports, { FWD_RELOAD, fwdAddCmd, fwdRemoveCmd, fwdRichRule
 
 // ---------------------------------------------------------------- Services sub-pages (Docker · Time sync · Auto updates)
 const UNITS = { docker: 'docker', timesync: 'chrony chronyd systemd-timesyncd', 'unattended-upgrades': 'unattended-upgrades apt-daily-upgrade dnf-automatic' };
-const logsFor = (item) => `echo @@logs; for u in ${UNITS[item]}; do if systemctl list-unit-files "$u.service" >/dev/null 2>&1 && systemctl cat "$u.service" >/dev/null 2>&1; then {{S}}journalctl -u "$u" -n 60 --no-pager -o short-iso 2>/dev/null; break; fi; done`;
+const logsFor = (item) => `echo @@logs; for u in ${UNITS[item]}; do if systemctl list-unit-files "$u.service" >/dev/null 2>&1 && systemctl cat "$u.service" >/dev/null 2>&1; then echo "#unit=$u"; {{S}}journalctl -u "$u" -n 60 --no-pager -o short-iso 2>/dev/null; break; fi; done`;
 const SERVICE_INFO = {
   docker: [
     "echo @@info; {{S}}docker info --format '{{json .}}' 2>/dev/null | head -c 60000",

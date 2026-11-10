@@ -156,8 +156,14 @@ async function openRunLog(runId) {
       `<b>${escapeHtml(i.label || i.item_id)}</b>${i.error ? `<div class="ui-sub" style="color:var(--danger)">${escapeHtml(String(i.error).slice(0, 200))}</div>` : ''}`,
       UI.pill(...(ic[i.state] || ['off', i.state])), `<span class="ui-sub">${i.duration_ms ? (i.duration_ms / 1000).toFixed(1) + ' s' : '—'}</span>`,
     ] })), { minWidth: 420, empty: 'No components recorded.' })}
-    <details style="margin-top:10px"><summary class="text-sm" style="cursor:pointer;font-weight:600">Full log</summary><pre style="white-space:pre-wrap;background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);padding:10px;border-radius:8px;max-height:45vh;overflow:auto;font-size:12px;margin-top:8px">${escapeHtml(d.run.log || '(empty)')}</pre></details>`, []);
+    <details style="margin-top:10px" data-runlog><summary class="text-sm" style="cursor:pointer;font-weight:600">Full log</summary><div data-lv style="margin-top:8px"></div></details>`, []);
   m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+  const det = m.overlay.querySelector('[data-runlog]');
+  det.addEventListener('toggle', () => { // the run's whole log in the shared LogViewer (search, errors, copy, download)
+    if (!det.open || det._lv) return;
+    det._lv = LogViewer.mount(det.querySelector('[data-lv]'), { key: 'setup-run', fileName: `setup-run-${runId}`, limits: null, compact: true, height: '45vh',
+      retention: 'DockGate keeps the newest 200 setup runs', empty: 'This run has no log.', load: async () => ({ text: d.run.log || '' }) });
+  });
   const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Close'; c.onclick = () => m.close();
   m.overlay.querySelector('.modal-footer').append(c);
 }

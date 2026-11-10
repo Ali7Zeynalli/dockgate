@@ -7,6 +7,7 @@ class LogAggregator {
     this.notifier = notifier; // { telegram, mailer }
     this.streams = new Map(); // containerId -> stream
     this.errorCounts = new Map(); // containerName -> [timestamps]
+    this.lastSeen = new Map(); // containerId -> newest log timestamp kept (ms)
     this.stopped = false;
     this.pollTimer = null;
   }
@@ -34,6 +35,10 @@ class LogAggregator {
     try {
       const running = await this.docker.listContainers({ all: false });
       const currentIds = new Set(running.map(c => c.Id));
+
+      // Forget containers not seen for a day (removed ones), so lastSeen stays small
+      const dayAgo = Date.now() - 86400000;
+      for (const [id, t] of this.lastSeen) if (t < dayAgo && !currentIds.has(id)) this.lastSeen.delete(id);
 
       // Clean up stopped streams
       for (const [id, stream] of this.streams.entries()) {
@@ -64,7 +69,11 @@ class LogAggregator {
 
     try {
       const container = this.docker.getContainer(cid);
-      const sinceSec = Math.floor((Date.now() - 30000) / 1000); // last 30s
+      // From the last line already kept for this container (so a reattach after a restart adds no duplicates),
+      // else the last 30 s.
+      const last = this.lastSeen.get(cid);
+      // Docker takes since as seconds with a fraction; 1 µs after the last kept line.
+      const sinceSec = last ? `${Math.floor(last / 1000)}.${String(last % 1000).padStart(3, '0')}001` : Math.floor((Date.now() - 30000) / 1000);
       const logStream = await container.logs({
         follow: true,
         stdout: true,
@@ -129,6 +138,7 @@ class LogAggregator {
         message = tsMatch[2];
       }
 
+      if (tsMatch) { const prev = this.lastSeen.get(containerId) || 0; if (timestamp > prev) this.lastSeen.set(containerId, timestamp); }
       const logItem = {
         timestamp,
         containerId: containerId.slice(0, 12),
@@ -137,10 +147,11 @@ class LogAggregator {
         message,
       };
 
-      this.storage.addLog(logItem);
+      const stored = this.storage.addLog(logItem);
 
-      // Error Anomaly Spike Detection
-      if (logItem.level === 'error') {
+      // Error spike: the level is decided in storage, so read it from the stored line. (logItem.level was always
+      // empty here, so the spike alert never fired.)
+      if (stored && stored.level === 'error') {
         this.trackErrorSpike(containerName, message);
       }
     }

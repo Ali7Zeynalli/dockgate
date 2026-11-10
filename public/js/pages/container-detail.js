@@ -266,87 +266,34 @@ Router.register('container-detail', async (content, params) => {
     loadTop();
   }
 
+  // Live container log in the shared LogViewer (search, levels, histogram, up to 10,000 lines).
   function renderLogs(el, info) {
-    let isPaused = false;
-    let autoScroll = true;
-    el.innerHTML = `
-      <div class="log-toolbar">
-        <button class="btn btn-sm btn-secondary" id="log-pause">${Icons.pause} Pause</button>
-        <button class="btn btn-sm btn-secondary" id="log-clear">Clear</button>
-        <button class="btn btn-sm btn-secondary" id="log-download">${Icons.download} Download</button>
-        <button class="btn btn-sm btn-secondary" id="log-copy">${Icons.copy} Copy</button>
-        <div style="flex:1"></div>
-        <div class="search-input" style="max-width:200px">
-          <span class="nav-item-icon">${Icons.search}</span>
-          <input type="text" placeholder="Search logs..." id="log-search">
-        </div>
-      </div>
-      <div class="log-viewer" id="log-content">Connecting to log stream...</div>
-    `;
-
-    const logEl = document.getElementById('log-content');
-
-    // Subscribe to log stream (and re-subscribe on socket reconnect so it doesn't freeze)
-    const subscribeLogs = () => {
-      const logSettings = { logTimestamps: appSetting('logTimestamps', 'false') };
-      socket.emit('logs:subscribe', { containerId: id, tail: 200, timestamps: logSettings.logTimestamps === 'true' });
-    };
+    let partial = '';
+    const viewer = LogViewer.mount(el, {
+      key: 'container-logs', fileName: `${info.Name?.replace(/^\//, '') || 'container'}-logs`, live: true,  format: 'docker',
+      showTime: appSetting('logTimestamps', 'false') === 'true',
+      retention: 'Docker keeps this log (its log driver limits)',
+      empty: 'No log lines yet.',
+      onLimit: () => subscribeLogs(),
+    });
+    const subscribeLogs = () => { partial = ''; viewer.clear(); socket.emit('logs:subscribe', { containerId: id, tail: viewer.limit, timestamps: true }); };
     subscribeLogs();
     window._activeResub = subscribeLogs;
-    logEl.textContent = '';
-
-    const onLogData = ({ data }) => {
-      if (isPaused) return;
-      const line = document.createElement('div');
-      line.className = 'log-line';
-      line.textContent = data;
-      logEl.appendChild(line);
-      if (logEl.children.length > 5000) logEl.removeChild(logEl.firstChild);
-      if (autoScroll) logEl.scrollTop = logEl.scrollHeight;
+    const mine = (cid) => !cid || id.startsWith(cid) || cid.startsWith(id);
+    const onLogData = ({ containerId, data }) => {
+      if (!mine(containerId) || typeof data !== 'string') return;
+      const text = partial + data; const cut = text.lastIndexOf('\n'); // keep a half-received line for the next chunk
+      if (cut < 0) { partial = text; return; }
+      partial = text.slice(cut + 1); viewer.push(text.slice(0, cut));
     };
-    const onLogNotice = (txt, color) => {
-      const line = document.createElement('div');
-      line.className = 'log-line'; line.style.color = color; line.textContent = txt;
-      logEl.appendChild(line); if (autoScroll) logEl.scrollTop = logEl.scrollHeight;
-    };
-    const onLogEnd = () => onLogNotice('— stream ended —', 'var(--warning)');
-    const onLogError = ({ error }) => onLogNotice(`— log error: ${error} —`, 'var(--danger)');
+    const onLogEnd = ({ containerId } = {}) => { if (!mine(containerId)) return; if (partial) { viewer.push(partial); partial = ''; } viewer.notice('The container stopped writing (stream ended).', 'W'); };
+    const onLogError = ({ containerId, error }) => { if (mine(containerId)) viewer.notice(`Log error: ${error}`, 'E'); };
     socket.on('logs:data', onLogData);
     socket.on('logs:end', onLogEnd);
     socket.on('logs:error', onLogError);
     cleanup.push(() => {
-      socket.off('logs:data', onLogData);
-      socket.off('logs:end', onLogEnd);
-      socket.off('logs:error', onLogError);
-      window._activeResub = null;
-      socket.emit('logs:unsubscribe');
-    });
-
-    document.getElementById('log-pause')?.addEventListener('click', function() {
-      isPaused = !isPaused;
-      this.innerHTML = isPaused ? `${Icons.play} Resume` : `${Icons.pause} Pause`;
-    });
-
-    document.getElementById('log-clear')?.addEventListener('click', () => { logEl.innerHTML = ''; });
-
-    document.getElementById('log-download')?.addEventListener('click', () => {
-      const blob = new Blob([logEl.textContent], { type: 'text/plain' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${info.Name?.replace(/^\//, '') || 'container'}-logs.txt`;
-      a.click();
-    });
-
-    document.getElementById('log-copy')?.addEventListener('click', () => {
-      navigator.clipboard.writeText(logEl.textContent);
-      showToast('Logs copied to clipboard');
-    });
-
-    document.getElementById('log-search')?.addEventListener('input', (e) => {
-      const q = e.target.value.toLowerCase();
-      logEl.querySelectorAll('.log-line').forEach(line => {
-        line.style.display = !q || line.textContent.toLowerCase().includes(q) ? '' : 'none';
-      });
+      socket.off('logs:data', onLogData); socket.off('logs:end', onLogEnd); socket.off('logs:error', onLogError);
+      window._activeResub = null; socket.emit('logs:unsubscribe'); viewer.destroy();
     });
   }
 

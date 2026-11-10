@@ -534,7 +534,9 @@ router.get('/:id/services/:item/info', send(async (req) => {
   const item = req.params.item;
   if (!plans.SERVICE_INFO_ITEMS.includes(item)) throw P.httpError(404, 'No details for this service');
   const sec = await readState(row, plans.serviceInfoScript(item));
-  const out = { item, logs: sec.logs || '' };
+  // logsFor() prints "#unit=<name>" first: the unit whose journal the Recent log viewer reads (up to 10,000 lines)
+  const um = /^#unit=([A-Za-z0-9@._-]+)\s*\n?/.exec(sec.logs || '');
+  const out = { item, unit: um ? um[1] + '.service' : null, logs: um ? (sec.logs || '').slice(um[0].length) : (sec.logs || '') };
   if (item === 'docker') {
     let info = null; try { info = JSON.parse(sec.info || 'null'); } catch (e) {}
     let daemon = {}; try { daemon = sec.daemon ? JSON.parse(sec.daemon) : {}; } catch (e) { daemon = null; }

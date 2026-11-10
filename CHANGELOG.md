@@ -2,6 +2,81 @@
 
 ---
 
+## [2.22.0] - 2026-11-10
+
+### Added
+- **Edge agent updates reach the servers.**
+  - The agent image tag follows the agent's code (`dockgate-agent:<version>-<build>`), so a new DockGate brings a new agent build.
+  - DockGate builds the image itself and copies it to each server over SSH. Nothing is pulled from Docker Hub.
+  - **Servers → Edge agent** shows each server's agent version and build, marked "Update available" or "Up to date".
+  - When servers run an older agent, a banner offers **Update all servers**. After sign-in, a notice says so once per browser session and opens that page.
+  - Updating is safe. The new image is on the server before the old agent stops. The old agent is kept until the new one runs, and comes back if the new one does not start. Old agent images are removed afterwards.
+  - Changing notification settings still recreates the agents, but keeps the version they run. Only Install and Update change the agent's code.
+- **Edge agent 1.1.0** (install it with Update all servers).
+
+### Fixed
+- **DockGate never read the Edge agent on remote servers.** The reply over SSH was read the wrong way, so every query failed. Monitoring → Live, All containers, Log Doctor and the summary used Docker directly instead. This works with already installed 1.0.0 agents as well.
+- **Agent alerts could be lost:** when Docker sent several events at once (two containers stopping together), all of them were dropped.
+- **The agent's "high error spike" Telegram alert never fired.**
+- **Container network in the agent** showed the total bytes since the container started, not bytes per second.
+- **Container memory in the agent** counted the file cache as used memory on cgroup v2 hosts (Ubuntu 22.04+, Debian 12+). It now matches `docker stats`.
+- **Host log lines (auth, syslog, nginx)** keep the time they were written, not the time the agent read them.
+- **Kernel (dmesg) errors** are added once. Before, the same 20 lines were added again every 10 seconds.
+- **Agent log levels:**
+  - a status code counts only where a status stands: a 512-byte response is not an error, and a 404 is a warning;
+  - stderr alone is a warning, not an error, because postgres and nginx write normal lines there.
+- **The agent restarting a container's log stream** no longer adds the last 30 seconds twice.
+- **The agent's query port** listens on 127.0.0.1 only. Other containers on the same Docker network could read its logs.
+- **One log line** keeps at most 8 KB, so 10,000 lines stay inside the agent's 96 MB limit.
+- **Agent disk usage** is the server's disk, not the agent container's own layer.
+- **Servers → Edge agent** stayed on "Loading servers…" when no notification channel was set up.
+- **Log Doctor without the agent** split the log text into single characters.
+
+---
+
+## [2.21.0] - 2026-11-09
+
+### Added
+- **One log viewer everywhere.** Every log in DockGate now has the same view and tools:
+  - search that highlights matches, with regex and match case, and Enter / Shift+Enter to jump between matches;
+  - Error / Warn / Info / Debug chips with counts;
+  - source and time-range filters;
+  - a per-minute bar chart (errors in red) that shows one minute when clicked;
+  - a details panel for a line (JSON is pretty-printed);
+  - Live / Pause, Wrap, Copy and Download.
+- **How many lines to load:** Last 1,000 / 2,000 / 5,000 / 8,000 / 10,000, remembered per place. Only the visible lines are drawn, so 10,000 lines scroll smoothly.
+- Each log says how long it is kept, for example "DockGate keeps the newest 10,000 entries" or "The server keeps these logs".
+- The viewer is used in:
+  - Observe → Logs: Container, All containers, Host logs;
+  - Observe → Events, Audit log and Notifications sent;
+  - Server Console → Logs;
+  - the container page → Logs;
+  - Builds → Logs, with build steps as sources;
+  - the Setup run log;
+  - Fail2ban → Ban history;
+  - Services → Recent log;
+  - the Edge agent job log.
+- **Fail2ban → Ban history** shows fail2ban's own log, with the jail as source and a "Bans only" button.
+- **Services → Recent log** reads the service's journal at the chosen length, and only when the section is opened.
+
+### Changed
+- **Notification log moved to Observe → Notifications sent.** Old `#/settings?tab=log` links open it. Settings → Notifications has a "See what was sent" button.
+- **Host logs** have one implementation: Observe → Logs → Host logs is the same view as Server Console → Logs.
+- Limits raised to 10,000:
+  - host logs, from 2,000 lines and a 200,000-character cut (now cut by lines, so a long line never hides the newest ones);
+  - container logs (live tail);
+  - the audit log (kept and listed, from 1,000);
+  - the notification log (from 500);
+  - Edge agent log queries (from 1,000; an installed agent returns at most 1,000 until it is updated).
+- **Settings → Log timestamps** now shows or hides the time column. Time filters work either way.
+
+### Fixed
+- **Pages in Resources, Deploy, Observe and Tools were cleaned up right after opening when they loaded instantly.** For example, Events lost its live stream at once. The section wrapper no longer bumps the navigation id that Router had just set.
+- **Events:** when Docker sent several events in one chunk (a replayed time range), all of them were dropped. Each line is now read separately.
+- **All containers without the Edge agent** read every running container (not only 8) with Docker's real timestamps. Before, it made up times counting back from now, and split the log text into single characters.
+
+---
+
 ## [2.20.1] - 2026-11-09
 
 ### Changed
