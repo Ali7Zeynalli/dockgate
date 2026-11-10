@@ -2,13 +2,17 @@
 
 ---
 
-## [2.22.2] - 2026-11-10
+## [2.23.0] - 2026-11-10
+
+### Added
+- **Ready Edge agent images for amd64 and arm64.** CI publishes the agent as one multi-arch image, `ghcr.io/ali7zeynalli/dockgate-agent:<version>-<build>`. On Install or Update the server pulls it, and Docker takes the variant for that server's CPU, so nothing is built or copied. The tag comes from `agent/build-info.js`, which DockGate and CI both use. For servers to pull it without a login, the `dockgate-agent` package on GitHub must be public, as `dockgate` is. When the pull is not possible (no internet, a private package, or CI not finished yet), DockGate falls back to building the agent, as below.
 
 ### Fixed
-- **Edge agent on a server with another CPU died with "exec format error".** DockGate built the agent for its own CPU (usually x86_64) and copied that image to every server, so on an ARM64 server (Hetzner CAX, Oracle Ampere, AWS Graviton) it could not start. Now:
+- **Edge agent on a server with another CPU died with "exec format error".** DockGate built the agent for its own CPU (usually x86_64) and copied that image to every server, so on an ARM64 server (Hetzner CAX, Oracle Ampere, AWS Graviton) it could not start. Now, when the published image cannot be pulled:
   - a server with a different CPU builds the agent itself (it needs internet for node:22-alpine and npm);
   - a server with the same CPU still gets a copy from DockGate;
-  - a wrong-CPU image left by 2.22.0 or 2.22.1 is removed and replaced on the next Install or Update.
+  - a wrong-CPU image left by 2.22.0 or 2.22.1 is removed and replaced on the next Install or Update;
+  - the image is always checked against the server's CPU before the agent is started.
 - **A new agent that dies right after starting** fails the job with its last log line. The previous agent is put back. Before, the job said "Completed" while the agent was restarting in a loop.
 
 ---

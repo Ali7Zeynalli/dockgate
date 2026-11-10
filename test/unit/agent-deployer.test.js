@@ -33,7 +33,7 @@ function fakeDaemon(name) {
     buildImage: (ctx, opts, cb) => { steps.push(`${name}:build ${opts.t}`); buildCtx = ctx; d.images.set(opts.t, imgArch()); cb(null, 'stream'); },
     info: async () => ({ Architecture: d.arch }),
     listImages: async () => [...d.images.keys()].map(t => ({ RepoTags: [t] })),
-    pull: (ref, o, cb) => cb(new Error('should not pull')),
+    pull: (ref, o, cb) => { steps.push(`${name}:pull ${ref}`); if (!d.pullable) return cb(new Error('denied')); d.images.set(ref, imgArch()); cb(null, 'stream'); },
     modem: { followProgress: (s, done) => { for (const r of loads) r(); done(null); } },
   };
   // a copied image keeps the CPU it was built for (DockGate's host)
@@ -48,7 +48,7 @@ const { stmts } = require('../../server/db');
 stmts.insertServer.run('srv', 'ssh', '203.0.113.30', 22, 'deploy', null, null, null, '', 'test', 0);
 const D = require('../../server/agent/deployer');
 
-beforeEach(() => { steps.length = 0; remote.failStart = false; remote.crash = false; });
+beforeEach(() => { steps.length = 0; remote.failStart = false; remote.crash = false; remote.pullable = false; });
 
 test('the tag follows the agent code: a changed file gives a new build', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-src-'));
@@ -60,13 +60,16 @@ test('the tag follows the agent code: a changed file gives a new build', () => {
   const b = D.agentBuildInfo(dir);
   assert.equal(a.version, '1.1.0');
   assert.notEqual(a.build, b.build);
-  assert.match(D.IMAGE_REF, /^dockgate-agent:\d+\.\d+\.\d+-[0-9a-f]{10}$/);
+  assert.match(D.IMAGE_REF, /^ghcr\.io\/ali7zeynalli\/dockgate-agent:\d+\.\d+\.\d+-[0-9a-f]{10}$/);
+  assert.equal(D.isOldAgentTag('dockgate-agent:1.1.0-091f83fc8e'), true, 'a 2.22.x local tag is old');
+  const cli = require('node:child_process').execFileSync(process.execPath, [path.join(__dirname, '../../agent/build-info.js')], { encoding: 'utf8' }).trim();
+  assert.equal(D.IMAGE_REF.split(':').pop(), cli, 'CI (agent/build-info.js) publishes exactly the tag DockGate asks for');
   assert.equal(D.isOldAgentTag('dockgate/agent:1.0.0'), true);
   assert.equal(D.isOldAgentTag(D.IMAGE_REF), false);
   assert.equal(D.isOldAgentTag('nginx:1.27'), false);
 });
 
-test('update of an old 1.0.0 agent: build once, copy, then swap; old image removed; no Docker Hub pull', async () => {
+test('update of an old 1.0.0 agent with no published image to pull: build once, copy, then swap; old image removed', async () => {
   remote.images.set('dockgate/agent:1.0.0', 'amd64');
   remote.containers.push({ Id: 'old1', Names: ['/dockgate-agent'], Image: 'dockgate/agent:1.0.0', Labels: { 'dockgate.role': 'agent', 'dockgate.version': '1.0.0' }, State: 'running' });
   const before = await D.statusOne('srv');
@@ -124,5 +127,17 @@ test('an ARM server managed from an x86 DockGate: the agent is built on the serv
   assert.ok(!steps.some(s => s === 'srv:load'), 'not copied');
   assert.equal(remote.images.get(D.IMAGE_REF), 'arm64');
   assert.match(lines.join(''), /the server is arm64, DockGate's host is amd64/);
+  remote.arch = 'x86_64';
+});
+
+test('the published multi-arch image is pulled on the server: nothing built or copied', async () => {
+  remote.arch = 'aarch64'; remote.pullable = true;
+  remote.images.delete(D.IMAGE_REF);
+  await D.installOne('srv', () => {}, () => {}, 'update');
+  assert.ok(steps.includes(`srv:pull ${D.IMAGE_REF}`));
+  assert.ok(!steps.some(s => /build|load/.test(s)), steps.join(' | '));
+  assert.equal(remote.images.get(D.IMAGE_REF), 'arm64');
+  const st = await D.statusOne('srv');
+  assert.equal(st.updateAvailable, false);
   remote.arch = 'x86_64';
 });

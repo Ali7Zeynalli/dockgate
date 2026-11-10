@@ -20,25 +20,20 @@ const fs = require('fs');
 // and a hash of its code, so any change to the agent gives a new tag: "Update" then really ships new code, and
 // DockGate can tell which servers run an older build. (Before, the tag was a fixed dockgate/agent:1.0.0: Update
 // re-shipped the image built at the first install, and tried to pull that name from Docker Hub first.)
-// AGENT_IMAGE (env) keeps the old behaviour of pulling a ready image from a registry you trust.
+// AGENT_IMAGE (env) pins one ready image from a registry you trust instead.
 const AGENT_DIR = path.join(__dirname, '..', '..', 'agent');
-function agentBuildInfo(dir = AGENT_DIR) {
-  const h = crypto.createHash('sha256');
-  const files = ['package.json', 'package-lock.json', 'Dockerfile'].map(f => path.join(dir, f))
-    .concat(fs.readdirSync(path.join(dir, 'src')).filter(f => f.endsWith('.js')).sort().map(f => path.join(dir, 'src', f)));
-  for (const f of files) { if (!fs.existsSync(f)) continue; h.update(path.relative(dir, f) + '\0'); h.update(fs.readFileSync(f)); h.update('\0'); }
-  let version = '0.0.0';
-  try { version = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version || version; } catch (e) { /* keep 0.0.0 */ }
-  return { version, build: h.digest('hex').slice(0, 10) };
-}
+const agentBuildInfo = (dir = AGENT_DIR) => require('../../agent/build-info').buildInfo(dir);
 const { version: AGENT_VERSION, build: AGENT_BUILD } = agentBuildInfo();
 const REGISTRY_IMAGE = process.env.AGENT_IMAGE || '';
-const IMAGE_REPO = 'dockgate-agent';
+// CI publishes this exact tag for amd64 and arm64 (one multi-arch image): a server pulls it and Docker picks the
+// variant for its CPU. AGENT_REPOSITORY points to another registry; AGENT_PULL=0 never pulls (build / copy only).
+const IMAGE_REPO = (process.env.AGENT_REPOSITORY || 'ghcr.io/ali7zeynalli/dockgate-agent').toLowerCase();
+const PULL_PUBLISHED = process.env.AGENT_PULL !== '0';
 const IMAGE_REF = REGISTRY_IMAGE || `${IMAGE_REPO}:${AGENT_VERSION}-${AGENT_BUILD}`;
 const AGENT_NAME = 'dockgate-agent';
 const LABEL_FILTER = ['dockgate.role=agent'];
 // Agent images DockGate made earlier (old fixed tag, or an older build): removed after an update.
-const isOldAgentTag = (t) => t !== IMAGE_REF && (t.startsWith(IMAGE_REPO + ':') || t.startsWith('dockgate/agent:'));
+const isOldAgentTag = (t) => t !== IMAGE_REF && (t.startsWith(IMAGE_REPO + ':') || t.startsWith('dockgate-agent:') || t.startsWith('dockgate/agent:'));
 
 // ---- channel resolution (global smtp_config, overridden per-server) ----
 
@@ -187,6 +182,8 @@ async function copyImage(local, client, log) {
 //   AGENT_IMAGE set: present → done (Update pulls again); else pull it from that registry (multi-arch is the registry's job).
 //   default:
 //     - present and for the server's CPU → done; present for another CPU (copied by an earlier version) → removed, see below;
+//     - pull the multi-arch image CI published (GHCR); Docker takes the variant for the server's CPU;
+//     - no pull (no internet, package not public, CI not finished yet):
 //     - DockGate's host has the same CPU → build there once and copy it over (works without internet on the server);
 //     - another CPU (an ARM server managed from an x86 DockGate) → build on the server itself. Before, the x86 image was
 //       copied there and the agent died with "exec format error";
@@ -206,6 +203,18 @@ async function ensureImage(client, log, forcePull, isLocal, key = 'local') {
     log(`the image on the server is for ${have}, the server is ${target}: removing it\n`);
     try { await client.getImage(IMAGE_REF).remove({ force: true }); } catch (e) { /* replaced below anyway */ }
   }
+  // 1. The published multi-arch image: the server's Docker picks the variant for its CPU. Nothing to build or copy.
+  if (PULL_PUBLISHED) {
+    try {
+      log(`pulling ${IMAGE_REF} …\n`);
+      await pullOn(client, IMAGE_REF);
+      const got = await imageArch(client, IMAGE_REF);
+      if (got && (!target || got === target)) { log(`pulled the ${got} image\n`); return; }
+      log(`the registry has no ${target} image for this tag\n`);
+      try { await client.getImage(IMAGE_REF).remove({ force: true }); } catch (e) { /* replaced below */ }
+    } catch (e) { log(`pull unavailable (${String(e.message).slice(0, 160)}); building it instead\n`); }
+  }
+  // 2. Build: on DockGate's host and copy (same CPU), or on the server itself (another CPU).
   if (isLocal) { await buildAgentImage(log, client, 'local'); return; }
   const local = createLocalClient();
   const here = await daemonArch(local);
