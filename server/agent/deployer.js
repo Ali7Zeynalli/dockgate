@@ -375,6 +375,13 @@ async function statusAll() {
 
 function newJobId() { return 'aj_' + crypto.randomBytes(6).toString('hex'); }
 
+// A job runs inside DockGate's process. If DockGate restarted while one ran (an update of DockGate itself), the
+// row would say "running" for good and the Edge agent page would show it as running forever. Close those at start.
+try {
+  db.prepare("UPDATE agent_jobs SET status = 'failed', error = 'DockGate restarted while this job ran', log = log || ?, finished_at = CURRENT_TIMESTAMP WHERE status = 'running'")
+    .run('\nERROR: DockGate restarted while this job ran. Check the server in Servers → Edge agent and run Update again.\n');
+} catch (e) { /* table missing in an old database: nothing to close */ }
+
 // kind: 'install' | 'update' | 'reconfigure' | 'install-all' | 'remove'
 function runJob(kind, serverIds, sourceIp) {
   const id = newJobId();

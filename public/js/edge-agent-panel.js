@@ -23,10 +23,15 @@
 
   // Live deploy-log modal. Polls the job; stops cleanly when the job ends or the modal is closed.
   // Always shows a Close button, and a prominent status that turns green/red when the job finishes.
+  // Closing it only closes the window: the job keeps running on DockGate, and Servers → Edge agent → Agent jobs
+  // (or the banner there while it runs) opens it again, with the whole log so far.
+  const KIND = { install: 'Install', 'install-all': 'Install', update: 'Update', reconfigure: 'Apply settings', remove: 'Remove' };
   function openJobModal(jobId, onDone) {
     const body = `<div id="edge-job-log"></div>
-      <div id="edge-job-status" style="margin-top:10px;font-size:13px;font-weight:600;color:var(--text-muted);">⏳ Working…</div>`;
-    const m = showModal('DockGate Agent — deploy', body, []);
+      <div id="edge-job-status" style="margin-top:10px;font-size:13px;font-weight:600;color:var(--text-muted);">⏳ Working…</div>
+      <div class="ui-sub" style="margin-top:4px">Closing this window does not stop the job. Reopen it from Servers → Edge agent → Agent jobs.</div>`;
+    const m = showModal('Edge agent job', body, []);
+    if (typeof window._edgeAgentJobsRefresh === 'function' && document.getElementById('edge-agent-jobs')) setTimeout(window._edgeAgentJobsRefresh, 300);
     const footer = m.overlay.querySelector('#modal-footer');
     const closeBtn = document.createElement('button');
     closeBtn.className = 'btn btn-secondary';
@@ -40,11 +45,13 @@
       retention: 'DockGate keeps the newest 200 agent jobs', empty: 'Starting…' });
     let sent = 0;
     const feed = (log, all) => { const lines = String(log || '').split('\n'); const upto = all ? lines.length : lines.length - 1; if (upto > sent) { viewer.push(lines.slice(sent, upto).join('\n')); sent = upto; } };
-    let timer = null, finished = false;
+    let timer = null, finished = false, sawRunning = false, titled = false;
     async function poll() {
       if (!m.overlay || !m.overlay.isConnected) { if (timer) clearTimeout(timer); return; }
       try {
         const j = await API.get('/agent/job/' + jobId);
+        if (!titled) { titled = true; const h = m.overlay.querySelector('.modal-title, .modal-header h3, .modal-header h2'); if (h) h.textContent = `Edge agent · ${KIND[j.kind] || j.kind}${(j.servers || []).length ? ' · ' + j.servers.map(x => x.id).join(', ') : ''}`; }
+        if (j.status === 'running') sawRunning = true;
         feed(j.log, j.status !== 'running');
         const se = m.overlay.querySelector('#edge-job-status');
         const per = (j.servers || []).map(s => `${s.id}: ${s.state}${s.message ? ' — ' + s.message : ''}`).join('   ·   ');
@@ -60,8 +67,10 @@
               + (per ? '   |   ' + per : '');
           }
           closeBtn.className = 'btn btn-primary';   // highlight Close once it's done
-          showToast(okAll ? 'Deploy finished' : (j.status === 'failed' ? 'Deploy failed' : 'Deploy finished with errors'), okAll ? 'success' : 'error');
-          if (typeof onDone === 'function') onDone();
+          if (sawRunning) { // a job reopened after it ended shows its result without a toast
+            showToast(okAll ? 'Agent job finished' : (j.status === 'failed' ? 'Agent job failed' : 'Agent job finished with errors'), okAll ? 'success' : 'error');
+            if (typeof onDone === 'function') onDone();
+          }
           if (timer) clearTimeout(timer);
           return;
         }
@@ -180,6 +189,8 @@
       ${channelConfigured ? '' : `<div class="insight-card warning" style="margin-bottom:12px"><span>No notification channel is set up yet, so the agent installs in metrics-only mode. <a href="#/settings?tab=notifications">Set up a channel</a></span></div>`}
       <div id="edge-agent-update"></div>
       <div id="edge-agent-table"><div class="text-xs text-muted">Loading servers…</div></div>
+      <h3 style="margin:22px 0 8px;font-size:15px">Agent jobs</h3>
+      <div id="edge-agent-jobs"><div class="text-xs text-muted">Loading…</div></div>
     </div>`;
   };
 
@@ -248,14 +259,42 @@
       }
     }
 
-    document.getElementById('edge-refresh')?.addEventListener('click', load);
+    // Agent jobs: the running one on top (banner + Open log), then the recent ones. Any of them reopens its log.
+    let jobsTimer = null, lastRunning = 0;
+    async function loadJobs() {
+      const el = document.getElementById('edge-agent-jobs');
+      if (!el) { clearTimeout(jobsTimer); return; }
+      let jobs = [];
+      try { jobs = await API.get('/agent/jobs'); } catch (e) { el.innerHTML = `<div class="text-xs text-muted">Could not load agent jobs: ${escapeHtml(e.message)}</div>`; return; }
+      const running = jobs.filter(j => j.status === 'running');
+      const what = (j) => `${KIND[j.kind] || escapeHtml(j.kind)}${j.server_id ? ` · ${escapeHtml(j.server_id)}` : j.total > 1 ? ` · ${j.total} servers` : ''}`;
+      const when = (t) => (t ? formatTime(String(t).replace(' ', 'T') + (/[zZ]$/.test(t) ? '' : 'Z')) : '—');
+      const result = (j) => j.status === 'running' ? UI.pill('warn', `Running${j.total > 1 ? ` ${j.ok + j.failed}/${j.total}` : ''}`)
+        : j.status === 'failed' ? UI.pill('bad', 'Failed') : (j.failed ? UI.pill('warn', `${j.failed} of ${j.total} failed`) : UI.pill('ok', 'Done'));
+      el.innerHTML = (running.length ? running.map(j => `<div class="insight-card info" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="flex:1;min-width:200px"><b>Running:</b> ${what(j)} · started ${escapeHtml(when(j.started_at))}</span>${UI.btn('Open log', `data-job="${escapeHtml(j.id)}"`, 'btn-primary')}</div>`).join('') : '')
+        + (jobs.length ? UI.table([{ label: 'Started' }, { label: 'Job' }, { label: 'Result' }, { label: '', align: 'right' }],
+            jobs.slice(0, 10).map(j => ({ cells: [`<span class="ui-sub">${escapeHtml(when(j.started_at))}</span>`, what(j), result(j), UI.btn('Open log', `data-job="${escapeHtml(j.id)}"`)] })), { minWidth: 480 })
+          : '<div class="text-xs text-muted">No agent jobs yet.</div>');
+      el.querySelectorAll('[data-job]').forEach(b => b.addEventListener('click', () => openJobModal(b.dataset.job, () => { load(); loadJobs(); })));
+      if (lastRunning && !running.length) load(); // a job ended while the page was open: refresh versions
+      lastRunning = running.length;
+      clearTimeout(jobsTimer);
+      if (running.length) jobsTimer = setTimeout(loadJobs, 3000);
+    }
+    const loadAll = () => { load(); loadJobs(); };
+    window._edgeAgentJobsRefresh = loadJobs; // a job started anywhere on the page shows up here at once
+
+    document.getElementById('edge-refresh')?.addEventListener('click', loadAll);
     document.getElementById('edge-install-all')?.addEventListener('click', () => openInstallPicker(load));
 
-    load();
+    loadAll();
   };
 
   // Once per browser session, shortly after sign-in: if some servers run an older agent build than DockGate carries,
   // say so in a notice that opens Servers → Edge agent (where "Update all servers" is). Nothing updates by itself.
+  window.openAgentJob = openJobModal;
+
   window.edgeAgentUpdateCheck = function () {
     try { if (sessionStorage.getItem('dg_agent_update_checked')) return; sessionStorage.setItem('dg_agent_update_checked', '1'); } catch (e) { /* storage off: check anyway */ }
     setTimeout(async () => {

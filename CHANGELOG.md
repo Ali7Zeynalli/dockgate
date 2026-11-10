@@ -2,6 +2,20 @@
 
 ---
 
+## [2.23.1] - 2026-11-10
+
+### Added
+- **Edge agent jobs reopen.** Closing a job window only closes the window; the job keeps running on DockGate.
+  - **Servers → Edge agent → Agent jobs** lists the recent jobs (install, update, apply settings) with their result, and **Open log** brings the window back with the whole log so far.
+  - A running job also shows as a banner on that page with **Open log**.
+  - While a job runs, the sidebar shows "▶ 1" on Servers and Edge agent, as Deploy does for compose deploys.
+  - A job reopened after it ended shows its result without a new notice.
+
+### Fixed
+- **An agent job cut off by a DockGate restart** (for example while DockGate itself was updated) stayed "running" for good. DockGate now closes such jobs when it starts, marked as failed with the reason in the log.
+
+---
+
 ## [2.23.0] - 2026-11-10
 
 ### Added
