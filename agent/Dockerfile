@@ -2,6 +2,7 @@
 # Built by DockGate, deployed onto each managed host. No inbound ports; the only
 # listener is a loopback health endpoint for the Docker HEALTHCHECK below.
 FROM node:22-alpine
+LABEL dockgate.role=agent-image
 WORKDIR /app
 
 # Install deps first for layer caching. nodemailer is pure JS; dockerode here only

@@ -7,7 +7,6 @@
 
 const crypto = require('crypto');
 const path = require('path');
-const { execFile } = require('child_process');
 const { stmts, db } = require('../db');
 const { createSshClient, createLocalClient } = require('../docker');
 const { decrypt } = require('../auth/secrets');
@@ -21,25 +20,20 @@ const fs = require('fs');
 // and a hash of its code, so any change to the agent gives a new tag: "Update" then really ships new code, and
 // DockGate can tell which servers run an older build. (Before, the tag was a fixed dockgate/agent:1.0.0: Update
 // re-shipped the image built at the first install, and tried to pull that name from Docker Hub first.)
-// AGENT_IMAGE (env) keeps the old behaviour of pulling a ready image from a registry you trust.
+// AGENT_IMAGE (env) pins one ready image from a registry you trust instead.
 const AGENT_DIR = path.join(__dirname, '..', '..', 'agent');
-function agentBuildInfo(dir = AGENT_DIR) {
-  const h = crypto.createHash('sha256');
-  const files = ['package.json', 'package-lock.json', 'Dockerfile'].map(f => path.join(dir, f))
-    .concat(fs.readdirSync(path.join(dir, 'src')).filter(f => f.endsWith('.js')).sort().map(f => path.join(dir, 'src', f)));
-  for (const f of files) { if (!fs.existsSync(f)) continue; h.update(path.relative(dir, f) + '\0'); h.update(fs.readFileSync(f)); h.update('\0'); }
-  let version = '0.0.0';
-  try { version = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version || version; } catch (e) { /* keep 0.0.0 */ }
-  return { version, build: h.digest('hex').slice(0, 10) };
-}
+const agentBuildInfo = (dir = AGENT_DIR) => require('../../agent/build-info').buildInfo(dir);
 const { version: AGENT_VERSION, build: AGENT_BUILD } = agentBuildInfo();
 const REGISTRY_IMAGE = process.env.AGENT_IMAGE || '';
-const IMAGE_REPO = 'dockgate-agent';
+// CI publishes this exact tag for amd64 and arm64 (one multi-arch image): a server pulls it and Docker picks the
+// variant for its CPU. AGENT_REPOSITORY points to another registry; AGENT_PULL=0 never pulls (build / copy only).
+const IMAGE_REPO = (process.env.AGENT_REPOSITORY || 'ghcr.io/ali7zeynalli/dockgate-agent').toLowerCase();
+const PULL_PUBLISHED = process.env.AGENT_PULL !== '0';
 const IMAGE_REF = REGISTRY_IMAGE || `${IMAGE_REPO}:${AGENT_VERSION}-${AGENT_BUILD}`;
 const AGENT_NAME = 'dockgate-agent';
 const LABEL_FILTER = ['dockgate.role=agent'];
 // Agent images DockGate made earlier (old fixed tag, or an older build): removed after an update.
-const isOldAgentTag = (t) => t !== IMAGE_REF && (t.startsWith(IMAGE_REPO + ':') || t.startsWith('dockgate/agent:'));
+const isOldAgentTag = (t) => t !== IMAGE_REF && (t.startsWith(IMAGE_REPO + ':') || t.startsWith('dockgate-agent:') || t.startsWith('dockgate/agent:'));
 
 // ---- channel resolution (global smtp_config, overridden per-server) ----
 
@@ -133,39 +127,45 @@ function pullOn(client, ref) {
   });
 }
 
-// Build the agent image on DockGate's LOCAL daemon from the bundled agent/ context (host `docker` CLI, the same
-// assumption as compose deploys). One build at a time; a second caller waits for the first.
-let building = null;
-function buildAgentImage(log) {
-  if (building) return building;
-  building = new Promise((resolve, reject) => {
-    log(`building ${IMAGE_REF} on DockGate's host …\n`);
-    execFile('docker', ['build', '-t', IMAGE_REF, '--label', 'dockgate.role=agent-image', AGENT_DIR], { maxBuffer: 16 * 1024 * 1024, timeout: 600000 }, (err, stdout, stderr) => {
-      if (err) return reject(new Error('agent image build failed: ' + String(stderr || err.message).trim().slice(-400)));
-      log('built the agent image\n');
-      resolve();
+// Build the agent image on DockGate's LOCAL daemon from the bundled agent/ folder, through the Docker Engine API.
+// (The `docker build` CLI needs the buildx plugin, which DockGate's image does not have: every build failed with
+// "BuildKit is enabled but the buildx component is missing", so Update stopped before touching the old agent.)
+// One build at a time; a second caller waits for the first.
+const building = new Map(); // daemon key ('local' or server id) -> build in progress
+function agentContextFiles(dir = AGENT_DIR) {
+  const files = ['Dockerfile', 'package.json', 'package-lock.json'].filter(f => fs.existsSync(path.join(dir, f)));
+  return files.concat(fs.readdirSync(path.join(dir, 'src')).filter(f => f.endsWith('.js')).sort().map(f => 'src/' + f));
+}
+function buildAgentImage(log, client = createLocalClient(), key = 'local') {
+  if (building.has(key)) return building.get(key);
+  const job = new Promise((resolve, reject) => {
+    log(key === 'local' ? `building ${IMAGE_REF} on DockGate's host (first time only, can take a few minutes) …\n` : `building ${IMAGE_REF} on the server itself (it pulls node:22-alpine and npm packages; a few minutes) …\n`);
+    client.buildImage({ context: AGENT_DIR, src: agentContextFiles() }, { t: IMAGE_REF, labels: JSON.stringify({ 'dockgate.role': 'agent-image' }), rm: true, forcerm: true }, (err, stream) => {
+      if (err) return reject(new Error('agent image build failed: ' + err.message));
+      let failed = null;
+      client.modem.followProgress(stream, (e) => {
+        if (e || failed) return reject(new Error('agent image build failed: ' + String(failed || e.message).trim().slice(-400)));
+        log('built the agent image\n');
+        resolve();
+      }, (ev) => {
+        if (ev && (ev.error || ev.errorDetail)) failed = ev.error || (ev.errorDetail && ev.errorDetail.message);
+        else if (ev && ev.stream && /^Step \d+\/\d+/.test(ev.stream)) log(ev.stream.trim() + '\n');
+      });
     });
-  }).finally(() => { building = null; });
-  return building;
+  }).finally(() => { building.delete(key); });
+  building.set(key, job);
+  return job;
 }
 
 async function hasImage(client, ref) { try { await client.getImage(ref).inspect(); return true; } catch (e) { return false; } }
 
-// Make sure IMAGE_REF is on the target.
-//   default: present → done; else build it on DockGate's host if needed and copy it over (docker save | load).
-//   AGENT_IMAGE set: present → done (Update pulls again); else pull it from that registry.
-async function ensureImage(client, log, forcePull, isLocal) {
-  if (REGISTRY_IMAGE) {
-    if (!forcePull && await hasImage(client, IMAGE_REF)) { log(`image present: ${IMAGE_REF}\n`); return; }
-    log(`pulling ${IMAGE_REF} …\n`);
-    await pullOn(client, IMAGE_REF);
-    log('pull complete\n');
-    return;
-  }
-  if (await hasImage(client, IMAGE_REF)) { log(`image present: ${IMAGE_REF}\n`); return; }
-  const local = isLocal ? client : createLocalClient();
-  if (!await hasImage(local, IMAGE_REF)) await buildAgentImage(log);
-  if (isLocal) return;
+// CPU architecture of a daemon (docker info: x86_64 / aarch64 …) and of an image (amd64 / arm64 …), in one naming.
+const ARCH = { x86_64: 'amd64', amd64: 'amd64', aarch64: 'arm64', arm64: 'arm64', armv7l: 'arm', armhf: 'arm', arm: 'arm', i386: '386', i686: '386', ppc64le: 'ppc64le', s390x: 's390x' };
+const archName = (a) => ARCH[String(a || '').toLowerCase()] || String(a || '').toLowerCase();
+async function daemonArch(client) { try { return archName((await client.info()).Architecture); } catch (e) { return ''; } }
+async function imageArch(client, ref) { try { return archName((await client.getImage(ref).inspect()).Architecture); } catch (e) { return null; } }
+
+async function copyImage(local, client, log) {
   log(`copying ${IMAGE_REF} to the server …\n`);
   const tar = await new Promise((res, rej) => local.getImage(IMAGE_REF).get((err, stream) => (err ? rej(err) : res(stream))));
   await new Promise((res, rej) => {
@@ -178,7 +178,73 @@ async function ensureImage(client, log, forcePull, isLocal) {
   log('image copied\n');
 }
 
+// Make sure IMAGE_REF is on the target, built for the target's CPU.
+//   AGENT_IMAGE set: present → done (Update pulls again); else pull it from that registry (multi-arch is the registry's job).
+//   default:
+//     - present and for the server's CPU → done; present for another CPU (copied by an earlier version) → removed, see below;
+//     - pull the multi-arch image CI published (GHCR); Docker takes the variant for the server's CPU;
+//     - no pull (no internet, package not public, CI not finished yet):
+//     - DockGate's host has the same CPU → build there once and copy it over (works without internet on the server);
+//     - another CPU (an ARM server managed from an x86 DockGate) → build on the server itself. Before, the x86 image was
+//       copied there and the agent died with "exec format error";
+//     - the copy fails → build on the server as a last try.
+async function ensureImage(client, log, forcePull, isLocal, key = 'local') {
+  if (REGISTRY_IMAGE) {
+    if (!forcePull && await hasImage(client, IMAGE_REF)) { log(`image present: ${IMAGE_REF}\n`); return; }
+    log(`pulling ${IMAGE_REF} …\n`);
+    await pullOn(client, IMAGE_REF);
+    log('pull complete\n');
+    return;
+  }
+  const target = await daemonArch(client);
+  const have = await imageArch(client, IMAGE_REF);
+  if (have && (!target || have === target)) { log(`image present: ${IMAGE_REF}\n`); return; }
+  if (have) {
+    log(`the image on the server is for ${have}, the server is ${target}: removing it\n`);
+    try { await client.getImage(IMAGE_REF).remove({ force: true }); } catch (e) { /* replaced below anyway */ }
+  }
+  // 1. The published multi-arch image: the server's Docker picks the variant for its CPU. Nothing to build or copy.
+  if (PULL_PUBLISHED) {
+    try {
+      log(`pulling ${IMAGE_REF} …\n`);
+      await pullOn(client, IMAGE_REF);
+      const got = await imageArch(client, IMAGE_REF);
+      if (got && (!target || got === target)) { log(`pulled the ${got} image\n`); return; }
+      log(`the registry has no ${target} image for this tag\n`);
+      try { await client.getImage(IMAGE_REF).remove({ force: true }); } catch (e) { /* replaced below */ }
+    } catch (e) { log(`pull unavailable (${String(e.message).slice(0, 160)}); building it instead\n`); }
+  }
+  // 2. Build: on DockGate's host and copy (same CPU), or on the server itself (another CPU).
+  if (isLocal) { await buildAgentImage(log, client, 'local'); return; }
+  const local = createLocalClient();
+  const here = await daemonArch(local);
+  if (target && here && target !== here) {
+    log(`the server is ${target}, DockGate's host is ${here}: building the agent on the server\n`);
+    await buildAgentImage(log, client, key);
+  } else {
+    if (!await hasImage(local, IMAGE_REF)) await buildAgentImage(log, local, 'local');
+    try { await copyImage(local, client, log); }
+    catch (e) { log(`copy failed (${e.message}): building the agent on the server instead\n`); await buildAgentImage(log, client, key); }
+  }
+  const got = await imageArch(client, IMAGE_REF);
+  if (!got) throw new Error('the agent image is not on the server');
+  if (target && got !== target) throw new Error(`the agent image is for ${got} but the server is ${target}`);
+}
+
 // Remove agent images DockGate made earlier that no container uses any more (best effort, never fails a job).
+// A started agent can still die at once (wrong CPU, a crash on boot) and then restart in a loop. Watch it for a few
+// seconds; if it is not running steadily, fail with its last log lines so the previous agent is put back.
+const STARTUP_WATCH_MS = Number(process.env.AGENT_STARTUP_WATCH_MS || 6000);
+async function checkStaysUp(cont, log) {
+  await new Promise(r => setTimeout(r, STARTUP_WATCH_MS));
+  let st;
+  try { st = (await cont.inspect()).State || {}; } catch (e) { return; } // cannot tell: do not fail the job on it
+  if (st.Running && !st.Restarting && !(st.ExitCode > 0)) return;
+  let tail = '';
+  try { const b = await cont.logs({ stdout: true, stderr: true, tail: 5 }); tail = String(Buffer.isBuffer(b) ? b.toString('utf8') : b).replace(/[\x00-\x08]/g, '').trim(); } catch (e) { /* no logs */ }
+  throw new Error(`the new agent stopped right after starting${st.ExitCode ? ` (exit ${st.ExitCode})` : ''}${tail ? ': ' + tail.split('\n').pop().slice(0, 300) : ''}`);
+}
+
 async function removeOldImages(client, log) {
   try {
     const imgs = await client.listImages();
@@ -225,7 +291,7 @@ async function installOne(serverId, log, onPhase, kind = 'install') {
     log(`keeping the agent's current image (${image})\n`);
   } else {
     onPhase('pulling');
-    await ensureImage(client, log, kind === 'update', isLocal);
+    await ensureImage(client, log, kind === 'update', isLocal, serverId);
   }
   onPhase('creating');
   const backups = [];
@@ -241,6 +307,7 @@ async function installOne(serverId, log, onPhase, kind = 'install') {
   try {
     cont = await client.createContainer(containerSpec(env, image, labels));
     await cont.start();
+    await checkStaysUp(cont, log);
   } catch (e) {
     log(`the new agent did not start (${e.message}); putting the previous one back\n`);
     if (cont) { try { await cont.remove({ force: true }); } catch (e2) { /* gone */ } }
