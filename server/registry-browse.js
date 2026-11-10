@@ -144,4 +144,34 @@ async function getRemoteDigest(registry, repoIn, ref) {
   return d;
 }
 
-module.exports = { listTags, getManifestInfo, getRemoteDigest, apiBase, normRepo, HUB_ALIASES };
+// The image config of repo:ref for one platform (os/arch) — the JSON that holds Env, Labels and the build
+// date. Read so a newer image can be shown as "15.8 → 15.19" instead of two digests. Three GETs: the tag's
+// manifest (an index for multi-arch images), the platform's manifest, then its config blob.
+async function getRemoteConfig(registry, repoIn, ref, { os = 'linux', arch = 'amd64', variant } = {}) {
+  const repo = normRepo(registry.server_address, repoIn);
+  const scope = `repository:${repo}:pull`;
+  const accept = [
+    'application/vnd.oci.image.index.v1+json',
+    'application/vnd.docker.distribution.manifest.list.v2+json',
+    'application/vnd.docker.distribution.manifest.v2+json',
+    'application/vnd.oci.image.manifest.v1+json',
+  ].join(', ');
+  const getJson = async (path) => {
+    const res = await v2Get(registry, path, { scope, accept });
+    if (!res.ok) throw new Error(`registry answered ${res.status}`);
+    return res.json();
+  };
+  let man = await getJson(`/v2/${repo}/manifests/${encodeURIComponent(ref)}`);
+  if (Array.isArray(man.manifests)) {
+    const plats = man.manifests.filter(m => m.platform && m.platform.os === os && m.platform.architecture === arch);
+    const pick = plats.find(m => !variant || m.platform.variant === variant) || plats[0];
+    if (!pick) throw new Error(`no ${os}/${arch} image for this tag`);
+    man = await getJson(`/v2/${repo}/manifests/${pick.digest}`);
+  }
+  if (!man.config || !man.config.digest) throw new Error('manifest has no config');
+  const res = await v2Get(registry, `/v2/${repo}/blobs/${man.config.digest}`, { scope });
+  if (!res.ok) throw new Error(`config blob ${res.status}`);
+  return res.json();
+}
+
+module.exports = { listTags, getManifestInfo, getRemoteDigest, getRemoteConfig, apiBase, normRepo, HUB_ALIASES };

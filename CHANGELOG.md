@@ -2,6 +2,30 @@
 
 ---
 
+## [2.24.0] - 2026-11-10
+
+### Added
+- **Image update history.** Every image update and roll back started from DockGate is stored: when, from where, which image, the version and digest before and after, the result and the full log.
+  - It is kept by server and container name (and compose project/service), so it stays after the container is recreated. The last 50 per container are kept.
+  - **Containers → Update history** lists them for the server in use; **Log** opens the stored log.
+  - The audit log gets `image_update` / `image_rollback` entries with "1.0 → 1.1" and the result.
+- **Versions instead of digests.** The newer-image check reads the version from the image config (a `<NAME>_VERSION` variable such as `PG_VERSION`, or the OCI version label) for the local image and for the registry's newer one, so the list says "newer image · 15.8 → 15.19" and the dialog shows the build date. When an image does not say, the digests are shown as before.
+- **Roll back.** Before an update DockGate tags the current image `dockgate-rollback/<container>:previous`, so it stays on the server. **Roll back** points the tag at that image again and recreates the container. For a compose service the compose file is not changed: the tag on the server is moved, then `docker compose up -d --no-deps <service>` runs. The next Update pulls the newest image again.
+- **Container page: updates.** The Overview shows whether a newer image exists ("15.8 → 15.19", when it was checked) with **Update…**, **Roll back…** after an update, and a failed last update with its reason. The header has **Update…** when there is a newer image. A new **Updates** tab lists this container's updates with **Log** and **Roll back**.
+- **Alerts:** "Image update failed or rolled back" (on by default) and "Image updated" (off by default).
+
+### Changed
+- **Update checks the new container and puts the old image back when it fails.** After the recreate DockGate watches the new container for 10 seconds (`IMAGE_UPDATE_WATCH_MS`); one with a healthcheck must turn healthy (up to 90 seconds, `IMAGE_UPDATE_HEALTH_MS`). If it stops, keeps restarting or turns unhealthy, the previous image runs again and the update is marked "Failed · previous image restored" with the last log lines. The update runs as a job: the window shows the steps and the log, can be closed and reopened.
+- **A standalone container is not removed before its replacement runs.** Update and Recreate rename and stop the old container, start the new one, and remove the old one only then; if the new one can not be created or started, the old one is put back.
+- **Container History tab** finds entries by the container name and every ID it had, so the history no longer disappears after an update or recreate. Container actions are now audited with the container name instead of the short ID.
+- **A container that runs an older image than its tag** (another container using the same tag was updated, or the image was pulled by hand) shows "newer image pulled · not recreated" with **Update…**. The check compares the image the tag points at, not the first container's image.
+
+### Fixed
+- **Update and Recreate copied the old image's settings onto the new image.** `docker inspect` mixes the image's environment, command, labels and ports into the container's settings; copying them pinned old values such as `PG_VERSION=15.8` or an old start command onto the new image. Only settings that differ from the old image are copied now.
+- **With Docker's containerd image store** (the default on new Docker installs) the previous image is removed as soon as its tag moves to the newer one. DockGate now tags it before the pull, so a roll back is possible.
+
+---
+
 ## [2.23.1] - 2026-11-10
 
 ### Added

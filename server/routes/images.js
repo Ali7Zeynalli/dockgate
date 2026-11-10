@@ -5,9 +5,13 @@ const { logAction } = require('../audit');
 
 // ---- Newer-image check (server/image-updates.js) ----
 // GET /api/images/updates — last results for the server in use; POST /api/images/updates/check runs it now.
-router.get('/updates', (req, res) => {
-  try { res.json({ results: require('../image-updates').resultsFor(dockerService.getActiveServerId() || 'local') }); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+// "stale": containers whose tag already points at a newer local image (not recreated yet), by container ID.
+router.get('/updates', async (req, res) => {
+  try {
+    const IU = require('../image-updates');
+    const stale = await IU.staleContainers(dockerService.docker).catch(() => new Map());
+    res.json({ results: IU.resultsFor(dockerService.getActiveServerId() || 'local'), stale: Object.fromEntries(stale) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 router.post('/updates/check', async (req, res) => {
   try {

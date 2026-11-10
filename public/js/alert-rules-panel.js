@@ -16,6 +16,8 @@ function alertWhen(type, p) {
     case 'host_cpu': return `above <b>${p.percent ?? 90}%</b> for <b>${p.minutes ?? 10} min</b>`;
     case 'disk_threshold': return `Docker uses more than <b>${p.gb ?? 50} GB</b>`;
     case 'image_update': return 'the daily check finds a newer image for a container\'s tag';
+    case 'image_update_failed': return 'an image update from DockGate fails, or its new container fails and the previous image is put back';
+    case 'image_updated': return 'an image update or roll back from DockGate finishes';
     default: return 'when Docker reports it';
   }
 }

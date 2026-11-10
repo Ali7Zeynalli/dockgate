@@ -315,6 +315,10 @@ const healthRules = [
 ];
 const insertHealthRule = db.prepare('INSERT OR IGNORE INTO notification_rules (event_type, description, cooldown_minutes, enabled, params) VALUES (?, ?, ?, ?, ?)');
 healthRules.forEach(([t, d, cd, en, pr]) => insertHealthRule.run(t, d, cd, en, JSON.stringify(pr)));
+// Results of an image update started in DockGate: a failure / automatic roll back alerts by default,
+// a successful update is opt-in.
+insertHealthRule.run('image_update_failed', 'Image update failed or rolled back', 0, 1, '{}');
+insertHealthRule.run('image_updated', 'Image updated', 0, 0, '{}');
 // "Newer image available" is opt-in: it was just inserted by defaultRules (enabled = 1) on databases that
 // did not have it yet — turn it off once, then leave it to the user.
 try {

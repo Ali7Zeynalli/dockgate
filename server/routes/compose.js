@@ -2591,4 +2591,6 @@ async function scheduledGitSync(serverId, projects = []) {
 }
 router.scheduledGitSync = scheduledGitSync;
 
+// Image updates of compose services run compose through the same file resolution.
+require('../image-update-runner').setComposeExec(execComposeAction);
 module.exports = router;

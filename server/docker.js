@@ -246,35 +246,13 @@ async function recreateContainer(id, newImage) {
   try { await pullImage(image); } catch (e) { /* may already be local */ }
   try { await docker.getImage(image).inspect(); }
   catch (e) { throw new Error(`Image not available: ${image}`); } // abort before touching the old container
-
-  const name = (info.Name || '').replace(/^\//, '');
-  const config = {
-    name,
-    Image: image,
-    Hostname: info.Config.Hostname,
-    Env: info.Config.Env,
-    Cmd: info.Config.Cmd,
-    Entrypoint: info.Config.Entrypoint,
-    Labels: info.Config.Labels,
-    WorkingDir: info.Config.WorkingDir,
-    User: info.Config.User,
-    ExposedPorts: info.Config.ExposedPorts,
-    HostConfig: info.HostConfig,
-  };
-
-  await docker.getContainer(id).remove({ force: true });
-  const created = await docker.createContainer(config);
-  await created.start();
-
-  // Re-attach any networks beyond the primary one (NetworkMode is handled by HostConfig).
-  const nets = info.NetworkSettings?.Networks || {};
-  const primary = info.HostConfig?.NetworkMode;
-  for (const netName of Object.keys(nets)) {
-    if (netName === primary || ['default', 'bridge', 'host', 'none'].includes(netName)) continue;
-    try { await docker.getNetwork(netName).connect({ Container: created.id }); } catch (e) { /* best-effort */ }
-  }
+  // The old container is renamed and stopped, not removed, until the new one has started; if creating or
+  // starting the new one fails the old one is put back. Settings that came from the old image are not copied.
+  const { swapContainer } = require('./image-update-runner'); // late require — it requires this module
+  const sw = await swapContainer(docker, info, image, () => {});
+  await sw.commit();
   invalidateCache('');
-  return { id: created.id };
+  return { id: sw.newId };
 }
 
 async function getContainerStats(id) {
@@ -1159,7 +1137,7 @@ module.exports = {
   containerListFiles, containerDownloadFile, containerUpload,
   getContainerLogs, createContainer, parseStats, demuxLogs,
   listImages, inspectImage, imageHistory, imageSaveStream, loadImage, pullImage, pushImage, pushImageStream, removeImage, tagImage, buildImage, makeDockerfileTar,
-  registryHostOf, checkRegistryAuth,
+  registryHostOf, checkRegistryAuth, lookupAuthConfig,
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
   listVolumeFiles, downloadVolumeFile,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
