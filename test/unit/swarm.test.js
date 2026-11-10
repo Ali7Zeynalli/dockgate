@@ -56,3 +56,39 @@ test('checks: live-restore and an existing swarm block Create', () => withDocker
   assert.equal(r.checks.find(c => c.id === 'live-restore').status, 'bad');
   assert.equal(r.checks.find(c => c.id === 'state').status, 'bad');
 }));
+
+const cl = require('../../server/swarm-cluster');
+
+test('firewall rules: each member allows the Swarm ports from the others; ESP when encrypted', () => {
+  const r = cl.rulesFor(['10.0.0.3'], 4789, false);
+  assert.deepEqual(r.map(x => `${x.port}/${x.proto}`), ['2377/tcp', '7946/tcp', '7946/udp', '4789/udp']);
+  assert.equal(cl.rulesFor(['10.0.0.3'], 4790, true).some(x => x.proto === 'esp'), true);
+  assert.equal(cl.rulesFor(['10.0.0.3'], 4790, true).find(x => x.proto === 'udp' && x.port !== 7946).port, 4790);
+});
+
+test('firewall commands for UFW and firewalld; only IPv4 addresses go into a command', () => {
+  const rules = [{ ip: '10.0.0.3', port: 2377, proto: 'tcp' }, { ip: '10.0.0.3', port: null, proto: 'esp' }, { ip: '1.2.3.4; rm -rf /', port: 2377, proto: 'tcp' }];
+  const ufw = cl.fwCommands('ufw', null, rules);
+  assert.deepEqual(ufw, ["{{S}}ufw allow proto tcp from 10.0.0.3 to any port 2377 comment 'dockgate-swarm' >/dev/null", "{{S}}ufw allow proto esp from 10.0.0.3 comment 'dockgate-swarm' >/dev/null"]);
+  assert.match(cl.fwCommands('ufw', null, rules, true)[0], /^\(\{\{S\}\}ufw delete allow proto tcp from 10\.0\.0\.3 to any port 2377 .*\|\| true\)$/);
+  const fwd = cl.fwCommands('firewalld', 'public', rules.slice(0, 1));
+  assert.match(fwd[0], /--zone=public --add-rich-rule='rule family="ipv4" source address="10\.0\.0\.3" port port="2377" protocol="tcp" accept'/);
+  assert.equal(fwd[fwd.length - 1], '{{S}}firewall-cmd --reload >/dev/null');
+  assert.deepEqual(cl.fwCommands('none', null, rules), []);
+});
+
+test('node labels are validated', () => {
+  assert.deepEqual(cl.parseLabels({ db: 'true', 'zone.eu': 'fsn1' }), { db: 'true', 'zone.eu': 'fsn1' });
+  assert.throws(() => cl.parseLabels({ 'bad key': 'x' }), /letters/);
+  assert.throws(() => cl.parseLabels({ k: 'a\nb' }), /one line/);
+  assert.throws(() => cl.parseLabels([]), /object/);
+});
+
+test('pinnedTo finds services bound to one node by hostname or ID', () => {
+  const nodes = [{ ID: 'n1', Description: { Hostname: 'vps1' } }, { ID: 'n2', Description: { Hostname: 'vps2' } }];
+  const svc = (c) => ({ Spec: { TaskTemplate: { Placement: { Constraints: c } } } });
+  assert.deepEqual(cl.pinnedTo(svc(['node.hostname == vps2']), nodes), ['n2']);
+  assert.deepEqual(cl.pinnedTo(svc(['node.id==n1']), nodes), ['n1']);
+  assert.equal(cl.pinnedTo(svc(['node.labels.db==true']), nodes), null);
+  assert.equal(cl.pinnedTo({ Spec: {} }, nodes), null);
+});

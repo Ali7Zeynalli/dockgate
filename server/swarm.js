@@ -82,8 +82,8 @@ async function status() {
 // ---- checks ----
 
 /** IPv4 addresses of the server, for --advertise-addr. [{ ip, iface, private }] */
-async function addressCandidates() {
-  const sid = serverId();
+async function addressCandidates(forServer) {
+  const sid = forServer || serverId();
   const out = [];
   const add = (ip, iface) => { if (isIPv4(ip) && !ip.startsWith('127.') && !out.some(a => a.ip === ip)) out.push({ ip, iface: iface || '', private: isPrivate(ip) }); };
   if (sid === 'local') {
@@ -109,7 +109,7 @@ async function addressCandidates() {
  * Checks before "Create Swarm" on the server in use. Each: { id, label, status: ok|warn|bad|info, detail, fix? }.
  * Also returns the address candidates and a pool to use.
  */
-async function checks({ pool } = {}) {
+async function checks({ pool, multi = false } = {}) {
   const c = client();
   const info = await c.info();
   const sw = info.Swarm || {};
@@ -158,7 +158,8 @@ async function checks({ pool } = {}) {
       free ? `Use ${free} (it is set in the next step).` : 'Pick a pool that is not used on this server.');
   } else push('pool', 'Overlay address pool', 'ok', `${want} does not overlap this server's networks.`);
 
-  push('firewall', 'Firewall', 'info', 'One server: no ports are opened. Docker listens on 2377/tcp for Swarm management (mutual TLS; joining needs a token). Keep it closed to the internet in the server\'s firewall (Server Console → Firewall) — with UFW\'s default "deny incoming" it is.');
+  if (multi) push('firewall', 'Firewall', 'info', 'Several servers: DockGate opens 2377/tcp, 7946/tcp+udp and the data port (udp) on each server for the other cluster servers only.');
+  else push('firewall', 'Firewall', 'info', 'One server: no ports are opened. Docker listens on 2377/tcp for Swarm management (mutual TLS; joining needs a token). Keep it closed to the internet in the server\'s firewall (Server Console → Firewall) — with UFW\'s default "deny incoming" it is.');
 
   try {
     const projects = await dockerService.listComposeProjects();
@@ -212,7 +213,11 @@ function initOptions(body = {}) {
 }
 
 /** Start "Create Swarm" on the server in use. Returns the job. */
-async function startInit(body, { sourceIp } = {}) {
+/**
+ * Start "Create Swarm" on the server in use. Returns the job. join (optional): async ({ job, log, step, client, nodeId })
+ * that adds more servers in the same job; if it throws, the whole swarm is undone.
+ */
+async function startInit(body, { sourceIp, join } = {}) {
   const o = initOptions(body);
   if (currentJob && !currentJob.finishedAt) throw Object.assign(new Error('A Swarm job is already running'), { statusCode: 409 });
   const c = client();
@@ -224,7 +229,7 @@ async function startInit(body, { sourceIp } = {}) {
     let inited = false;
     try {
       step(job, 'check', 'running', 'Check the server again');
-      const ck = await checks({ pool: o.pool });
+      const ck = await checks({ pool: o.pool, multi: !!join });
       for (const x of ck.checks) log(`${{ ok: '✓', warn: '!', bad: '✗', info: '·' }[x.status]} ${x.label}: ${x.detail}`);
       if (!ck.ok) throw new Error('A check failed: ' + ck.checks.filter(x => x.status === 'bad').map(x => x.label).join(', '));
       step(job, 'check', 'done');
@@ -235,7 +240,10 @@ async function startInit(body, { sourceIp } = {}) {
         CAConfig: { NodeCertExpiry: o.certDays * 24 * 3600 * 1e9 },
         EncryptionConfig: { AutoLockManagers: o.autolock },
       };
-      const req = { ListenAddr: '0.0.0.0:2377', DataPathPort: o.dataPort, DefaultAddrPool: [o.pool], SubnetSize: o.subnetSize, Spec: spec };
+      // Listen on the chosen address when it is one of the server's own (a private address keeps 2377 off the
+      // public interface); 0.0.0.0 otherwise (an address behind NAT).
+      const own = o.advertiseAddr && (await addressCandidates().catch(() => [])).some(a => a.ip === o.advertiseAddr);
+      const req = { ListenAddr: `${own ? o.advertiseAddr : '0.0.0.0'}:2377`, DataPathPort: o.dataPort, DefaultAddrPool: [o.pool], SubnetSize: o.subnetSize, Spec: spec };
       if (o.advertiseAddr) req.AdvertiseAddr = o.advertiseAddr;
       log(`$ docker swarm init${o.advertiseAddr ? ` --advertise-addr ${o.advertiseAddr}` : ''} --default-addr-pool ${o.pool} --default-addr-pool-mask-length ${o.subnetSize} --data-path-port ${o.dataPort} --cert-expiry ${o.certDays * 24}h --task-history-limit ${o.taskHistory}${o.autolock ? ' --autolock' : ''}`);
       let nodeId;
@@ -251,7 +259,9 @@ async function startInit(body, { sourceIp } = {}) {
         throw new Error(msg);
       }
       inited = true;
-      log(`Swarm created. Node ID ${String(nodeId).replace(/"/g, '').slice(0, 12)}`);
+      nodeId = String(nodeId).replace(/"/g, '');
+      log(`Swarm created. Node ID ${nodeId.slice(0, 12)}`);
+      try { const ci = await c.swarmInspect(); require('./swarm-cluster').remember(ci.ID, nodeId, sid); } catch (e) { /* mapping is rebuilt later */ }
       step(job, 'init', 'done');
 
       step(job, 'verify', 'running', 'Check the node is Ready');
@@ -276,6 +286,7 @@ async function startInit(body, { sourceIp } = {}) {
         }
         step(job, 'key', 'done');
       }
+      if (join) await join({ job, log, step, client: c, nodeId });
       job.status = 'done';
       log('✓ Swarm is on. Compose projects were not changed.');
       logAction({ sourceIp, server: sid, resourceType: 'swarm', resourceName: sid, action: 'swarm_init', details: { advertiseAddr: o.advertiseAddr, pool: o.pool, subnetSize: o.subnetSize, dataPort: o.dataPort, autolock: o.autolock, certDays: o.certDays } });
@@ -357,7 +368,7 @@ async function overview() {
     role: n.Spec.Role,
     availability: n.Spec.Availability,
     state: n.Status.State,
-    addr: n.Status.Addr,
+    addr: n.ManagerStatus && n.ManagerStatus.Addr ? String(n.ManagerStatus.Addr).replace(/:\d+$/, '') : n.Status.Addr,
     arch: n.Description.Platform && n.Description.Platform.Architecture,
     os: n.Description.Platform && n.Description.Platform.OS,
     engine: n.Description.Engine && n.Description.Engine.EngineVersion,
@@ -443,9 +454,16 @@ async function leave() {
   if (st.state === 'inactive') return { left: false };
   let services = 0;
   try { services = (await c.listServices()).length; } catch (e) { /* worker */ }
+  if (st.manager) {
+    const nodes = await c.listNodes().catch(() => []);
+    if (nodes.length > 1) throw Object.assign(new Error(`The swarm has ${nodes.length} servers — remove the others first (Swarm → Nodes → Remove), then turn Swarm off here`), { statusCode: 400 });
+  }
   await c.swarmLeave({ force: true });
   stmts.setSetting.run(`swarm_unlock_key:${serverId()}`, '');
   return { left: true, services };
 }
 
-module.exports = { status, checks, startInit, getJob, runningJob, overview, settings, storedUnlockKey, unlock, leave, initOptions, _overlaps: overlaps, _parseCidr: parseCidr, _isPrivate: isPrivate, dockerMsg };
+// Shared with server/swarm-cluster.js (one Swarm job at a time per DockGate).
+const _jobs = { newJob, logTo, step, setCurrent: (j) => { currentJob = j; }, busy: () => !!(currentJob && !currentJob.finishedAt) };
+
+module.exports = { _jobs, addressCandidates, isIPv4, isPrivate, dial, status, checks, startInit, getJob, runningJob, overview, settings, storedUnlockKey, unlock, leave, initOptions, _overlaps: overlaps, _parseCidr: parseCidr, _isPrivate: isPrivate, dockerMsg };

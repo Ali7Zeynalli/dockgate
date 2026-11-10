@@ -2,6 +2,23 @@
 
 ---
 
+## [2.26.0] - 2026-11-10
+
+### Added
+- **Swarm, phase 2: several servers and nodes.**
+  - **Set up Swarm… → Several servers:** the server in use is the first manager; choose other DockGate servers as managers or workers (the wizard says how many losses the managers tolerate and warns at 2). Checks run on every server over SSH: Docker version against the manager's, not already in a swarm, live-restore, duplicate host names, CPU architecture, clock and NTP, whether it reaches the manager on 2377/7946, and its firewall. **Network** picks the address each server uses (a private address on the same network is suggested; addresses already in the cluster are left out), offers overlay encryption (recommended when an address is public) and shows the firewall plan.
+  - **Add servers…** (Overview or Nodes) joins more DockGate servers to the running swarm the same way.
+  - **One job does it all:** the Swarm ports (2377/tcp, 7946/tcp+udp, the data port/udp, ESP when encrypted) are allowed on each server's UFW or firewalld **only from the other cluster servers**, existing members get rules for the new addresses, then the servers join one at a time with a token that never leaves DockGate, and each is checked Ready. If a step fails, the servers that joined leave again, their nodes are removed, the firewall rules are deleted (and with "Several servers" the swarm is removed).
+  - **Swarm listens on the chosen address** instead of every interface when that address belongs to the server, so with a private network 2377 is not on the public IP.
+  - **Nodes tab:** each node with its DockGate server, address, role, state, labels, running tasks, Docker version and CPU. Actions: **Pause**, **Drain…** (says which services move, which have nowhere to run — pinned or global — and warns that a data volume stays behind), **Activate**, **Promote / Demote** (shows the manager count after it), **Labels…** (validated, shows which services use them), **Remove…** (job: demote, drain, leave on the server, remove from the list, delete its firewall rules) and **Add to DockGate…** for a node joined elsewhere (opens Add server with its address).
+  - **Rebalance…** restarts the tasks of services that can move, one service at a time; pinned, global and data-volume services are left alone.
+  - **Overview** shows which DockGate server each node is, warns about nodes not in DockGate and about tasks not spread evenly (with Rebalance), and has **Add servers…**.
+
+### Changed
+- Guards: no Drain when no other server is active; the last manager is not demoted; the node DockGate manages through is not demoted or removed; the leader is not removed; Turn Swarm off asks to remove the other nodes first.
+
+---
+
 ## [2.25.0] - 2026-11-10
 
 ### Added

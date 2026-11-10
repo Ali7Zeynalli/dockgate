@@ -49,6 +49,8 @@ Router.register('infra', async (content, params) => {
       ${UI.table([{ label: 'Name' }, { label: 'Status' }, { label: 'Address' }, { label: 'Login' }, { label: 'Setup' }, { label: 'CPU · RAM · Disk' }, { label: '', align: 'right' }], rows, { minWidth: 860 })}
       <div class="ui-sub" style="margin-top:8px">Edit, remove and Docker access for a server are in its console → Settings.</div></div>`;
     tabContent.querySelector('[data-add]').onclick = () => openAddServerWizard();
+    // Swarm → Nodes → Add to DockGate… opens the wizard with the node's address filled in.
+    if (params && params.addHost && !renderServers.prefilled) { renderServers.prefilled = true; openAddServerWizard({ host: String(params.addHost) }); }
     tabContent.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', (e) => { e.preventDefault(); Router.navigate('server-console', { id: b.dataset.open }); }));
     tabContent.querySelectorAll('[data-use]').forEach(b => b.onclick = async () => {
       const srv = data.servers.find(x => x.id === b.dataset.use);
@@ -67,8 +69,8 @@ Router.register('infra', async (content, params) => {
     });
   }
 
-  function openAddServerWizard() {
-    const st = { step: 0, name: '', id: '', idTouched: false, host: '', port: 22, username: 'root', auth: 'key', privateKey: '', passphrase: '', password: '', test: null, description: '', accessPassword: '', notifs: true };
+  function openAddServerWizard(prefill = {}) {
+    const st = { step: 0, name: '', id: '', idTouched: false, host: prefill.host || '', port: 22, username: 'root', auth: 'key', privateKey: '', passphrase: '', password: '', test: null, description: '', accessPassword: '', notifs: true };
     const STEPS = ['Connection', 'Login', 'Verify', 'Details'];
     const slug = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
     const authBody = () => ({ type: 'ssh', host: st.host.trim(), port: Number(st.port) || 22, username: st.username.trim(), ...(st.auth === 'key' ? { privateKey: st.privateKey || undefined, passphrase: st.passphrase || undefined } : { password: st.password || undefined }) });
