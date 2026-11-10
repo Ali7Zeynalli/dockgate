@@ -10,11 +10,14 @@ Router.register('containers', async (content) => {
   let refreshTimer = null;
   let groupByProject = Store.get('groupByProject') ?? true; // Default to grouping
   let updates = new Map();
+  let stale = {}; // container ID → newer local image of its tag (pulled, container not recreated yet)
+  const hasUpdate = (c) => (updates.get(c.image) || {}).status === 'update' || !!stale[c.id];
   // "newer image" / "cannot check" next to the image, from the last newer-image check.
   const imageUpdatePill = (c) => {
+    if (stale[c.id]) return ` ${UI.pill('info', `newer image pulled${stale[c.id].version ? ` · ${escapeHtml(stale[c.id].version)}` : ''} · not recreated`)}`;
     const u = updates.get(c.image);
     if (!u) return '';
-    if (u.status === 'update') return ` ${UI.pill('info', 'newer image')}`;
+    if (u.status === 'update') return ` ${UI.pill('info', u.remote_version ? (u.local_version === u.remote_version ? `newer build of ${escapeHtml(u.remote_version)}` : `newer image · ${escapeHtml(u.local_version || '?')} → ${escapeHtml(u.remote_version)}`) : 'newer image')}`;
     if (u.status === 'error') return ` <span class="ui-sub" title="${escapeHtml(u.error || '')}">update check failed</span>`;
     return '';
   };
@@ -31,7 +34,8 @@ Router.register('containers', async (content) => {
       if (!Router.isActiveNav(pageNavId)) return;
       // Newer-image check results by image reference (server/image-updates.js).
       updates = new Map((upd.results || []).map(r => [r.image, r]));
-      const withUpdate = allContainers.filter(c => (updates.get(c.image) || {}).status === 'update').length;
+      stale = upd.stale || {};
+      const withUpdate = allContainers.filter(hasUpdate).length;
       const lastCheck = (upd.results || []).reduce((a, r) => Math.max(a, r.checked_at || 0), 0);
 
       // Filter
@@ -83,6 +87,7 @@ Router.register('containers', async (content) => {
         ${UI.header('Containers', `${containers.length === counts.all ? counts.all : `${containers.length} of ${counts.all}`} container${counts.all === 1 ? '' : 's'} on this server${withUpdate ? ` · <b>${withUpdate} with a newer image</b>` : ''}${lastCheck ? ` · images checked ${timeAgo(Math.floor(lastCheck / 1000))}` : ''}. Select several to start, stop or restart them together.`,
           `${viewIcon('table', 'Table view', Icons.layers)}${viewIcon('card', 'Card view', Icons.dashboard)}${viewIcon('topology', 'Topology view (read-only)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="6" r="2.3"/><circle cx="19" cy="6" r="2.3"/><circle cx="12" cy="18" r="2.3"/><path d="M7 7.4 10.6 15.8M17 7.4 13.4 15.8M7.3 6h9.4"/></svg>')}
            <button class="btn btn-secondary btn-sm" id="containers-refresh" title="Refresh">${Icons.refresh}</button>
+           <button class="btn btn-secondary btn-sm" id="update-history" title="Image updates and roll backs started from DockGate on this server">Update history</button>
            <button class="btn btn-secondary btn-sm" id="check-updates" title="Ask the registries whether a newer image exists for each container's tag">Check for updates</button>
            <button class="btn btn-primary btn-sm" id="run-container-btn">${Icons.play} Run container</button>`)}
 
@@ -169,7 +174,7 @@ Router.register('containers', async (content) => {
         <td class="text-muted text-sm">${timeAgo(c.created)}</td>
         <td>
           <div class="td-actions" style="justify-content:flex-end">
-            ${(updates.get(c.image) || {}).status === 'update'
+            ${hasUpdate(c)
               ? `<button class="btn btn-xs btn-secondary" data-update-image="${c.id}">${Icons.download} Update…</button>`
               : c.state === 'running'
               ? `<button class="btn btn-xs btn-secondary" data-action="logs" data-id="${c.id}">${Icons.logs} Logs</button>`
@@ -476,37 +481,12 @@ Router.register('containers', async (content) => {
       } catch (er) { showToast(er.message, 'error'); }
       render();
     });
+    document.getElementById('update-history')?.addEventListener('click', () => ImageUpdate.openHistory());
     content.querySelectorAll('[data-update-image]').forEach(b => b.addEventListener('click', () => {
       const c = containers.find(x => x.id === b.dataset.updateImage); if (!c) return;
-      const u = updates.get(c.image) || {};
-      const inStack = c.composeProject && c.composeService;
-      secConfirm({
-        title: `Update ${c.name}`,
-        change: inStack
-          ? `The newer <span class="td-mono">${escapeHtml(c.image)}</span> is pulled, then only service <b>${escapeHtml(c.composeService)}</b> of stack <b>${escapeHtml(c.composeProject)}</b> is recreated.`
-          : `The newer <span class="td-mono">${escapeHtml(c.image)}</span> is pulled and the container is recreated with the same settings.`,
-        protects: `Data in volumes stays. Digest now ${escapeHtml((u.local_digest || '').slice(7, 19))}… → ${escapeHtml((u.remote_digest || '').slice(7, 19))}…. For a database, read its release notes first.`,
-        confirmLabel: 'Pull and recreate',
-        onConfirm: async () => {
-          try {
-            if (inStack) {
-              const r = await API.post(`/compose/${encodeURIComponent(c.composeProject)}/update-service`, { service: c.composeService });
-              showToast(`Updating ${c.name}…`, 'info', 4000);
-              for (let i = 0; i < 300; i++) {
-                await new Promise(z => setTimeout(z, 2000));
-                const j = await API.get(`/compose/deploy-job/${r.jobId}`).catch(() => null);
-                if (j && j.status && j.status !== 'running') { showToast(j.status === 'done' ? `${c.name} updated` : `Update failed: ${j.error || ''}`, j.status === 'done' ? 'success' : 'error', 9000); break; }
-              }
-            } else {
-              showToast(`Updating ${c.name}…`, 'info', 4000);
-              await API.post(`/containers/${c.id}/recreate`, {});
-              showToast(`${c.name} updated`);
-            }
-            await API.post('/images/updates/check', {}).catch(() => null);
-          } catch (er) { showToast(er.message, 'error', 9000); }
-          render();
-        },
-      });
+      const st = stale[c.id];
+      const check = st ? { local_digest: c.imageId, remote_digest: st.imageId, remote_version: st.version, remote_created: st.created, local_version: null } : (updates.get(c.image) || null);
+      ImageUpdate.confirmUpdate({ id: c.id, name: c.name, image: st ? st.image : c.image, project: c.composeProject, service: c.composeService, check, pulled: !!st }, () => render());
     }));
 
     // Detail navigation

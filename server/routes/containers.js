@@ -41,6 +41,63 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Audit entries carry the container NAME (the ID changes on every recreate, the name stays), so a
+// container's history can be found after an update.
+async function nameOf(id) {
+  try { return (await dockerService.docker.getContainer(id).inspect()).Name.replace(/^\//, ''); }
+  catch (e) { return String(id).substring(0, 12); }
+}
+
+// ---- Image update with history and roll back (server/image-update-runner.js) ----
+const runner = () => require('../image-update-runner');
+const activeServer = () => dockerService.getActiveServerId() || 'local';
+// History of image updates: ?name= (container) and/or ?project=&service=; none → the whole server.
+router.get('/image-updates/history', (req, res) => {
+  try { res.json({ rows: runner().history({ serverId: activeServer(), name: req.query.name, project: req.query.project, service: req.query.service, limit: req.query.limit }) }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.get('/image-updates/job/:jobId', (req, res) => {
+  const j = runner().getJob(req.params.jobId);
+  if (!j) return res.status(404).json({ error: 'Job not found (DockGate restarted?) — see the update history' });
+  res.json(j);
+});
+router.get('/image-updates/:historyId/log', (req, res) => {
+  const r = runner().logOf(req.params.historyId);
+  if (!r || r.server_id !== activeServer()) return res.status(404).json({ error: 'Not found' });
+  res.json(r);
+});
+// Roll back to the image a container ran before the update in history row :historyId.
+router.post('/image-updates/:historyId/rollback', async (req, res) => {
+  try {
+    const job = await runner().start({ kind: 'rollback', historyId: req.params.historyId, containerId: (req.body || {}).containerId || null, sourceIp: req.ip });
+    res.json({ jobId: job.id, historyId: job.historyId });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+// Update status of one container: the newer-image check row, its last updates and a roll back target.
+router.get('/:id/image-update', async (req, res) => {
+  try {
+    const info = await dockerService.docker.getContainer(req.params.id).inspect();
+    const name = (info.Name || '').replace(/^\//, '');
+    const l = info.Config.Labels || {};
+    const project = l['com.docker.compose.project'] || null, service = l['com.docker.compose.service'] || null;
+    const IU = require('../image-updates');
+    const check = IU.resultFor(activeServer(), info.Config.Image);
+    let current = null;
+    try { const im = await dockerService.docker.getImage(info.Image).inspect(); current = { version: IU.versionOf(im.Config, (IU.parseRef(info.Config.Image) || {}).repo || ''), created: im.Created }; } catch (e) { /* removed */ }
+    const stale = (await IU.staleContainers(dockerService.docker).catch(() => new Map())).get(info.Id) || null;
+    res.json({ name, project, service, image: info.Config.Image, imageId: info.Image, current, check, stale,
+      history: runner().history({ serverId: activeServer(), name, project, service, limit: 10 }),
+      rollback: await runner().rollbackTarget(activeServer(), name, project, service, info.Image) });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+// Pull the same tag and recreate the container (compose: only its service), with a check and an automatic roll back.
+router.post('/:id/image-update', async (req, res) => {
+  try {
+    const job = await runner().start({ kind: 'update', containerId: req.params.id, sourceIp: req.ip });
+    res.json({ jobId: job.id, historyId: job.historyId });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 // Inspect container
 router.get('/:id', async (req, res) => {
   try {
@@ -86,7 +143,7 @@ router.get('/:id/top', async (req, res) => {
 // Export the container's filesystem as a tar download
 router.get('/:id/export', async (req, res) => {
   try {
-    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'export' });
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: await nameOf(req.params.id), action: 'export' });
     const stream = await dockerService.containerExportStream(req.params.id);
     res.setHeader('Content-Type', 'application/x-tar');
     res.setHeader('Content-Disposition', `attachment; filename="${req.params.id.substring(0, 12)}.tar"`);
@@ -105,7 +162,7 @@ router.post('/:id/exec', async (req, res) => {
     const cmd = Array.isArray(raw) ? raw : String(raw || '').trim().split(/\s+/).filter(Boolean);
     if (!cmd.length) return res.status(400).json({ error: 'cmd required' });
     const result = await dockerService.containerExecOnce(req.params.id, cmd);
-    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'exec', details: { cmd: cmd.join(' ') } });
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: await nameOf(req.params.id), action: 'exec', details: { cmd: cmd.join(' ') } });
     res.json(result);
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
@@ -123,7 +180,7 @@ router.post('/:id/update', async (req, res) => {
     if (restart) cfg.RestartPolicy = { Name: restart, MaximumRetryCount: restart === 'on-failure' ? 3 : 0 };
     if (!Object.keys(cfg).length) return res.status(400).json({ error: 'Nothing to update' });
     await dockerService.updateContainer(req.params.id, cfg);
-    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'update', details: { cpus, memory, restart } });
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: await nameOf(req.params.id), action: 'update', details: { cpus, memory, restart } });
     res.json({ success: true });
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
@@ -136,7 +193,7 @@ router.post('/:id/commit', async (req, res) => {
     const { repo, tag, comment } = req.body || {};
     if (!repo) return res.status(400).json({ error: 'repo required' });
     const r = await dockerService.commitContainer(req.params.id, { repo, tag: tag || 'latest', comment });
-    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'commit', details: { repo, tag: tag || 'latest' } });
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: await nameOf(req.params.id), action: 'commit', details: { repo, tag: tag || 'latest' } });
     res.json(r);
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
@@ -146,8 +203,10 @@ router.post('/:id/commit', async (req, res) => {
 // Recreate with (optionally) a new image — the update flow (C2). body: { image? }
 router.post('/:id/recreate', async (req, res) => {
   try {
+    const before = await dockerService.docker.getContainer(req.params.id).inspect().catch(() => null);
     const r = await dockerService.recreateContainer(req.params.id, (req.body || {}).image);
-    logAction({ req, resourceId: r.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'recreate', details: { image: (req.body || {}).image || '(same)' } });
+    const cname = before ? before.Name.replace(/^\//, '') : req.params.id.substring(0, 12);
+    logAction({ req, resourceId: r.id, resourceType: 'container', resourceName: cname, action: 'recreate', details: { from: before ? before.Config.Image : undefined, image: (req.body || {}).image || '(same)', old_id: before ? before.Id.slice(0, 12) : undefined } });
     res.json(r);
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
@@ -164,7 +223,7 @@ router.get('/:id/files', async (req, res) => {
 router.get('/:id/file', async (req, res) => {
   try {
     if (!req.query.path) return res.status(400).json({ error: 'path required' });
-    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'file-download', details: { path: req.query.path } });
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: await nameOf(req.params.id), action: 'file-download', details: { path: req.query.path } });
     await dockerService.containerDownloadFile(req.params.id, req.query.path, res);
   } catch (err) { if (!res.headersSent) res.status(err.statusCode || 500).json({ error: err.message }); }
 });
@@ -173,7 +232,7 @@ router.get('/:id/file', async (req, res) => {
 router.post('/:id/upload', async (req, res) => {
   try {
     await dockerService.containerUpload(req.params.id, req.query.path || '/', req);
-    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: req.params.id.substring(0, 12), action: 'cp-in', details: { path: req.query.path || '/' } });
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: await nameOf(req.params.id), action: 'cp-in', details: { path: req.query.path || '/' } });
     res.json({ success: true });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });

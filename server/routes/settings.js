@@ -110,6 +110,12 @@ router.get('/activity', (req, res) => {
     if (type)   { where.push('resource_type = ?'); params.push(type); }
     if (action) { where.push('action = ?');        params.push(action); }
     if (server) { where.push('server = ?');         params.push(server); }
+    // One container's history across recreates: its name, or any of its (old) IDs.
+    if (req.query.container) {
+      const ids = String(req.query.ids || '').split(',').map(x => x.trim().slice(0, 12)).filter(x => /^[0-9a-f]{12}$/.test(x)).slice(0, 100);
+      where.push(`(resource_type = 'container' AND (resource_name = ?${ids.length ? ` OR substr(resource_id, 1, 12) IN (${ids.map(() => '?').join(',')})` : ''}))`);
+      params.push(String(req.query.container), ...ids);
+    }
     if (q) {
       // Search across all text-searchable columns shown in the audit table:
       // resource, details, action, server, source IP and type.

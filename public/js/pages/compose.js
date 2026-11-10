@@ -83,7 +83,7 @@ Router.register('compose', async (content) => {
                   <td style="text-align:center"><input type="checkbox" class="bulk-item" data-proj="${escapeHtml(p.name)}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"></td>
                   <td class="td-name">${escapeHtml(p.name)}${p.workingDir ? `<div class="td-mono text-xs text-muted" title="${escapeHtml(p.workingDir)}" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.workingDir)}</div>` : ''}</td>
                   <td>${isGit ? UI.chip(`git${gitBranch ? ' · ' + escapeHtml(gitBranch) : ''}`, { title: p.gitInfo?.repoUrl || 'Git' }) : p.deploySource === 'adopt' ? UI.chip('adopted', { title: 'Adopted in place: the compose file lives on the server. Deleting stops and untracks it but never removes your folder.' }) : p.deploySource ? UI.chip(escapeHtml(p.deploySource)) : UI.chip('external', { title: 'Started outside DockGate (docker compose up on the server)' })}</td>
-                  <td>${p.total === 0 ? UI.pill('off', 'not deployed') : p.running === p.total ? UI.pill('ok', `${p.running}/${p.total} running`) : p.running > 0 ? UI.pill('warn', `${p.running}/${p.total} running`) : UI.pill('off', 'stopped')}</td>
+                  <td>${p.total === 0 ? UI.pill('off', 'not deployed') : p.running === p.total ? UI.pill('ok', `${p.running}/${p.total} running`) : p.running > 0 ? UI.pill('warn', `${p.running}/${p.total} running`) : UI.pill('off', 'stopped')}${stackImageNote(p)}</td>
                   <td class="text-sm">${(p.services || []).map(x => escapeHtml(x)).join(', ') || '—'}</td>
                   <td><div class="td-actions" style="justify-content:flex-end">
                     ${p.running > 0 && p.running === p.total
@@ -1636,6 +1636,23 @@ Router.register('compose', async (content) => {
 
   // Re-openable live log for a deploy job — per-step status + a real terminal (xterm) so docker's
   // \r progress bars and ANSI colors render correctly. Poll until done; closing just stops polling.
+  // Newer images of the stack's services and its last image update (from GET /compose).
+  function stackImageNote(p) {
+    let out = '';
+    for (const u of p.imageUpdates || []) {
+      const what = u.pulled ? `newer image pulled${u.to ? ` · ${escapeHtml(u.to)}` : ''}` : `${u.from && u.to ? (u.from === u.to ? `newer build of ${escapeHtml(u.to)}` : `${escapeHtml(u.from)} → ${escapeHtml(u.to)}`) : 'newer image'}`;
+      out += `<div style="margin-top:4px">${UI.pill('info', `${escapeHtml(u.service)}: ${what}`)}</div>`;
+    }
+    const l = p.lastImageUpdate;
+    if (l) {
+      const ago = l.finished_at ? timeAgo(new Date(l.finished_at).toISOString()) : '';
+      const ver = `${escapeHtml(l.from_version || String(l.from_image_id || '').slice(7, 19))} → ${escapeHtml(l.to_version || String(l.to_image_id || '').slice(7, 19))}`;
+      const res = l.status === 'updated' ? (l.kind === 'rollback' ? 'rolled back' : 'updated') : l.status === 'rolled_back' ? 'update failed, previous image put back' : 'update failed';
+      out += `<div class="ui-sub" style="margin-top:4px" title="${escapeHtml(l.error || '')}">${escapeHtml(l.service || l.container_name)} ${res} ${escapeHtml(ago)}${l.status === 'updated' ? ` · ${ver}` : ''}</div>`;
+    }
+    return out;
+  }
+
   // Deploy history: every deploy of the stack with the compose files it used. "Changes" compares a deploy with
   // the one before it; "Redeploy this" puts its files back and runs `up -d` (volumes untouched).
   async function openDeployHistory(project) {
@@ -1643,7 +1660,8 @@ Router.register('compose', async (content) => {
     try { rows = (await API.get(`/compose/${encodeURIComponent(project)}/deploys`)).deploys || []; }
     catch (e) { showToast(e.message, 'error'); return; }
     const when = (ms) => (ms ? formatTime(new Date(ms).toISOString()) : '—'); // stored in milliseconds
-    const kindLabel = { editor: 'editor', redeploy: 'earlier version', up: 'Up', rebuild: 'rebuild', deploy: 'deploy' };
+    const kindLabel = { editor: 'editor', redeploy: 'earlier version', up: 'Up', rebuild: 'rebuild', deploy: 'deploy', 'image update': 'image update', 'image rollback': 'image roll back' };
+    const detailText = (d) => { try { const x = JSON.parse(d.details || 'null'); return x && x.service ? `<div class="ui-sub">${escapeHtml(x.service)}: ${escapeHtml(x.from || '?')} → ${escapeHtml(x.to || '?')}</div>` : ''; } catch (e) { return ''; } };
     const srcText = (d) => d.source === 'git' ? `git${d.git_commit ? ` <span class="td-mono">${escapeHtml(d.git_commit.slice(0, 7))}</span>` : ''}` : escapeHtml(d.source || '');
     const withFiles = rows.filter(d => d.has_files);
     const current = withFiles[0];
@@ -1652,8 +1670,8 @@ Router.register('compose', async (content) => {
       const same = current && d.files_hash && d.files_hash === current.files_hash;
       return { cells: [
         `${when(d.finished_at || d.started_at)}${d.id === (current && current.id) ? '<div class="ui-sub">files in use now</div>' : ''}`,
-        `${escapeHtml(kindLabel[d.kind] || d.kind || 'deploy')} · ${srcText(d)}`,
-        d.status === 'done' ? UI.pill('ok', 'deployed') : `${UI.pill('bad', 'failed')}${d.error ? `<div class="ui-sub" title="${escapeHtml(d.error)}">${escapeHtml(d.error.slice(0, 80))}</div>` : ''}`,
+        `${escapeHtml(kindLabel[d.kind] || d.kind || 'deploy')}${d.source && d.source !== d.kind ? ` · ${srcText(d)}` : ''}${detailText(d)}`,
+        d.status === 'done' ? UI.pill('ok', 'deployed') : `${UI.pill('bad', 'failed')}${d.error ? `<div class="ui-sub" title="${escapeHtml(d.error)}" style="max-width:420px;white-space:normal;word-break:break-word">${escapeHtml(d.error.slice(0, 240))}</div>` : ''}`,
         `${d.has_files && prev ? UI.btn('Changes', `data-hdiff="${d.id}" data-hprev="${prev.id}"`) : ''} ${d.has_files && !same ? UI.btn('Redeploy this…', `data-hredeploy="${d.id}"`) : ''}`,
       ] };
     }), { minWidth: 0 }) : '<p class="text-sm text-muted">No deploys recorded yet. From now on every deploy of this stack is listed here with the compose files it used.</p>';

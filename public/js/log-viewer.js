@@ -27,7 +27,12 @@ const LogViewer = (() => {
   const store = { get(k) { try { return JSON.parse(localStorage.getItem('dg_lv_' + k) || 'null'); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem('dg_lv_' + k, JSON.stringify(v)); } catch (e) { /* storage off */ } } };
 
   /** Level of a line from its words (error / warn / debug), else info. */
+  // A structured line names its own level ({"level":"warn"}, level=warn, "severity":"ERROR"): that wins over the words.
+  const OWN_LEVEL = { error: 'E', err: 'E', fatal: 'E', panic: 'E', critical: 'E', crit: 'E', emerg: 'E', emergency: 'E', alert: 'E', dpanic: 'E',
+    warn: 'W', warning: 'W', info: 'I', notice: 'I', information: 'I', debug: 'D', trace: 'D', verbose: 'D' };
   function levelOf(s) {
+    const own = /"(?:level|severity|lvl|log\.level)"\s*:\s*"([a-zA-Z]+)"/.exec(s) || /(?:^|\s)(?:level|lvl|severity)=["']?([a-zA-Z]+)\b/.exec(s);
+    if (own && OWN_LEVEL[own[1].toLowerCase()]) return OWN_LEVEL[own[1].toLowerCase()];
     if (/^(E|ERR!?):? /.test(s) || /\bnpm ERR!/.test(s)) return 'E'; // apt "E: …", npm "ERR!"
     if (/\b(fatal|panic|emerg|alert|crit(ical)?|err(or)?|exception|traceback|fail(ed|ure)?|denied|refused|oom|killed|segfault)\b|\bE\d{4}\b|level=(error|fatal)|"level":"(error|fatal)"|\[(error|err)\]/i.test(s)) return 'E';
     if (/\b(warn(ing)?|deprecated|retry(ing)?|timeout|timed out|slow|invalid user|preauth)\b|level=warn|"level":"warn"|\[warn\]/i.test(s)) return 'W';

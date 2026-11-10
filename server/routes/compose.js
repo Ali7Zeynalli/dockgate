@@ -110,13 +110,42 @@ async function runCompose(project, action, cwd, onData) {
     child.stdout.on('data', onChunk);
     child.stderr.on('data', onChunk);
     child.on('error', reject);
-    child.on('close', (code) => { if (code === 0) return resolve(out); const e = new Error('docker compose exited with code ' + code); e.statusCode = 400; reject(e); });
+    child.on('close', (code) => { if (code === 0) return resolve(out); const e = new Error('docker compose exited with code ' + code + remoteCompose.composeReason(out)); e.statusCode = 400; reject(e); });
   });
+}
+
+// Per stack: services whose image has a newer version (registry check, or already pulled but not recreated),
+// and the last image update / roll back from DockGate — shown on the Compose stacks list.
+async function annotateImageUpdates(list) {
+  try {
+    const IU = require('../image-updates');
+    const serverId = dockerService.getActiveServerId() || 'local';
+    const checks = new Map(IU.resultsFor(serverId).map(r => [r.image, r]));
+    const stale = await IU.staleContainers(dockerService.docker).catch(() => new Map());
+    const containers = await dockerService.docker.listContainers({ all: true });
+    const { db } = require('../db');
+    const lastRow = db.prepare("SELECT container_name, service, kind, status, from_version, to_version, from_image_id, to_image_id, error, finished_at FROM image_update_history WHERE server_id = ? AND project = ? AND status != 'running' ORDER BY id DESC LIMIT 1");
+    for (const p of list) {
+      const seen = new Set(); const ups = [];
+      for (const c of containers) {
+        const l = c.Labels || {};
+        if (l['com.docker.compose.project'] !== p.name) continue;
+        const svc = l['com.docker.compose.service'];
+        if (!svc || seen.has(svc)) continue;
+        const st = stale.get(c.Id), ck = checks.get(c.Image);
+        if (st) { seen.add(svc); ups.push({ service: svc, pulled: true, to: st.version || null }); }
+        else if (ck && ck.status === 'update') { seen.add(svc); ups.push({ service: svc, from: ck.local_version || null, to: ck.remote_version || null }); }
+      }
+      p.imageUpdates = ups;
+      p.lastImageUpdate = lastRow.get(serverId, p.name) || null;
+    }
+  } catch (e) { /* the list works without it */ }
+  return list;
 }
 
 router.get('/', async (req, res) => {
   try {
-    const list = await dockerService.listComposeProjects();
+    const list = await annotateImageUpdates(await dockerService.listComposeProjects());
     const activeId = dockerService.getActiveServerId();
     if (fs.existsSync(COMPOSE_DIR)) {
       // Annotate running remote folder-deployed projects so the UI can show Update/etc.
@@ -672,7 +701,7 @@ async function captureComposeFiles(project) {
   }
   return Object.keys(out).length ? out : null;
 }
-async function recordDeploy({ project, kind, status, error, sourceIp, startedAt, finishedAt }) {
+async function recordDeploy({ project, kind, status, error, sourceIp, startedAt, finishedAt, details = null }) {
   try {
     if (!validateProjectName(project)) return;
     const files = status === 'done' ? await captureComposeFiles(project) : null;
@@ -683,7 +712,7 @@ async function recordDeploy({ project, kind, status, error, sourceIp, startedAt,
     const serverId = dockerService.getActiveServerId() || 'local';
     stmts.insertComposeDeploy.run({ project, server_id: serverId, kind: kind || 'deploy', source, git_commit: git && git.deployedCommit ? String(git.deployedCommit).slice(0, 40) : null,
       status, error: error ? String(error).slice(0, 500) : null, files: json, files_hash: json ? crypto.createHash('sha256').update(json).digest('hex').slice(0, 16) : null,
-      source_ip: sourceIp || null, started_at: startedAt || null, finished_at: finishedAt || Date.now() });
+      source_ip: sourceIp || null, started_at: startedAt || null, finished_at: finishedAt || Date.now(), details: details ? JSON.stringify(details).slice(0, 2000) : null });
     stmts.trimComposeDeploys.run(project, serverId, project, serverId);
   } catch (e) { console.warn('[deploy-history]', e.message); }
 }
@@ -2591,4 +2620,6 @@ async function scheduledGitSync(serverId, projects = []) {
 }
 router.scheduledGitSync = scheduledGitSync;
 
+// Image updates of compose services run compose through the same file resolution.
+require('../image-update-runner').setComposeExec(execComposeAction, recordDeploy);
 module.exports = router;

@@ -1,15 +1,17 @@
-// Container Detail Page (10 tabs)
+// Container Detail Page (13 tabs)
 Router.register('container-detail', async (content, params) => {
   const { id, tab: initialTab = 'overview' } = params;
   let currentTab = initialTab;
   let cleanup = [];
+  let iu = null; // image update status: newer-image check, last updates, roll back target
 
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
 
   async function render() {
     try {
-      const info = await API.get(`/containers/${id}`);
+      const [info, upd] = await Promise.all([API.get(`/containers/${id}`), API.get(`/containers/${id}/image-update`).catch(() => null)]);
+      iu = upd;
 
       // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
       if (!Router.isActiveNav(pageNavId)) return;
@@ -41,6 +43,7 @@ Router.register('container-detail', async (content, params) => {
             ` : `
               <button class="btn btn-primary" data-action="start">${Icons.play} Start</button>
             `}
+            ${iu && ((iu.check && iu.check.status === 'update') || iu.stale) ? `<button class="btn btn-primary" id="image-update-btn" title="Pull the newer image of the same tag and recreate">${Icons.download} Update…</button>` : ''}
             <button class="btn btn-secondary" id="update-btn" title="Edit CPU / memory / restart">${Icons.settings} Resources</button>
             <button class="btn btn-secondary" id="recreate-btn" title="Recreate with a new image">${Icons.restart} Recreate</button>
             <button class="btn btn-secondary" id="commit-btn" title="Commit to an image">${Icons.layers} Commit</button>
@@ -50,7 +53,7 @@ Router.register('container-detail', async (content, params) => {
         </div>
 
         <div class="tabs" id="detail-tabs">
-          ${['overview','logs','terminal','stats','processes','environment','ports','volumes','files','network','inspect','history'].map(t =>
+          ${['overview','logs','terminal','stats','processes','environment','ports','volumes','files','network','inspect','updates','history'].map(t =>
             `<button class="tab ${currentTab === t ? 'active' : ''}" data-tab="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</button>`
           ).join('')}
         </div>
@@ -114,6 +117,8 @@ Router.register('container-detail', async (content, params) => {
           } catch (e) { showToast(e.message, 'error', 9000); btn.disabled = false; btn.textContent = 'Recreate'; }
         });
       });
+
+      document.getElementById('image-update-btn')?.addEventListener('click', () => startImageUpdate(info));
 
       // Commit to an image (C4)
       document.getElementById('commit-btn')?.addEventListener('click', () => {
@@ -183,6 +188,7 @@ Router.register('container-detail', async (content, params) => {
       case 'files': renderFiles(tabContent, info); break;
       case 'network': renderNetwork(tabContent, info); break;
       case 'inspect': renderInspect(tabContent, info); break;
+      case 'updates': renderUpdates(tabContent, info); break;
       case 'history': renderHistory(tabContent, info); break;
     }
   }
@@ -192,9 +198,10 @@ Router.register('container-detail', async (content, params) => {
     const state = info.State || {};
     const hc = info.HostConfig || {};
     el.innerHTML = `
+      ${imageUpdateBanner()}
       <div class="detail-grid">
         <div class="detail-item"><div class="detail-label">Container ID</div><div class="detail-value mono">${info.Id?.substring(0, 24) || 'N/A'}</div></div>
-        <div class="detail-item"><div class="detail-label">Image</div><div class="detail-value mono">${escapeHtml(cfg.Image || '')}</div></div>
+        <div class="detail-item"><div class="detail-label">Image</div><div class="detail-value mono">${escapeHtml(cfg.Image || '')}${iu && iu.current && iu.current.version ? ` <span class="ui-sub">· version ${escapeHtml(iu.current.version)}</span>` : ''}</div></div>
         <div class="detail-item"><div class="detail-label">Command</div><div class="detail-value mono">${escapeHtml((cfg.Cmd || []).join(' '))}</div></div>
         <div class="detail-item"><div class="detail-label">Entrypoint</div><div class="detail-value mono">${escapeHtml((cfg.Entrypoint || []).join(' ') || 'N/A')}</div></div>
         <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${state.Status || 'N/A'}</div></div>
@@ -226,6 +233,78 @@ Router.register('container-detail', async (content, params) => {
           </div>
         </div>` : ''}
     `;
+    bindImageBanner(el, info);
+  }
+
+  // ---- image update ----
+  // The page moves to the new container ID when the job window is closed (navigating closes open windows).
+  const AFTER_CLOSE = { afterClose: true };
+  // After an update or roll back the container has a new ID: open the new one (same tab).
+  function afterImageJob(j) {
+    const nid = j && j.result && j.result.newContainerId;
+    if (nid && nid !== id) Router.navigate('container-detail', { id: nid, tab: currentTab });
+    else render();
+  }
+  function startImageUpdate(info) {
+    if (!iu) return;
+    const check = iu.stale ? { local_digest: iu.imageId, local_version: iu.current && iu.current.version, remote_digest: iu.stale.imageId, remote_version: iu.stale.version, remote_created: iu.stale.created } : iu.check;
+    ImageUpdate.confirmUpdate({ id, name: iu.name, image: iu.image, project: iu.project, service: iu.service, check, pulled: !!iu.stale }, afterImageJob, AFTER_CLOSE);
+  }
+  function imageUpdateBanner() {
+    if (!iu) return '';
+    const c = iu.check;
+    const checked = c && c.checked_at ? ` · checked ${escapeHtml(timeAgo(new Date(c.checked_at).toISOString()))}` : '';
+    const running = (iu.history || []).find(r => r.status === 'running' && r.job_id);
+    const last = (iu.history || []).find(r => r.status !== 'running');
+    const rb = iu.rollback;
+    let tone = 'info', text, btns = '';
+    if (running) {
+      text = `<b>${running.kind === 'rollback' ? 'Roll back' : 'Update'} running</b> — ${escapeHtml(running.image)}`;
+      btns = UI.btn('Open', `data-iu-open="${escapeHtml(running.job_id)}"`, 'btn-primary');
+    } else if (iu.stale) {
+      text = `<b>Newer image already on the server</b> — <span class="td-mono">${escapeHtml(iu.image)}</span> ${ImageUpdate.ver(iu.current && iu.current.version, iu.imageId)} → ${ImageUpdate.ver(iu.stale.version, iu.stale.imageId)}. Its tag was pulled (another container using it was updated?), but this container still runs the older image.`;
+      btns = UI.btn(`${Icons.download} Update…`, 'data-iu-update', 'btn-primary');
+    } else if (c && c.status === 'update') {
+      text = `<b>Newer image available</b> — <span class="td-mono">${escapeHtml(iu.image)}</span> ${ImageUpdate.checkChange(c)}${c.remote_created ? ` <span class="ui-sub">(built ${escapeHtml(String(c.remote_created).slice(0, 10))})</span>` : ''}${checked}`;
+      btns = UI.btn(`${Icons.download} Update…`, 'data-iu-update', 'btn-primary');
+    } else if (c && c.status === 'current') {
+      tone = 'ok'; text = `<b>Image up to date</b>${iu.current && iu.current.version ? ` — version ${escapeHtml(iu.current.version)}` : ''}${checked}`;
+    } else if (c) {
+      tone = 'muted'; text = `<b>Newer image: not checked</b> — ${escapeHtml(c.error || 'unknown')}${checked}`;
+    } else {
+      tone = 'muted'; text = '<b>Newer image: not checked yet</b> — Containers → Check for updates asks the registry.';
+    }
+    if (!running && rb) {
+      text += `<div class="ui-sub" style="margin-top:4px">Updated ${escapeHtml(timeAgo(new Date(rb.started_at).toISOString()))}: ${ImageUpdate.ver(rb.from_version, rb.from_image_id)} → ${ImageUpdate.ver(rb.to_version, rb.to_image_id)}.${rb.missing ? ' The previous image is no longer on the server, so it can not be rolled back.' : ''}</div>`;
+      if (!rb.missing) btns += ' ' + UI.btn('Roll back…', 'data-iu-rollback-now');
+    } else if (!running && last && last.status !== 'updated' && last.status !== 'no_change') {
+      if (tone !== 'info') tone = 'warning';
+      text += `<div class="ui-sub" style="margin-top:4px">Last ${last.kind === 'rollback' ? 'roll back' : 'update'} ${escapeHtml(timeAgo(new Date(last.started_at).toISOString()))}: ${escapeHtml(last.status === 'rolled_back' ? 'failed, the previous image was put back' : 'failed')} — ${escapeHtml((last.error || '').slice(0, 140))}</div>`;
+    }
+    btns += ' ' + UI.btn('History', 'data-iu-tab');
+    return `<div class="insight-card ${tone === 'info' || tone === 'warning' ? tone : ''}" style="margin-bottom:14px;${tone === 'ok' ? 'border-left:3px solid var(--success,#16a34a);' : tone === 'muted' ? 'border-left:3px solid var(--border);' : ''}display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px">${text}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${btns}</div></div>`;
+  }
+  function bindImageBanner(el, info) {
+    el.querySelector('[data-iu-update]')?.addEventListener('click', () => startImageUpdate(info));
+    el.querySelector('[data-iu-open]')?.addEventListener('click', (e) => ImageUpdate.openJob(e.currentTarget.dataset.iuOpen, `Update ${iu.name}`, afterImageJob, AFTER_CLOSE));
+    el.querySelector('[data-iu-rollback-now]')?.addEventListener('click', () => iu.rollback && ImageUpdate.confirmRollback(iu.rollback, afterImageJob, AFTER_CLOSE));
+    el.querySelector('[data-iu-tab]')?.addEventListener('click', () => content.querySelector('[data-tab="updates"]')?.click());
+  }
+
+  async function renderUpdates(el, info) {
+    el.innerHTML = '<div class="text-muted text-sm">Loading…</div>';
+    try {
+      const q = new URLSearchParams({ name: iu ? iu.name : (info.Name || '').replace(/^\//, ''), limit: '50' });
+      if (iu && iu.project && iu.service) { q.set('project', iu.project); q.set('service', iu.service); }
+      const { rows } = await API.get(`/containers/image-updates/history?${q}`);
+      if (!el.isConnected) return;
+      el.innerHTML = `${imageUpdateBanner()}
+        <div class="ui-sub" style="margin-bottom:8px">Every image update and roll back of this container started from DockGate — kept by container name${iu && iu.project ? ' and compose service' : ''}, so it stays after the container is recreated. The last 50 are kept.</div>
+        ${ImageUpdate.historyTable(rows, { rollbackId: iu && iu.rollback && !iu.rollback.missing ? iu.rollback.id : null, empty: 'No image updates of this container yet.' })}`;
+      bindImageBanner(el, info);
+      ImageUpdate.bindHistory(el, rows, afterImageJob, AFTER_CLOSE);
+    } catch (e) { el.innerHTML = UI.errorState(e, { compact: true }); }
   }
 
   // Processes (top) + one-off exec (C6 + C8)
@@ -725,20 +804,27 @@ Router.register('container-detail', async (content, params) => {
     });
   }
 
-  function renderHistory(el) {
-    API.get(`/meta/activity?limit=50`).then(activity => {
-      const filtered = activity.filter(a => a.resource_id === id || a.resource_id === id.substring(0, 12));
+  // Audit entries of this container: by its name and by every ID it had (an update or recreate gives a new ID).
+  function renderHistory(el, info) {
+    const cname = (info.Name || '').replace(/^\//, '');
+    const ids = new Set([id.substring(0, 12)]);
+    for (const r of (iu && iu.history) || []) { if (r.old_container_id) ids.add(r.old_container_id.slice(0, 12)); if (r.new_container_id) ids.add(r.new_container_id.slice(0, 12)); }
+    const q = new URLSearchParams({ container: cname, ids: [...ids].join(','), limit: '200' });
+    API.get(`/meta/activity?${q}`).then(filtered => {
+      if (!el.isConnected) return;
       if (filtered.length === 0) { el.innerHTML = '<div class="empty-state"><h3>No activity recorded</h3><p>Actions performed on this container will appear here</p></div>'; return; }
       el.innerHTML = `
+        <div class="ui-sub" style="margin-bottom:8px">Actions on <b>${escapeHtml(cname)}</b> from the audit log, also from before it was recreated (newest 200).</div>
         <div class="table-wrapper">
           <table>
-            <thead><tr><th>Action</th><th>Details</th><th>Time</th></tr></thead>
+            <thead><tr><th>Action</th><th>Details</th><th>From</th><th>Time</th></tr></thead>
             <tbody>
               ${filtered.map(a => `
                 <tr>
-                  <td><span class="badge badge-${a.action === 'start' ? 'running' : a.action === 'stop' ? 'stopped' : 'created'}">${a.action}</span></td>
-                  <td class="text-sm text-muted">${escapeHtml(a.details || '')}</td>
-                  <td class="text-sm text-muted">${timeAgo(a.created_at)}</td>
+                  <td><span class="badge badge-${a.action === 'start' ? 'running' : a.action === 'stop' ? 'stopped' : 'created'}">${escapeHtml(a.action)}</span></td>
+                  <td class="text-sm text-muted" style="max-width:520px;white-space:normal;word-break:break-word">${escapeHtml(a.details || '')}</td>
+                  <td class="text-sm text-muted">${escapeHtml(a.source_ip || '—')}</td>
+                  <td class="text-sm text-muted" title="${escapeHtml(formatTime(a.created_at))}">${timeAgo(a.created_at)}</td>
                 </tr>
               `).join('')}
             </tbody>

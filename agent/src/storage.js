@@ -3,6 +3,14 @@
 
 const MAX_LINE = 8192;
 
+// The level a structured log line states itself, or null. JSON (level / severity / lvl) or logfmt (level=…).
+const LEVEL_MAP = { error: 'error', err: 'error', fatal: 'error', panic: 'error', critical: 'error', crit: 'error', emerg: 'error', emergency: 'error', alert: 'error', dpanic: 'error',
+  warn: 'warn', warning: 'warn', info: 'info', notice: 'info', information: 'info', debug: 'debug', trace: 'debug', verbose: 'debug' };
+function explicitLevel(s) {
+  const m = /"(?:level|severity|lvl|log\.level)"\s*:\s*"([a-zA-Z]+)"/.exec(s) || /(?:^|\s)(?:level|lvl|severity)=["']?([a-zA-Z]+)\b/.exec(s);
+  return m ? (LEVEL_MAP[m[1].toLowerCase()] || null) : null;
+}
+
 class Storage {
   constructor(opts = {}) {
     this.maxLogs = opts.maxLogs || 10000;
@@ -234,6 +242,10 @@ class Storage {
   // stderr alone is not an error: many programs (postgres, nginx) write normal lines there, so it is a warning.
   _detectLogLevel(msg, stream) {
     const s = String(msg || '');
+    // A structured line names its own level ({"level":"warn"}, level=warn, "severity":"ERROR"): that wins over the
+    // words. Caddy's {"level":"warn", … "error":"reading: context canceled"} is a warning, not an error.
+    const own = explicitLevel(s);
+    if (own) return own;
     const http = /"\s(\d{3})\s|\bHTTP\/\d(?:\.\d)?"?\s(\d{3})\b|\bstatus[=:]\s*"?(\d{3})\b/i.exec(s);
     const code = http ? Number(http[1] || http[2] || http[3]) : 0;
     if (/^(E|ERR!?):? /.test(s) || /\b(fatal|panic|emerg|alert|crit(ical)?|err(or)?|exception|traceback|fail(ed|ure)?|denied|refused|oom|segfault)\b|level=(error|fatal)|"level":"(error|fatal)"/i.test(s) || code >= 500) return 'error';
