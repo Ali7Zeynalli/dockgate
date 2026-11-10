@@ -59,8 +59,9 @@ function startQueryServer(storage, getState) {
     res.end(JSON.stringify({ error: 'Not found' }));
   });
 
-  // Listen on health port
-  server.listen(cfg.healthPort, '0.0.0.0');
+  // Loopback only: DockGate asks from inside the container (docker exec … wget 127.0.0.1) and so does the image's
+  // HEALTHCHECK. On 0.0.0.0 any container on the same Docker network could read the logs without a password.
+  server.listen(cfg.healthPort, process.env.AGENT_BIND || '127.0.0.1');
   return server;
 }
 

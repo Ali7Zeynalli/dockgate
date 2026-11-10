@@ -19,8 +19,8 @@ const Docker = require('dockerode');
   // Optional startup notification test
   if (process.env.SEND_TEST_ON_START === 'true') {
     try {
-      if (mailer.isConfigured) await mailer.sendEmail({ subject: 'Test Email', html: templates.testEmailTemplate() });
-      if (telegram.isConfigured) await telegram.sendMessage({ text: `🐳 <b>DockGate Agent active</b>\n\nWatching <code>${cfg.serverLabel}</code>` });
+      if (mailer.isConfigured()) await mailer.sendEmail({ subject: 'Test Email', html: templates.testEmailTemplate() });
+      if (telegram.isConfigured()) await telegram.sendMessage({ text: `🐳 <b>DockGate Agent active</b>\n\nWatching <code>${cfg.serverLabel}</code>` });
     } catch (e) {
       console.warn('[agent] startup test failed:', e && e.message);
     }

@@ -44,11 +44,18 @@ async function queryAgent(serverId, endpoint) {
   const server = stmts.getServer.get(serverId);
   if (!server) throw new Error(`Server not found: ${serverId}`);
 
-  // Query agent container via docker exec or wget over SSH
-  const cmd = `docker exec dockgate-agent wget -qO- "http://127.0.0.1:9000${endpoint}" 2>/dev/null || wget -qO- "http://127.0.0.1:9000${endpoint}" 2>/dev/null`;
-  const raw = await remoteCompose.execRemote(server, cmd);
-  if (!raw || !raw.trim()) throw new Error('Agent returned empty response or is not responding');
-  return JSON.parse(raw.trim());
+  // Ask the agent from inside its own container (it publishes no port). sudo -n covers a user outside the docker group.
+  const q = `wget -qO- "http://127.0.0.1:9000${endpoint}"`;
+  const cmd = `docker exec dockgate-agent ${q} 2>/dev/null || sudo -n docker exec dockgate-agent ${q} 2>/dev/null`;
+  return parseAgentReply(await remoteCompose.execRemote(server, cmd));
+}
+
+// execRemote resolves { code, stdout, stderr }. (Reading it as a string threw, so every remote agent query failed
+// and DockGate silently fell back to reading Docker directly.)
+function parseAgentReply(r) {
+  const out = String((r && typeof r === 'object' ? r.stdout : r) || '').trim();
+  if (!out) throw new Error('The agent did not answer (is the dockgate-agent container running?)');
+  try { return JSON.parse(out); } catch (e) { throw new Error('The agent sent an answer DockGate could not read'); }
 }
 
 // GET /api/monitoring/servers — list all servers with agent readiness
@@ -299,10 +306,15 @@ router.get('/:serverId/doctor', async (req, res) => {
         const containers = await dockerService.listContainers(false);
         for (const c of containers.slice(0, 6)) {
           const cName = c.name || c.shortId || c.id.substring(0, 12);
-          const cLogs = await dockerService.getContainerLogs(c.id, { tail: 40 }).catch(() => []);
-          for (const msg of cLogs) {
+          // getContainerLogs returns one text, not lines (iterating it gave one "log" per character)
+          const text = await dockerService.getContainerLogs(c.id, { tail: 40, timestamps: true }).catch(() => '');
+          for (const raw of String(text || '').split('\n')) {
+            const m = /^(\d{4}-\d\d-\d\dT\S+)\s(.*)$/.exec(raw);
+            const msg = (m ? m[2] : raw).trim();
+            if (!msg) continue;
+            const t = m ? Date.parse(m[1]) : NaN;
             rawLogs.push({
-              timestamp: Date.now(),
+              timestamp: Number.isFinite(t) ? t : Date.now(),
               containerName: cName,
               message: msg,
               source: 'container',
@@ -403,3 +415,4 @@ router.get('/:serverId/summary', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.parseAgentReply = parseAgentReply;

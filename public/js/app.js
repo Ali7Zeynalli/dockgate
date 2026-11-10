@@ -252,6 +252,7 @@ async function boot() {
 
     // Enable browser Back/Forward navigation + hash deep-links
     Router.init();
+    if (window.edgeAgentUpdateCheck) edgeAgentUpdateCheck(); // tells you when servers run an older Edge agent
 
     // Restore the page+params: prefer the URL hash (shareable, survives refresh),
     // then fall back to localStorage (legacy hard-refresh persistence), then default.

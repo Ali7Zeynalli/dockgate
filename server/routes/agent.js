@@ -18,6 +18,21 @@ router.get('/status', async (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/agent/current — the agent build DockGate installs now ({ version, build, image })
+router.get('/current', (req, res) => res.json(deployer.current()));
+
+// POST /api/agent/update-all — update every installed agent that runs an older build (one job, server by server)
+router.post('/update-all', async (req, res) => {
+  try {
+    const status = await deployer.statusAll();
+    const ids = Object.keys(status).filter(id => status[id] && status[id].installed && status[id].updateAvailable);
+    if (!ids.length) return res.json({ jobId: null, count: 0 });
+    const jobId = deployer.runJob('update', ids, sourceIp(req));
+    logAction({ req, resourceType: 'agent', resourceName: 'all', action: 'agent_update_all', details: { count: ids.length, to: deployer.current() } });
+    res.json({ jobId, count: ids.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/agent/install { serverId } — async job
 router.post('/install', (req, res) => {
   try {
@@ -29,7 +44,7 @@ router.post('/install', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/agent/update { serverId } — pull a newer image + recreate
+// POST /api/agent/update { serverId } — install the current agent build on this server (recreate)
 router.post('/update', (req, res) => {
   try {
     const { serverId } = req.body || {};

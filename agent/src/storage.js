@@ -1,6 +1,8 @@
 // In-memory time-series and circular log storage with downsampling retention.
 // Zero dependencies, ultra-fast, capped memory footprint (<20 MB).
 
+const MAX_LINE = 8192;
+
 class Storage {
   constructor(opts = {}) {
     this.maxLogs = opts.maxLogs || 10000;
@@ -213,30 +215,31 @@ class Storage {
       containerName: entry.containerName || 'system',
       source: entry.source || (entry.containerName === 'system' || entry.containerName === 'auth' || entry.containerName === 'nginx' || entry.containerName === 'kernel' ? entry.containerName : 'container'),
       stream: entry.stream || 'stdout', // 'stdout' | 'stderr'
-      message: String(entry.message || '').trim(),
+      // One line keeps at most 8 KB, so 10,000 lines stay well inside the agent's 96 MB memory limit.
+      message: String(entry.message || '').trim().slice(0, MAX_LINE),
       level: entry.level || this._detectLogLevel(entry.message, entry.stream),
     };
 
-    if (!logItem.message) return;
+    if (!logItem.message) return null;
 
     this.logs.push(logItem);
     if (this.logs.length > this.maxLogs) {
       this.logs.shift();
     }
+    return logItem; // the stored line, with its level (the error-spike check reads it)
   }
 
+  // Level from the words in the line (the same rules as DockGate's log viewer). An HTTP 5xx / 4xx counts only where a
+  // status code stands (after the request, or status=…), not any 3-digit number (a 512-byte response is not an error).
+  // stderr alone is not an error: many programs (postgres, nginx) write normal lines there, so it is a warning.
   _detectLogLevel(msg, stream) {
-    const lower = String(msg).toLowerCase();
-    if (stream === 'stderr' || lower.includes('error') || lower.includes('fatal') || lower.includes('panic') || lower.includes('exception') || lower.includes('fail') || /\b5\d{2}\b/.test(msg)) {
-      return 'error';
-    }
-    if (lower.includes('warn') || lower.includes('deprecated') || /\b4\d{2}\b/.test(msg)) {
-      return 'warn';
-    }
-    if (lower.includes('debug') || lower.includes('trace')) {
-      return 'debug';
-    }
-    return 'info';
+    const s = String(msg || '');
+    const http = /"\s(\d{3})\s|\bHTTP\/\d(?:\.\d)?"?\s(\d{3})\b|\bstatus[=:]\s*"?(\d{3})\b/i.exec(s);
+    const code = http ? Number(http[1] || http[2] || http[3]) : 0;
+    if (/^(E|ERR!?):? /.test(s) || /\b(fatal|panic|emerg|alert|crit(ical)?|err(or)?|exception|traceback|fail(ed|ure)?|denied|refused|oom|segfault)\b|level=(error|fatal)|"level":"(error|fatal)"/i.test(s) || code >= 500) return 'error';
+    if (/\b(warn(ing)?|deprecated|retry(ing)?|timeout|timed out)\b|level=warn|"level":"warn"/i.test(s) || (code >= 400 && code < 500)) return 'warn';
+    if (/\b(debug|trace|verbose)\b|level=debug|"level":"debug"/i.test(s)) return 'debug';
+    return stream === 'stderr' ? 'warn' : 'info';
   }
 
   getLogs({ container = '', source = '', level = '', search = '', limit = 100, since = 0 } = {}) {
