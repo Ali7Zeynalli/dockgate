@@ -2,6 +2,19 @@
 
 ---
 
+## [2.27.0] - 2026-11-10
+
+### Added
+- **Swarm, phase 3: Services.** A new **Swarm → Services** tab.
+  - **The list:** each service with its image, mode, running/wanted tasks and a square per task (green running, amber starting, red failed — hover for the server and the error), its ports, the last update (updated, rolling back, rolled back, paused) and, when a task does not run, why: "no suitable node (scheduling constraints not satisfied …)", "exit code 137", a network error. Refreshes every 5 seconds.
+  - **Scale…**, **Update image…** (change the tag or pull the same tag again; Swarm replaces tasks by the service's update settings and goes back by itself when a new task fails), **Roll back to previous**, **Restart** (every task, one at a time), **Logs** (docker service logs of every task in the log viewer, the source is task @ server, up to 10,000 lines), **Tasks** (where each task ran, when and why it stopped, exit code 137 explained), **Traffic** (how requests reach the tasks: the virtual IP, ingress routing mesh or host ports and what the app sees as the client IP), **Remove…** (volumes stay).
+  - After Update, Roll back, Restart, Save and New service a window follows the update: Swarm's state and message, and the tasks with server, image and state.
+  - **Settings…** and **New service…** — the full form in 10 sections: General (mode replicated / global / job, replicas, image, entrypoint, command, user, working directory, hostname), Resources (CPU and memory limits and reservations, PID limit, generic resources such as GPUs), Placement (constraints, spread by a node label, at most per server), Updates & rollback (order, tasks at a time, delay, watch time, failure action, failure ratio), Restart (condition, delay, max attempts, window), Health check (image's, custom or off), Env & secrets (environment, secrets, configs, service and container labels), Ports & network (ports with ingress or host mode, VIP or DNS round robin, overlay networks with aliases, DNS servers, extra hosts), Mounts (volume, bind, tmpfs, volume driver) and Advanced (capabilities, sysctls, ulimits, read-only, init, stop grace and signal, log driver). Settings the form does not show are kept as they are; an image digest stays pinned when the image is not changed.
+  - **New services get safe defaults:** one task at a time, the new task first (start-first), back to the previous version when a new task fails within 15 s, restart on any exit after 5 s, json-file logs 10 MB × 3. With host-mode ports the update order is stop-first (two tasks can not hold one host port).
+  - **Guards:** a database image (postgres, mysql, mariadb, mongo, redis …) with more than one replica asks first — those are separate databases, not copies; the mode of a service can not be changed; constraints, mounts, ports, durations and sizes are checked with a clear message. A service of a stack says that the next stack deploy writes over changes made here. privileged and devices are not offered: Swarm does not support them.
+
+---
+
 ## [2.26.0] - 2026-11-10
 
 ### Added

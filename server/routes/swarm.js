@@ -66,6 +66,22 @@ router.post('/nodes/:id/remove', async (req, res) => {
 router.post('/rebalance', async (req, res) => {
   try { const j = await cluster.startRebalance({ sourceIp: req.ip }); res.json({ jobId: j.id }); } catch (e) { fail(res, e); }
 });
+// ---- phase 3: services (server/swarm-services.js) ----
+const svc = require('../swarm-services');
+const ok = (fn) => async (req, res) => { try { res.json(await fn(req)); } catch (e) { res.status(e.statusCode || 500).json({ error: e.statusCode ? e.message : (swarm.dockerMsg(e) || e.message), ...(e.needConfirm ? { needConfirm: e.needConfirm } : {}) }); } };
+router.get('/services', ok(async () => ({ services: await svc.list() })));
+router.get('/services/new', ok(() => svc.choices()));
+router.post('/services', ok((req) => svc.create((req.body || {}).form || {}, { sourceIp: req.ip })));
+router.get('/services/:id', ok((req) => svc.get(req.params.id)));
+router.put('/services/:id', ok((req) => svc.save(req.params.id, (req.body || {}).form || {}, { sourceIp: req.ip, version: (req.body || {}).version })));
+router.post('/services/:id/scale', ok((req) => svc.scale(req.params.id, (req.body || {}).replicas, { sourceIp: req.ip, confirmDb: !!(req.body || {}).confirmDb })));
+router.post('/services/:id/image', ok((req) => svc.setImage(req.params.id, (req.body || {}).image, { sourceIp: req.ip })));
+router.post('/services/:id/rollback', ok((req) => svc.rollback(req.params.id, { sourceIp: req.ip })));
+router.post('/services/:id/restart', ok((req) => svc.restart(req.params.id, { sourceIp: req.ip })));
+router.delete('/services/:id', ok((req) => svc.remove(req.params.id, { sourceIp: req.ip })));
+router.get('/services/:id/tasks', ok(async (req) => ({ tasks: await svc.tasks(req.params.id) })));
+router.get('/services/:id/logs', ok((req) => svc.logs(req.params.id, { tail: req.query.tail })));
+router.get('/services/:id/progress', ok((req) => svc.progress(req.params.id)));
 router.get('/settings', async (req, res) => {
   try { res.json(await swarm.settings()); } catch (e) { fail(res, e); }
 });
