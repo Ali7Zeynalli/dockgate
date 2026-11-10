@@ -65,7 +65,8 @@ const jobs = new Map();
 const busy = new Set(); // server:name being changed
 
 let composeExec = null; // (project, args[], onData) → Promise, set by routes/compose.js
-function setComposeExec(fn) { composeExec = fn; }
+let composeRecord = null; // records the run in the stack's deploy history (Deploy → Compose stacks)
+function setComposeExec(fn, record) { composeExec = fn; composeRecord = record || null; }
 
 const COLS = `id, server_id, container_name, project, service, image, kind, status, from_image_id, to_image_id, from_digest, to_digest,
   from_version, to_version, from_created, to_created, old_container_id, new_container_id, error, source_ip, started_at, finished_at`;
@@ -469,6 +470,11 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
       job.phase = job.status === 'done' ? 'done' : 'error';
       job.finishedAt = Date.now();
       if (result.status !== 'no_change') notify(row);
+      if (isCompose && composeRecord && result.status !== 'no_change') {
+        composeRecord({ project, kind: kind === 'update' ? 'image update' : 'image rollback', status: result.status === 'updated' ? 'done' : 'error',
+          error: result.status === 'rolled_back' ? `${result.error} — the previous image was put back` : result.error, sourceIp, startedAt: job.startedAt, finishedAt: Date.now(),
+          details: { service, image: ref, from: row.from_version || short(row.from_image_id), to: row.to_version || short(row.to_image_id), result: result.status, historyId: rowId } }).catch(() => {});
+      }
     }
   })();
   return job;

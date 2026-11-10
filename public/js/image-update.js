@@ -13,6 +13,7 @@ const ImageUpdate = (() => {
   /** "15.8 → 15.19" for a newer-image check row (falls back to digests). */
   function checkChange(c) {
     if (!c) return '';
+    if (c.local_version && c.local_version === c.remote_version) return `newer build of ${escapeHtml(c.remote_version)}`;
     return `${ver(c.local_version, c.local_digest)} → ${ver(c.remote_version, c.remote_digest)}`;
   }
 

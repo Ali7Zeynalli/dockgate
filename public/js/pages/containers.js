@@ -17,7 +17,7 @@ Router.register('containers', async (content) => {
     if (stale[c.id]) return ` ${UI.pill('info', `newer image pulled${stale[c.id].version ? ` · ${escapeHtml(stale[c.id].version)}` : ''} · not recreated`)}`;
     const u = updates.get(c.image);
     if (!u) return '';
-    if (u.status === 'update') return ` ${UI.pill('info', u.remote_version ? `newer image · ${escapeHtml(u.local_version || '?')} → ${escapeHtml(u.remote_version)}` : 'newer image')}`;
+    if (u.status === 'update') return ` ${UI.pill('info', u.remote_version ? (u.local_version === u.remote_version ? `newer build of ${escapeHtml(u.remote_version)}` : `newer image · ${escapeHtml(u.local_version || '?')} → ${escapeHtml(u.remote_version)}`) : 'newer image')}`;
     if (u.status === 'error') return ` <span class="ui-sub" title="${escapeHtml(u.error || '')}">update check failed</span>`;
     return '';
   };

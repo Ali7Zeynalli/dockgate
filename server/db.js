@@ -297,6 +297,7 @@ migrate(`CREATE TABLE IF NOT EXISTS compose_deploys (
   finished_at INTEGER
 )`);
 migrate('CREATE INDEX IF NOT EXISTS idx_compose_deploys_project ON compose_deploys (project, id)');
+migrate('ALTER TABLE compose_deploys ADD COLUMN details TEXT'); // e.g. image update: service and versions
 migrate('ALTER TABLE notification_rules ADD COLUMN params TEXT');
 migrate(`CREATE TABLE IF NOT EXISTS alert_overrides (
   server_id TEXT NOT NULL,
@@ -436,8 +437,8 @@ const stmts = {
   setRuleEnabled: db.prepare('UPDATE notification_rules SET enabled = ? WHERE event_type = ?'),
   setRuleCooldown: db.prepare('UPDATE notification_rules SET cooldown_minutes = ? WHERE event_type = ?'),
   setRuleParams: db.prepare('UPDATE notification_rules SET params = ? WHERE event_type = ?'),
-  insertComposeDeploy: db.prepare('INSERT INTO compose_deploys (project, server_id, kind, source, git_commit, status, error, files, files_hash, source_ip, started_at, finished_at) VALUES (@project, @server_id, @kind, @source, @git_commit, @status, @error, @files, @files_hash, @source_ip, @started_at, @finished_at)'),
-  getComposeDeploys: db.prepare('SELECT id, project, server_id, kind, source, git_commit, status, error, files_hash, source_ip, started_at, finished_at, files IS NOT NULL AS has_files FROM compose_deploys WHERE project = ? AND (server_id = ? OR server_id IS NULL) ORDER BY id DESC LIMIT ?'),
+  insertComposeDeploy: db.prepare('INSERT INTO compose_deploys (project, server_id, kind, source, git_commit, status, error, files, files_hash, source_ip, started_at, finished_at, details) VALUES (@project, @server_id, @kind, @source, @git_commit, @status, @error, @files, @files_hash, @source_ip, @started_at, @finished_at, @details)'),
+  getComposeDeploys: db.prepare('SELECT id, project, server_id, kind, source, git_commit, status, error, files_hash, source_ip, started_at, finished_at, details, files IS NOT NULL AS has_files FROM compose_deploys WHERE project = ? AND (server_id = ? OR server_id IS NULL) ORDER BY id DESC LIMIT ?'),
   getComposeDeploy: db.prepare('SELECT * FROM compose_deploys WHERE id = ? AND project = ?'),
   trimComposeDeploys: db.prepare('DELETE FROM compose_deploys WHERE project = ? AND server_id IS ? AND id NOT IN (SELECT id FROM compose_deploys WHERE project = ? AND server_id IS ? ORDER BY id DESC LIMIT 20)'),
   getAlertOverrides: db.prepare('SELECT * FROM alert_overrides WHERE server_id = ?'),

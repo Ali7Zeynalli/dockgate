@@ -2,6 +2,17 @@
 
 ---
 
+## [2.24.1] - 2026-11-10
+
+### Added
+- **Compose stacks show image updates.** A stack row lists its services that have a newer image ("app: 15.8 → 15.19", or "newer image pulled" when the tag is already on the server) and its last image update ("app updated 2h ago · 15.8 → 15.19", or that it failed). An image update or roll back of a compose service is also a row in the stack's **Deploy history** with the service and versions. A newer build of the same version reads "newer build of 15.19".
+
+### Fixed
+- **"Update failed: compose exited with code 1" said nothing about why.** The compose output was only in the job log, which the old Update did not show. The error now ends with the line from compose that says why (for example "pull access denied …", "env file … not found", "no such service …", "toomanyrequests …"), in the notice, the update history and the stack's deploy history. Failed deploy errors there are no longer cut at 80 characters.
+- **Edge agent: false "High Error Spike" alerts.** A structured log line that names its own level is now taken at its word. Caddy writes `{"level":"warn", … "msg":"aborting with incomplete response", … "error":"reading: context canceled"}` when a visitor closes or leaves a page before the response finished; the word "error" in it made each line count as an error, so busy sites got spike alerts for normal traffic. The same rule now applies in DockGate's log viewer. Agent version 1.1.1 — update the agents from Servers → Edge agent.
+
+---
+
 ## [2.24.0] - 2026-11-10
 
 ### Added

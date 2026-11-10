@@ -181,6 +181,16 @@ async function uploadDirToRemote(server, localDir, remoteDir, onProgress) {
 // Uses a DockGate-owned, WRITABLE DOCKER_CONFIG so `--build` doesn't fail when the user's ~/.docker is
 // root-owned (e.g. a host previously used by Coolify/root → "buildx/.lock: permission denied"). Any
 // existing registry auth (~/.docker/config.json) is copied in so private-image pulls still work.
+/**
+ * The line of compose output that says why it failed ("pull access denied …", "env file … not found",
+ * "no such service: …"), so the error message carries the reason and not only the exit code.
+ */
+function composeReason(out) {
+  const lines = String(out || '').replace(/\r/g, '\n').split('\n').map(l => l.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').trim()).filter(Boolean);
+  const hit = [...lines].reverse().find(l => /\b(error|denied|not found|no such|invalid|unauthorized|failed|cannot|refused|toomanyrequests|permission|conflict|already in use|allocated)\b/i.test(l)) || lines[lines.length - 1];
+  return hit ? `: ${hit.slice(0, 300)}` : '';
+}
+
 async function runComposeInRemoteDir(server, remoteDir, project, actionArgs, onData) {
   const args = ['compose', '-p', project, ...actionArgs].map(shq).join(' ');
   const cfg = '"$HOME/.dockgate/.docker-config"';
@@ -188,7 +198,7 @@ async function runComposeInRemoteDir(server, remoteDir, project, actionArgs, onD
   const r = await execRemote(server, `cd ${shq(remoteDir)} && ${prep} && DOCKER_CONFIG=${cfg} docker ${args} 2>&1`, onData);
   if (r.code !== 0) {
     // When streaming, the full output already reached the job log — keep the thrown error short to avoid duplicating it.
-    const e = new Error(onData ? ('compose exited with code ' + r.code) : (r.stdout || r.stderr || 'compose failed').trim());
+    const e = new Error(onData ? ('compose exited with code ' + r.code + composeReason(r.stdout || r.stderr)) : (r.stdout || r.stderr || 'compose failed').trim());
     e.statusCode = 400; throw e;
   }
   return r.stdout || r.stderr || '';
@@ -235,7 +245,7 @@ async function persistGitSshConfig(server, repoRoot, keyId) {
   }
 }
 
-module.exports = {
+module.exports = { composeReason,
   getActiveRemoteServer, execRemote, resolveRemotePath, checkComposeAvailable, checkGitAvailable,
   ensureRemoteKey, removeRemoteKey, runGitOnRemote, persistGitSshConfig,
   uploadDirToRemote, runComposeInRemoteDir, removeRemoteDir, shq,
