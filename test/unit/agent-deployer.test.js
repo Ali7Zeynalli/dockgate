@@ -141,3 +141,14 @@ test('the published multi-arch image is pulled on the server: nothing built or c
   assert.equal(st.updateAvailable, false);
   remote.arch = 'x86_64';
 });
+
+test('a job left "running" by a DockGate restart is closed when DockGate starts', () => {
+  const { db, stmts } = require('../../server/db');
+  stmts.insertAgentJob.run('aj_stuck', 'update', 'srv', 'running', 1, null);
+  delete require.cache[require.resolve('../../server/agent/deployer')];
+  require('../../server/agent/deployer');
+  const row = db.prepare("SELECT status, error, log FROM agent_jobs WHERE id = 'aj_stuck'").get();
+  assert.equal(row.status, 'failed');
+  assert.match(row.error, /restarted/);
+  assert.match(row.log, /run Update again/);
+});

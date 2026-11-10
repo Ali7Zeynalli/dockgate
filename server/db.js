@@ -530,7 +530,7 @@ const stmts = {
   setAgentJobServers: db.prepare('UPDATE agent_jobs SET servers = ? WHERE id = ?'),
   appendAgentJobLog: db.prepare('UPDATE agent_jobs SET log = log || ? WHERE id = ?'),
   getAgentJob: db.prepare('SELECT * FROM agent_jobs WHERE id = ?'),
-  getAgentJobs: db.prepare('SELECT id, kind, server_id, status, total, ok, failed, started_at, finished_at FROM agent_jobs ORDER BY started_at DESC LIMIT ?'),
+  getAgentJobs: db.prepare('SELECT id, kind, server_id, status, total, ok, failed, started_at, finished_at FROM agent_jobs ORDER BY started_at DESC, rowid DESC LIMIT ?'),
   trimAgentJobs: db.prepare('DELETE FROM agent_jobs WHERE id NOT IN (SELECT id FROM agent_jobs ORDER BY started_at DESC LIMIT 200)'),
 };
 

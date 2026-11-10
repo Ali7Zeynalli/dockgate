@@ -389,6 +389,14 @@ async function checkRunningDeploys() {
     if (running) { badge.textContent = '▶ ' + running; badge.style.display = 'inline-flex'; }
     else badge.style.display = 'none';
   } catch (e) { /* not logged in / no access — leave the badge hidden */ }
+  // The same for Edge agent jobs (install / update …) on Servers → Edge agent, where the job reopens.
+  try {
+    const n = ((await API.get('/agent/jobs')) || []).filter(j => j.status === 'running').length;
+    for (const id of ['badge-infra', 'badge-infra-agent']) {
+      const b = document.getElementById(id); if (!b) continue;
+      if (n) { b.textContent = '▶ ' + n; b.style.display = 'inline-flex'; } else b.style.display = 'none';
+    }
+  } catch (e) { /* no access — leave it hidden */ }
 }
 
 // ============ SERVER SWITCHER (Local + SSH) ============
