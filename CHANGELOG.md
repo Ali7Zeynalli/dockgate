@@ -2,6 +2,17 @@
 
 ---
 
+## [2.22.2] - 2026-11-10
+
+### Fixed
+- **Edge agent on a server with another CPU died with "exec format error".** DockGate built the agent for its own CPU (usually x86_64) and copied that image to every server, so on an ARM64 server (Hetzner CAX, Oracle Ampere, AWS Graviton) it could not start. Now:
+  - a server with a different CPU builds the agent itself (it needs internet for node:22-alpine and npm);
+  - a server with the same CPU still gets a copy from DockGate;
+  - a wrong-CPU image left by 2.22.0 or 2.22.1 is removed and replaced on the next Install or Update.
+- **A new agent that dies right after starting** fails the job with its last log line. The previous agent is put back. Before, the job said "Completed" while the agent was restarting in a loop.
+
+---
+
 ## [2.22.1] - 2026-11-10
 
 ### Changed
