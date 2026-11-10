@@ -7,7 +7,6 @@
 
 const crypto = require('crypto');
 const path = require('path');
-const { execFile } = require('child_process');
 const { stmts, db } = require('../db');
 const { createSshClient, createLocalClient } = require('../docker');
 const { decrypt } = require('../auth/secrets');
@@ -133,17 +132,30 @@ function pullOn(client, ref) {
   });
 }
 
-// Build the agent image on DockGate's LOCAL daemon from the bundled agent/ context (host `docker` CLI, the same
-// assumption as compose deploys). One build at a time; a second caller waits for the first.
+// Build the agent image on DockGate's LOCAL daemon from the bundled agent/ folder, through the Docker Engine API.
+// (The `docker build` CLI needs the buildx plugin, which DockGate's image does not have: every build failed with
+// "BuildKit is enabled but the buildx component is missing", so Update stopped before touching the old agent.)
+// One build at a time; a second caller waits for the first.
 let building = null;
-function buildAgentImage(log) {
+function agentContextFiles(dir = AGENT_DIR) {
+  const files = ['Dockerfile', 'package.json', 'package-lock.json'].filter(f => fs.existsSync(path.join(dir, f)));
+  return files.concat(fs.readdirSync(path.join(dir, 'src')).filter(f => f.endsWith('.js')).sort().map(f => 'src/' + f));
+}
+function buildAgentImage(log, client = createLocalClient()) {
   if (building) return building;
   building = new Promise((resolve, reject) => {
-    log(`building ${IMAGE_REF} on DockGate's host …\n`);
-    execFile('docker', ['build', '-t', IMAGE_REF, '--label', 'dockgate.role=agent-image', AGENT_DIR], { maxBuffer: 16 * 1024 * 1024, timeout: 600000 }, (err, stdout, stderr) => {
-      if (err) return reject(new Error('agent image build failed: ' + String(stderr || err.message).trim().slice(-400)));
-      log('built the agent image\n');
-      resolve();
+    log(`building ${IMAGE_REF} on DockGate's host (first time only, can take a few minutes) …\n`);
+    client.buildImage({ context: AGENT_DIR, src: agentContextFiles() }, { t: IMAGE_REF, labels: JSON.stringify({ 'dockgate.role': 'agent-image' }), rm: true, forcerm: true }, (err, stream) => {
+      if (err) return reject(new Error('agent image build failed: ' + err.message));
+      let failed = null;
+      client.modem.followProgress(stream, (e) => {
+        if (e || failed) return reject(new Error('agent image build failed: ' + String(failed || e.message).trim().slice(-400)));
+        log('built the agent image\n');
+        resolve();
+      }, (ev) => {
+        if (ev && (ev.error || ev.errorDetail)) failed = ev.error || (ev.errorDetail && ev.errorDetail.message);
+        else if (ev && ev.stream && /^Step \d+\/\d+/.test(ev.stream)) log(ev.stream.trim() + '\n');
+      });
     });
   }).finally(() => { building = null; });
   return building;
@@ -164,7 +176,7 @@ async function ensureImage(client, log, forcePull, isLocal) {
   }
   if (await hasImage(client, IMAGE_REF)) { log(`image present: ${IMAGE_REF}\n`); return; }
   const local = isLocal ? client : createLocalClient();
-  if (!await hasImage(local, IMAGE_REF)) await buildAgentImage(log);
+  if (!await hasImage(local, IMAGE_REF)) await buildAgentImage(log, local);
   if (isLocal) return;
   log(`copying ${IMAGE_REF} to the server …\n`);
   const tar = await new Promise((res, rej) => local.getImage(IMAGE_REF).get((err, stream) => (err ? rej(err) : res(stream))));

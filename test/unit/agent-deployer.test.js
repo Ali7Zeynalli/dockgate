@@ -7,7 +7,7 @@ const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { Readable } = require('node:stream');
 
-const steps = [];
+const steps = []; let buildCtx = null;
 function fakeDaemon(name) {
   const d = { name, images: new Set(), containers: [], failStart: false };
   const cont = (c) => ({
@@ -26,6 +26,7 @@ function fakeDaemon(name) {
       remove: async () => { if (d.containers.some(c => c.Image === ref)) throw new Error('in use'); d.images.delete(ref); steps.push(`${name}:rmi ${ref}`); },
     }),
     loadImage: (tar, opts, cb) => { steps.push(`${name}:load`); cb(null, 'stream'); },
+    buildImage: (ctx, opts, cb) => { steps.push(`${name}:build ${opts.t}`); buildCtx = ctx; d.images.add(opts.t); cb(null, 'stream'); },
     listImages: async () => [...d.images].map(t => ({ RepoTags: [t] })),
     pull: (ref, o, cb) => cb(new Error('should not pull')),
     modem: { followProgress: (s, done) => { for (const r of loads) r(); done(null); } },
@@ -37,9 +38,6 @@ const local = fakeDaemon('dockgate'), remote = fakeDaemon('srv');
 const dockerMod = require('../../server/docker');
 dockerMod.createLocalClient = () => local.client;
 dockerMod.createSshClient = () => remote.client;
-const cp = require('node:child_process');
-const realExecFile = cp.execFile;
-cp.execFile = (cmd, args, opts, cb) => { if (cmd === 'docker' && args[0] === 'build') { steps.push('dockgate:build ' + args[2]); local.images.add(args[2]); return cb(null, '', ''); } return realExecFile(cmd, args, opts, cb); };
 const { stmts } = require('../../server/db');
 stmts.insertServer.run('srv', 'ssh', '203.0.113.30', 22, 'deploy', null, null, null, '', 'test', 0);
 const D = require('../../server/agent/deployer');
@@ -70,6 +68,7 @@ test('update of an old 1.0.0 agent: build once, copy, then swap; old image remov
   await D.installOne('srv', () => {}, () => {}, 'update');
   const i = (s) => steps.findIndex(x => x.startsWith(s));
   assert.ok(i('dockgate:build') >= 0 && i('srv:load') > i('dockgate:build'), 'built on DockGate, then copied');
+  assert.ok(buildCtx.src.includes('Dockerfile') && buildCtx.src.includes('src/index.js'), 'built through the Docker API from the agent folder (no docker CLI / buildx)');
   assert.ok(i('srv:stop /dockgate-agent') > i('srv:load'), 'the old agent stops only after the image arrived');
   assert.ok(i('srv:create ' + D.IMAGE_REF) > i('srv:rename'), 'old renamed before the new one is created');
   assert.ok(steps.includes('srv:rmi dockgate/agent:1.0.0'), 'old image removed');

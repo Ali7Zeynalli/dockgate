@@ -2,6 +2,13 @@
 
 ---
 
+## [2.22.1] - 2026-11-10
+
+### Changed
+- **Edge agent image** is built through the Docker Engine API, the same way Builds works, instead of the `docker build` command. The build no longer depends on the docker CLI or its buildx plugin inside DockGate's container. A failed build now shows Docker's own error in the job log.
+
+---
+
 ## [2.22.0] - 2026-11-10
 
 ### Added
