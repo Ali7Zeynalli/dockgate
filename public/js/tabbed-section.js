@@ -36,7 +36,7 @@ function renderTabbedSection(content, params, config) {
 }
 
 // The sections are defined once, in navItems (app.js): the same list drives the sidebar and these pages.
-['resources', 'deploy', 'observe', 'tools'].forEach(key => Router.register(key, (content, params) => {
+['resources', 'deploy', 'swarm', 'observe', 'tools'].forEach(key => Router.register(key, (content, params) => {
   const item = navItems[key];
   return renderTabbedSection(content, params, { tabs: item.tabs, default: item.default });
 }));

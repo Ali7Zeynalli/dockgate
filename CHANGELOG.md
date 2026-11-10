@@ -2,6 +2,21 @@
 
 ---
 
+## [2.25.0] - 2026-11-10
+
+### Added
+- **Swarm, phase 1: one server.** A new **Docker → Swarm** section for the server in use.
+  - **Set up Swarm…** is a five step wizard (Mode, Server, Checks, Options, Create). Nothing changes on the server before the last step.
+  - **Checks:** Docker version, whether the server is already in a swarm, `live-restore` (Swarm does not run with it; the fix is shown), the node name, the address to advertise (read over SSH; a private address is suggested), whether the overlay address pool overlaps a network the server already uses (a cloud private network such as 10.0.0.0/16, a Docker network) — then a free pool is suggested — the firewall note, and the compose projects that keep running.
+  - **Options:** the address, and under Advanced the address pool and mask, data port, node certificate lifetime, task history and autolock.
+  - **Create** runs as a job with a live log (can be closed and reopened): `docker swarm init`, then a check that the node is Ready; if the check fails, the server leaves the swarm again. With autolock the unlock key is shown once and kept by DockGate (encrypted). When Docker can not choose between several addresses, the wizard asks which one to use.
+  - **Overview** (refreshes every 5 seconds): one sentence, warnings (tasks not running, manager count, compose projects outside Swarm), four numbers (ready servers, managers and how many losses they tolerate, services, running tasks), "Where tasks run" with a card per node and its tasks (green running, amber starting, red failed with the error), and the Swarm events of the last 24 hours.
+  - **Locked swarm** (autolock after a Docker restart): the Overview says so and **Unlock…** uses the stored key or one you enter.
+  - **Cluster settings:** cluster ID, creation date, address pool, data port, certificate lifetime, task history, autolock with **Show unlock key…** (audited), and **Turn Swarm off…**.
+  - Compose projects are not stopped or changed by any of this. Services, stacks, nodes and moving compose projects to Swarm come in the next versions.
+
+---
+
 ## [2.24.1] - 2026-11-10
 
 ### Added
