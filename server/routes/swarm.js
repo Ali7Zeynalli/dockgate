@@ -133,6 +133,9 @@ const bk = require('../swarm-backup');
 router.get('/backups', ok(async () => ({ backups: bk.list(), nightly: bk.nightlyOn() })));
 router.post('/backups', ok((req) => bk.backupNow({ reason: 'manual', sourceIp: req.ip })));
 router.put('/backups/nightly', ok(async (req) => { bk.setNightly(!!(req.body || {}).on); logAction({ req, resourceType: 'swarm', resourceName: 'backup', action: 'swarm_backup_nightly', details: { on: !!(req.body || {}).on } }); return { nightly: bk.nightlyOn() }; }));
+router.post('/backups/upload', ok((req) => bk.upload(req, { sourceIp: req.ip })));
+router.get('/backups/:file/restore-plan', ok((req) => bk.restorePlan(req.params.file)));
+router.post('/backups/:file/restore', ok(async (req) => jobOf(await bk.startRestore(req.params.file, { services: (req.body || {}).services, secrets: (req.body || {}).secrets }, { sourceIp: req.ip }))));
 router.get('/backups/:file', (req, res) => {
   try {
     const p = bk.filePath(req.params.file);

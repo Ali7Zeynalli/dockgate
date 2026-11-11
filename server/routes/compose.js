@@ -148,11 +148,14 @@ router.get('/', async (req, res) => {
     const list = await annotateImageUpdates(await dockerService.listComposeProjects());
     // Projects moved to Swarm: marked (and listed, since their compose containers are gone).
     try {
-      const rows = require('../swarm-stacks').stackRows();
-      for (const r of rows) {
-        const p = list.find(x => x.name === r.name);
-        if (p) p.onSwarm = true;
-        else list.push({ name: r.name, onSwarm: true, services: [], running: 0, stopped: 0, total: 0, workingDir: (JSON.parse(r.location || '{}') || {}).cwd || '', configFiles: '' });
+      const SS = require('../swarm-stacks');
+      for (const r of SS.stackRows()) {
+        if (r.origin !== 'compose') continue; // stack files and containers moved to Swarm are not compose projects
+        const part = SS.partialOf(r);
+        const name = part ? part.project : r.name;
+        const p = list.find(x => x.name === name);
+        if (p) { p.onSwarm = true; if (part) p.swarmPart = { stack: r.name, services: part.services }; }
+        else list.push({ name, onSwarm: true, services: [], running: 0, stopped: 0, total: 0, workingDir: (JSON.parse(r.location || '{}') || {}).cwd || '', configFiles: '' });
       }
     } catch (e) { /* Swarm off */ }
     const activeId = dockerService.getActiveServerId();
@@ -362,7 +365,9 @@ const SWARM_BLOCKED = new Set(['up', 'restart', 'update-service', 'rebuild', 're
 router.post('/:project/:action', (req, res, next) => {
   if (!SWARM_BLOCKED.has(req.params.action)) return next();
   try {
-    if (require('../swarm-stacks').isOnSwarm(req.params.project)) return res.status(409).json({ error: `${req.params.project} runs on Swarm now — manage it in Swarm → Stacks (Redeploy, or Move back to Compose)` });
+    const row = require('../swarm-stacks').stackOfProject(req.params.project);
+    if (row && row.name !== req.params.project) return res.status(409).json({ error: `Part of ${req.params.project} runs on Swarm as stack ${row.name} — Compose would start those services a second time. Manage it in Swarm → Stacks (Redeploy, or Move back to Compose)` });
+    if (row) return res.status(409).json({ error: `${req.params.project} runs on Swarm now — manage it in Swarm → Stacks (Redeploy, or Move back to Compose)` });
   } catch (e) { /* Swarm module not ready: let Compose handle it */ }
   next();
 });

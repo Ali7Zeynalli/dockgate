@@ -2,6 +2,33 @@
 
 ---
 
+## [2.36.0] - 2026-11-11
+
+### Added
+- **Edit files inside containers and volumes.** The container Files tab and the volume file browser now have:
+  - **Edit** for a text file up to 1 MB. Saving keeps the file's owner and permissions; Ctrl+S saves.
+  - **New file** and **New folder**.
+  - **⋯ → Rename… / Delete…**. Deleting asks for the name; a folder is deleted with everything in it.
+  - Paths can not leave `/` (container) or the volume. The top folder and system folders such as /etc and /usr can not be deleted.
+  - Containers must run (DockGate uses exec there); volumes use a short-lived helper container. Every change is recorded in the audit log.
+- **Move part of a compose project to Swarm.** A project where some services can not run on Swarm (privileged, devices, network_mode) shows "Part can move" in Swarm → Migrate instead of "Not possible".
+  - The other services move to the stack *project*-swarm; only they are stopped in Compose (`docker compose rm -s`).
+  - Volumes are used by their Compose names, so the data stays.
+  - The services that stay in Compose are connected to the stack network with their service name, so both sides reach each other by name as before.
+  - Compose → Stacks shows "Part on Swarm". Compose Up for the project is refused while part runs on Swarm, because it would start those services twice.
+  - Redeploy, Swarm settings and Move back to Compose work as for a whole project. Move back brings the services back into the same project.
+- **Restore from a backup.** Swarm → Cluster settings → Backups → **Restore…** recreates on the swarm in use what the backup describes and is missing here:
+  - overlay networks, configs with their content, secrets, services (with their networks, configs and secrets matched by name), node labels (by hostname) and DockGate's stack records;
+  - secret values are typed in, because a backup has names only (Swarm never gives the values out). A service whose secret has no value is skipped;
+  - names that exist are left alone, and you choose which services to restore.
+  - **Upload a backup…** adds a backup downloaded from another DockGate, for example from a server that is gone.
+  - Backups now also record network IDs, so services get their networks back.
+
+### Fixed
+- **Stacks deployed from a stack file or moved from a container were listed in Deploy → Compose stacks** as compose projects "on Swarm". Only projects moved from Compose are listed there now.
+
+---
+
 ## [2.35.0] - 2026-11-11
 
 ### Added

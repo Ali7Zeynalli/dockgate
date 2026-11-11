@@ -700,18 +700,19 @@ Router.register('container-detail', async (content, params) => {
         .join(' <span class="text-muted">/</span> ');
       const join = (n) => (curPath === '/' ? '' : curPath) + '/' + n;
       const rows = (data.entries || []).map(e => e.type === 'dir'
-        ? `<tr><td><a href="#" class="td-name" data-dir="${escapeHtml(join(e.name))}">📁 ${escapeHtml(e.name)}</a></td><td></td><td></td></tr>`
-        : `<tr><td class="td-name">📄 ${escapeHtml(e.name)}</td><td class="text-xs text-muted" style="white-space:nowrap">${formatBytes(e.size)}</td><td style="text-align:right"><button class="btn btn-xs btn-secondary" data-dl="${escapeHtml(join(e.name))}">${Icons.download}</button></td></tr>`
+        ? `<tr><td><a href="#" class="td-name" data-dir="${escapeHtml(join(e.name))}">📁 ${escapeHtml(e.name)}</a></td><td></td><td style="text-align:right">${FileEditUI.rowActions(join(e.name), true)}</td></tr>`
+        : `<tr><td class="td-name">📄 ${escapeHtml(e.name)}</td><td class="text-xs text-muted" style="white-space:nowrap">${formatBytes(e.size)}</td><td style="text-align:right;white-space:nowrap"><button class="btn btn-xs btn-secondary" data-dl="${escapeHtml(join(e.name))}" title="Download">${Icons.download}</button> ${FileEditUI.rowActions(join(e.name), false)}</td></tr>`
       ).join('');
       el.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
           <div class="text-sm" style="word-break:break-all">${crumb}</div>
-          <button class="btn btn-xs btn-secondary" id="cp-up" title="Upload a .tar — extracted into the current folder">${Icons.arrowUp} Upload .tar here</button>
+          <span>${FileEditUI.folderActions()} <button class="btn btn-xs btn-secondary" id="cp-up" title="Upload a .tar — extracted into the current folder">${Icons.arrowUp} Upload .tar here</button></span>
         </div>
         <div class="table-wrapper" style="max-height:55vh;overflow:auto"><table><tbody>${rows || '<tr><td class="text-muted text-sm" style="padding:10px">Empty</td></tr>'}</tbody></table></div>
       </div>`;
       el.querySelectorAll('[data-dir]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); load(a.dataset.dir); }));
       el.querySelectorAll('[data-nav]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); load(a.dataset.nav); }));
+      FileEditUI.bind(el, `/containers/${id}`, curPath, () => load(curPath));
       el.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => {
         const a = document.createElement('a'); a.href = `/api/containers/${id}/file?path=${encodeURIComponent(b.dataset.dl)}`;
         document.body.appendChild(a); a.click(); a.remove();

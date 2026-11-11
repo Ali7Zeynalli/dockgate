@@ -66,8 +66,16 @@ const serverId = () => dockerService.getActiveServerId() || 'local';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const WATCH_MS = () => Math.max(0, Number(process.env.SWARM_MOVE_WATCH_MS) || 30000);
 
-/** Is this compose project running as a stack on the server in use? (Compose Up is blocked then.) */
-function isOnSwarm(project, sid = serverId()) { return !!q.get.get(sid, project); }
+/** { project, services } when the stack row is part of a compose project moved to Swarm (the rest stays in Compose). */
+function partialOf(row) { try { const st = JSON.parse(row.settings || '{}'); return st.partial && st.partial.project ? st.partial : null; } catch (e) { return null; } }
+/** The stack row that holds (all or part of) this compose project, or null. */
+function stackOfProject(project, sid = serverId()) {
+  const direct = q.get.get(sid, project);
+  if (direct && direct.origin === 'compose') return direct;
+  return q.all.all(sid).find(r => r.origin === 'compose' && (partialOf(r) || {}).project === project) || null;
+}
+/** Is this compose project (or a part of it) running as a stack on the server in use? (Compose Up is blocked then.) */
+function isOnSwarm(project, sid = serverId()) { return !!stackOfProject(project, sid); }
 function stackRows(sid = serverId()) { return q.all.all(sid); }
 
 // ---- reading a compose project ----
@@ -131,11 +139,16 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
     if (s.environment && Object.keys(s.environment).length) add('info', `environment (${Object.keys(s.environment).length}) taken from the files and .env`);
     const secretish = Object.keys(s.environment || {}).filter(k => /(PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|PRIVATE_KEY)$/i.test(k) && !/_FILE$/i.test(k));
     if (secretish.length) add('info', `${secretish.join(', ')} look${secretish.length === 1 ? 's' : ''} like a password in plain environment. If the image reads ${secretish[0]}_FILE (postgres, mysql and many others do), it can become a Swarm secret later (Secrets & configs) — DockGate does not change it by itself.`);
-    if (f.some(x => x.level === 'bad')) out.status = 'impossible';
-    else if (out.status === 'ready' && f.some(x => x.level === 'warn')) out.status = 'attention';
-    out.services.push({ name, image, database: isDatabase(image), findings: f, ports: (s.ports || []).map(p => ({ published: Number(p.published) || null, target: p.target, protocol: p.protocol || 'tcp' })), healthcheck: !!(s.healthcheck && !s.healthcheck.disable), volumes: vols.map(v => v.source), binds: binds.map(v => v.source) });
+    const stays = f.some(x => x.level === 'bad'); // this service can not run on Swarm: it stays in Compose
+    if (!stays && out.status === 'ready' && f.some(x => x.level === 'warn')) out.status = 'attention';
+    out.services.push({ name, image, database: isDatabase(image), findings: f, ports: (s.ports || []).map(p => ({ published: Number(p.published) || null, target: p.target, protocol: p.protocol || 'tcp' })), healthcheck: !!(s.healthcheck && !s.healthcheck.disable), volumes: vols.map(v => v.source), binds: binds.map(v => v.source), stays });
   }
   if (!out.services.length) block('The project has no services.');
+  out.stays = out.services.filter(x => x.stays).map(x => x.name);
+  if (out.status !== 'impossible' && out.stays.length) {
+    if (out.stays.length === out.services.length) { out.status = 'impossible'; out.reasons.push('No service of this project can run on Swarm.'); }
+    else out.status = 'partial'; // the others move; these stay in Compose and are connected to the stack network
+  }
   out.cfg = cfg; // server side only
   return out;
 }
@@ -168,13 +181,16 @@ function clean(v) {
 function adapt(cfg, settings = {}, ctx = {}) {
   const set = (settings && settings.services) || {};
   const out = { services: {}, networks: {}, volumes: {}, secrets: {}, configs: {} };
+  const only = ctx.only ? new Set(ctx.only) : null; // part of a project: only these services
   for (const [name, s0] of Object.entries(cfg.services || {})) {
+    if (only && !only.has(name)) continue;
     const s = JSON.parse(JSON.stringify(s0));
     const my = set[name] || {};
     for (const k of ['container_name', 'build', 'profiles', 'pull_policy', 'links', 'external_links', 'restart', 'scale']) delete s[k];
     for (const k of IGNORED_BY_SWARM) delete s[k];
     if (ctx.images && ctx.images[name]) s.image = ctx.images[name];
     if (s.depends_on && !Array.isArray(s.depends_on)) s.depends_on = Object.keys(s.depends_on);
+    if (only && s.depends_on) { s.depends_on = s.depends_on.filter(x => only.has(x)); if (!s.depends_on.length) delete s.depends_on; }
     if (s.networks && !Array.isArray(s.networks)) for (const k of Object.keys(s.networks)) if (s.networks[k] === null) s.networks[k] = {};
     const hostPorts = my.portMode === 'host';
     if (s.ports) s.ports = s.ports.map(p => clean({ target: Number(p.target), published: p.published !== undefined && p.published !== '' ? Number(p.published) : undefined, protocol: p.protocol || 'tcp', mode: hostPorts ? 'host' : 'ingress' }));
@@ -201,11 +217,16 @@ function adapt(cfg, settings = {}, ctx = {}) {
     const n = { ...(n0 || {}) };
     if (n.external) { out.networks[k] = clean(n); continue; }
     delete n.ipam; if (n.driver === 'bridge' || !n.driver) n.driver = 'overlay';
+    if (ctx.project) delete n.name; // part of a project: the Compose network keeps its name; the stack makes its own
     n.attachable = true;
     if (ctx.encrypt && n.driver === 'overlay') n.driver_opts = { ...(n.driver_opts || {}), encrypted: '' };
     out.networks[k] = clean(n);
   }
-  for (const [k, v] of Object.entries(cfg.volumes || {})) out.volumes[k] = clean(v || {});
+  for (const [k, v] of Object.entries(cfg.volumes || {})) {
+    // Part of a project: the stack has another name, so its volumes are named by their Compose name (the data stays).
+    if (ctx.project && !(v && v.external)) out.volumes[k] = { external: true, name: (v && v.name) || `${ctx.project}_${k}` };
+    else out.volumes[k] = clean(v || {});
+  }
   for (const [k, v] of Object.entries(cfg.secrets || {})) out.secrets[k] = clean(v || {});
   for (const [k, v] of Object.entries(cfg.configs || {})) out.configs[k] = clean(v || {});
   for (const k of ['networks', 'volumes', 'secrets', 'configs']) if (!Object.keys(out[k]).length) delete out[k];
@@ -252,6 +273,10 @@ async function stackRemove(name, log) {
   for (let i = 0; i < 60; i++) {
     const nets = await c.listNetworks({ filters: stackFilter(name) });
     if (!nets.length) { if (i) log(`  stack network gone after ${i * 2}s`); return; }
+    if (i === 0) for (const n of nets) { // Compose containers DockGate connected to it (part of a project)
+      const info = await c.getNetwork(n.Id).inspect().catch(() => null);
+      for (const [cid, ct] of Object.entries((info && info.Containers) || {})) if (!/^lb-|\.\d+\.[a-z0-9]{25}$/.test(ct.Name || '')) await c.getNetwork(n.Id).disconnect({ Container: cid, Force: true }).then(() => log(`  disconnected ${ct.Name} from ${n.Name}`)).catch(() => {});
+    }
     for (const n of nets) await c.getNetwork(n.Id).remove().catch(() => {});
     await sleep(2000);
   }
@@ -337,7 +362,7 @@ async function list() {
   return [...stacks.values()].map(x => {
     const r = rows.get(x.name);
     const last = q.history.all(sid, x.name)[0] || null;
-    return { ...x, managed: !!r, origin: r ? r.origin : 'outside', location: r ? JSON.parse(r.location || 'null') : null, hasFile: !!(r && r.yaml), fromContainer: r && r.from_container ? JSON.parse(r.from_container).name : null, last };
+    return { ...x, managed: !!r, origin: r ? r.origin : 'outside', location: r ? JSON.parse(r.location || 'null') : null, hasFile: !!(r && r.yaml), fromContainer: r && r.from_container ? JSON.parse(r.from_container).name : null, partial: r ? partialOf(r) : null, last };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -357,6 +382,26 @@ function finish(job, err) {
 }
 
 /**
+ * Part of a project on Swarm: connect its Compose containers (the services that stay) to the stack's
+ * networks, with their service name as alias, so both sides reach each other by name as before.
+ */
+async function connectStaying(project, stackName, stays, log) {
+  const c = dockerService.docker;
+  const nets = await c.listNetworks({ filters: stackFilter(stackName) });
+  const cts = await c.listContainers({ all: false, filters: JSON.stringify({ label: [`com.docker.compose.project=${project}`] }) });
+  for (const ct of cts) {
+    const svc = ct.Labels['com.docker.compose.service'];
+    if (!stays.includes(svc)) continue;
+    if (ct.HostConfig && ct.HostConfig.NetworkMode === 'host') { log(`  ${svc}: host network — it reaches the stack through published ports only`); continue; }
+    for (const n of nets) {
+      if (((ct.NetworkSettings || {}).Networks || {})[n.Name]) continue;
+      try { await c.getNetwork(n.Id).connect({ Container: ct.Id, EndpointConfig: { Aliases: [svc] } }); log(`  ${svc} connected to ${n.Name}`); }
+      catch (e) { log(`  ! ${svc} could not join ${n.Name}: ${swarm.dockerMsg(e)}`); }
+    }
+  }
+}
+
+/**
  * Move compose projects to Swarm, one at a time. plans: [{ project, hash, settings }].
  * A project that fails its check is put back in Compose; the others go on.
  */
@@ -373,7 +418,7 @@ async function startMove(plans, { sourceIp } = {}) {
       const res = { project: p, status: 'failed', error: null, downtimeMs: null };
       job.result.projects.push(res);
       const sk = (id, st, label) => step(job, `${p}:${id}`, st, label ? `${p}: ${label}` : undefined);
-      let deployId = null, downAt = null, r = null, deployed = false;
+      let deployId = null, downAt = null, r = null, deployed = false, partial = null, stackName = p;
       try {
         log(`\n=== ${p} ===`);
         sk('check', 'running', 'read the compose files again');
@@ -382,27 +427,34 @@ async function startMove(plans, { sourceIp } = {}) {
         if (a.status === 'impossible') throw new Error(a.reasons.concat(a.services.flatMap(s => s.findings.filter(f => f.level === 'bad').map(f => `${s.name}: ${f.text}`))).join('; '));
         if (plan.hash && a.hash !== plan.hash) { res.status = 'changed'; throw new Error('the compose files changed after the plan was made — review it again'); }
         r = { files: a.location.files, cwd: a.location.cwd, remote: a.location.remote, server: a.location.serverId ? require('./db').stmts.getServer.get(a.location.serverId) : null };
+        partial = a.status === 'partial' ? { project: p, services: a.services.filter(x => !x.stays).map(x => x.name), stays: a.stays } : null;
+        stackName = partial ? `${p}-swarm` : p;
+        if (partial) {
+          if (q.get.get(sid, stackName) || (await dockerService.docker.listServices({ filters: stackFilter(stackName) })).length) throw new Error(`a stack named ${stackName} already exists`);
+          log(`Part of ${p} moves: ${partial.services.join(', ')} → stack ${stackName}. ${partial.stays.join(', ')} stay${partial.stays.length === 1 ? 's' : ''} in Compose and ${partial.stays.length === 1 ? 'is' : 'are'} connected to the stack network.`);
+        }
         const images = {};
         for (const s of a.services) if (s.image && !(a.cfg.services[s.name] || {}).image) images[s.name] = s.image;
-        const stack = adapt(a.cfg, plan.settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images });
+        const stack = adapt(a.cfg, plan.settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, only: partial ? partial.services : null, project: partial ? p : null });
         sk('check', 'done');
-        deployId = q.addDeploy.run(sid, p, 'move', a.hash, JSON.stringify(stack), sourceIp || null, Date.now()).lastInsertRowid;
-        sk('down', 'running', 'docker compose down (volumes stay)');
+        deployId = q.addDeploy.run(sid, stackName, 'move', a.hash, JSON.stringify(stack), sourceIp || null, Date.now()).lastInsertRowid;
+        sk('down', 'running', partial ? `docker compose rm -s -f ${partial.services.join(' ')} (volumes stay)` : 'docker compose down (volumes stay)');
         downAt = Date.now();
-        await helpers().runResolved(r, p, ['down'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
+        await helpers().runResolved(r, p, partial ? ['rm', '-s', '-f', ...partial.services] : ['down'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
         sk('down', 'done');
         sk('deploy', 'running', 'docker stack deploy');
-        await stackDeploy(p, stack, log);
+        await stackDeploy(stackName, stack, log);
         deployed = true;
         sk('deploy', 'done');
         sk('verify', 'running', 'check every service runs');
-        const readyAt = await verify(p, log, { since: downAt });
+        const readyAt = await verify(stackName, log, { since: downAt });
         sk('verify', 'done');
+        if (partial) { sk('connect', 'running', 'connect the services that stay in Compose'); await connectStaying(p, stackName, partial.stays, log); sk('connect', 'done'); }
         res.status = 'moved'; res.downtimeMs = readyAt - downAt;
-        q.put.run({ server_id: sid, name: p, origin: 'compose', location: JSON.stringify({ files: r.files, cwd: r.cwd, remote: r.remote, serverId: a.location.serverId }), settings: JSON.stringify(plan.settings || {}), now: Date.now() });
+        q.put.run({ server_id: sid, name: stackName, origin: 'compose', location: JSON.stringify({ files: r.files, cwd: r.cwd, remote: r.remote, serverId: a.location.serverId }), settings: JSON.stringify({ ...(plan.settings || {}), ...(partial ? { partial: { project: p, services: partial.services } } : {}) }), now: Date.now() });
         q.endDeploy.run('done', null, res.downtimeMs, Date.now(), deployId);
-        log(`✓ ${p} runs on Swarm (down for about ${Math.round(res.downtimeMs / 1000)}s)`);
-        logAction({ sourceIp, server: sid, resourceType: 'swarm-stack', resourceName: p, action: 'swarm_move_to_swarm', details: { services: Object.keys(stack.services), downtimeMs: res.downtimeMs } });
+        log(`✓ ${partial ? `${partial.services.join(', ')} of ${p} run` : `${p} runs`} on Swarm (down for about ${Math.round(res.downtimeMs / 1000)}s)`);
+        logAction({ sourceIp, server: sid, resourceType: 'swarm-stack', resourceName: stackName, action: 'swarm_move_to_swarm', details: { services: Object.keys(stack.services), downtimeMs: res.downtimeMs, ...(partial ? { project: p, stays: partial.stays } : {}) } });
       } catch (e) {
         res.error = e.message;
         log(`✗ ${p}: ${e.message}`);
@@ -410,8 +462,8 @@ async function startMove(plans, { sourceIp } = {}) {
         if (downAt && r) {
           sk('back', 'running', 'put it back in Compose');
           try {
-            if (deployed) await stackRemove(p, log);
-            else await stackRemove(p, log).catch(() => {});
+            if (deployed) await stackRemove(stackName, log);
+            else await stackRemove(stackName, log).catch(() => {});
             await helpers().runResolved(r, p, ['up', '-d'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
             res.status = 'rolled_back';
             sk('back', 'done');
@@ -425,7 +477,7 @@ async function startMove(plans, { sourceIp } = {}) {
         if (deployId) q.endDeploy.run(res.status === 'rolled_back' ? 'rolled_back' : 'failed', res.error, downAt ? Date.now() - downAt : null, Date.now(), deployId);
         logAction({ sourceIp, server: sid, resourceType: 'swarm-stack', resourceName: p, action: 'swarm_move_failed', details: { status: res.status, error: res.error } });
       }
-      if (deployId) q.trim.run(sid, p, sid, p);
+      if (deployId) q.trim.run(sid, stackName, sid, stackName);
     }
     const moved = job.result.projects.filter(x => x.status === 'moved').length;
     log(`\n${moved} of ${plans.length} project${plans.length > 1 ? 's' : ''} moved.`);
@@ -458,11 +510,13 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
         const loc = JSON.parse(row.location || 'null');
         if (!loc) throw new Error('The location of the compose files is not known');
         const r = { files: loc.files, cwd: loc.cwd, remote: loc.remote, server: loc.serverId ? require('./db').stmts.getServer.get(loc.serverId) : null };
-        const cfg = await readConfig(r, name);
+        const part = partialOf(row);
+        const proj = part ? part.project : name;
+        const cfg = await readConfig(r, proj);
         hash = hashOf(cfg);
-        const set = settings || JSON.parse(row.settings || '{}');
-        stack = adapt(cfg, set, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images: imagesForBuilt(cfg, name, ctx) });
-        if (settings) q.put.run({ server_id: sid, name, origin: row.origin, location: row.location, settings: JSON.stringify(settings), now: Date.now() });
+        const set = settings ? { ...settings, ...(part ? { partial: part } : {}) } : JSON.parse(row.settings || '{}');
+        stack = adapt(cfg, set, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images: imagesForBuilt(cfg, proj, ctx), only: part ? part.services.filter(x => cfg.services && cfg.services[x]) : null, project: part ? proj : null });
+        if (settings) q.put.run({ server_id: sid, name, origin: row.origin, location: row.location, settings: JSON.stringify(set), now: Date.now() });
         step(job, 'read', 'done');
       }
       id = q.addDeploy.run(sid, name, deployId ? 'previous' : 'redeploy', hash, JSON.stringify(stack), sourceIp || null, Date.now()).lastInsertRowid;
@@ -473,6 +527,11 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
       step(job, 'verify', 'running', 'Check every service runs');
       await verify(name, log, { since: t });
       step(job, 'verify', 'done');
+      const part = partialOf(row);
+      if (part) { // a new network in the file: connect the Compose part to it too
+        const others = Object.keys((await readConfigSafe(row, part.project)).services || {}).filter(x => !part.services.includes(x));
+        if (others.length) await connectStaying(part.project, name, others, log);
+      }
       q.endDeploy.run('done', null, null, Date.now(), id);
       if (row.yaml && deployId && typeof stack === 'string') db.prepare('UPDATE swarm_stacks SET yaml = ?, updated_at = ? WHERE server_id = ? AND name = ?').run(stack, Date.now(), sid, name); // the earlier file is the kept one now
       logAction({ sourceIp, server: sid, resourceType: 'swarm-stack', resourceName: name, action: deployId ? 'swarm_stack_previous' : 'swarm_stack_redeploy', details: { hash } });
@@ -485,6 +544,10 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
     } finally { q.trim.run(sid, name, sid, name); }
   })();
   return job;
+}
+async function readConfigSafe(row, project) {
+  try { const loc = JSON.parse(row.location || 'null'); return await readConfig({ files: loc.files, cwd: loc.cwd, remote: loc.remote, server: loc.serverId ? require('./db').stmts.getServer.get(loc.serverId) : null }, project); }
+  catch (e) { return { services: {} }; }
 }
 function imagesForBuilt(cfg, project, ctx) {
   const images = {};
@@ -504,14 +567,16 @@ async function startMoveBack(name, { sourceIp } = {}) {
     const t = Date.now();
     try {
       const r = { files: loc.files, cwd: loc.cwd, remote: loc.remote, server: loc.serverId ? require('./db').stmts.getServer.get(loc.serverId) : null };
+      const part = partialOf(row);
+      const proj = part ? part.project : name;
       step(job, 'read', 'running', 'Check the compose files are still there');
-      await readConfig(r, name);
+      await readConfig(r, proj);
       step(job, 'read', 'done');
       step(job, 'rm', 'running', 'Remove the stack (volumes stay)');
       await stackRemove(name, log);
       step(job, 'rm', 'done');
-      step(job, 'up', 'running', 'docker compose up -d');
-      await helpers().runResolved(r, name, ['up', '-d'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
+      step(job, 'up', 'running', part ? `docker compose up -d (${part.services.join(', ')} come back to ${proj})` : 'docker compose up -d');
+      await helpers().runResolved(r, proj, ['up', '-d'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
       step(job, 'up', 'done');
       q.del.run(sid, name);
       q.endDeploy.run('done', null, Date.now() - t, Date.now(), id);
@@ -540,15 +605,19 @@ async function removeStack(name, { sourceIp } = {}) {
 /** Plan for the Review step: per project, what the adapted stack file looks like. */
 async function preview(project, settings) {
   const ctx = await context();
-  const row = q.get.get(serverId(), project);
-  const a = await analyze(project, { nodes: ctx.nodes, localImages: ctx.localImages, location: row ? JSON.parse(row.location || 'null') : null });
+  const row = q.get.get(serverId(), project); // a stack DockGate keeps (Swarm settings of a moved project)
+  const part = row ? partialOf(row) : null;
+  const proj = part ? part.project : project;
+  const a = await analyze(proj, { nodes: ctx.nodes, localImages: ctx.localImages, location: row ? JSON.parse(row.location || 'null') : null });
   if (row && !settings) settings = JSON.parse(row.settings || '{}');
   if (a.status === 'impossible') return { ...a, cfg: undefined, stack: null };
+  if (part) { a.services = a.services.filter(x => part.services.includes(x.name)); a.status = 'partial'; }
   const images = {};
   for (const s of a.services) if (s.image && !(a.cfg.services[s.name] || {}).image) images[s.name] = s.image;
-  const stack = adapt(a.cfg, settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images });
+  const only = part ? part.services : a.status === 'partial' ? a.services.filter(x => !x.stays).map(x => x.name) : null;
+  const stack = adapt(a.cfg, settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, only, project: only ? proj : null });
   const { cfg, ...rest } = a;
   return { ...rest, stack, settings: settings || {} };
 }
 
-module.exports = { isOnSwarm, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf } };
+module.exports = { isOnSwarm, stackOfProject, partialOf, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf } };

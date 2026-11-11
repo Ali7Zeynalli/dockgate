@@ -572,6 +572,30 @@
       onSave: async (ov) => { await API.post('/swarm/unlock', { key: ov.querySelector('[data-key]').value.trim() }); showToast('Swarm unlocked'); onDone && onDone(); } });
   }
 
+  // Restore from a backup's description: create what is missing on the swarm in use.
+  async function restoreDialog(file, done) {
+    let p;
+    try { p = await API.get(`/swarm/backups/${encodeURIComponent(file)}/restore-plan`); } catch (e) { return showToast(e.message, 'error', 9000); }
+    const miss = (l) => l.filter(x => !x.exists);
+    const list = (l, f) => l.length ? l.map(f).join('') : '<div class="ui-sub">—</div>';
+    const svcs = p.services;
+    const body = `<p class="text-sm">Creates on this swarm what the backup (${esc(timeAgo(p.takenAt))}) describes and is missing here. Names that exist are left alone. Volume data is not in the backup: services start with the volumes that are on the servers.</p>
+      <div class="ui-label" style="margin-top:10px">Services</div>
+      ${list(svcs, s => `<label class="text-sm" style="display:block;margin:3px 0"><input type="checkbox" data-rs-svc="${esc(s.name)}" ${s.exists ? 'disabled' : 'checked'}> <b>${esc(s.name)}</b> <span class="td-mono ui-sub">${esc(s.image)}</span> ${s.exists ? UI.pill('off', 'already here') : ''}${s.problems.map(x => `<div class="ui-sub" style="color:var(--warning,#d97706);margin-left:22px">! ${esc(x)}</div>`).join('')}</label>`)}
+      <div class="ui-label" style="margin-top:10px">Secrets</div>
+      ${miss(p.secrets).length ? `<div class="ui-sub" style="margin-bottom:4px">A backup has secret names only — Swarm never gives the values out. Type each value; a service whose secret has no value is skipped.</div>${miss(p.secrets).map(x => `<label class="ui-field" style="margin:4px 0"><span class="ui-label">${esc(x.name)} <span class="ui-sub">${x.usedBy.length ? 'used by ' + esc(x.usedBy.join(', ')) : 'not used'}</span></span><input class="input" type="password" autocomplete="new-password" data-rs-sec="${esc(x.name)}"></label>`).join('')}` : '<div class="ui-sub">Nothing to create.</div>'}
+      <div class="ui-label" style="margin-top:10px">Also created</div>
+      <div class="text-sm">${[...miss(p.networks).map(x => `network ${esc(x.name)}`), ...miss(p.configs).map(x => `config ${esc(x.name)}`), ...p.nodes.filter(n => n.found && n.needed).map(n => `labels on ${esc(n.hostname)}`), ...miss(p.stacks).map(x => `DockGate record of stack ${esc(x.name)}`)].join(' · ') || '<span class="ui-sub">Nothing else.</span>'}</div>
+      ${p.nodes.some(n => !n.found) ? `<div class="ui-sub" style="margin-top:6px">Labels for ${p.nodes.filter(n => !n.found).map(n => esc(n.hostname)).join(', ')} are not applied: no node with that name here.</div>` : ''}`;
+    UI.dialog({ title: 'Restore from backup', wide: true, saveLabel: 'Restore', body,
+      onSave: async (ov) => {
+        const services = [...ov.querySelectorAll('[data-rs-svc]:checked:not(:disabled)')].map(x => x.dataset.rsSvc);
+        const secrets = {}; ov.querySelectorAll('[data-rs-sec]').forEach(x => { if (x.value) secrets[x.dataset.rsSec] = x.value; });
+        const r = await API.post(`/swarm/backups/${encodeURIComponent(file)}/restore`, { services, secrets });
+        openJob(r.jobId, done, 'Restore from backup');
+      } });
+  }
+
   // ---- Cluster settings ----
   Router.register('swarm-settings', async (content) => {
     css();
@@ -607,7 +631,23 @@
             + UI.table([{ label: 'Taken' }, { label: 'Why' }, { label: 'Size' }, { label: 'Contains' }, { label: '', align: 'right' }], r.backups.map(b => ({ cells: [
               `<span title="${esc(formatTime(b.takenAt))}">${esc(timeAgo(b.takenAt))}</span><div class="ui-sub">${esc(b.serverName)}</div>`, esc(b.reason), formatBytes(b.size),
               `<span class="text-sm">${b.raw ? 'swarm state' : '<span style="color:var(--warning,#d97706)">no swarm state</span>'} · ${b.services} service${b.services === 1 ? '' : 's'} · ${b.nodes} node${b.nodes === 1 ? '' : 's'}${b.unlockKey ? ' · unlock key (encrypted)' : ''}</span>${b.errors && b.errors.length ? `<div class="ui-sub" style="white-space:normal">${esc(b.errors.join('; '))}</div>` : ''}`,
-              `<a class="btn btn-xs btn-secondary" href="/api/swarm/backups/${encodeURIComponent(b.file)}" download>Download</a>`] })), { minWidth: 640, empty: 'No backups yet.' });
+              `<span style="white-space:nowrap">${b.services ? UI.btn('Restore…', `data-restore="${esc(b.file)}"`) + ' ' : ''}<a class="btn btn-xs btn-secondary" href="/api/swarm/backups/${encodeURIComponent(b.file)}" download>Download</a></span>`] })), { minWidth: 700, empty: 'No backups yet.' })
+            + `<div style="margin-top:8px">${UI.btn('Upload a backup…', 'data-upload')} <span class="ui-sub">A .tar downloaded from DockGate, e.g. from a server that is gone.</span></div>`;
+          el.querySelectorAll('[data-restore]').forEach(btn => btn.onclick = () => restoreDialog(btn.dataset.restore, loadBackups));
+          el.querySelector('[data-upload]').onclick = () => {
+            const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.tar';
+            inp.onchange = async () => {
+              const f = inp.files && inp.files[0]; if (!f) return;
+              showToast(`Uploading ${f.name}…`, 'info');
+              try {
+                const r = await fetch('/api/swarm/backups/upload', { method: 'POST', headers: { 'Content-Type': 'application/x-tar' }, body: f });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(d.error || 'Upload failed');
+                showToast(`Backup added (${d.services} services)`); loadBackups();
+              } catch (er) { showToast(er.message, 'error', 9000); }
+            };
+            inp.click();
+          };
           el.querySelector('[data-nightly]').onclick = async (e) => { try { await API.put('/swarm/backups/nightly', { on: !e.currentTarget.classList.contains('active') }); loadBackups(); } catch (er) { showToast(er.message, 'error'); } };
         } catch (e) { el.innerHTML = UI.errorState(e, { compact: true }); }
       };
@@ -622,7 +662,8 @@
         <p><b>One manager still runs?</b> Do not restore — use Swarm → Overview → <b>Recover cluster…</b> on it.</p>
         <p><b>Every manager is lost:</b> on a new server (the same Docker version is best), with the backup's <span class="td-mono">swarm-dir.tar.gz</span>:</p>
         <ol style="padding-left:18px;line-height:1.7"><li><span class="td-mono">sudo systemctl stop docker</span></li><li><span class="td-mono">sudo rm -rf /var/lib/docker/swarm</span></li><li><span class="td-mono">sudo tar -xzf swarm-dir.tar.gz -C /var/lib/docker</span></li><li><span class="td-mono">sudo systemctl start docker</span></li><li><span class="td-mono">docker swarm init --force-new-cluster --advertise-addr &lt;its address&gt;</span></li><li>With autolock: <span class="td-mono">docker swarm unlock</span> (Show unlock key on this page)</li><li>Add the other servers again (Swarm → Add servers…) and remove the old nodes.</li></ol>
-        <p class="ui-sub">The backup is a .tar with RESTORE.txt (these steps), cluster.json (services, networks, configs, nodes — plain JSON), swarm-dir.tar.gz and, with autolock, the key encrypted for this DockGate. It is not done automatically: losing every manager is rare and the steps run on a server DockGate does not know yet.</p></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+        <p><b>Only the services are gone</b> (removed by mistake, or a new swarm on new servers): use <b>Restore…</b> on a backup in the list (Upload a backup… first if it comes from another DockGate). It creates the missing networks, configs, secrets (you type their values) and services.</p>
+        <p class="ui-sub">The backup is a .tar with RESTORE.txt (these steps), cluster.json (services, networks, configs, nodes — plain JSON), swarm-dir.tar.gz and, with autolock, the key encrypted for this DockGate.</p></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
       const save = async (body, msg) => {
         try {
           const r = await API.put('/swarm/settings', body);

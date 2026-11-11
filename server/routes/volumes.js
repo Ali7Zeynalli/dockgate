@@ -43,6 +43,30 @@ router.get('/:name/file', async (req, res) => {
   }
 });
 
+// Edit files in a volume (helper container, read-write): text file, new folder, rename, delete
+const FE = require('../file-edit');
+const feFail = (res, err) => res.status(err.statusCode || 500).json({ error: err.message });
+router.get('/:name/text', async (req, res) => {
+  try { res.json(await FE.read('volume', req.params.name, String(req.query.path || ''))); } catch (e) { feFail(res, e); }
+});
+router.put('/:name/text', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = await FE.write('volume', req.params.name, String(b.path || ''), b.content);
+    logAction({ req, resourceType: 'volume', resourceName: req.params.name, action: 'file-edit', details: { path: r.path, size: r.size, created: r.created } });
+    res.json(r);
+  } catch (e) { feFail(res, e); }
+});
+for (const [route, fn, action] of [['mkdir', (n, b) => FE.mkdir('volume', n, String(b.path || '')), 'file-mkdir'], ['rename', (n, b) => FE.rename('volume', n, String(b.path || ''), b.name), 'file-rename'], ['delete-path', (n, b) => FE.remove('volume', n, String(b.path || '')), 'file-delete']]) {
+  router.post(`/:name/${route}`, async (req, res) => {
+    try {
+      const r = await fn(req.params.name, req.body || {});
+      logAction({ req, resourceType: 'volume', resourceName: req.params.name, action, details: { path: (req.body || {}).path, ...(route === 'rename' ? { to: r.path } : {}) } });
+      res.json(r);
+    } catch (e) { feFail(res, e); }
+  });
+}
+
 // V2 — restore the volume from an uploaded .tar.gz (helper container extracts the streamed upload).
 // The body is the raw tar.gz (Content-Type isn't application/json, so it bypasses express.json).
 router.post('/:name/restore', async (req, res) => {

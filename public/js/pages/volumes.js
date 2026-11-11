@@ -181,7 +181,7 @@ Router.register('volumes', async (content) => {
     } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
-  // File browser (V3) — navigate directories and download files (read-only helper container).
+  // File browser (V3) — navigate directories, download files, and edit / create / rename / delete (file-edit-ui.js).
   async function openVolumeBrowser(name, path) {
     let data;
     try { data = await API.get(`/volumes/${encodeURIComponent(name)}/files?path=${encodeURIComponent(path || '')}`); }
@@ -192,17 +192,18 @@ Router.register('volumes', async (content) => {
       .concat(parts.map((p, i) => `<a href="#" data-nav="/${parts.slice(0, i + 1).join('/')}">${escapeHtml(p)}</a>`))
       .join(' <span class="text-muted">/</span> ');
     const rows = (data.entries || []).map(e => e.type === 'dir'
-      ? `<tr><td><a href="#" class="td-name" data-dir="${escapeHtml(cur + '/' + e.name)}">📁 ${escapeHtml(e.name)}</a></td><td></td><td></td></tr>`
-      : `<tr><td class="td-name">📄 ${escapeHtml(e.name)}</td><td class="text-xs text-muted" style="white-space:nowrap">${formatBytes(e.size)}</td><td style="text-align:right"><button class="btn btn-xs btn-secondary" data-dl="${escapeHtml(cur + '/' + e.name)}">${Icons.download}</button></td></tr>`
+      ? `<tr><td><a href="#" class="td-name" data-dir="${escapeHtml(cur + '/' + e.name)}">📁 ${escapeHtml(e.name)}</a></td><td></td><td style="text-align:right">${FileEditUI.rowActions(cur + '/' + e.name, true)}</td></tr>`
+      : `<tr><td class="td-name">📄 ${escapeHtml(e.name)}</td><td class="text-xs text-muted" style="white-space:nowrap">${formatBytes(e.size)}</td><td style="text-align:right;white-space:nowrap"><button class="btn btn-xs btn-secondary" data-dl="${escapeHtml(cur + '/' + e.name)}" title="Download">${Icons.download}</button> ${FileEditUI.rowActions(cur + '/' + e.name, false)}</td></tr>`
     ).join('');
     const body = `<div style="display:flex;flex-direction:column;gap:8px">
-      <div class="text-sm" id="vb-crumb" style="word-break:break-all">${crumb}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div class="text-sm" id="vb-crumb" style="word-break:break-all">${crumb}</div><span>${FileEditUI.folderActions()}</span></div>
       <div class="table-wrapper" style="max-height:50vh;overflow:auto"><table><tbody>${rows || '<tr><td class="text-muted text-sm" style="padding:10px">Empty</td></tr>'}</tbody></table></div>
     </div>`;
     const m = showModal(`Files — ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
     const root = m.overlay;
     root.querySelectorAll('[data-dir]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); m.close(); openVolumeBrowser(name, a.dataset.dir); }));
     root.querySelectorAll('[data-nav]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); m.close(); openVolumeBrowser(name, a.dataset.nav); }));
+    FileEditUI.bind(root, `/volumes/${encodeURIComponent(name)}`, cur || '/', () => { m.close(); openVolumeBrowser(name, cur); });
     root.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => {
       const a = document.createElement('a');
       a.href = `/api/volumes/${encodeURIComponent(name)}/file?path=${encodeURIComponent(b.dataset.dl)}`;

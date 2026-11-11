@@ -1152,7 +1152,7 @@ module.exports = {
   listImages, inspectImage, imageHistory, imageSaveStream, loadImage, pullImage, pushImage, pushImageStream, removeImage, tagImage, buildImage, makeDockerfileTar,
   registryHostOf, checkRegistryAuth, lookupAuthConfig,
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
-  listVolumeFiles, downloadVolumeFile,
+  listVolumeFiles, downloadVolumeFile, ensureHelperImage, VOL_HELPER_IMAGE,
   listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,

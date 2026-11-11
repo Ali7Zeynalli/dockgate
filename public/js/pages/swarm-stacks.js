@@ -8,7 +8,7 @@
 
 (() => {
   const esc = (s) => escapeHtml(String(s == null ? '' : s));
-  const STATUS = { ready: ['ok', 'Ready'], attention: ['warn', 'Attention'], impossible: ['bad', 'Not possible'] };
+  const STATUS = { ready: ['ok', 'Ready'], attention: ['warn', 'Attention'], partial: ['warn', 'Part can move'], impossible: ['bad', 'Not possible'] };
   const LV = { info: 'var(--text-muted)', warn: 'var(--warning,#d97706)', bad: 'var(--danger,#dc2626)' };
   const findings = (list) => list.map(f => `<div class="text-sm" style="color:${LV[f.level]};white-space:normal;min-width:220px">${f.level === 'bad' ? '✗' : f.level === 'warn' ? '!' : '·'} ${esc(f.text)}</div>`).join('');
   const job = (...a) => window.SwarmUI.openJob(...a);
@@ -17,6 +17,7 @@
   function settingsTable(p, settings) {
     const set = settings.services = settings.services || {};
     return UI.table([{ label: 'Service' }, { label: 'Replicas' }, { label: 'Ports' }, { label: 'Updates' }], p.services.map(s => {
+      if (s.stays) return { cells: [`<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '?')}</div>`, '<span class="text-sm" style="color:var(--warning,#d97706)">stays in Compose</span>', `<span class="ui-sub">${esc((s.findings.find(f => f.level === 'bad') || {}).text || '')}</span>`, '<span class="ui-sub">connected to the stack network</span>'] };
       const my = set[s.name] = set[s.name] || {};
       const data = s.volumes.length || s.binds.length || s.database;
       return { cells: [
@@ -65,14 +66,16 @@
       root.innerHTML = head + previews.map(pv => {
         if (!pv.stack) return `<div class="ui-ph-title" style="margin:10px 0 6px">${esc(pv.project)} ${UI.pill('bad', 'Not possible')}</div>${pv.reasons.map(r => `<div class="text-sm" style="color:${LV.bad}">✗ ${esc(r)}</div>`).join('')}`;
         const svcs = Object.entries(pv.stack.services);
-        return `<div class="ui-ph-title" style="margin:14px 0 6px">${esc(pv.project)}</div>
+        const sname = pv.status === 'partial' ? `${pv.project}-swarm` : pv.project;
+        return `<div class="ui-ph-title" style="margin:14px 0 6px">${esc(pv.project)}${pv.status === 'partial' ? ` <span class="ui-sub">→ stack ${esc(sname)}</span>` : ''}</div>
+          ${pv.status === 'partial' ? `<div class="insight-card warning" style="margin-bottom:8px"><div><b>Part of the project moves.</b> ${(pv.stays || []).map(x => `<b>${esc(x)}</b>`).join(', ')} stay${(pv.stays || []).length === 1 ? 's' : ''} in Compose and ${(pv.stays || []).length === 1 ? 'is' : 'are'} connected to the stack network, so the services reach each other by name as before. Only the moving services are stopped in Compose (<span class="td-mono">docker compose rm -s</span>). While part runs on Swarm, Compose Up for the project is refused (it would start those services twice).</div></div>` : ''}
           ${UI.table([{ label: 'Service on Swarm' }, { label: 'Replicas' }, { label: 'Ports' }, { label: 'Updates' }, { label: 'Changes for Swarm' }], svcs.map(([n, s]) => {
             const a = pv.services.find(x => x.name === n) || { findings: [] };
-            return { cells: [`<b>${esc(pv.project)}_${esc(n)}</b><div class="ui-sub td-mono">${esc(s.image)}</div>`, esc(s.deploy.replicas ?? 'global'),
+            return { cells: [`<b>${esc(sname)}_${esc(n)}</b><div class="ui-sub td-mono">${esc(s.image)}</div>`, esc(s.deploy.replicas ?? 'global'),
               (s.ports || []).map(p => `${p.published || ''}→${p.target}/${p.protocol} <span class="ui-sub">${p.mode}</span>`).join('<br>') || '—', `<span class="text-sm">${esc(s.deploy.update_config.order)}</span>${s.deploy.placement ? `<div class="ui-sub">${esc((s.deploy.placement.constraints || []).join(', '))}</div>` : ''}`, findings(a.findings) || '<span class="ui-sub">nothing</span>'] };
           }), { minWidth: 760 })}
-          <div class="text-sm" style="margin-top:6px"><b>Volumes that stay the same:</b> ${pv.volumes.length ? pv.volumes.map(v => `<span class="td-mono">${esc(v.name)}</span>`).join(', ') : 'none'}. <b>Network:</b> ${Object.values(pv.stack.networks || {}).map(n => `<span class="td-mono">${esc(n.name || '')}</span> (overlay)`).join(', ') || 'default'}.</div>`;
-      }).join('') + `<div class="insight-card info" style="margin-top:12px"><div><b>What happens, one project at a time:</b> the files are read again (if they changed since this plan, the project is not moved) → <span class="td-mono">docker compose down</span> (volumes stay) → <span class="td-mono">docker stack deploy</span> under the same name → every service must run and stay up for 30 s. If not, it is put back: the stack is removed and <span class="td-mono">docker compose up -d</span> runs. <b>The project is down from compose down until its services run on Swarm</b> — usually 10–60 s. The compose files are not changed.</div></div>`;
+          <div class="text-sm" style="margin-top:6px"><b>Volumes that stay the same:</b> ${pv.volumes.length ? pv.volumes.map(v => `<span class="td-mono">${esc(v.name)}</span>`).join(', ') : 'none'}. <b>Network:</b> ${Object.entries(pv.stack.networks || {}).map(([k, n]) => `<span class="td-mono">${esc(n.name || `${sname}_${k}`)}</span> (overlay)`).join(', ') || `${esc(sname)}_default (overlay)`}.</div>`;
+      }).join('') + `<div class="insight-card info" style="margin-top:12px"><div><b>What happens, one project at a time:</b> the files are read again (if they changed since this plan, the project is not moved) → <span class="td-mono">docker compose down</span> (volumes stay) → <span class="td-mono">docker stack deploy</span> under the same name → every service must run and stay up for 30 s. If not, it is put back: the stack is removed and <span class="td-mono">docker compose up -d</span> runs. <b>The project is down from compose down until its services run on Swarm</b> — usually 10–60 s. The compose files are not changed.${previews.some(pv => pv.status === 'partial') ? ' <b>For part of a project</b> only the moving services are stopped, and the stack gets the name <i>project</i>-swarm.' : ''}</div></div>`;
       next.disabled = previews.every(pv => !pv.stack);
     }
     back.onclick = () => { step = 0; render(); };
@@ -110,7 +113,7 @@
     ] }));
     content.innerHTML = `${UI.header('Migrate', `Compose projects on this server that run outside Swarm. Choose some and DockGate moves them one at a time; one that does not run on Swarm goes back to Compose by itself. The compose files are not changed.${data.nodes > 1 ? ' Services with data stay on this server (placement rule).' : ''}`, UI.primary('Review…', 'data-review'))}
       ${UI.table([{ label: '', width: '36px' }, { label: 'Project' }, { label: 'Status' }, { label: 'Services' }, { label: 'Running' }, { label: 'Details' }], rows, { minWidth: 860, empty: 'No compose projects outside Swarm on this server.' })}
-      <div class="ui-sub" style="margin-top:8px"><b>Ready</b>: nothing to change. <b>Attention</b>: it can move; something is shown (a build image, a database kept at 1, depends_on conditions). <b>Not possible</b>: privileged or devices, network_mode host, no compose file — it stays in Compose.</div>
+      <div class="ui-sub" style="margin-top:8px"><b>Ready</b>: nothing to change. <b>Attention</b>: it can move; something is shown (a build image, a database kept at 1, depends_on conditions). <b>Part can move</b>: some services can not run on Swarm (privileged, devices, network_mode) — the others move to the stack <i>project</i>-swarm, those stay in Compose and are connected to the stack network so they reach each other by name; volumes keep their names. <b>Not possible</b>: no service can move, or no compose file.</div>
       <div class="ui-ph" style="margin-top:18px"><div class="ui-ph-text"><div class="ui-ph-title">Containers started with docker run</div><div class="ui-ph-desc">DockGate writes a stack file from the container (image, command, environment, ports, volumes, restart policy) for you to check, then moves it: the container is stopped and kept, the stack deployed, and the container started again if the stack does not come up.</div></div></div>
       <div data-cts class="text-sm text-muted">Loading…</div>`;
     API.get('/swarm/containers').then(({ containers }) => {

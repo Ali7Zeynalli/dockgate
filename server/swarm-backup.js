@@ -73,10 +73,10 @@ async function describe(c, sid) {
   await tryPart('swarm', async () => { const s = await c.swarmInspect(); delete s.JoinTokens; return s; });
   await tryPart('nodes', async () => (await c.listNodes()).map(n => ({ id: n.ID, hostname: n.Description.Hostname, role: n.Spec.Role, availability: n.Spec.Availability, labels: n.Spec.Labels || {}, addr: n.Status.Addr, engine: n.Description.Engine && n.Description.Engine.EngineVersion })));
   await tryPart('services', async () => (await c.listServices()).map(s => ({ id: s.ID, spec: s.Spec })));
-  await tryPart('networks', async () => (await c.listNetworks({ filters: JSON.stringify({ scope: ['swarm'] }) })).filter(n => !n.Ingress).map(n => ({ name: n.Name, driver: n.Driver, attachable: n.Attachable, internal: n.Internal, options: n.Options, labels: n.Labels, subnets: ((n.IPAM && n.IPAM.Config) || []).map(x => x.Subnet) })));
+  await tryPart('networks', async () => (await c.listNetworks({ filters: JSON.stringify({ scope: ['swarm'] }) })).filter(n => !n.Ingress).map(n => ({ id: n.Id, name: n.Name, driver: n.Driver, attachable: n.Attachable, internal: n.Internal, options: n.Options, labels: n.Labels, subnets: ((n.IPAM && n.IPAM.Config) || []).map(x => x.Subnet) })));
   await tryPart('configs', async () => (await c.listConfigs()).map(x => ({ name: x.Spec.Name, labels: x.Spec.Labels || {}, data: x.Spec.Data })));
   await tryPart('secrets', async () => (await c.listSecrets()).map(x => ({ name: x.Spec.Name, labels: x.Spec.Labels || {} })));
-  try { out.stacks = db.prepare('SELECT name, origin, location, settings FROM swarm_stacks WHERE server_id = ?').all(sid); } catch (e) { out.stacks = []; }
+  try { out.stacks = db.prepare('SELECT name, origin, location, settings, yaml, from_container FROM swarm_stacks WHERE server_id = ?').all(sid); } catch (e) { out.stacks = []; }
   return out;
 }
 
@@ -243,4 +243,172 @@ async function startRecover({ confirm, sourceIp } = {}) {
   return job;
 }
 
-module.exports = { backupNow, list, filePath, nightlyOn, setNightly, start, recoveryInfo, startRecover, describe, _dir: DIR };
+// ---- restore from cluster.json (the logical description) ----
+// Recreates on the swarm in use what a backup describes and is missing here: overlay networks, configs (with
+// their content), secrets (values typed in: Swarm never gives them out, so a backup has names only), services
+// (IDs of networks, secrets and configs are matched by name) and node labels (by hostname). Existing names are
+// left alone. DockGate's stack records come back too, so Redeploy works again.
+
+/** cluster.json of a stored backup. */
+async function readDescription(file) {
+  const p = filePath(file);
+  const ex = tarStream.extract();
+  let json = null;
+  ex.on('entry', (h, stream, next) => {
+    if (h.name !== 'cluster.json') { stream.resume(); stream.on('end', next); return; }
+    const chunks = []; stream.on('data', c => chunks.push(c)); stream.on('end', () => { json = Buffer.concat(chunks).toString('utf8'); next(); });
+  });
+  await pipeline(fs.createReadStream(p), ex);
+  if (!json) throw bad(400, 'The backup has no cluster.json');
+  const d = JSON.parse(json);
+  if (!d.services) throw bad(400, `The backup has no service list${(d.errors || []).length ? ` (${d.errors.join('; ')})` : ''}`);
+  return d;
+}
+
+/** A backup .tar uploaded from another DockGate: checked and stored with the others. */
+async function upload(req, { sourceIp } = {}) {
+  fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
+  const tmp = path.join(DIR, `.upload-${Date.now()}.tar`);
+  let size = 0;
+  const { Transform } = require('stream');
+  const limit = new Transform({ transform(c, e, cb) { size += c.length; if (size > 512 * 1048576) return cb(bad(413, 'More than 512 MB')); cb(null, c); } });
+  await pipeline(req, limit, fs.createWriteStream(tmp, { mode: 0o600 }));
+  try {
+    const ex = tarStream.extract(); let json = null; const names = [];
+    ex.on('entry', (h, stream, next) => { names.push(h.name); if (h.name !== 'cluster.json') { stream.resume(); stream.on('end', next); return; } const ch = []; stream.on('data', c => ch.push(c)); stream.on('end', () => { json = Buffer.concat(ch).toString('utf8'); next(); }); });
+    await pipeline(fs.createReadStream(tmp), ex);
+    if (!json) throw bad(400, 'Not a DockGate Swarm backup (no cluster.json inside)');
+    const d = JSON.parse(json);
+    const clusterId = (d.swarm && d.swarm.ID) || 'uploaded';
+    const name = `swarm-${String(clusterId).slice(0, 12).toLowerCase().replace(/[^a-z0-9]/g, '') || 'uploaded'}-${stamp()}.tar`;
+    fs.renameSync(tmp, path.join(DIR, name));
+    const meta = { file: name, clusterId, server: 'upload', serverName: 'uploaded', reason: 'uploaded', takenAt: d.takenAt || new Date().toISOString(), raw: names.includes('swarm-dir.tar.gz'), unlockKey: names.includes('unlock-key.enc'), services: (d.services || []).length, nodes: (d.nodes || []).length, errors: d.errors || [], size };
+    fs.writeFileSync(path.join(DIR, `${name}.json`), JSON.stringify(meta), { mode: 0o600 });
+    logAction({ sourceIp, server: dockerService.getActiveServerId() || 'local', resourceType: 'swarm', resourceName: 'backup', action: 'swarm_backup_upload', details: { file: name, size } });
+    return meta;
+  } finally { fs.rmSync(tmp, { force: true }); }
+}
+
+/** What a restore would do on the swarm in use. */
+async function restorePlan(file) {
+  const { c } = await manager();
+  const d = await readDescription(file);
+  const [nets, configs, secrets, services, nodes] = await Promise.all([
+    c.listNetworks({ filters: JSON.stringify({ scope: ['swarm'] }) }), c.listConfigs(), c.listSecrets(), c.listServices(), c.listNodes()]);
+  const has = (list, name, key = (x) => x.Spec.Name) => list.some(x => key(x) === name);
+  const netById = new Map((d.networks || []).filter(n => n.id).map(n => [n.id, n.name]));
+  const plan = { takenAt: d.takenAt, networks: [], configs: [], secrets: [], services: [], nodes: [], stacks: [], notes: [] };
+  for (const n of d.networks || []) plan.networks.push({ name: n.name, exists: has(nets, n.name, x => x.Name) });
+  for (const x of d.configs || []) plan.configs.push({ name: x.name, exists: has(configs, x.name) });
+  const secretUse = {};
+  for (const sv of d.services) for (const sc of (sv.spec.TaskTemplate.ContainerSpec || {}).Secrets || []) (secretUse[sc.SecretName] = secretUse[sc.SecretName] || []).push(sv.spec.Name);
+  for (const x of d.secrets || []) plan.secrets.push({ name: x.name, exists: has(secrets, x.name), usedBy: secretUse[x.name] || [] });
+  for (const sv of d.services) {
+    const sp = sv.spec, problems = [];
+    for (const n of sp.TaskTemplate.Networks || []) if (!netById.get(n.Target) && !nets.some(x => x.Id === n.Target)) problems.push('a network is not in the backup (older backup): the service is created without it');
+    for (const ct of (sp.TaskTemplate.Placement || {}).Constraints || []) if (/node\.id\s*==/.test(ct)) problems.push(`placement "${ct}" names an old node ID`);
+    plan.services.push({ name: sp.Name, image: String(sp.TaskTemplate.ContainerSpec.Image || '').split('@')[0], exists: has(services, sp.Name), secrets: ((sp.TaskTemplate.ContainerSpec || {}).Secrets || []).map(x => x.SecretName), problems: [...new Set(problems)] });
+  }
+  for (const n of d.nodes || []) {
+    const here = nodes.find(x => x.Description.Hostname === n.hostname);
+    const cur = here ? here.Spec.Labels || {} : {};
+    if (Object.keys(n.labels || {}).length) plan.nodes.push({ hostname: n.hostname, labels: n.labels, found: !!here, needed: Object.entries(n.labels).some(([k, v]) => cur[k] === undefined) });
+  }
+  const sid = dockerService.getActiveServerId() || 'local';
+  for (const r of d.stacks || []) plan.stacks.push({ name: r.name, origin: r.origin, exists: !!db.prepare('SELECT 1 FROM swarm_stacks WHERE server_id = ? AND name = ?').get(sid, r.name) });
+  return plan;
+}
+
+/** Restore what is missing. opts: { services: [names] (default: all missing), secrets: { name: value } } */
+async function startRestore(file, opts = {}, { sourceIp } = {}) {
+  const { c } = await manager();
+  const d = await readDescription(file);
+  if (swarm._jobs.busy()) throw bad(409, 'A Swarm job is already running');
+  const sid = dockerService.getActiveServerId() || 'local';
+  const job = swarm._jobs.newJob('restore'); swarm._jobs.setCurrent(job);
+  const log = swarm._jobs.logTo(job), step = swarm._jobs.step;
+  const want = opts.services ? new Set(opts.services) : null;
+  const values = opts.secrets || {};
+  (async () => {
+    const report = { created: [], skipped: [], failed: [] };
+    try {
+      const auth = (img) => (dockerService.lookupAuthConfig ? dockerService.lookupAuthConfig(String(img || '')) : undefined);
+      step(job, 'nets', 'running', 'Overlay networks');
+      const nets = await c.listNetworks({ filters: JSON.stringify({ scope: ['swarm'] }) });
+      const netId = new Map(nets.map(n => [n.Name, n.Id]));
+      for (const n of d.networks || []) {
+        if (netId.has(n.name)) continue;
+        try {
+          const r = await c.createNetwork({ Name: n.name, Driver: n.driver || 'overlay', Attachable: !!n.attachable, Internal: !!n.internal, Options: n.options || {}, Labels: n.labels || {}, CheckDuplicate: true, ...(n.subnets && n.subnets.length ? { IPAM: { Driver: 'default', Config: n.subnets.map(x => ({ Subnet: x })) } } : {}) });
+          netId.set(n.name, r.id); log(`  + network ${n.name}`); report.created.push(`network ${n.name}`);
+        } catch (e) { log(`  ✗ network ${n.name}: ${swarm.dockerMsg(e)}`); report.failed.push(`network ${n.name}`); }
+      }
+      step(job, 'nets', 'done');
+      step(job, 'objs', 'running', 'Configs and secrets');
+      const cfgId = new Map((await c.listConfigs()).map(x => [x.Spec.Name, x.ID]));
+      for (const x of d.configs || []) {
+        if (cfgId.has(x.name)) continue;
+        try { const r = await c.createConfig({ Name: x.name, Labels: x.labels || {}, Data: x.data }); cfgId.set(x.name, r.id || r.ID); log(`  + config ${x.name}`); report.created.push(`config ${x.name}`); }
+        catch (e) { log(`  ✗ config ${x.name}: ${swarm.dockerMsg(e)}`); report.failed.push(`config ${x.name}`); }
+      }
+      const secId = new Map((await c.listSecrets()).map(x => [x.Spec.Name, x.ID]));
+      for (const x of d.secrets || []) {
+        if (secId.has(x.name)) continue;
+        if (values[x.name] === undefined || values[x.name] === '') { log(`  · secret ${x.name}: no value given — services that use it are skipped`); continue; }
+        try { const r = await c.createSecret({ Name: x.name, Labels: x.labels || {}, Data: Buffer.from(String(values[x.name])).toString('base64') }); secId.set(x.name, r.id || r.ID); log(`  + secret ${x.name}`); report.created.push(`secret ${x.name}`); }
+        catch (e) { log(`  ✗ secret ${x.name}: ${swarm.dockerMsg(e)}`); report.failed.push(`secret ${x.name}`); }
+      }
+      step(job, 'objs', 'done');
+      step(job, 'svcs', 'running', 'Services');
+      const have = new Set((await c.listServices()).map(s => s.Spec.Name));
+      const oldNet = new Map((d.networks || []).filter(n => n.id).map(n => [n.id, n.name]));
+      for (const sv of d.services) {
+        const sp = JSON.parse(JSON.stringify(sv.spec));
+        if (have.has(sp.Name)) continue;
+        if (want && !want.has(sp.Name)) { report.skipped.push(`${sp.Name} (not chosen)`); continue; }
+        const cs = sp.TaskTemplate.ContainerSpec || {};
+        const missing = (cs.Secrets || []).filter(x => !secId.has(x.SecretName)).map(x => x.SecretName);
+        if (missing.length) { log(`  · ${sp.Name}: skipped — secret ${missing.join(', ')} has no value`); report.skipped.push(`${sp.Name} (secret ${missing.join(', ')})`); continue; }
+        for (const x of cs.Secrets || []) x.SecretID = secId.get(x.SecretName);
+        cs.Configs = (cs.Configs || []).filter(x => cfgId.has(x.ConfigName)).map(x => ({ ...x, ConfigID: cfgId.get(x.ConfigName) }));
+        sp.TaskTemplate.Networks = (sp.TaskTemplate.Networks || []).map(n => ({ ...n, Target: netId.get(oldNet.get(n.Target)) || (nets.some(x => x.Id === n.Target) ? n.Target : null) })).filter(n => n.Target);
+        if (sp.Networks) delete sp.Networks;
+        try {
+          const a = auth(cs.Image);
+          await c.createService(a ? { ...sp, authconfig: a } : sp);
+          log(`  + service ${sp.Name} (${String(cs.Image).split('@')[0]})`); report.created.push(`service ${sp.Name}`);
+        } catch (e) { log(`  ✗ service ${sp.Name}: ${swarm.dockerMsg(e)}`); report.failed.push(`service ${sp.Name}`); }
+      }
+      step(job, 'svcs', 'done');
+      step(job, 'rest', 'running', 'Node labels and DockGate stack records');
+      const nodes = await c.listNodes();
+      for (const n of d.nodes || []) {
+        const here = nodes.find(x => x.Description.Hostname === n.hostname);
+        if (!here || !Object.keys(n.labels || {}).length) continue;
+        const x = await c.getNode(here.ID).inspect();
+        const labels = { ...(n.labels || {}), ...(x.Spec.Labels || {}) };
+        if (JSON.stringify(labels) === JSON.stringify(x.Spec.Labels || {})) continue;
+        try { await c.getNode(here.ID).update({ version: x.Version.Index, ...x.Spec, Labels: labels }); log(`  + labels on ${n.hostname}`); } catch (e) { log(`  ✗ labels on ${n.hostname}: ${swarm.dockerMsg(e)}`); }
+      }
+      for (const r of d.stacks || []) {
+        if (db.prepare('SELECT 1 FROM swarm_stacks WHERE server_id = ? AND name = ?').get(sid, r.name)) continue;
+        try {
+          db.prepare(`INSERT INTO swarm_stacks (server_id, name, origin, location, settings, yaml, from_container, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(sid, r.name, r.origin, r.location || null, r.settings || '{}', r.yaml || null, r.from_container || null, Date.now(), Date.now());
+          log(`  + DockGate record of stack ${r.name}${r.yaml ? '' : r.origin === 'compose' ? ' (its compose files must be on this server for Redeploy)' : ''}`);
+        } catch (e) { log(`  ✗ stack record ${r.name}: ${e.message}`); }
+      }
+      step(job, 'rest', 'done');
+      job.result = report;
+      log(`\n${report.created.length} created, ${report.skipped.length} skipped, ${report.failed.length} failed.`);
+      job.status = report.failed.length ? 'error' : 'done';
+      if (report.failed.length) job.error = `${report.failed.length} could not be created — see the log`;
+      logAction({ sourceIp, server: sid, resourceType: 'swarm', resourceName: file, action: 'swarm_restore', details: report });
+    } catch (e) {
+      job.steps.forEach(x => { if (x.status === 'running') x.status = 'failed'; });
+      job.status = 'error'; job.error = swarm.dockerMsg(e) || e.message; log('✗ ' + job.error);
+    } finally { job.finishedAt = Date.now(); }
+  })();
+  return job;
+}
+
+module.exports = { backupNow, list, filePath, nightlyOn, setNightly, start, recoveryInfo, startRecover, describe, readDescription, upload, restorePlan, startRestore, _dir: DIR };
