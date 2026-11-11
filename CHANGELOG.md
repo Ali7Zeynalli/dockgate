@@ -2,6 +2,17 @@
 
 ---
 
+## [2.38.5] - 2026-11-11
+
+### Changed
+- **README shortened and tidied.** It is now about half as long: a short intro, Quick Start with update and backup in one table, screenshot galleries for Docker, Docker Swarm and the rest, a features table, and the details (architecture, API) folded away.
+- **New Swarm screenshots:** Migrate, Secrets & configs and Overlay networks; the Stacks screenshot was retaken.
+
+### Fixed
+- **Stacks made from a `docker run` container were labelled "moved from Compose".** The Last deploy column and the History dialog now say "moved from container", "moved back to the container" and "container started again" for these stacks.
+
+---
+
 ## [2.38.4] - 2026-11-11
 
 ### Changed
