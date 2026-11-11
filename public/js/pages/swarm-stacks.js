@@ -197,6 +197,18 @@
     }
   }
   window.SwarmUI.stackEditor = stackEditor;
+  /** Move one compose project to Swarm from anywhere (Deploy → Compose stacks): analyse it, then the usual dialog. */
+  window.SwarmUI.moveProject = async (name, done) => {
+    showToast(`Reading ${name}…`, 'info', 2500);
+    let data;
+    try { data = await API.get('/swarm/migrate'); } catch (e) { return showToast(e.message, 'error', 9000); }
+    const p = data.projects.find(x => x.project === name);
+    if (!p) return showToast(`${name} is not a compose project on this server (or it runs on Swarm already)`, 'error', 9000);
+    if (p.status === 'impossible') {
+      return showModal(`${esc(name)} can not move to Swarm`, `${p.reasons.map(r => `<div class="text-sm" style="color:${LV.bad}">✗ ${esc(r)}</div>`).join('')}${p.services.map(s => s.findings.length ? `<div class="text-sm" style="margin-top:6px"><b>${esc(s.name)}</b></div>${findings(s.findings)}` : '').join('')}`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    }
+    openMove([p], done);
+  };
 
   // ---- Stacks ----
   function historyDialog(s, done) {

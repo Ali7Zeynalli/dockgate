@@ -66,7 +66,14 @@ function parseEnv(text) {
 const envOf = (row) => (row && row.env ? parseEnv(decrypt(row.env)) : {});
 
 /** `docker stack config -c -`: checks the file and fills in ${VAR}. Returns the rendered file. */
-function check(yaml, vars = {}) {
+async function check(yaml, vars = {}) {
+  const remote = I.remoteServer();
+  if (remote) { // on the server itself over the SSH session (password or key)
+    const r = await require('./remote-compose').runDockerRemote(remote, ['stack', 'config', '-c', '@stack.yml'], { files: { 'stack.yml': String(yaml) }, vars });
+    if (r.code === 0) return r.out;
+    if (/unknown command|is not a docker command/i.test(r.out)) return null; // old CLI there: deploy checks it
+    throw bad(400, `The stack file is not valid: ${r.out.trim().split('\n').slice(-3).join(' ').slice(0, 400)}`);
+  }
   return new Promise((resolve, reject) => {
     const { env } = buildCliEnv(I.serverId(), 'stack');
     const child = spawn('docker', ['stack', 'config', '-c', '-'], { env: { ...env, ...vars } });

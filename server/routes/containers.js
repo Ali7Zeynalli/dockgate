@@ -28,12 +28,16 @@ router.get('/', async (req, res) => {
   try {
     const all = req.query.all !== 'false';
     const containers = await dockerService.listContainers(all);
+    // Containers moved to Swarm (docker run → stack): kept stopped; marked so they are not started twice.
+    const moved = new Map();
+    try { for (const r of require('../swarm-stacks').stackRows()) if (r.from_container) moved.set(JSON.parse(r.from_container).id, r.name); } catch (e) { /* Swarm off */ }
     // Enrich with metadata
     const enriched = containers.map(c => {
       const fav = stmts.isFavorite.get(c.id, 'container');
       const note = stmts.getNote.get(c.id, 'container');
       const tags = stmts.getTagsForResource.all(c.id, 'container');
-      return { ...c, isFavorite: !!fav, note: note?.note || null, tags: tags.map(t => ({ tag: t.tag, color: t.color })) };
+      const stack = moved.get(c.id);
+      return { ...c, isFavorite: !!fav, note: note?.note || null, tags: tags.map(t => ({ tag: t.tag, color: t.color })), ...(stack ? { movedToSwarm: stack } : {}) };
     });
     res.json(enriched);
   } catch (err) {

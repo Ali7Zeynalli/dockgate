@@ -237,7 +237,27 @@ function adapt(cfg, settings = {}, ctx = {}) {
 
 /** docker stack deploy with the stack file on stdin, against the server in use. stack: object or YAML text;
  * vars: { KEY: value } for ${KEY} in the file. */
-function stackDeploy(name, stack, log, vars = null) {
+/** The server in use when it is a remote SSH host (stack commands then run on it over the SSH session). */
+function remoteServer() {
+  const sid = serverId();
+  if (sid === 'local') return null;
+  const row = require('./db').stmts.getServer.get(sid);
+  return row && row.type !== 'local' && row.host ? row : null;
+}
+async function stackDeploy(name, stack, log, vars = null) {
+  const text = typeof stack === 'string' ? stack : JSON.stringify(stack);
+  const remote = remoteServer();
+  if (remote) {
+    // On the server itself over the SSH session: works with a password or a key with passphrase too.
+    log(`$ docker stack deploy -c <stack file> --prune --with-registry-auth --detach=true ${name}   (on ${remote.name || remote.host})`);
+    let buf = '';
+    const r = await require('./remote-compose').runDockerRemote(remote, ['stack', 'deploy', '-c', '@stack.yml', '--prune', '--with-registry-auth', '--detach=true', name],
+      { files: { 'stack.yml': text }, vars, registryJson: require('./remote-cli-env').registryConfigJson() },
+      (t) => { buf += t; const lines = buf.split('\n'); buf = lines.pop(); lines.filter(Boolean).forEach(l => log('  ' + l)); });
+    if (buf.trim()) log('  ' + buf.trim());
+    if (r.code !== 0) throw new Error(`docker stack deploy exited with code ${r.code}${require('./remote-compose').composeReason(r.out)}`);
+    return r.out;
+  }
   return new Promise((resolve, reject) => {
     const { env: base } = buildCliEnv(serverId(), 'stack');
     const env = vars ? { ...base, ...vars } : base;
@@ -253,7 +273,7 @@ function stackDeploy(name, stack, log, vars = null) {
       const reason = require('./remote-compose').composeReason(out);
       reject(new Error(`docker stack deploy exited with code ${code}${reason}`));
     });
-    child.stdin.end(typeof stack === 'string' ? stack : JSON.stringify(stack));
+    child.stdin.end(text);
   });
 }
 
@@ -620,4 +640,4 @@ async function preview(project, settings) {
   return { ...rest, stack, settings: settings || {} };
 }
 
-module.exports = { isOnSwarm, stackOfProject, partialOf, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf } };
+module.exports = { isOnSwarm, stackOfProject, partialOf, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, remoteServer, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf } };

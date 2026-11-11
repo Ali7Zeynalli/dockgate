@@ -245,7 +245,47 @@ async function persistGitSshConfig(server, repoRoot, keyId) {
   }
 }
 
-module.exports = { composeReason,
+/**
+ * Run a docker CLI command ON the remote host over the SSH session (works with password, key or key with
+ * passphrase — the docker CLI's own ssh:// transport needs a key without passphrase). files: { name: text }
+ * are written with SFTP into a private temp folder first (never on the command line), and "@name" in args
+ * is replaced by that file's path. vars: { KEY: value } are exported from a file for ${KEY} in a stack file.
+ * registryJson: a Docker config.json used for this command only. Returns { code, out }.
+ */
+function runDockerRemote(server, args, { files = {}, vars = null, registryJson = null } = {}, onData) {
+  const run = (conn, cmd) => new Promise((resolve, reject) => {
+    conn.exec(cmd, (err, stream) => {
+      if (err) return reject(err);
+      let out = '';
+      const on = (d) => { const t = d.toString(); out += t; if (onData) onData(t); };
+      stream.on('data', on); stream.stderr.on('data', on);
+      stream.on('close', (code) => resolve({ code: code || 0, out }));
+    });
+  });
+  const quiet = (conn, cmd) => new Promise((resolve, reject) => {
+    conn.exec(cmd, (err, stream) => { if (err) return reject(err); let o = ''; stream.on('data', d => { o += d; }); stream.stderr.on('data', () => {}); stream.on('close', (code) => resolve({ code, out: o.trim() })); });
+  });
+  return withConn(server, async (conn) => {
+    const t = await quiet(conn, 'umask 077 && mktemp -d "${TMPDIR:-/tmp}/dockgate.XXXXXX"');
+    if (t.code !== 0 || !t.out.startsWith('/')) throw new Error('Could not make a temp folder on the server');
+    const dir = t.out;
+    try {
+      const put = { ...files };
+      if (registryJson) put['config.json'] = registryJson;
+      if (vars && Object.keys(vars).length) put.vars = Object.entries(vars).map(([k, v]) => `export ${k}=${shq(v)}`).join('\n') + '\n';
+      if (Object.keys(put).length) {
+        const sftp = await new Promise((res, rej) => conn.sftp((e, x) => (e ? rej(e) : res(x))));
+        for (const [n, text] of Object.entries(put)) await new Promise((res, rej) => sftp.writeFile(`${dir}/${n}`, String(text), { mode: 0o600 }, (e) => (e ? rej(e) : res())));
+        try { sftp.end(); } catch (e) { /* closed */ }
+      }
+      const argv = args.map(a => (typeof a === 'string' && a.startsWith('@') && files[a.slice(1)] !== undefined ? shq(`${dir}/${a.slice(1)}`) : shq(a))).join(' ');
+      const pre = `${put.vars ? `. ${shq(dir + '/vars')} && ` : ''}${registryJson ? `DOCKER_CONFIG=${shq(dir)} ` : ''}`;
+      return await run(conn, `${pre}docker ${argv}`);
+    } finally { await quiet(conn, `rm -rf ${shq(dir)}`).catch(() => {}); }
+  });
+}
+
+module.exports = { composeReason, runDockerRemote,
   getActiveRemoteServer, execRemote, resolveRemotePath, checkComposeAvailable, checkGitAvailable,
   ensureRemoteKey, removeRemoteKey, runGitOnRemote, persistGitSshConfig,
   uploadDirToRemote, runComposeInRemoteDir, removeRemoteDir, shq,

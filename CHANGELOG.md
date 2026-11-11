@@ -2,6 +2,20 @@
 
 ---
 
+## [2.37.0] - 2026-11-11
+
+### Added
+- **Move to Swarm… from Deploy → Compose stacks.** With Swarm on, each compose project row has a **Move to Swarm…** button. It opens the same move dialog (settings, plan, move) on that page. A project that can not move shows why. Before, it was only in the ⋯ menu and opened the Migrate page.
+- **Swarm in Resources → Containers.**
+  - A Swarm task shows "⎈ Swarm task of *service* · stack *name*".
+  - A container moved to Swarm (docker run → stack) shows "⎈ moved to Swarm · stack *name*". It has **Open stack** instead of Start, because starting it would run the app twice.
+  - A **Swarm** filter lists only those.
+
+### Fixed
+- **Moving a project to Swarm on a remote server with a password, or a key with a passphrase, failed** with "Remote Compose/Stack needs a key-based SSH server with no passphrase", after Compose had already stopped the project; DockGate then started it again. Compose commands ran on the server over DockGate's SSH session, but `docker stack deploy` used the local Docker CLI over ssh://, which can only use a key without a passphrase. Stack commands (`docker stack deploy`, `docker stack config`) now run on the server itself over the same SSH session as Compose, so password, key and key with passphrase all work. The stack file, its variables and the registry logins go to a private temp folder on the server by SFTP and are removed after; they are never on the command line.
+
+---
+
 ## [2.36.1] - 2026-11-11
 
 ### Fixed
