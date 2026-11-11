@@ -184,19 +184,42 @@ function safeFsPath(p) {
   return '/' + parts.join('/');
 }
 
-/** C3 — list a directory inside a (running) container via exec. Returns { path, entries[] }. */
-async function containerListFiles(id, path) {
-  const safe = safeFsPath(path);
-  // Pass the path as $1 (a positional arg) instead of interpolating it into the script — the shell
-  // treats $1 as a literal, so a path containing quotes/$/backtick/; cannot inject commands.
-  const script = `cd "$1" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
-  const { output } = await containerExecOnce(id, ['sh', '-c', script, 'sh', safe]);
-  const entries = String(output || '').split('\n').filter(Boolean).map(line => {
+// A folder listing as tab-separated "type size name" lines. The path is $1 (never interpolated), so a
+// path with quotes/$/backtick/; can not inject commands. A missing folder (exit 2) and a folder that can
+// not be opened (exit 3) print a marker on stderr, so neither is shown as an empty folder; `true` keeps a
+// last broken symlink from failing the script.
+const LIST_SCRIPT = (base) => `[ -d "${base}$1" ] || { echo "dg-no-such-folder" >&2; exit 2; }; cd "${base}$1" 2>/dev/null || { echo "dg-no-access" >&2; exit 3; }; for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done; true`;
+const listErr = (status, message) => Object.assign(new Error(message), { statusCode: status });
+function parseListing(text) {
+  return String(text || '').split('\n').filter(Boolean).map(line => {
     const i1 = line.indexOf('\t'), i2 = line.indexOf('\t', i1 + 1);
     if (i1 < 0 || i2 < 0) return null;
     return { type: line.slice(0, i1) === 'd' ? 'dir' : 'file', size: parseInt(line.slice(i1 + 1, i2)) || 0, name: line.slice(i2 + 1).replace(/\r$/, '') };
   }).filter(Boolean).sort((a, b) => (a.type === b.type) ? a.name.localeCompare(b.name) : (a.type === 'dir' ? -1 : 1));
-  return { path: safe, entries };
+}
+/** Turn a failed listing into the message the user needs (same wording as the file editor). */
+function listingFailure(output, exitCode, shown) {
+  const out = String(output || '');
+  if (/dg-no-such-folder/.test(out)) return listErr(400, `The folder ${shown} does not exist`);
+  if (/dg-no-access/.test(out)) return listErr(400, `The folder ${shown} can not be opened (permission denied)`);
+  // OCI runtime: exec: "sh": executable file not found in $PATH (exit 126/127 when the shell is missing).
+  if (/exec: "?sh"?:|executable file not found|sh: not found/i.test(out) || exitCode === 126 || exitCode === 127) return listErr(400, 'The container has no shell (sh) — files can only be downloaded and uploaded');
+  return listErr(400, `Could not list ${shown}: ${out.trim().split('\n').slice(-2).join(' ').slice(0, 300) || `exit code ${exitCode}`}`);
+}
+
+/** C3 — list a directory inside a (running) container via exec. Returns { path, entries[] }. */
+async function containerListFiles(id, path) {
+  const safe = safeFsPath(path);
+  let r;
+  try { r = await containerExecOnce(id, ['sh', '-c', LIST_SCRIPT(''), 'sh', safe]); }
+  catch (e) {
+    if (e.statusCode === 409 || /is not running|is paused/i.test(e.message || '')) throw listErr(409, 'The container must be running');
+    throw e;
+  }
+  // A failed exec (no shell in the image) gives a non-zero exit code and no listing lines.
+  if (r.exitCode !== 0 && r.exitCode !== null) throw listingFailure(r.output, r.exitCode, safe);
+  if (r.exitCode === null && !parseListing(r.output).length && r.output.trim()) throw listingFailure(r.output, null, safe);
+  return { path: safe, entries: parseListing(r.output) };
 }
 
 /** C3 — stream a single file from a container as a download (binary-safe, via exec cat). */
@@ -709,21 +732,32 @@ async function backupVolumeToResponse(volName, res) {
  * @param {import('stream').Readable} req the request body stream (the .tar.gz upload)
  */
 async function restoreVolumeFromRequest(volName, req) {
+  // The upload may be a .tar.gz (Back up makes those) or a plain .tar; busybox tar does not detect
+  // gzip on stdin, so look at the first bytes (gzip starts with 1f 8b) and pick the command.
+  const first = await new Promise((resolve, reject) => {
+    req.once('data', (c) => { req.pause(); resolve(c); });
+    req.once('end', () => resolve(Buffer.alloc(0)));
+    req.once('error', reject);
+  });
+  if (!first.length) throw Object.assign(new Error('The file is empty'), { statusCode: 400 });
+  const gz = first.length >= 2 && first[0] === 0x1f && first[1] === 0x8b;
   await ensureHelperImage();
   const helper = await docker.createContainer({
     Image: VOL_HELPER_IMAGE,
-    Cmd: ['sh', '-c', 'tar xzf - -C /volume'],
+    Cmd: ['sh', '-c', gz ? 'tar xzf - -C /volume' : 'tar xf - -C /volume'],
     HostConfig: { Binds: [`${volName}:/volume`], AutoRemove: false },
     AttachStdin: true, OpenStdin: true, StdinOnce: true,
     AttachStdout: true, AttachStderr: true, Tty: false,
   });
   const stream = await helper.attach({ stream: true, stdin: true, stdout: true, stderr: true, hijack: true });
   await helper.start();
+  stream.write(first);
   req.pipe(stream); // upload → container stdin; StdinOnce closes stdin when the upload ends
+  req.resume();
   const result = await helper.wait();
   try { await helper.remove({ force: true }); } catch (e) {}
   invalidateCache('');
-  if (result.StatusCode !== 0) throw new Error(`Restore failed (tar exited ${result.StatusCode})`);
+  if (result.StatusCode !== 0) throw Object.assign(new Error(`Restore failed (tar exited ${result.StatusCode}) — use a .tar.gz or .tar file`), { statusCode: 400 });
   return { success: true };
 }
 
@@ -745,24 +779,19 @@ function safeVolPath(p) {
 async function listVolumeFiles(volName, path) {
   await ensureHelperImage();
   const safe = safeVolPath(path);
-  // Path passed as $1 (literal positional arg) — see containerListFiles; prevents shell injection.
-  const script = `cd "/volume$1" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
   const helper = await docker.createContainer({
     Image: VOL_HELPER_IMAGE,
-    Cmd: ['sh', '-c', script, 'sh', safe],
+    Cmd: ['sh', '-c', LIST_SCRIPT('/volume'), 'sh', safe],
     HostConfig: { Binds: [`${volName}:/volume:ro`], AutoRemove: false },
     Tty: true, // raw (un-framed) text output
   });
   await helper.start();
-  await helper.wait();
-  const buf = await helper.logs({ stdout: true, stderr: false });
+  const w = await helper.wait();
+  const buf = await helper.logs({ stdout: true, stderr: true });
   try { await helper.remove({ force: true }); } catch (e) {}
   const text = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
-  const entries = text.split('\n').filter(Boolean).map(line => {
-    const i1 = line.indexOf('\t'), i2 = line.indexOf('\t', i1 + 1);
-    if (i1 < 0 || i2 < 0) return null;
-    return { type: line.slice(0, i1) === 'd' ? 'dir' : 'file', size: parseInt(line.slice(i1 + 1, i2)) || 0, name: line.slice(i2 + 1).replace(/\r$/, '') };
-  }).filter(Boolean).sort((a, b) => (a.type === b.type) ? a.name.localeCompare(b.name) : (a.type === 'dir' ? -1 : 1));
+  if (w && w.StatusCode) throw listingFailure(text, w.StatusCode, safe);
+  const entries = parseListing(text);
   return { path: safe, entries };
 }
 
@@ -794,37 +823,84 @@ async function downloadVolumeFile(volName, path, res) {
  * V4 — clone a volume's contents into a new volume (a helper container `cp -a`s the data).
  */
 async function cloneVolume(srcName, destName) {
+  const fail = (status, message) => Object.assign(new Error(message), { statusCode: status });
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/.test(String(destName || ''))) throw fail(400, 'Volume name: at least 2 characters — letters, digits, _ . or -, starting with a letter or digit');
+  // Docker's create returns the existing volume when the name is taken, so the copy would write into
+  // another volume's data. Refuse instead.
+  const exists = await docker.getVolume(destName).inspect().then(() => true, (e) => { if (e.statusCode === 404) return false; throw e; });
+  if (exists) throw fail(409, `A volume named ${destName} already exists — choose another name`);
+  await docker.getVolume(srcName).inspect().catch((e) => { throw e.statusCode === 404 ? fail(404, `Volume ${srcName} not found`) : e; });
   await ensureHelperImage();
   await docker.createVolume({ Name: destName });
   const helper = await docker.createContainer({
     Image: VOL_HELPER_IMAGE,
-    Cmd: ['sh', '-c', 'cp -a /from/. /to/ 2>/dev/null || true'],
+    Cmd: ['sh', '-c', 'cp -a /from/. /to/'],
     HostConfig: { Binds: [`${srcName}:/from:ro`, `${destName}:/to`], AutoRemove: false },
+    Tty: true,
   });
-  await helper.start();
-  await helper.wait();
+  let result;
+  try {
+    await helper.start();
+    result = await helper.wait();
+    if (result.StatusCode !== 0) {
+      const out = String(await helper.logs({ stdout: true, stderr: true }).catch(() => '')).trim().split('\n').slice(-2).join(' ');
+      throw fail(500, `Copying the data failed${out ? `: ${out.slice(0, 300)}` : ` (exit code ${result.StatusCode})`} — the new volume was removed`);
+    }
+  } catch (e) {
+    try { await helper.remove({ force: true }); } catch (x) {}
+    await docker.getVolume(destName).remove().catch(() => {});
+    invalidateCache('');
+    throw e;
+  }
   try { await helper.remove({ force: true }); } catch (e) {}
   invalidateCache('');
   return { success: true, name: destName };
 }
 
 // ============ NETWORKS ============
+// Networks Docker or Swarm made for itself: never offered for removal.
+const DEFAULT_NETWORKS = ['bridge', 'host', 'none'];
+const SYSTEM_NETWORKS = ['ingress', 'docker_gwbridge'];
 async function listNetworks() {
-  const networks = await docker.listNetworks();
-  return networks.map(n => ({
-    id: n.Id,
-    shortId: n.Id.substring(0, 12),
-    name: n.Name,
-    driver: n.Driver,
-    scope: n.Scope,
-    internal: n.Internal,
-    ipam: n.IPAM,
-    containers: Object.keys(n.Containers || {}).length,
-    labels: n.Labels || {},
-    created: n.Created,
-    subnet: n.IPAM?.Config?.[0]?.Subnet || '',
-    gateway: n.IPAM?.Config?.[0]?.Gateway || '',
-  }));
+  // GET /networks leaves Containers empty, so count the containers on each network from the container
+  // list, and the Swarm services attached to it (overlay networks have no local containers on a manager
+  // that runs none of their tasks).
+  const [networks, ctrs, services] = await Promise.all([
+    docker.listNetworks(),
+    docker.listContainers({ all: true }).catch(() => []),
+    docker.listServices().catch(() => []), // not a swarm manager → none
+  ]);
+  const byNet = {};
+  for (const c of ctrs) for (const [name, n] of Object.entries((c.NetworkSettings && c.NetworkSettings.Networks) || {})) {
+    for (const key of new Set([name, n && n.NetworkID].filter(Boolean))) byNet[key] = (byNet[key] || 0) + 1;
+  }
+  const svcByNet = {};
+  for (const sv of services) {
+    const nets = [...((sv.Spec && sv.Spec.TaskTemplate && sv.Spec.TaskTemplate.Networks) || []), ...((sv.Spec && sv.Spec.Networks) || [])];
+    for (const t of new Set(nets.map(x => x.Target))) svcByNet[t] = (svcByNet[t] || 0) + 1;
+  }
+  return networks.map(n => {
+    const containers = Math.max(Object.keys(n.Containers || {}).length, byNet[n.Id] || 0, byNet[n.Name] || 0);
+    const svc = (svcByNet[n.Id] || 0) + (n.Id !== n.Name ? (svcByNet[n.Name] || 0) : 0);
+    const builtIn = DEFAULT_NETWORKS.includes(n.Name) || SYSTEM_NETWORKS.includes(n.Name) || !!(n.Ingress);
+    return {
+      id: n.Id,
+      shortId: n.Id.substring(0, 12),
+      name: n.Name,
+      driver: n.Driver,
+      scope: n.Scope,
+      internal: n.Internal,
+      ipam: n.IPAM,
+      containers,
+      services: svc,
+      builtIn,
+      removable: !builtIn && containers === 0 && svc === 0,
+      labels: n.Labels || {},
+      created: n.Created,
+      subnet: n.IPAM?.Config?.[0]?.Subnet || '',
+      gateway: n.IPAM?.Config?.[0]?.Gateway || '',
+    };
+  });
 }
 
 async function inspectNetwork(id) {
@@ -842,7 +918,7 @@ async function removeNetwork(id) {
 async function createNetwork(config) {
   const r = await docker.createNetwork(config);
   invalidateCache('');
-  return r;
+  return { id: r.id }; // not the dockerode object (it carries the client's connection settings)
 }
 
 /** Attach a container to a network (networks are immutable, but membership is live). */
@@ -954,9 +1030,7 @@ async function getCleanupPreview() {
   const unusedImages = images.filter(i => !i.inUse);
   const danglingImages = images.filter(i => i.isDangling);
   const unusedVolumes = volumes.filter(v => !v.inUse);
-  const unusedNetworks = networks.filter(n =>
-    !['bridge', 'host', 'none'].includes(n.name) && n.containers === 0
-  );
+  const unusedNetworks = networks.filter(n => n.removable);
 
   const buildCacheSize = dfData.BuildCache?.reduce((a, b) => a + (b.Size || 0), 0) || 0;
 
@@ -1159,3 +1233,4 @@ module.exports = {
   getCleanupPreview, pruneContainers, pruneImages, pruneVolumes, pruneNetworks, pruneBuildCache, systemPrune,
   getAutoStartStatus, setAutoStart,
 };
+module.exports._test = { LIST_SCRIPT, parseListing, listingFailure };

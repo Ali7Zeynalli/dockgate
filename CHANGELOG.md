@@ -2,6 +2,60 @@
 
 ---
 
+## [2.38.13] - 2026-11-12
+
+### Added
+- **Contributing guide, security policy and code of conduct** (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`). GitHub now shows them as tabs next to README and License. The contributing guide explains how to run DockGate locally, test, version and open a pull request; the security policy explains how to report a vulnerability privately and what is in scope.
+- **Issue forms** for bug reports and feature requests. Blank issues are off; security problems are sent to the private report form.
+- README links to the contributing guide.
+
+---
+
+## [2.38.12] - 2026-11-11
+
+### Fixed
+- **Creating a network returned DockGate's internal Docker client object** (with its connection settings) to the browser. It now returns only the new network's ID.
+- **Network errors came back as server errors (500).** Creating a network whose name or subnet is taken, or removing one that is in use or built in, now keeps Docker's own status (409 / 403) with its message.
+
+---
+
+## [2.38.11] - 2026-11-11
+
+### Fixed
+- **Files tab: a folder that can not be opened was called missing.** When the container's user may not open a folder, the Files tab now says *The folder … can not be opened (permission denied)* instead of *does not exist*. A stray "No such file or directory" in other output is no longer taken for a missing shell.
+- **Volume clone accepted a one-character name** that Docker then refused with a server error. The name rule now matches Docker's (at least 2 characters).
+- **Resources → Networks** explains that Swarm's own networks and networks with Swarm services can not be removed either.
+
+---
+
+## [2.38.10] - 2026-11-11
+
+### Fixed
+- **Restoring a volume from a plain `.tar` failed.** Resources → Volumes → Restore from .tar.gz… lets you pick a `.tar`, but the volume was always extracted as gzip, so a plain tar stopped with *Restore failed (tar exited 1)*. DockGate now looks at the first bytes of the upload and extracts `.tar.gz` and `.tar` alike. An empty file says *The file is empty*, and a file that is neither says so instead of a server error.
+
+---
+
+## [2.38.9] - 2026-11-11
+
+### Fixed
+- **Networks in use were shown as unused.** Docker's network list does not say which containers are attached, so every network counted 0 containers. Resources → Prune listed running projects' networks (such as `blog_default`) and Swarm's `ingress` under *Unused networks*, and Resources → Networks let you tick and remove networks that were in use (Docker then refused). DockGate now counts the containers on each network from the container list and the Swarm services attached to it. `ingress` and `docker_gwbridge` are marked *made by Swarm* and never offered for removal, and the *Used by* column shows Swarm services too.
+
+---
+
+## [2.38.8] - 2026-11-11
+
+### Fixed
+- **Cloning a volume under a name that was already taken wrote into that other volume.** Docker hands back the existing volume when the name is in use, so Resources → Volumes → Clone… copied the files over its data without a word. Clone now refuses: *A volume named … already exists — choose another name*. A name Docker does not accept and a missing source volume are refused too, and if copying fails the new volume is removed and the error is shown instead of a silent success.
+
+---
+
+## [2.38.7] - 2026-11-11
+
+### Fixed
+- **Files tab said "Empty" when it could not list a folder.** In a container without a shell (images built `FROM scratch`, such as `traefik/whoami`) it now says *The container has no shell (sh) — files can only be downloaded and uploaded*, the same message the file editor gives. A folder that does not exist now says *The folder … does not exist*, in containers and in volumes, and a stopped container says *The container must be running*. Real empty folders still show as empty.
+
+---
+
 ## [2.38.6] - 2026-11-11
 
 ### Changed
