@@ -364,8 +364,12 @@ async function tasks(id) {
   const { c } = await mgr();
   const [ts, nodes] = await Promise.all([c.listTasks({ filters: JSON.stringify({ service: [id] }) }), c.listNodes()]);
   const host = new Map(nodes.map(n => [n.ID, n.Description.Hostname]));
+  // DockGate server of each node (for a terminal into a task on another node)
+  const where = new Map();
+  try { const ns = await require('./swarm-cluster').nodes(); for (const n of ns.nodes) where.set(n.id, n.serverId || (n.self ? (dockerService.getActiveServerId() || 'local') : null)); } catch (e) { /* no mapping */ }
   return ts.sort((a, b) => new Date(b.CreatedAt) - new Date(a.CreatedAt)).slice(0, 200).map(t => ({
     id: t.ID, slot: t.Slot || null, node: host.get(t.NodeID) || (t.NodeID ? t.NodeID.slice(0, 12) : '—'), state: t.Status.State, desired: t.DesiredState,
+    serverId: where.get(t.NodeID) || null, containerId: t.Status.ContainerStatus && t.Status.ContainerStatus.ContainerID ? t.Status.ContainerStatus.ContainerID : null,
     message: t.Status.Message || '', error: t.Status.Err || null, exitCode: t.Status.ContainerStatus ? t.Status.ContainerStatus.ExitCode : null,
     container: t.Status.ContainerStatus && t.Status.ContainerStatus.ContainerID ? t.Status.ContainerStatus.ContainerID.slice(0, 12) : null,
     image: String((t.Spec.ContainerSpec || {}).Image || '').split('@')[0], createdAt: t.CreatedAt, updatedAt: t.Status.Timestamp,

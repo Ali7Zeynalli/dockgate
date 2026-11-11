@@ -83,7 +83,7 @@
       content.innerHTML = `${UI.header('Networks', 'Overlay networks connect services across the servers; services on the same network reach each other by name. The ingress network carries published ingress ports to the tasks.', UI.primary('New overlay network…', 'data-new'))}
         ${UI.table([{ label: 'Network' }, { label: 'Subnet' }, { label: 'Options' }, { label: 'Used by' }, { label: '', align: 'right' }], nets.map(n => ({ cells: [
           `<b class="td-mono">${esc(n.name)}</b>${n.ingress ? ' ' + UI.pill('info', 'ingress') : ''}${n.stack ? ' ' + UI.chip(`stack ${esc(n.stack)}`) : ''}`,
-          `<span class="td-mono text-sm">${esc(n.subnets.join(', ') || '—')}</span>`,
+          `<span class="td-mono text-sm">${esc(n.subnets.join(', ') || '—')}</span>${(n.gateways || []).length ? `<div class="ui-sub">gateway ${esc(n.gateways.join(', '))}</div>` : ''}`,
           [n.encrypted ? UI.pill('ok', 'encrypted') : '', n.attachable ? UI.chip('attachable') : '', n.internal ? UI.chip('internal') : ''].filter(Boolean).join(' ') || '<span class="ui-sub">—</span>',
           n.usedBy.length ? `<span class="text-sm">${n.usedBy.map(esc).join(', ')}</span>${n.ingress ? '<div class="ui-sub">publish ingress ports</div>' : ''}` : '<span class="ui-sub">not used</span>',
           n.ingress ? UI.btn('Change subnet…', `data-ingress="${n.id}"`) : UI.btn('Remove…', `data-rm="${n.id}"`),

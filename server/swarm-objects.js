@@ -161,6 +161,7 @@ async function networks() {
     id: n.Id, name: n.Name, driver: n.Driver, ingress: !!n.Ingress, internal: !!n.Internal, attachable: !!n.Attachable,
     encrypted: !!(n.Options && Object.prototype.hasOwnProperty.call(n.Options, 'encrypted')),
     subnets: ((n.IPAM && n.IPAM.Config) || []).map(x => x.Subnet).filter(Boolean),
+    gateways: ((n.IPAM && n.IPAM.Config) || []).map(x => x.Gateway).filter(Boolean),
     usedBy: n.Ingress ? ingressPorts : (use.get(n.Id) || use.get(n.Name) || []), stack: stackOf(n.Labels), createdAt: n.Created,
   })).sort((a, b) => (b.ingress - a.ingress) || a.name.localeCompare(b.name));
 }

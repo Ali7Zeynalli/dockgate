@@ -609,6 +609,18 @@ async function listVolumes() {
   const result = await docker.listVolumes();
   const containers = await docker.listContainers({ all: true });
   const volumes = result.Volumes || [];
+  // Swarm services that mount a volume by name (only on a manager; elsewhere the list is empty)
+  const svcUse = new Map();
+  try {
+    const info = await docker.info();
+    if (info.Swarm && info.Swarm.ControlAvailable) {
+      for (const s of await docker.listServices()) {
+        for (const m of ((s.Spec.TaskTemplate || {}).ContainerSpec || {}).Mounts || []) {
+          if (m.Type === 'volume' && m.Source) (svcUse.get(m.Source) || svcUse.set(m.Source, []).get(m.Source)).push(s.Spec.Name);
+        }
+      }
+    }
+  } catch (e) { /* no swarm */ }
 
   return volumes.map(v => {
     const attachedContainers = containers.filter(c =>
@@ -623,8 +635,9 @@ async function listVolumes() {
       scope: v.Scope,
       options: v.Options || {},
       attachedContainers: attachedContainers.length,
-      inUse: attachedContainers.length > 0,
+      inUse: attachedContainers.length > 0 || (svcUse.get(v.Name) || []).length > 0,
       containerNames: attachedContainers.map(c => (c.Names[0] || '').replace(/^\//, '')),
+      services: svcUse.get(v.Name) || [],
     };
   });
 }

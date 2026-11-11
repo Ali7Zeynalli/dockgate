@@ -538,14 +538,24 @@ io.on('connection', (socket) => {
   // Container terminal (exec) — slot-aware to support split screen / dual terminals
   const termStreams = new Map(); // slot -> { stream, exec }
 
-  socket.on('terminal:start', async ({ containerId, shell = '/bin/sh', slot = 0 }) => {
+  socket.on('terminal:start', async ({ containerId, shell = '/bin/sh', slot = 0, serverId = null }) => {
     try {
       if (termStreams.has(slot)) {
         try { termStreams.get(slot).stream.end(); } catch(e) {}
         termStreams.delete(slot);
       }
 
-      const container = dockerService.docker.getContainer(containerId);
+      // serverId (optional): a container on another DockGate server, e.g. a Swarm task on another node
+      let client = dockerService.docker;
+      if (serverId && serverId !== (dockerService.getActiveServerId() || 'local')) {
+        if (serverId === 'local') client = dockerService.createLocalClient();
+        else {
+          const row = stmts.getServer.get(String(serverId));
+          if (!row) throw new Error('Unknown server');
+          client = dockerService.createSshClient(row);
+        }
+      }
+      const container = client.getContainer(containerId);
       const exec = await container.exec({
         Cmd: [shell],
         AttachStdin: true, AttachStdout: true, AttachStderr: true, Tty: true,
@@ -560,7 +570,7 @@ io.on('connection', (socket) => {
       termStreams.set(slot, { stream, exec });
 
       // Audit — interactive shell access into the container (session level; keystrokes are not logged)
-      logAction({ socket, resourceId: containerId, resourceType: 'container', resourceName: containerId.substring(0, 12), action: 'terminal_open', details: { shell, slot } });
+      logAction({ socket, resourceId: containerId, resourceType: 'container', resourceName: containerId.substring(0, 12), action: 'terminal_open', details: { shell, slot, ...(serverId ? { serverId } : {}) } });
       socket.emit('terminal:ready', { containerId, slot });
     } catch (err) {
       socket.emit('terminal:error', { containerId, error: err.message, slot });

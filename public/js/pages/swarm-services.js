@@ -247,9 +247,13 @@
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     try {
       const { tasks } = await API.get(`/swarm/services/${s.id}/tasks`);
-      m.overlay.querySelector('[data-t]').innerHTML = `<div class="ui-sub" style="margin-bottom:6px">Where each task ran, and when and why it stopped. Swarm keeps a few old tasks per slot (Cluster settings → Task history).</div>` + UI.table([{ label: 'Task' }, { label: 'Server' }, { label: 'State' }, { label: 'Why' }, { label: 'Image' }, { label: 'When' }],
+      m.overlay.querySelector('[data-t]').innerHTML = `<div class="ui-sub" style="margin-bottom:6px">Where each task ran, and when and why it stopped. Swarm keeps a few old tasks per slot (Cluster settings → Task history).</div>` + UI.table([{ label: 'Task' }, { label: 'Server' }, { label: 'State' }, { label: 'Why' }, { label: 'Image' }, { label: 'When' }, { label: '', align: 'right' }],
         tasks.map(t => ({ cells: [`${esc(s.name)}${t.slot ? '.' + t.slot : ''}<div class="ui-sub td-mono">${esc(t.id.slice(0, 12))}</div>`, esc(t.node), `${UI.pill(t.state === 'running' ? 'ok' : ['failed', 'rejected'].includes(t.state) ? 'bad' : ['shutdown', 'complete'].includes(t.state) ? 'off' : 'warn', esc(t.state))}<div class="ui-sub">wanted: ${esc(t.desired)}</div>`,
-          `<span class="text-sm">${esc(t.error || t.message)}${t.exitCode ? ` · exit code ${t.exitCode}${t.exitCode === 137 ? ' (killed: memory limit or stop timeout)' : ''}` : ''}</span>`, `<span class="td-mono text-sm">${esc(t.image)}</span>`, `<span class="ui-sub" title="${esc(formatTime(t.updatedAt))}">${esc(timeAgo(t.updatedAt))}</span>`] })), { minWidth: 820 });
+          `<span class="text-sm">${esc(t.error || t.message)}${t.exitCode ? ` · exit code ${t.exitCode}${t.exitCode === 137 ? ' (killed: memory limit or stop timeout)' : ''}` : ''}</span>`, `<span class="td-mono text-sm">${esc(t.image)}</span>`, `<span class="ui-sub" title="${esc(formatTime(t.updatedAt))}">${esc(timeAgo(t.updatedAt))}</span>`,
+          `<span style="white-space:nowrap">${t.state === 'running' && t.containerId ? UI.btn('Terminal', `data-term="${esc(t.id)}"`) : ''} ${UI.btn('Inspect', `data-insp="${esc(t.id)}"`)}</span>`] })), { minWidth: 900 });
+      const el = m.overlay.querySelector('[data-t]');
+      el.querySelectorAll('[data-term]').forEach(b => b.onclick = () => { const t = tasks.find(x => x.id === b.dataset.term); SwarmUI.terminal({ containerId: t.containerId, serverId: t.serverId, node: t.node, title: `${s.name}${t.slot ? '.' + t.slot : ''} @ ${t.node}` }); });
+      el.querySelectorAll('[data-insp]').forEach(b => b.onclick = () => SwarmUI.inspect('task', b.dataset.insp, `task ${b.dataset.insp.slice(0, 12)}`));
     } catch (e) { m.overlay.querySelector('[data-t]').innerHTML = UI.errorState(e, { compact: true }); }
   }
   function trafficDialog(s) {
@@ -292,6 +296,7 @@
           { label: 'Tasks', attrs: `data-a="tasks" data-id="${s.id}"` },
           { label: 'Traffic', attrs: `data-a="traffic" data-id="${s.id}"` },
           { label: 'Settings…', attrs: `data-a="settings" data-id="${s.id}"` },
+          { label: 'Inspect (JSON)', attrs: `data-a="inspect" data-id="${s.id}"` },
           '-',
           { label: 'Remove…', attrs: `data-a="remove" data-id="${s.id}"` },
         ];
@@ -319,6 +324,7 @@
       if (a === 'logs') return logsDialog(s);
       if (a === 'tasks') return tasksDialog(s);
       if (a === 'traffic') return trafficDialog(s);
+      if (a === 'inspect') return SwarmUI.inspect('service', s.id, s.name);
       if (a === 'settings') return openForm({ id: s.id, onDone: load });
       if (a === 'rollback') return secConfirm({ title: `Roll back ${s.name}`, change: 'The service goes back to its previous settings and image (docker service rollback), using its roll back settings.', protects: 'Volumes stay. Tasks are replaced the same way as an update.', undo: 'Roll back again returns to the version before.', confirmLabel: 'Roll back', onConfirm: async () => { try { await API.post(`/swarm/services/${s.id}/rollback`, {}); watch(s.id, `Roll back ${s.name}`, load); } catch (e) { showToast(e.message, 'error', 9000); } } });
       if (a === 'restart') return secConfirm({ title: `Restart ${s.name}`, change: 'Every task is replaced, one at a time, with the same settings (docker service update --force).', protects: 'With start-first updates the service keeps answering while it restarts.', undo: 'Not needed.', confirmLabel: 'Restart', onConfirm: async () => { try { await API.post(`/swarm/services/${s.id}/restart`, {}); watch(s.id, `Restart ${s.name}`, load); } catch (e) { showToast(e.message, 'error', 9000); } } });

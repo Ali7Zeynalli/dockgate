@@ -2,6 +2,20 @@
 
 ---
 
+## [2.33.0] - 2026-11-11
+
+### Added
+- **Cluster settings can be changed after the swarm was created** (Swarm → Cluster settings):
+  - node certificate lifetime and task history per slot (**Change…**);
+  - autolock on or off. Turning it on stores the new unlock key (encrypted) and shows it once; turning it off removes the stored key.
+- **Join tokens.** Cluster settings → Join tokens → **Show…** gives the full `docker swarm join` command for a worker and a manager, with Copy. **Rotate…** makes a new token; the old one stops working and servers already in the swarm stay. Showing and rotating are recorded in the audit log.
+- **Terminal into a Swarm task on any node.** Services → Tasks → **Terminal** opens a shell in that task's container, also when it runs on another server, as long as that server is in DockGate. It does not close a terminal open elsewhere.
+- **Inspect (JSON)** for services and nodes (their ⋯ menu) and for tasks (Services → Tasks → Inspect), with Copy.
+- **Volumes** list the Swarm services that use a volume (⎈ name), and such a volume counts as in use, so it is not offered for removal.
+- **Swarm → Networks** shows each network's gateway under its subnet.
+
+---
+
 ## [2.32.1] - 2026-11-11
 
 ### Fixed

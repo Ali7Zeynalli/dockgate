@@ -141,6 +141,38 @@ router.get('/summary', ok(async () => {
 router.get('/settings', async (req, res) => {
   try { res.json(await swarm.settings()); } catch (e) { fail(res, e); }
 });
+router.put('/settings', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = await swarm.updateSettings({ autolock: b.autolock, certDays: b.certDays, taskHistory: b.taskHistory });
+    logAction({ req, server: dockerService.getActiveServerId() || 'local', resourceType: 'swarm', resourceName: 'swarm', action: 'swarm_settings', details: { before: r.before, after: r.after } });
+    res.json(r);
+  } catch (e) { fail(res, e); }
+});
+// Join tokens (audited: a token lets a server into the swarm).
+router.post('/join-tokens', async (req, res) => {
+  try {
+    const r = await swarm.joinTokens();
+    logAction({ req, server: dockerService.getActiveServerId() || 'local', resourceType: 'swarm', resourceName: 'join tokens', action: 'swarm_join_tokens_shown' });
+    res.json(r);
+  } catch (e) { fail(res, e); }
+});
+router.post('/join-tokens/:role/rotate', async (req, res) => {
+  try {
+    const r = await swarm.rotateToken(req.params.role);
+    logAction({ req, server: dockerService.getActiveServerId() || 'local', resourceType: 'swarm', resourceName: `${req.params.role} join token`, action: 'swarm_join_token_rotate' });
+    res.json(r);
+  } catch (e) { fail(res, e); }
+});
+// Raw inspect JSON of a service, node or task.
+router.get('/inspect/:kind/:id', ok(async (req) => {
+  const c = dockerService.docker;
+  const k = req.params.kind;
+  if (k === 'service') return c.getService(req.params.id).inspect();
+  if (k === 'node') return c.getNode(req.params.id).inspect();
+  if (k === 'task') return c.getTask(req.params.id).inspect();
+  throw Object.assign(new Error('kind must be service, node or task'), { statusCode: 400 });
+}));
 // Show the stored autolock key (audited).
 router.post('/unlock-key', (req, res) => {
   try {

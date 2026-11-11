@@ -438,6 +438,64 @@ async function settings() {
   };
 }
 
+/**
+ * Change cluster settings after the swarm was created: { autolock, certDays, taskHistory }.
+ * Turning autolock on stores the new unlock key (encrypted) and returns it once.
+ */
+async function updateSettings(body = {}) {
+  const c = client();
+  const st = await status();
+  if (st.state !== 'active' || !st.manager) throw Object.assign(new Error('Swarm must be active and this server a manager'), { statusCode: 409 });
+  const bad = (m) => Object.assign(new Error(m), { statusCode: 400 });
+  const sw = await c.swarmInspect();
+  const spec = JSON.parse(JSON.stringify(sw.Spec || {}));
+  const before = { autolock: !!(spec.EncryptionConfig && spec.EncryptionConfig.AutoLockManagers), certDays: spec.CAConfig && spec.CAConfig.NodeCertExpiry ? Math.round(spec.CAConfig.NodeCertExpiry / 1e9 / 86400) : null, taskHistory: spec.Orchestration ? spec.Orchestration.TaskHistoryRetentionLimit : null };
+  if (body.certDays !== undefined) {
+    const d = Number(body.certDays);
+    if (!Number.isInteger(d) || d < 1 || d > 3650) throw bad('Certificate lifetime must be 1–3650 days');
+    spec.CAConfig = { ...(spec.CAConfig || {}), NodeCertExpiry: d * 86400 * 1e9 };
+  }
+  if (body.taskHistory !== undefined) {
+    const n = Number(body.taskHistory);
+    if (!Number.isInteger(n) || n < 0 || n > 100) throw bad('Task history must be 0–100');
+    spec.Orchestration = { ...(spec.Orchestration || {}), TaskHistoryRetentionLimit: n };
+  }
+  if (body.autolock !== undefined) spec.EncryptionConfig = { ...(spec.EncryptionConfig || {}), AutoLockManagers: !!body.autolock };
+  try { await dial(c, '/swarm/update?', 'POST', { _query: { version: sw.Version.Index }, _body: spec }); }
+  catch (e) { throw bad(dockerMsg(e) || 'Swarm update failed'); }
+  const out = { before, after: { autolock: !!(spec.EncryptionConfig && spec.EncryptionConfig.AutoLockManagers), certDays: spec.CAConfig && spec.CAConfig.NodeCertExpiry ? Math.round(spec.CAConfig.NodeCertExpiry / 1e9 / 86400) : null, taskHistory: spec.Orchestration ? spec.Orchestration.TaskHistoryRetentionLimit : null } };
+  if (out.after.autolock && !before.autolock) {
+    const k = await dial(c, '/swarm/unlockkey').catch(() => null);
+    const key = k && (k.UnlockKey || (typeof k === 'string' ? JSON.parse(k).UnlockKey : null));
+    if (key) { stmts.setSetting.run(`swarm_unlock_key:${serverId()}`, encrypt(key)); out.unlockKey = key; }
+  }
+  if (!out.after.autolock && before.autolock) stmts.setSetting.run(`swarm_unlock_key:${serverId()}`, '');
+  return out;
+}
+
+/** Join tokens and the manager address, for adding a server by hand (`docker swarm join`). */
+async function joinTokens() {
+  const c = client();
+  const st = await status();
+  if (st.state !== 'active' || !st.manager) throw Object.assign(new Error('Swarm must be active and this server a manager'), { statusCode: 409 });
+  const sw = await c.swarmInspect();
+  const info = await c.info();
+  const addr = ((info.Swarm || {}).RemoteManagers || []).find(m => m.NodeID === (info.Swarm || {}).NodeID) || ((info.Swarm || {}).RemoteManagers || [])[0] || {};
+  const manager = addr.Addr || `${(info.Swarm || {}).NodeAddr}:2377`;
+  return { worker: sw.JoinTokens.Worker, manager: sw.JoinTokens.Manager, addr: manager };
+}
+
+/** Make a new join token for workers or managers; the old one stops working (servers already in stay). */
+async function rotateToken(role) {
+  if (!['worker', 'manager'].includes(role)) throw Object.assign(new Error('role must be worker or manager'), { statusCode: 400 });
+  const c = client();
+  const sw = await c.swarmInspect();
+  const q = { version: sw.Version.Index, [role === 'worker' ? 'rotateWorkerToken' : 'rotateManagerToken']: true };
+  try { await dial(c, '/swarm/update?', 'POST', { _query: q, _body: sw.Spec }); }
+  catch (e) { throw Object.assign(new Error(dockerMsg(e) || 'Rotate failed'), { statusCode: 400 }); }
+  return joinTokens();
+}
+
 /** The stored unlock key (for "Show unlock key"); null if none. */
 function storedUnlockKey() {
   const row = stmts.getSetting.get(`swarm_unlock_key:${serverId()}`);
@@ -478,4 +536,4 @@ async function leave() {
 // Shared with server/swarm-cluster.js (one Swarm job at a time per DockGate).
 const _jobs = { newJob, logTo, step, setCurrent: (j) => { currentJob = j; }, busy: () => !!(currentJob && !currentJob.finishedAt) };
 
-module.exports = { _jobs, addressCandidates, isIPv4, isPrivate, dial, status, checks, startInit, getJob, runningJob, overview, settings, storedUnlockKey, unlock, leave, initOptions, _overlaps: overlaps, _parseCidr: parseCidr, _isPrivate: isPrivate, dockerMsg };
+module.exports = { _jobs, addressCandidates, isIPv4, isPrivate, dial, status, checks, startInit, getJob, runningJob, overview, settings, updateSettings, joinTokens, rotateToken, storedUnlockKey, unlock, leave, initOptions, _overlaps: overlaps, _parseCidr: parseCidr, _isPrivate: isPrivate, dockerMsg };

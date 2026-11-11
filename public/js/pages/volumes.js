@@ -49,7 +49,7 @@ Router.register('volumes', async (content) => {
                 <td>${!v.inUse ? `<div class="checkbox ${selectedNames.has(v.name) ? 'checked' : ''}" data-select="${escapeHtml(v.name)}"></div>` : ''}</td>
                 <td class="td-name td-mono" style="max-width:200px">${escapeHtml(v.name)}</td>
                 <td class="text-sm">${escapeHtml(v.driver)}</td>
-                <td>${v.inUse ? (v.containerNames || []).map(n => UI.chip(escapeHtml(n))).join('') || UI.chip(String(v.attachedContainers)) : UI.pill('off', 'unused')}</td>
+                <td>${v.inUse ? (v.containerNames || []).map(n => UI.chip(escapeHtml(n))).join('') + (v.services || []).map(n => `<span title="Swarm service">${UI.chip('⎈ ' + escapeHtml(n))}</span>`).join('') || UI.chip(String(v.attachedContainers)) : UI.pill('off', 'unused')}</td>
                 <td class="td-mono text-xs" style="max-width:250px" title="${escapeHtml(v.mountpoint)}">${escapeHtml(v.mountpoint)}</td>
                 <td class="text-muted text-sm">${v.createdAt ? timeAgo(v.createdAt) : 'N/A'}</td>
                 <td><div class="td-actions" style="justify-content:flex-end">

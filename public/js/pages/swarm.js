@@ -83,7 +83,51 @@
     return m;
   }
 
-  window.SwarmUI = { openJob: (...a) => openJob(...a), css }; // used by the Stacks / Migrate tabs (swarm-stacks.js)
+  /** Raw inspect JSON of a service, node or task, with Copy. */
+  async function inspectDialog(kind, id, title) {
+    const m = showModal(`Inspect · ${esc(title)}`, '<div data-j class="text-sm text-muted">Loading…</div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    try {
+      const d = await API.get(`/swarm/inspect/${kind}/${encodeURIComponent(id)}`);
+      const text = JSON.stringify(d, null, 2);
+      m.overlay.querySelector('[data-j]').innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:6px">${UI.btn('Copy', 'data-copy')}</div><pre class="td-mono" style="max-height:60vh;overflow:auto;font-size:12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:10px;white-space:pre">${esc(text)}</pre>`;
+      m.overlay.querySelector('[data-copy]').onclick = () => navigator.clipboard.writeText(text).then(() => showToast('Copied'), () => showToast('Copy failed', 'error'));
+    } catch (e) { m.overlay.querySelector('[data-j]').innerHTML = UI.errorState(e, { compact: true }); }
+  }
+
+  /** A shell in a Swarm task, also on another node (its DockGate server). t: { containerId, serverId, title } */
+  function taskTerminal(t) {
+    if (!t.containerId) return showToast('This task has no running container', 'error');
+    if (!t.serverId) return showToast('Its server is not in DockGate — add it (Swarm → Nodes → Add to DockGate…) to open a terminal there', 'error', 9000);
+    const SLOT = 7; // own slot: does not close a terminal open elsewhere
+    const m = showModal(`Terminal · ${esc(t.title)}`, `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><select class="select" data-shell style="width:auto"><option>/bin/sh</option><option>/bin/bash</option><option>/bin/ash</option></select>${UI.btn('Reconnect', 'data-rc')}<span class="ui-sub">${esc(t.node || '')}</span></div><div data-area style="height:420px;background:#000;padding:8px;overflow:hidden;border-radius:6px"></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    const term = new Terminal({ cursorBlink: true, theme: { background: '#000000', foreground: '#e8ecf4' }, fontFamily: 'var(--font-mono), monospace', fontSize: 13 });
+    let fit = null; try { fit = new window.FitAddon.FitAddon(); term.loadAddon(fit); } catch (e) { /* no fit addon */ }
+    term.open(m.overlay.querySelector('[data-area]'));
+    const size = () => { try { fit && fit.fit(); } catch (e) { /* hidden */ } socket.emit('terminal:resize', { cols: term.cols, rows: term.rows, slot: SLOT }); };
+    const connect = () => { term.reset(); term.write(`\x1b[36mConnecting…\x1b[0m\r\n`); socket.emit('terminal:start', { containerId: t.containerId, serverId: t.serverId, shell: m.overlay.querySelector('[data-shell]').value, slot: SLOT }); setTimeout(size, 120); };
+    const mine = (p) => p && p.slot === SLOT;
+    const onData = (p) => { if (mine(p)) term.write(p.data); };
+    const onReady = (p) => { if (mine(p)) term.write('\x1b[32mConnected\x1b[0m\r\n'); };
+    const onEnd = (p) => { if (mine(p)) term.write('\r\n\x1b[33m— session ended (Reconnect) —\x1b[0m\r\n'); };
+    const onErr = (p) => { if (mine(p)) term.write(`\r\n\x1b[31m— ${p.error || 'error'} —\x1b[0m\r\n`); };
+    socket.on('terminal:data', onData); socket.on('terminal:ready', onReady); socket.on('terminal:end', onEnd); socket.on('terminal:error', onErr);
+    term.onData(d => socket.emit('terminal:input', { data: d, slot: SLOT }));
+    m.overlay.querySelector('[data-rc]').onclick = () => { socket.emit('terminal:stop', { slot: SLOT }); connect(); };
+    m.overlay.querySelector('[data-shell]').onchange = () => { socket.emit('terminal:stop', { slot: SLOT }); connect(); };
+    window.addEventListener('resize', size);
+    connect();
+    const watch = setInterval(() => {
+      if (m.overlay.isConnected) return;
+      clearInterval(watch); window.removeEventListener('resize', size);
+      socket.emit('terminal:stop', { slot: SLOT });
+      socket.off('terminal:data', onData); socket.off('terminal:ready', onReady); socket.off('terminal:end', onEnd); socket.off('terminal:error', onErr);
+      try { term.dispose(); } catch (e) { /* gone */ }
+    }, 800);
+  }
+
+  window.SwarmUI = { openJob: (...a) => openJob(...a), css, inspect: inspectDialog, terminal: taskTerminal }; // used by the other Swarm tabs
 
   // ---- Set up Swarm… / Add servers… wizard ----
   // Modes: one (one server), several (create with several servers), add (join servers to the running swarm).
@@ -405,6 +449,7 @@
           '-',
           n.role === 'worker' ? { label: 'Promote to manager', attrs: `data-act="promote" data-id="${esc(n.id)}"` } : { label: 'Demote to worker', attrs: `data-act="demote" data-id="${esc(n.id)}"` },
           { label: 'Labels…', attrs: `data-act="labels" data-id="${esc(n.id)}"` },
+          { label: 'Inspect (JSON)', attrs: `data-act="inspect" data-id="${esc(n.id)}"` },
           !n.serverId ? { label: 'Add to DockGate…', attrs: `data-act="adopt" data-id="${esc(n.id)}"` } : null,
           '-',
           { label: 'Remove…', attrs: `data-act="remove" data-id="${esc(n.id)}"` },
@@ -449,6 +494,7 @@
           protects: `After this: ${tolerance(after)}.${after === 2 ? ' With 2 managers losing either one stops cluster changes — add or remove one more.' : ''}`,
           undo: act === 'promote' ? 'Demote it again.' : 'Promote it again.', confirmLabel: act === 'promote' ? 'Promote' : 'Demote', onConfirm: () => upd({ role: act === 'promote' ? 'manager' : 'worker' }, `${n.hostname} is now a ${act === 'promote' ? 'manager' : 'worker'}`) });
       }
+      if (act === 'inspect') return inspectDialog('node', n.id, n.hostname);
       if (act === 'labels') {
         const text = Object.entries(n.labels).map(([k, v]) => `${k}=${v}`).join('\n');
         const used = Object.entries(data.labelUse || {}).map(([k, svcs]) => `<b>${esc(k)}</b>: ${svcs.map(esc).join(', ')}`).join('<br>');
@@ -519,9 +565,10 @@
           { label: 'Created', value: esc(formatTime(c.createdAt)) },
           { label: 'Overlay address pool', desc: 'Set when the swarm was created.', value: `<span class="td-mono">${esc((c.defaultAddrPool || []).join(', '))}</span> · /${esc(c.subnetSize)}` },
           { label: 'Data port', value: esc(c.dataPort) },
-          { label: 'Node certificate lifetime', value: `${esc(c.certExpiryDays)} days` },
-          { label: 'Task history per slot', value: esc(c.taskHistory) },
-          { label: 'Autolock', desc: c.autolock ? 'After a Docker restart the swarm is locked until it is unlocked with the key.' : 'Off: the swarm starts unlocked after a Docker restart.', value: c.autolock ? UI.pill('ok', 'on') : UI.pill('off', 'off'), action: c.autolock && st.hasStoredKey ? UI.btn('Show unlock key…', 'data-showkey') : '' },
+          { label: 'Node certificate lifetime', desc: 'Node certificates are renewed by Swarm before they expire.', value: `${esc(c.certExpiryDays)} days`, action: UI.btn('Change…', 'data-edit="certDays"') },
+          { label: 'Task history per slot', desc: 'How many stopped tasks Swarm keeps per slot (shown in Services → Tasks).', value: esc(c.taskHistory), action: UI.btn('Change…', 'data-edit="taskHistory"') },
+          { label: 'Autolock', desc: c.autolock ? 'After a Docker restart the swarm is locked until it is unlocked with the key.' : 'Off: the swarm starts unlocked after a Docker restart.', value: c.autolock ? UI.pill('ok', 'on') : UI.pill('off', 'off'), action: `${c.autolock && st.hasStoredKey ? UI.btn('Show unlock key…', 'data-showkey') + ' ' : ''}${UI.btn(c.autolock ? 'Turn off…' : 'Turn on…', 'data-autolock')}` },
+          { label: 'Join tokens', desc: 'To add a server by hand with docker swarm join. DockGate\'s Add servers… does this for you.', value: '', action: UI.btn('Show…', 'data-tokens') },
         ])}
         <div class="ui-ph" style="margin-top:18px"><div class="ui-ph-text"><div class="ui-ph-title">Backups</div><div class="ui-ph-desc">The swarm state (Raft) of this manager and a plain description of services, networks, configs and nodes. Kept in DockGate's data folder, the last 7. Secrets are listed by name only — Swarm never gives their values out.</div></div><div class="ui-ph-actions">${UI.btn('How to restore', 'data-howto')} ${UI.primary('Back up now', 'data-backup')}</div></div>
         <div data-backups class="text-sm text-muted">Loading…</div>
@@ -550,6 +597,39 @@
         <p><b>Every manager is lost:</b> on a new server (the same Docker version is best), with the backup's <span class="td-mono">swarm-dir.tar.gz</span>:</p>
         <ol style="padding-left:18px;line-height:1.7"><li><span class="td-mono">sudo systemctl stop docker</span></li><li><span class="td-mono">sudo rm -rf /var/lib/docker/swarm</span></li><li><span class="td-mono">sudo tar -xzf swarm-dir.tar.gz -C /var/lib/docker</span></li><li><span class="td-mono">sudo systemctl start docker</span></li><li><span class="td-mono">docker swarm init --force-new-cluster --advertise-addr &lt;its address&gt;</span></li><li>With autolock: <span class="td-mono">docker swarm unlock</span> (Show unlock key on this page)</li><li>Add the other servers again (Swarm → Add servers…) and remove the old nodes.</li></ol>
         <p class="ui-sub">The backup is a .tar with RESTORE.txt (these steps), cluster.json (services, networks, configs, nodes — plain JSON), swarm-dir.tar.gz and, with autolock, the key encrypted for this DockGate. It is not done automatically: losing every manager is rare and the steps run on a server DockGate does not know yet.</p></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+      const save = async (body, msg) => {
+        try {
+          const r = await API.put('/swarm/settings', body);
+          showToast(msg);
+          if (r.unlockKey) showModal('Unlock key', `<p class="text-sm">Autolock is on. After a Docker restart the swarm stays locked until it is unlocked with this key. DockGate keeps it (encrypted) and offers Unlock; keep a copy in your password manager too. It is shown here once.</p><div class="sw-key">${esc(r.unlockKey)}</div>`, [{ label: 'Close', className: 'btn btn-primary' }]);
+          load();
+        } catch (e) { showToast(e.message, 'error', 9000); }
+      };
+      content.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
+        const k = b.dataset.edit;
+        const meta = k === 'certDays' ? { title: 'Node certificate lifetime', label: 'Days (1–3650)', cur: c.certExpiryDays } : { title: 'Task history per slot', label: 'Stopped tasks kept per slot (0–100)', cur: c.taskHistory };
+        UI.dialog({ title: meta.title, saveLabel: 'Save', body: `<label class="ui-field"><span class="ui-label">${meta.label}</span><input class="input" type="number" data-v value="${esc(meta.cur)}"></label>`,
+          onSave: async (ov) => { await save({ [k]: Number(ov.querySelector('[data-v]').value) }, `${meta.title} saved`); } });
+      }));
+      content.querySelector('[data-autolock]')?.addEventListener('click', () => secConfirm(c.autolock
+        ? { title: 'Turn autolock off', change: 'The swarm starts unlocked after a Docker restart. The stored unlock key is removed.', protects: 'Services keep running; nothing restarts.', undo: 'Turn it on again (a new key is made).', confirmLabel: 'Turn off', onConfirm: () => save({ autolock: false }, 'Autolock is off') }
+        : { title: 'Turn autolock on', change: 'Swarm encrypts its keys at rest. After every Docker restart a manager stays locked until it is unlocked with the key.', protects: 'DockGate stores the key (encrypted) and shows it once. Services keep running.', undo: 'Turn it off again.', confirmLabel: 'Turn on', onConfirm: () => save({ autolock: true }, 'Autolock is on') }));
+      content.querySelector('[data-tokens]')?.addEventListener('click', () => secConfirm({ title: 'Show the join tokens', change: 'The tokens are shown on screen. Anyone with a token can join a server to this swarm.', protects: 'Showing them is recorded in the audit log.', undo: 'Rotate a token to make the old one useless.', confirmLabel: 'Show', onConfirm: async () => {
+        const render = (r) => `<p class="text-sm">Run on the new server (its Docker must reach <span class="td-mono">${esc(r.addr)}</span>):</p>
+          ${['worker', 'manager'].map(role => `<div class="ui-label" style="margin-top:10px">As a ${role}</div><div class="sw-key" style="word-break:break-all">docker swarm join --token ${esc(r[role])} ${esc(r.addr)}</div><div style="margin-top:6px">${UI.btn('Copy', `data-cp="${role}"`)} ${UI.btn('Rotate…', `data-rot="${role}"`)}</div>`).join('')}
+          <p class="ui-sub" style="margin-top:10px">Rotate makes a new token: the old one stops working, servers already in the swarm are not affected.</p>`;
+        let r; try { r = await API.post('/swarm/join-tokens', {}); } catch (e) { return showToast(e.message, 'error'); }
+        const m = showModal('Join tokens', `<div data-tk>${render(r)}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+        const bind = () => {
+          const el = m.overlay.querySelector('[data-tk]');
+          el.querySelectorAll('[data-cp]').forEach(b => b.onclick = () => navigator.clipboard.writeText(`docker swarm join --token ${r[b.dataset.cp]} ${r.addr}`).then(() => showToast('Copied'), () => showToast('Copy failed', 'error')));
+          el.querySelectorAll('[data-rot]').forEach(b => b.onclick = async () => {
+            if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Click again to rotate'; return; }
+            try { r = await API.post(`/swarm/join-tokens/${b.dataset.rot}/rotate`, {}); el.innerHTML = render(r); bind(); showToast(`New ${b.dataset.rot} token`); } catch (e) { showToast(e.message, 'error'); }
+          });
+        };
+        bind();
+      } }));
       content.querySelector('[data-showkey]')?.addEventListener('click', () => secConfirm({ title: 'Show the unlock key', change: 'The key is shown on screen.', protects: 'Showing it is recorded in the audit log.', undo: '—', confirmLabel: 'Show', onConfirm: async () => {
         try { const r = await API.post('/swarm/unlock-key', {}); showModal('Unlock key', `<div class="sw-key">${esc(r.key || '(none stored)')}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]); } catch (e) { showToast(e.message, 'error'); }
       } }));
