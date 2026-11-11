@@ -95,18 +95,19 @@
     } catch (e) { m.overlay.querySelector('[data-j]').innerHTML = UI.errorState(e, { compact: true }); }
   }
 
-  /** A shell in a Swarm task, also on another node (its DockGate server). t: { containerId, serverId, title } */
-  function taskTerminal(t) {
-    if (!t.containerId) return showToast('This task has no running container', 'error');
-    if (!t.serverId) return showToast('Its server is not in DockGate — add it (Swarm → Nodes → Add to DockGate…) to open a terminal there', 'error', 9000);
-    const SLOT = 7; // own slot: does not close a terminal open elsewhere
-    const m = showModal(`Terminal · ${esc(t.title)}`, `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><select class="select" data-shell style="width:auto"><option>/bin/sh</option><option>/bin/bash</option><option>/bin/ash</option></select>${UI.btn('Reconnect', 'data-rc')}<span class="ui-sub">${esc(t.node || '')}</span></div><div data-area style="height:420px;background:#000;padding:8px;overflow:hidden;border-radius:6px"></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
-    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+  /**
+   * A shell in a Swarm task, also on another node (its DockGate server), mounted in el.
+   * t: { containerId, serverId, node }. Returns a function that closes it.
+   */
+  let termSlot = 7; // own slots: a task terminal does not close a terminal open elsewhere
+  function mountTerminal(el, t) {
+    const SLOT = termSlot = termSlot >= 15 ? 7 : termSlot + 1;
+    el.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><select class="select" data-shell style="width:auto"><option>/bin/sh</option><option>/bin/bash</option><option>/bin/ash</option></select>${UI.btn('Reconnect', 'data-rc')}<span class="ui-sub">${esc(t.node || '')}</span></div><div data-area style="height:420px;background:#000;padding:8px;overflow:hidden;border-radius:6px"></div>`;
     const term = new Terminal({ cursorBlink: true, theme: { background: '#000000', foreground: '#e8ecf4' }, fontFamily: 'var(--font-mono), monospace', fontSize: 13 });
     let fit = null; try { fit = new window.FitAddon.FitAddon(); term.loadAddon(fit); } catch (e) { /* no fit addon */ }
-    term.open(m.overlay.querySelector('[data-area]'));
+    term.open(el.querySelector('[data-area]'));
     const size = () => { try { fit && fit.fit(); } catch (e) { /* hidden */ } socket.emit('terminal:resize', { cols: term.cols, rows: term.rows, slot: SLOT }); };
-    const connect = () => { term.reset(); term.write(`\x1b[36mConnecting…\x1b[0m\r\n`); socket.emit('terminal:start', { containerId: t.containerId, serverId: t.serverId, shell: m.overlay.querySelector('[data-shell]').value, slot: SLOT }); setTimeout(size, 120); };
+    const connect = () => { term.reset(); term.write('\x1b[36mConnecting…\x1b[0m\r\n'); socket.emit('terminal:start', { containerId: t.containerId, serverId: t.serverId, shell: el.querySelector('[data-shell]').value, slot: SLOT }); setTimeout(size, 120); };
     const mine = (p) => p && p.slot === SLOT;
     const onData = (p) => { if (mine(p)) term.write(p.data); };
     const onReady = (p) => { if (mine(p)) term.write('\x1b[32mConnected\x1b[0m\r\n'); };
@@ -114,20 +115,30 @@
     const onErr = (p) => { if (mine(p)) term.write(`\r\n\x1b[31m— ${p.error || 'error'} —\x1b[0m\r\n`); };
     socket.on('terminal:data', onData); socket.on('terminal:ready', onReady); socket.on('terminal:end', onEnd); socket.on('terminal:error', onErr);
     term.onData(d => socket.emit('terminal:input', { data: d, slot: SLOT }));
-    m.overlay.querySelector('[data-rc]').onclick = () => { socket.emit('terminal:stop', { slot: SLOT }); connect(); };
-    m.overlay.querySelector('[data-shell]').onchange = () => { socket.emit('terminal:stop', { slot: SLOT }); connect(); };
+    el.querySelector('[data-rc]').onclick = () => { socket.emit('terminal:stop', { slot: SLOT }); connect(); };
+    el.querySelector('[data-shell]').onchange = () => { socket.emit('terminal:stop', { slot: SLOT }); connect(); };
     window.addEventListener('resize', size);
     connect();
-    const watch = setInterval(() => {
-      if (m.overlay.isConnected) return;
-      clearInterval(watch); window.removeEventListener('resize', size);
+    let closed = false;
+    return () => {
+      if (closed) return; closed = true;
+      window.removeEventListener('resize', size);
       socket.emit('terminal:stop', { slot: SLOT });
       socket.off('terminal:data', onData); socket.off('terminal:ready', onReady); socket.off('terminal:end', onEnd); socket.off('terminal:error', onErr);
       try { term.dispose(); } catch (e) { /* gone */ }
-    }, 800);
+    };
+  }
+  /** The same in a window. t: { containerId, serverId, node, title } */
+  function taskTerminal(t) {
+    if (!t.containerId) return showToast('This task has no running container', 'error');
+    if (!t.serverId) return showToast('Its server is not in DockGate — add it (Swarm → Nodes → Add to DockGate…) to open a terminal there', 'error', 9000);
+    const m = showModal(`Terminal · ${esc(t.title)}`, '<div data-term></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    const close = mountTerminal(m.overlay.querySelector('[data-term]'), t);
+    const watch = setInterval(() => { if (!m.overlay.isConnected) { clearInterval(watch); close(); } }, 800);
   }
 
-  window.SwarmUI = { openJob: (...a) => openJob(...a), css, inspect: inspectDialog, terminal: taskTerminal }; // used by the other Swarm tabs
+  window.SwarmUI = { openJob: (...a) => openJob(...a), css, inspect: inspectDialog, terminal: taskTerminal, mountTerminal }; // used by the other Swarm tabs
 
   // ---- Set up Swarm… / Add servers… wizard ----
   // Modes: one (one server), several (create with several servers), add (join servers to the running swarm).

@@ -86,6 +86,28 @@ router.get('/services/:id/tasks', ok(async (req) => ({ tasks: await svc.tasks(re
 router.get('/services/:id/logs', ok((req) => svc.logs(req.params.id, { tail: req.query.tail })));
 router.get('/services/:id/progress', ok((req) => svc.progress(req.params.id)));
 router.get('/services/:id/history', ok((req) => svc.history(req.params.id, req.query.hours)));
+router.get('/services/:id/summary', ok((req) => svc.one(req.params.id)));
+router.get('/services/:id/events', ok(async (req) => ({ events: await svc.events(req.params.id, req.query.hours) })));
+router.get('/services/:id/audit', ok(async (req) => ({ audit: svc.auditOf((await svc.one(req.params.id)).name) })));
+// Files of a task's container, on whichever node it runs (through that node's DockGate server).
+const FE = require('../file-edit');
+const onTask = (fn) => ok(async (req) => { const t = await svc.taskTarget(req.params.task); return fn(t, req); });
+const auditTask = (req, t, action, details) => logAction({ req, server: t.serverId, resourceId: t.containerId, resourceType: 'container', resourceName: `task ${req.params.task.slice(0, 12)} @ ${t.node}`, action, details });
+router.get('/tasks/:task/where', onTask(async (t) => ({ serverId: t.serverId, node: t.node, containerId: t.containerId })));
+router.get('/tasks/:task/files', onTask((t, req) => FE.list(t.containerId, String(req.query.path || '/'), { client: t.client })));
+router.get('/tasks/:task/text', onTask((t, req) => FE.read('container', t.containerId, String(req.query.path || ''), { client: t.client })));
+router.put('/tasks/:task/text', onTask(async (t, req) => { const b = req.body || {}; const r = await FE.write('container', t.containerId, String(b.path || ''), b.content, { client: t.client }); auditTask(req, t, 'file-edit', { path: r.path, size: r.size }); return r; }));
+router.post('/tasks/:task/mkdir', onTask(async (t, req) => { const r = await FE.mkdir('container', t.containerId, String((req.body || {}).path || ''), { client: t.client }); auditTask(req, t, 'file-mkdir', { path: r.path }); return r; }));
+router.post('/tasks/:task/rename', onTask(async (t, req) => { const b = req.body || {}; const r = await FE.rename('container', t.containerId, String(b.path || ''), b.name, { client: t.client }); auditTask(req, t, 'file-rename', { path: b.path, to: r.path }); return r; }));
+router.post('/tasks/:task/delete-path', onTask(async (t, req) => { const r = await FE.remove('container', t.containerId, String((req.body || {}).path || ''), { client: t.client }); auditTask(req, t, 'file-delete', { path: r.path }); return r; }));
+router.get('/tasks/:task/file', async (req, res) => {
+  try { const t = await svc.taskTarget(req.params.task); auditTask(req, t, 'file-download', { path: req.query.path }); await FE.download(t.containerId, String(req.query.path || ''), res, { client: t.client }); }
+  catch (e) { if (!res.headersSent) res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+router.post('/tasks/:task/upload', async (req, res) => {
+  try { const t = await svc.taskTarget(req.params.task); await FE.upload(t.containerId, String(req.query.path || '/'), req, { client: t.client }); auditTask(req, t, 'cp-in', { path: req.query.path }); res.json({ success: true }); }
+  catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
 // ---- phase 4: stacks and moving compose projects (server/swarm-stacks.js) ----
 const stacks = require('../swarm-stacks');
 const jobOf = (j) => ({ jobId: j.id });

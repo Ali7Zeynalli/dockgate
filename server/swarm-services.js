@@ -620,3 +620,69 @@ async function history(id, hours = 6) {
 module.exports.sampleOnce = sampleOnce;
 module.exports.startSampler = startSampler;
 module.exports.history = history;
+
+// ---- the service page (Swarm → Services → a service) ----
+
+/** One service in the list's shape. */
+async function one(id) {
+  const s = (await list()).find(x => x.id === id || x.name === id);
+  if (!s) throw Object.assign(new Error('Service not found'), { statusCode: 404 });
+  return s;
+}
+
+/**
+ * A task's container and the Docker client of the node it runs on (its DockGate server), for terminal,
+ * files and logs of a task on another node. Returns { client, containerId, serverId, node }.
+ */
+async function taskTarget(taskId) {
+  const { c } = await mgr();
+  const t = await c.getTask(taskId).inspect().catch(() => { throw Object.assign(new Error('Task not found'), { statusCode: 404 }); });
+  const cid = t.Status && t.Status.ContainerStatus && t.Status.ContainerStatus.ContainerID;
+  if (!cid) throw Object.assign(new Error('This task has no container (it is not running)'), { statusCode: 409 });
+  const ns = await require('./swarm-cluster').nodes();
+  const n = ns.nodes.find(x => x.id === t.NodeID) || {};
+  const sid = n.serverId || (n.self ? (dockerService.getActiveServerId() || 'local') : null);
+  if (!sid) throw Object.assign(new Error(`The task runs on ${n.hostname || 'a node'} that is not in DockGate — add it (Swarm → Nodes → Add to DockGate…)`), { statusCode: 409 });
+  let client;
+  if (sid === (dockerService.getActiveServerId() || 'local')) client = dockerService.docker;
+  else if (sid === 'local') client = dockerService.createLocalClient();
+  else client = dockerService.createSshClient(require('./db').stmts.getServer.get(sid));
+  return { client, containerId: cid, serverId: sid, node: n.hostname || '' };
+}
+
+/** Docker events of this service, the last `hours` (default 24). */
+async function events(id, hours = 24) {
+  const { c } = await mgr();
+  const s = await c.getService(id).inspect();
+  const now = Math.floor(Date.now() / 1000);
+  const stream = await c.getEvents({ since: now - Math.min(Number(hours) || 24, 168) * 3600, until: now, filters: JSON.stringify({ type: ['service'], service: [s.ID] }) });
+  return new Promise((resolve) => {
+    let buf = ''; const out = [];
+    const end = () => resolve(out.reverse().slice(0, 200));
+    const t = setTimeout(() => { try { stream.destroy(); } catch (e) { /* gone */ } end(); }, 4000);
+    stream.on('data', (d) => {
+      buf += d.toString(); let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        try {
+          const e = JSON.parse(line); const a = (e.Actor && e.Actor.Attributes) || {};
+          out.push({ time: e.time, action: e.Action, detail: Object.entries(a).filter(([k]) => k !== 'name').map(([k, v]) => `${k}=${v}`).join(' ') });
+        } catch (err) { /* partial line */ }
+      }
+    });
+    stream.on('end', () => { clearTimeout(t); end(); });
+    stream.on('error', () => { clearTimeout(t); end(); });
+  });
+}
+
+/** What was done to this service from DockGate (audit log). */
+function auditOf(name) {
+  const { db } = require('./db');
+  return db.prepare("SELECT action, details, created_at FROM activity WHERE resource_type = 'swarm-service' AND resource_name = ? ORDER BY id DESC LIMIT 50").all(name)
+    .map(r => ({ action: r.action, details: (() => { try { return JSON.parse(r.details || '{}'); } catch (e) { return {}; } })(), at: r.created_at }));
+}
+
+module.exports.one = one;
+module.exports.taskTarget = taskTarget;
+module.exports.events = events;
+module.exports.auditOf = auditOf;

@@ -2,6 +2,25 @@
 
 ---
 
+## [2.38.0] - 2026-11-11
+
+### Added
+- **A page for each Swarm service, like a container's page.** Click a service's name in Swarm → Services, choose ⋯ → Open, or use **Open service** on a task in Resources → Containers. The page has the same buttons as the list: Scale, Update to newest, Update image, Roll back, Restart, Settings, Remove. Its tabs:
+  - **Overview:** image, mode and replicas, running tasks per server, ports, the name and virtual IP it is reached by, command, resources, update settings and the last update. The reason is shown when tasks do not run.
+  - **Tasks:** every task with its server, state, reason, image and age, plus Logs, Terminal, Files and Inspect for each running task.
+  - **Logs:** live, for all tasks or one.
+  - **Terminal:** a shell in a chosen task, in the page, also on another node in DockGate.
+  - **Files:** the files of a chosen task's container, also on another node: browse, edit, new file and folder, rename, delete, download and upload a .tar.
+  - **Stats:** CPU and memory now, and graphs for the last 1 to 48 hours.
+  - **Environment:** values that look like passwords are hidden until shown.
+  - **Ports**, **Volumes**, **Networks**, **Secrets & configs** (with the file path in the task) and **Placement** (constraints, resources, restart). Each has **Edit…**, which opens the service settings.
+  - **Updates:** the image now, the registry check, the previous version, Check for updates, Update to newest, Update image and Roll back, plus everything changed from DockGate.
+  - **Events:** Docker events of the last 24 hours.
+  - **Inspect:** the JSON, with Copy.
+- Files and downloads of a task on another node go through that node's DockGate server, and every change is recorded in the audit log.
+
+---
+
 ## [2.37.0] - 2026-11-11
 
 ### Added

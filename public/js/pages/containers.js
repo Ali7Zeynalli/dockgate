@@ -499,7 +499,7 @@ Router.register('containers', async (content) => {
       render();
     });
     document.getElementById('update-history')?.addEventListener('click', () => ImageUpdate.openHistory());
-    content.querySelectorAll('[data-open-service]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); Router.navigate('swarm', { tab: 'swarm-services' }); }));
+    content.querySelectorAll('[data-open-service]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); Router.navigate('swarm-service', { id: b.dataset.openService }); }));
     content.querySelectorAll('[data-open-stacks]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); Router.navigate('swarm', { tab: 'swarm-stacks' }); }));
     content.querySelectorAll('[data-update-image]').forEach(b => b.addEventListener('click', () => {
       const c = containers.find(x => x.id === b.dataset.updateImage); if (!c) return;
