@@ -2,6 +2,13 @@
 
 ---
 
+## [2.36.1] - 2026-11-11
+
+### Fixed
+- **App templates whose compose file is in a GitHub repository did not load** ("No compose content found for this template"). That is most stack templates of the default catalog. DockGate asked github.com/…/raw/…, which answers with a redirect that DockGate's safe fetch refuses. It now asks raw.githubusercontent.com directly (main, then master). This affected Deploy → App templates and Swarm → New stack → template.
+
+---
+
 ## [2.36.0] - 2026-11-11
 
 ### Added
