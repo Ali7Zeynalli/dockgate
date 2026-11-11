@@ -367,7 +367,7 @@ async function startAddServers(body, { sourceIp } = {}) {
   const clash = servers.find(s => used.includes(s.addr));
   if (clash) throw bad(400, `${clash.addr} is already used by a node in the cluster`);
   if (swarm._jobs.busy()) throw bad(409, 'A Swarm job is already running');
-  const job = swarm._jobs.newJob('join');
+  const job = swarm._jobs.newJob('join', servers.map(s => s.name || s.addr).join(', '));
   swarm._jobs.setCurrent(job);
   const log = swarm._jobs.logTo(job), step = swarm._jobs.step;
   (async () => {
@@ -512,7 +512,7 @@ async function startRemoveNode(nodeId, { sourceIp } = {}) {
   const map = await mapping(mgr.clusterId, list);
   const sid = map.get(nodeId) || null;
   const name = n.Description.Hostname;
-  const job = swarm._jobs.newJob('remove'); swarm._jobs.setCurrent(job);
+  const job = swarm._jobs.newJob('remove', name); swarm._jobs.setCurrent(job);
   const log = swarm._jobs.logTo(job), step = swarm._jobs.step;
   (async () => {
     try {

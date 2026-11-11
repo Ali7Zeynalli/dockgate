@@ -175,8 +175,8 @@ async function checks({ pool, multi = false } = {}) {
 
 const jobs = new Map();
 let currentJob = null;
-function newJob(kind) {
-  const job = { id: crypto.randomBytes(8).toString('hex'), kind, serverId: serverId(), status: 'running', steps: [], log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
+function newJob(kind, subject = null) {
+  const job = { id: crypto.randomBytes(8).toString('hex'), kind, subject: subject ? String(subject).slice(0, 200) : null, serverId: serverId(), status: 'running', steps: [], log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
   jobs.set(job.id, job);
   for (const [k, j] of jobs) if (j.finishedAt && Date.now() - j.finishedAt > 6 * 3600000) jobs.delete(k);
   return job;
@@ -314,6 +314,12 @@ function getJob(id) {
   // The unlock key is handed out while the job is fresh only.
   if (j.result && j.result.unlockKey && j.finishedAt && Date.now() - j.finishedAt > 10 * 60000) { j.result = { ...j.result, unlockKey: undefined }; }
   return j;
+}
+/** Swarm jobs of the server in use, newest first (kept 6 hours after they end), without their logs. */
+function listJobs() {
+  const sid = serverId();
+  return [...jobs.values()].filter(j => j.serverId === sid).sort((a, b) => b.startedAt - a.startedAt).slice(0, 30)
+    .map(j => ({ id: j.id, kind: j.kind, subject: j.subject || null, status: j.finishedAt ? j.status : 'running', error: j.error || null, startedAt: j.startedAt, finishedAt: j.finishedAt }));
 }
 function runningJob() { return currentJob && !currentJob.finishedAt && currentJob.serverId === serverId() ? currentJob : null; }
 
@@ -536,4 +542,4 @@ async function leave() {
 // Shared with server/swarm-cluster.js (one Swarm job at a time per DockGate).
 const _jobs = { newJob, logTo, step, setCurrent: (j) => { currentJob = j; }, busy: () => !!(currentJob && !currentJob.finishedAt) };
 
-module.exports = { _jobs, addressCandidates, isIPv4, isPrivate, dial, status, checks, startInit, getJob, runningJob, overview, settings, updateSettings, joinTokens, rotateToken, storedUnlockKey, unlock, leave, initOptions, _overlaps: overlaps, _parseCidr: parseCidr, _isPrivate: isPrivate, dockerMsg };
+module.exports = { _jobs, listJobs, addressCandidates, isIPv4, isPrivate, dial, status, checks, startInit, getJob, runningJob, overview, settings, updateSettings, joinTokens, rotateToken, storedUnlockKey, unlock, leave, initOptions, _overlaps: overlaps, _parseCidr: parseCidr, _isPrivate: isPrivate, dockerMsg };

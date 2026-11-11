@@ -16,7 +16,7 @@ Router.register('swarm-service', async (content, params) => {
   const runCleanup = () => { for (const f of cleanup) { try { f(); } catch (e) { /* gone */ } } cleanup = []; };
   const editBtn = (label = 'Edit…') => `<div style="margin-top:12px">${UI.btn(label, 'data-edit-svc')}</div>`;
   const kv = (rows) => `<div class="detail-grid">${rows.filter(Boolean).map(([k, v]) => `<div class="detail-item"><div class="detail-label">${esc(k)}</div><div class="detail-value" style="white-space:normal;overflow-wrap:anywhere">${v}</div></div>`).join('')}</div>`;
-  const done = (kind) => { if (kind === 'removed') Router.navigate('swarm', { tab: 'swarm-services' }); else render(); };
+  const done = (kind) => { if (kind === 'removed') Router.navigate('swarm', { tab: 'swarm-services' }, { replace: true }); else render(); };
 
   async function load() {
     const [sum, f, t] = await Promise.all([API.get(`/swarm/services/${encodeURIComponent(id)}/summary`), API.get(`/swarm/services/${encodeURIComponent(id)}`), API.get(`/swarm/services/${encodeURIComponent(id)}/tasks`)]);
@@ -59,11 +59,12 @@ Router.register('swarm-service', async (content, params) => {
       ${s.problem ? `<div class="insight-card danger" style="margin-bottom:12px"><div><b>Why it is not running:</b> ${esc(s.problem)}</div></div>` : ''}
       <div class="tabs" id="detail-tabs">${TABS.map(([k, l]) => `<button class="tab ${currentTab === k ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
       <div id="tab-content"></div>`;
-    content.querySelector('#back-btn').onclick = () => Router.navigate('swarm', { tab: 'swarm-services' });
+    content.querySelector('#back-btn').onclick = () => Router.back('swarm', { tab: 'swarm-services' }); // where you came from
     content.querySelector('#tab-content').addEventListener('click', (e) => { if (e.target.closest('[data-edit-svc]')) SwarmUI.openServiceForm({ id: s.id, onDone: render }); });
     content.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => SwarmUI.serviceAction(b.dataset.act, s, done)));
     content.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
       currentTab = b.dataset.tab;
+      Router.setTab(currentTab); // in the URL: Back / Forward and a refresh come back to this tab
       content.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === currentTab));
       renderTab();
     }));

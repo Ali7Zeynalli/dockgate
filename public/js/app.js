@@ -133,7 +133,10 @@ function initMacSidebar() {
 function syncSidebarTabs() {
   const nav = document.getElementById('sidebar-nav');
   if (!nav) return;
-  const tab = new URLSearchParams((location.hash.split('?')[1] || '')).get('tab') || '';
+  // The entry for the page shown: a detail page (a container, a Swarm service or node) lights up its list.
+  const target = (typeof Router !== 'undefined' && Router.currentPage) ? Router.navTarget() : null;
+  const tab = target ? (target.tab || '') : (new URLSearchParams((location.hash.split('?')[1] || '')).get('tab') || '');
+  if (target) nav.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.page === target.page));
   nav.querySelectorAll('.nav-parent').forEach(parent => {
     const on = parent.classList.contains('active');
     const sub = document.getElementById('nav-sub-' + parent.dataset.page);
@@ -390,6 +393,12 @@ async function checkRunningDeploys() {
     if (running) { badge.textContent = '▶ ' + running; badge.style.display = 'inline-flex'; }
     else badge.style.display = 'none';
   } catch (e) { /* not logged in / no access — leave the badge hidden */ }
+  // Swarm jobs (move to Swarm, redeploy, add servers …): every Swarm page shows the bar to reopen them.
+  try {
+    const n = (((await API.get('/swarm/jobs')) || {}).jobs || []).filter(j => j.status === 'running').length;
+    const b = document.getElementById('badge-swarm');
+    if (b) { if (n) { b.textContent = '▶ ' + n; b.style.display = 'inline-flex'; } else b.style.display = 'none'; }
+  } catch (e) { /* no access — leave it hidden */ }
   // The same for Edge agent jobs (install / update …) on Servers → Edge agent, where the job reopens.
   try {
     const n = ((await API.get('/agent/jobs')) || []).filter(j => j.status === 'running').length;

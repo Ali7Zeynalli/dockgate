@@ -7,9 +7,11 @@
 function renderTabbedSection(content, params, config) {
   const valid = config.tabs.map(t => t[0]);
   let active = (params && valid.includes(params.tab)) ? params.tab : config.default;
-  content.innerHTML = `<div id="sec-content"></div>`;
+  content.innerHTML = `<div id="sec-top"></div><div id="sec-content"></div>`;
   const sub = content.querySelector('#sec-content');
   let subCleanup = null;
+  // A bar above every page of the section (Swarm: the running job, so it can be reopened from any tab).
+  const topCleanup = config.top ? config.top(content.querySelector('#sec-top')) : null;
 
   async function show(tab) {
     // Tear down the previous tab (clears its setInterval etc.) before showing the next.
@@ -32,13 +34,14 @@ function renderTabbedSection(content, params, config) {
 
   show(active);
   // Wrapper cleanup (called by Router on navigating away) tears down the active sub-tab.
-  return () => { if (subCleanup) { try { subCleanup(); } catch (e) {} } };
+  return () => { if (subCleanup) { try { subCleanup(); } catch (e) {} } if (typeof topCleanup === 'function') topCleanup(); };
 }
 
 // The sections are defined once, in navItems (app.js): the same list drives the sidebar and these pages.
 ['resources', 'deploy', 'swarm', 'observe', 'tools'].forEach(key => Router.register(key, (content, params) => {
   const item = navItems[key];
-  return renderTabbedSection(content, params, { tabs: item.tabs, default: item.default });
+  const top = key === 'swarm' ? (el) => (window.SwarmUI && window.SwarmUI.jobBar ? window.SwarmUI.jobBar(el) : null) : null;
+  return renderTabbedSection(content, params, { tabs: item.tabs, default: item.default, top });
 }));
 // Old #/activity links: Router.resolve sends them to Observe, Tools or Resources → Prune. The route stays
 // registered so a stale link still reaches resolve.

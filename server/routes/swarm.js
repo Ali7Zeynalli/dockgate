@@ -17,6 +17,7 @@ router.post('/checks', async (req, res) => {
 router.post('/init', async (req, res) => {
   try { const j = await swarm.startInit(req.body || {}, { sourceIp: req.ip }); res.json({ jobId: j.id }); } catch (e) { fail(res, e); }
 });
+router.get('/jobs', (req, res) => { res.json({ jobs: swarm.listJobs() }); });
 router.get('/job/:id', (req, res) => {
   const j = swarm.getJob(req.params.id);
   if (!j) return res.status(404).json({ error: 'Job not found (DockGate restarted?)' });

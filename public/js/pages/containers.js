@@ -2,9 +2,10 @@
 // Docker reports health inside the status text ("Up 3 hours (unhealthy)").
 const isUnhealthy = (c) => /\(unhealthy\)/i.test(c.status || '') || c.health === 'unhealthy';
 Router.register('containers', async (content) => {
-  let currentFilter = 'all';
-  let currentSearch = '';
-  let currentSort = 'name';
+  const view = Store.view('containers'); // filter, search and sort survive leaving the page
+  let currentFilter = view.get('filter', 'all');
+  let currentSearch = view.get('search', '');
+  let currentSort = view.get('sort', 'name');
   let currentView = appSetting('defaultView', 'table') === 'card' ? 'card' : 'table'; // Settings → General → Container list
   let selectedIds = new Set();
   let refreshTimer = null;
@@ -463,7 +464,7 @@ Router.register('containers', async (content) => {
 
     // Filter buttons
     content.querySelectorAll('[data-filter]').forEach(btn => {
-      btn.addEventListener('click', () => { currentFilter = btn.dataset.filter; render(); });
+      btn.addEventListener('click', () => { currentFilter = btn.dataset.filter; view.set('filter', currentFilter); render(); });
     });
 
     // Search
@@ -472,12 +473,12 @@ Router.register('containers', async (content) => {
       let timeout;
       searchInput.addEventListener('input', () => {
         clearTimeout(timeout);
-        timeout = setTimeout(() => { currentSearch = searchInput.value; render(); }, 300);
+        timeout = setTimeout(() => { currentSearch = searchInput.value; view.set('search', currentSearch); render(); }, 300);
       });
     }
 
     // Sort
-    document.getElementById('container-sort')?.addEventListener('change', (e) => { currentSort = e.target.value; render(); });
+    document.getElementById('container-sort')?.addEventListener('change', (e) => { currentSort = e.target.value; view.set('sort', currentSort); render(); });
 
     // View toggle
     document.getElementById('view-table')?.addEventListener('click', () => { currentView = 'table'; render(); });

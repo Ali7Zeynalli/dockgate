@@ -39,11 +39,14 @@
   const banner = (level, html, actions = '') => `<div class="insight-card ${level === 'bad' ? 'danger' : level === 'warn' ? 'warning' : 'info'}" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:220px">${html}</div>${actions ? `<div style="display:flex;gap:6px">${actions}</div>` : ''}</div>`;
 
   // ---- the job window (Create Swarm, Add servers, Rebalance, Remove node) ----
-  const DONE_TEXT = { 'Create Swarm': '✓ Swarm is on', 'Add servers': '✓ Servers added', Rebalance: '✓ Rebalanced', 'Remove node': '✓ Node removed', 'Move to Swarm': '✓ Every project moved', 'Move back to Compose': '✓ Runs in Compose again', Redeploy: '✓ Deployed', 'Recover cluster': '✓ Recovered — one manager now; add managers again', 'Rotate secret': '✓ Rotated — the old version is removed', 'Edit config': '✓ Saved — the old version is removed' };
+  // What each kind of Swarm job is called (server/swarm*.js newJob(kind, subject)).
+  const JOB_KIND = { init: 'Create Swarm', join: 'Add servers', rebalance: 'Rebalance', remove: 'Remove node', rotate: 'Rotate', move: 'Move to Swarm', convert: 'Move to Swarm', redeploy: 'Redeploy', deploy: 'Deploy', 'move-back': 'Move back', recover: 'Recover cluster', restore: 'Restore from backup' };
+  const jobTitle = (j) => `${JOB_KIND[j.kind] || 'Swarm job'}${j.subject ? ` · ${j.subject}` : ''}`;
+  const DONE_TEXT = { 'Move back': '✓ Moved back', Deploy: '✓ Deployed', Rotate: '✓ Rotated — the old version is removed', 'Create Swarm': '✓ Swarm is on', 'Add servers': '✓ Servers added', Rebalance: '✓ Rebalanced', 'Remove node': '✓ Node removed', 'Move to Swarm': '✓ Every project moved', 'Move back to Compose': '✓ Runs in Compose again', Redeploy: '✓ Deployed', 'Recover cluster': '✓ Recovered — one manager now; add managers again', 'Rotate secret': '✓ Rotated — the old version is removed', 'Edit config': '✓ Saved — the old version is removed' };
   function openJob(jobId, onDone, title = 'Create Swarm') {
     const m = showModal(esc(title), `${serverContextBanner()}<div id="sw-job-steps" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px"></div><div id="sw-job-log"></div>
       <div id="sw-job-status" style="margin-top:10px;font-weight:600;font-size:13px;color:var(--text-muted)">⏳ Working…</div><div id="sw-job-extra"></div>
-      <div class="ui-sub" style="margin-top:4px">Closing this window does not stop the job. Reopen it from Swarm → Overview.</div>`, []);
+      <div class="ui-sub" style="margin-top:4px">Closing this window does not stop the job. Reopen it from the bar at the top of any Swarm page, or from Swarm → Overview → Recent jobs.</div>`, []);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     const close = document.createElement('button'); close.className = 'btn btn-secondary'; close.textContent = 'Close';
     let ended = null;
@@ -64,7 +67,7 @@
           ended = j;
           const se = m.overlay.querySelector('#sw-job-status');
           se.style.color = j.status === 'done' ? '#16a34a' : '#dc2626';
-          se.textContent = j.status === 'done' ? (DONE_TEXT[title] || '✓ Done') : `✗ ${j.error || 'Failed'}`;
+          se.textContent = j.status === 'done' ? (DONE_TEXT[title] || DONE_TEXT[String(title).split(' · ')[0]] || '✓ Done') : `✗ ${j.error || 'Failed'}`;
           const ex = m.overlay.querySelector('#sw-job-extra');
           if (j.result && j.result.projects) {
             const lbl = { moved: ['ok', 'moved'], rolled_back: ['warn', 'put back in Compose'], changed: ['warn', 'files changed — not moved'], skipped: ['off', 'not moved'], failed: ['bad', 'failed'] };
@@ -138,7 +141,48 @@
     const watch = setInterval(() => { if (!m.overlay.isConnected) { clearInterval(watch); close(); } }, 800);
   }
 
-  window.SwarmUI = { openJob: (...a) => openJob(...a), css, inspect: inspectDialog, terminal: taskTerminal, mountTerminal }; // used by the other Swarm tabs
+  // ---- Swarm jobs: the same on every Swarm page (like Compose deploys and Edge agent jobs) ----
+  const reopen = (j, onDone) => openJob(j.id, onDone, j.kind ? jobTitle(j) : 'Swarm job');
+  const ago = (ms) => timeAgo(new Date(ms).toISOString());
+  const took = (j) => { const s = Math.round(((j.finishedAt || Date.now()) - j.startedAt) / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
+  /** The bar at the top of the Swarm pages: the running job, or one that ended in the last 10 minutes. */
+  function jobBar(el) {
+    let timer = null, alive = true, last = '';
+    const hidden = () => { try { return JSON.parse(sessionStorage.getItem('dg_swjob_hidden') || '[]'); } catch (e) { return []; } };
+    const tick = async () => {
+      if (!alive || !el.isConnected) return;
+      let jobs = [];
+      try { jobs = (await API.get('/swarm/jobs')).jobs || []; } catch (e) { /* no access: show nothing */ }
+      const run = jobs.find(j => j.status === 'running');
+      const recent = !run && jobs.find(j => j.finishedAt && Date.now() - j.finishedAt < 10 * 60000 && !hidden().includes(j.id));
+      const j = run || recent;
+      const html = !j ? '' : run
+        ? `<div class="insight-card info" style="margin-bottom:12px;align-items:center"><div style="flex:1">⏳ <b>${esc(jobTitle(j))}</b> is running · started ${esc(ago(j.startedAt))}</div>${UI.btn('Open log', 'data-jb-open', 'btn-primary btn-sm')}</div>`
+        : `<div class="insight-card ${j.status === 'done' ? 'success' : 'danger'}" style="margin-bottom:12px;align-items:center"><div style="flex:1">${j.status === 'done' ? '✓' : '✗'} <b>${esc(jobTitle(j))}</b> ${j.status === 'done' ? 'finished' : 'failed'} ${esc(ago(j.finishedAt))}${j.error ? ` — <span class="text-sm">${esc(j.error)}</span>` : ''}</div>${UI.btn('Open log', 'data-jb-open', 'btn-sm')} ${UI.btn('Hide', 'data-jb-hide', 'btn-ghost btn-sm')}</div>`;
+      if (html !== last) {
+        last = html; el.innerHTML = html;
+        el.querySelector('[data-jb-open]')?.addEventListener('click', () => reopen(j));
+        el.querySelector('[data-jb-hide]')?.addEventListener('click', () => { try { sessionStorage.setItem('dg_swjob_hidden', JSON.stringify([...hidden(), j.id].slice(-50))); } catch (e) {} last = ''; el.innerHTML = ''; });
+      }
+      timer = setTimeout(tick, run ? 3000 : 8000);
+    };
+    tick();
+    return () => { alive = false; clearTimeout(timer); };
+  }
+  /** Recent jobs table (Swarm → Overview): each one reopens its log. */
+  async function recentJobs(el, onDone) {
+    let jobs = [];
+    try { jobs = (await API.get('/swarm/jobs')).jobs || []; } catch (e) { el.innerHTML = ''; return; }
+    if (!el.isConnected) return;
+    const ST = { running: ['warn', 'running'], done: ['ok', 'done'], error: ['bad', 'failed'] };
+    el.innerHTML = `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Recent jobs</div><div class="ui-ph-desc">Swarm jobs on this server in the last 6 hours. Open one to see its steps and log.</div></div></div>
+      ${UI.table([{ label: 'Started' }, { label: 'Job' }, { label: 'Result' }, { label: 'Took' }, { label: '', align: 'right' }], jobs.map(j => ({ cells: [
+        `<span class="ui-sub" title="${esc(formatTime(new Date(j.startedAt).toISOString()))}">${esc(ago(j.startedAt))}</span>`, `<b>${esc(jobTitle(j))}</b>`,
+        `${UI.pill(...(ST[j.status] || ['off', esc(j.status)]))}${j.error ? `<div class="ui-sub" style="max-width:320px;white-space:normal">${esc(j.error)}</div>` : ''}`, esc(took(j)), UI.btn('Open log', `data-rj="${esc(j.id)}"`)] })), { empty: 'No Swarm jobs in the last 6 hours.', minWidth: 640 })}`;
+    el.querySelectorAll('[data-rj]').forEach(b => b.onclick = () => reopen(jobs.find(x => x.id === b.dataset.rj), onDone));
+  }
+
+  window.SwarmUI = { openJob: (...a) => openJob(...a), jobBar, recentJobs, jobTitle, css, inspect: inspectDialog, terminal: taskTerminal, mountTerminal }; // used by the other Swarm tabs
 
   // ---- Set up Swarm… / Add servers… wizard ----
   // Modes: one (one server), several (create with several servers), add (join servers to the running swarm).
@@ -367,8 +411,8 @@
       catch (e) { content.innerHTML = UI.errorState(e, { title: 'Swarm status could not be read' }); return; }
       if (!Router.isActiveNav(navId)) return;
       const st = data.status;
-      const job = (await API.get('/swarm/status').catch(() => ({}))).job;
-      const jobBanner = job ? banner('info', '<b>A Swarm job is running.</b>', UI.btn('Open', 'data-open-job', 'btn-primary')) : '';
+      const job = (await API.get('/swarm/status').catch(() => ({}))).job; // the bar at the top shows it
+      const jobBanner = '';
 
       if (st.state === 'inactive' || st.state === 'error' && !st.nodeId) {
         content.innerHTML = `${UI.header('Swarm', `Docker Swarm is off on <b>${esc(st.serverName)}</b>.`, job ? '' : UI.primary('Set up Swarm…', 'data-setup'))}${jobBanner}
@@ -412,12 +456,13 @@
           </div>
           <div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Where tasks run</div><div class="ui-ph-desc">Green runs, amber is starting, red failed (hover for the error).</div></div></div>
           <div class="sw-nodes">${data.nodes.map(node).join('')}</div>
+          <div data-recent-jobs></div>
           <div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Recent Swarm events</div><div class="ui-ph-desc">Services, nodes, secrets and configs, last 24 hours.</div></div></div>
           ${UI.table([{ label: 'When' }, { label: 'What' }, { label: 'Name' }, { label: 'Detail' }], data.events.map(e => ({ cells: [
             `<span class="ui-sub" title="${esc(formatTime(new Date(e.time * 1000).toISOString()))}">${esc(timeAgo(e.time))}</span>`, `${esc(e.type)} ${esc(e.action)}`, `<b>${esc(e.name || String(e.id || '').slice(0, 12))}</b>`, `<span class="ui-sub td-mono">${esc(e.detail)}</span>`] })), { empty: 'No Swarm events in the last 24 hours.', minWidth: 560 })}`;
       }
       content.querySelector('[data-setup]')?.addEventListener('click', () => openWizard(st, load));
-      content.querySelector('[data-open-job]')?.addEventListener('click', () => openJob(job, load, 'Swarm job'));
+      const rj = content.querySelector('[data-recent-jobs]'); if (rj) recentJobs(rj, load);
       content.querySelector('[data-addsrv]')?.addEventListener('click', () => openWizard(st, load, { add: true }));
       content.querySelector('[data-go-nodes]')?.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-nodes' }));
       content.querySelector('[data-go-migrate]')?.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-migrate' }));

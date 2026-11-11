@@ -2,6 +2,21 @@
 
 ---
 
+## [2.39.0] - 2026-11-12
+
+### Added
+- **Swarm jobs can be reopened from every Swarm page.** While a job runs (move to Swarm, redeploy, add servers, rotate a secret …), a bar at the top of each Swarm tab names it — e.g. *Redeploy · shop is running* — with **Open log**; for 10 minutes after it ends the bar shows how it ended. The sidebar shows **Swarm ▶ 1** while it runs, as Deploy and Servers do for their jobs.
+- **Swarm → Overview → Recent jobs:** the Swarm jobs of the last 6 hours with their result and time; any of them opens its steps and log again. Before, a closed job window could only be reopened from Overview while the job was still running, and not at all once it had ended.
+
+### Fixed
+- **Back and Forward forgot where you were.**
+  - The tab of a container page and of a Swarm service page is now in the address, so Back, Forward and a refresh return to the same tab (it was always Overview).
+  - The list you came from keeps its filter, search, sort and scroll position (Containers, Images, Volumes).
+  - The **Back** button on a container or service page returns to the page you came from (it always opened the list, and added a history step).
+- **The sidebar showed nothing selected on a container or Swarm service page.** It now highlights Resources → Containers or Swarm → Services.
+
+---
+
 ## [2.38.13] - 2026-11-12
 
 ### Added

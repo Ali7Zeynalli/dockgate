@@ -63,7 +63,7 @@ Router.register('container-detail', async (content, params) => {
 
       // Back button
       const backIcon = document.querySelector('#back-btn svg'); if (backIcon) backIcon.style.transform = 'rotate(180deg)'; // the arrow points back; the text stays readable
-      document.getElementById('back-btn').addEventListener('click', () => Router.navigate('resources',{tab:'containers'}));
+      document.getElementById('back-btn').addEventListener('click', () => Router.back('resources', { tab: 'containers' })); // where you came from
 
       // Export filesystem → tar download (C5)
       document.getElementById('export-btn')?.addEventListener('click', () => {
@@ -141,6 +141,7 @@ Router.register('container-detail', async (content, params) => {
       content.querySelectorAll('[data-tab]').forEach(btn => {
         btn.addEventListener('click', () => { 
           currentTab = btn.dataset.tab; 
+          Router.setTab(currentTab); // in the URL: Back / Forward and a refresh come back to this tab
           content.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
           renderTab(info); 
         });
@@ -152,7 +153,7 @@ Router.register('container-detail', async (content, params) => {
           const action = btn.dataset.action;
           if (action === 'remove') {
             showDeleteConfirm('Remove Container', { message: `Remove <strong>${escapeHtml(name)}</strong>?`, phrase: name, onConfirm: async () => {
-              try { await API.post(`/containers/${id}/remove`, { force: true }); showToast(`Removed ${name}`); Router.navigate('resources',{tab:'containers'}); }
+              try { await API.post(`/containers/${id}/remove`, { force: true }); showToast(`Removed ${name}`); Router.navigate('resources', { tab: 'containers' }, { replace: true }); }
               catch (err) { showToast(err.message, 'error'); }
             } });
             return;
