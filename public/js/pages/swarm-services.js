@@ -272,7 +272,8 @@
     const stop = () => clearTimeout(timer);
     async function load() {
       if (!Router.isActiveNav(navId) || !content.isConnected) return stop();
-      try { data = (await API.get('/swarm/services')).services; }
+      let st = { services: {} };
+      try { [data, st] = await Promise.all([API.get('/swarm/services').then(r => r.services), API.get('/swarm/services/stats').catch(() => ({ services: {} }))]); }
       catch (e) {
         content.innerHTML = UI.header('Services', esc(e.message), UI.btn('Open Overview', 'data-go'));
         content.querySelector('[data-go]').onclick = () => Router.navigate('swarm', { tab: 'swarm-overview' });
@@ -299,13 +300,14 @@
           `<span class="td-mono text-sm">${esc(s.image)}</span>`,
           `<span class="text-sm">${esc(s.mode)}</span>`,
           `<b style="color:${s.running < s.desired ? 'var(--warning,#d97706)' : 'inherit'}">${s.running}/${s.desired}</b><div style="margin-top:3px">${s.tasks.slice(0, 24).map(t => `<span class="svc-sq ${esc(t.state)}" title="${esc(`${s.name}${t.slot ? '.' + t.slot : ''} · ${t.state}${t.node ? ' · ' + t.node : ''}${t.error ? ' · ' + t.error : ''}`)}"></span>`).join('')}</div>`,
+          (() => { const x = st.services[s.id]; return x ? `<span class="text-sm">${x.cpu}%</span> · <span class="text-sm">${formatBytes(x.memBytes)}</span><div class="ui-sub">${x.tasks} task${x.tasks === 1 ? '' : 's'} measured</div>` : '<span class="ui-sub">—</span>'; })(),
           s.ports.length ? s.ports.map(p => `<span class="td-mono text-sm">${p.published || ''}${p.published ? '→' : ''}${p.target}/${p.protocol}</span>${p.mode === 'host' ? ' <span class="ui-sub">host</span>' : ''}`).join('<br>') : '<span class="ui-sub">—</span>',
           `${upd ? UI.pill(upd[0], upd[1]) : '<span class="ui-sub">—</span>'}${s.update && s.update.message && s.update.state !== 'completed' ? `<div class="ui-sub" style="max-width:240px;white-space:normal">${esc(s.update.message)}</div>` : ''}${s.problem ? `<div class="text-sm" style="color:var(--danger,#dc2626);max-width:280px;white-space:normal">${esc(s.problem)}</div>` : ''}`,
           UI.menu(menu),
         ] };
       });
       content.innerHTML = `${UI.header('Services', `${data.length} service${data.length === 1 ? '' : 's'}. Updates replace tasks one at a time and go back by themselves when a new task fails (each service's update settings).`, UI.primary('New service…', 'data-new'))}
-        ${UI.table([{ label: 'Service' }, { label: 'Image' }, { label: 'Mode' }, { label: 'Tasks' }, { label: 'Ports' }, { label: 'Last update' }, { label: '', align: 'right' }], rowsHtml, { minWidth: 960, empty: 'No services yet. Create one with New service…, or deploy a stack (next version).' })}`;
+        ${UI.table([{ label: 'Service' }, { label: 'Image' }, { label: 'Mode' }, { label: 'Tasks' }, { label: 'CPU · Memory' }, { label: 'Ports' }, { label: 'Last update' }, { label: '', align: 'right' }], rowsHtml, { minWidth: 1060, empty: 'No services yet. Create one with New service…, or deploy a stack (next version).' })}`;
       content.querySelector('[data-new]').onclick = () => openForm({ onDone: load });
       content.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, data.find(x => x.id === b.dataset.id))));
       stop(); timer = setTimeout(load, 5000);

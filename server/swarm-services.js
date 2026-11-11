@@ -499,4 +499,39 @@ async function progress(id) {
   };
 }
 
-module.exports = { list, get, choices, tasks, logs, create, save, scale, setImage, rollback, restart, remove, progress, formFromSpec, specFromForm, newForm, parseDur, fmtDur, parseBytes, splitArgs, isDatabase };
+// ---- CPU and memory per service ----
+let statsCache = { at: 0, data: null, server: null };
+/**
+ * CPU % and memory of every service's running tasks, summed. Read with `docker stats` from each node's DockGate
+ * server (a node not in DockGate has no numbers). Cached for 10 s.
+ */
+async function stats() {
+  const { serverId } = await mgr();
+  if (statsCache.data && statsCache.server === serverId && Date.now() - statsCache.at < 10000) return statsCache.data;
+  const cl = require('./swarm-cluster');
+  const ns = await cl.nodes();
+  const out = {}; const missing = [];
+  await Promise.all(ns.nodes.map(async (n) => {
+    const sid = n.serverId || (n.self ? serverId : null);
+    if (!sid) { missing.push(n.hostname); return; }
+    try {
+      const row = sid === 'local' ? null : require('./db').stmts.getServer.get(sid);
+      const c = sid === 'local' ? dockerService.createLocalClient() : dockerService.createSshClient(row);
+      const list = await c.listContainers({ filters: JSON.stringify({ label: ['com.docker.swarm.service.id'] }) });
+      await Promise.all(list.map(async (ct) => {
+        const svcId = ct.Labels['com.docker.swarm.service.id'];
+        try {
+          const st = dockerService.parseStats(await c.getContainer(ct.Id).stats({ stream: false }));
+          const o = out[svcId] || (out[svcId] = { cpu: 0, memBytes: 0, tasks: 0, nodes: new Set() });
+          o.cpu += st.cpuPercent || 0; o.memBytes += st.memoryUsage || 0; o.tasks++; o.nodes.add(n.hostname);
+        } catch (e) { /* the task stopped meanwhile */ }
+      }));
+    } catch (e) { missing.push(n.hostname); }
+  }));
+  for (const k of Object.keys(out)) out[k] = { cpu: Math.round(out[k].cpu * 10) / 10, memBytes: out[k].memBytes, tasks: out[k].tasks, nodes: [...out[k].nodes] };
+  const data = { services: out, missing };
+  statsCache = { at: Date.now(), data, server: serverId };
+  return data;
+}
+
+module.exports = { stats, list, get, choices, tasks, logs, create, save, scale, setImage, rollback, restart, remove, progress, formFromSpec, specFromForm, newForm, parseDur, fmtDur, parseBytes, splitArgs, isDatabase };

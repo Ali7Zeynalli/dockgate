@@ -70,6 +70,7 @@ router.post('/rebalance', async (req, res) => {
 const svc = require('../swarm-services');
 const ok = (fn) => async (req, res) => { try { res.json(await fn(req)); } catch (e) { res.status(e.statusCode || 500).json({ error: e.statusCode ? e.message : (swarm.dockerMsg(e) || e.message), ...(e.needConfirm ? { needConfirm: e.needConfirm } : {}) }); } };
 router.get('/services', ok(async () => ({ services: await svc.list() })));
+router.get('/services/stats', ok(() => svc.stats()));
 router.get('/services/new', ok(() => svc.choices()));
 router.post('/services', ok((req) => svc.create((req.body || {}).form || {}, { sourceIp: req.ip })));
 router.get('/services/:id', ok((req) => svc.get(req.params.id)));

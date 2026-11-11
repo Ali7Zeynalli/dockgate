@@ -2,6 +2,20 @@
 
 ---
 
+## [2.30.0] - 2026-11-11
+
+### Added
+- **Swarm, phase 6: alerts, numbers and logs.**
+  - **Four Swarm alerts** in Settings → Notifications (on by default, sent through email, Telegram and webhook): a service runs fewer tasks than wanted for 2 minutes (the limit can be changed) and when it is back, with the reason from its tasks; a server of the swarm goes Down and when it is Ready again (with how long, and a hint to Rebalance); a service update was rolled back or paused; most managers can not be reached and when they are back. DockGate looks at every swarm it knows every 30 seconds through one of its managers. After a DockGate restart the first look only records the state, so nothing already known is sent again. A server's notification switch applies.
+  - **Services: CPU and memory** of each service — the sum over its running tasks, read with `docker stats` from each node's DockGate server (a node not in DockGate has no numbers), refreshed every few seconds.
+  - **Observe → Logs → Swarm service**: `docker service logs` of every task of a service on every server in the log viewer, the source is task @ server. Shown while Swarm is active.
+  - **Resources → Containers:** a task container shows "Swarm task of <service>" and **Open service** instead of Stop, Restart and Update — Swarm would start a stopped task again at once.
+
+### Fixed
+- **A "server not reachable" or "reachable again" alert that could not be sent was lost.** When a channel is set up and the rule is on but no channel took the message (network error, Telegram or the mail server not answering), DockGate now tries again every minute for 15 minutes and marks it as sent late. Swarm alerts use the same retry.
+
+---
+
 ## [2.29.0] - 2026-11-11
 
 ### Added

@@ -16,7 +16,7 @@ Router.register('logs', async (content, params = {}) => {
     <div style="display:flex;flex-direction:column;gap:14px;max-width:1400px;margin:0 auto;">
       
       ${UI.header('Logs', 'Follow one container live, search every container at once, read the server\'s own logs, or let Log Doctor point out errors.',
-        `<span class="ui-seg" id="logs-mode-nav">${[['stream', 'Container'], ['search', 'All containers'], ['host', 'Host logs'], ['doctor', 'Log Doctor']].map(([m, l]) => `<button type="button" data-mode="${m}" aria-pressed="${currentMode === m}">${l}</button>`).join('')}</span>`)}
+        `<span class="ui-seg" id="logs-mode-nav">${[['stream', 'Container'], ['search', 'All containers'], ['swarm', 'Swarm service'], ['host', 'Host logs'], ['doctor', 'Log Doctor']].map(([m, l]) => `<button type="button" data-mode="${m}" aria-pressed="${currentMode === m}">${l}</button>`).join('')}</span>`)}
 
       <!-- Mode View Container -->
       <div id="logs-view-root"></div>
@@ -37,6 +37,27 @@ Router.register('logs', async (content, params = {}) => {
     else if (mode === 'host') await renderHostLogsView();
     else if (mode === 'doctor') await renderLogDoctorView();
     else if (mode === 'search') await renderCrossContainerSearchView();
+    else if (mode === 'swarm') await renderSwarmServiceView();
+  }
+
+  // Swarm service: docker service logs of every task of one service (all servers), source = task @ server.
+  // The button is shown only while Swarm is active on the server in use.
+  API.get('/swarm/status').then(st => { if (!(st && st.state === 'active' && st.manager)) modeNav.querySelector('[data-mode="swarm"]')?.remove(); }).catch(() => modeNav.querySelector('[data-mode="swarm"]')?.remove());
+  async function renderSwarmServiceView() {
+    if (window._activeLogStreamTeardown) { window._activeLogStreamTeardown(); window._activeLogStreamTeardown = null; }
+    let services = [];
+    try { services = (await API.get('/swarm/services')).services; } catch (e) { viewRoot.innerHTML = UI.errorState(e, { compact: true }); return; }
+    if (!Router.isActiveNav(pageNavId) || currentMode !== 'swarm') return;
+    const pre = services.find(x => x.name === params.service || x.id === params.service);
+    const tools = `<select class="select" data-svc aria-label="Service" style="max-width:260px"><option value="">Choose a service…</option>${services.map(x => `<option value="${escapeHtml(x.id)}" ${pre && pre.id === x.id ? 'selected' : ''}>${escapeHtml(x.name)} (${x.running}/${x.desired})</option>`).join('')}</select>`;
+    viewRoot.innerHTML = '<div data-lvroot></div>';
+    let sel;
+    LogViewer.mount(viewRoot.querySelector('[data-lvroot]'), {
+      key: 'swarm-service', fileName: 'swarm-service', tools, live: true, poll: 5000, liveDefault: false,
+      retention: 'Docker keeps these logs on each server (the service\'s log driver limits)', empty: 'Choose a service to read the logs of all its tasks.',
+      onTools(el, v) { sel = el.querySelector('[data-svc]'); sel.addEventListener('change', () => v.reload()); },
+      load: async (limit) => { if (!sel || !sel.value) return { rows: [] }; const r = await API.get(`/swarm/services/${sel.value}/logs?tail=${limit}`); return { rows: r.rows }; },
+    });
   }
 
   modeNav.addEventListener('click', (e) => {

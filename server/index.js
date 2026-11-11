@@ -634,6 +634,7 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   // Server health: reachability, disk, memory and CPU alerts for every server, checked once a minute.
   if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
   if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
+  if (process.env.NODE_ENV !== 'test') require('./swarm-monitor').start(); // Swarm alerts: services short, nodes down, rolled back updates, quorum
   // Newer-image check for every server: 10 minutes after start, then once a day. New updates are announced
   // once per new digest when the "Newer image available" rule is on (off by default).
   if (process.env.NODE_ENV !== 'test') {

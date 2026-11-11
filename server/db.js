@@ -320,6 +320,11 @@ healthRules.forEach(([t, d, cd, en, pr]) => insertHealthRule.run(t, d, cd, en, J
 // a successful update is opt-in.
 insertHealthRule.run('image_update_failed', 'Image update failed or rolled back', 0, 1, '{}');
 insertHealthRule.run('image_updated', 'Image updated', 0, 0, '{}');
+// Swarm (server/swarm-monitor.js checks the cluster every 30 s): state changes, so no quiet period.
+insertHealthRule.run('swarm_service_down', 'Swarm service below its replicas', 0, 1, JSON.stringify({ minutes: 2 }));
+insertHealthRule.run('swarm_node_down', 'Swarm server down or back', 0, 1, '{}');
+insertHealthRule.run('swarm_update_rollback', 'Swarm update rolled back or paused', 0, 1, '{}');
+insertHealthRule.run('swarm_quorum', 'Swarm managers lost their majority', 0, 1, '{}');
 // "Newer image available" is opt-in: it was just inserted by defaultRules (enabled = 1) on databases that
 // did not have it yet — turn it off once, then leave it to the user.
 try {

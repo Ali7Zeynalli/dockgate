@@ -13,6 +13,7 @@ const LIMITS = {
   host_mem: { percent: [50, 100], minutes: [1, 120] },
   host_cpu: { percent: [50, 100], minutes: [1, 240] },
   disk_threshold: { gb: [1, 100000] },
+  swarm_service_down: { minutes: [1, 60] },
 };
 const HEALTH_TYPES = ['server_down', 'server_up', 'host_disk', 'host_mem', 'host_cpu'];
 const MODES = ['default', 'custom', 'off'];
