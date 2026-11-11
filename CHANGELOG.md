@@ -2,6 +2,13 @@
 
 ---
 
+## [2.38.9] - 2026-11-11
+
+### Fixed
+- **Networks in use were shown as unused.** Docker's network list does not say which containers are attached, so every network counted 0 containers. Resources → Prune listed running projects' networks (such as `blog_default`) and Swarm's `ingress` under *Unused networks*, and Resources → Networks let you tick and remove networks that were in use (Docker then refused). DockGate now counts the containers on each network from the container list and the Swarm services attached to it. `ingress` and `docker_gwbridge` are marked *made by Swarm* and never offered for removal, and the *Used by* column shows Swarm services too.
+
+---
+
 ## [2.38.8] - 2026-11-11
 
 ### Fixed

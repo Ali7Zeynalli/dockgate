@@ -844,22 +844,49 @@ async function cloneVolume(srcName, destName) {
 }
 
 // ============ NETWORKS ============
+// Networks Docker or Swarm made for itself: never offered for removal.
+const DEFAULT_NETWORKS = ['bridge', 'host', 'none'];
+const SYSTEM_NETWORKS = ['ingress', 'docker_gwbridge'];
 async function listNetworks() {
-  const networks = await docker.listNetworks();
-  return networks.map(n => ({
-    id: n.Id,
-    shortId: n.Id.substring(0, 12),
-    name: n.Name,
-    driver: n.Driver,
-    scope: n.Scope,
-    internal: n.Internal,
-    ipam: n.IPAM,
-    containers: Object.keys(n.Containers || {}).length,
-    labels: n.Labels || {},
-    created: n.Created,
-    subnet: n.IPAM?.Config?.[0]?.Subnet || '',
-    gateway: n.IPAM?.Config?.[0]?.Gateway || '',
-  }));
+  // GET /networks leaves Containers empty, so count the containers on each network from the container
+  // list, and the Swarm services attached to it (overlay networks have no local containers on a manager
+  // that runs none of their tasks).
+  const [networks, ctrs, services] = await Promise.all([
+    docker.listNetworks(),
+    docker.listContainers({ all: true }).catch(() => []),
+    docker.listServices().catch(() => []), // not a swarm manager → none
+  ]);
+  const byNet = {};
+  for (const c of ctrs) for (const [name, n] of Object.entries((c.NetworkSettings && c.NetworkSettings.Networks) || {})) {
+    for (const key of new Set([name, n && n.NetworkID].filter(Boolean))) byNet[key] = (byNet[key] || 0) + 1;
+  }
+  const svcByNet = {};
+  for (const sv of services) {
+    const nets = [...((sv.Spec && sv.Spec.TaskTemplate && sv.Spec.TaskTemplate.Networks) || []), ...((sv.Spec && sv.Spec.Networks) || [])];
+    for (const t of new Set(nets.map(x => x.Target))) svcByNet[t] = (svcByNet[t] || 0) + 1;
+  }
+  return networks.map(n => {
+    const containers = Math.max(Object.keys(n.Containers || {}).length, byNet[n.Id] || 0, byNet[n.Name] || 0);
+    const svc = (svcByNet[n.Id] || 0) + (n.Id !== n.Name ? (svcByNet[n.Name] || 0) : 0);
+    const builtIn = DEFAULT_NETWORKS.includes(n.Name) || SYSTEM_NETWORKS.includes(n.Name) || !!(n.Ingress);
+    return {
+      id: n.Id,
+      shortId: n.Id.substring(0, 12),
+      name: n.Name,
+      driver: n.Driver,
+      scope: n.Scope,
+      internal: n.Internal,
+      ipam: n.IPAM,
+      containers,
+      services: svc,
+      builtIn,
+      removable: !builtIn && containers === 0 && svc === 0,
+      labels: n.Labels || {},
+      created: n.Created,
+      subnet: n.IPAM?.Config?.[0]?.Subnet || '',
+      gateway: n.IPAM?.Config?.[0]?.Gateway || '',
+    };
+  });
 }
 
 async function inspectNetwork(id) {
@@ -989,9 +1016,7 @@ async function getCleanupPreview() {
   const unusedImages = images.filter(i => !i.inUse);
   const danglingImages = images.filter(i => i.isDangling);
   const unusedVolumes = volumes.filter(v => !v.inUse);
-  const unusedNetworks = networks.filter(n =>
-    !['bridge', 'host', 'none'].includes(n.name) && n.containers === 0
-  );
+  const unusedNetworks = networks.filter(n => n.removable);
 
   const buildCacheSize = dfData.BuildCache?.reduce((a, b) => a + (b.Size || 0), 0) || 0;
 

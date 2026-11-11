@@ -22,7 +22,7 @@ Router.register('networks', async (content) => {
       }
 
       // Only user-created, empty networks can be removed/selected
-      const removableNetworks = networks.filter(n => !['bridge', 'host', 'none'].includes(n.name) && n.containers === 0);
+      const removableNetworks = networks.filter(n => n.removable);
 
       content.innerHTML = `
         ${UI.header('Networks', `${networks.length} network${networks.length === 1 ? '' : 's'} on this server. Docker's own networks (bridge, host, none) and networks with containers cannot be removed.`,
@@ -45,14 +45,14 @@ Router.register('networks', async (content) => {
             </tr></thead>
             <tbody>
               ${networks.map(n => {
-                const canRemove = !['bridge', 'host', 'none'].includes(n.name) && n.containers === 0;
+                const canRemove = n.removable;
                 return `<tr class="${selectedIds.has(n.id) ? 'selected' : ''}">
                   <td>${canRemove ? `<div class="checkbox ${selectedIds.has(n.id) ? 'checked' : ''}" data-select="${n.id}"></div>` : ''}</td>
-                  <td class="td-name">${escapeHtml(n.name)}${n.internal ? ' ' + UI.pill('info', 'internal') : ''}${['bridge', 'host', 'none'].includes(n.name) ? ' <span class="ui-sub">Docker default</span>' : ''}</td>
+                  <td class="td-name">${escapeHtml(n.name)}${n.internal ? ' ' + UI.pill('info', 'internal') : ''}${['bridge', 'host', 'none'].includes(n.name) ? ' <span class="ui-sub">Docker default</span>' : n.builtIn ? ' <span class="ui-sub">made by Swarm</span>' : ''}</td>
                   <td class="text-sm">${escapeHtml(n.driver)} · ${escapeHtml(n.scope)}</td>
                   <td class="td-mono">${n.subnet || '—'}</td>
                   <td class="td-mono">${n.gateway || '—'}</td>
-                  <td>${(usedBy[n.name] || []).length ? usedBy[n.name].slice(0, 4).map(x => UI.chip(escapeHtml(x))).join('') + (usedBy[n.name].length > 4 ? ` <span class="text-xs text-muted">+${usedBy[n.name].length - 4}</span>` : '') : n.containers ? UI.chip(String(n.containers)) : '<span class="text-muted">—</span>'}</td>
+                  <td>${(usedBy[n.name] || []).length ? usedBy[n.name].slice(0, 4).map(x => UI.chip(escapeHtml(x))).join('') + (usedBy[n.name].length > 4 ? ` <span class="text-xs text-muted">+${usedBy[n.name].length - 4}</span>` : '') : n.containers ? UI.chip(String(n.containers)) : ''}${n.services ? ` ${UI.chip(`${n.services} Swarm service${n.services === 1 ? '' : 's'}`)}` : ''}${!(usedBy[n.name] || []).length && !n.containers && !n.services ? '<span class="text-muted">—</span>' : ''}</td>
                   <td><div class="td-actions" style="justify-content:flex-end">
                     ${UI.menu([
                       { label: `${Icons.eye} Inspect`, attrs: `data-inspect="${n.id}"` },
