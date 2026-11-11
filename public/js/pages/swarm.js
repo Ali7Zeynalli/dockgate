@@ -39,7 +39,7 @@
   const banner = (level, html, actions = '') => `<div class="insight-card ${level === 'bad' ? 'danger' : level === 'warn' ? 'warning' : 'info'}" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:220px">${html}</div>${actions ? `<div style="display:flex;gap:6px">${actions}</div>` : ''}</div>`;
 
   // ---- the job window (Create Swarm, Add servers, Rebalance, Remove node) ----
-  const DONE_TEXT = { 'Create Swarm': '✓ Swarm is on', 'Add servers': '✓ Servers added', Rebalance: '✓ Rebalanced', 'Remove node': '✓ Node removed', 'Move to Swarm': '✓ Every project moved', 'Move back to Compose': '✓ Runs in Compose again', Redeploy: '✓ Deployed', 'Rotate secret': '✓ Rotated — the old version is removed', 'Edit config': '✓ Saved — the old version is removed' };
+  const DONE_TEXT = { 'Create Swarm': '✓ Swarm is on', 'Add servers': '✓ Servers added', Rebalance: '✓ Rebalanced', 'Remove node': '✓ Node removed', 'Move to Swarm': '✓ Every project moved', 'Move back to Compose': '✓ Runs in Compose again', Redeploy: '✓ Deployed', 'Recover cluster': '✓ Recovered — one manager now; add managers again', 'Rotate secret': '✓ Rotated — the old version is removed', 'Edit config': '✓ Saved — the old version is removed' };
   function openJob(jobId, onDone, title = 'Create Swarm') {
     const m = showModal(esc(title), `${serverContextBanner()}<div id="sw-job-steps" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px"></div><div id="sw-job-log"></div>
       <div id="sw-job-status" style="margin-top:10px;font-weight:600;font-size:13px;color:var(--text-muted)">⏳ Working…</div><div id="sw-job-extra"></div>
@@ -329,6 +329,10 @@
           ${banner('bad', '<b>Swarm is locked.</b> Autolock is on and Docker was restarted: services keep their containers but the swarm can not be managed until it is unlocked.', UI.btn('Unlock…', 'data-unlock', 'btn-primary'))}`;
       } else if (st.state === 'active' && !st.manager) {
         content.innerHTML = `${UI.header('Swarm', `<b>${esc(st.serverName)}</b> is a worker in a swarm.`)}${banner('info', 'Workers can not show or change the cluster. Switch to a manager server at the top to manage it.')}`;
+      } else if (data.quorumLost) {
+        content.innerHTML = `${UI.header('Swarm', `The swarm managed through <b>${esc(st.serverName)}</b> has no leader.`)}
+          ${banner('bad', `<b>Most managers can not be reached.</b> Running services keep running, but nothing can be deployed, scaled or changed. <span class="ui-sub">${esc(data.error || '')}</span>`, UI.btn('Recover cluster…', 'data-recover', 'btn-danger'))}
+          <div class="sw-card"><b>Two ways out</b><div class="text-sm" style="margin-top:6px">1. <b>Wait</b> — when the lost managers come back (power, network), the cluster works again by itself. Best when they will come back.<br>2. <b>Recover cluster…</b> — only when they will not come back: DockGate takes a backup, runs <span class="td-mono">docker swarm init --force-new-cluster</span> on ${esc(st.serverName)} (a one-manager cluster that keeps every service) and removes the managers that are gone. Then add managers again.</div></div>`;
       } else if (st.state === 'pending') {
         content.innerHTML = `${UI.header('Swarm', 'Joining a swarm…')}${banner('warn', 'The server is joining a swarm. This page refreshes by itself.')}`;
       } else {
@@ -364,6 +368,7 @@
       content.querySelector('[data-go-migrate]')?.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-migrate' }));
       content.querySelector('[data-rebalance]')?.addEventListener('click', () => confirmRebalance(load));
       content.querySelector('[data-unlock]')?.addEventListener('click', () => unlockDialog(st, load));
+      content.querySelector('[data-recover]')?.addEventListener('click', () => recoverDialog(st, load));
       stop();
       if (st.state !== 'inactive') timer = setTimeout(load, 5000);
       else if (job) timer = setTimeout(load, 3000);
@@ -478,6 +483,16 @@
       onConfirm: () => startJob('/swarm/rebalance', {}, 'Rebalance', done) });
   }
 
+  async function recoverDialog(st, onDone) {
+    let r; try { r = await API.get('/swarm/recovery'); } catch (e) { return showToast(e.message, 'error'); }
+    if (!r.lost) { showToast('The cluster has a leader again — nothing to recover', 'success'); return onDone(); }
+    showDeleteConfirm('Recover cluster', {
+      message: `Use this only when the lost managers will <b>not</b> come back. On <b>${esc(r.serverName)}</b> (${esc(r.nodeAddr)}) DockGate 1) takes a backup of the swarm state, 2) runs <span class="td-mono">docker swarm init --force-new-cluster</span> — a cluster with this server as the only manager, every service and node kept — and 3) removes the managers that are down. A lost manager that comes back later must leave and join again. This can not be undone.`,
+      phrase: r.serverName, confirmLabel: 'Recover',
+      onConfirm: async () => { try { const x = await API.post('/swarm/recover', { confirm: r.serverName }); openJob(x.jobId, onDone, 'Recover cluster'); } catch (e) { showToast(e.message, 'error', 9000); } },
+    });
+  }
+
   function unlockDialog(st, onDone) {
     UI.dialog({ title: 'Unlock the swarm', saveLabel: 'Unlock',
       body: `<p class="text-sm">${st.hasStoredKey ? 'DockGate has the unlock key stored. Leave the field empty to use it, or enter another key.' : 'Enter the unlock key (SWMKEY-1-…) you saved when Swarm was set up.'}</p>
@@ -508,7 +523,33 @@
           { label: 'Task history per slot', value: esc(c.taskHistory) },
           { label: 'Autolock', desc: c.autolock ? 'After a Docker restart the swarm is locked until it is unlocked with the key.' : 'Off: the swarm starts unlocked after a Docker restart.', value: c.autolock ? UI.pill('ok', 'on') : UI.pill('off', 'off'), action: c.autolock && st.hasStoredKey ? UI.btn('Show unlock key…', 'data-showkey') : '' },
         ])}
+        <div class="ui-ph" style="margin-top:18px"><div class="ui-ph-text"><div class="ui-ph-title">Backups</div><div class="ui-ph-desc">The swarm state (Raft) of this manager and a plain description of services, networks, configs and nodes. Kept in DockGate's data folder, the last 7. Secrets are listed by name only — Swarm never gives their values out.</div></div><div class="ui-ph-actions">${UI.btn('How to restore', 'data-howto')} ${UI.primary('Back up now', 'data-backup')}</div></div>
+        <div data-backups class="text-sm text-muted">Loading…</div>
         <div class="ui-ph" style="margin-top:18px"><div class="ui-ph-text"><div class="ui-ph-title">Turn Swarm off</div><div class="ui-ph-desc">The server leaves the swarm. With one server that removes the swarm with its services, secrets and configs. Containers of compose projects are not touched.</div></div><div class="ui-ph-actions">${UI.btn('Turn Swarm off…', 'data-leave', 'btn-danger')}</div></div>`;
+      const loadBackups = async () => {
+        const el = content.querySelector('[data-backups]'); if (!el) return;
+        try {
+          const r = await API.get('/swarm/backups');
+          el.innerHTML = `<div class="flex items-center gap-2" style="margin-bottom:8px"><div class="toggle ${r.nightly ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${r.nightly}" data-nightly></div><span class="text-sm">Back up every night</span></div>`
+            + UI.table([{ label: 'Taken' }, { label: 'Why' }, { label: 'Size' }, { label: 'Contains' }, { label: '', align: 'right' }], r.backups.map(b => ({ cells: [
+              `<span title="${esc(formatTime(b.takenAt))}">${esc(timeAgo(b.takenAt))}</span><div class="ui-sub">${esc(b.serverName)}</div>`, esc(b.reason), formatBytes(b.size),
+              `<span class="text-sm">${b.raw ? 'swarm state' : '<span style="color:var(--warning,#d97706)">no swarm state</span>'} · ${b.services} service${b.services === 1 ? '' : 's'} · ${b.nodes} node${b.nodes === 1 ? '' : 's'}${b.unlockKey ? ' · unlock key (encrypted)' : ''}</span>${b.errors && b.errors.length ? `<div class="ui-sub" style="white-space:normal">${esc(b.errors.join('; '))}</div>` : ''}`,
+              `<a class="btn btn-xs btn-secondary" href="/api/swarm/backups/${encodeURIComponent(b.file)}" download>Download</a>`] })), { minWidth: 640, empty: 'No backups yet.' });
+          el.querySelector('[data-nightly]').onclick = async (e) => { try { await API.put('/swarm/backups/nightly', { on: !e.currentTarget.classList.contains('active') }); loadBackups(); } catch (er) { showToast(er.message, 'error'); } };
+        } catch (e) { el.innerHTML = UI.errorState(e, { compact: true }); }
+      };
+      loadBackups();
+      content.querySelector('[data-backup]').onclick = async (e) => {
+        const b = e.currentTarget; b.disabled = true; b.textContent = 'Backing up…';
+        try { const r = await API.post('/swarm/backups', {}); showToast(`Backup taken (${formatBytes(r.size)})${r.errors.length ? ' — ' + r.errors.join('; ') : ''}`, r.errors.length ? 'warning' : 'success', 8000); loadBackups(); }
+        catch (er) { showToast(er.message, 'error', 9000); }
+        finally { b.disabled = false; b.textContent = 'Back up now'; }
+      };
+      content.querySelector('[data-howto]').onclick = () => showModal('Restore a swarm', `<div class="text-sm">
+        <p><b>One manager still runs?</b> Do not restore — use Swarm → Overview → <b>Recover cluster…</b> on it.</p>
+        <p><b>Every manager is lost:</b> on a new server (the same Docker version is best), with the backup's <span class="td-mono">swarm-dir.tar.gz</span>:</p>
+        <ol style="padding-left:18px;line-height:1.7"><li><span class="td-mono">sudo systemctl stop docker</span></li><li><span class="td-mono">sudo rm -rf /var/lib/docker/swarm</span></li><li><span class="td-mono">sudo tar -xzf swarm-dir.tar.gz -C /var/lib/docker</span></li><li><span class="td-mono">sudo systemctl start docker</span></li><li><span class="td-mono">docker swarm init --force-new-cluster --advertise-addr &lt;its address&gt;</span></li><li>With autolock: <span class="td-mono">docker swarm unlock</span> (Show unlock key on this page)</li><li>Add the other servers again (Swarm → Add servers…) and remove the old nodes.</li></ol>
+        <p class="ui-sub">The backup is a .tar with RESTORE.txt (these steps), cluster.json (services, networks, configs, nodes — plain JSON), swarm-dir.tar.gz and, with autolock, the key encrypted for this DockGate. It is not done automatically: losing every manager is rare and the steps run on a server DockGate does not know yet.</p></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
       content.querySelector('[data-showkey]')?.addEventListener('click', () => secConfirm({ title: 'Show the unlock key', change: 'The key is shown on screen.', protects: 'Showing it is recorded in the audit log.', undo: '—', confirmLabel: 'Show', onConfirm: async () => {
         try { const r = await API.post('/swarm/unlock-key', {}); showModal('Unlock key', `<div class="sw-key">${esc(r.key || '(none stored)')}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]); } catch (e) { showToast(e.message, 'error'); }
       } }));

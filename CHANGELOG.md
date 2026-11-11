@@ -2,6 +2,16 @@
 
 ---
 
+## [2.31.0] - 2026-11-11
+
+### Added
+- **Swarm, phase 7: backup and recovery.**
+  - **Cluster settings → Backups:** **Back up now**, a nightly backup (on by default, switch on the page) and the list of backups with **Download**. A backup is one .tar in DockGate's data folder (`data/swarm-backups/`, the last 7 per cluster, readable only by DockGate) with `swarm-dir.tar.gz` — the manager's `/var/lib/docker/swarm` (Raft state), read through a helper container that is never started; `cluster.json` — the cluster spec without join tokens, nodes and labels, services, overlay networks, configs with content and secrets by name only (Swarm never gives their values); with autolock the unlock key encrypted for this DockGate; and `RESTORE.txt`. It is taken while Docker runs; Docker recommends stopping Docker for a perfectly consistent copy. Downloads are in the audit log — the archive holds the node's certificates.
+  - **How to restore** explains bringing the cluster back on a new server when every manager is lost (stop Docker, put the swarm folder back, `docker swarm init --force-new-cluster`, unlock, join the others). It is not automatic: that case is rare and runs on a server DockGate does not know yet.
+  - **Recover cluster…** — when most managers can not be reached the Overview says so (services keep running, nothing can be changed) and offers to wait or to recover. Recover, with the server name typed in: a backup first, then `docker swarm init --force-new-cluster` on the manager in use (a one-manager cluster that keeps every service and node), then the managers that are gone are removed, and what to do next (promote workers or add managers). It is refused while the cluster has a leader.
+
+---
+
 ## [2.30.0] - 2026-11-11
 
 ### Added

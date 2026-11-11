@@ -349,7 +349,14 @@ async function overview() {
   const c = client();
   const st = await status();
   if (st.state !== 'active' || !st.manager) return { status: st };
-  const [nodes, services, tasks, events] = await Promise.all([c.listNodes(), c.listServices({ status: true }), c.listTasks(), recentEvents(c).catch(() => [])]);
+  let nodes, services, tasks, events;
+  try { [nodes, services, tasks, events] = await Promise.all([c.listNodes(), c.listServices({ status: true }), c.listTasks(), recentEvents(c).catch(() => [])]); }
+  catch (e) {
+    const msg = dockerMsg(e) || e.message;
+    // Most managers gone: the cluster can not be read or changed (services keep running).
+    if (/leader|quorum|deadline exceeded/i.test(msg)) return { status: st, quorumLost: true, error: msg };
+    throw e;
+  }
   const svcName = new Map(services.map(s => [s.ID, s.Spec.Name]));
   // A slot with no live task shows its newest failed task (red), so a crashing service is visible on its node.
   const live = (t) => t.DesiredState !== 'shutdown' && !['shutdown', 'complete', 'failed', 'rejected', 'orphaned'].includes(t.Status.State);

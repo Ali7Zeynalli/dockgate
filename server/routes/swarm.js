@@ -112,6 +112,20 @@ router.post('/networks/ingress', ok((req) => {
   if ((req.body || {}).confirm !== true) throw Object.assign(new Error('confirm required'), { statusCode: 400 });
   return objs.changeIngress((req.body || {}).subnet, { sourceIp: req.ip });
 }));
+// ---- phase 7: backup and recovery (server/swarm-backup.js) ----
+const bk = require('../swarm-backup');
+router.get('/backups', ok(async () => ({ backups: bk.list(), nightly: bk.nightlyOn() })));
+router.post('/backups', ok((req) => bk.backupNow({ reason: 'manual', sourceIp: req.ip })));
+router.put('/backups/nightly', ok(async (req) => { bk.setNightly(!!(req.body || {}).on); logAction({ req, resourceType: 'swarm', resourceName: 'backup', action: 'swarm_backup_nightly', details: { on: !!(req.body || {}).on } }); return { nightly: bk.nightlyOn() }; }));
+router.get('/backups/:file', (req, res) => {
+  try {
+    const p = bk.filePath(req.params.file);
+    logAction({ req, resourceType: 'swarm', resourceName: req.params.file, action: 'swarm_backup_download' });
+    res.download(p, req.params.file);
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+router.get('/recovery', ok(() => bk.recoveryInfo()));
+router.post('/recover', ok(async (req) => jobOf(await bk.startRecover({ confirm: (req.body || {}).confirm, sourceIp: req.ip }))));
 router.get('/settings', async (req, res) => {
   try { res.json(await swarm.settings()); } catch (e) { fail(res, e); }
 });
