@@ -2,6 +2,21 @@
 
 ---
 
+## [2.34.0] - 2026-11-11
+
+### Added
+- **Newer images for Swarm services.** A service runs its image pinned to one build (tag@digest), so every node runs the same one. DockGate now compares that build with what the registry gives for the same tag.
+  - Swarm → Services → **Check for updates** checks now; it also runs once a day with the container check. A service with a newer build shows "newer image" and its version when the image tells it.
+  - **Update to newest…** (the service's ⋯ menu) writes the new tag@digest, so all nodes run exactly that build. The update rolls one task at a time and goes back by itself when new tasks fail.
+  - With the "Newer image available" alert on, a new build is announced once (email, Telegram, webhook).
+- **CPU and memory per node** in Swarm → Nodes: use in percent and the node's CPUs and memory, read from its DockGate server every 30 seconds. A node not in DockGate shows its size only.
+- **Service graphs.** Swarm → Services → ⋯ → **Graphs** shows CPU and memory of all the service's tasks for the last 1 to 48 hours. DockGate records every 2 minutes while the server in use is a manager.
+
+### Fixed
+- **Newer-image checks failed for a registry on the same machine** (localhost:5000) with "fetch failed": DockGate asked it over HTTPS. Like Docker, it now uses HTTP for localhost and 127.0.0.1.
+
+---
+
 ## [2.33.0] - 2026-11-11
 
 ### Added

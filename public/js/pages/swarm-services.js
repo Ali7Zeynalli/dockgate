@@ -256,6 +256,29 @@
       el.querySelectorAll('[data-insp]').forEach(b => b.onclick = () => SwarmUI.inspect('task', b.dataset.insp, `task ${b.dataset.insp.slice(0, 12)}`));
     } catch (e) { m.overlay.querySelector('[data-t]').innerHTML = UI.errorState(e, { compact: true }); }
   }
+  function graphsDialog(s) {
+    const m = showModal(`Graphs · ${esc(s.name)}`, `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><select class="select" data-h style="width:auto"><option value="1">Last hour</option><option value="6" selected>Last 6 hours</option><option value="24">Last 24 hours</option><option value="48">Last 48 hours</option></select><span class="ui-sub">All running tasks summed, every 2 minutes. DockGate records while the server in use is a manager of this swarm.</span></div>
+      <div class="ui-label">CPU</div><div style="height:180px"><canvas data-cpu></canvas></div>
+      <div class="ui-label" style="margin-top:12px">Memory</div><div style="height:180px"><canvas data-mem></canvas></div>
+      <div data-empty class="ui-sub" style="margin-top:8px"></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    const cs = getComputedStyle(document.documentElement);
+    const grid = cs.getPropertyValue('--border').trim() || 'rgba(128,128,128,.2)', tick = cs.getPropertyValue('--text-muted').trim() || '#888';
+    let charts = [];
+    const draw = async () => {
+      let r; try { r = await API.get(`/swarm/services/${s.id}/history?hours=${m.overlay.querySelector('[data-h]').value}`); } catch (e) { m.overlay.querySelector('[data-empty]').textContent = e.message; return; }
+      charts.forEach(c => c.destroy()); charts = [];
+      const labels = r.samples.map(x => new Date(x.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      m.overlay.querySelector('[data-empty]').textContent = r.samples.length ? `${r.samples.length} samples` : 'No samples yet — the first one is taken within 2 minutes after DockGate starts.';
+      const opts = (fmt) => ({ responsive: true, maintainAspectRatio: false, animation: { duration: 0 }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmt(c.parsed.y) } } },
+        scales: { x: { ticks: { color: tick, maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } }, y: { beginAtZero: true, grid: { color: grid }, ticks: { color: tick, font: { size: 10 }, callback: fmt } } },
+        elements: { point: { radius: 0 }, line: { tension: 0.25, borderWidth: 2 } } });
+      charts.push(new Chart(m.overlay.querySelector('[data-cpu]'), { type: 'line', data: { labels, datasets: [{ data: r.samples.map(x => x.cpu), borderColor: '#00b37e', backgroundColor: 'rgba(0,179,126,0.12)', fill: true }] }, options: opts(v => `${Math.round(v * 10) / 10}%`) }));
+      charts.push(new Chart(m.overlay.querySelector('[data-mem]'), { type: 'line', data: { labels, datasets: [{ data: r.samples.map(x => x.mem), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.12)', fill: true }] }, options: opts(v => formatBytes(v)) }));
+    };
+    m.overlay.querySelector('[data-h]').onchange = draw;
+    draw();
+  }
   function trafficDialog(s) {
     const ing = s.ports.filter(p => p.mode === 'ingress'), host = s.ports.filter(p => p.mode === 'host');
     const running = s.tasks.filter(t => t.state === 'running');
@@ -288,6 +311,7 @@
         const upd = s.update && UPD[s.update.state];
         const menu = [
           s.mode === 'replicated' ? { label: 'Scale…', attrs: `data-a="scale" data-id="${s.id}"` } : null,
+          s.newer && s.newer.status === 'update' ? { label: 'Update to newest…', attrs: `data-a="newest" data-id="${s.id}"` } : null,
           { label: 'Update image…', attrs: `data-a="image" data-id="${s.id}"` },
           s.hasPrevious ? { label: 'Roll back to previous', attrs: `data-a="rollback" data-id="${s.id}"` } : null,
           { label: 'Restart (one by one)', attrs: `data-a="restart" data-id="${s.id}"` },
@@ -295,6 +319,7 @@
           { label: 'Logs', attrs: `data-a="logs" data-id="${s.id}"` },
           { label: 'Tasks', attrs: `data-a="tasks" data-id="${s.id}"` },
           { label: 'Traffic', attrs: `data-a="traffic" data-id="${s.id}"` },
+          { label: 'Graphs', attrs: `data-a="graphs" data-id="${s.id}"` },
           { label: 'Settings…', attrs: `data-a="settings" data-id="${s.id}"` },
           { label: 'Inspect (JSON)', attrs: `data-a="inspect" data-id="${s.id}"` },
           '-',
@@ -302,7 +327,7 @@
         ];
         return { cells: [
           `<b>${esc(s.name)}</b>${s.stack ? ` ${UI.chip(`stack ${esc(s.stack)}`)}` : ''}${s.database ? ' <span class="ui-sub">database</span>' : ''}`,
-          `<span class="td-mono text-sm">${esc(s.image)}</span>`,
+          `<span class="td-mono text-sm">${esc(s.image)}</span>${s.newer ? (s.newer.status === 'update' ? `<div>${UI.pill('info', 'newer image')}${s.newer.version ? ` <span class="ui-sub">${esc(s.newer.version)}</span>` : ''}</div>` : s.newer.status === 'error' ? `<div class="ui-sub" title="${esc(s.newer.error || '')}">check failed</div>` : '') : ''}`,
           `<span class="text-sm">${esc(s.mode)}</span>`,
           `<b style="color:${s.running < s.desired ? 'var(--warning,#d97706)' : 'inherit'}">${s.running}/${s.desired}</b><div style="margin-top:3px">${s.tasks.slice(0, 24).map(t => `<span class="svc-sq ${esc(t.state)}" title="${esc(`${s.name}${t.slot ? '.' + t.slot : ''} · ${t.state}${t.node ? ' · ' + t.node : ''}${t.error ? ' · ' + t.error : ''}`)}"></span>`).join('')}</div>`,
           (() => { const x = st.services[s.id]; return x ? `<span class="text-sm">${x.cpu}%</span> · <span class="text-sm">${formatBytes(x.memBytes)}</span><div class="ui-sub">${x.tasks} task${x.tasks === 1 ? '' : 's'} measured</div>` : '<span class="ui-sub">—</span>'; })(),
@@ -311,9 +336,20 @@
           UI.menu(menu),
         ] };
       });
-      content.innerHTML = `${UI.header('Services', `${data.length} service${data.length === 1 ? '' : 's'}. Updates replace tasks one at a time and go back by themselves when a new task fails (each service's update settings).`, UI.primary('New service…', 'data-new'))}
+      content.innerHTML = `${UI.header('Services', `${data.length} service${data.length === 1 ? '' : 's'}. Updates replace tasks one at a time and go back by themselves when a new task fails (each service's update settings).`, `${UI.btn('Check for updates', 'data-check')} ${UI.primary('New service…', 'data-new')}`)}
         ${UI.table([{ label: 'Service' }, { label: 'Image' }, { label: 'Mode' }, { label: 'Tasks' }, { label: 'CPU · Memory' }, { label: 'Ports' }, { label: 'Last update' }, { label: '', align: 'right' }], rowsHtml, { minWidth: 1060, empty: 'No services yet. Create one with New service…, or deploy a stack (next version).' })}`;
       content.querySelector('[data-new]').onclick = () => openForm({ onDone: load });
+      content.querySelector('[data-check]').onclick = async (e) => {
+        const b = e.currentTarget; b.disabled = true; b.textContent = 'Checking…';
+        try {
+          const r = await API.post('/swarm/services/check-images', {});
+          const n = r.services.filter(x => x.newer && x.newer.status === 'update').length;
+          const f = r.services.filter(x => x.newer && x.newer.status === 'error').length;
+          showToast(n ? `${n} service${n === 1 ? ' has' : 's have'} a newer image` : 'All service images are up to date', n ? 'info' : 'success');
+          if (f) showToast(`${f} could not be checked — hover "check failed" for the reason`, 'warning', 8000);
+          load();
+        } catch (er) { showToast(er.message, 'error', 9000); b.disabled = false; b.textContent = 'Check for updates'; }
+      };
       content.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, data.find(x => x.id === b.dataset.id))));
       stop(); timer = setTimeout(load, 5000);
     }
@@ -321,9 +357,11 @@
       if (!s) return;
       if (a === 'scale') return scaleDialog(s, load);
       if (a === 'image') return imageDialog(s, load);
+      if (a === 'newest') return secConfirm({ title: `Update ${s.name} to the newest image`, change: `The registry has a newer build of <span class="td-mono">${esc(s.image)}</span>${s.newer.version ? ` (${esc(s.newer.version)})` : ''}. Its tasks are replaced one at a time with exactly that build on every server.`, protects: 'If new tasks fail, the service goes back by itself (its update settings). Volumes stay.', undo: 'Roll back to previous.', confirmLabel: 'Update', onConfirm: async () => { try { const r = await API.post(`/swarm/services/${s.id}/update-newest`, {}); if (r.current) { showToast('Already the newest build'); load(); } else watch(s.id, `Update ${s.name}`, load); } catch (e) { showToast(e.message, 'error', 9000); } } });
       if (a === 'logs') return logsDialog(s);
       if (a === 'tasks') return tasksDialog(s);
       if (a === 'traffic') return trafficDialog(s);
+      if (a === 'graphs') return graphsDialog(s);
       if (a === 'inspect') return SwarmUI.inspect('service', s.id, s.name);
       if (a === 'settings') return openForm({ id: s.id, onDone: load });
       if (a === 'rollback') return secConfirm({ title: `Roll back ${s.name}`, change: 'The service goes back to its previous settings and image (docker service rollback), using its roll back settings.', protects: 'Volumes stay. Tasks are replaced the same way as an update.', undo: 'Roll back again returns to the version before.', confirmLabel: 'Roll back', onConfirm: async () => { try { await API.post(`/swarm/services/${s.id}/rollback`, {}); watch(s.id, `Roll back ${s.name}`, load); } catch (e) { showToast(e.message, 'error', 9000); } } });

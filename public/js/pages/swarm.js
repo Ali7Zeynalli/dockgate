@@ -456,23 +456,49 @@
         ].filter(Boolean);
         return { cells: [
           `<b>${esc(n.hostname)}</b> ${n.leader ? UI.pill('info', 'leader') : ''}${n.self ? ' <span class="ui-sub">· DockGate manages through this one</span>' : ''}
-            <div class="ui-sub">${n.serverId ? `DockGate server: ${esc(n.serverName)}` : '<span style="color:var(--warning,#d97706)">not in DockGate</span>'}</div>`,
+            <div class="ui-sub">${n.serverId ? `DockGate server: ${esc(n.serverName)}` : '<span style="color:var(--warning,#d97706)">not in DockGate</span>'} · Docker ${esc(n.engine)} · ${esc(n.arch)}</div>`,
           `<span class="td-mono text-sm">${esc(n.addr)}</span>`,
           `${esc(n.role)}${n.role === 'manager' && n.reachability && n.reachability !== 'reachable' ? ` ${UI.pill('bad', esc(n.reachability))}` : ''}`,
           `${UI.pill(n.state === 'ready' ? 'ok' : 'bad', esc(n.state))}${av ? ' ' + UI.pill(av[0], av[1]) : ''}`,
           Object.keys(n.labels).length ? Object.entries(n.labels).map(([k, v]) => UI.chip(`${esc(k)}=${esc(v)}`, { mono: true })).join(' ') : '<span class="ui-sub">—</span>',
           String(n.tasks),
-          `<span class="text-sm">${esc(n.engine)} · ${esc(n.arch)}</span>`,
+          `<span data-use="${esc(n.id)}">${useCell(n)}</span>`,
           UI.menu(menu),
         ] };
       });
       content.innerHTML = `${UI.header('Nodes', `${plural(data.nodes.length, 'server')} in the cluster · ${tolerance(data.managers)}. Pause keeps a server's tasks but gives it no new ones; Drain moves its tasks to other servers.`,
         `${data.nodes.length > 1 ? UI.btn('Rebalance…', 'data-rebalance') : ''} ${UI.primary('Add servers…', 'data-add')}`)}
-        ${UI.table([{ label: 'Node' }, { label: 'Address' }, { label: 'Role' }, { label: 'State' }, { label: 'Labels' }, { label: 'Tasks' }, { label: 'Docker · CPU' }, { label: '', align: 'right' }], rows, { minWidth: 900 })}`;
+        ${UI.table([{ label: 'Node' }, { label: 'Address' }, { label: 'Role' }, { label: 'State' }, { label: 'Labels' }, { label: 'Tasks' }, { label: 'CPU · Memory' }, { label: '', align: 'right' }], rows, { minWidth: 900 })}`;
+      refreshUsage();
       content.querySelector('[data-add]').onclick = () => openWizard(null, load, { add: true });
       content.querySelector('[data-rebalance]')?.addEventListener('click', () => confirmRebalance(load));
       content.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => nodeAction(b.dataset.act, data.nodes.find(n => n.id === b.dataset.id), load)));
       stop(); timer = setTimeout(load, 10000);
+    }
+    // CPU and memory of each node's server, read from its DockGate server (host stats), every 30 s
+    const usage = new Map(); let usageAt = 0, usageBusy = false;
+    const sidOf = (n) => n.serverId || (n.self ? data.managerServer || 'local' : null);
+    function useCell(n) {
+      const cap = `${n.cpus ? `${n.cpus} CPU` : ''}${n.memBytes ? ` · ${formatBytes(n.memBytes)}` : ''}`;
+      const u = usage.get(n.id);
+      if (!sidOf(n)) return `<span class="ui-sub" title="Add the server to DockGate to see its use">${esc(cap) || '—'}</span>`;
+      if (!u) return `<span class="ui-sub">${esc(cap)}</span>`;
+      if (u.error) return `<span class="ui-sub" title="${esc(u.error)}">${esc(cap)} · not readable</span>`;
+      const memPct = u.mem && u.mem.total ? Math.round(u.mem.used / u.mem.total * 100) : null;
+      const tone = (p) => (p >= 90 ? 'var(--danger,#dc2626)' : p >= 75 ? 'var(--warning,#d97706)' : 'inherit');
+      return `<span class="text-sm" style="color:${tone(u.cpu)}">${Math.round(u.cpu)}%</span> · <span class="text-sm" style="color:${tone(memPct || 0)}">${memPct != null ? memPct + '%' : '—'}</span><div class="ui-sub">${esc(cap)}${u.mem && u.mem.used ? ` · ${formatBytes(u.mem.used)} used` : ''}</div>`;
+    }
+    async function refreshUsage() {
+      if (usageBusy || Date.now() - usageAt < 30000) return;
+      usageBusy = true;
+      try {
+        await Promise.all(data.nodes.filter(n => n.state === 'ready' && sidOf(n)).map(async (n) => {
+          try { const s = await API.get(`/servers/${encodeURIComponent(sidOf(n))}/host/stats`); usage.set(n.id, { cpu: s.cpu || 0, mem: s.mem ? { used: s.mem.used, total: s.mem.total } : null }); }
+          catch (e) { usage.set(n.id, { error: e.message }); }
+        }));
+        usageAt = Date.now();
+        for (const n of data.nodes) { const el = content.querySelector(`[data-use="${CSS.escape(n.id)}"]`); if (el) el.innerHTML = useCell(n); }
+      } finally { usageBusy = false; }
     }
     async function nodeAction(act, n, done) {
       if (!n) return;

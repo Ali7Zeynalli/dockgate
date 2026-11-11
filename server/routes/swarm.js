@@ -72,6 +72,8 @@ const ok = (fn) => async (req, res) => { try { res.json(await fn(req)); } catch 
 router.get('/services', ok(async () => ({ services: await svc.list() })));
 router.get('/services/stats', ok(() => svc.stats()));
 router.get('/services/new', ok(() => svc.choices()));
+router.post('/services/check-images', ok(() => svc.checkImages()));
+router.post('/services/:id/update-newest', ok((req) => svc.updateToNewest(req.params.id, { sourceIp: req.ip })));
 router.post('/services', ok((req) => svc.create((req.body || {}).form || {}, { sourceIp: req.ip })));
 router.get('/services/:id', ok((req) => svc.get(req.params.id)));
 router.put('/services/:id', ok((req) => svc.save(req.params.id, (req.body || {}).form || {}, { sourceIp: req.ip, version: (req.body || {}).version })));
@@ -83,6 +85,7 @@ router.delete('/services/:id', ok((req) => svc.remove(req.params.id, { sourceIp:
 router.get('/services/:id/tasks', ok(async (req) => ({ tasks: await svc.tasks(req.params.id) })));
 router.get('/services/:id/logs', ok((req) => svc.logs(req.params.id, { tail: req.query.tail })));
 router.get('/services/:id/progress', ok((req) => svc.progress(req.params.id)));
+router.get('/services/:id/history', ok((req) => svc.history(req.params.id, req.query.hours)));
 // ---- phase 4: stacks and moving compose projects (server/swarm-stacks.js) ----
 const stacks = require('../swarm-stacks');
 const jobOf = (j) => ({ jobId: j.id });

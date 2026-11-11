@@ -317,6 +317,8 @@ const stackOf = (spec) => (spec.Labels || {})['com.docker.stack.namespace'] || n
 
 async function list() {
   const { c } = await mgr();
+  let upd = {};
+  try { const st = await swarm.status(); if (st.clusterId) upd = require('./swarm-images').results(st.clusterId); } catch (e) { /* no check yet */ }
   const [services, tasks, nodes] = await Promise.all([c.listServices({ status: true }), c.listTasks(), c.listNodes()]);
   const host = new Map(nodes.map(n => [n.ID, n.Description.Hostname]));
   return services.map(s => {
@@ -339,6 +341,7 @@ async function list() {
       update: us ? { state: us.State, message: us.Message || '', completedAt: us.CompletedAt || null, startedAt: us.StartedAt || null } : null,
       hasPrevious: !!s.PreviousSpec, problem, updatedAt: s.UpdatedAt, createdAt: s.CreatedAt,
       endpointMode: (s.Spec.EndpointSpec && s.Spec.EndpointSpec.Mode) || 'vip', vips: ((s.Endpoint && s.Endpoint.VirtualIPs) || []).map(v => v.Addr),
+      newer: imageState(upd[s.ID], s.Spec.TaskTemplate.ContainerSpec.Image),
     };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -463,6 +466,38 @@ async function setImage(id, image, { sourceIp } = {}) {
   return { ok: true };
 }
 
+/** The stored check result, if it is still about the image the service runs now. */
+function imageState(row, image) {
+  if (!row) return null;
+  const { digest } = require('./swarm-images').splitImage(image);
+  if (row.current_digest !== digest) return null; // the service changed since the check
+  return { status: row.status, version: row.remote_version, created: row.remote_created, error: row.error, checkedAt: row.checked_at };
+}
+
+/** Check the services' images against their registries now (the cluster of the server in use). */
+async function checkImages() {
+  const { c } = await mgr();
+  const st = await swarm.status();
+  await require('./swarm-images').check(c, st.clusterId);
+  return { services: await list() };
+}
+
+/** Update a service to the newest build of its tag: tag@digest from the registry, so every node runs it. */
+async function updateToNewest(id, { sourceIp } = {}) {
+  const { c } = await mgr();
+  const s = await c.getService(id).inspect();
+  const SI = require('./swarm-images'); const IU = require('./image-updates');
+  const { tagRef, digest } = SI.splitImage(s.Spec.TaskTemplate.ContainerSpec.Image);
+  const ref = IU.parseRef(tagRef);
+  if (!ref || ref.pinned) throw bad('The service image is not a tag');
+  let remote;
+  try { remote = await require('./registry-browse').getRemoteDigest(IU.registryFor(ref.host), ref.repo, ref.tag); }
+  catch (e) { throw bad(`Registry: ${e.message}`); }
+  if (remote === digest) return { ok: true, current: true };
+  await setImage(id, `${tagRef}@${remote}`, { sourceIp });
+  return { ok: true, digest: remote };
+}
+
 async function rollback(id, { sourceIp } = {}) {
   const { c, serverId } = await mgr();
   const s = await c.getService(id).inspect();
@@ -538,4 +573,50 @@ async function stats() {
   return data;
 }
 
-module.exports = { writeSpec, stats, list, get, choices, tasks, logs, create, save, scale, setImage, rollback, restart, remove, progress, formFromSpec, specFromForm, newForm, parseDur, fmtDur, parseBytes, splitArgs, isDatabase };
+module.exports = { checkImages, updateToNewest, writeSpec, stats, list, get, choices, tasks, logs, create, save, scale, setImage, rollback, restart, remove, progress, formFromSpec, specFromForm, newForm, parseDur, fmtDur, parseBytes, splitArgs, isDatabase };
+
+// ---- service history (Services → Graphs): CPU and memory of each service, every 2 minutes, kept 48 hours ----
+const { db: hdb } = require('./db');
+hdb.exec(`CREATE TABLE IF NOT EXISTS swarm_service_samples (
+  cluster_id TEXT NOT NULL, service_id TEXT NOT NULL, t INTEGER NOT NULL, cpu REAL, mem INTEGER, tasks INTEGER
+)`);
+hdb.exec('CREATE INDEX IF NOT EXISTS swarm_service_samples_idx ON swarm_service_samples (cluster_id, service_id, t)');
+const addSample = hdb.prepare('INSERT INTO swarm_service_samples (cluster_id, service_id, t, cpu, mem, tasks) VALUES (?, ?, ?, ?, ?, ?)');
+const KEEP_MS = 48 * 3600 * 1000;
+let sampleTimer = null, sampling = false;
+
+/** One sample of every service of the swarm the server in use manages (skipped when it is not a manager). */
+async function sampleOnce(now = Date.now()) {
+  if (sampling) return 0;
+  sampling = true;
+  try {
+    const st = await swarm.status();
+    if (st.state !== 'active' || !st.manager || !st.clusterId) return 0;
+    statsCache.at = 0; // fresh numbers
+    const data = await stats();
+    const services = await dockerService.docker.listServices();
+    const tx = hdb.transaction(() => {
+      for (const s of services) {
+        const x = data.services[s.ID] || { cpu: 0, memBytes: 0, tasks: 0 };
+        addSample.run(st.clusterId, s.ID, now, x.cpu, x.memBytes, x.tasks);
+      }
+      hdb.prepare('DELETE FROM swarm_service_samples WHERE t < ?').run(now - KEEP_MS);
+    });
+    tx();
+    return services.length;
+  } catch (e) { return 0; } finally { sampling = false; }
+}
+function startSampler() { if (!sampleTimer) { sampleTimer = setInterval(sampleOnce, 2 * 60 * 1000); if (sampleTimer.unref) sampleTimer.unref(); setTimeout(sampleOnce, 20000).unref?.(); } }
+
+/** Samples of one service for the last `hours` (1–48). */
+async function history(id, hours = 6) {
+  const st = await swarm.status();
+  if (!st.clusterId) throw bad('Swarm is not active');
+  const h = Math.min(Math.max(Number(hours) || 6, 1), 48);
+  const rows = hdb.prepare('SELECT t, cpu, mem, tasks FROM swarm_service_samples WHERE cluster_id = ? AND service_id = ? AND t >= ? ORDER BY t').all(st.clusterId, id, Date.now() - h * 3600 * 1000);
+  return { hours: h, every: 120, samples: rows };
+}
+
+module.exports.sampleOnce = sampleOnce;
+module.exports.startSampler = startSampler;
+module.exports.history = history;

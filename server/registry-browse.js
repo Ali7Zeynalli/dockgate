@@ -15,6 +15,8 @@ const TIMEOUT_MS = 12000;
 function apiBase(serverAddress) {
   if (HUB_ALIASES.includes(serverAddress)) return 'https://registry-1.docker.io';
   const host = String(serverAddress).replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  // Docker talks plain HTTP to a registry on the machine itself (localhost:5000, 127.0.0.1:5000).
+  if (/^(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?$/.test(host)) return 'http://' + host;
   return 'https://' + host;
 }
 

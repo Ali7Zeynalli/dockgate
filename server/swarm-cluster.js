@@ -122,6 +122,7 @@ async function nodes() {
         addr: nodeAddr(n), leader: !!(n.ManagerStatus && n.ManagerStatus.Leader), reachability: n.ManagerStatus ? n.ManagerStatus.Reachability : null,
         engine: n.Description.Engine && n.Description.Engine.EngineVersion, arch: n.Description.Platform && n.Description.Platform.Architecture,
         labels: n.Spec.Labels || {}, tasks: running.get(n.ID) || 0, self: n.ID === mgr.nodeId,
+        cpus: n.Description.Resources ? Math.round(n.Description.Resources.NanoCPUs / 1e8) / 10 : null, memBytes: n.Description.Resources ? n.Description.Resources.MemoryBytes : null,
         serverId: sid, serverName: sid && servers.get(sid) ? label(servers.get(sid)) : null,
       };
     }).sort((a, b) => (b.role === 'manager') - (a.role === 'manager') || a.hostname.localeCompare(b.hostname)),
