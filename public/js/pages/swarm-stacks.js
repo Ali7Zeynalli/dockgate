@@ -211,14 +211,21 @@
   };
 
   // ---- Stacks ----
+  // What a deploy of a stack was, in words that fit where the stack came from (Compose, a container, a stack file).
+  function kindLabel(kind, s, short = false) {
+    const ct = s && s.origin === 'container';
+    const map = short
+      ? { move: ct ? 'moved from container' : 'moved from Compose', deploy: 'deployed', redeploy: 'redeployed', previous: 'earlier deploy', 'move-back': 'moved back' }
+      : { move: ct ? 'moved from container' : 'moved from Compose', deploy: 'deploy', redeploy: 'redeploy', previous: 'earlier deploy again', 'move-back': ct ? 'moved back to the container' : 'moved back to Compose' };
+    return map[kind] || kind;
+  }
   function historyDialog(s, done) {
     const m = showModal(`History · ${esc(s.name)}`, '<div data-h class="text-sm text-muted">Loading…</div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     API.get(`/swarm/stacks/${encodeURIComponent(s.name)}/history`).then(({ history }) => {
-      const KIND = { move: 'moved from Compose', deploy: 'deploy', redeploy: 'redeploy', previous: 'earlier deploy again', 'move-back': 'moved back to Compose' };
-      const ST = { done: ['ok', 'done'], rolled_back: ['warn', 'put back in Compose'], failed: ['bad', 'failed'], running: ['warn', 'running'] };
+      const ST = { done: ['ok', 'done'], rolled_back: ['warn', s.origin === 'container' ? 'container started again' : 'put back in Compose'], failed: ['bad', 'failed'], running: ['warn', 'running'] };
       m.overlay.querySelector('[data-h]').innerHTML = UI.table([{ label: 'When' }, { label: 'What' }, { label: 'Result' }, { label: 'Files' }, { label: 'From' }, { label: '', align: 'right' }], history.map((h, i) => ({ cells: [
-        `<span title="${esc(formatTime(new Date(h.started_at).toISOString()))}">${esc(timeAgo(new Date(h.started_at).toISOString()))}</span>`, esc(KIND[h.kind] || h.kind),
+        `<span title="${esc(formatTime(new Date(h.started_at).toISOString()))}">${esc(timeAgo(new Date(h.started_at).toISOString()))}</span>`, esc(kindLabel(h.kind, s)),
         `${UI.pill(...(ST[h.status] || ['off', esc(h.status)]))}${h.downtime_ms ? ` <span class="ui-sub">down ${Math.round(h.downtime_ms / 1000)}s</span>` : ''}${h.error ? `<div class="ui-sub" style="max-width:300px;white-space:normal">${esc(h.error)}</div>` : ''}`,
         `<span class="td-mono text-sm">${esc(h.hash || '—')}</span>`, `<span class="ui-sub">${esc(h.source_ip || '—')}</span>`,
         h.has_stack && h.status === 'done' && i > 0 && s.managed ? UI.btn('Deploy this again…', `data-again="${h.id}"`) : ''] })), { minWidth: 720, empty: 'No deploys recorded.' });
@@ -245,13 +252,12 @@
       try { data = (await API.get('/swarm/stacks')).stacks; }
       catch (e) { content.innerHTML = UI.header('Stacks', esc(e.message), UI.btn('Open Overview', 'data-go')); content.querySelector('[data-go]').onclick = () => Router.navigate('swarm', { tab: 'swarm-overview' }); return; }
       if (!Router.isActiveNav(navId)) return;
-      const KIND = { move: 'moved from Compose', redeploy: 'redeployed', previous: 'earlier deploy', 'move-back': 'moved back' };
       const rows = data.map(s => ({ cells: [
         `<b>${esc(s.name)}</b>${s.location ? `<div class="ui-sub td-mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(s.location.cwd || '')}</div>` : ''}`,
         s.managed ? ({ compose: 'moved from Compose', yaml: 'stack file in DockGate', container: `moved from container ${esc(s.fromContainer || '')}` }[s.origin] || 'deployed by DockGate') : '<span class="ui-sub">deployed outside DockGate</span>',
         String(s.services),
         `<b style="color:${s.running < s.desired ? 'var(--warning,#d97706)' : 'inherit'}">${s.running}/${s.desired}</b>`,
-        s.last ? `${esc(KIND[s.last.kind] || s.last.kind)} ${UI.pill(s.last.status === 'done' ? 'ok' : s.last.status === 'running' ? 'warn' : 'bad', esc(s.last.status))}<div class="ui-sub">${esc(timeAgo(new Date(s.last.started_at).toISOString()))}</div>` : '<span class="ui-sub">—</span>',
+        s.last ? `${esc(kindLabel(s.last.kind, s, true))} ${UI.pill(s.last.status === 'done' ? 'ok' : s.last.status === 'running' ? 'warn' : 'bad', esc(s.last.status))}<div class="ui-sub">${esc(timeAgo(new Date(s.last.started_at).toISOString()))}</div>` : '<span class="ui-sub">—</span>',
         UI.menu([
           s.managed ? { label: 'Redeploy', attrs: `data-a="redeploy" data-n="${esc(s.name)}"` } : null,
           s.hasFile ? { label: 'Edit stack file…', attrs: `data-a="file" data-n="${esc(s.name)}"` } : null,
