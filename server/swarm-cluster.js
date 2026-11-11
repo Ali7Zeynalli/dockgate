@@ -322,6 +322,8 @@ async function joinServers({ job, log, step, mgrClient, mgrServerId, servers, en
       if (!ready) throw new Error(`${label(row)} joined but did not become Ready — the servers probably can not reach each other on 7946 or the data port`);
       step(job, `join-${s.id}`, 'done');
     }
+    // Stacks and new networks use encrypted overlays from now on when it was chosen here.
+    if (encrypt) stmts.setSetting.run(`swarm_overlay_encrypt:${clusterId}`, '1');
     logAction({ sourceIp, server: mgrServerId, resourceType: 'swarm', resourceName: 'nodes', action: 'swarm_join', details: { servers: servers.map(s => ({ id: s.id, role: s.role, addr: s.addr })), encrypt } });
   } catch (e) {
     step(job, 'undo-join', 'running', 'Undo: remove the servers that joined and the firewall rules');
@@ -565,6 +567,31 @@ async function startRemoveNode(nodeId, { sourceIp } = {}) {
   return job;
 }
 
+/**
+ * Allow ESP (encrypted overlay traffic) between every pair of cluster servers DockGate manages, where it is not
+ * allowed yet. Called when an encrypted network is created. Returns what was done per server.
+ */
+async function ensureEsp() {
+  const mgr = await manager();
+  const nodesNow = await mgr.client.listNodes();
+  if (nodesNow.length < 2) return { servers: [], note: 'one server: nothing to open' };
+  const map = await mapping(mgr.clusterId, nodesNow);
+  const members = nodesNow.map(n => ({ nodeId: n.ID, serverId: map.get(n.ID) || null, ip: nodeAddr(n) }));
+  const out = [];
+  const lines = [];
+  for (const m of members) {
+    if (!m.serverId || m.serverId === 'local') { out.push({ node: m.ip, done: false, why: m.serverId ? 'DockGate\'s own server: allow ESP (protocol 50) yourself' : 'not in DockGate' }); continue; }
+    const have = new Set(storedFw(mgr.clusterId, m.nodeId).filter(r => r.proto === 'esp').map(r => r.ip));
+    const want = members.filter(o => o !== m && !have.has(o.ip)).map(o => ({ ip: o.ip, port: null, proto: 'esp' }));
+    if (!want.length) { out.push({ node: m.ip, server: m.serverId, done: true, why: 'already allowed' }); continue; }
+    const added = await applyFirewall(m.serverId, want, (l) => lines.push(l));
+    if (added.length) storeFw(mgr.clusterId, m.nodeId, added);
+    out.push({ node: m.ip, server: m.serverId, done: !!added.length, why: added.length ? `ESP allowed from ${added.map(r => r.ip).join(', ')}` : 'no firewall is on' });
+  }
+  stmts.setSetting.run(`swarm_overlay_encrypt:${mgr.clusterId}`, '1');
+  return { servers: out, log: lines };
+}
+
 /** Extra Overview warnings for several servers: nodes not in DockGate, uneven task spread. */
 async function overviewExtras(ov) {
   if (!ov || !ov.nodes || ov.nodes.length < 2) return ov;
@@ -583,4 +610,4 @@ async function overviewExtras(ov) {
   return ov;
 }
 
-module.exports = { remember, nodes, candidates, checkServers, startAddServers, startCreateCluster, drainImpact, updateNode, startRebalance, startRemoveNode, overviewExtras, rulesFor, fwCommands, parseLabels, pinnedTo };
+module.exports = { ensureEsp, remember, nodes, candidates, checkServers, startAddServers, startCreateCluster, drainImpact, updateNode, startRebalance, startRemoveNode, overviewExtras, rulesFor, fwCommands, parseLabels, pinnedTo };

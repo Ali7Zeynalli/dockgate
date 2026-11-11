@@ -92,3 +92,10 @@ test('pinnedTo finds services bound to one node by hostname or ID', () => {
   assert.equal(cl.pinnedTo(svc(['node.labels.db==true']), nodes), null);
   assert.equal(cl.pinnedTo({ Spec: {} }, nodes), null);
 });
+
+test('secret / config versions for rotate', () => {
+  const O = require('../../server/swarm-objects');
+  assert.deepEqual(O.versionOf('db_password'), { base: 'db_password', n: 1 });
+  assert.deepEqual(O.versionOf('db_password_v3'), { base: 'db_password', n: 3 });
+  assert.deepEqual(O.versionOf('tls_v2_key'), { base: 'tls_v2_key', n: 1 });
+});

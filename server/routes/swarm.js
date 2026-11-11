@@ -96,6 +96,21 @@ router.post('/stacks/:name/move-back', ok(async (req) => {
   return jobOf(await stacks.startMoveBack(req.params.name, { sourceIp: req.ip }));
 }));
 router.delete('/stacks/:name', ok((req) => stacks.removeStack(req.params.name, { sourceIp: req.ip })));
+// ---- phase 5: secrets, configs, networks (server/swarm-objects.js) ----
+const objs = require('../swarm-objects');
+const kindOf = (k) => { if (!['secret', 'config'].includes(k)) throw Object.assign(new Error('kind must be secret or config'), { statusCode: 400 }); return k; };
+router.get('/objects', ok(() => objs.list()));
+router.post('/objects/:kind', ok((req) => objs.create(kindOf(req.params.kind), req.body || {}, { sourceIp: req.ip })));
+router.get('/objects/config/:id/content', ok((req) => objs.configContent(req.params.id)));
+router.post('/objects/:kind/:id/rotate', ok(async (req) => jobOf(await objs.startRotate(kindOf(req.params.kind), req.params.id, (req.body || {}).value, { sourceIp: req.ip }))));
+router.delete('/objects/:kind/:id', ok((req) => objs.remove(kindOf(req.params.kind), req.params.id, { sourceIp: req.ip })));
+router.get('/networks', ok(async () => ({ networks: await objs.networks() })));
+router.post('/networks', ok((req) => objs.createNetwork(req.body || {}, { sourceIp: req.ip })));
+router.delete('/networks/:id', ok((req) => objs.removeNetwork(req.params.id, { sourceIp: req.ip })));
+router.post('/networks/ingress', ok((req) => {
+  if ((req.body || {}).confirm !== true) throw Object.assign(new Error('confirm required'), { statusCode: 400 });
+  return objs.changeIngress((req.body || {}).subnet, { sourceIp: req.ip });
+}));
 router.get('/settings', async (req, res) => {
   try { res.json(await swarm.settings()); } catch (e) { fail(res, e); }
 });

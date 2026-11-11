@@ -2,6 +2,19 @@
 
 ---
 
+## [2.29.0] - 2026-11-11
+
+### Added
+- **Swarm, phase 5: secrets, configs and networks.**
+  - **Swarm → Secrets & configs:** every secret and config with the services that use it and the file path in the container, when it was made and where from (DockGate, a stack, outside). **New secret…** (the value goes to Swarm only — DockGate does not store, log or show it again; in a task it is /run/secrets/<name>) and **New config…** (file content; **View** shows it).
+  - **Rotate… (secret) / Edit… (config)**, as a job: Swarm can not change a secret or config, so DockGate creates `<name>_v2` (then _v3 …), moves every service that uses it to the new one with a rolling update — the file path in the container stays the same — and removes the old one when all updates finished. If an update fails or rolls back the job stops and the old one stays. A secret of a stack says to change the compose file too.
+  - **Remove…** only when no service uses it.
+  - **Swarm → Networks:** overlay networks with subnet, options (encrypted, attachable, internal) and the services that use them. **New overlay network…**: encrypted (IPsec), attachable (plain containers may join), internal (no internet), subnet from the pool or your own. Creating an encrypted network allows ESP between the cluster servers DockGate manages (and says where it could not). **Remove…** only when unused. **Change subnet…** recreates the ingress network with another subnet, only when no service publishes a port through it (for an ingress subnet that overlaps a cloud private network).
+  - The overlay encryption chosen in Set up Swarm / Add servers is now kept and used for stack networks.
+  - **Migrate** points out environment variables that look like passwords (…_PASSWORD, …_TOKEN, …_SECRET, …_API_KEY) and how they can become secrets through *_FILE variables — DockGate does not change them by itself.
+
+---
+
 ## [2.28.0] - 2026-11-11
 
 ### Added

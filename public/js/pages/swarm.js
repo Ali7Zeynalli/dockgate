@@ -39,7 +39,7 @@
   const banner = (level, html, actions = '') => `<div class="insight-card ${level === 'bad' ? 'danger' : level === 'warn' ? 'warning' : 'info'}" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:220px">${html}</div>${actions ? `<div style="display:flex;gap:6px">${actions}</div>` : ''}</div>`;
 
   // ---- the job window (Create Swarm, Add servers, Rebalance, Remove node) ----
-  const DONE_TEXT = { 'Create Swarm': '✓ Swarm is on', 'Add servers': '✓ Servers added', Rebalance: '✓ Rebalanced', 'Remove node': '✓ Node removed', 'Move to Swarm': '✓ Every project moved', 'Move back to Compose': '✓ Runs in Compose again', Redeploy: '✓ Deployed' };
+  const DONE_TEXT = { 'Create Swarm': '✓ Swarm is on', 'Add servers': '✓ Servers added', Rebalance: '✓ Rebalanced', 'Remove node': '✓ Node removed', 'Move to Swarm': '✓ Every project moved', 'Move back to Compose': '✓ Runs in Compose again', Redeploy: '✓ Deployed', 'Rotate secret': '✓ Rotated — the old version is removed', 'Edit config': '✓ Saved — the old version is removed' };
   function openJob(jobId, onDone, title = 'Create Swarm') {
     const m = showModal(esc(title), `${serverContextBanner()}<div id="sw-job-steps" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px"></div><div id="sw-job-log"></div>
       <div id="sw-job-status" style="margin-top:10px;font-weight:600;font-size:13px;color:var(--text-muted)">⏳ Working…</div><div id="sw-job-extra"></div>
