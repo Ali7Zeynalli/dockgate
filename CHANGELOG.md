@@ -2,6 +2,13 @@
 
 ---
 
+## [2.38.10] - 2026-11-11
+
+### Fixed
+- **Restoring a volume from a plain `.tar` failed.** Resources → Volumes → Restore from .tar.gz… lets you pick a `.tar`, but the volume was always extracted as gzip, so a plain tar stopped with *Restore failed (tar exited 1)*. DockGate now looks at the first bytes of the upload and extracts `.tar.gz` and `.tar` alike. An empty file says *The file is empty*, and a file that is neither says so instead of a server error.
+
+---
+
 ## [2.38.9] - 2026-11-11
 
 ### Fixed

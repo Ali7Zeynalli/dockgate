@@ -729,21 +729,32 @@ async function backupVolumeToResponse(volName, res) {
  * @param {import('stream').Readable} req the request body stream (the .tar.gz upload)
  */
 async function restoreVolumeFromRequest(volName, req) {
+  // The upload may be a .tar.gz (Back up makes those) or a plain .tar; busybox tar does not detect
+  // gzip on stdin, so look at the first bytes (gzip starts with 1f 8b) and pick the command.
+  const first = await new Promise((resolve, reject) => {
+    req.once('data', (c) => { req.pause(); resolve(c); });
+    req.once('end', () => resolve(Buffer.alloc(0)));
+    req.once('error', reject);
+  });
+  if (!first.length) throw Object.assign(new Error('The file is empty'), { statusCode: 400 });
+  const gz = first.length >= 2 && first[0] === 0x1f && first[1] === 0x8b;
   await ensureHelperImage();
   const helper = await docker.createContainer({
     Image: VOL_HELPER_IMAGE,
-    Cmd: ['sh', '-c', 'tar xzf - -C /volume'],
+    Cmd: ['sh', '-c', gz ? 'tar xzf - -C /volume' : 'tar xf - -C /volume'],
     HostConfig: { Binds: [`${volName}:/volume`], AutoRemove: false },
     AttachStdin: true, OpenStdin: true, StdinOnce: true,
     AttachStdout: true, AttachStderr: true, Tty: false,
   });
   const stream = await helper.attach({ stream: true, stdin: true, stdout: true, stderr: true, hijack: true });
   await helper.start();
+  stream.write(first);
   req.pipe(stream); // upload → container stdin; StdinOnce closes stdin when the upload ends
+  req.resume();
   const result = await helper.wait();
   try { await helper.remove({ force: true }); } catch (e) {}
   invalidateCache('');
-  if (result.StatusCode !== 0) throw new Error(`Restore failed (tar exited ${result.StatusCode})`);
+  if (result.StatusCode !== 0) throw Object.assign(new Error(`Restore failed (tar exited ${result.StatusCode}) — use a .tar.gz or .tar file`), { statusCode: 400 });
   return { success: true };
 }
 
