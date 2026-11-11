@@ -2,6 +2,13 @@
 
 ---
 
+## [2.38.4] - 2026-11-11
+
+### Changed
+- **Unused screenshots removed.** `screenshots/` now holds only the 18 images the README shows. The 12 removed ones were from the old interface or not shown anywhere: images, builds, networks, events, files, infrastructure, server console, and the general, log, update, system and security settings.
+
+---
+
 ## [2.38.3] - 2026-11-11
 
 ### Fixed
