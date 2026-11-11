@@ -2,6 +2,13 @@
 
 ---
 
+## [2.38.3] - 2026-11-11
+
+### Fixed
+- **README described a DockGate backup that does not exist.** Settings → System → Backup was taken out in 2.15.1, but the rewritten README still offered it in Quick Start, Settings and the data folder list. It now says to back up the `data/` folder, and that volume data is backed up from Resources → Volumes or a volume backup task in Tools → Schedules.
+
+---
+
 ## [2.38.2] - 2026-11-11
 
 ### Changed
