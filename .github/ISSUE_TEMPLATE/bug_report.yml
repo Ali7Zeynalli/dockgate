@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in DockGate does not work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Security problems: do not use this form — see SECURITY.md.**
+  - type: input
+    id: version
+    attributes:
+      label: DockGate version
+      description: Shown at the bottom of the sidebar, e.g. v2.38.12
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where in DockGate
+      options:
+        - Dashboard / Monitoring
+        - Resources (containers, images, volumes, networks, builds, prune)
+        - Deploy (Compose, templates, registries)
+        - Swarm
+        - Observe (logs, events, audit, notifications)
+        - Tools (terminal, files, schedules)
+        - Servers / Server Console
+        - Settings / sign in / update
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      description: Steps to reproduce
+      placeholder: |
+        1. Open Resources → Volumes
+        2. Click ⋯ → Clone…
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The exact error message, and a screenshot if it helps
+    validations:
+      required: true
+  - type: dropdown
+    id: server
+    attributes:
+      label: Server
+      options:
+        - Local (the host DockGate runs on)
+        - Remote server over SSH
+        - Both
+  - type: input
+    id: env
+    attributes:
+      label: Host OS and Docker version
+      placeholder: Ubuntu 24.04, Docker 27.3
+  - type: textarea
+    id: logs
+    attributes:
+      label: DockGate log
+      description: Output of `docker logs dockgate-control-panel --tail 100`. Remove any secrets.
+      render: text

@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.38.12-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.38.13-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.38.12-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.38.13-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
@@ -22,7 +22,8 @@
   <a href="#docker-swarm">Swarm</a> ·
   <a href="#notifications">Notifications</a> ·
   <a href="#security">Security</a> ·
-  <a href="CHANGELOG.md">Changelog</a>
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 <p align="center">
@@ -247,7 +248,7 @@ Everything is under `/api`, in JSON, behind the session (except `/api/auth/{stat
 
 ## Contributing
 
-Fork, make a branch, run `npm test`, try it with `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build` (or `npm install && npm run dev`), then open a PR.
+Bug reports, fixes and ideas are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for how to run DockGate locally, test and open a pull request. Report security problems privately as described in [SECURITY.md](SECURITY.md). Please follow the [Code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

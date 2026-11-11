@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/Ali7Zeynalli/dockgate/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.
+  - name: Changelog
+    url: https://github.com/Ali7Zeynalli/dockgate/blob/main/CHANGELOG.md
+    about: See what changed in each version before reporting.

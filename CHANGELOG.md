@@ -2,6 +2,15 @@
 
 ---
 
+## [2.38.13] - 2026-11-12
+
+### Added
+- **Contributing guide, security policy and code of conduct** (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`). GitHub now shows them as tabs next to README and License. The contributing guide explains how to run DockGate locally, test, version and open a pull request; the security policy explains how to report a vulnerability privately and what is in scope.
+- **Issue forms** for bug reports and feature requests. Blank issues are off; security problems are sent to the private report form.
+- README links to the contributing guide.
+
+---
+
 ## [2.38.12] - 2026-11-11
 
 ### Fixed
