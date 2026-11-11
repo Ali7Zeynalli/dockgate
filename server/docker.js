@@ -809,15 +809,35 @@ async function downloadVolumeFile(volName, path, res) {
  * V4 — clone a volume's contents into a new volume (a helper container `cp -a`s the data).
  */
 async function cloneVolume(srcName, destName) {
+  const fail = (status, message) => Object.assign(new Error(message), { statusCode: status });
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(String(destName || ''))) throw fail(400, 'Volume name: letters, digits, _ . or -, starting with a letter or digit');
+  // Docker's create returns the existing volume when the name is taken, so the copy would write into
+  // another volume's data. Refuse instead.
+  const exists = await docker.getVolume(destName).inspect().then(() => true, (e) => { if (e.statusCode === 404) return false; throw e; });
+  if (exists) throw fail(409, `A volume named ${destName} already exists — choose another name`);
+  await docker.getVolume(srcName).inspect().catch((e) => { throw e.statusCode === 404 ? fail(404, `Volume ${srcName} not found`) : e; });
   await ensureHelperImage();
   await docker.createVolume({ Name: destName });
   const helper = await docker.createContainer({
     Image: VOL_HELPER_IMAGE,
-    Cmd: ['sh', '-c', 'cp -a /from/. /to/ 2>/dev/null || true'],
+    Cmd: ['sh', '-c', 'cp -a /from/. /to/'],
     HostConfig: { Binds: [`${srcName}:/from:ro`, `${destName}:/to`], AutoRemove: false },
+    Tty: true,
   });
-  await helper.start();
-  await helper.wait();
+  let result;
+  try {
+    await helper.start();
+    result = await helper.wait();
+    if (result.StatusCode !== 0) {
+      const out = String(await helper.logs({ stdout: true, stderr: true }).catch(() => '')).trim().split('\n').slice(-2).join(' ');
+      throw fail(500, `Copying the data failed${out ? `: ${out.slice(0, 300)}` : ` (exit code ${result.StatusCode})`} — the new volume was removed`);
+    }
+  } catch (e) {
+    try { await helper.remove({ force: true }); } catch (x) {}
+    await docker.getVolume(destName).remove().catch(() => {});
+    invalidateCache('');
+    throw e;
+  }
   try { await helper.remove({ force: true }); } catch (e) {}
   invalidateCache('');
   return { success: true, name: destName };

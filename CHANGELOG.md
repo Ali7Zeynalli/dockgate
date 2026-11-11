@@ -2,6 +2,13 @@
 
 ---
 
+## [2.38.8] - 2026-11-11
+
+### Fixed
+- **Cloning a volume under a name that was already taken wrote into that other volume.** Docker hands back the existing volume when the name is in use, so Resources → Volumes → Clone… copied the files over its data without a word. Clone now refuses: *A volume named … already exists — choose another name*. A name Docker does not accept and a missing source volume are refused too, and if copying fails the new volume is removed and the error is shown instead of a silent success.
+
+---
+
 ## [2.38.7] - 2026-11-11
 
 ### Fixed
