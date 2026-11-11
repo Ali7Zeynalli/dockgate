@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.38.2-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.38.4-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.38.2-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.38.4-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/CPU-≤0.5_core-brightgreen?style=for-the-badge" alt="CPU">
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
@@ -80,7 +80,7 @@ docker compose pull && docker compose up -d
 
 ### Back up DockGate itself
 
-**Settings → System → Backup** downloads DockGate's database and keys; nightly copies can be kept, and a backup can be restored there.
+Back up the `data/` folder (database, SSH keys, `.master.key`, managed compose projects). Volume data is backed up separately: Resources → Volumes, or a volume backup task in Tools → Schedules.
 
 ### ⚠️ Note — container restart-loops on SELinux-confined Docker
 
@@ -230,7 +230,7 @@ See [Docker Swarm](#docker-swarm) below.
 
 ### ⚙️ System — Settings
 
-**General** (theme, default view, timezone, default shell, log timestamps, container list, auto-start), **Notifications** (channels and rules), **Software update** (self-update from GHCR), **System** (Docker engine and host info, **backup and restore of DockGate**), **Security** (change the admin password, sign out everywhere).
+**General** (theme, default view, timezone, default shell, log timestamps, container list, auto-start), **Notifications** (channels and rules), **Software update** (self-update from GHCR), **System** (Docker engine and host info), **Security** (change the admin password, sign out everywhere).
 
 ---
 
@@ -397,7 +397,7 @@ All under `/api`, JSON, **session-gated** (except `/api/auth/{status,setup,login
 | `ALLOWED_ORIGIN` | *(same-origin)* | allow a specific cross-origin panel |
 | `FILES_ROOT` | `/host` | root of Tools → Files on Local |
 
-**Data** lives under `data/`: `docker-panel.db` (SQLite), `ssh-keys/` (0600), `compose/` (managed projects), `swarm-backups/`, DockGate backups, `.master.key`.
+**Data** lives under `data/`: `docker-panel.db` (SQLite), `ssh-keys/` (0600), `compose/` (managed projects), `swarm-backups/` (Swarm backups), `.master.key`.
 
 ---
 
