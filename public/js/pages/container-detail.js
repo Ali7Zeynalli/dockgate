@@ -62,7 +62,7 @@ Router.register('container-detail', async (content, params) => {
       `;
 
       // Back button
-      document.getElementById('back-btn').style.transform = 'rotate(180deg)';
+      const backIcon = document.querySelector('#back-btn svg'); if (backIcon) backIcon.style.transform = 'rotate(180deg)'; // the arrow points back; the text stays readable
       document.getElementById('back-btn').addEventListener('click', () => Router.navigate('resources',{tab:'containers'}));
 
       // Export filesystem → tar download (C5)

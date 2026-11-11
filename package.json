@@ -1,6 +1,6 @@
 {
   "name": "dockgate",
-  "version": "2.38.0",
+  "version": "2.38.2",
   "description": "DockGate — A lightweight, browser-based Docker control panel",
   "main": "server/index.js",
   "author": "Ali Zeynalli",
@@ -29,7 +29,7 @@
   "scripts": {
     "dev": "node server/index.js",
     "start": "NODE_ENV=production node server/index.js",
-    "test": "node --test"
+    "test": "node --test --import ./test/setup-env.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
