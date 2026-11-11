@@ -291,6 +291,28 @@
       <p class="ui-sub" style="margin-top:8px">Sticky sessions and weighted (canary) routing are not part of Swarm — put Traefik or Caddy in front for that.</p>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
   }
 
+  // One action on a service, from the list or the service page. load(kind) runs after it; kind 'removed' after Remove.
+  function serviceAction(a, s, load = () => {}) {
+    if (!s) return;
+    if (a === 'scale') return scaleDialog(s, load);
+    if (a === 'image') return imageDialog(s, load);
+    if (a === 'newest') return secConfirm({ title: `Update ${s.name} to the newest image`, change: `The registry has a newer build of <span class="td-mono">${esc(s.image)}</span>${s.newer.version ? ` (${esc(s.newer.version)})` : ''}. Its tasks are replaced one at a time with exactly that build on every server.`, protects: 'If new tasks fail, the service goes back by itself (its update settings). Volumes stay.', undo: 'Roll back to previous.', confirmLabel: 'Update', onConfirm: async () => { try { const r = await API.post(`/swarm/services/${s.id}/update-newest`, {}); if (r.current) { showToast('Already the newest build'); load(); } else watch(s.id, `Update ${s.name}`, load); } catch (e) { showToast(e.message, 'error', 9000); } } });
+    if (a === 'logs') return logsDialog(s);
+    if (a === 'tasks') return tasksDialog(s);
+    if (a === 'traffic') return trafficDialog(s);
+    if (a === 'graphs') return graphsDialog(s);
+    if (a === 'inspect') return SwarmUI.inspect('service', s.id, s.name);
+    if (a === 'settings') return openForm({ id: s.id, onDone: load });
+    if (a === 'rollback') return secConfirm({ title: `Roll back ${s.name}`, change: 'The service goes back to its previous settings and image (docker service rollback), using its roll back settings.', protects: 'Volumes stay. Tasks are replaced the same way as an update.', undo: 'Roll back again returns to the version before.', confirmLabel: 'Roll back', onConfirm: async () => { try { await API.post(`/swarm/services/${s.id}/rollback`, {}); watch(s.id, `Roll back ${s.name}`, load); } catch (e) { showToast(e.message, 'error', 9000); } } });
+    if (a === 'restart') return secConfirm({ title: `Restart ${s.name}`, change: 'Every task is replaced, one at a time, with the same settings (docker service update --force).', protects: 'With start-first updates the service keeps answering while it restarts.', undo: 'Not needed.', confirmLabel: 'Restart', onConfirm: async () => { try { await API.post(`/swarm/services/${s.id}/restart`, {}); watch(s.id, `Restart ${s.name}`, load); } catch (e) { showToast(e.message, 'error', 9000); } } });
+    if (a === 'remove') return showDeleteConfirm(`Remove ${s.name}`, { message: `The service and its ${s.desired} task${s.desired === 1 ? '' : 's'} are removed. Volumes stay on the servers.${s.stack ? ` It belongs to stack <b>${esc(s.stack)}</b>: the next deploy of the stack creates it again.` : ''}`, phrase: s.name, confirmLabel: 'Remove',
+      onConfirm: async () => { try { await API.del(`/swarm/services/${s.id}`); showToast(`${s.name} removed`); load('removed'); } catch (e) { showToast(e.message, 'error', 9000); } } });
+  }
+  window.SwarmUI.serviceAction = serviceAction;
+  window.SwarmUI.openServiceForm = openForm;
+  window.SwarmUI.watchService = watch;
+  window.SwarmUI.svcCss = css;
+
   // ---- the list ----
   Router.register('swarm-services', async (content) => {
     css();
@@ -310,6 +332,8 @@
       const rowsHtml = data.map(s => {
         const upd = s.update && UPD[s.update.state];
         const menu = [
+          { label: 'Open', attrs: `data-open-svc="${s.id}"` },
+          '-',
           s.mode === 'replicated' ? { label: 'Scale…', attrs: `data-a="scale" data-id="${s.id}"` } : null,
           s.newer && s.newer.status === 'update' ? { label: 'Update to newest…', attrs: `data-a="newest" data-id="${s.id}"` } : null,
           { label: 'Update image…', attrs: `data-a="image" data-id="${s.id}"` },
@@ -326,7 +350,7 @@
           { label: 'Remove…', attrs: `data-a="remove" data-id="${s.id}"` },
         ];
         return { cells: [
-          `<b>${esc(s.name)}</b>${s.stack ? ` ${UI.chip(`stack ${esc(s.stack)}`)}` : ''}${s.database ? ' <span class="ui-sub">database</span>' : ''}`,
+          `<a href="#" class="td-name" data-open-svc="${s.id}" title="Open the service: tasks, logs, terminal, files, settings"><b>${esc(s.name)}</b></a>${s.stack ? ` ${UI.chip(`stack ${esc(s.stack)}`)}` : ''}${s.database ? ' <span class="ui-sub">database</span>' : ''}`,
           `<span class="td-mono text-sm">${esc(s.image)}</span>${s.newer ? (s.newer.status === 'update' ? `<div>${UI.pill('info', 'newer image')}${s.newer.version ? ` <span class="ui-sub">${esc(s.newer.version)}</span>` : ''}</div>` : s.newer.status === 'error' ? `<div class="ui-sub" title="${esc(s.newer.error || '')}">check failed</div>` : '') : ''}`,
           `<span class="text-sm">${esc(s.mode)}</span>`,
           `<b style="color:${s.running < s.desired ? 'var(--warning,#d97706)' : 'inherit'}">${s.running}/${s.desired}</b><div style="margin-top:3px">${s.tasks.slice(0, 24).map(t => `<span class="svc-sq ${esc(t.state)}" title="${esc(`${s.name}${t.slot ? '.' + t.slot : ''} · ${t.state}${t.node ? ' · ' + t.node : ''}${t.error ? ' · ' + t.error : ''}`)}"></span>`).join('')}</div>`,
@@ -350,24 +374,9 @@
           load();
         } catch (er) { showToast(er.message, 'error', 9000); b.disabled = false; b.textContent = 'Check for updates'; }
       };
-      content.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, data.find(x => x.id === b.dataset.id))));
+      content.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => serviceAction(b.dataset.a, data.find(x => x.id === b.dataset.id), load)));
+      content.querySelectorAll('[data-open-svc]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); Router.navigate('swarm-service', { id: a.dataset.openSvc }); }));
       stop(); timer = setTimeout(load, 5000);
-    }
-    function act(a, s) {
-      if (!s) return;
-      if (a === 'scale') return scaleDialog(s, load);
-      if (a === 'image') return imageDialog(s, load);
-      if (a === 'newest') return secConfirm({ title: `Update ${s.name} to the newest image`, change: `The registry has a newer build of <span class="td-mono">${esc(s.image)}</span>${s.newer.version ? ` (${esc(s.newer.version)})` : ''}. Its tasks are replaced one at a time with exactly that build on every server.`, protects: 'If new tasks fail, the service goes back by itself (its update settings). Volumes stay.', undo: 'Roll back to previous.', confirmLabel: 'Update', onConfirm: async () => { try { const r = await API.post(`/swarm/services/${s.id}/update-newest`, {}); if (r.current) { showToast('Already the newest build'); load(); } else watch(s.id, `Update ${s.name}`, load); } catch (e) { showToast(e.message, 'error', 9000); } } });
-      if (a === 'logs') return logsDialog(s);
-      if (a === 'tasks') return tasksDialog(s);
-      if (a === 'traffic') return trafficDialog(s);
-      if (a === 'graphs') return graphsDialog(s);
-      if (a === 'inspect') return SwarmUI.inspect('service', s.id, s.name);
-      if (a === 'settings') return openForm({ id: s.id, onDone: load });
-      if (a === 'rollback') return secConfirm({ title: `Roll back ${s.name}`, change: 'The service goes back to its previous settings and image (docker service rollback), using its roll back settings.', protects: 'Volumes stay. Tasks are replaced the same way as an update.', undo: 'Roll back again returns to the version before.', confirmLabel: 'Roll back', onConfirm: async () => { try { await API.post(`/swarm/services/${s.id}/rollback`, {}); watch(s.id, `Roll back ${s.name}`, load); } catch (e) { showToast(e.message, 'error', 9000); } } });
-      if (a === 'restart') return secConfirm({ title: `Restart ${s.name}`, change: 'Every task is replaced, one at a time, with the same settings (docker service update --force).', protects: 'With start-first updates the service keeps answering while it restarts.', undo: 'Not needed.', confirmLabel: 'Restart', onConfirm: async () => { try { await API.post(`/swarm/services/${s.id}/restart`, {}); watch(s.id, `Restart ${s.name}`, load); } catch (e) { showToast(e.message, 'error', 9000); } } });
-      if (a === 'remove') return showDeleteConfirm(`Remove ${s.name}`, { message: `The service and its ${s.desired} task${s.desired === 1 ? '' : 's'} are removed. Volumes stay on the servers.${s.stack ? ` It belongs to stack <b>${esc(s.stack)}</b>: the next deploy of the stack creates it again.` : ''}`, phrase: s.name, confirmLabel: 'Remove',
-        onConfirm: async () => { try { await API.del(`/swarm/services/${s.id}`); showToast(`${s.name} removed`); load(); } catch (e) { showToast(e.message, 'error', 9000); } } });
     }
     await load();
     return stop;

@@ -12,6 +12,14 @@ Router.register('containers', async (content) => {
   let updates = new Map();
   // A Swarm task: Swarm starts a stopped or removed task again at once, so Stop / Restart / Update here would not do what they say.
   const swarmSvc = (c) => (c.labels || {})['com.docker.swarm.service.name'] || null;
+  const swarmStack = (c) => (c.labels || {})['com.docker.stack.namespace'] || null;
+  // The Swarm line under a container's name: task of a service (and stack), or a container moved to Swarm.
+  const swarmChip = (c) => {
+    const chip = swarmSvc(c)
+      ? `<span class="ui-chip" style="white-space:normal" title="Managed by Swarm: change it in Swarm → Services">⎈ Swarm task of ${escapeHtml(swarmSvc(c))}${swarmStack(c) ? ` · stack ${escapeHtml(swarmStack(c))}` : ''}</span>`
+      : c.movedToSwarm ? `<span class="ui-chip" style="white-space:normal" title="This container was moved to Swarm. It is kept, stopped; starting it would run the app twice. Move it back from Swarm → Stacks.">⎈ moved to Swarm · stack ${escapeHtml(c.movedToSwarm)}</span>` : '';
+    return chip ? `<div style="margin-top:3px">${chip}</div>` : '';
+  };
   let stale = {}; // container ID → newer local image of its tag (pulled, container not recreated yet)
   const hasUpdate = (c) => (updates.get(c.image) || {}).status === 'update' || !!stale[c.id];
   // "newer image" / "cannot check" next to the image, from the last newer-image check.
@@ -49,6 +57,7 @@ Router.register('containers', async (content) => {
           if (currentFilter === 'restarting') return c.state === 'restarting';
           if (currentFilter === 'paused') return c.state === 'paused';
           if (currentFilter === 'unhealthy') return isUnhealthy(c);
+          if (currentFilter === 'swarm') return !!(swarmSvc(c) || c.movedToSwarm);
           return true;
         });
       }
@@ -80,8 +89,9 @@ Router.register('containers', async (content) => {
         unhealthy: allContainers.filter(isUnhealthy).length,
         restarting: allContainers.filter(c => c.state === 'restarting').length,
         paused: allContainers.filter(c => c.state === 'paused').length,
+        swarm: allContainers.filter(c => swarmSvc(c) || c.movedToSwarm).length,
       };
-      const chipList = [['all', 'All', counts.all], ['running', 'Running', counts.running], ['stopped', 'Stopped', counts.stopped], ['unhealthy', 'Unhealthy', counts.unhealthy], ['restarting', 'Restarting', counts.restarting], ['paused', 'Paused', counts.paused]]
+      const chipList = [['all', 'All', counts.all], ['running', 'Running', counts.running], ['stopped', 'Stopped', counts.stopped], ['unhealthy', 'Unhealthy', counts.unhealthy], ['restarting', 'Restarting', counts.restarting], ['paused', 'Paused', counts.paused], ['swarm', 'Swarm', counts.swarm]]
         .filter(([k, , n]) => n > 0 || k === 'all' || k === 'running' || k === 'stopped' || k === currentFilter);
       const viewIcon = (v, title, icon) => `<button class="btn btn-ghost btn-sm ${currentView === v ? 'active' : ''}" id="view-${v}" title="${title}" aria-pressed="${currentView === v}">${icon}</button>`;
 
@@ -164,7 +174,7 @@ Router.register('containers', async (content) => {
             ${c.isFavorite ? '<span style="color:var(--warning);margin-right:4px">★</span>' : ''}
             ${escapeHtml(c.name)}
           </div>
-          <div class="td-mono text-xs" style="margin-top:2px">${c.shortId}${swarmSvc(c) ? ` · <span class="ui-chip" title="Managed by Swarm: change it in Swarm → Services">Swarm task of ${escapeHtml(swarmSvc(c))}</span>` : ''}</div>
+          <div class="td-mono text-xs" style="margin-top:2px">${c.shortId}</div>${swarmChip(c)}
         </td>
         <td><span class="td-mono">${escapeHtml(c.image)}</span>${imageUpdatePill(c)}</td>
         <td><span class="badge badge-${c.state}"><span class="badge-dot"></span> ${c.state}</span>${isUnhealthy(c) ? ' ' + UI.pill('bad', 'unhealthy') : ''}</td>
@@ -178,6 +188,8 @@ Router.register('containers', async (content) => {
           <div class="td-actions" style="justify-content:flex-end">
             ${swarmSvc(c)
               ? `<button class="btn btn-xs btn-secondary" data-open-service="${escapeHtml(swarmSvc(c))}" title="Swarm runs this task: scale, update or restart the service">Open service</button>`
+              : c.movedToSwarm
+              ? `<button class="btn btn-xs btn-secondary" data-open-stacks title="It runs on Swarm now: manage it, or move it back, in Swarm → Stacks">Open stack</button>`
               : hasUpdate(c)
               ? `<button class="btn btn-xs btn-secondary" data-update-image="${c.id}">${Icons.download} Update…</button>`
               : c.state === 'running'
@@ -487,7 +499,8 @@ Router.register('containers', async (content) => {
       render();
     });
     document.getElementById('update-history')?.addEventListener('click', () => ImageUpdate.openHistory());
-    content.querySelectorAll('[data-open-service]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); Router.navigate('swarm', { tab: 'swarm-services' }); }));
+    content.querySelectorAll('[data-open-service]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); Router.navigate('swarm-service', { id: b.dataset.openService }); }));
+    content.querySelectorAll('[data-open-stacks]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); Router.navigate('swarm', { tab: 'swarm-stacks' }); }));
     content.querySelectorAll('[data-update-image]').forEach(b => b.addEventListener('click', () => {
       const c = containers.find(x => x.id === b.dataset.updateImage); if (!c) return;
       const st = stale[c.id];

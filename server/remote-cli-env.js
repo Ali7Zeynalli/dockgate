@@ -21,7 +21,8 @@ const { DATA_DIR } = paths;
  * Write the registry credentials into a DOCKER_CONFIG dir (so the CLI pulls private images).
  * @returns {string|null} the config dir, or null if no registries are stored.
  */
-function writeRegistryConfig(subdir) {
+/** The stored registry logins as a Docker config.json text, or null when there are none. */
+function registryConfigJson() {
   try {
     const regs = stmts.getRegistries.all();
     if (!regs.length) return null;
@@ -32,9 +33,16 @@ function writeRegistryConfig(subdir) {
         auths['https://index.docker.io/v1/'] = auths[r.server_address];
       }
     }
+    return JSON.stringify({ auths });
+  } catch (e) { return null; }
+}
+function writeRegistryConfig(subdir) {
+  try {
+    const json = registryConfigJson();
+    if (!json) return null;
     const dir = path.join(DATA_DIR, subdir, '.docker-config');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ auths }), { mode: 0o600 });
+    fs.writeFileSync(path.join(dir, 'config.json'), json, { mode: 0o600 });
     return dir;
   } catch (e) { return null; }
 }
@@ -89,4 +97,4 @@ function buildCliEnv(activeServerId, subdir) {
   return { env, remote: true };
 }
 
-module.exports = { buildCliEnv };
+module.exports = { buildCliEnv, registryConfigJson };

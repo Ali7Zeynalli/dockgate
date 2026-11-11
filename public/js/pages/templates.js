@@ -9,13 +9,14 @@ async function resolveStackYaml(t) {
   if (repo && repo.url) {
     // Build a raw URL: <repo.url>/raw/<branch?>/<stackfile> is unreliable across hosts, so try the
     // common GitHub raw form, falling back to <url>/<stackfile>.
-    const file = repo.stackfile || 'docker-compose.yml';
+    const file = String(repo.stackfile || 'docker-compose.yml').replace(/^\/+/, '');
     const base = repo.url.replace(/\.git$/, '').replace(/\/$/, '');
-    const candidates = [
-      `${base}/raw/main/${file}`,
-      `${base}/raw/master/${file}`,
-      `${base}/${file}`,
-    ];
+    // github.com/<repo>/raw/... answers with a redirect, which the server-side fetch refuses (SSRF guard):
+    // ask raw.githubusercontent.com directly.
+    const gh = /^https?:\/\/github\.com\/([^/]+\/[^/]+)$/i.exec(base);
+    const candidates = gh
+      ? [`https://raw.githubusercontent.com/${gh[1]}/main/${file}`, `https://raw.githubusercontent.com/${gh[1]}/master/${file}`]
+      : [`${base}/raw/main/${file}`, `${base}/raw/master/${file}`, `${base}/${file}`];
     for (const url of candidates) {
       try {
         const r = await API.get('/templates/stackfile?url=' + encodeURIComponent(url));

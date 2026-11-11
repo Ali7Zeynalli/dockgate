@@ -2,6 +2,46 @@
 
 ---
 
+## [2.38.0] - 2026-11-11
+
+### Added
+- **A page for each Swarm service, like a container's page.** Click a service's name in Swarm → Services, choose ⋯ → Open, or use **Open service** on a task in Resources → Containers. The page has the same buttons as the list: Scale, Update to newest, Update image, Roll back, Restart, Settings, Remove. Its tabs:
+  - **Overview:** image, mode and replicas, running tasks per server, ports, the name and virtual IP it is reached by, command, resources, update settings and the last update. The reason is shown when tasks do not run.
+  - **Tasks:** every task with its server, state, reason, image and age, plus Logs, Terminal, Files and Inspect for each running task.
+  - **Logs:** live, for all tasks or one.
+  - **Terminal:** a shell in a chosen task, in the page, also on another node in DockGate.
+  - **Files:** the files of a chosen task's container, also on another node: browse, edit, new file and folder, rename, delete, download and upload a .tar.
+  - **Stats:** CPU and memory now, and graphs for the last 1 to 48 hours.
+  - **Environment:** values that look like passwords are hidden until shown.
+  - **Ports**, **Volumes**, **Networks**, **Secrets & configs** (with the file path in the task) and **Placement** (constraints, resources, restart). Each has **Edit…**, which opens the service settings.
+  - **Updates:** the image now, the registry check, the previous version, Check for updates, Update to newest, Update image and Roll back, plus everything changed from DockGate.
+  - **Events:** Docker events of the last 24 hours.
+  - **Inspect:** the JSON, with Copy.
+- Files and downloads of a task on another node go through that node's DockGate server, and every change is recorded in the audit log.
+
+---
+
+## [2.37.0] - 2026-11-11
+
+### Added
+- **Move to Swarm… from Deploy → Compose stacks.** With Swarm on, each compose project row has a **Move to Swarm…** button. It opens the same move dialog (settings, plan, move) on that page. A project that can not move shows why. Before, it was only in the ⋯ menu and opened the Migrate page.
+- **Swarm in Resources → Containers.**
+  - A Swarm task shows "⎈ Swarm task of *service* · stack *name*".
+  - A container moved to Swarm (docker run → stack) shows "⎈ moved to Swarm · stack *name*". It has **Open stack** instead of Start, because starting it would run the app twice.
+  - A **Swarm** filter lists only those.
+
+### Fixed
+- **Moving a project to Swarm on a remote server with a password, or a key with a passphrase, failed** with "Remote Compose/Stack needs a key-based SSH server with no passphrase", after Compose had already stopped the project; DockGate then started it again. Compose commands ran on the server over DockGate's SSH session, but `docker stack deploy` used the local Docker CLI over ssh://, which can only use a key without a passphrase. Stack commands (`docker stack deploy`, `docker stack config`) now run on the server itself over the same SSH session as Compose, so password, key and key with passphrase all work. The stack file, its variables and the registry logins go to a private temp folder on the server by SFTP and are removed after; they are never on the command line.
+
+---
+
+## [2.36.1] - 2026-11-11
+
+### Fixed
+- **App templates whose compose file is in a GitHub repository did not load** ("No compose content found for this template"). That is most stack templates of the default catalog. DockGate asked github.com/…/raw/…, which answers with a redirect that DockGate's safe fetch refuses. It now asks raw.githubusercontent.com directly (main, then master). This affected Deploy → App templates and Swarm → New stack → template.
+
+---
+
 ## [2.36.0] - 2026-11-11
 
 ### Added

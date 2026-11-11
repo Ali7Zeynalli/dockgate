@@ -91,6 +91,7 @@ Router.register('compose', async (content) => {
                       : p.running > 0 && p.running === p.total
                       ? (isGit ? `<button class="btn btn-xs btn-secondary" data-git-sync="${escapeHtml(p.name)}" title="Pull the latest code and rebuild / restart">Sync</button>` : `<button class="btn btn-xs btn-secondary" data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.restart} Restart</button>`)
                       : `<button class="btn btn-xs btn-secondary" data-action="up" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.play} Up</button>`}
+                    ${!p.onSwarm && p.total > 0 && window.__swarmActive ? `<button class="btn btn-xs btn-secondary" data-move-swarm="${escapeHtml(p.name)}" title="Run this project as a Swarm stack">${Icons.layers} Move to Swarm…</button>` : ''}
                     ${UI.menu([
                       { label: `${Icons.eye} Services and details`, attrs: `data-detail="${escapeHtml(p.name)}"` },
                       !p.onSwarm && p.total > 0 && window.__swarmActive ? { label: `${Icons.layers} Move to Swarm…`, attrs: `data-move-swarm="${escapeHtml(p.name)}"` } : null,
@@ -401,7 +402,7 @@ Router.register('compose', async (content) => {
 
       content.querySelectorAll('[data-history]').forEach(btn => btn.addEventListener('click', () => openDeployHistory(btn.dataset.history)));
       content.querySelectorAll('[data-open-stack]').forEach(btn => btn.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-stacks' })));
-      content.querySelectorAll('[data-move-swarm]').forEach(btn => btn.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-migrate', project: btn.dataset.moveSwarm })));
+      content.querySelectorAll('[data-move-swarm]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveProject ? window.SwarmUI.moveProject(btn.dataset.moveSwarm, () => render()) : Router.navigate('swarm', { tab: 'swarm-migrate', project: btn.dataset.moveSwarm }))));
 
       content.querySelectorAll('[data-detail]').forEach(btn => {
         btn.addEventListener('click', async () => {

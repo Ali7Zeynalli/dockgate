@@ -82,9 +82,9 @@ function check(r, what) {
 }
 
 /** target: { kind: 'container'|'volume', id }. Returns the runner for that target. */
-function target(kind, id) {
+function target(kind, id, client = null) {
   if (kind === 'container') {
-    const c = docker();
+    const c = client || docker();
     return {
       path: (p) => confine(p),
       run: async (script, ...args) => { try { return await execIn(c, id, sh(script, ...args)); } catch (e) { if (e.statusCode === 409) throw bad(409, 'The container must be running'); throw e; } },
@@ -108,8 +108,8 @@ function target(kind, id) {
 const shown = (kind, p) => (kind === 'volume' ? p.replace(/^\/volume/, '') || '/' : p);
 
 /** Read a text file (up to 1 MB). Binary files are refused. */
-async function read(kind, id, path) {
-  const t = target(kind, id);
+async function read(kind, id, path, { client } = {}) {
+  const t = target(kind, id, client);
   const p = t.path(path);
   const r = check(await t.run(SCRIPTS.read, p), 'Read');
   if (r.out.includes(0)) throw bad(400, 'This is a binary file — download it instead');
@@ -117,8 +117,8 @@ async function read(kind, id, path) {
 }
 
 /** Save a text file; an existing file keeps its owner and mode, a new one gets 0644 root. */
-async function write(kind, id, path, content) {
-  const t = target(kind, id);
+async function write(kind, id, path, content, { client } = {}) {
+  const t = target(kind, id, client);
   const p = t.path(path);
   const name = baseOf(p);
   if (!VALID_NAME(name)) throw bad(400, 'Give a file name');
@@ -140,16 +140,16 @@ async function write(kind, id, path, content) {
   return { path: shown(kind, p), size: buf.length, created: st.code !== 0 };
 }
 
-async function mkdir(kind, id, path) {
-  const t = target(kind, id);
+async function mkdir(kind, id, path, { client } = {}) {
+  const t = target(kind, id, client);
   const p = t.path(path);
   if (!VALID_NAME(baseOf(p))) throw bad(400, 'Give a folder name');
   check(await t.run(SCRIPTS.mkdir, p), 'New folder');
   return { path: shown(kind, p) };
 }
 
-async function rename(kind, id, path, newName) {
-  const t = target(kind, id);
+async function rename(kind, id, path, newName, { client } = {}) {
+  const t = target(kind, id, client);
   const p = t.path(path);
   if (!VALID_NAME(String(newName || ''))) throw bad(400, 'The new name can not contain /');
   const to = dirOf(p).replace(/\/$/, '') + '/' + newName;
@@ -157,8 +157,8 @@ async function rename(kind, id, path, newName) {
   return { path: shown(kind, to) };
 }
 
-async function remove(kind, id, path) {
-  const t = target(kind, id);
+async function remove(kind, id, path, { client } = {}) {
+  const t = target(kind, id, client);
   const p = t.path(path);
   if (p === '/' || p === '/volume' || p === '/volume/') throw bad(400, 'The top folder can not be deleted');
   if (kind === 'container' && /^\/(bin|sbin|lib|lib64|usr|etc|proc|sys|dev|boot|var|run)$/.test(p)) throw bad(400, `${p} is a system folder — it is not deleted here`);
@@ -166,4 +166,35 @@ async function remove(kind, id, path) {
   return { path: shown(kind, p) };
 }
 
-module.exports = { read, write, mkdir, rename, remove, confine, tarOf, MAX_EDIT };
+// ---- browse / download / upload a container on any Docker client (a Swarm task on another node) ----
+const LIST_SCRIPT = `cd "$1" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
+async function list(id, path, { client } = {}) {
+  const c = client || docker();
+  const p = confine(path || '/');
+  const r = await execIn(c, id, sh(LIST_SCRIPT, p)).catch(e => { if (e.statusCode === 409) throw bad(409, 'The container must be running'); throw e; });
+  const entries = r.out.toString('utf8').split('\n').filter(Boolean).map(line => {
+    const i1 = line.indexOf('\t'), i2 = line.indexOf('\t', i1 + 1);
+    if (i1 < 0 || i2 < 0) return null;
+    return { type: line.slice(0, i1) === 'd' ? 'dir' : 'file', size: parseInt(line.slice(i1 + 1, i2)) || 0, name: line.slice(i2 + 1).replace(/\r$/, '') };
+  }).filter(Boolean).sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : (a.type === 'dir' ? -1 : 1)));
+  return { path: p, entries };
+}
+async function download(id, path, res, { client } = {}) {
+  const c = client || docker();
+  const p = confine(path);
+  const exec = await c.getContainer(id).exec({ Cmd: ['cat', p], AttachStdout: true, AttachStderr: true, Tty: false });
+  const stream = await exec.start({ hijack: true, stdin: false });
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${(baseOf(p) || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')}"`);
+  const { Writable } = require('stream');
+  c.modem.demuxStream(stream, res, new Writable({ write(x, e, cb) { cb(); } }));
+  stream.on('end', () => { try { res.end(); } catch (e) { /* closed */ } });
+  stream.on('error', () => { try { res.destroy(); } catch (e) { /* closed */ } });
+}
+async function upload(id, path, req, { client } = {}) {
+  const c = client || docker();
+  await c.getContainer(id).putArchive(req, { path: confine(path) });
+  return { success: true };
+}
+
+module.exports = { read, write, mkdir, rename, remove, list, download, upload, confine, tarOf, MAX_EDIT };
