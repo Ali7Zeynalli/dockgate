@@ -2,6 +2,15 @@
 
 ---
 
+## [2.38.6] - 2026-11-11
+
+### Changed
+- **README opens with the DockGate logo and a short animated tour** (Dashboard, Containers, Compose, Swarm overview, services, a service page, stacks and Monitoring), taken from a running DockGate.
+- **Screenshots shown two per row** so the text in them can be read.
+- **The "From source" commands have their own code block** instead of one long line in the table.
+
+---
+
 ## [2.38.5] - 2026-11-11
 
 ### Changed
