@@ -97,8 +97,21 @@ router.post('/migrate', ok(async (req) => jobOf(await stacks.startMove((req.body
 router.post('/stacks/:name/redeploy', ok(async (req) => jobOf(await stacks.startRedeploy(req.params.name, { deployId: (req.body || {}).deployId, settings: (req.body || {}).settings, sourceIp: req.ip }))));
 router.post('/stacks/:name/move-back', ok(async (req) => {
   if ((req.body || {}).confirm !== true) throw Object.assign(new Error('confirm required'), { statusCode: 400 });
+  const row = stacks.stackRows().find(r => r.name === req.params.name);
+  if (row && row.origin === 'container') return jobOf(await sy.startBackToContainer(req.params.name, { sourceIp: req.ip }));
   return jobOf(await stacks.startMoveBack(req.params.name, { sourceIp: req.ip }));
 }));
+// ---- stack files kept in DockGate, taking over outside stacks, docker run containers (server/swarm-yaml.js) ----
+const sy = require('../swarm-yaml');
+router.post('/stacks', ok(async (req) => jobOf(await sy.startDeploy({ ...(req.body || {}), create: true }, { sourceIp: req.ip }))));
+router.post('/stacks/check', ok(async (req) => { const b = req.body || {}; const out = await sy.check(String(b.yaml || ''), sy.parseEnv(b.env)); return { ok: true, rendered: out }; }));
+router.get('/stacks/:name/file', ok(async (req) => sy.getFile(req.params.name)));
+router.put('/stacks/:name/file', ok(async (req) => jobOf(await sy.startDeploy({ ...(req.body || {}), name: req.params.name, create: false }, { sourceIp: req.ip }))));
+router.get('/stacks/:name/written', ok(async (req) => ({ yaml: await sy.yamlFromStack(req.params.name) })));
+router.post('/stacks/:name/take-over', ok((req) => sy.takeOver(req.params.name, req.body || {}, { sourceIp: req.ip })));
+router.get('/containers', ok(async () => ({ containers: await sy.containers() })));
+router.get('/containers/:id/stack-file', ok((req) => sy.yamlFromContainer(req.params.id)));
+router.post('/containers/:id/move', ok(async (req) => jobOf(await sy.startConvert({ ...(req.body || {}), containerId: req.params.id }, { sourceIp: req.ip }))));
 router.delete('/stacks/:name', ok((req) => stacks.removeStack(req.params.name, { sourceIp: req.ip })));
 // ---- phase 5: secrets, configs, networks (server/swarm-objects.js) ----
 const objs = require('../swarm-objects');

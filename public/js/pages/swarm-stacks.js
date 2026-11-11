@@ -110,13 +110,90 @@
     ] }));
     content.innerHTML = `${UI.header('Migrate', `Compose projects on this server that run outside Swarm. Choose some and DockGate moves them one at a time; one that does not run on Swarm goes back to Compose by itself. The compose files are not changed.${data.nodes > 1 ? ' Services with data stay on this server (placement rule).' : ''}`, UI.primary('Review…', 'data-review'))}
       ${UI.table([{ label: '', width: '36px' }, { label: 'Project' }, { label: 'Status' }, { label: 'Services' }, { label: 'Running' }, { label: 'Details' }], rows, { minWidth: 860, empty: 'No compose projects outside Swarm on this server.' })}
-      <div class="ui-sub" style="margin-top:8px"><b>Ready</b>: nothing to change. <b>Attention</b>: it can move; something is shown (a build image, a database kept at 1, depends_on conditions). <b>Not possible</b>: privileged or devices, network_mode host, no compose file — it stays in Compose.</div>`;
+      <div class="ui-sub" style="margin-top:8px"><b>Ready</b>: nothing to change. <b>Attention</b>: it can move; something is shown (a build image, a database kept at 1, depends_on conditions). <b>Not possible</b>: privileged or devices, network_mode host, no compose file — it stays in Compose.</div>
+      <div class="ui-ph" style="margin-top:18px"><div class="ui-ph-text"><div class="ui-ph-title">Containers started with docker run</div><div class="ui-ph-desc">DockGate writes a stack file from the container (image, command, environment, ports, volumes, restart policy) for you to check, then moves it: the container is stopped and kept, the stack deployed, and the container started again if the stack does not come up.</div></div></div>
+      <div data-cts class="text-sm text-muted">Loading…</div>`;
+    API.get('/swarm/containers').then(({ containers }) => {
+      const el = content.querySelector('[data-cts]'); if (!el) return;
+      el.innerHTML = UI.table([{ label: 'Container' }, { label: 'Image' }, { label: 'State' }, { label: '', align: 'right' }], containers.map(x => ({ cells: [
+        `<b>${esc(x.name)}</b>`, `<span class="td-mono text-sm">${esc(x.image)}</span>`, `${UI.pill(x.state === 'running' ? 'ok' : 'off', esc(x.state))} <span class="ui-sub">${esc(x.status)}</span>`, UI.btn('Move to Swarm…', `data-ct="${esc(x.id)}"`)] })), { minWidth: 640, empty: 'No containers started with docker run on this server.' });
+      el.querySelectorAll('[data-ct]').forEach(b => b.onclick = async () => {
+        try { const g = await API.get(`/swarm/containers/${encodeURIComponent(b.dataset.ct)}/stack-file`); stackEditor({ mode: 'container', containerId: b.dataset.ct, container: g.container, name: g.name, yaml: g.yaml, notes: g.notes, onDone: () => Router.navigate('swarm', { tab: 'swarm-stacks' }) }); }
+        catch (e) { showToast(e.message, 'error', 9000); }
+      });
+    }).catch(e => { const el = content.querySelector('[data-cts]'); if (el) el.innerHTML = UI.errorState(e, { compact: true }); });
     content.querySelector('[data-review]').onclick = () => {
       const picked = [...content.querySelectorAll('[data-pick]:checked')].map(c => data.projects.find(p => p.project === c.dataset.pick));
       if (!picked.length) return showToast('Choose at least one project', 'warning');
       openMove(picked, () => Router.navigate('swarm', { tab: 'swarm-stacks' }));
     };
   });
+
+  // ---- stack file editor: New stack / Edit stack file / Take over / Move a container to Swarm ----
+  // o: { mode: 'new'|'edit'|'takeover'|'container', name, yaml, env, notes, containerId, container, onDone }
+  async function stackEditor(o) {
+    const titles = { new: 'New stack', edit: `Stack file of ${o.name}`, takeover: `Take over ${o.name}`, container: `Move ${o.container} to Swarm` };
+    const saveLabel = { new: 'Deploy', edit: 'Save and deploy', takeover: 'Take over', container: 'Move to Swarm' }[o.mode];
+    let templates = [];
+    const NOTE = { info: 'var(--text-muted)', warn: 'var(--warning,#d97706)', bad: 'var(--danger,#dc2626)' };
+    const intro = {
+      new: 'Paste a stack file (compose format) or start from an app template. DockGate checks it, deploys it with <span class="td-mono">docker stack deploy</span> and keeps it: Edit stack file… changes it later.',
+      edit: 'Saving deploys the file again: changed services are updated one task at a time and go back by themselves when a new task fails. Services removed from the file are removed.',
+      takeover: 'This file was written from the services that run now. Check it, then save: DockGate keeps it for Redeploy and Edit stack file. Nothing is deployed now.',
+      container: `This file was written from the container. <b>${esc(o.container || '')}</b> is stopped (kept, its restart policy set to "no") and the stack deployed. If the service does not come up, the container is started again. Named volumes are used by their own name, so the data stays.`,
+    }[o.mode];
+    const m = showModal(titles[o.mode], `${serverContextBanner()}<p class="text-sm">${intro}</p>
+      ${(o.notes || []).length ? `<div style="margin:8px 0">${o.notes.map(n => `<div class="text-sm" style="color:${NOTE[n.level]}">${n.level === 'bad' ? '✗' : n.level === 'warn' ? '!' : '·'} ${esc(n.text)}</div>`).join('')}</div>` : ''}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:8px 0">
+        ${o.mode === 'new' || o.mode === 'container' ? `<label class="ui-field" style="flex:1;min-width:200px"><span class="ui-label">Stack name</span><input class="input" data-name value="${esc(o.name || '')}" placeholder="myapp"></label>` : ''}
+        ${o.mode === 'new' ? `<label class="ui-field" style="flex:2;min-width:240px"><span class="ui-label">Start from an app template (optional)</span><select class="select" data-tpl><option value="">Loading templates…</option></select></label>` : ''}
+      </div>
+      <label class="ui-field"><span class="ui-label">Stack file</span><textarea class="input" data-yaml rows="18" spellcheck="false" style="font-family:var(--font-mono,monospace);font-size:12px;white-space:pre;tab-size:2">${esc(o.yaml || '')}</textarea></label>
+      <label class="ui-field" style="margin-top:8px"><span class="ui-label">Variables (optional)</span><textarea class="input" data-env rows="3" spellcheck="false" placeholder="TAG=1.27&#10;DB_PASSWORD=…" style="font-family:var(--font-mono,monospace);font-size:12px">${esc(o.env || '')}</textarea><span class="ui-sub">KEY=VALUE per line, filled in for \${KEY} in the file. Kept encrypted in DockGate.</span></label>
+      <div data-out class="text-sm" style="margin-top:8px"></div>`, []);
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    const ov = m.overlay, out = ov.querySelector('[data-out]');
+    const footer = ov.querySelector('#modal-footer');
+    const mk = (label, cls, fn) => { const b = document.createElement('button'); b.className = cls; b.textContent = label; b.onclick = fn; footer.appendChild(b); return b; };
+    mk('Cancel', 'btn btn-secondary', () => m.close());
+    const val = () => ({ yaml: ov.querySelector('[data-yaml]').value, env: ov.querySelector('[data-env]').value, name: ov.querySelector('[data-name]') ? ov.querySelector('[data-name]').value.trim() : o.name });
+    mk('Check', 'btn btn-secondary', async () => {
+      try { await API.post('/swarm/stacks/check', val()); out.innerHTML = `<span style="color:var(--success,#16a34a)">✓ The file is valid.</span>`; }
+      catch (e) { out.innerHTML = `<span style="color:var(--danger,#dc2626)">${esc(e.message)}</span>`; }
+    });
+    const save = mk(saveLabel, 'btn btn-primary', async () => {
+      const v = val();
+      save.disabled = true;
+      try {
+        let r;
+        if (o.mode === 'new') r = await API.post('/swarm/stacks', v);
+        else if (o.mode === 'edit') r = await API.put(`/swarm/stacks/${encodeURIComponent(o.name)}/file`, v);
+        else if (o.mode === 'takeover') { await API.post(`/swarm/stacks/${encodeURIComponent(o.name)}/take-over`, v); m.close(); showToast(`DockGate manages ${o.name} now`); return o.onDone && o.onDone(); }
+        else r = await API.post(`/swarm/containers/${encodeURIComponent(o.containerId)}/move`, v);
+        m.close();
+        job(r.jobId, o.onDone, o.mode === 'container' ? 'Move to Swarm' : o.mode === 'new' ? 'Deploy' : 'Redeploy');
+      } catch (e) { out.innerHTML = `<span style="color:var(--danger,#dc2626)">${esc(e.message)}</span>`; save.disabled = false; }
+    });
+    if (o.mode === 'new') {
+      const sel = ov.querySelector('[data-tpl]');
+      try {
+        const cat = await API.get('/templates');
+        templates = (cat.templates || []).filter(t => t.type === 2 || t.type === 3 || t.compose);
+        sel.innerHTML = '<option value="">—</option>' + templates.map((t, i) => `<option value="${i}">${esc(t.title || t.name || 'Template')}</option>`).join('');
+      } catch (e) { sel.innerHTML = '<option value="">Templates could not be loaded</option>'; }
+      sel.onchange = async () => {
+        const t = templates[Number(sel.value)]; if (!t) return;
+        out.textContent = 'Loading the template…';
+        try {
+          const yaml = await window.TemplatesUI.resolveStackYaml(t);
+          ov.querySelector('[data-yaml]').value = yaml;
+          const nm = ov.querySelector('[data-name]'); if (!nm.value) nm.value = (t.title || 'stack').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+          out.innerHTML = '<span class="ui-sub">Template loaded. Swarm ignores container_name and build; Check shows other problems.</span>';
+        } catch (e) { out.innerHTML = `<span style="color:var(--danger,#dc2626)">${esc(e.message)}</span>`; }
+      };
+    }
+  }
+  window.SwarmUI.stackEditor = stackEditor;
 
   // ---- Stacks ----
   function historyDialog(s, done) {
@@ -156,23 +233,27 @@
       const KIND = { move: 'moved from Compose', redeploy: 'redeployed', previous: 'earlier deploy', 'move-back': 'moved back' };
       const rows = data.map(s => ({ cells: [
         `<b>${esc(s.name)}</b>${s.location ? `<div class="ui-sub td-mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(s.location.cwd || '')}</div>` : ''}`,
-        s.managed ? (s.origin === 'compose' ? 'moved from Compose' : 'deployed by DockGate') : '<span class="ui-sub">deployed outside DockGate</span>',
+        s.managed ? ({ compose: 'moved from Compose', yaml: 'stack file in DockGate', container: `moved from container ${esc(s.fromContainer || '')}` }[s.origin] || 'deployed by DockGate') : '<span class="ui-sub">deployed outside DockGate</span>',
         String(s.services),
         `<b style="color:${s.running < s.desired ? 'var(--warning,#d97706)' : 'inherit'}">${s.running}/${s.desired}</b>`,
         s.last ? `${esc(KIND[s.last.kind] || s.last.kind)} ${UI.pill(s.last.status === 'done' ? 'ok' : s.last.status === 'running' ? 'warn' : 'bad', esc(s.last.status))}<div class="ui-sub">${esc(timeAgo(new Date(s.last.started_at).toISOString()))}</div>` : '<span class="ui-sub">—</span>',
         UI.menu([
           s.managed ? { label: 'Redeploy', attrs: `data-a="redeploy" data-n="${esc(s.name)}"` } : null,
-          s.managed ? { label: 'Swarm settings…', attrs: `data-a="settings" data-n="${esc(s.name)}"` } : null,
+          s.hasFile ? { label: 'Edit stack file…', attrs: `data-a="file" data-n="${esc(s.name)}"` } : null,
+          s.managed && s.origin === 'compose' ? { label: 'Swarm settings…', attrs: `data-a="settings" data-n="${esc(s.name)}"` } : null,
+          !s.managed && s.services ? { label: 'Take over…', attrs: `data-a="takeover" data-n="${esc(s.name)}"` } : null,
           { label: 'History', attrs: `data-a="history" data-n="${esc(s.name)}"` },
           { label: 'Services', attrs: `data-a="services" data-n="${esc(s.name)}"` },
           '-',
           s.managed && s.location ? { label: 'Move back to Compose…', attrs: `data-a="back" data-n="${esc(s.name)}"` } : null,
+          s.origin === 'container' ? { label: 'Move back to the container…', attrs: `data-a="back-ct" data-n="${esc(s.name)}"` } : null,
           { label: 'Remove…', attrs: `data-a="remove" data-n="${esc(s.name)}"` },
         ]),
       ] }));
-      content.innerHTML = `${UI.header('Stacks', 'Compose projects running on Swarm. Each deploy reads the compose files again and adapts them for Swarm in memory — the files are not changed.', UI.primary('Move projects to Swarm…', 'data-migrate'))}
+      content.innerHTML = `${UI.header('Stacks', 'Stacks on Swarm. A stack moved from Compose reads its compose files again on each deploy (adapted in memory, the files are not changed); a stack file kept in DockGate is edited here.', `${UI.btn('Move projects to Swarm…', 'data-migrate')} ${UI.primary('New stack…', 'data-newstack')}`)}
         ${UI.table([{ label: 'Stack' }, { label: 'Origin' }, { label: 'Services' }, { label: 'Tasks' }, { label: 'Last deploy' }, { label: '', align: 'right' }], rows, { minWidth: 820, empty: 'No stacks yet. Move compose projects to Swarm with Migrate.' })}`;
       content.querySelector('[data-migrate]').onclick = () => Router.navigate('swarm', { tab: 'swarm-migrate' });
+      content.querySelector('[data-newstack]').onclick = () => stackEditor({ mode: 'new', yaml: 'services:\n  web:\n    image: nginx:1.27\n    ports:\n      - "8080:80"\n    deploy:\n      replicas: 2\n', onDone: load });
       content.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, data.find(x => x.name === b.dataset.n))));
       stop(); timer = setTimeout(load, 8000);
     }
@@ -181,6 +262,10 @@
       if (a === 'history') return historyDialog(s, load);
       if (a === 'services') return Router.navigate('swarm', { tab: 'swarm-services' });
       if (a === 'settings') return stackSettings(s, load);
+      if (a === 'file') return API.get(`/swarm/stacks/${encodeURIComponent(s.name)}/file`).then(f => stackEditor({ mode: 'edit', name: s.name, yaml: f.yaml, env: f.env, onDone: load })).catch(e => showToast(e.message, 'error'));
+      if (a === 'takeover') return API.get(`/swarm/stacks/${encodeURIComponent(s.name)}/written`).then(f => stackEditor({ mode: 'takeover', name: s.name, yaml: f.yaml, onDone: load })).catch(e => showToast(e.message, 'error'));
+      if (a === 'back-ct') return secConfirm({ title: `Move ${s.name} back to the container`, danger: true, change: `The stack is removed, then the container <b>${esc(s.fromContainer || '')}</b> gets its restart policy back and starts. It is down for a short time.`, protects: 'Volumes keep their data: the container uses the same volumes.', undo: 'Move it to Swarm again (Migrate → Containers).', confirmLabel: 'Move back',
+        onConfirm: async () => { try { const r = await API.post(`/swarm/stacks/${encodeURIComponent(s.name)}/move-back`, { confirm: true }); job(r.jobId, load, 'Move back to the container'); } catch (e) { showToast(e.message, 'error', 9000); } } });
       if (a === 'redeploy') return secConfirm({ title: `Redeploy ${s.name}`, change: 'The compose files are read again and deployed (docker stack deploy --prune): changed services are updated, services removed from the files are removed.', protects: 'Services update one task at a time and go back by themselves when a new task fails. Volumes stay.', undo: 'History → Deploy this again on an earlier deploy.', confirmLabel: 'Redeploy',
         onConfirm: async () => { try { const r = await API.post(`/swarm/stacks/${encodeURIComponent(s.name)}/redeploy`, {}); job(r.jobId, load, 'Redeploy'); } catch (e) { showToast(e.message, 'error', 9000); } } });
       if (a === 'back') return secConfirm({ title: `Move ${s.name} back to Compose`, danger: true, change: `The stack is removed, DockGate waits until its network is gone, then <span class="td-mono">docker compose up -d</span> runs in ${esc((s.location || {}).cwd || 'its folder')}. It is down for a short time (usually 20–60 s).`, protects: 'Volumes keep their data: Compose uses the same volume names.', undo: 'Move it to Swarm again with Migrate.', confirmLabel: 'Move back',

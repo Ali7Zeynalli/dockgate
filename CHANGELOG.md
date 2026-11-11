@@ -2,6 +2,26 @@
 
 ---
 
+## [2.35.0] - 2026-11-11
+
+### Added
+- **New stack from a stack file.** Swarm → Stacks → **New stack…** takes a stack file (compose format) and optional variables (KEY=VALUE for `${KEY}`, kept encrypted).
+  - **Check** validates it with `docker stack config` before anything runs.
+  - Deploy runs `docker stack deploy` and waits until every service runs.
+  - DockGate keeps the file. **Edit stack file…** changes and deploys it again, and History can deploy an earlier file again.
+- **Deploy an app template as a Swarm stack.** With Swarm on, deploying a stack template asks: Compose project (as before) or Swarm stack. New stack… can also start from a template.
+- **Take over a stack deployed outside DockGate.** Stacks → ⋯ → **Take over…** writes a stack file from the running services (image, command, environment, ports, volumes, networks, secrets, configs, placement, resources, restart and update settings). Check it and save: DockGate keeps it for Redeploy and Edit stack file. Nothing is deployed when it is taken over; the stack's own volumes and networks keep their names.
+- **Move a container started with docker run to Swarm.** Swarm → Migrate → **Containers started with docker run** → Move to Swarm… writes a one-service stack file from the container for you to check, with notes on what does not carry over (privileged, devices, host network, bridge networks, a host address on a port).
+  - The container is stopped and kept, with its restart policy set to "no", then the stack is deployed.
+  - If the service does not come up, the stack is removed and the container is started again.
+  - Named volumes are used by their own name, so the data stays; bind mounts keep their host path. With several servers the service stays on this one.
+  - Stacks → ⋯ → **Move back to the container…** removes the stack, gives the container its restart policy back and starts it.
+
+### Fixed
+- A new stack could not be given the name of a compose project on the server (that would have blocked the project's Compose commands).
+
+---
+
 ## [2.34.0] - 2026-11-11
 
 ### Added

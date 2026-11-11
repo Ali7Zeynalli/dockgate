@@ -1,6 +1,32 @@
 // App Templates (marketplace) — a catalog of ready-to-deploy apps in the Portainer "App Templates"
 // v2 format. Click Deploy → a container template prefills the Run modal; a stack template prefills the
 // shared Compose editor. Source is the bundled catalog by default, or a configurable `template_url`.
+// Resolve the compose YAML for a stack template: inline `compose`/`stackfile`, else fetch the repository file.
+async function resolveStackYaml(t) {
+  if (t.compose) return t.compose;
+  if (typeof t.stackfile === 'string' && t.stackfile.includes('\n')) return t.stackfile; // inline content
+  const repo = t.repository;
+  if (repo && repo.url) {
+    // Build a raw URL: <repo.url>/raw/<branch?>/<stackfile> is unreliable across hosts, so try the
+    // common GitHub raw form, falling back to <url>/<stackfile>.
+    const file = repo.stackfile || 'docker-compose.yml';
+    const base = repo.url.replace(/\.git$/, '').replace(/\/$/, '');
+    const candidates = [
+      `${base}/raw/main/${file}`,
+      `${base}/raw/master/${file}`,
+      `${base}/${file}`,
+    ];
+    for (const url of candidates) {
+      try {
+        const r = await API.get('/templates/stackfile?url=' + encodeURIComponent(url));
+        if (r && r.yaml && r.yaml.trim()) return r.yaml;
+      } catch (e) { /* try next candidate */ }
+    }
+  }
+  throw new Error('No compose content found for this template');
+}
+window.TemplatesUI = { resolveStackYaml }; // also used by Swarm → Stacks → New stack
+
 Router.register('templates', async (content) => {
   let all = [];      // every template from the catalog
   let source = '';   // 'bundled' | 'remote' | 'bundled-fallback'
@@ -31,31 +57,6 @@ Router.register('templates', async (content) => {
     };
   }
 
-  // Resolve the compose YAML for a stack template: inline `compose`/`stackfile`, else fetch the repository file.
-  async function resolveStackYaml(t) {
-    if (t.compose) return t.compose;
-    if (typeof t.stackfile === 'string' && t.stackfile.includes('\n')) return t.stackfile; // inline content
-    const repo = t.repository;
-    if (repo && repo.url) {
-      // Build a raw URL: <repo.url>/raw/<branch?>/<stackfile> is unreliable across hosts, so try the
-      // common GitHub raw form, falling back to <url>/<stackfile>.
-      const file = repo.stackfile || 'docker-compose.yml';
-      const base = repo.url.replace(/\.git$/, '').replace(/\/$/, '');
-      const candidates = [
-        `${base}/raw/main/${file}`,
-        `${base}/raw/master/${file}`,
-        `${base}/${file}`,
-      ];
-      for (const url of candidates) {
-        try {
-          const r = await API.get('/templates/stackfile?url=' + encodeURIComponent(url));
-          if (r && r.yaml && r.yaml.trim()) return r.yaml;
-        } catch (e) { /* try next candidate */ }
-      }
-    }
-    throw new Error('No compose content found for this template');
-  }
-
   async function deploy(t) {
     try {
       if (t.type === 1) {
@@ -64,9 +65,15 @@ Router.register('templates', async (content) => {
         showToast('Loading compose definition…', 'info', 2000);
         const yaml = await resolveStackYaml(t);
         const slug = (t.title || 'stack').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-        openComposeEditor(null, { prefillYaml: yaml, prefillName: slug });
-        // With Swarm on, a template still deploys with Compose first; Move to Swarm then runs it as a stack.
-        API.get('/swarm/status').then(st => { if (st && st.state === 'active' && st.manager) showToast('Swarm is on: deploy it here, then Deploy → Compose stacks → ⋯ → Move to Swarm… to run it as a stack.', 'info', 9000); }).catch(() => {});
+        // With Swarm on (a manager), choose: a Compose project here, or a Swarm stack.
+        let swarmOn = false;
+        try { const st = await API.get('/swarm/status'); swarmOn = !!(st && st.state === 'active' && st.manager); } catch (e) { /* no swarm */ }
+        if (swarmOn && window.SwarmUI && window.SwarmUI.stackEditor) {
+          showModal(`Deploy ${escapeHtml(t.title || slug)}`, '<p class="text-sm">Swarm is on for this server. Deploy the app as a Compose project on this server, or as a Swarm stack (DockGate keeps its stack file).</p>', [
+            { label: 'Compose project', className: 'btn btn-secondary', onClick: () => openComposeEditor(null, { prefillYaml: yaml, prefillName: slug }) },
+            { label: 'Swarm stack', className: 'btn btn-primary', onClick: () => window.SwarmUI.stackEditor({ mode: 'new', name: slug.slice(0, 40), yaml, onDone: () => Router.navigate('swarm', { tab: 'swarm-stacks' }) }) },
+          ]);
+        } else openComposeEditor(null, { prefillYaml: yaml, prefillName: slug });
       }
     } catch (err) {
       showToast('Cannot deploy: ' + err.message, 'error', 8000);

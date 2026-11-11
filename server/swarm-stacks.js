@@ -29,6 +29,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS swarm_stacks (
   updated_at INTEGER,
   PRIMARY KEY (server_id, name)
 )`);
+// yaml: the stack file kept in DockGate (origin yaml / container); env: KEY=VALUE lines for ${VAR}, encrypted;
+// from_container: JSON { name, id, restart } of the container a stack replaced (origin container).
+for (const col of ['yaml TEXT', 'env TEXT', 'from_container TEXT']) { try { db.exec(`ALTER TABLE swarm_stacks ADD COLUMN ${col}`); } catch (e) { /* already there */ } }
 db.exec(`CREATE TABLE IF NOT EXISTS swarm_stack_deploys (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   server_id TEXT NOT NULL,
@@ -211,10 +214,12 @@ function adapt(cfg, settings = {}, ctx = {}) {
 
 // ---- running Swarm commands ----
 
-/** docker stack deploy with the stack file on stdin, against the server in use. */
-function stackDeploy(name, stack, log) {
+/** docker stack deploy with the stack file on stdin, against the server in use. stack: object or YAML text;
+ * vars: { KEY: value } for ${KEY} in the file. */
+function stackDeploy(name, stack, log, vars = null) {
   return new Promise((resolve, reject) => {
-    const { env } = buildCliEnv(serverId(), 'stack');
+    const { env: base } = buildCliEnv(serverId(), 'stack');
+    const env = vars ? { ...base, ...vars } : base;
     const args = ['stack', 'deploy', '-c', '-', '--prune', '--with-registry-auth', '--detach=true', name];
     log(`$ docker ${args.join(' ')}`);
     const child = spawn('docker', args, { env });
@@ -227,7 +232,7 @@ function stackDeploy(name, stack, log) {
       const reason = require('./remote-compose').composeReason(out);
       reject(new Error(`docker stack deploy exited with code ${code}${reason}`));
     });
-    child.stdin.end(JSON.stringify(stack));
+    child.stdin.end(typeof stack === 'string' ? stack : JSON.stringify(stack));
   });
 }
 
@@ -332,7 +337,7 @@ async function list() {
   return [...stacks.values()].map(x => {
     const r = rows.get(x.name);
     const last = q.history.all(sid, x.name)[0] || null;
-    return { ...x, managed: !!r, origin: r ? r.origin : 'outside', location: r ? JSON.parse(r.location || 'null') : null, last };
+    return { ...x, managed: !!r, origin: r ? r.origin : 'outside', location: r ? JSON.parse(r.location || 'null') : null, hasFile: !!(r && r.yaml), fromContainer: r && r.from_container ? JSON.parse(r.from_container).name : null, last };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -436,11 +441,14 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
   if (!row) throw bad(404, 'DockGate does not manage this stack');
   const ctx = await context();
   let stack, hash = null;
+  let vars = null;
+  if (row.yaml) vars = require('./swarm-yaml').envOf(row); // ${VAR}s of a kept stack file
   if (deployId) {
     const d = q.deployRow.get(Number(deployId), sid);
     if (!d || d.name !== name || !d.stack) throw bad(404, 'That deploy has no stored stack file');
-    stack = JSON.parse(d.stack); hash = d.hash;
-  }
+    try { stack = JSON.parse(d.stack); } catch (e) { stack = d.stack; } // a kept YAML file
+    hash = d.hash;
+  } else if (row.yaml) { stack = row.yaml; hash = hashOf(row.yaml); }
   const { job, log, step } = newJob('redeploy');
   (async () => {
     let id = null;
@@ -460,12 +468,13 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
       id = q.addDeploy.run(sid, name, deployId ? 'previous' : 'redeploy', hash, JSON.stringify(stack), sourceIp || null, Date.now()).lastInsertRowid;
       step(job, 'deploy', 'running', 'docker stack deploy');
       const t = Date.now();
-      await stackDeploy(name, stack, log);
+      await stackDeploy(name, stack, log, vars);
       step(job, 'deploy', 'done');
       step(job, 'verify', 'running', 'Check every service runs');
       await verify(name, log, { since: t });
       step(job, 'verify', 'done');
       q.endDeploy.run('done', null, null, Date.now(), id);
+      if (row.yaml && deployId && typeof stack === 'string') db.prepare('UPDATE swarm_stacks SET yaml = ?, updated_at = ? WHERE server_id = ? AND name = ?').run(stack, Date.now(), sid, name); // the earlier file is the kept one now
       logAction({ sourceIp, server: sid, resourceType: 'swarm-stack', resourceName: name, action: deployId ? 'swarm_stack_previous' : 'swarm_stack_redeploy', details: { hash } });
       log('✓ Deployed. Services that changed were updated one task at a time; a failed one goes back by itself.');
       finish(job);
@@ -542,4 +551,4 @@ async function preview(project, settings) {
   return { ...rest, stack, settings: settings || {} };
 }
 
-module.exports = { isOnSwarm, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean };
+module.exports = { isOnSwarm, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf } };
