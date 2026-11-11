@@ -2,6 +2,13 @@
 
 ---
 
+## [2.38.1] - 2026-11-11
+
+### Fixed
+- **The image for v2.38.0 was not published** because one test failed on GitHub Actions with "SQLITE_BUSY: database is locked" (test/unit/file-manager-local.test.js). `node --test` runs the test files in parallel processes, and 17 of them shared one `data/docker-panel.db`. On a fresh checkout several processes switched that new database to WAL at the same moment. Each test file now gets its own empty data folder (`test/setup-env.js`, loaded by `npm test`), so the files no longer share a database. DockGate itself is not changed.
+
+---
+
 ## [2.38.0] - 2026-11-11
 
 ### Added
