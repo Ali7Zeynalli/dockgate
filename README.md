@@ -1,16 +1,18 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.38.5-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
-  <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
-  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.38.5-orange?style=for-the-badge" alt="Changelog"></a>
-  <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
-</p>
+<p align="center"><img src="screenshots/logo.png" width="88" alt="DockGate logo"></p>
 
 <h1 align="center">DockGate</h1>
 
 <p align="center">
   <strong>Self-hosted control panel for Docker, Compose, Docker Swarm and your servers.</strong><br>
   One container, one admin login, every host — local and over SSH.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/DockGate-v2.38.6-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.38.6-orange?style=for-the-badge" alt="Changelog"></a>
+  <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
 <p align="center">
@@ -21,6 +23,10 @@
   <a href="#notifications">Notifications</a> ·
   <a href="#security">Security</a> ·
   <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+<p align="center">
+  <img src="screenshots/00-demo.gif" alt="DockGate: dashboard, containers, Compose, Swarm and monitoring" width="100%">
 </p>
 
 ---
@@ -52,7 +58,13 @@ Open **http://localhost:7077** and set the admin password. From the internet, th
 |---|---|
 | **Update** | Settings → Software update → **Update now**, or `docker compose pull && docker compose up -d` |
 | **Back up** | the `data/` folder (database, SSH keys, `.master.key`, compose projects); volumes from Resources → Volumes or Tools → Schedules |
-| **From source** | `git clone https://github.com/Ali7Zeynalli/dockgate.git && cd dockgate && docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build` |
+
+**From source:**
+
+```bash
+git clone https://github.com/Ali7Zeynalli/dockgate.git && cd dockgate
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
 
 <details>
 <summary><strong>Container restart-loops on SELinux-confined Docker (openSUSE Leap 16 and similar)</strong></summary>
@@ -84,14 +96,16 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 
 <table>
 <tr>
-<td width="33%"><img src="screenshots/02-dashboard.png" alt="Dashboard"><br><sub><b>Dashboard</b></sub></td>
-<td width="33%"><img src="screenshots/03-containers.png" alt="Containers"><br><sub><b>Containers</b> — stacks, filters, Swarm tasks</sub></td>
-<td width="33%"><img src="screenshots/23.png" alt="Topology"><br><sub><b>Topology</b> — live graph of the stacks</sub></td>
+<td width="50%"><img src="screenshots/02-dashboard.png" alt="Dashboard"><br><sub><b>Dashboard</b></sub></td>
+<td width="50%"><img src="screenshots/03-containers.png" alt="Containers"><br><sub><b>Containers</b> — stacks, filters, Swarm tasks</sub></td>
 </tr>
 <tr>
-<td><img src="screenshots/11-terminal.png" alt="Container terminal"><br><sub><b>Container terminal</b></sub></td>
-<td><img src="screenshots/10-logs.png" alt="Logs"><br><sub><b>Logs</b> — one viewer everywhere</sub></td>
-<td><img src="screenshots/08-compose.png" alt="Compose stacks"><br><sub><b>Compose stacks</b> — history, Move to Swarm</sub></td>
+<td width="50%"><img src="screenshots/23.png" alt="Topology"><br><sub><b>Topology</b> — live graph of the stacks</sub></td>
+<td width="50%"><img src="screenshots/11-terminal.png" alt="Container terminal"><br><sub><b>Container terminal</b></sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/10-logs.png" alt="Logs"><br><sub><b>Logs</b> — one viewer everywhere</sub></td>
+<td width="50%"><img src="screenshots/08-compose.png" alt="Compose stacks"><br><sub><b>Compose stacks</b> — history, Move to Swarm</sub></td>
 </tr>
 </table>
 
@@ -99,19 +113,24 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 
 <table>
 <tr>
-<td width="33%"><img src="screenshots/25-swarm-overview.png" alt="Swarm overview"><br><sub><b>Overview</b> — servers, tasks, events</sub></td>
-<td width="33%"><img src="screenshots/26-swarm-services.png" alt="Swarm services"><br><sub><b>Services</b> — replicas, CPU, memory, ports</sub></td>
-<td width="33%"><img src="screenshots/27-swarm-service.png" alt="Service page"><br><sub><b>Service page</b> — tasks, logs, terminal, files</sub></td>
+<td width="50%"><img src="screenshots/25-swarm-overview.png" alt="Swarm overview"><br><sub><b>Overview</b> — servers, tasks, events</sub></td>
+<td width="50%"><img src="screenshots/26-swarm-services.png" alt="Swarm services"><br><sub><b>Services</b> — replicas, CPU, memory, ports</sub></td>
 </tr>
 <tr>
-<td><img src="screenshots/28-swarm-stacks.png" alt="Swarm stacks"><br><sub><b>Stacks</b> — from Compose, a file or a container</sub></td>
-<td><img src="screenshots/31-swarm-migrate.png" alt="Migrate"><br><sub><b>Migrate</b> — Compose projects and containers</sub></td>
-<td><img src="screenshots/29-swarm-nodes.png" alt="Nodes"><br><sub><b>Nodes</b> — role, state, CPU, memory</sub></td>
+<td width="50%"><img src="screenshots/27-swarm-service.png" alt="Service page"><br><sub><b>Service page</b> — tasks, logs, terminal, files</sub></td>
+<td width="50%"><img src="screenshots/28-swarm-stacks.png" alt="Swarm stacks"><br><sub><b>Stacks</b> — from Compose, a file or a container</sub></td>
 </tr>
 <tr>
-<td><img src="screenshots/32-swarm-secrets.png" alt="Secrets and configs"><br><sub><b>Secrets & configs</b></sub></td>
-<td><img src="screenshots/33-swarm-networks.png" alt="Overlay networks"><br><sub><b>Overlay networks</b></sub></td>
-<td><img src="screenshots/30-swarm-cluster-settings.png" alt="Cluster settings"><br><sub><b>Cluster settings</b> — tokens, autolock, backups</sub></td>
+<td width="50%"><img src="screenshots/31-swarm-migrate.png" alt="Migrate"><br><sub><b>Migrate</b> — Compose projects and containers</sub></td>
+<td width="50%"><img src="screenshots/29-swarm-nodes.png" alt="Nodes"><br><sub><b>Nodes</b> — role, state, CPU, memory</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/32-swarm-secrets.png" alt="Secrets and configs"><br><sub><b>Secrets & configs</b></sub></td>
+<td width="50%"><img src="screenshots/33-swarm-networks.png" alt="Overlay networks"><br><sub><b>Overlay networks</b></sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/30-swarm-cluster-settings.png" alt="Cluster settings"><br><sub><b>Cluster settings</b> — tokens, autolock, backups</sub></td>
+<td width="50%"></td>
 </tr>
 </table>
 
@@ -119,14 +138,16 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 
 <table>
 <tr>
-<td width="33%"><img src="screenshots/24-monitoring.png" alt="Monitoring"><br><sub><b>Monitoring</b> — every server, live and 48 h</sub></td>
-<td width="33%"><img src="screenshots/09-templates.png" alt="App templates"><br><sub><b>App templates</b> — 500+ apps</sub></td>
-<td width="33%"><img src="screenshots/06-volumes.png" alt="Volumes"><br><sub><b>Volumes</b> — backup, restore, files</sub></td>
+<td width="50%"><img src="screenshots/24-monitoring.png" alt="Monitoring"><br><sub><b>Monitoring</b> — every server, live and 48 h</sub></td>
+<td width="50%"><img src="screenshots/09-templates.png" alt="App templates"><br><sub><b>App templates</b> — 500+ apps</sub></td>
 </tr>
 <tr>
-<td><img src="screenshots/14-audit.png" alt="Audit log"><br><sub><b>Audit log</b></sub></td>
-<td><img src="screenshots/18-settings-notifications.png" alt="Notifications"><br><sub><b>Notifications</b> — channels and rules</sub></td>
-<td><img src="screenshots/01-login.png" alt="Login"><br><sub><b>Login</b></sub></td>
+<td width="50%"><img src="screenshots/06-volumes.png" alt="Volumes"><br><sub><b>Volumes</b> — backup, restore, files</sub></td>
+<td width="50%"><img src="screenshots/14-audit.png" alt="Audit log"><br><sub><b>Audit log</b></sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/18-settings-notifications.png" alt="Notifications"><br><sub><b>Notifications</b> — channels and rules</sub></td>
+<td width="50%"><img src="screenshots/01-login.png" alt="Login"><br><sub><b>Login</b></sub></td>
 </tr>
 </table>
 
