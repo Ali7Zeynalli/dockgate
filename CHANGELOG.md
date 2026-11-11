@@ -2,6 +2,15 @@
 
 ---
 
+## [2.38.11] - 2026-11-11
+
+### Fixed
+- **Files tab: a folder that can not be opened was called missing.** When the container's user may not open a folder, the Files tab now says *The folder … can not be opened (permission denied)* instead of *does not exist*. A stray "No such file or directory" in other output is no longer taken for a missing shell.
+- **Volume clone accepted a one-character name** that Docker then refused with a server error. The name rule now matches Docker's (at least 2 characters).
+- **Resources → Networks** explains that Swarm's own networks and networks with Swarm services can not be removed either.
+
+---
+
 ## [2.38.10] - 2026-11-11
 
 ### Fixed

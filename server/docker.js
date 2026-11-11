@@ -185,9 +185,10 @@ function safeFsPath(p) {
 }
 
 // A folder listing as tab-separated "type size name" lines. The path is $1 (never interpolated), so a
-// path with quotes/$/backtick/; can not inject commands. A missing folder exits 2 with a marker on stderr,
-// so it is not shown as an empty folder; `true` keeps a last broken symlink from failing the script.
-const LIST_SCRIPT = (base) => `cd "${base}$1" 2>/dev/null || { echo "dg-no-such-folder" >&2; exit 2; }; for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done; true`;
+// path with quotes/$/backtick/; can not inject commands. A missing folder (exit 2) and a folder that can
+// not be opened (exit 3) print a marker on stderr, so neither is shown as an empty folder; `true` keeps a
+// last broken symlink from failing the script.
+const LIST_SCRIPT = (base) => `[ -d "${base}$1" ] || { echo "dg-no-such-folder" >&2; exit 2; }; cd "${base}$1" 2>/dev/null || { echo "dg-no-access" >&2; exit 3; }; for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done; true`;
 const listErr = (status, message) => Object.assign(new Error(message), { statusCode: status });
 function parseListing(text) {
   return String(text || '').split('\n').filter(Boolean).map(line => {
@@ -200,7 +201,9 @@ function parseListing(text) {
 function listingFailure(output, exitCode, shown) {
   const out = String(output || '');
   if (/dg-no-such-folder/.test(out)) return listErr(400, `The folder ${shown} does not exist`);
-  if (/executable file not found|sh: not found|no such file or directory/i.test(out) || exitCode === 126 || exitCode === 127) return listErr(400, 'The container has no shell (sh) — files can only be downloaded and uploaded');
+  if (/dg-no-access/.test(out)) return listErr(400, `The folder ${shown} can not be opened (permission denied)`);
+  // OCI runtime: exec: "sh": executable file not found in $PATH (exit 126/127 when the shell is missing).
+  if (/exec: "?sh"?:|executable file not found|sh: not found/i.test(out) || exitCode === 126 || exitCode === 127) return listErr(400, 'The container has no shell (sh) — files can only be downloaded and uploaded');
   return listErr(400, `Could not list ${shown}: ${out.trim().split('\n').slice(-2).join(' ').slice(0, 300) || `exit code ${exitCode}`}`);
 }
 
@@ -821,7 +824,7 @@ async function downloadVolumeFile(volName, path, res) {
  */
 async function cloneVolume(srcName, destName) {
   const fail = (status, message) => Object.assign(new Error(message), { statusCode: status });
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(String(destName || ''))) throw fail(400, 'Volume name: letters, digits, _ . or -, starting with a letter or digit');
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/.test(String(destName || ''))) throw fail(400, 'Volume name: at least 2 characters — letters, digits, _ . or -, starting with a letter or digit');
   // Docker's create returns the existing volume when the name is taken, so the copy would write into
   // another volume's data. Refuse instead.
   const exists = await docker.getVolume(destName).inspect().then(() => true, (e) => { if (e.statusCode === 404) return false; throw e; });

@@ -25,7 +25,7 @@ Router.register('networks', async (content) => {
       const removableNetworks = networks.filter(n => n.removable);
 
       content.innerHTML = `
-        ${UI.header('Networks', `${networks.length} network${networks.length === 1 ? '' : 's'} on this server. Docker's own networks (bridge, host, none) and networks with containers cannot be removed.`,
+        ${UI.header('Networks', `${networks.length} network${networks.length === 1 ? '' : 's'} on this server. Docker's and Swarm's own networks, and networks with containers or Swarm services, cannot be removed.`,
           `<button class="btn btn-secondary btn-sm" id="net-refresh" title="Refresh">${Icons.refresh}</button>
            <button class="btn btn-primary btn-sm" id="net-new">${Icons.network} Create network</button>`)}
 

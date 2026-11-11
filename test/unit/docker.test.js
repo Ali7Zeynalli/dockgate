@@ -89,4 +89,15 @@ test('a failed listing says when the image has no shell', () => {
   assert.match(L.listingFailure(oci, 126, '/').message, /has no shell \(sh\)/);
   assert.match(L.listingFailure('', 127, '/').message, /has no shell \(sh\)/);
   assert.match(L.listingFailure('permission denied', 1, '/root').message, /^Could not list \/root: permission denied/);
+  // a stray "no such file or directory" in other output is not taken for a missing shell
+  assert.match(L.listingFailure('stat: x: No such file or directory', 1, '/a').message, /^Could not list \/a/);
+});
+
+test('the listing script tells a folder it can not open from a missing one', { skip: process.getuid && process.getuid() === 0 ? 'root can open every folder' : false }, () => {
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'dg-list-'));
+  const locked = pathMod.join(dir, 'locked'); fs.mkdirSync(locked); fs.chmodSync(locked, 0o000);
+  const r = spawnSync('sh', ['-c', L.LIST_SCRIPT(''), 'sh', locked]);
+  assert.strictEqual(r.status, 3);
+  assert.match(L.listingFailure(r.stderr.toString(), r.status, locked).message, /can not be opened \(permission denied\)/);
+  fs.chmodSync(locked, 0o755); fs.rmSync(dir, { recursive: true, force: true });
 });
