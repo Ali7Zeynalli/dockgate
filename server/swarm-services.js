@@ -534,4 +534,4 @@ async function stats() {
   return data;
 }
 
-module.exports = { stats, list, get, choices, tasks, logs, create, save, scale, setImage, rollback, restart, remove, progress, formFromSpec, specFromForm, newForm, parseDur, fmtDur, parseBytes, splitArgs, isDatabase };
+module.exports = { writeSpec, stats, list, get, choices, tasks, logs, create, save, scale, setImage, rollback, restart, remove, progress, formFromSpec, specFromForm, newForm, parseDur, fmtDur, parseBytes, splitArgs, isDatabase };

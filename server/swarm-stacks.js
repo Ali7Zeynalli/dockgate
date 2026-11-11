@@ -177,7 +177,8 @@ function adapt(cfg, settings = {}, ctx = {}) {
     if (s.ports) s.ports = s.ports.map(p => clean({ target: Number(p.target), published: p.published !== undefined && p.published !== '' ? Number(p.published) : undefined, protocol: p.protocol || 'tcp', mode: hostPorts ? 'host' : 'ingress' }));
     const d = s.deploy || {};
     const db = isDatabase(s.image);
-    if (!d.mode || d.mode === 'replicated') d.replicas = db ? 1 : Math.max(0, Number(my.replicas ?? d.replicas ?? 1));
+    const want = [my.replicas, d.replicas, 1].map(v => (v === '' || v === null || v === undefined ? NaN : Number(v))).find(v => Number.isInteger(v) && v >= 0 && v <= 100);
+    if (!d.mode || d.mode === 'replicated') d.replicas = db ? 1 : (want ?? 1);
     d.restart_policy = d.restart_policy || { ...restartPolicy(s0.restart), delay: '5s' };
     // Two copies at once would share the data (a database on one volume) or the host port: stop the old one first.
     const ownsData = db || (s.volumes || []).some(v => v.type === 'volume' || v.type === 'bind');
@@ -235,7 +236,13 @@ const stackFilter = (name) => JSON.stringify({ label: [`com.docker.stack.namespa
 /** Remove a stack's services and networks (secrets, configs and volumes stay), then wait until its networks are gone. */
 async function stackRemove(name, log) {
   const c = dockerService.docker;
-  const services = await c.listServices({ filters: stackFilter(name) });
+  let services;
+  try { services = await c.listServices({ filters: stackFilter(name) }); }
+  catch (e) {
+    // The swarm itself is gone (left outside DockGate): so is the stack — nothing to remove.
+    if (e.statusCode === 503 || /not part of a swarm|not a swarm manager/i.test(swarm.dockerMsg(e) || '')) { log('  the server is not in a swarm any more — the stack is already gone'); return; }
+    throw e;
+  }
   for (const s of services) { await c.getService(s.ID).remove().catch(() => {}); log(`  removed service ${s.Spec.Name}`); }
   for (let i = 0; i < 60; i++) {
     const nets = await c.listNetworks({ filters: stackFilter(name) });

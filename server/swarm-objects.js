@@ -129,7 +129,7 @@ async function startRotate(kind, id, value, { sourceIp } = {}) {
         const spec2 = JSON.parse(JSON.stringify(s.Spec));
         const cs = spec2.TaskTemplate.ContainerSpec;
         cs[`${K}s`] = (cs[`${K}s`] || []).map(x => (x[`${K}ID`] === id ? { ...x, [`${K}ID`]: newId, [`${K}Name`]: newName, File: x.File || { Name: old.Spec.Name, UID: '0', GID: '0', Mode: 0o444 } } : x));
-        await c.getService(u.id).update({ _query: { version: s.Version.Index }, _body: spec2 });
+        await require('./swarm-services').writeSpec(c, u.id, s.Version.Index, spec2); // registry login sent: tasks may start on other servers
         log(`  ${u.name}: updating — the file stays at ${kind === 'secret' ? '/run/secrets/' : ''}${u.target || old.Spec.Name}`);
         const r = await waitUpdate(c, u.id, log, u.name);
         if (r !== 'completed') throw new Error(`${u.name} did not finish its update (${r}) — ${old.Spec.Name} is kept; fix the service, then rotate again`);

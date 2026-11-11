@@ -24,9 +24,9 @@ function ruleMinutes() {
 
 /** Servers to ask: the local Docker, the server in use and every server DockGate made a node. */
 function candidates() {
-  const ids = new Set(['local', dockerService.getActiveServerId() || 'local']);
-  try { for (const r of db.prepare('SELECT DISTINCT server_id FROM swarm_node_servers').all()) ids.add(r.server_id); } catch (e) { /* no table yet */ }
-  return [...ids].map(serverRow).filter(Boolean);
+  const ids = new Map([['local', null], [dockerService.getActiveServerId() || 'local', null]]); // server → its cluster, when known
+  try { for (const r of db.prepare('SELECT server_id, cluster_id FROM swarm_node_servers').all()) ids.set(r.server_id, r.cluster_id); } catch (e) { /* no table yet */ }
+  return [...ids].map(([id, clusterId]) => ({ row: serverRow(id), clusterId })).filter(x => x.row);
 }
 
 /**
@@ -115,7 +115,8 @@ async function tick() {
   const HM = require('./notifications/health-monitor');
   try {
     const done = new Set();
-    for (const row of candidates()) {
+    for (const { row, clusterId: known } of candidates()) {
+      if (known && done.has(known)) continue; // that cluster was already read from another manager in this round
       let c, info;
       try { c = clientFor(row); info = await withTimeout(c.info(), 8000); } catch (e) { continue; }
       const sw = info.Swarm || {};

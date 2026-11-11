@@ -478,7 +478,7 @@ async function startRebalance({ sourceIp } = {}) {
         step(job, `svc-${s.ID}`, 'running', `Spread ${s.Spec.Name}`);
         const cur = await mgr.client.getService(s.ID).inspect();
         const tt = { ...cur.Spec.TaskTemplate, ForceUpdate: ((cur.Spec.TaskTemplate || {}).ForceUpdate || 0) + 1 };
-        await mgr.client.getService(s.ID).update({ version: cur.Version.Index, ...cur.Spec, TaskTemplate: tt });
+        await require('./swarm-services').writeSpec(mgr.client, s.ID, cur.Version.Index, { ...cur.Spec, TaskTemplate: tt }); // spec in the body, registry login sent
         log(`$ docker service update --force ${s.Spec.Name}`);
         for (let i = 0; i < 90; i++) {
           await new Promise(r => setTimeout(r, 1000));

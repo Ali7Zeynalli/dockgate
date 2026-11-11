@@ -2,6 +2,21 @@
 
 ---
 
+## [2.32.1] - 2026-11-11
+
+### Fixed
+- **Set up Swarm → Several servers could not be finished when DockGate runs in Docker.** DockGate can not list the addresses then, and the address field stayed hidden behind a list with one entry. The field now shows at once.
+- **Rebalance and Rotate sent the whole service spec in the URL and no registry login.** A service with many settings could fail with "URL too long", and tasks of a private image started on another server failed with "No such image". They now update the service the same way the Services page does.
+- **Turn Swarm off with stacks moved from Compose** removed those stacks and left their projects stopped, still marked "Runs on Swarm" (Compose Up refused). It is now refused until they are moved back to Compose or removed; DockGate's node records of the cluster are cleaned up after.
+- **Move back to Compose failed when the swarm was removed outside DockGate.** The stack is gone with the swarm, so it now goes straight to `docker compose up -d`.
+- **An emptied replicas field deployed a service with 0 replicas** (and text gave an invalid file). Empty or invalid now means the default, 1.
+- **Compose Build was refused for a project moved to Swarm**, although it only builds images — the way to give a stack with `build:` a new image before Redeploy. It is allowed again.
+- **An image update that failed while starting** left the container locked ("an update is already running") until DockGate restarted.
+- **The unlock dialog said a key was stored** after the swarm was turned off and created again.
+- **The Swarm monitor asked every server for its state every 30 seconds**, also when the cluster had already been read from another manager in that round.
+
+---
+
 ## [2.32.0] - 2026-11-11
 
 ### Added

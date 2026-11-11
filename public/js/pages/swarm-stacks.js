@@ -31,7 +31,8 @@
     root.querySelectorAll('[data-set]').forEach(el => {
       const [proj, svc, key] = el.dataset.set.split('|');
       const st = all[proj].services[svc] = all[proj].services[svc] || {};
-      st[key] = key === 'replicas' ? Number(el.value) : el.value;
+      if (key === 'replicas') { const n = Number(el.value); if (el.value.trim() === '' || !Number.isInteger(n) || n < 0) { delete st[key]; return; } st[key] = n; } // empty → the default (1)
+      else st[key] = el.value;
     });
   }
 

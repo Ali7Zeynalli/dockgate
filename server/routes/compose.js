@@ -358,7 +358,7 @@ function startComposeActionJob(req, res, action, label) {
 }
 
 // A project that runs on Swarm must not be started by Compose too (two copies on the same ports and volumes).
-const SWARM_BLOCKED = new Set(['up', 'restart', 'update-service', 'build', 'rebuild', 'redeploy', 'redeploy-prepare', 'git-sync', 'adopt-redeploy']);
+const SWARM_BLOCKED = new Set(['up', 'restart', 'update-service', 'rebuild', 'redeploy', 'redeploy-prepare', 'git-sync', 'adopt-redeploy']);
 router.post('/:project/:action', (req, res, next) => {
   if (!SWARM_BLOCKED.has(req.params.action)) return next();
   try {

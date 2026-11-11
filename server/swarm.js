@@ -75,7 +75,7 @@ async function status() {
     dockerVersion: info.ServerVersion,
     arch: info.Architecture,
     liveRestore: !!info.LiveRestoreEnabled,
-    hasStoredKey: !!stmts.getSetting.get(`swarm_unlock_key:${serverId()}`),
+    hasStoredKey: !!((stmts.getSetting.get(`swarm_unlock_key:${serverId()}`) || {}).value),
   };
 }
 
@@ -465,8 +465,13 @@ async function leave() {
     const nodes = await c.listNodes().catch(() => []);
     if (nodes.length > 1) throw Object.assign(new Error(`The swarm has ${nodes.length} servers — remove the others first (Swarm → Nodes → Remove), then turn Swarm off here`), { statusCode: 400 });
   }
+  // Projects moved to Swarm are down in Compose: removing the swarm would leave them stopped everywhere.
+  const { db } = require('./db');
+  const moved = db.prepare('SELECT name FROM swarm_stacks WHERE server_id = ?').all(serverId()).map(r => r.name);
+  if (moved.length) throw Object.assign(new Error(`${moved.join(', ')} run${moved.length === 1 ? 's' : ''} on Swarm — move ${moved.length === 1 ? 'it' : 'them'} back to Compose first (Swarm → Stacks), or remove ${moved.length === 1 ? 'it' : 'them'} there`), { statusCode: 409 });
   await c.swarmLeave({ force: true });
   stmts.setSetting.run(`swarm_unlock_key:${serverId()}`, '');
+  if (st.clusterId) db.prepare('DELETE FROM swarm_node_servers WHERE cluster_id = ?').run(st.clusterId);
   return { left: true, services };
 }
 
