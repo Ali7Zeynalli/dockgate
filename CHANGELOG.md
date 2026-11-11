@@ -2,6 +2,210 @@
 
 ---
 
+## [2.36.0] - 2026-11-11
+
+### Added
+- **Edit files inside containers and volumes.** The container Files tab and the volume file browser now have:
+  - **Edit** for a text file up to 1 MB. Saving keeps the file's owner and permissions; Ctrl+S saves.
+  - **New file** and **New folder**.
+  - **⋯ → Rename… / Delete…**. Deleting asks for the name; a folder is deleted with everything in it.
+  - Paths can not leave `/` (container) or the volume. The top folder and system folders such as /etc and /usr can not be deleted.
+  - Containers must run (DockGate uses exec there); volumes use a short-lived helper container. Every change is recorded in the audit log.
+- **Move part of a compose project to Swarm.** A project where some services can not run on Swarm (privileged, devices, network_mode) shows "Part can move" in Swarm → Migrate instead of "Not possible".
+  - The other services move to the stack *project*-swarm; only they are stopped in Compose (`docker compose rm -s`).
+  - Volumes are used by their Compose names, so the data stays.
+  - The services that stay in Compose are connected to the stack network with their service name, so both sides reach each other by name as before.
+  - Compose → Stacks shows "Part on Swarm". Compose Up for the project is refused while part runs on Swarm, because it would start those services twice.
+  - Redeploy, Swarm settings and Move back to Compose work as for a whole project. Move back brings the services back into the same project.
+- **Restore from a backup.** Swarm → Cluster settings → Backups → **Restore…** recreates on the swarm in use what the backup describes and is missing here:
+  - overlay networks, configs with their content, secrets, services (with their networks, configs and secrets matched by name), node labels (by hostname) and DockGate's stack records;
+  - secret values are typed in, because a backup has names only (Swarm never gives the values out). A service whose secret has no value is skipped;
+  - names that exist are left alone, and you choose which services to restore.
+  - **Upload a backup…** adds a backup downloaded from another DockGate, for example from a server that is gone.
+  - Backups now also record network IDs, so services get their networks back.
+
+### Fixed
+- **Stacks deployed from a stack file or moved from a container were listed in Deploy → Compose stacks** as compose projects "on Swarm". Only projects moved from Compose are listed there now.
+
+---
+
+## [2.35.0] - 2026-11-11
+
+### Added
+- **New stack from a stack file.** Swarm → Stacks → **New stack…** takes a stack file (compose format) and optional variables (KEY=VALUE for `${KEY}`, kept encrypted).
+  - **Check** validates it with `docker stack config` before anything runs.
+  - Deploy runs `docker stack deploy` and waits until every service runs.
+  - DockGate keeps the file. **Edit stack file…** changes and deploys it again, and History can deploy an earlier file again.
+- **Deploy an app template as a Swarm stack.** With Swarm on, deploying a stack template asks: Compose project (as before) or Swarm stack. New stack… can also start from a template.
+- **Take over a stack deployed outside DockGate.** Stacks → ⋯ → **Take over…** writes a stack file from the running services (image, command, environment, ports, volumes, networks, secrets, configs, placement, resources, restart and update settings). Check it and save: DockGate keeps it for Redeploy and Edit stack file. Nothing is deployed when it is taken over; the stack's own volumes and networks keep their names.
+- **Move a container started with docker run to Swarm.** Swarm → Migrate → **Containers started with docker run** → Move to Swarm… writes a one-service stack file from the container for you to check, with notes on what does not carry over (privileged, devices, host network, bridge networks, a host address on a port).
+  - The container is stopped and kept, with its restart policy set to "no", then the stack is deployed.
+  - If the service does not come up, the stack is removed and the container is started again.
+  - Named volumes are used by their own name, so the data stays; bind mounts keep their host path. With several servers the service stays on this one.
+  - Stacks → ⋯ → **Move back to the container…** removes the stack, gives the container its restart policy back and starts it.
+
+### Fixed
+- A new stack could not be given the name of a compose project on the server (that would have blocked the project's Compose commands).
+
+---
+
+## [2.34.0] - 2026-11-11
+
+### Added
+- **Newer images for Swarm services.** A service runs its image pinned to one build (tag@digest), so every node runs the same one. DockGate now compares that build with what the registry gives for the same tag.
+  - Swarm → Services → **Check for updates** checks now; it also runs once a day with the container check. A service with a newer build shows "newer image" and its version when the image tells it.
+  - **Update to newest…** (the service's ⋯ menu) writes the new tag@digest, so all nodes run exactly that build. The update rolls one task at a time and goes back by itself when new tasks fail.
+  - With the "Newer image available" alert on, a new build is announced once (email, Telegram, webhook).
+- **CPU and memory per node** in Swarm → Nodes: use in percent and the node's CPUs and memory, read from its DockGate server every 30 seconds. A node not in DockGate shows its size only.
+- **Service graphs.** Swarm → Services → ⋯ → **Graphs** shows CPU and memory of all the service's tasks for the last 1 to 48 hours. DockGate records every 2 minutes while the server in use is a manager.
+
+### Fixed
+- **Newer-image checks failed for a registry on the same machine** (localhost:5000) with "fetch failed": DockGate asked it over HTTPS. Like Docker, it now uses HTTP for localhost and 127.0.0.1.
+
+---
+
+## [2.33.0] - 2026-11-11
+
+### Added
+- **Cluster settings can be changed after the swarm was created** (Swarm → Cluster settings):
+  - node certificate lifetime and task history per slot (**Change…**);
+  - autolock on or off. Turning it on stores the new unlock key (encrypted) and shows it once; turning it off removes the stored key.
+- **Join tokens.** Cluster settings → Join tokens → **Show…** gives the full `docker swarm join` command for a worker and a manager, with Copy. **Rotate…** makes a new token; the old one stops working and servers already in the swarm stay. Showing and rotating are recorded in the audit log.
+- **Terminal into a Swarm task on any node.** Services → Tasks → **Terminal** opens a shell in that task's container, also when it runs on another server, as long as that server is in DockGate. It does not close a terminal open elsewhere.
+- **Inspect (JSON)** for services and nodes (their ⋯ menu) and for tasks (Services → Tasks → Inspect), with Copy.
+- **Volumes** list the Swarm services that use a volume (⎈ name), and such a volume counts as in use, so it is not offered for removal.
+- **Swarm → Networks** shows each network's gateway under its subnet.
+
+---
+
+## [2.32.1] - 2026-11-11
+
+### Fixed
+- **Set up Swarm → Several servers could not be finished when DockGate runs in Docker.** DockGate can not list the addresses then, and the address field stayed hidden behind a list with one entry. The field now shows at once.
+- **Rebalance and Rotate sent the whole service spec in the URL and no registry login.** A service with many settings could fail with "URL too long", and tasks of a private image started on another server failed with "No such image". They now update the service the same way the Services page does.
+- **Turn Swarm off with stacks moved from Compose** removed those stacks and left their projects stopped, still marked "Runs on Swarm" (Compose Up refused). It is now refused until they are moved back to Compose or removed; DockGate's node records of the cluster are cleaned up after.
+- **Move back to Compose failed when the swarm was removed outside DockGate.** The stack is gone with the swarm, so it now goes straight to `docker compose up -d`.
+- **An emptied replicas field deployed a service with 0 replicas** (and text gave an invalid file). Empty or invalid now means the default, 1.
+- **Compose Build was refused for a project moved to Swarm**, although it only builds images — the way to give a stack with `build:` a new image before Redeploy. It is allowed again.
+- **An image update that failed while starting** left the container locked ("an update is already running") until DockGate restarted.
+- **The unlock dialog said a key was stored** after the swarm was turned off and created again.
+- **The Swarm monitor asked every server for its state every 30 seconds**, also when the cluster had already been read from another manager in that round.
+
+---
+
+## [2.32.0] - 2026-11-11
+
+### Added
+- **Swarm in the other pages.**
+  - **Dashboard** shows "Swarm · 9/9 tasks" (and the ready servers with several), amber when tasks or servers are missing or the swarm has no leader; it opens Swarm.
+  - **Server Console → Firewall:** rules DockGate added for Swarm say "Swarm · between the cluster servers", and deleting one warns that the cluster servers would no longer reach each other — remove a server in Swarm → Nodes instead, which deletes its rules. (Swarm firewall rules are now tagged `dockgate:swarm`, like DockGate's other rules.)
+  - **Server Console → Services → Docker:** the Swarm row links to the Swarm page.
+  - **App templates:** with Swarm on, opening a compose template says how to run it as a stack (deploy, then Move to Swarm…).
+
+### Fixed
+- **Live restore could be turned on for a server in a swarm** (Server Console → Services → Docker). Docker does not start with live-restore on in swarm mode, so saving it would have stopped Docker on that server. The switch now only turns off there, and the server refuses the setting.
+
+---
+
+## [2.31.0] - 2026-11-11
+
+### Added
+- **Swarm, phase 7: backup and recovery.**
+  - **Cluster settings → Backups:** **Back up now**, a nightly backup (on by default, switch on the page) and the list of backups with **Download**. A backup is one .tar in DockGate's data folder (`data/swarm-backups/`, the last 7 per cluster, readable only by DockGate) with `swarm-dir.tar.gz` — the manager's `/var/lib/docker/swarm` (Raft state), read through a helper container that is never started; `cluster.json` — the cluster spec without join tokens, nodes and labels, services, overlay networks, configs with content and secrets by name only (Swarm never gives their values); with autolock the unlock key encrypted for this DockGate; and `RESTORE.txt`. It is taken while Docker runs; Docker recommends stopping Docker for a perfectly consistent copy. Downloads are in the audit log — the archive holds the node's certificates.
+  - **How to restore** explains bringing the cluster back on a new server when every manager is lost (stop Docker, put the swarm folder back, `docker swarm init --force-new-cluster`, unlock, join the others). It is not automatic: that case is rare and runs on a server DockGate does not know yet.
+  - **Recover cluster…** — when most managers can not be reached the Overview says so (services keep running, nothing can be changed) and offers to wait or to recover. Recover, with the server name typed in: a backup first, then `docker swarm init --force-new-cluster` on the manager in use (a one-manager cluster that keeps every service and node), then the managers that are gone are removed, and what to do next (promote workers or add managers). It is refused while the cluster has a leader.
+
+---
+
+## [2.30.0] - 2026-11-11
+
+### Added
+- **Swarm, phase 6: alerts, numbers and logs.**
+  - **Four Swarm alerts** in Settings → Notifications (on by default, sent through email, Telegram and webhook): a service runs fewer tasks than wanted for 2 minutes (the limit can be changed) and when it is back, with the reason from its tasks; a server of the swarm goes Down and when it is Ready again (with how long, and a hint to Rebalance); a service update was rolled back or paused; most managers can not be reached and when they are back. DockGate looks at every swarm it knows every 30 seconds through one of its managers. After a DockGate restart the first look only records the state, so nothing already known is sent again. A server's notification switch applies.
+  - **Services: CPU and memory** of each service — the sum over its running tasks, read with `docker stats` from each node's DockGate server (a node not in DockGate has no numbers), refreshed every few seconds.
+  - **Observe → Logs → Swarm service**: `docker service logs` of every task of a service on every server in the log viewer, the source is task @ server. Shown while Swarm is active.
+  - **Resources → Containers:** a task container shows "Swarm task of <service>" and **Open service** instead of Stop, Restart and Update — Swarm would start a stopped task again at once.
+
+### Fixed
+- **A "server not reachable" or "reachable again" alert that could not be sent was lost.** When a channel is set up and the rule is on but no channel took the message (network error, Telegram or the mail server not answering), DockGate now tries again every minute for 15 minutes and marks it as sent late. Swarm alerts use the same retry.
+
+---
+
+## [2.29.0] - 2026-11-11
+
+### Added
+- **Swarm, phase 5: secrets, configs and networks.**
+  - **Swarm → Secrets & configs:** every secret and config with the services that use it and the file path in the container, when it was made and where from (DockGate, a stack, outside). **New secret…** (the value goes to Swarm only — DockGate does not store, log or show it again; in a task it is /run/secrets/<name>) and **New config…** (file content; **View** shows it).
+  - **Rotate… (secret) / Edit… (config)**, as a job: Swarm can not change a secret or config, so DockGate creates `<name>_v2` (then _v3 …), moves every service that uses it to the new one with a rolling update — the file path in the container stays the same — and removes the old one when all updates finished. If an update fails or rolls back the job stops and the old one stays. A secret of a stack says to change the compose file too.
+  - **Remove…** only when no service uses it.
+  - **Swarm → Networks:** overlay networks with subnet, options (encrypted, attachable, internal) and the services that use them. **New overlay network…**: encrypted (IPsec), attachable (plain containers may join), internal (no internet), subnet from the pool or your own. Creating an encrypted network allows ESP between the cluster servers DockGate manages (and says where it could not). **Remove…** only when unused. **Change subnet…** recreates the ingress network with another subnet, only when no service publishes a port through it (for an ingress subnet that overlaps a cloud private network).
+  - The overlay encryption chosen in Set up Swarm / Add servers is now kept and used for stack networks.
+  - **Migrate** points out environment variables that look like passwords (…_PASSWORD, …_TOKEN, …_SECRET, …_API_KEY) and how they can become secrets through *_FILE variables — DockGate does not change them by itself.
+
+---
+
+## [2.28.0] - 2026-11-11
+
+### Added
+- **Swarm, phase 4: Stacks and moving compose projects.** The compose files are never changed.
+  - **Swarm → Migrate** lists the compose projects on the server in use (also ones started by hand: their compose file is found from the container labels). Each is **Ready**, **Attention** (it can move; something is shown — a build image is used, a database stays at 1 replica, depends_on conditions are not waited for, settings Swarm ignores) or **Not possible** (privileged, devices, network_mode host, no compose file, a file secret on a remote server), with what changes per service.
+  - **Review…**: per service the replicas (databases always 1), the port mode (ingress: every server answers; host: the app sees the real client IP) and the update order (services with data are always stop-first, so two copies never share a volume). The **plan** shows each service as it will run on Swarm, the changes, the volumes that stay the same and the overlay network.
+  - **Move** runs one job, one project at a time: the files are read again (a project whose files changed since the plan is not touched) → `docker compose down` (volumes stay) → `docker stack deploy` under the same name → every service must run and stay up for 30 s (`SWARM_MOVE_WATCH_MS`). If not, the project is put back: the stack is removed, DockGate waits until its network is gone and runs `docker compose up -d`. The report says which projects moved, which were put back and why, and how long each was down.
+  - **How the files are adapted in memory:** `docker compose config` (fills in .env, merges several files) → container_name, build, restart and settings Swarm ignores are removed; restart becomes the restart policy; depends_on conditions become a list; ports become numbers (a host address is dropped); networks become attachable overlays (encrypted when chosen at setup); volume names stay; DockGate's Swarm settings are added (safe update and roll back defaults). On several servers a service with data is kept on the server where its data is. Deployed with `docker stack deploy --prune --with-registry-auth`, so private images use the logins from Deploy → Registries.
+  - **Swarm → Stacks**: each stack with its origin, services, running tasks and last deploy. **Redeploy** reads the compose files again; **Swarm settings…** changes replicas, port mode and update order (kept in DockGate) and redeploys; **History** lists every deploy, move and move back with the files' hash, the result and the downtime, and can deploy an earlier one again; **Move back to Compose…** removes the stack, waits for its network and runs `docker compose up -d` — the data stays; **Remove…** keeps volumes, secrets and configs.
+  - **Deploy → Compose stacks:** a moved project shows **Runs on Swarm** with **Open stack**; Compose Up, Restart, Build, Rebuild, Redeploy, Git sync and image updates are refused for it, so it never runs twice on the same ports and volumes. Each project's menu has **Move to Swarm…**.
+  - The Overview's "compose projects outside Swarm" notice has **Migrate…**.
+
+### Not in this version
+- Moving part of a project (a privileged service stays in Compose, the rest moves) — such projects are "Not possible" for now.
+
+---
+
+## [2.27.0] - 2026-11-10
+
+### Added
+- **Swarm, phase 3: Services.** A new **Swarm → Services** tab.
+  - **The list:** each service with its image, mode, running/wanted tasks and a square per task (green running, amber starting, red failed — hover for the server and the error), its ports, the last update (updated, rolling back, rolled back, paused) and, when a task does not run, why: "no suitable node (scheduling constraints not satisfied …)", "exit code 137", a network error. Refreshes every 5 seconds.
+  - **Scale…**, **Update image…** (change the tag or pull the same tag again; Swarm replaces tasks by the service's update settings and goes back by itself when a new task fails), **Roll back to previous**, **Restart** (every task, one at a time), **Logs** (docker service logs of every task in the log viewer, the source is task @ server, up to 10,000 lines), **Tasks** (where each task ran, when and why it stopped, exit code 137 explained), **Traffic** (how requests reach the tasks: the virtual IP, ingress routing mesh or host ports and what the app sees as the client IP), **Remove…** (volumes stay).
+  - After Update, Roll back, Restart, Save and New service a window follows the update: Swarm's state and message, and the tasks with server, image and state.
+  - **Settings…** and **New service…** — the full form in 10 sections: General (mode replicated / global / job, replicas, image, entrypoint, command, user, working directory, hostname), Resources (CPU and memory limits and reservations, PID limit, generic resources such as GPUs), Placement (constraints, spread by a node label, at most per server), Updates & rollback (order, tasks at a time, delay, watch time, failure action, failure ratio), Restart (condition, delay, max attempts, window), Health check (image's, custom or off), Env & secrets (environment, secrets, configs, service and container labels), Ports & network (ports with ingress or host mode, VIP or DNS round robin, overlay networks with aliases, DNS servers, extra hosts), Mounts (volume, bind, tmpfs, volume driver) and Advanced (capabilities, sysctls, ulimits, read-only, init, stop grace and signal, log driver). Settings the form does not show are kept as they are; an image digest stays pinned when the image is not changed.
+  - **New services get safe defaults:** one task at a time, the new task first (start-first), back to the previous version when a new task fails within 15 s, restart on any exit after 5 s, json-file logs 10 MB × 3. With host-mode ports the update order is stop-first (two tasks can not hold one host port).
+  - **Guards:** a database image (postgres, mysql, mariadb, mongo, redis …) with more than one replica asks first — those are separate databases, not copies; the mode of a service can not be changed; constraints, mounts, ports, durations and sizes are checked with a clear message. A service of a stack says that the next stack deploy writes over changes made here. privileged and devices are not offered: Swarm does not support them.
+
+---
+
+## [2.26.0] - 2026-11-10
+
+### Added
+- **Swarm, phase 2: several servers and nodes.**
+  - **Set up Swarm… → Several servers:** the server in use is the first manager; choose other DockGate servers as managers or workers (the wizard says how many losses the managers tolerate and warns at 2). Checks run on every server over SSH: Docker version against the manager's, not already in a swarm, live-restore, duplicate host names, CPU architecture, clock and NTP, whether it reaches the manager on 2377/7946, and its firewall. **Network** picks the address each server uses (a private address on the same network is suggested; addresses already in the cluster are left out), offers overlay encryption (recommended when an address is public) and shows the firewall plan.
+  - **Add servers…** (Overview or Nodes) joins more DockGate servers to the running swarm the same way.
+  - **One job does it all:** the Swarm ports (2377/tcp, 7946/tcp+udp, the data port/udp, ESP when encrypted) are allowed on each server's UFW or firewalld **only from the other cluster servers**, existing members get rules for the new addresses, then the servers join one at a time with a token that never leaves DockGate, and each is checked Ready. If a step fails, the servers that joined leave again, their nodes are removed, the firewall rules are deleted (and with "Several servers" the swarm is removed).
+  - **Swarm listens on the chosen address** instead of every interface when that address belongs to the server, so with a private network 2377 is not on the public IP.
+  - **Nodes tab:** each node with its DockGate server, address, role, state, labels, running tasks, Docker version and CPU. Actions: **Pause**, **Drain…** (says which services move, which have nowhere to run — pinned or global — and warns that a data volume stays behind), **Activate**, **Promote / Demote** (shows the manager count after it), **Labels…** (validated, shows which services use them), **Remove…** (job: demote, drain, leave on the server, remove from the list, delete its firewall rules) and **Add to DockGate…** for a node joined elsewhere (opens Add server with its address).
+  - **Rebalance…** restarts the tasks of services that can move, one service at a time; pinned, global and data-volume services are left alone.
+  - **Overview** shows which DockGate server each node is, warns about nodes not in DockGate and about tasks not spread evenly (with Rebalance), and has **Add servers…**.
+
+### Changed
+- Guards: no Drain when no other server is active; the last manager is not demoted; the node DockGate manages through is not demoted or removed; the leader is not removed; Turn Swarm off asks to remove the other nodes first.
+
+---
+
+## [2.25.0] - 2026-11-10
+
+### Added
+- **Swarm, phase 1: one server.** A new **Docker → Swarm** section for the server in use.
+  - **Set up Swarm…** is a five step wizard (Mode, Server, Checks, Options, Create). Nothing changes on the server before the last step.
+  - **Checks:** Docker version, whether the server is already in a swarm, `live-restore` (Swarm does not run with it; the fix is shown), the node name, the address to advertise (read over SSH; a private address is suggested), whether the overlay address pool overlaps a network the server already uses (a cloud private network such as 10.0.0.0/16, a Docker network) — then a free pool is suggested — the firewall note, and the compose projects that keep running.
+  - **Options:** the address, and under Advanced the address pool and mask, data port, node certificate lifetime, task history and autolock.
+  - **Create** runs as a job with a live log (can be closed and reopened): `docker swarm init`, then a check that the node is Ready; if the check fails, the server leaves the swarm again. With autolock the unlock key is shown once and kept by DockGate (encrypted). When Docker can not choose between several addresses, the wizard asks which one to use.
+  - **Overview** (refreshes every 5 seconds): one sentence, warnings (tasks not running, manager count, compose projects outside Swarm), four numbers (ready servers, managers and how many losses they tolerate, services, running tasks), "Where tasks run" with a card per node and its tasks (green running, amber starting, red failed with the error), and the Swarm events of the last 24 hours.
+  - **Locked swarm** (autolock after a Docker restart): the Overview says so and **Unlock…** uses the stored key or one you enter.
+  - **Cluster settings:** cluster ID, creation date, address pool, data port, certificate lifetime, task history, autolock with **Show unlock key…** (audited), and **Turn Swarm off…**.
+  - Compose projects are not stopped or changed by any of this. Services, stacks, nodes and moving compose projects to Swarm come in the next versions.
+
+---
+
 ## [2.24.1] - 2026-11-10
 
 ### Added

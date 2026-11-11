@@ -32,10 +32,11 @@ Router.register('dashboard', async (content) => {
 
   async function render() {
     try {
-      const [data, srvData, fleetOv] = await Promise.all([
+      const [data, srvData, fleetOv, swarmSum] = await Promise.all([
         API.get('/dashboard'),
         API.get('/servers').catch(() => ({ servers: [], activeId: 'local' })),
         API.get('/servers/overview').catch(() => ({ servers: {} })),
+        API.get('/swarm/summary').catch(() => null),
       ]);
 
       // Abort if user navigated away during API call / API çağırışı zamanı istifadəçi başqa səhifəyə keçibsə dayandır
@@ -55,7 +56,12 @@ Router.register('dashboard', async (content) => {
 
       content.innerHTML = `
         ${UI.header('Dashboard', (srvData.servers || []).length > 1 ? `All servers first, then the Docker host you are working on (${escapeHtml(activeSrv?.name || activeId)}).` : `Docker on ${isRemote ? escapeHtml(activeSrv?.name || activeId) : 'this machine'}.`,
-          `<button class="btn btn-secondary btn-sm" onclick="Router.navigate('resources', {tab:'prune'})">${Icons.cleanup} Prune…</button>
+          `${swarmSum && swarmSum.active && swarmSum.manager ? (() => {
+              const bad = swarmSum.quorumLost || swarmSum.running < swarmSum.desired || swarmSum.ready < swarmSum.nodes;
+              const text = swarmSum.quorumLost ? 'Swarm · no leader' : `Swarm · ${swarmSum.running}/${swarmSum.desired} tasks${swarmSum.nodes > 1 ? ` · ${swarmSum.ready}/${swarmSum.nodes} servers` : ''}`;
+              return `<button class="btn btn-secondary btn-sm" onclick="Router.navigate('swarm', {tab:'swarm-overview'})" title="Open Swarm" style="${bad ? 'color:var(--warning,#d97706);border-color:var(--warning,#d97706)' : ''}">${Icons.layers} ${text}</button>`;
+            })() : ''}
+           <button class="btn btn-secondary btn-sm" onclick="Router.navigate('resources', {tab:'prune'})">${Icons.cleanup} Prune…</button>
            <button class="btn btn-secondary btn-sm" id="dash-refresh" title="Refresh">${Icons.refresh}</button>`)}
 
         ${fleetCards(srvData.servers || [], (fleetOv && fleetOv.servers) || {}, activeId)}

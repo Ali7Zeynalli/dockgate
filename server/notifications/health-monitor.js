@@ -75,14 +75,39 @@ function message(type, s, data) {
 
 async function send(type, s, data) {
   const [subject, text, body] = message(type, s, data);
-  return deliver(type, s, subject, text, body, { always: ['server_down', 'server_up'].includes(type) });
+  return deliver(type, s, subject, text, body, { always: ['server_down', 'server_up'].includes(type), retry: ['server_down', 'server_up'].includes(type) });
+}
+
+// Alerts that must not be lost (server down / up, Swarm events): when a channel is set up and the rule is on but
+// no channel took the message (network error, Telegram or the mail server not answering), it is tried again
+// every minute for 15 minutes, marked as sent late.
+const RETRY_EVERY_MS = 60 * 1000, RETRY_TRIES = 15;
+const retryQueue = [];
+let retryTimer = null;
+const anyChannel = () => mailer.isConfigured() || telegram.isConfigured() || webhook.isConfigured();
+function queueRetry(item) {
+  if (retryQueue.length >= 200) retryQueue.shift();
+  retryQueue.push(item);
+  if (!retryTimer) retryTimer = setInterval(flushRetries, RETRY_EVERY_MS);
+  if (retryTimer.unref) retryTimer.unref();
+}
+async function flushRetries() {
+  const items = retryQueue.splice(0, retryQueue.length);
+  for (const it of items) {
+    const late = ` (sent late — first tried at ${hhmm(it.firstAt)})`;
+    const [first, ...rest] = it.text.split('\n');
+    const ok = await deliver(it.type, it.s, it.subject + late, [first + late, ...rest].join('\n'), it.body + `<p style="color:#888">${esc(late.trim())}</p>`, { always: true, retry: false });
+    if (!ok && ++it.tries < RETRY_TRIES && anyChannel()) retryQueue.push(it);
+    else if (!ok) console.warn(`[alerts] gave up on "${it.subject}" after ${it.tries} tries`);
+  }
+  if (!retryQueue.length && retryTimer) { clearInterval(retryTimer); retryTimer = null; }
 }
 
 /**
  * Send one alert to every set-up channel (email, Telegram, webhook), respecting the server's mute and the
  * rule's switch and quiet period. text: Telegram text (first line = title); body: email HTML.
  */
-async function deliver(type, s, subject, text, body, { always = false } = {}) {
+async function deliver(type, s, subject, text, body, { always = false, retry = false } = {}) {
   if (!notificationsOn(s.id)) return false;
   const rule = stmts.getRule.get(type);
   if (rule && !rule.enabled) return false;
@@ -97,6 +122,7 @@ async function deliver(type, s, subject, text, body, { always = false } = {}) {
     if (webhook.isConfigured()) { const r = await webhook.sendMessage({ title: subject, text: text.split('\n').slice(1).join('\n'), eventType: type, server: s.id }); if (r && r.success) sent = true; }
   } catch (e) { console.warn('[alerts] send failed:', e.message); }
   if (sent) lastSent.set(key, Date.now());
+  else if (retry && anyChannel()) queueRetry({ type, s, subject, text, body, tries: 1, firstAt: Date.now() });
   return sent;
 }
 
@@ -166,4 +192,4 @@ function statusOf(serverId) {
 }
 function forget(serverId) { state.delete(serverId); for (const k of [...lastSent.keys()]) if (k.startsWith(serverId + ':')) lastSent.delete(k); }
 
-module.exports = { start, stop, tick, statusOf, forget, message, deliver, serverLabel, _state: state };
+module.exports = { start, stop, tick, statusOf, forget, message, deliver, serverLabel, _state: state, _retryQueue: retryQueue, _flushRetries: flushRetries };

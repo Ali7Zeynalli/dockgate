@@ -237,6 +237,30 @@ router.post('/:id/upload', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
+// Edit files in a container: read / save a text file, new folder, rename, delete (server/file-edit.js)
+const FE = require('../file-edit');
+const feFail = (res, err) => res.status(err.statusCode || 500).json({ error: err.message });
+router.get('/:id/text', async (req, res) => {
+  try { res.json(await FE.read('container', req.params.id, String(req.query.path || ''))); } catch (e) { feFail(res, e); }
+});
+router.put('/:id/text', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = await FE.write('container', req.params.id, String(b.path || ''), b.content);
+    logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: await nameOf(req.params.id), action: 'file-edit', details: { path: r.path, size: r.size, created: r.created } });
+    res.json(r);
+  } catch (e) { feFail(res, e); }
+});
+for (const [route, fn, action] of [['mkdir', (id, b) => FE.mkdir('container', id, String(b.path || '')), 'file-mkdir'], ['rename', (id, b) => FE.rename('container', id, String(b.path || ''), b.name), 'file-rename'], ['delete-path', (id, b) => FE.remove('container', id, String(b.path || '')), 'file-delete']]) {
+  router.post(`/:id/${route}`, async (req, res) => {
+    try {
+      const r = await fn(req.params.id, req.body || {});
+      logAction({ req, resourceId: req.params.id, resourceType: 'container', resourceName: await nameOf(req.params.id), action, details: { path: (req.body || {}).path, ...(route === 'rename' ? { to: r.path } : {}) } });
+      res.json(r);
+    } catch (e) { feFail(res, e); }
+  });
+}
+
 // Container actions
 router.post('/:id/:action', async (req, res) => {
   try {

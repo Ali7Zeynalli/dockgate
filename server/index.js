@@ -63,6 +63,7 @@ app.use('/api/builds', require('./routes/builds'));
 app.use('/api/volumes', require('./routes/volumes'));
 app.use('/api/networks', require('./routes/networks'));
 app.use('/api/compose', require('./routes/compose'));
+app.use('/api/swarm', require('./routes/swarm')); // Docker Swarm on the server in use
 app.use('/api/files', require('./routes/files'));
 app.use('/api/system', require('./routes/system'));
 app.use('/api/cleanup', require('./routes/cleanup'));
@@ -537,14 +538,24 @@ io.on('connection', (socket) => {
   // Container terminal (exec) — slot-aware to support split screen / dual terminals
   const termStreams = new Map(); // slot -> { stream, exec }
 
-  socket.on('terminal:start', async ({ containerId, shell = '/bin/sh', slot = 0 }) => {
+  socket.on('terminal:start', async ({ containerId, shell = '/bin/sh', slot = 0, serverId = null }) => {
     try {
       if (termStreams.has(slot)) {
         try { termStreams.get(slot).stream.end(); } catch(e) {}
         termStreams.delete(slot);
       }
 
-      const container = dockerService.docker.getContainer(containerId);
+      // serverId (optional): a container on another DockGate server, e.g. a Swarm task on another node
+      let client = dockerService.docker;
+      if (serverId && serverId !== (dockerService.getActiveServerId() || 'local')) {
+        if (serverId === 'local') client = dockerService.createLocalClient();
+        else {
+          const row = stmts.getServer.get(String(serverId));
+          if (!row) throw new Error('Unknown server');
+          client = dockerService.createSshClient(row);
+        }
+      }
+      const container = client.getContainer(containerId);
       const exec = await container.exec({
         Cmd: [shell],
         AttachStdin: true, AttachStdout: true, AttachStderr: true, Tty: true,
@@ -559,7 +570,7 @@ io.on('connection', (socket) => {
       termStreams.set(slot, { stream, exec });
 
       // Audit — interactive shell access into the container (session level; keystrokes are not logged)
-      logAction({ socket, resourceId: containerId, resourceType: 'container', resourceName: containerId.substring(0, 12), action: 'terminal_open', details: { shell, slot } });
+      logAction({ socket, resourceId: containerId, resourceType: 'container', resourceName: containerId.substring(0, 12), action: 'terminal_open', details: { shell, slot, ...(serverId ? { serverId } : {}) } });
       socket.emit('terminal:ready', { containerId, slot });
     } catch (err) {
       socket.emit('terminal:error', { containerId, error: err.message, slot });
@@ -633,6 +644,9 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   // Server health: reachability, disk, memory and CPU alerts for every server, checked once a minute.
   if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
   if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
+  if (process.env.NODE_ENV !== 'test') require('./swarm-monitor').start();
+  if (process.env.NODE_ENV !== 'test') require('./swarm-services').startSampler(); // Swarm → Services → Graphs (every 2 min, 48 h)
+  if (process.env.NODE_ENV !== 'test') require('./swarm-backup').start(); // nightly Swarm backup (data/swarm-backups, last 7) // Swarm alerts: services short, nodes down, rolled back updates, quorum
   // Newer-image check for every server: 10 minutes after start, then once a day. New updates are announced
   // once per new digest when the "Newer image available" rule is on (off by default).
   if (process.env.NODE_ENV !== 'test') {
@@ -654,6 +668,7 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
           }
         } catch (e) { console.warn(`[image-updates] ${srv.id}:`, e.message); }
       }
+      try { await require('./swarm-images').checkAll(); } catch (e) { console.warn('[swarm-images]', e.message); }
     };
     setTimeout(runImageChecks, 10 * 60 * 1000);
     setInterval(runImageChecks, 24 * 60 * 60 * 1000);

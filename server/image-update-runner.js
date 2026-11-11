@@ -347,15 +347,17 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
   const lock = `${serverId}:${project && service ? `${project}/${service}` : name}`;
   if (busy.has(lock)) throw Object.assign(new Error('An update of this container is already running'), { statusCode: 409 });
   busy.add(lock);
-
-  const job = newJob(kind, name);
-  const log = logTo(job);
-  const before = await imageFacts(client, info.Image, ref).catch(() => ({ id: info.Image, digests: [], version: null, created: null }));
-  const rowId = insertRow.run({ server_id: serverId, container_name: name, project, service, image: ref, kind,
+  let job, log, before, rowId;
+  try {
+  job = newJob(kind, name);
+  log = logTo(job);
+  before = await imageFacts(client, info.Image, ref).catch(() => ({ id: info.Image, digests: [], version: null, created: null }));
+  rowId = insertRow.run({ server_id: serverId, container_name: name, project, service, image: ref, kind,
     from_image_id: before.id, from_digest: before.digests[0] || null, from_version: before.version, from_created: before.created,
     old_container_id: info.Id, source_ip: sourceIp, started_at: job.startedAt }).lastInsertRowid;
   job.historyId = rowId;
   jobOfRow.set(rowId, job.id);
+  } catch (e) { busy.delete(lock); throw e; } // never leave the container locked when the job could not start
   const isCompose = !!(project && service);
 
   const sameServer = () => { if ((dockerService.getActiveServerId() || 'local') !== serverId) throw new Error('The server in use was switched during the update — switch back to finish it'); };

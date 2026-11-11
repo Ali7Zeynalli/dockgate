@@ -18,6 +18,10 @@ function alertWhen(type, p) {
     case 'image_update': return 'the daily check finds a newer image for a container\'s tag';
     case 'image_update_failed': return 'an image update from DockGate fails, or its new container fails and the previous image is put back';
     case 'image_updated': return 'an image update or roll back from DockGate finishes';
+    case 'swarm_service_down': return `a Swarm service runs fewer tasks than wanted for <b>${p.minutes ?? 2} min</b>, and when it is back`;
+    case 'swarm_node_down': return 'a server of the swarm goes Down, and when it is Ready again';
+    case 'swarm_update_rollback': return 'a Swarm service update is rolled back or paused because new tasks failed';
+    case 'swarm_quorum': return 'most managers can not be reached — the cluster can not be changed';
     default: return 'when Docker reports it';
   }
 }

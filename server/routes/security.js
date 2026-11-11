@@ -587,6 +587,12 @@ router.post('/:id/services/docker/settings', send(async (req) => {
   if (!/^\d{1,4}[kmg]$/.test(String(maxSize || ''))) throw P.httpError(400, 'Log size per file: a number with k, m or g, e.g. 10m');
   const mf = Number(maxFile);
   if (!Number.isInteger(mf) || mf < 1 || mf > 50) throw P.httpError(400, 'Log files to keep must be 1–50');
+  // Docker does not start with live-restore on while the server is in a swarm — never write that.
+  if (liveRestore) {
+    let state = null;
+    try { state = ((await require('../docker').createSshClient(row).info()).Swarm || {}).LocalNodeState; } catch (e) { /* Docker not reachable: the plan reports it */ }
+    if (state && state !== 'inactive') throw P.httpError(400, 'This server is in a swarm: Docker would not start with live-restore on. Leave live-restore off (Swarm restarts failed tasks itself).');
+  }
   const jobId = runner.startPlan(cfgOf(row), plans.dockerSettingsPlan({ maxSize, maxFile: mf, liveRestore: !!liveRestore }), {
     title: 'Docker settings', successText: 'Saved. New limits apply to containers created from now on (recreate a container to apply them to it).',
     onSuccess: () => audit(req, row, 'docker-settings', { maxSize, maxFile: mf, liveRestore: !!liveRestore }),
