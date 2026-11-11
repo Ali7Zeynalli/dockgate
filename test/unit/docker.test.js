@@ -55,3 +55,38 @@ test('demuxLogs concatenates multiple frames', () => {
   const buf = Buffer.concat([frame('line1\n'), frame('line2\n')]);
   assert.strictEqual(docker.demuxLogs(buf), 'line1\nline2\n');
 });
+
+// ---- folder listing (container and volume Files) ----
+const { execFileSync, spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const pathMod = require('node:path');
+const L = docker._test;
+
+test('the listing script lists files and folders with sizes, also names with spaces and quotes', () => {
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'dg-list-'));
+  fs.mkdirSync(pathMod.join(dir, 'sub'));
+  fs.writeFileSync(pathMod.join(dir, 'a "b" c.txt'), '12345');
+  fs.writeFileSync(pathMod.join(dir, '.hidden'), 'x');
+  fs.symlinkSync('/nonexistent-target', pathMod.join(dir, 'zz-broken'));
+  const out = execFileSync('sh', ['-c', L.LIST_SCRIPT(''), 'sh', dir]).toString();
+  const entries = L.parseListing(out);
+  assert.deepStrictEqual(entries.map(e => [e.type, e.name]), [['dir', 'sub'], ['file', '.hidden'], ['file', 'a "b" c.txt']]);
+  assert.strictEqual(entries.find(e => e.name === 'a "b" c.txt').size, 5);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the listing script reports a missing folder instead of an empty one', () => {
+  const r = spawnSync('sh', ['-c', L.LIST_SCRIPT(''), 'sh', '/no/such/folder-dg']);
+  assert.strictEqual(r.status, 2);
+  const e = L.listingFailure(r.stderr.toString(), r.status, '/no/such/folder-dg');
+  assert.strictEqual(e.statusCode, 400);
+  assert.strictEqual(e.message, 'The folder /no/such/folder-dg does not exist');
+});
+
+test('a failed listing says when the image has no shell', () => {
+  const oci = 'OCI runtime exec failed: exec failed: unable to start container process: exec: "sh": executable file not found in $PATH: unknown';
+  assert.match(L.listingFailure(oci, 126, '/').message, /has no shell \(sh\)/);
+  assert.match(L.listingFailure('', 127, '/').message, /has no shell \(sh\)/);
+  assert.match(L.listingFailure('permission denied', 1, '/root').message, /^Could not list \/root: permission denied/);
+});

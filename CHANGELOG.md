@@ -2,6 +2,13 @@
 
 ---
 
+## [2.38.7] - 2026-11-11
+
+### Fixed
+- **Files tab said "Empty" when it could not list a folder.** In a container without a shell (images built `FROM scratch`, such as `traefik/whoami`) it now says *The container has no shell (sh) — files can only be downloaded and uploaded*, the same message the file editor gives. A folder that does not exist now says *The folder … does not exist*, in containers and in volumes, and a stopped container says *The container must be running*. Real empty folders still show as empty.
+
+---
+
 ## [2.38.6] - 2026-11-11
 
 ### Changed

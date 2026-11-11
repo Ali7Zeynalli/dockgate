@@ -184,19 +184,39 @@ function safeFsPath(p) {
   return '/' + parts.join('/');
 }
 
-/** C3 — list a directory inside a (running) container via exec. Returns { path, entries[] }. */
-async function containerListFiles(id, path) {
-  const safe = safeFsPath(path);
-  // Pass the path as $1 (a positional arg) instead of interpolating it into the script — the shell
-  // treats $1 as a literal, so a path containing quotes/$/backtick/; cannot inject commands.
-  const script = `cd "$1" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
-  const { output } = await containerExecOnce(id, ['sh', '-c', script, 'sh', safe]);
-  const entries = String(output || '').split('\n').filter(Boolean).map(line => {
+// A folder listing as tab-separated "type size name" lines. The path is $1 (never interpolated), so a
+// path with quotes/$/backtick/; can not inject commands. A missing folder exits 2 with a marker on stderr,
+// so it is not shown as an empty folder; `true` keeps a last broken symlink from failing the script.
+const LIST_SCRIPT = (base) => `cd "${base}$1" 2>/dev/null || { echo "dg-no-such-folder" >&2; exit 2; }; for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done; true`;
+const listErr = (status, message) => Object.assign(new Error(message), { statusCode: status });
+function parseListing(text) {
+  return String(text || '').split('\n').filter(Boolean).map(line => {
     const i1 = line.indexOf('\t'), i2 = line.indexOf('\t', i1 + 1);
     if (i1 < 0 || i2 < 0) return null;
     return { type: line.slice(0, i1) === 'd' ? 'dir' : 'file', size: parseInt(line.slice(i1 + 1, i2)) || 0, name: line.slice(i2 + 1).replace(/\r$/, '') };
   }).filter(Boolean).sort((a, b) => (a.type === b.type) ? a.name.localeCompare(b.name) : (a.type === 'dir' ? -1 : 1));
-  return { path: safe, entries };
+}
+/** Turn a failed listing into the message the user needs (same wording as the file editor). */
+function listingFailure(output, exitCode, shown) {
+  const out = String(output || '');
+  if (/dg-no-such-folder/.test(out)) return listErr(400, `The folder ${shown} does not exist`);
+  if (/executable file not found|sh: not found|no such file or directory/i.test(out) || exitCode === 126 || exitCode === 127) return listErr(400, 'The container has no shell (sh) — files can only be downloaded and uploaded');
+  return listErr(400, `Could not list ${shown}: ${out.trim().split('\n').slice(-2).join(' ').slice(0, 300) || `exit code ${exitCode}`}`);
+}
+
+/** C3 — list a directory inside a (running) container via exec. Returns { path, entries[] }. */
+async function containerListFiles(id, path) {
+  const safe = safeFsPath(path);
+  let r;
+  try { r = await containerExecOnce(id, ['sh', '-c', LIST_SCRIPT(''), 'sh', safe]); }
+  catch (e) {
+    if (e.statusCode === 409 || /is not running|is paused/i.test(e.message || '')) throw listErr(409, 'The container must be running');
+    throw e;
+  }
+  // A failed exec (no shell in the image) gives a non-zero exit code and no listing lines.
+  if (r.exitCode !== 0 && r.exitCode !== null) throw listingFailure(r.output, r.exitCode, safe);
+  if (r.exitCode === null && !parseListing(r.output).length && r.output.trim()) throw listingFailure(r.output, null, safe);
+  return { path: safe, entries: parseListing(r.output) };
 }
 
 /** C3 — stream a single file from a container as a download (binary-safe, via exec cat). */
@@ -745,24 +765,19 @@ function safeVolPath(p) {
 async function listVolumeFiles(volName, path) {
   await ensureHelperImage();
   const safe = safeVolPath(path);
-  // Path passed as $1 (literal positional arg) — see containerListFiles; prevents shell injection.
-  const script = `cd "/volume$1" 2>/dev/null && for f in * .*; do [ "$f" = "." ] || [ "$f" = ".." ] || { [ -e "$f" ] && printf '%s\\t%s\\t%s\\n' "$([ -d "$f" ] && echo d || echo f)" "$(stat -c %s "$f" 2>/dev/null || echo 0)" "$f"; }; done`;
   const helper = await docker.createContainer({
     Image: VOL_HELPER_IMAGE,
-    Cmd: ['sh', '-c', script, 'sh', safe],
+    Cmd: ['sh', '-c', LIST_SCRIPT('/volume'), 'sh', safe],
     HostConfig: { Binds: [`${volName}:/volume:ro`], AutoRemove: false },
     Tty: true, // raw (un-framed) text output
   });
   await helper.start();
-  await helper.wait();
-  const buf = await helper.logs({ stdout: true, stderr: false });
+  const w = await helper.wait();
+  const buf = await helper.logs({ stdout: true, stderr: true });
   try { await helper.remove({ force: true }); } catch (e) {}
   const text = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
-  const entries = text.split('\n').filter(Boolean).map(line => {
-    const i1 = line.indexOf('\t'), i2 = line.indexOf('\t', i1 + 1);
-    if (i1 < 0 || i2 < 0) return null;
-    return { type: line.slice(0, i1) === 'd' ? 'dir' : 'file', size: parseInt(line.slice(i1 + 1, i2)) || 0, name: line.slice(i2 + 1).replace(/\r$/, '') };
-  }).filter(Boolean).sort((a, b) => (a.type === b.type) ? a.name.localeCompare(b.name) : (a.type === 'dir' ? -1 : 1));
+  if (w && w.StatusCode) throw listingFailure(text, w.StatusCode, safe);
+  const entries = parseListing(text);
   return { path: safe, entries };
 }
 
@@ -1159,3 +1174,4 @@ module.exports = {
   getCleanupPreview, pruneContainers, pruneImages, pruneVolumes, pruneNetworks, pruneBuildCache, systemPrune,
   getAutoStartStatus, setAutoStart,
 };
+module.exports._test = { LIST_SCRIPT, parseListing, listingFailure };
