@@ -2,6 +2,18 @@
 
 ---
 
+## [2.38.2] - 2026-11-11
+
+### Changed
+- **README rewritten for the current DockGate.** It describes the real sidebar, adds a Docker Swarm section, lists the 21 alert rules by group, and updates the architecture, limitations, tech stack (nodemailer 10), API and configuration (`DATA_DIR`, `BIND_HOST`, `FILES_ROOT`). It no longer says that Swarm support was removed or that Compose only works on Local.
+- **New screenshots** taken from a running DockGate, including the Swarm pages, Monitoring and the container terminal.
+
+### Fixed
+- **Opening a container terminal could stop DockGate.** When the browser sent the terminal size before the shell had started (or after it ended), Docker answered "exec process is not started". That rejected promise was not caught, and Node stopped the whole process. The error is now ignored, as it was meant to be. Fifteen quick open–resize–close rounds stopped the old version and leave the new one running.
+- **The Back button on a container's page showed its text upside down** ("Back" was rotated along with the arrow). Only the arrow is turned now.
+
+---
+
 ## [2.38.1] - 2026-11-11
 
 ### Fixed

@@ -592,7 +592,9 @@ io.on('connection', (socket) => {
     const rows = payload?.rows;
     const s = termStreams.get(slot);
     if (s?.exec && cols && rows) {
-      try { s.exec.resize({ h: rows, w: cols }); } catch(e) {}
+      // dockerode returns a promise: a resize before the exec has started (or after it ended) rejects with
+      // "exec process is not started" — catch it, or the unhandled rejection stops DockGate.
+      try { Promise.resolve(s.exec.resize({ h: rows, w: cols })).catch(() => {}); } catch(e) {}
     }
   });
 
