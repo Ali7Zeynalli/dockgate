@@ -2,6 +2,14 @@
 
 ---
 
+## [2.38.12] - 2026-11-11
+
+### Fixed
+- **Creating a network returned DockGate's internal Docker client object** (with its connection settings) to the browser. It now returns only the new network's ID.
+- **Network errors came back as server errors (500).** Creating a network whose name or subnet is taken, or removing one that is in use or built in, now keeps Docker's own status (409 / 403) with its message.
+
+---
+
 ## [2.38.11] - 2026-11-11
 
 ### Fixed

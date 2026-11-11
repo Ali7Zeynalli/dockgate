@@ -5,7 +5,7 @@ const { logAction } = require('../audit');
 
 router.get('/', async (req, res) => {
   try { res.json(await dockerService.listNetworks()); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
 router.get('/:id', async (req, res) => {
@@ -18,7 +18,7 @@ router.post('/', async (req, res) => {
     const result = await dockerService.createNetwork(req.body);
     logAction({ req, resourceId: result.id || '', resourceType: 'network', resourceName: req.body.Name || '', action: 'create' });
     res.json(result);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
 router.delete('/:id', async (req, res) => {

@@ -918,7 +918,7 @@ async function removeNetwork(id) {
 async function createNetwork(config) {
   const r = await docker.createNetwork(config);
   invalidateCache('');
-  return r;
+  return { id: r.id }; // not the dockerode object (it carries the client's connection settings)
 }
 
 /** Attach a container to a network (networks are immutable, but membership is live). */
