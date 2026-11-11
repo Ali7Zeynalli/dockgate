@@ -2,6 +2,23 @@
 
 ---
 
+## [2.28.0] - 2026-11-11
+
+### Added
+- **Swarm, phase 4: Stacks and moving compose projects.** The compose files are never changed.
+  - **Swarm → Migrate** lists the compose projects on the server in use (also ones started by hand: their compose file is found from the container labels). Each is **Ready**, **Attention** (it can move; something is shown — a build image is used, a database stays at 1 replica, depends_on conditions are not waited for, settings Swarm ignores) or **Not possible** (privileged, devices, network_mode host, no compose file, a file secret on a remote server), with what changes per service.
+  - **Review…**: per service the replicas (databases always 1), the port mode (ingress: every server answers; host: the app sees the real client IP) and the update order (services with data are always stop-first, so two copies never share a volume). The **plan** shows each service as it will run on Swarm, the changes, the volumes that stay the same and the overlay network.
+  - **Move** runs one job, one project at a time: the files are read again (a project whose files changed since the plan is not touched) → `docker compose down` (volumes stay) → `docker stack deploy` under the same name → every service must run and stay up for 30 s (`SWARM_MOVE_WATCH_MS`). If not, the project is put back: the stack is removed, DockGate waits until its network is gone and runs `docker compose up -d`. The report says which projects moved, which were put back and why, and how long each was down.
+  - **How the files are adapted in memory:** `docker compose config` (fills in .env, merges several files) → container_name, build, restart and settings Swarm ignores are removed; restart becomes the restart policy; depends_on conditions become a list; ports become numbers (a host address is dropped); networks become attachable overlays (encrypted when chosen at setup); volume names stay; DockGate's Swarm settings are added (safe update and roll back defaults). On several servers a service with data is kept on the server where its data is. Deployed with `docker stack deploy --prune --with-registry-auth`, so private images use the logins from Deploy → Registries.
+  - **Swarm → Stacks**: each stack with its origin, services, running tasks and last deploy. **Redeploy** reads the compose files again; **Swarm settings…** changes replicas, port mode and update order (kept in DockGate) and redeploys; **History** lists every deploy, move and move back with the files' hash, the result and the downtime, and can deploy an earlier one again; **Move back to Compose…** removes the stack, waits for its network and runs `docker compose up -d` — the data stays; **Remove…** keeps volumes, secrets and configs.
+  - **Deploy → Compose stacks:** a moved project shows **Runs on Swarm** with **Open stack**; Compose Up, Restart, Build, Rebuild, Redeploy, Git sync and image updates are refused for it, so it never runs twice on the same ports and volumes. Each project's menu has **Move to Swarm…**.
+  - The Overview's "compose projects outside Swarm" notice has **Migrate…**.
+
+### Not in this version
+- Moving part of a project (a privileged service stays in Compose, the rest moves) — such projects are "Not possible" for now.
+
+---
+
 ## [2.27.0] - 2026-11-10
 
 ### Added

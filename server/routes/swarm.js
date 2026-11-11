@@ -82,6 +82,20 @@ router.delete('/services/:id', ok((req) => svc.remove(req.params.id, { sourceIp:
 router.get('/services/:id/tasks', ok(async (req) => ({ tasks: await svc.tasks(req.params.id) })));
 router.get('/services/:id/logs', ok((req) => svc.logs(req.params.id, { tail: req.query.tail })));
 router.get('/services/:id/progress', ok((req) => svc.progress(req.params.id)));
+// ---- phase 4: stacks and moving compose projects (server/swarm-stacks.js) ----
+const stacks = require('../swarm-stacks');
+const jobOf = (j) => ({ jobId: j.id });
+router.get('/stacks', ok(async () => ({ stacks: await stacks.list() })));
+router.get('/stacks/:name/history', ok(async (req) => ({ history: stacks.history(req.params.name) })));
+router.get('/migrate', ok(() => stacks.candidates()));
+router.post('/migrate/preview', ok((req) => stacks.preview(String((req.body || {}).project || ''), (req.body || {}).settings)));
+router.post('/migrate', ok(async (req) => jobOf(await stacks.startMove((req.body || {}).plans, { sourceIp: req.ip }))));
+router.post('/stacks/:name/redeploy', ok(async (req) => jobOf(await stacks.startRedeploy(req.params.name, { deployId: (req.body || {}).deployId, settings: (req.body || {}).settings, sourceIp: req.ip }))));
+router.post('/stacks/:name/move-back', ok(async (req) => {
+  if ((req.body || {}).confirm !== true) throw Object.assign(new Error('confirm required'), { statusCode: 400 });
+  return jobOf(await stacks.startMoveBack(req.params.name, { sourceIp: req.ip }));
+}));
+router.delete('/stacks/:name', ok((req) => stacks.removeStack(req.params.name, { sourceIp: req.ip })));
 router.get('/settings', async (req, res) => {
   try { res.json(await swarm.settings()); } catch (e) { fail(res, e); }
 });

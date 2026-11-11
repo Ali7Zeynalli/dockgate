@@ -395,7 +395,7 @@ async function overview() {
   if (running < desired) warnings.push({ level: 'warn', text: `${desired - running} task${desired - running > 1 ? 's are' : ' is'} not running.` });
   try {
     const projects = (await dockerService.listComposeProjects()).filter(p => p.total > 0);
-    if (projects.length) warnings.push({ level: 'info', text: `${projects.length} compose project${projects.length > 1 ? 's run' : ' runs'} outside Swarm (${projects.slice(0, 4).map(p => p.name).join(', ')}${projects.length > 4 ? ', …' : ''}). Moving them to Swarm comes in a later version; they keep running as they are.` });
+    if (projects.length) warnings.push({ level: 'info', text: `${projects.length} compose project${projects.length > 1 ? 's run' : ' runs'} outside Swarm (${projects.slice(0, 4).map(p => p.name).join(', ')}${projects.length > 4 ? ', …' : ''}). They keep running as they are; Swarm → Migrate moves them when you choose.`, action: 'migrate' });
   } catch (e) { /* ignore */ }
   return {
     status: st,

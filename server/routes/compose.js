@@ -146,6 +146,15 @@ async function annotateImageUpdates(list) {
 router.get('/', async (req, res) => {
   try {
     const list = await annotateImageUpdates(await dockerService.listComposeProjects());
+    // Projects moved to Swarm: marked (and listed, since their compose containers are gone).
+    try {
+      const rows = require('../swarm-stacks').stackRows();
+      for (const r of rows) {
+        const p = list.find(x => x.name === r.name);
+        if (p) p.onSwarm = true;
+        else list.push({ name: r.name, onSwarm: true, services: [], running: 0, stopped: 0, total: 0, workingDir: (JSON.parse(r.location || '{}') || {}).cwd || '', configFiles: '' });
+      }
+    } catch (e) { /* Swarm off */ }
     const activeId = dockerService.getActiveServerId();
     if (fs.existsSync(COMPOSE_DIR)) {
       // Annotate running remote folder-deployed projects so the UI can show Update/etc.
@@ -308,6 +317,13 @@ async function execComposeAction(projectName, action, onData) {
   if (r.remote) return await remoteCompose.runComposeInRemoteDir(r.server, r.cwd, projectName, fullAction, onData);
   return await runCompose(projectName, fullAction, r.cwd, onData);
 }
+// Run compose against an already resolved location (Swarm keeps it, because after `compose down` the
+// container labels that point at the files are gone).
+async function runResolved(r, projectName, action, onData) {
+  const fullAction = [...r.files.flatMap(f => ['-f', f]), ...action];
+  if (r.remote) return await remoteCompose.runComposeInRemoteDir(r.server, r.cwd, projectName, fullAction, onData);
+  return await runCompose(projectName, fullAction, r.cwd, onData);
+}
 
 // Synchronous compose action (fast ops: down/restart) → run and return the output as JSON.
 async function runComposeAction(req, res, action, label) {
@@ -341,6 +357,15 @@ function startComposeActionJob(req, res, action, label) {
   res.json({ jobId: job.id, project: projectName });
 }
 
+// A project that runs on Swarm must not be started by Compose too (two copies on the same ports and volumes).
+const SWARM_BLOCKED = new Set(['up', 'restart', 'update-service', 'build', 'rebuild', 'redeploy', 'redeploy-prepare', 'git-sync', 'adopt-redeploy']);
+router.post('/:project/:action', (req, res, next) => {
+  if (!SWARM_BLOCKED.has(req.params.action)) return next();
+  try {
+    if (require('../swarm-stacks').isOnSwarm(req.params.project)) return res.status(409).json({ error: `${req.params.project} runs on Swarm now — manage it in Swarm → Stacks (Redeploy, or Move back to Compose)` });
+  } catch (e) { /* Swarm module not ready: let Compose handle it */ }
+  next();
+});
 router.post('/:project/up', (req, res) => startComposeActionJob(req, res, ['up', '-d'], 'up'));
 // Newer image for one service: pull it, then recreate only that service. Recorded in the deploy history.
 router.post('/:project/update-service', (req, res) => {
@@ -2623,3 +2648,4 @@ router.scheduledGitSync = scheduledGitSync;
 // Image updates of compose services run compose through the same file resolution.
 require('../image-update-runner').setComposeExec(execComposeAction, recordDeploy);
 module.exports = router;
+module.exports.composeHelpers = { resolveComposeFiles: (p) => resolveComposeFiles(p), runResolved: (...a) => runResolved(...a), validateProjectName: (p) => validateProjectName(p) };

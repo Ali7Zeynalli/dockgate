@@ -41,7 +41,8 @@ Router.register('compose', async (content) => {
 
   async function render() {
     try {
-      const projects = await API.get('/compose');
+      const [projects, swSt] = await Promise.all([API.get('/compose'), API.get('/swarm/status').catch(() => null)]);
+      window.__swarmActive = !!(swSt && swSt.state === 'active' && swSt.manager); // offers "Move to Swarm…" in the row menu
 
       // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
       if (!Router.isActiveNav(pageNavId)) return;
@@ -83,14 +84,16 @@ Router.register('compose', async (content) => {
                   <td style="text-align:center"><input type="checkbox" class="bulk-item" data-proj="${escapeHtml(p.name)}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"></td>
                   <td class="td-name">${escapeHtml(p.name)}${p.workingDir ? `<div class="td-mono text-xs text-muted" title="${escapeHtml(p.workingDir)}" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.workingDir)}</div>` : ''}</td>
                   <td>${isGit ? UI.chip(`git${gitBranch ? ' · ' + escapeHtml(gitBranch) : ''}`, { title: p.gitInfo?.repoUrl || 'Git' }) : p.deploySource === 'adopt' ? UI.chip('adopted', { title: 'Adopted in place: the compose file lives on the server. Deleting stops and untracks it but never removes your folder.' }) : p.deploySource ? UI.chip(escapeHtml(p.deploySource)) : UI.chip('external', { title: 'Started outside DockGate (docker compose up on the server)' })}</td>
-                  <td>${p.total === 0 ? UI.pill('off', 'not deployed') : p.running === p.total ? UI.pill('ok', `${p.running}/${p.total} running`) : p.running > 0 ? UI.pill('warn', `${p.running}/${p.total} running`) : UI.pill('off', 'stopped')}${stackImageNote(p)}</td>
+                  <td>${p.onSwarm ? `${UI.pill('info', 'Runs on Swarm')}<div class="ui-sub">Swarm → Stacks</div>` : p.total === 0 ? UI.pill('off', 'not deployed') : p.running === p.total ? UI.pill('ok', `${p.running}/${p.total} running`) : p.running > 0 ? UI.pill('warn', `${p.running}/${p.total} running`) : UI.pill('off', 'stopped')}${stackImageNote(p)}</td>
                   <td class="text-sm">${(p.services || []).map(x => escapeHtml(x)).join(', ') || '—'}</td>
                   <td><div class="td-actions" style="justify-content:flex-end">
-                    ${p.running > 0 && p.running === p.total
+                    ${p.onSwarm ? `<button class="btn btn-xs btn-secondary" data-open-stack="${escapeHtml(p.name)}" title="Manage it in Swarm → Stacks">Open stack</button>`
+                      : p.running > 0 && p.running === p.total
                       ? (isGit ? `<button class="btn btn-xs btn-secondary" data-git-sync="${escapeHtml(p.name)}" title="Pull the latest code and rebuild / restart">Sync</button>` : `<button class="btn btn-xs btn-secondary" data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.restart} Restart</button>`)
                       : `<button class="btn btn-xs btn-secondary" data-action="up" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.play} Up</button>`}
                     ${UI.menu([
                       { label: `${Icons.eye} Services and details`, attrs: `data-detail="${escapeHtml(p.name)}"` },
+                      !p.onSwarm && p.total > 0 && window.__swarmActive ? { label: `${Icons.layers} Move to Swarm…`, attrs: `data-move-swarm="${escapeHtml(p.name)}"` } : null,
                       { label: `${Icons.refresh} Deploy history…`, attrs: `data-history="${escapeHtml(p.name)}"` },
                       { label: `${Icons.settings} Edit YAML`, attrs: `data-edit="${escapeHtml(p.name)}" ${dis}` },
                       { label: `${Icons.folder || Icons.compose} Files (Dockerfile, .env…)`, attrs: `data-files="${escapeHtml(p.name)}"` },
@@ -397,6 +400,8 @@ Router.register('compose', async (content) => {
       });
 
       content.querySelectorAll('[data-history]').forEach(btn => btn.addEventListener('click', () => openDeployHistory(btn.dataset.history)));
+      content.querySelectorAll('[data-open-stack]').forEach(btn => btn.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-stacks' })));
+      content.querySelectorAll('[data-move-swarm]').forEach(btn => btn.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-migrate', project: btn.dataset.moveSwarm })));
 
       content.querySelectorAll('[data-detail]').forEach(btn => {
         btn.addEventListener('click', async () => {

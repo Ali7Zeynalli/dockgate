@@ -39,7 +39,7 @@
   const banner = (level, html, actions = '') => `<div class="insight-card ${level === 'bad' ? 'danger' : level === 'warn' ? 'warning' : 'info'}" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:220px">${html}</div>${actions ? `<div style="display:flex;gap:6px">${actions}</div>` : ''}</div>`;
 
   // ---- the job window (Create Swarm, Add servers, Rebalance, Remove node) ----
-  const DONE_TEXT = { 'Create Swarm': '✓ Swarm is on', 'Add servers': '✓ Servers added', Rebalance: '✓ Rebalanced', 'Remove node': '✓ Node removed' };
+  const DONE_TEXT = { 'Create Swarm': '✓ Swarm is on', 'Add servers': '✓ Servers added', Rebalance: '✓ Rebalanced', 'Remove node': '✓ Node removed', 'Move to Swarm': '✓ Every project moved', 'Move back to Compose': '✓ Runs in Compose again', Redeploy: '✓ Deployed' };
   function openJob(jobId, onDone, title = 'Create Swarm') {
     const m = showModal(esc(title), `${serverContextBanner()}<div id="sw-job-steps" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px"></div><div id="sw-job-log"></div>
       <div id="sw-job-status" style="margin-top:10px;font-weight:600;font-size:13px;color:var(--text-muted)">⏳ Working…</div><div id="sw-job-extra"></div>
@@ -66,8 +66,12 @@
           se.style.color = j.status === 'done' ? '#16a34a' : '#dc2626';
           se.textContent = j.status === 'done' ? (DONE_TEXT[title] || '✓ Done') : `✗ ${j.error || 'Failed'}`;
           const ex = m.overlay.querySelector('#sw-job-extra');
+          if (j.result && j.result.projects) {
+            const lbl = { moved: ['ok', 'moved'], rolled_back: ['warn', 'put back in Compose'], changed: ['warn', 'files changed — not moved'], skipped: ['off', 'not moved'], failed: ['bad', 'failed'] };
+            ex.innerHTML = `<div class="ui-ph-title" style="margin:12px 0 6px">Report</div>${UI.table([{ label: 'Project' }, { label: 'Result' }, { label: 'Down for' }, { label: 'Why' }], j.result.projects.map(x => ({ cells: [`<b>${esc(x.project)}</b>`, UI.pill(...(lbl[x.status] || ['off', esc(x.status)])), x.downtimeMs ? `${Math.round(x.downtimeMs / 1000)}s` : '—', `<span class="text-sm">${esc(x.error || '')}</span>`] })), { minWidth: 0 })}`;
+          }
           if (j.result && j.result.unlockKey) {
-            ex.innerHTML = `<div class="insight-card warning" style="margin-top:10px"><div><b>Unlock key</b> — after Docker restarts, the swarm stays locked until it is unlocked with this key. DockGate keeps it (encrypted) and can unlock for you; keep a copy in your password manager too. It is shown here once.<div class="sw-key" style="margin-top:6px">${esc(j.result.unlockKey)}</div></div></div>`;
+            ex.innerHTML += `<div class="insight-card warning" style="margin-top:10px"><div><b>Unlock key</b> — after Docker restarts, the swarm stays locked until it is unlocked with this key. DockGate keeps it (encrypted) and can unlock for you; keep a copy in your password manager too. It is shown here once.<div class="sw-key" style="margin-top:6px">${esc(j.result.unlockKey)}</div></div></div>`;
           }
           close.className = 'btn btn-primary';
           return;
@@ -78,6 +82,8 @@
     poll();
     return m;
   }
+
+  window.SwarmUI = { openJob: (...a) => openJob(...a), css }; // used by the Stacks / Migrate tabs (swarm-stacks.js)
 
   // ---- Set up Swarm… / Add servers… wizard ----
   // Modes: one (one server), several (create with several servers), add (join servers to the running swarm).
@@ -336,8 +342,8 @@
               const cls = t.state === 'running' ? 'running' : ['failed', 'rejected'].includes(t.state) ? 'failed' : 'starting';
               return `<span class="sw-chip ${cls}" title="${esc(`${t.service}${t.slot ? '.' + t.slot : ''} · ${t.state}${t.error ? ' · ' + t.error : ''} · ${t.image}`)}">${esc(t.service)}${t.slot ? '.' + t.slot : ''}</span>`;
             }).join('') : '<span class="ui-sub">No tasks</span>'}</div></div>`;
-        const wAction = (w) => (w.action === 'nodes' ? UI.btn('Open Nodes', 'data-go-nodes') : w.action === 'rebalance' ? UI.btn('Rebalance…', 'data-rebalance') : '');
-        content.innerHTML = `${UI.header('Swarm', sentence, `<span class="ui-sub">Services and stacks come in the next versions.</span> ${job ? '' : UI.btn('Add servers…', 'data-addsrv')}`)}${jobBanner}
+        const wAction = (w) => (w.action === 'nodes' ? UI.btn('Open Nodes', 'data-go-nodes') : w.action === 'rebalance' ? UI.btn('Rebalance…', 'data-rebalance') : w.action === 'migrate' ? UI.btn('Migrate…', 'data-go-migrate') : '');
+        content.innerHTML = `${UI.header('Swarm', sentence, `${job ? '' : UI.btn('Add servers…', 'data-addsrv')}`)}${jobBanner}
           ${data.warnings.map(w => banner(w.level, esc(w.text), wAction(w))).join('')}
           <div class="sw-cards">
             ${card('Ready servers', `${c.ready}/${c.nodes}`, c.ready === c.nodes ? 'ok' : 'warn')}
@@ -355,6 +361,7 @@
       content.querySelector('[data-open-job]')?.addEventListener('click', () => openJob(job, load, 'Swarm job'));
       content.querySelector('[data-addsrv]')?.addEventListener('click', () => openWizard(st, load, { add: true }));
       content.querySelector('[data-go-nodes]')?.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-nodes' }));
+      content.querySelector('[data-go-migrate]')?.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-migrate' }));
       content.querySelector('[data-rebalance]')?.addEventListener('click', () => confirmRebalance(load));
       content.querySelector('[data-unlock]')?.addEventListener('click', () => unlockDialog(st, load));
       stop();
