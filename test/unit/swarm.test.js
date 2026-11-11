@@ -69,7 +69,7 @@ test('firewall rules: each member allows the Swarm ports from the others; ESP wh
 test('firewall commands for UFW and firewalld; only IPv4 addresses go into a command', () => {
   const rules = [{ ip: '10.0.0.3', port: 2377, proto: 'tcp' }, { ip: '10.0.0.3', port: null, proto: 'esp' }, { ip: '1.2.3.4; rm -rf /', port: 2377, proto: 'tcp' }];
   const ufw = cl.fwCommands('ufw', null, rules);
-  assert.deepEqual(ufw, ["{{S}}ufw allow proto tcp from 10.0.0.3 to any port 2377 comment 'dockgate-swarm' >/dev/null", "{{S}}ufw allow proto esp from 10.0.0.3 comment 'dockgate-swarm' >/dev/null"]);
+  assert.deepEqual(ufw, ["{{S}}ufw allow proto tcp from 10.0.0.3 to any port 2377 comment 'dockgate:swarm' >/dev/null", "{{S}}ufw allow proto esp from 10.0.0.3 comment 'dockgate:swarm' >/dev/null"]);
   assert.match(cl.fwCommands('ufw', null, rules, true)[0], /^\(\{\{S\}\}ufw delete allow proto tcp from 10\.0\.0\.3 to any port 2377 .*\|\| true\)$/);
   const fwd = cl.fwCommands('firewalld', 'public', rules.slice(0, 1));
   assert.match(fwd[0], /--zone=public --add-rich-rule='rule family="ipv4" source address="10\.0\.0\.3" port port="2377" protocol="tcp" accept'/);
@@ -98,4 +98,13 @@ test('secret / config versions for rotate', () => {
   assert.deepEqual(O.versionOf('db_password'), { base: 'db_password', n: 1 });
   assert.deepEqual(O.versionOf('db_password_v3'), { base: 'db_password', n: 3 });
   assert.deepEqual(O.versionOf('tls_v2_key'), { base: 'tls_v2_key', n: 1 });
+});
+
+test('UFW rules added for Swarm are recognised as Swarm rules', () => {
+  const P = require('../../server/security/parse'), FW = require('../../server/security/fwmodel');
+  const txt = 'Status: active\n\n     To                         Action      From\n     --                         ------      ----\n[ 1] 22/tcp                     ALLOW IN    Anywhere\n[ 2] 2377/tcp                   ALLOW IN    10.0.0.3                   # dockgate:swarm\n';
+  const { groups } = FW.groupRules({ backend: 'ufw', rules: P.parseUfwNumbered(txt).rules, lists: [], dockgateIp: null });
+  const g = groups.find(x => x.port === '2377');
+  assert.ok(g.entries.every(e => e.tag === 'swarm'));
+  assert.ok(groups.find(x => x.port === '22').entries.every(e => e.tag !== 'swarm'));
 });

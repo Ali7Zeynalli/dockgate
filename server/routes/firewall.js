@@ -56,6 +56,7 @@ async function firewallOf(row) {
   for (const g of groups) {
     g.description = desc[g.key] || '';
     g.isSsh = g.dir === 'in' && !g.container && FW.coversPort(g, sshPort, 'tcp') && g.action !== 'deny';
+    g.swarm = g.entries.length > 0 && g.entries.every(e => e.tag === 'swarm'); // added by Swarm (server/swarm-cluster.js)
     if (g.dir === 'in' && g.container) {
       const d = docker.find(x => x.containerPort === g.container && (!g.proto || x.proto === g.proto));
       g.usedBy = d ? `${d.container} (container)` : 'container';

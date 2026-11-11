@@ -126,6 +126,18 @@ router.get('/backups/:file', (req, res) => {
 });
 router.get('/recovery', ok(() => bk.recoveryInfo()));
 router.post('/recover', ok(async (req) => jobOf(await bk.startRecover({ confirm: (req.body || {}).confirm, sourceIp: req.ip }))));
+// A short summary for the Dashboard: running / wanted tasks and ready nodes (no events).
+router.get('/summary', ok(async () => {
+  const st = await swarm.status();
+  if (st.state !== 'active' || !st.manager) return { active: st.state === 'active', manager: st.manager, state: st.state };
+  const c = dockerService.docker;
+  try {
+    const [services, nodes] = await Promise.all([c.listServices({ status: true }), c.listNodes()]);
+    let running = 0, desired = 0;
+    for (const s of services) if (s.ServiceStatus) { running += s.ServiceStatus.RunningTasks; desired += s.ServiceStatus.DesiredTasks; }
+    return { active: true, manager: true, services: services.length, running, desired, nodes: nodes.length, ready: nodes.filter(n => n.Status.State === 'ready').length };
+  } catch (e) { return { active: true, manager: true, quorumLost: true }; }
+}));
 router.get('/settings', async (req, res) => {
   try { res.json(await swarm.settings()); } catch (e) { fail(res, e); }
 });

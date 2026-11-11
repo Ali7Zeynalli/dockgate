@@ -217,13 +217,15 @@ function renderDockerPage(serverId, info, body, reload) {
       </div>
       <div class="card">
         <div style="font-weight:700;font-size:15px;margin-bottom:10px">Engine</div>
-        ${s ? svcKv([['Version', escapeHtml(s.version || '—')], ['Containers', `${s.running} running / ${s.containers}`], ['Images', String(s.images)], ['Storage', escapeHtml(s.storageDriver || '—')], ['Logging', escapeHtml(s.loggingDriver || '—')], ['Live restore', s.liveRestore ? 'on' : 'off'], ['Cgroup', escapeHtml(s.cgroupDriver || '—')], ['Swarm', escapeHtml(s.swarm || '—')]]) : '<div class="text-sm text-muted">Docker is not reachable on this server.</div>'}
+        ${s ? svcKv([['Version', escapeHtml(s.version || '—')], ['Containers', `${s.running} running / ${s.containers}`], ['Images', String(s.images)], ['Storage', escapeHtml(s.storageDriver || '—')], ['Logging', escapeHtml(s.loggingDriver || '—')], ['Live restore', s.liveRestore ? 'on' : 'off'], ['Cgroup', escapeHtml(s.cgroupDriver || '—')], ['Swarm', s.swarm && s.swarm !== 'inactive' ? `${escapeHtml(s.swarm)} · <a href="#/swarm">Swarm page</a> <span class="ui-sub">(use this server at the top)</span>` : escapeHtml(s.swarm || '—')]]) : '<div class="text-sm text-muted">Docker is not reachable on this server.</div>'}
         ${info.df ? `<div style="margin-top:12px">${svcPre(info.df)}</div>` : ''}
       </div>
     </div>`;
   const lr = body.querySelector('#dk-lr');
-  lr.addEventListener('click', () => lr.classList.toggle('active'));
-  lr.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); lr.classList.toggle('active'); } });
+  // In swarm mode Docker refuses to start with live-restore on: the switch can only be turned off there.
+  const flipLr = () => { if (!lr.classList.contains('active') && s && s.swarm && s.swarm !== 'inactive') { showToast('This server is in a swarm — Docker would not start with live-restore on', 'warning', 7000); return; } lr.classList.toggle('active'); };
+  lr.addEventListener('click', flipLr);
+  lr.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flipLr(); } });
   body.querySelector('[data-form]').addEventListener('submit', (e) => {
     e.preventDefault();
     const v = { maxSize: body.querySelector('#dk-size').value.trim(), maxFile: Number(body.querySelector('#dk-files').value), liveRestore: lr.classList.contains('active') };

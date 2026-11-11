@@ -65,6 +65,8 @@ Router.register('templates', async (content) => {
         const yaml = await resolveStackYaml(t);
         const slug = (t.title || 'stack').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
         openComposeEditor(null, { prefillYaml: yaml, prefillName: slug });
+        // With Swarm on, a template still deploys with Compose first; Move to Swarm then runs it as a stack.
+        API.get('/swarm/status').then(st => { if (st && st.state === 'active' && st.manager) showToast('Swarm is on: deploy it here, then Deploy → Compose stacks → ⋯ → Move to Swarm… to run it as a stack.', 'info', 9000); }).catch(() => {});
       }
     } catch (err) {
       showToast('Cannot deploy: ' + err.message, 'error', 8000);

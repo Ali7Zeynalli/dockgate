@@ -2,6 +2,20 @@
 
 ---
 
+## [2.32.0] - 2026-11-11
+
+### Added
+- **Swarm in the other pages.**
+  - **Dashboard** shows "Swarm · 9/9 tasks" (and the ready servers with several), amber when tasks or servers are missing or the swarm has no leader; it opens Swarm.
+  - **Server Console → Firewall:** rules DockGate added for Swarm say "Swarm · between the cluster servers", and deleting one warns that the cluster servers would no longer reach each other — remove a server in Swarm → Nodes instead, which deletes its rules. (Swarm firewall rules are now tagged `dockgate:swarm`, like DockGate's other rules.)
+  - **Server Console → Services → Docker:** the Swarm row links to the Swarm page.
+  - **App templates:** with Swarm on, opening a compose template says how to run it as a stack (deploy, then Move to Swarm…).
+
+### Fixed
+- **Live restore could be turned on for a server in a swarm** (Server Console → Services → Docker). Docker does not start with live-restore on in swarm mode, so saving it would have stopped Docker on that server. The switch now only turns off there, and the server refuses the setting.
+
+---
+
 ## [2.31.0] - 2026-11-11
 
 ### Added

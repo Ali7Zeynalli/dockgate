@@ -232,7 +232,7 @@ function fwCommands(backend, zone, rules, remove = false) {
     if (!swarm.isIPv4(r.ip)) continue; // only IPv4 addresses are ever put in a command
     if (backend === 'ufw') {
       const spec = r.proto === 'esp' ? `proto esp from ${r.ip}` : `proto ${r.proto} from ${r.ip} to any port ${Number(r.port)}`;
-      cmds.push(remove ? `({{S}}ufw delete allow ${spec} >/dev/null 2>&1 || true)` : `{{S}}ufw allow ${spec} comment 'dockgate-swarm' >/dev/null`);
+      cmds.push(remove ? `({{S}}ufw delete allow ${spec} >/dev/null 2>&1 || true)` : `{{S}}ufw allow ${spec} comment 'dockgate:swarm' >/dev/null`);
     } else if (backend === 'firewalld') {
       const z = String(zone || 'public').replace(/[^\w-]/g, '');
       const rule = r.proto === 'esp' ? `rule family="ipv4" source address="${r.ip}" protocol value="esp" accept` : `rule family="ipv4" source address="${r.ip}" port port="${Number(r.port)}" protocol="${r.proto}" accept`;

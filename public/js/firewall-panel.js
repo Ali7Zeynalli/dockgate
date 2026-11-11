@@ -35,7 +35,7 @@ async function renderFirewallPanel(serverId, container) {
 
   const cols = (addrLabel) => [{ label: 'Description' }, { label: addrLabel }, { label: 'Protocol' }, { label: 'Port' }, { label: 'Action' }, { label: '', align: 'right' }];
   const ruleRows = (list, dir) => list.map((g, i) => ({ cells: [
-    `<b>${UI.esc(g.description || fwAutoName(g))}</b><div class="ui-sub">${[g.usedBy ? UI.esc(g.usedBy) : '', g.container ? `container port ${g.container}${g.hostPort && g.hostPort !== g.container ? ` · host ${g.hostPort}` : ''}` : '', g.containers ? 'also containers' : '', g.isSsh ? 'SSH · DockGate keeps itself allowed' : ''].filter(Boolean).join(' · ')}</div>`,
+    `<b>${UI.esc(g.description || fwAutoName(g))}</b><div class="ui-sub">${[g.usedBy ? UI.esc(g.usedBy) : '', g.container ? `container port ${g.container}${g.hostPort && g.hostPort !== g.container ? ` · host ${g.hostPort}` : ''}` : '', g.containers ? 'also containers' : '', g.isSsh ? 'SSH · DockGate keeps itself allowed' : '', g.swarm ? 'Swarm · between the cluster servers' : ''].filter(Boolean).join(' · ')}</div>`,
     `<div class="ui-chips">${g.sources.map(s => fwChip(s, lists, f.dockgateIp)).join('')}</div>${g.outdated && g.outdated.length ? `<div class="ui-sub" style="color:var(--warning)">${g.outdated.map(id => UI.esc((lists.find(l => l.id === id) || {}).name || id)).join(', ')} changed — <a href="#" data-edit="${dir}:${i}">update this rule</a></div>` : ''}<div class="ui-sub">${g.family || ''}${g.addressCount ? ` · ${g.addressCount} address${g.addressCount === 1 ? '' : 'es'}` : ''}</div>`,
     (g.proto || 'any').toUpperCase(),
     `<span class="td-mono">${g.port || 'any'}</span>`,
@@ -85,7 +85,7 @@ async function renderFirewallPanel(serverId, container) {
     secConfirm({
       title: `Delete ${g.dir === 'in' ? 'inbound' : 'outbound'} rule`, danger: true, confirmLabel: 'Delete rule',
       change: `"${UI.esc(g.description || fwAutoName(g))}" is removed — ${g.addressCount || g.sources.length} firewall entr${(g.addressCount || g.sources.length) === 1 ? 'y' : 'ies'}.${g.dir === 'in' ? ' The port stays reachable inside the server.' : ''}`,
-      protects: g.isSsh ? 'DockGate refuses the change if it would lose SSH, and tests a new login afterwards.' : 'fail2ban bans and running containers are checked afterwards.',
+      protects: (g.swarm ? '<b style="color:var(--danger,#dc2626)">Swarm uses this rule:</b> without it the cluster servers can not reach each other on this port — nodes go Down or overlay traffic stops. Remove a server in Swarm → Nodes instead; that deletes its rules. ' : '') + (g.isSsh ? 'DockGate refuses the change if it would lose SSH, and tests a new login afterwards.' : 'fail2ban bans and running containers are checked afterwards.'),
       undo: 'Add the rule again.',
       onConfirm: () => fwSave(ctx, { original: g.key, sources: [] }, 'Rule deleted'),
     });
