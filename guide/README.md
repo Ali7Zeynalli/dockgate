@@ -23,6 +23,7 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 - [Resources → Builds](builds.md) — build from Git or an inline Dockerfile, steps and cache
 - [Resources → Prune](prune.md) — free disk space safely
 - [Deploy → Compose stacks](compose.md) — deploy from the editor, Git, a folder or the server; history, rebuild, Git sync
+- [Deploy → Compose stacks → Scaling & health](compose-scaling.md) — replicas with one click, without Swarm; your files stay as they are
 - [Deploy → App templates and Registries](templates-and-registries.md) — 500+ ready-made apps; private registry logins
 
 ## Docker Swarm

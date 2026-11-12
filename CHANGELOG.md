@@ -2,6 +2,20 @@
 
 ---
 
+## [2.45.0] - 2026-11-12
+
+### Added
+- **Replicas for Compose services, with one click and without Swarm.** Deploy → Compose stacks → ⋯ → **Scaling & health…** lists each service with its replicas (`−` / `+`), the limits from your compose file, and its state.
+  - **Your compose files are not changed.** DockGate keeps its choices in its own override file (`docker-compose.dockgate.yml`) outside the project folder and any Git checkout, private to its owner, and adds it to every compose command it runs (Up, Rebuild, image updates, Move to Swarm). **Show the override** shows it; **Back to the files…** removes it.
+  - **Checked first:** a database or a service that writes to a volume stays at 1. A host port or a `container_name` is fixed only after you see the fix (the port goes behind the proxy; the name stays a name others reach it by). The fixes need Docker Compose 2.24.4 or newer, and the panel shows the server's version.
+  - **Nothing else is touched:** only that service is scaled; the replicas already running stay.
+  - **Fewer replicas stop gracefully**, and nginx / Caddy on the same networks are reloaded after each change (nginx only when `nginx -t` passes). In a test with a request every 200 ms through nginx, none failed while scaling 3 → 1 → 3.
+  - **If compose fails,** the previous setting comes back by itself.
+  - **Drift:** replicas that differ from what was set (a `docker compose up` without the override) are shown with a **Fix** button.
+  - Each change is in Deploy history (*replicas*) and the audit log.
+
+---
+
 ## [2.44.0] - 2026-11-12
 
 ### Added
