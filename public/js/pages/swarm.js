@@ -182,7 +182,7 @@
     el.querySelectorAll('[data-rj]').forEach(b => b.onclick = () => reopen(jobs.find(x => x.id === b.dataset.rj), onDone));
   }
 
-  window.SwarmUI = { openJob: (...a) => openJob(...a), jobBar, recentJobs, jobTitle, css, inspect: inspectDialog, terminal: taskTerminal, mountTerminal }; // used by the other Swarm tabs
+  window.SwarmUI = { openJob: (...a) => openJob(...a), jobBar, recentJobs, jobTitle, nodeAction: (...a) => nodeAction(...a), css, inspect: inspectDialog, terminal: taskTerminal, mountTerminal }; // used by the other Swarm tabs
 
   // ---- Set up Swarm… / Add servers… wizard ----
   // Modes: one (one server), several (create with several servers), add (join servers to the running swarm).
@@ -439,7 +439,7 @@
         const sentence = c.nodes === 1 ? `Single-server Swarm on <b>${esc(data.nodes[0].hostname)}</b>.` : `${c.nodes} servers in one cluster: ${plural(c.managers, 'manager')}, ${plural(c.nodes - c.managers, 'worker')}.`;
         const card = (k, v, tone) => `<div class="sw-card ${tone || ''}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
         const node = (n) => `<div class="sw-node ${n.state !== 'ready' ? 'down' : ''}">
-            <h4>${esc(n.hostname)} ${n.leader ? UI.pill('info', 'leader') : ''} ${UI.pill(n.state === 'ready' ? 'ok' : 'bad', esc(n.state))} ${n.availability !== 'active' ? UI.pill('warn', esc(n.availability)) : ''}</h4>
+            <h4>${n.id ? `<a href="#" data-node="${esc(n.id)}" title="Open the node page">${esc(n.hostname)}</a>` : esc(n.hostname)} ${n.leader ? UI.pill('info', 'leader') : ''} ${UI.pill(n.state === 'ready' ? 'ok' : 'bad', esc(n.state))} ${n.availability !== 'active' ? UI.pill('warn', esc(n.availability)) : ''}</h4>
             <div class="ui-sub">${esc(n.role)} · ${esc(n.addr)} · ${esc(n.arch)} · Docker ${esc(n.engine)}</div>${n.serverName ? `<div class="ui-sub">DockGate server: ${esc(n.serverName)}</div>` : data.nodes.length > 1 && n.serverId === null ? '<div class="ui-sub" style="color:var(--warning,#d97706)">not in DockGate</div>' : ''}
             <div class="sw-chips">${n.tasks.length ? n.tasks.map(t => {
               const cls = t.state === 'running' ? 'running' : ['failed', 'rejected'].includes(t.state) ? 'failed' : 'starting';
@@ -463,6 +463,7 @@
       }
       content.querySelector('[data-setup]')?.addEventListener('click', () => openWizard(st, load));
       const rj = content.querySelector('[data-recent-jobs]'); if (rj) recentJobs(rj, load);
+      content.querySelectorAll('.sw-node [data-node]').forEach(x => x.addEventListener('click', (e) => { e.preventDefault(); Router.navigate('swarm-node', { id: x.dataset.node }); }));
       content.querySelector('[data-addsrv]')?.addEventListener('click', () => openWizard(st, load, { add: true }));
       content.querySelector('[data-go-nodes]')?.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-nodes' }));
       content.querySelector('[data-go-migrate]')?.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-migrate' }));
@@ -511,7 +512,7 @@
           { label: 'Remove…', attrs: `data-act="remove" data-id="${esc(n.id)}"` },
         ].filter(Boolean);
         return { cells: [
-          `<b>${esc(n.hostname)}</b> ${n.leader ? UI.pill('info', 'leader') : ''}${n.self ? ' <span class="ui-sub">· DockGate manages through this one</span>' : ''}
+          `<a href="#" data-node="${esc(n.id)}" class="td-name" title="Open the node page"><b>${esc(n.hostname)}</b></a> ${n.leader ? UI.pill('info', 'leader') : ''}${n.self ? ' <span class="ui-sub">· DockGate manages through this one</span>' : ''}
             <div class="ui-sub">${n.serverId ? `DockGate server: ${esc(n.serverName)}` : '<span style="color:var(--warning,#d97706)">not in DockGate</span>'} · Docker ${esc(n.engine)} · ${esc(n.arch)}</div>`,
           `<span class="td-mono text-sm">${esc(n.addr)}</span>`,
           `${esc(n.role)}${n.role === 'manager' && n.reachability && n.reachability !== 'reachable' ? ` ${UI.pill('bad', esc(n.reachability))}` : ''}`,
@@ -528,7 +529,8 @@
       refreshUsage();
       content.querySelector('[data-add]').onclick = () => openWizard(null, load, { add: true });
       content.querySelector('[data-rebalance]')?.addEventListener('click', () => confirmRebalance(load));
-      content.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => nodeAction(b.dataset.act, data.nodes.find(n => n.id === b.dataset.id), load)));
+      content.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => nodeAction(b.dataset.act, data.nodes.find(n => n.id === b.dataset.id), data, load)));
+      content.querySelectorAll('[data-node]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); Router.navigate('swarm-node', { id: a.dataset.node }); }));
       stop(); timer = setTimeout(load, 10000);
     }
     // CPU and memory of each node's server, read from its DockGate server (host stats), every 30 s
@@ -556,55 +558,56 @@
         for (const n of data.nodes) { const el = content.querySelector(`[data-use="${CSS.escape(n.id)}"]`); if (el) el.innerHTML = useCell(n); }
       } finally { usageBusy = false; }
     }
-    async function nodeAction(act, n, done) {
-      if (!n) return;
-      const upd = async (body, msg) => { try { await API.post(`/swarm/nodes/${n.id}/update`, body); showToast(msg); done(); } catch (e) { showToast(e.message, 'error', 9000); } };
-      if (act === 'pause') return secConfirm({ title: `Pause ${n.hostname}`, change: 'The server keeps its running tasks but gets no new ones.', protects: 'Nothing stops. Safe on one server too.', undo: 'Activate.', confirmLabel: 'Pause', onConfirm: () => upd({ availability: 'pause' }, `${n.hostname} paused`) });
-      if (act === 'activate') return upd({ availability: 'active' }, data.nodes.length > 1 ? `${n.hostname} is active. Tasks do not move back by themselves — use Rebalance.` : `${n.hostname} is active`);
-      if (act === 'drain') {
-        let imp; try { imp = await API.get(`/swarm/nodes/${n.id}/drain-impact`); } catch (e) { return showToast(e.message, 'error'); }
-        if (!imp.others) return showToast('No other active server: draining would stop every service. Use Pause, or add a server first.', 'error', 9000);
-        return secConfirm({ title: `Drain ${n.hostname}`, danger: imp.stuck.length > 0,
-          change: `Its tasks stop here and start on the other ${plural(imp.others, 'server')}.${imp.moves.length ? `<div style="margin-top:4px">Moves: ${imp.moves.map(x => `<b>${esc(x.service)}</b>${x.volume ? ' <span style="color:var(--warning,#d97706)">(its data volume stays on this server — the new task starts with an empty volume)</span>' : ''}`).join(', ')}</div>` : ''}`,
-          protects: imp.stuck.length ? `<span style="color:var(--danger,#dc2626)">These stop and wait: ${imp.stuck.map(x => `<b>${esc(x.service)}</b> — ${esc(x.why)}`).join('; ')}</span>` : 'Every task has another server to run on.',
-          undo: 'Activate the server; then Rebalance to spread tasks again.', confirmLabel: 'Drain', onConfirm: () => upd({ availability: 'drain' }, `${n.hostname} drained`) });
-      }
-      if (act === 'promote' || act === 'demote') {
-        const after = data.managers + (act === 'promote' ? 1 : -1);
-        return secConfirm({ title: `${act === 'promote' ? 'Promote' : 'Demote'} ${n.hostname}`, danger: after === 2,
-          change: act === 'promote' ? 'The server becomes a manager: it keeps a copy of the cluster state and can take over as leader.' : 'The server becomes a worker: it only runs tasks.',
-          protects: `After this: ${tolerance(after)}.${after === 2 ? ' With 2 managers losing either one stops cluster changes — add or remove one more.' : ''}`,
-          undo: act === 'promote' ? 'Demote it again.' : 'Promote it again.', confirmLabel: act === 'promote' ? 'Promote' : 'Demote', onConfirm: () => upd({ role: act === 'promote' ? 'manager' : 'worker' }, `${n.hostname} is now a ${act === 'promote' ? 'manager' : 'worker'}`) });
-      }
-      if (act === 'inspect') return inspectDialog('node', n.id, n.hostname);
-      if (act === 'labels') {
-        const text = Object.entries(n.labels).map(([k, v]) => `${k}=${v}`).join('\n');
-        const used = Object.entries(data.labelUse || {}).map(([k, svcs]) => `<b>${esc(k)}</b>: ${svcs.map(esc).join(', ')}`).join('<br>');
-        return UI.dialog({ title: `Labels of ${n.hostname}`, body: `<p class="text-sm text-muted">One <span class="td-mono">key=value</span> per line, e.g. <span class="td-mono">db=true</span> or <span class="td-mono">zone=fsn1</span>. Services use them in placement rules (<span class="td-mono">node.labels.db==true</span>).</p>
-            <textarea class="input" data-labels rows="6" style="font-family:var(--font-mono,monospace)">${esc(text)}</textarea>${used ? `<div class="ui-sub" style="margin-top:8px">Used by services — ${used}</div>` : ''}`,
-          onSave: async (ov) => {
-            const labels = {};
-            for (const line of ov.querySelector('[data-labels]').value.split('\n').map(l => l.trim()).filter(Boolean)) {
-              const i = line.indexOf('='); if (i < 1) throw new Error(`"${line}": write key=value`);
-              labels[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-            }
-            const gone = Object.keys(n.labels).filter(k => !(k in labels) && (data.labelUse || {})[k]);
-            if (gone.length && !confirm(`${gone.join(', ')} ${gone.length > 1 ? 'are' : 'is'} used by services. Without it their tasks may have nowhere to run. Remove anyway?`)) return false;
-            await API.post(`/swarm/nodes/${n.id}/update`, { labels }); showToast('Labels saved'); done();
-          } });
-      }
-      if (act === 'adopt') return Router.navigate('infra', { tab: 'servers', addHost: n.addr });
-      if (act === 'remove') {
-        return showDeleteConfirm(`Remove ${n.hostname}`, {
-          message: `${n.role === 'manager' ? 'It is demoted, then ' : ''}its tasks move to other servers (drain), ${n.serverId ? `<b>${esc(n.serverName)}</b> leaves the swarm` : 'it is removed from the list (run <span class="td-mono">docker swarm leave</span> on it yourself)'} and DockGate deletes the firewall rules it added for it. Containers of compose projects on it are not touched.`,
-          phrase: n.hostname, confirmLabel: 'Remove',
-          onConfirm: () => startJob(`/swarm/nodes/${n.id}/remove`, { confirm: true }, 'Remove node', done),
-        });
-      }
-    }
     await load();
     return stop;
   });
+  // Node actions, shared by Swarm → Nodes and the node page. data: { nodes, managers, labelUse }.
+  async function nodeAction(act, n, data, done) {
+    if (!n) return;
+    const upd = async (body, msg) => { try { await API.post(`/swarm/nodes/${n.id}/update`, body); showToast(msg); done(); } catch (e) { showToast(e.message, 'error', 9000); } };
+    if (act === 'pause') return secConfirm({ title: `Pause ${n.hostname}`, change: 'The server keeps its running tasks but gets no new ones.', protects: 'Nothing stops. Safe on one server too.', undo: 'Activate.', confirmLabel: 'Pause', onConfirm: () => upd({ availability: 'pause' }, `${n.hostname} paused`) });
+    if (act === 'activate') return upd({ availability: 'active' }, data.nodes.length > 1 ? `${n.hostname} is active. Tasks do not move back by themselves — use Rebalance.` : `${n.hostname} is active`);
+    if (act === 'drain') {
+      let imp; try { imp = await API.get(`/swarm/nodes/${n.id}/drain-impact`); } catch (e) { return showToast(e.message, 'error'); }
+      if (!imp.others) return showToast('No other active server: draining would stop every service. Use Pause, or add a server first.', 'error', 9000);
+      return secConfirm({ title: `Drain ${n.hostname}`, danger: imp.stuck.length > 0,
+        change: `Its tasks stop here and start on the other ${plural(imp.others, 'server')}.${imp.moves.length ? `<div style="margin-top:4px">Moves: ${imp.moves.map(x => `<b>${esc(x.service)}</b>${x.volume ? ' <span style="color:var(--warning,#d97706)">(its data volume stays on this server — the new task starts with an empty volume)</span>' : ''}`).join(', ')}</div>` : ''}`,
+        protects: imp.stuck.length ? `<span style="color:var(--danger,#dc2626)">These stop and wait: ${imp.stuck.map(x => `<b>${esc(x.service)}</b> — ${esc(x.why)}`).join('; ')}</span>` : 'Every task has another server to run on.',
+        undo: 'Activate the server; then Rebalance to spread tasks again.', confirmLabel: 'Drain', onConfirm: () => upd({ availability: 'drain' }, `${n.hostname} drained`) });
+    }
+    if (act === 'promote' || act === 'demote') {
+      const after = data.managers + (act === 'promote' ? 1 : -1);
+      return secConfirm({ title: `${act === 'promote' ? 'Promote' : 'Demote'} ${n.hostname}`, danger: after === 2,
+        change: act === 'promote' ? 'The server becomes a manager: it keeps a copy of the cluster state and can take over as leader.' : 'The server becomes a worker: it only runs tasks.',
+        protects: `After this: ${tolerance(after)}.${after === 2 ? ' With 2 managers losing either one stops cluster changes — add or remove one more.' : ''}`,
+        undo: act === 'promote' ? 'Demote it again.' : 'Promote it again.', confirmLabel: act === 'promote' ? 'Promote' : 'Demote', onConfirm: () => upd({ role: act === 'promote' ? 'manager' : 'worker' }, `${n.hostname} is now a ${act === 'promote' ? 'manager' : 'worker'}`) });
+    }
+    if (act === 'inspect') return inspectDialog('node', n.id, n.hostname);
+    if (act === 'labels') {
+      const text = Object.entries(n.labels).map(([k, v]) => `${k}=${v}`).join('\n');
+      const used = Object.entries(data.labelUse || {}).map(([k, svcs]) => `<b>${esc(k)}</b>: ${svcs.map(esc).join(', ')}`).join('<br>');
+      return UI.dialog({ title: `Labels of ${n.hostname}`, body: `<p class="text-sm text-muted">One <span class="td-mono">key=value</span> per line, e.g. <span class="td-mono">db=true</span> or <span class="td-mono">zone=fsn1</span>. Services use them in placement rules (<span class="td-mono">node.labels.db==true</span>).</p>
+          <textarea class="input" data-labels rows="6" style="font-family:var(--font-mono,monospace)">${esc(text)}</textarea>${used ? `<div class="ui-sub" style="margin-top:8px">Used by services — ${used}</div>` : ''}`,
+        onSave: async (ov) => {
+          const labels = {};
+          for (const line of ov.querySelector('[data-labels]').value.split('\n').map(l => l.trim()).filter(Boolean)) {
+            const i = line.indexOf('='); if (i < 1) throw new Error(`"${line}": write key=value`);
+            labels[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+          }
+          const gone = Object.keys(n.labels).filter(k => !(k in labels) && (data.labelUse || {})[k]);
+          if (gone.length && !confirm(`${gone.join(', ')} ${gone.length > 1 ? 'are' : 'is'} used by services. Without it their tasks may have nowhere to run. Remove anyway?`)) return false;
+          await API.post(`/swarm/nodes/${n.id}/update`, { labels }); showToast('Labels saved'); done();
+        } });
+    }
+    if (act === 'adopt') return Router.navigate('infra', { tab: 'servers', addHost: n.addr });
+    if (act === 'remove') {
+      return showDeleteConfirm(`Remove ${n.hostname}`, {
+        message: `${n.role === 'manager' ? 'It is demoted, then ' : ''}its tasks move to other servers (drain), ${n.serverId ? `<b>${esc(n.serverName)}</b> leaves the swarm` : 'it is removed from the list (run <span class="td-mono">docker swarm leave</span> on it yourself)'} and DockGate deletes the firewall rules it added for it. Containers of compose projects on it are not touched.`,
+        phrase: n.hostname, confirmLabel: 'Remove',
+        onConfirm: () => startJob(`/swarm/nodes/${n.id}/remove`, { confirm: true }, 'Remove node', done),
+      });
+    }
+  }
   function confirmRebalance(done) {
     secConfirm({ title: 'Rebalance', change: 'Services that can move get their tasks restarted, one service at a time (<span class="td-mono">docker service update --force</span>), so Swarm spreads them over the active servers.',
       protects: 'Services pinned to a server, global services and services with a data volume are left alone. Each service updates with its own rolling update settings.', undo: 'Not needed.', confirmLabel: 'Rebalance',

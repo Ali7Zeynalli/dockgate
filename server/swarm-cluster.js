@@ -129,6 +129,65 @@ async function nodes() {
   };
 }
 
+/** One node with everything the node page shows: what Nodes lists, plus OS, times, status message and
+ *  the tasks Swarm placed on it (newest first, also ended ones still in Swarm's history). */
+async function nodeDetail(nodeId) {
+  const all = await nodes();
+  const n = all.nodes.find(x => x.id === nodeId || x.hostname === nodeId);
+  if (!n) throw bad(404, 'Node not found');
+  const mgr = await manager();
+  const [raw, tasks, services] = await Promise.all([
+    mgr.client.getNode(n.id).inspect(),
+    mgr.client.listTasks({ filters: JSON.stringify({ node: [n.id] }) }),
+    mgr.client.listServices(),
+  ]);
+  const svc = new Map(services.map(s => [s.ID, s.Spec.Name]));
+  const d = raw.Description || {};
+  return {
+    ...n, managers: all.managers, labelUse: all.labelUse, managerServer: all.managerServer, nodes: all.nodes.length,
+    os: d.Platform ? d.Platform.OS : null, engineLabels: (d.Engine && d.Engine.Labels) || {},
+    plugins: ((d.Engine && d.Engine.Plugins) || []).map(p => `${p.Type}: ${p.Name}`),
+    createdAt: raw.CreatedAt, updatedAt: raw.UpdatedAt, message: raw.Status && raw.Status.Message || null,
+    tasks: tasks.sort((a, b) => new Date(b.Status.Timestamp) - new Date(a.Status.Timestamp)).slice(0, 200).map(t => ({
+      id: t.ID, serviceId: t.ServiceID, service: svc.get(t.ServiceID) || t.ServiceID.slice(0, 12), slot: t.Slot || null,
+      state: t.Status.State, desired: t.DesiredState, error: t.Status.Err || null, message: t.Status.Message || null,
+      image: String((t.Spec && t.Spec.ContainerSpec && t.Spec.ContainerSpec.Image) || '').split('@')[0], at: t.Status.Timestamp,
+      container: t.Status.ContainerStatus && t.Status.ContainerStatus.ContainerID ? t.Status.ContainerStatus.ContainerID.slice(0, 12) : null,
+    })),
+  };
+}
+
+/** Docker events about this node (state, availability, role, labels), newest first. */
+async function nodeEvents(nodeId, hours = 24) {
+  const mgr = await manager();
+  const now = Math.floor(Date.now() / 1000);
+  const stream = await mgr.client.getEvents({ since: now - Math.min(Number(hours) || 24, 168) * 3600, until: now, filters: JSON.stringify({ type: ['node'], node: [nodeId] }) });
+  return new Promise((resolve) => {
+    let buf = ''; const out = [];
+    const end = () => resolve(out.reverse().slice(0, 200));
+    const t = setTimeout(() => { try { stream.destroy(); } catch (e) { /* gone */ } end(); }, 4000);
+    stream.on('data', (chunk) => {
+      buf += chunk.toString(); let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        try {
+          const e = JSON.parse(line); const a = (e.Actor && e.Actor.Attributes) || {};
+          out.push({ time: e.time, action: e.Action, detail: Object.entries(a).filter(([k]) => k !== 'name').map(([k, v]) => `${k}=${v}`).join(' ') });
+        } catch (err) { /* partial line */ }
+      }
+    });
+    stream.on('end', () => { clearTimeout(t); end(); });
+    stream.on('error', () => { clearTimeout(t); end(); });
+  });
+}
+
+/** What was done to this node from DockGate (audit log). */
+function nodeAudit(hostname) {
+  const { db } = require('./db');
+  return db.prepare("SELECT action, details, created_at FROM activity WHERE resource_type = 'swarm-node' AND resource_name = ? ORDER BY id DESC LIMIT 50").all(hostname)
+    .map(r => ({ action: r.action, details: (() => { try { return JSON.parse(r.details || '{}'); } catch (e) { return {}; } })(), at: r.created_at }));
+}
+
 /** DockGate servers that are not nodes of this cluster (for Add servers…). */
 async function candidates() {
   const mgr = await manager();
@@ -611,4 +670,4 @@ async function overviewExtras(ov) {
   return ov;
 }
 
-module.exports = { ensureEsp, remember, nodes, candidates, checkServers, startAddServers, startCreateCluster, drainImpact, updateNode, startRebalance, startRemoveNode, overviewExtras, rulesFor, fwCommands, parseLabels, pinnedTo };
+module.exports = { ensureEsp, remember, nodes, nodeDetail, nodeEvents, nodeAudit, candidates, checkServers, startAddServers, startCreateCluster, drainImpact, updateNode, startRebalance, startRemoveNode, overviewExtras, rulesFor, fwCommands, parseLabels, pinnedTo };

@@ -2,6 +2,19 @@
 
 ---
 
+## [2.40.0] - 2026-11-12
+
+### Added
+- **A page for each Swarm node**, like the service and container pages. Click a node's name in Swarm → Nodes or on Swarm → Overview. Tabs:
+  - **Overview** — role, state, availability, address, capacity, OS, Docker, DockGate server, joined, last change, labels.
+  - **Tasks** — every task Swarm placed on the node (running now, or with history), with errors; click a service to open it.
+  - **Resources** — CPU, memory, disk and network of the node's DockGate server, live and for 48 hours, with its alert rules.
+  - **Labels** — the labels and which services' placement rules use them; edit them here.
+  - **Events** — Docker events about the node in the last 24 hours. **History** — what was changed on it from DockGate. **Inspect** — the raw JSON.
+  - The buttons on top are the node actions: Activate, Pause, Drain…, Promote / Demote, Server console, Add to DockGate…, Remove….
+
+---
+
 ## [2.39.0] - 2026-11-12
 
 ### Added

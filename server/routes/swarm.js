@@ -54,6 +54,9 @@ router.post('/cluster', async (req, res) => {
 router.post('/servers/add', async (req, res) => {
   try { const j = await cluster.startAddServers(req.body || {}, { sourceIp: req.ip }); res.json({ jobId: j.id }); } catch (e) { fail(res, e); }
 });
+router.get('/nodes/:id/detail', async (req, res) => { try { res.json(await cluster.nodeDetail(req.params.id)); } catch (e) { fail(res, e); } });
+router.get('/nodes/:id/events', async (req, res) => { try { res.json({ events: await cluster.nodeEvents(req.params.id, req.query.hours) }); } catch (e) { fail(res, e); } });
+router.get('/nodes/:id/audit', async (req, res) => { try { res.json({ audit: cluster.nodeAudit(String(req.query.name || '')) }); } catch (e) { fail(res, e); } });
 router.get('/nodes/:id/drain-impact', async (req, res) => { try { res.json(await cluster.drainImpact(req.params.id)); } catch (e) { fail(res, e); } });
 router.post('/nodes/:id/update', async (req, res) => {
   try { res.json(await cluster.updateNode(req.params.id, req.body || {}, { sourceIp: req.ip })); } catch (e) { fail(res, e); }
