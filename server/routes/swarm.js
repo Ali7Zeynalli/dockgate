@@ -23,6 +23,7 @@ const autoscale = require('../swarm-autoscale');
 router.get('/autoscale', async (req, res) => { try { res.json(await autoscale.overview()); } catch (e) { fail(res, e); } });
 router.get('/autoscale/rules', async (req, res) => { try { res.json({ rules: await autoscale.listRules() }); } catch (e) { fail(res, e); } });
 router.put('/autoscale/rules', async (req, res) => { try { res.json(await autoscale.saveRules((req.body || {}).services, req.body || {}, { sourceIp: req.ip })); } catch (e) { fail(res, e); } });
+router.post('/autoscale/suggest', async (req, res) => { try { res.json(await autoscale.suggest((req.body || {}).services)); } catch (e) { fail(res, e); } });
 router.put('/autoscale/settings', (req, res) => { try { res.json(autoscale.saveSettings(req.body || {}, { sourceIp: req.ip })); } catch (e) { fail(res, e); } });
 router.post('/services/:id/autoscale/enabled', async (req, res) => { try { res.json(await autoscale.setEnabled(req.params.id, !!(req.body || {}).on, { sourceIp: req.ip })); } catch (e) { fail(res, e); } });
 router.get('/services/:id/autoscale', async (req, res) => { try { res.json(await autoscale.getRule(req.params.id)); } catch (e) { fail(res, e); } });

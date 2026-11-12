@@ -91,3 +91,36 @@ test('validate fills defaults and refuses rules that would flap or are out of ra
   assert.throws(() => A.validate({ step: 9 }), /Replicas per change/);
   assert.strictEqual(A.validate({ cooldownMinutes: 7 }).coolUpMinutes, 7); // a 2.41 form
 });
+
+// ---- suggestions from usage ----
+const MB = 2 ** 20;
+const capBig = { nodes: [{ active: true, cpu: 4, mem: 16 * 2 ** 30, cpuReserved: 0, memReserved: 0 }] };
+// 2 tasks, a sample every 2 minutes for `n` readings; cpu = % of a core for all tasks
+const usage = (n, f) => Array.from({ length: n }, (_, i) => { const v = f(i); return { t: i * 120000, cpu: v.cpu, mem: v.mem, tasks: v.tasks ?? 2 }; });
+
+test('suggest needs about an hour of readings', () => {
+  const s = A.suggestFrom([{ name: 'web', replicas: 2, samples: usage(10, () => ({ cpu: 40, mem: 200 * MB })) }], capBig);
+  assert.strictEqual(s.enough, false); assert.strictEqual(s.values, null);
+});
+
+test('suggest sizes limits from real use and the range from the load', () => {
+  // per task: usually 0.2 CPU, busy 0.4 for the last 10% of the time; memory 100 MB per task steady
+  const s = A.suggestFrom([{ name: 'web', replicas: 2, samples: usage(100, i => ({ cpu: i >= 90 ? 80 : 40, mem: 200 * MB })) }], capBig);
+  assert.strictEqual(s.enough, true);
+  assert.strictEqual(s.values.cpuLimit, 0.6); // 0.4 × 1.5
+  assert.strictEqual(s.values.cpuReserve, 0.2);
+  assert.strictEqual(s.values.memLimit, 192); // 100 MB × 1.5 → 64 MB steps
+  assert.strictEqual(s.values.memReserve, 128); // 100 MB → 32 MB steps
+  assert.strictEqual(s.values.memOn, false); // memory did not move
+  assert.strictEqual(s.values.min, 1); // 0.4 CPU in all fits one replica at 80% of 0.6 = 0.48
+  assert.strictEqual(s.values.max, 3); // busy: 0.8 CPU → 2 replicas, × 1.5
+  assert.match(s.why.cpuLimit, /web used up to 0.4 CPU/);
+});
+
+test('suggest turns memory on when it rises with load, and caps the maximum to what fits', () => {
+  const small = { nodes: [{ active: true, cpu: 1, mem: 2 ** 30, cpuReserved: 0.5, memReserved: 0 }] };
+  const s = A.suggestFrom([{ name: 'api', replicas: 1, samples: usage(60, i => ({ cpu: i % 10 === 0 ? 180 : 60, mem: (i % 10 === 0 ? 600 : 200) * MB, tasks: 1 })) }], small);
+  assert.strictEqual(s.values.memOn, true);
+  assert.ok(s.values.max <= s.values.min + A.room(small, s.values.cpuReserve, s.values.memReserve * MB));
+  assert.match(s.notes.join(' '), /fit on the servers/);
+});
