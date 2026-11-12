@@ -322,7 +322,7 @@
     async function load() {
       if (!Router.isActiveNav(navId) || !content.isConnected) return stop();
       let st = { services: {} }, auto = {};
-      try { [data, st, auto] = await Promise.all([API.get('/swarm/services').then(r => r.services), API.get('/swarm/services/stats').catch(() => ({ services: {} })), API.get('/swarm/autoscale').then(r => r.rules).catch(() => ({}))]); }
+      try { [data, st, auto] = await Promise.all([API.get('/swarm/services').then(r => r.services), API.get('/swarm/services/stats').catch(() => ({ services: {} })), API.get('/swarm/autoscale/rules').then(r => r.rules).catch(() => ({}))]); }
       catch (e) {
         content.innerHTML = UI.header('Services', esc(e.message), UI.btn('Open Overview', 'data-go'));
         content.querySelector('[data-go]').onclick = () => Router.navigate('swarm', { tab: 'swarm-overview' });

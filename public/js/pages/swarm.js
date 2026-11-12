@@ -678,6 +678,13 @@
           { label: 'Task history per slot', desc: 'How many stopped tasks Swarm keeps per slot (shown in Services → Tasks).', value: esc(c.taskHistory), action: UI.btn('Change…', 'data-edit="taskHistory"') },
           { label: 'Autolock', desc: c.autolock ? 'After a Docker restart the swarm is locked until it is unlocked with the key.' : 'Off: the swarm starts unlocked after a Docker restart.', value: c.autolock ? UI.pill('ok', 'on') : UI.pill('off', 'off'), action: `${c.autolock && st.hasStoredKey ? UI.btn('Show unlock key…', 'data-showkey') + ' ' : ''}${UI.btn(c.autolock ? 'Turn off…' : 'Turn on…', 'data-autolock')}` },
           { label: 'Join tokens', desc: 'To add a server by hand with docker swarm join. DockGate\'s Add servers… does this for you.', value: '', action: UI.btn('Show…', 'data-tokens') },
+          ...(c.autolock ? [{ label: 'Unlock key', desc: 'Make a new unlock key; the old one stops working. DockGate stores the new one (encrypted) and shows it once.', value: '', action: UI.btn('Rotate…', 'data-rotunlock') }] : []),
+          { label: 'Root CA', desc: c.rootRotation ? 'A rotation is in progress: servers are getting new certificates.' : 'Signs every node certificate. Rotate it after a manager was compromised or a key may have leaked.', value: c.rootRotation ? UI.pill('warn', 'rotating') : (c.caRotations ? `rotated ${c.caRotations}×` : ''), action: c.rootRotation ? '' : UI.btn('Rotate…', 'data-rotca') },
+        ])}
+        <div class="ui-ph" style="margin-top:18px"><div class="ui-ph-text"><div class="ui-ph-title">Tuning</div><div class="ui-ph-desc">The defaults suit most clusters. Change only with a reason.</div></div></div>
+        ${UI.settings([
+          { label: 'Heartbeat period', desc: 'How often servers report to the managers. Higher means less traffic but a lost server is noticed later.', value: `${esc(c.heartbeatSec)} s`, action: UI.btn('Change…', 'data-edit="heartbeatSec"') },
+          { label: 'Raft snapshot interval', desc: 'Log entries between snapshots of the cluster state. Lower means smaller logs and more frequent snapshots.', value: esc(c.snapshotInterval), action: UI.btn('Change…', 'data-edit="snapshotInterval"') },
         ])}
         <div class="ui-ph" style="margin-top:18px"><div class="ui-ph-text"><div class="ui-ph-title">Backups</div><div class="ui-ph-desc">The swarm state (Raft) of this manager and a plain description of services, networks, configs and nodes. Kept in DockGate's data folder, the last 7. Secrets are listed by name only — Swarm never gives their values out.</div></div><div class="ui-ph-actions">${UI.btn('How to restore', 'data-howto')} ${UI.primary('Back up now', 'data-backup')}</div></div>
         <div data-backups class="text-sm text-muted">Loading…</div>
@@ -733,10 +740,18 @@
       };
       content.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
         const k = b.dataset.edit;
-        const meta = k === 'certDays' ? { title: 'Node certificate lifetime', label: 'Days (1–3650)', cur: c.certExpiryDays } : { title: 'Task history per slot', label: 'Stopped tasks kept per slot (0–100)', cur: c.taskHistory };
+        const meta = { certDays: { title: 'Node certificate lifetime', label: 'Days (1–3650)', cur: c.certExpiryDays }, taskHistory: { title: 'Task history per slot', label: 'Stopped tasks kept per slot (0–100)', cur: c.taskHistory },
+          heartbeatSec: { title: 'Heartbeat period', label: 'Seconds (1–60, default 5)', cur: c.heartbeatSec }, snapshotInterval: { title: 'Raft snapshot interval', label: 'Log entries (100–1,000,000, default 10,000)', cur: c.snapshotInterval } }[k];
         UI.dialog({ title: meta.title, saveLabel: 'Save', body: `<label class="ui-field"><span class="ui-label">${meta.label}</span><input class="input" type="number" data-v value="${esc(meta.cur)}"></label>`,
           onSave: async (ov) => { await save({ [k]: Number(ov.querySelector('[data-v]').value) }, `${meta.title} saved`); } });
       }));
+      content.querySelector('[data-rotca]')?.addEventListener('click', () => secConfirm({ title: 'Rotate the root CA', danger: true,
+        change: 'Swarm makes a new root CA and gives every server a new certificate signed by it (docker swarm ca --rotate). Servers that are down get theirs when they come back.',
+        protects: 'Services keep running; servers trust the old and the new CA until every server has its new certificate.', undo: 'Not needed. Rotate again if you must.', confirmLabel: 'Rotate CA',
+        onConfirm: async () => { try { await API.post('/swarm/ca/rotate', { confirm: true }); showToast('Root CA rotation started'); load(); } catch (e) { showToast(e.message, 'error', 9000); } } }));
+      content.querySelector('[data-rotunlock]')?.addEventListener('click', () => secConfirm({ title: 'Rotate the unlock key', danger: true,
+        change: 'A new unlock key is made. The old key stops working once every manager has the new one.', protects: 'DockGate stores the new key (encrypted) and shows it once — save it somewhere safe too.', undo: 'Rotate again.', confirmLabel: 'Rotate',
+        onConfirm: async () => { try { const r = await API.post('/swarm/unlock-key/rotate', { confirm: true }); showModal('New unlock key', `<p class="text-sm">Save this key somewhere safe. A locked manager needs it after a Docker restart.</p><div class="sw-key" style="word-break:break-all">${esc(r.key)}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]); load(); } catch (e) { showToast(e.message, 'error', 9000); } } }));
       content.querySelector('[data-autolock]')?.addEventListener('click', () => secConfirm(c.autolock
         ? { title: 'Turn autolock off', change: 'The swarm starts unlocked after a Docker restart. The stored unlock key is removed.', protects: 'Services keep running; nothing restarts.', undo: 'Turn it on again (a new key is made).', confirmLabel: 'Turn off', onConfirm: () => save({ autolock: false }, 'Autolock is off') }
         : { title: 'Turn autolock on', change: 'Swarm encrypts its keys at rest. After every Docker restart a manager stays locked until it is unlocked with the key.', protects: 'DockGate stores the key (encrypted) and shows it once. Services keep running.', undo: 'Turn it off again.', confirmLabel: 'Turn on', onConfirm: () => save({ autolock: true }, 'Autolock is on') }));

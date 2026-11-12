@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.41.1-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.42.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.41.1-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.42.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
@@ -173,11 +173,11 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 
 - **Set up** on one server or several at once: checks, firewall ports, undo on failure. Add servers later.
 - **Nodes** — pause, drain, promote, demote, labels, remove, rebalance. Each node has a **page** with its tasks, CPU and memory (live and 48 h), labels, events and history.
-- **Services** — full form, scale, update image, **Update to newest**, roll back, restart. Each service has a **page** with tasks, logs, terminal and files on any node, stats, settings, updates and events.
-- **Autoscale** — Swarm does not scale by itself: DockGate adds or removes one replica at a time when the CPU per task stays high or low (min / max, thresholds, wait between changes), and spreads replicas over the servers.
+- **Services** — full form, scale, update image, **Update to newest**, roll back, restart, resume a paused update. Each service has a **page** with tasks, logs, terminal and files on any node, stats, settings, updates and events.
+- **Auto Scaling** — Swarm does not scale by itself: DockGate adds or removes replicas when CPU or memory per replica stays high or low (min / max, thresholds, average or every replica, separate waits). It sets each replica's limits and reservations, shows the free capacity and how many more replicas fit, and spreads them over the servers.
 - **Stacks** — move Compose projects (whole or in part) and `docker run` containers to Swarm and back; new stacks from a file or a template; take over stacks made elsewhere. Volumes keep their names, so data stays; a move that fails puts the project back.
 - **Secrets, configs, overlay networks** — create, rotate, remove; encrypted overlays.
-- **Cluster** — certificates, autolock, join tokens, nightly backups, restore of missing services, Recover cluster.
+- **Cluster** — certificates and CA rotation, autolock and unlock-key rotation, heartbeat and Raft tuning, join tokens, nightly backups, restore of missing services, Recover cluster.
 
 ---
 

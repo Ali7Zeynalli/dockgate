@@ -2,6 +2,30 @@
 
 ---
 
+## [2.42.0] - 2026-11-12
+
+### Added
+- **Swarm → Auto Scaling**, a new tab after Services, for all autoscale rules in one place:
+  - **Capacity**: CPU and memory of the active servers, how much tasks have reserved, and how many more replicas of each service fit.
+  - **Rules**: each service's range, its CPU and memory now, how many replicas fit, and its state (*steady*, *busy — adds a replica after 5 min*, *busy, no room for another replica* …). Edit, pause, resume or remove a rule from its ⋯ menu; **Pause all** stops every rule at once.
+  - **History** of every change, filtered by service.
+  - **New rule** in 4 steps: services (one rule can cover several services), what each replica gets (CPU and memory limit and reservation, spread over the servers), when to scale, and the range with a check of how many replicas fit.
+- **Memory** as a reason to scale: add a replica when the memory per replica stays above a % of its limit, with *CPU or memory* or *CPU and memory*. A memory rule needs a memory limit.
+- **Every replica busy**: scale on the least busy replica instead of the average, so one hot replica does not add more.
+- **Replicas per change** (1–5) and separate waits after adding and after removing.
+- Checks **every 30 seconds** or every minute, and what to do with a replica that fits nowhere: wait for room or skip. A replica that stays pending is recorded once (*not placed: …*) and sent through the **Swarm autoscale** notification.
+- **Cluster settings**:
+  - **Root CA → Rotate…** gives every node a new certificate.
+  - **Unlock key → Rotate…** (with autolock on) shows the new key once and keeps it in DockGate.
+  - **Tuning**: heartbeat period (1–60 s) and Raft snapshot interval.
+- **Resume the update…** for a service whose rolling update paused after a failure: on the service's Updates tab and in a banner at the top of its page.
+
+### Changed
+- A service's **Autoscale** tab shows a short summary of its rule, Pause/Resume and its history; the rule is edited on Swarm → Auto Scaling.
+- Rules made in 2.41 keep working: their wait is used after adding, and after removing too (at least 5 min).
+
+---
+
 ## [2.41.1] - 2026-11-12
 
 ### Changed
