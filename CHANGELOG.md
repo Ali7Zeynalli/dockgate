@@ -2,6 +2,13 @@
 
 ---
 
+## [2.42.2] - 2026-11-12
+
+### Added
+- **Documentation** in [`docs/`](docs/README.md): getting started, Resources (Containers, Images, Volumes, Networks, Builds, Prune), Swarm → Stacks and Migrate, and Swarm → Auto Scaling, with screenshots, settings and every error message with its fix. The README links to it (**Docs**).
+
+---
+
 ## [2.42.1] - 2026-11-12
 
 ### Changed
