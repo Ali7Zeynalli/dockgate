@@ -13,4 +13,4 @@ LICENSE
 .gitignore
 .env
 .env.*
-docs
+guide

@@ -128,7 +128,7 @@ router.post('/', (req, res) => {
     if (!username) return res.status(400).json({ error: 'username tələb olunur' });
 
     if (stmts.getServer.get(id)) {
-      return res.status(409).json({ error: `Server "${id}" artıq mövcuddur` });
+      return res.status(409).json({ error: `A server with the ID "${id}" already exists` });
     }
 
     let keyPath = null;
@@ -178,7 +178,7 @@ router.post('/', (req, res) => {
 router.post('/:id/grant-docker', async (req, res) => {
   try {
     const server = stmts.getServer.get(req.params.id);
-    if (!server) return res.status(404).json({ error: 'Server tapılmadı' });
+    if (!server) return res.status(404).json({ error: 'Server not found' });
     const r = await grantDockerAccess(server);
     logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'server', resourceName: req.params.id, action: 'grant-docker', details: { user: server.username, already: !!r.already } });
     res.json({ success: true, already: !!r.already, message: r.already
@@ -272,7 +272,7 @@ router.post('/test', async (req, res) => {
       serverConfig = { type: 'local' };
     } else if (id && !privateKey && !password) {
       const existing = stmts.getServer.get(id);
-      if (!existing) return res.status(404).json({ error: 'Server tapılmadı' });
+      if (!existing) return res.status(404).json({ error: 'Server not found' });
       serverConfig = existing;
     } else {
       if (!host || !username) return res.status(400).json({ error: 'host və username tələb olunur' });
@@ -336,7 +336,7 @@ router.delete('/:id', (req, res) => {
     if (id === 'local') return res.status(400).json({ error: 'local server silinə bilməz' });
 
     const server = stmts.getServer.get(id);
-    if (!server) return res.status(404).json({ error: 'Server tapılmadı' });
+    if (!server) return res.status(404).json({ error: 'Server not found' });
 
     // Aktiv olan silinirsə — local-a keç
     const activeId = stmts.getSetting.get('active_server')?.value;

@@ -53,7 +53,7 @@ function setActiveServer(serverId) {
     _activeServerId = 'local';
   } else {
     const server = stmts.getServer.get(serverId);
-    if (!server) throw new Error(`Server tapılmadı: ${serverId}`);
+    if (!server) throw new Error(`Server not found: ${serverId}`);
     _docker = createSshClient(server);
     _activeServerId = serverId;
   }

@@ -361,7 +361,7 @@
         ] };
       });
       content.innerHTML = `${UI.header('Services', `${data.length} service${data.length === 1 ? '' : 's'}. Updates replace tasks one at a time and go back by themselves when a new task fails (each service's update settings).`, `${UI.btn('Check for updates', 'data-check')} ${UI.primary('New service…', 'data-new')}`)}
-        ${UI.table([{ label: 'Service' }, { label: 'Image' }, { label: 'Mode' }, { label: 'Tasks' }, { label: 'CPU · Memory' }, { label: 'Ports' }, { label: 'Last update' }, { label: '', align: 'right' }], rowsHtml, { minWidth: 1060, empty: 'No services yet. Create one with New service…, or deploy a stack (next version).' })}`;
+        ${UI.table([{ label: 'Service' }, { label: 'Image' }, { label: 'Mode' }, { label: 'Tasks' }, { label: 'CPU · Memory' }, { label: 'Ports' }, { label: 'Last update' }, { label: '', align: 'right' }], rowsHtml, { minWidth: 1060, empty: 'No services yet. Create one with New service…, or deploy a stack in Swarm → Stacks.' })}`;
       content.querySelector('[data-new]').onclick = () => openForm({ onDone: load });
       content.querySelector('[data-check]').onclick = async (e) => {
         const b = e.currentTarget; b.disabled = true; b.textContent = 'Checking…';
