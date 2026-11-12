@@ -23,10 +23,26 @@
       return { cells: [
         `<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '?')}</div>`,
         s.database ? '1 <span class="ui-sub">database</span>' : `<input class="input" type="number" min="0" max="100" style="width:80px" data-set="${esc(p.project)}|${esc(s.name)}|replicas" value="${my.replicas ?? 1}">`,
-        s.ports.length ? `<select class="select" data-set="${esc(p.project)}|${esc(s.name)}|portMode" style="max-width:220px"><option value="ingress" ${my.portMode !== 'host' ? 'selected' : ''}>ingress — every server answers</option><option value="host" ${my.portMode === 'host' ? 'selected' : ''}>host — real client IP</option></select><div class="ui-sub">${s.ports.map(x => `${x.published || ''}→${x.target}`).join(', ')}</div>` : '<span class="ui-sub">—</span>',
+        portsCell(p, s, my),
         data ? '<span class="text-sm">stop-first</span><div class="ui-sub">has data: never two copies at once</div>' : `<select class="select" data-set="${esc(p.project)}|${esc(s.name)}|order" style="max-width:200px"><option value="start-first" ${my.order !== 'stop-first' ? 'selected' : ''}>start-first (no downtime)</option><option value="stop-first" ${my.order === 'stop-first' ? 'selected' : ''}>stop-first</option></select>`,
       ] };
     }), { minWidth: 0 });
+  }
+  // Ports: open ones get ingress / host; ones only this server could reach (127.0.0.1) stay inside unless asked.
+  function portsCell(p, s, my) {
+    if (s.hostNetwork) return '<span class="text-sm">host network</span><div class="ui-sub">same as network_mode: host</div>';
+    if (!s.ports.length) return '<span class="ui-sub">— inside only</span>';
+    const open = s.ports.filter(x => x.scope === 'any'), local = s.ports.filter(x => x.scope === 'local'), addr = s.ports.filter(x => x.scope === 'address');
+    const list = (xs) => xs.map(x => `${x.hostIp ? `${x.hostIp}:` : ''}${x.published || ''}→${x.target}`).join(', ');
+    let h = '';
+    if (open.length) h += `<select class="select" data-set="${esc(p.project)}|${esc(s.name)}|portMode" style="max-width:220px"><option value="ingress" ${my.portMode !== 'host' ? 'selected' : ''}>ingress — every server answers</option><option value="host" ${my.portMode === 'host' ? 'selected' : ''}>host — real client IP</option></select><div class="ui-sub">${esc(list(open))}</div>`;
+    if (local.length) h += `<select class="select" data-set="${esc(p.project)}|${esc(s.name)}|localPorts" style="max-width:220px;margin-top:4px"><option value="inside" ${my.localPorts !== 'host' ? 'selected' : ''}>inside only — not published</option><option value="host" ${my.localPorts === 'host' ? 'selected' : ''}>this server only (host mode)</option></select><div class="ui-sub">${esc(list(local))} — was only on this server</div>`;
+    if (addr.length) h += `<div class="text-sm" style="margin-top:4px">host mode</div><div class="ui-sub">${esc(list(addr))} — tied to one address: allow it in the firewall</div>`;
+    return h;
+  }
+  // A Compose network shared with other projects: what DockGate does about it.
+  function bridgeNote(p) {
+    return (p.bridges || []).map(b => `<div class="insight-card info" style="margin-bottom:8px"><div><b>Shares the network ${esc(b.name)}${b.users.length ? ` with ${esc(b.users.join(', '))}` : ''}.</b> A stack can not join a Compose bridge, so DockGate makes its Swarm twin <span class="td-mono">${esc(b.twin)}</span>: the moved services join it, and the containers still in Compose are connected to it too, by the same names. Nothing stops. Move the project that publishes the ports (nginx) last.</div></div>`).join('');
   }
   function readSettings(root, all) {
     root.querySelectorAll('[data-set]').forEach(el => {
@@ -54,7 +70,7 @@
       const head = `${serverContextBanner()}<div class="sw-steps"><span class="${step === 0 ? 'on' : 'done'}">${step ? '✓' : '1.'} Settings</span><span class="${step === 1 ? 'on' : ''}">2. Plan</span></div>`;
       if (step === 0) {
         next.textContent = 'Review the plan'; next.disabled = false;
-        root.innerHTML = head + projects.map(p => `<div class="ui-ph-title" style="margin:10px 0 6px">${esc(p.project)} ${UI.pill(...STATUS[p.status])}</div>${settingsTable(p, settings[p.project])}`).join('')
+        root.innerHTML = head + projects.map(p => `<div class="ui-ph-title" style="margin:10px 0 6px">${esc(p.project)} ${UI.pill(...STATUS[p.status])}</div>${bridgeNote(p)}${settingsTable(p, settings[p.project])}`).join('')
           + '<div class="ui-sub" style="margin-top:8px">Safe defaults are filled in: 1 replica, databases always 1. Host ports allow one task per server; with one server keep 1 replica for a service with host ports.</div>';
         return;
       }
@@ -109,7 +125,7 @@
       UI.pill(...STATUS[p.status]),
       `<span class="text-sm">${p.services.map(s => esc(s.name)).join(', ') || '—'}</span>`,
       `${p.running}/${p.total}`,
-      `<details><summary class="text-sm" style="cursor:pointer">${p.reasons.length || p.services.some(s => s.findings.length) ? 'What changes' : 'Nothing to change'}</summary>${p.reasons.map(r => `<div class="text-sm" style="color:${LV.bad}">✗ ${esc(r)}</div>`).join('')}${p.services.map(s => s.findings.length ? `<div class="text-sm" style="margin-top:4px"><b>${esc(s.name)}</b></div>${findings(s.findings)}` : '').join('')}</details>`,
+      `${(p.bridges || []).length ? `<div class="ui-sub">shares ${esc(p.bridges.map(b => b.name).join(', '))} — joins its Swarm twin</div>` : ''}<details><summary class="text-sm" style="cursor:pointer">${p.reasons.length || p.services.some(s => s.findings.length) ? 'What changes' : 'Nothing to change'}</summary>${p.reasons.map(r => `<div class="text-sm" style="color:${LV.bad}">✗ ${esc(r)}</div>`).join('')}${p.services.map(s => s.findings.length ? `<div class="text-sm" style="margin-top:4px"><b>${esc(s.name)}</b></div>${findings(s.findings)}` : '').join('')}</details>`,
     ] }));
     content.innerHTML = `${UI.header('Migrate', `Compose projects on this server that run outside Swarm. Choose some and DockGate moves them one at a time; one that does not run on Swarm goes back to Compose by itself. The compose files are not changed.${data.nodes > 1 ? ' Services with data stay on this server (placement rule).' : ''}`, UI.primary('Review…', 'data-review'))}
       ${UI.table([{ label: '', width: '36px' }, { label: 'Project' }, { label: 'Status' }, { label: 'Services' }, { label: 'Running' }, { label: 'Details' }], rows, { minWidth: 860, empty: 'No compose projects outside Swarm on this server.' })}

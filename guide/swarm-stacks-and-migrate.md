@@ -48,23 +48,58 @@ Every move can be undone: **Stacks → ⋯ → Move back to Compose…** (also i
 | **Ports** | `ingress` — every server answers · `host` — the real client IP | With `host`, only one task per server can use the port. On a single server keep 1 replica for such a service. |
 | **Updates** | `start-first` (no downtime) · `stop-first` | A service with a volume or bind mount is always `stop-first`, so two copies never write the same data. |
 
+A port that was only on `127.0.0.1` in the compose file gets its own choice: **inside only — not published** (default; other services reach it by name) or **this server only (host mode)**. Swarm can not bind an address, so without this choice such a port would open on every server.
+
 **Step 2 — Plan.** DockGate builds the Swarm version of each project and shows it before anything happens.
 
 ![Move plan](images/migrate-plan.png)
 
 The plan lists every service with its replicas, ports, update order and *Changes for Swarm*, then the **volumes that stay the same** and the new **overlay network**.
 
+### What changes for Swarm
+
+Nothing in the compose file is dropped silently. Each field is turned into its Swarm form, or named in the plan:
+
+| In the compose file | On Swarm |
+|---|---|
+| `mem_limit`, `mem_reservation`, `cpus`, `cpu_quota` / `cpu_period`, `pids_limit` | `deploy.resources` limits and reservations (what `deploy:` already says wins) |
+| `shm_size` | a tmpfs of that size at `/dev/shm` |
+| `container_name`, `links: [db:database]` | kept as names other services reach it by (network aliases) |
+| `volumes_from` | the other service's volumes are mounted too, and both stay on one server |
+| `depends_on` | on the move, services start in that order: each waits until the ones it depends on run (healthy, if they have a health check) |
+| `ports: "127.0.0.1:…"` | not published (inside only), or host mode on this server — your choice |
+| `ports: "10.0.0.5:…"` (one address) | host mode on this server; allow it in the firewall |
+| `network_mode: host` | Docker's host network (no other network, no published ports) |
+| `ipv4_address` (fixed address) | dropped; reach the service by name. The plan says which services use that address in their environment |
+| `restart` | the restart policy |
+| `privileged`, `devices`, `network_mode: service:…` | not possible on Swarm: that service stays in Compose, the rest move |
+| `cpu_shares`, `cpuset`, `security_opt`, `pid`, `ipc`… | Swarm has no place for them: named in the plan as left out |
+
+### Projects that share a network
+
+Several projects often talk over one network made with `docker network create web` and declared `external: true` in each compose file (nginx, landing, frontend, app, api…). That network is a local bridge, and a stack can not join it.
+
+DockGate makes its **Swarm twin**, an attachable overlay `web-swarm`:
+
+- the moved services join `web-swarm` instead of `web`;
+- the containers still in Compose on `web` are connected to `web-swarm` too, by their service and container names, so both sides keep finding each other by name. Nothing stops;
+- if Compose re-creates one of them, DockGate connects it again within 30 seconds;
+- a project moved back to Compose joins the twin again.
+
+So the projects can move **one at a time**. Move the one that publishes the ports (nginx) last.
+
 ### What happens when you press Move
 
 One project at a time:
 
 1. The compose files are read again. **If they changed since the plan, that project is not moved** — review it again.
-2. `docker compose down` — volumes stay.
-3. `docker stack deploy` under the same name.
-4. Every service must run its replicas and **stay up for 30 seconds**.
-5. If it does not, DockGate puts it back by itself: the stack is removed and `docker compose up -d` runs.
+2. A shared network gets its Swarm twin (see above), and the containers still in Compose join it.
+3. `docker compose down` — volumes stay.
+4. `docker stack deploy` under the same name, in the order of `depends_on`.
+5. Every service must run its replicas and **stay up for 30 seconds**.
+6. If it does not, DockGate puts it back by itself: the stack is removed and `docker compose up -d` runs.
 
-The project is **down from step 2 until its services run on Swarm** — usually 10–60 seconds.
+The project is **down from step 3 until its services run on Swarm** — usually 10–60 seconds.
 A live log of each step opens while the job runs. Only one Swarm job runs at a time.
 
 > **Data is kept.** Volumes keep their names (`<project>_<volume>`), so the stack uses the same data.
@@ -137,6 +172,8 @@ Containers that belong to a Compose project are not listed here — move the pro
 
 | You see | Why | What to do |
 |---|---|---|
+| `A network <name>-swarm already exists and is not an overlay — rename or remove it first` | The name of the Swarm twin is taken | Rename or remove that network, then move again |
+| `<service> failed while starting: …` / `not running (healthy) in time: …` | A service others depend on did not start (or never became healthy) | Fix that service; the project is put back in Compose |
 | `Swarm must be active and the server in use a manager` | Swarm is off on this server, or it is a worker | Set up Swarm in **Swarm → Overview**, or pick a manager in the top bar |
 | `A Swarm job is already running` | Only one move/deploy runs at a time | Wait for the open job to finish |
 | `the compose files changed after the plan was made — review it again` | Files edited between Review and Move | Open **Review…** again |

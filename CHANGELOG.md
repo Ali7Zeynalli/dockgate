@@ -2,6 +2,33 @@
 
 ---
 
+## [2.44.0] - 2026-11-12
+
+### Added
+- **Projects that share a network move to Swarm.** Several Compose projects often talk over one network made with `docker network create` and declared `external` (nginx, landing, frontend, app, api). A stack can not join such a bridge, so moving any of them failed and was put back. Now DockGate makes its Swarm twin, an attachable overlay `<name>-swarm`:
+  - the moved services join the twin;
+  - the containers still in Compose are connected to it, by their service and container names, so both sides keep finding each other and nothing stops;
+  - containers Compose re-creates are connected again within 30 seconds, and a project moved back joins the twin again.
+
+  The projects can move one at a time; the plan says which network is shared and with whom.
+- **Start order on the move.** Services start in the order of `depends_on`: each one waits until the services it depends on run, and are healthy when they have a health check. Only the waiting service is scaled up, so nothing else restarts.
+
+### Changed
+- **Nothing in a compose file is dropped silently on the move.**
+  - `mem_limit`, `mem_reservation`, `cpus`, `cpu_quota` / `cpu_period` and `pids_limit` become Swarm resource limits and reservations (they were lost).
+  - `shm_size` becomes a tmpfs of that size at `/dev/shm`.
+  - `container_name` and `links` aliases stay names other services reach it by.
+  - `volumes_from` mounts the other service's volumes.
+  - `network_mode: host` joins Docker's host network (it was refused).
+  - A fixed `ipv4_address` is dropped with a note of which services use it.
+  - Fields Swarm has no place for are named in the plan.
+- `privileged` and `devices` now suggest what to do instead (`cap_add`, Swarm generic resources for a GPU).
+
+### Fixed
+- **A port only on `127.0.0.1` in the compose file opened on every server after the move.** It now stays inside (other services reach it by name), or, if you choose *this server only*, is published in host mode. A port tied to another address is published in host mode on that server.
+
+---
+
 ## [2.43.1] - 2026-11-12
 
 ### Added

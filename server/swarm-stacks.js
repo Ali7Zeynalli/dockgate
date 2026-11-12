@@ -46,6 +46,21 @@ db.exec(`CREATE TABLE IF NOT EXISTS swarm_stack_deploys (
   started_at INTEGER,
   finished_at INTEGER
 )`);
+// A Compose network several projects share (declared external) is a local bridge; a stack can only join an
+// overlay. DockGate gives it an attachable overlay twin: moved services join the twin, and the containers still
+// in Compose on the bridge are connected to it too (the keeper reconnects any that Compose re-creates).
+db.exec(`CREATE TABLE IF NOT EXISTS swarm_bridges (
+  server_id TEXT NOT NULL, bridge TEXT NOT NULL, overlay TEXT NOT NULL, created_at INTEGER,
+  PRIMARY KEY (server_id, bridge)
+)`);
+const qb = {
+  all: db.prepare('SELECT * FROM swarm_bridges WHERE server_id = ?'),
+  put: db.prepare('INSERT OR IGNORE INTO swarm_bridges (server_id, bridge, overlay, created_at) VALUES (?, ?, ?, ?)'),
+};
+const twinName = (bridge) => `${bridge}-swarm`.slice(0, 63);
+/** bridge → overlay twin already made on this server. */
+function twinsMap(sid = serverId()) { return Object.fromEntries(qb.all.all(sid).map(r => [r.bridge, r.overlay])); }
+
 const q = {
   get: db.prepare('SELECT * FROM swarm_stacks WHERE server_id = ? AND name = ?'),
   all: db.prepare('SELECT * FROM swarm_stacks WHERE server_id = ?'),
@@ -82,7 +97,47 @@ function stackRows(sid = serverId()) { return q.all.all(sid); }
 
 const DB_IMAGE = /(^|\/)(postgres|postgis|mysql|mariadb|mongo|mongodb|redis|valkey|keydb|elasticsearch|opensearch|cassandra|clickhouse|influxdb|timescaledb|couchdb|neo4j|rabbitmq|minio|etcd|zookeeper)(:|@|$)/i;
 const isDatabase = (image) => DB_IMAGE.test(String(image || '').replace(/^docker\.io\//, '').replace(/^library\//, ''));
-const IGNORED_BY_SWARM = ['security_opt', 'cgroup_parent', 'pid', 'ipc', 'userns_mode', 'links', 'external_links', 'mac_address', 'oom_score_adj', 'oom_kill_disable', 'cpuset', 'cpu_shares', 'cpu_quota', 'cpu_period', 'mem_limit', 'memswap_limit', 'shm_size', 'storage_opt', 'device_cgroup_rules', 'volumes_from', 'domainname'];
+// Fields Swarm has no place for (each one is named in the plan, never dropped silently).
+const IGNORED_BY_SWARM = ['security_opt', 'cgroup_parent', 'pid', 'ipc', 'userns_mode', 'external_links', 'mac_address', 'oom_score_adj', 'oom_kill_disable', 'cpuset', 'cpu_shares', 'memswap_limit', 'storage_opt', 'device_cgroup_rules', 'domainname', 'cpu_rt_runtime', 'cpu_rt_period', 'blkio_config', 'mem_swappiness'];
+// Fields DockGate turns into their Swarm form (see swarmShape).
+const CONVERTED = ['mem_limit', 'mem_reservation', 'cpus', 'cpu_quota', 'cpu_period', 'pids_limit', 'shm_size', 'links', 'volumes_from'];
+const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|localhost)$/;
+const HOST_NET = 'host_net'; // the stack's name for Docker's predefined "host" network
+const bytesOf = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; };
+const mbText = (b) => `${Math.round(b / 1048576)} MB`;
+/** Memory for a stack file: whole MiB when it is one, else bytes. */
+const memSpec = (b) => (b % 1048576 === 0 ? `${b / 1048576}M` : `${b}b`);
+
+/**
+ * What the compose fields Swarm does not take become (resources, /dev/shm, names, shared mounts).
+ * Pure: used by analyze (to tell) and adapt (to do). Returns { limits, reservations, shm, notes }.
+ */
+function resourcesOf(s) {
+  const limits = {}, reservations = {}, notes = [];
+  const mem = bytesOf(s.mem_limit), memRes = bytesOf(s.mem_reservation);
+  if (mem) { limits.memory = memSpec(mem); notes.push(`mem_limit ${mbText(mem)} → memory limit`); }
+  if (memRes) { reservations.memory = memSpec(memRes); notes.push(`mem_reservation ${mbText(memRes)} → memory reservation`); }
+  let cpus = Number(s.cpus);
+  if (!(cpus > 0) && Number(s.cpu_quota) > 0) { cpus = Number(s.cpu_quota) / (Number(s.cpu_period) || 100000); notes.push(`cpu_quota ${s.cpu_quota} / cpu_period ${s.cpu_period || 100000} → ${Math.round(cpus * 100) / 100} CPU limit`); }
+  else if (cpus > 0) notes.push(`cpus ${cpus} → CPU limit`);
+  if (cpus > 0) limits.cpus = String(Math.round(cpus * 1000) / 1000);
+  if (Number(s.pids_limit) > 0) { limits.pids = Number(s.pids_limit); notes.push(`pids_limit ${s.pids_limit} → pids limit`); }
+  const shm = bytesOf(s.shm_size);
+  if (shm) notes.push(`shm_size ${mbText(shm)} → a ${mbText(shm)} tmpfs at /dev/shm`);
+  return { limits, reservations, shm, notes };
+}
+/** Extra names each service answers to: its old container_name and the aliases other services gave it with links. */
+function aliasesOf(cfg) {
+  const out = {};
+  const add = (svc, name) => { if (!svc || !name || name === svc || !(cfg.services || {})[svc]) return; (out[svc] = out[svc] || new Set()).add(name); };
+  for (const [name, s] of Object.entries(cfg.services || {})) {
+    if (s.container_name) add(name, s.container_name);
+    for (const l of s.links || []) { const [svc, alias] = String(l).split(':'); add(svc, alias || svc); }
+  }
+  return out;
+}
+/** Is a port only for this server (loopback) or tied to one address of it? */
+const portScope = (p) => (!p.host_ip || p.host_ip === '0.0.0.0' || p.host_ip === '::' ? 'any' : LOOPBACK.test(p.host_ip) ? 'local' : 'address');
 
 /** `docker compose config --format json` of a resolved project; the JSON is cut out of any warnings around it. */
 async function readConfig(r, project) {
@@ -109,13 +164,33 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
   try { cfg = await readConfig(r, project); } catch (e) { out.status = 'impossible'; out.reasons.push(`docker compose config failed: ${e.message}`); return out; }
   out.hash = hashOf(cfg);
   out.volumes = Object.entries(cfg.volumes || {}).map(([k, v]) => ({ key: k, name: (v && v.name) || `${project}_${k}`, external: !!(v && v.external) }));
+  // External networks that are local bridges (shared with other Compose projects): they get an overlay twin.
+  out.bridges = [];
+  for (const [k, v] of Object.entries(cfg.networks || {})) {
+    if (!v || !v.external) continue;
+    const name = v.name || k;
+    const n = await netByName(name).catch(() => null);
+    if (!n || n.Scope !== 'local' || ['host', 'none'].includes(n.Name) || n.Driver !== 'bridge') continue;
+    let users = [];
+    try {
+      const info = await dockerService.docker.getNetwork(n.Id).inspect();
+      for (const id of Object.keys(info.Containers || {})) {
+        const ct = await dockerService.docker.getContainer(id).inspect().catch(() => null);
+        const pr = ct && ct.Config.Labels && ct.Config.Labels['com.docker.compose.project'];
+        if (pr && pr !== project) users.push(pr);
+      }
+    } catch (e) { /* listing who uses it is only for the plan */ }
+    users = [...new Set(users)];
+    out.bridges.push({ key: k, name, twin: twinName(name), users });
+  }
   const block = (m) => { out.status = 'impossible'; out.reasons.push(m); };
   for (const [name, s] of Object.entries(cfg.services || {})) {
     const f = []; // findings: { level: info|warn|bad, text }
     const add = (level, text) => f.push({ level, text });
-    if (s.privileged) add('bad', 'privileged: Swarm services can not be privileged — this project stays in Compose (moving part of a project comes later)');
-    if (s.devices && s.devices.length) add('bad', 'devices: Swarm services can not use host devices — this project stays in Compose');
-    if (s.network_mode && s.network_mode !== 'bridge') add('bad', `network_mode: ${s.network_mode} is not possible on Swarm`);
+    if (s.privileged) add('bad', 'privileged: Swarm services can not be privileged — it stays in Compose. Often only some rights are needed: give them with cap_add (e.g. NET_ADMIN) and it can move');
+    if (s.devices && s.devices.length) add('bad', 'devices: Swarm services can not use host devices — it stays in Compose (a GPU can use Swarm generic resources instead)');
+    if (s.network_mode === 'host') add('warn', 'network_mode: host → the service joins Docker\'s host network on Swarm (same as before); it can have no other network and no published ports');
+    else if (s.network_mode && s.network_mode !== 'bridge') add('bad', `network_mode: ${s.network_mode} shares another container's network — Swarm has no such mode, so it stays in Compose`);
     let image = s.image || null;
     if (s.build) {
       const built = `${project}-${name}`;
@@ -125,13 +200,34 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
         else add('bad', `build: without image and no built image ${built} here — build it first (Compose → Build)`);
       } else add('warn', `build: Swarm does not build — the image ${image} is used${nodes > 1 ? ' (it must be in a registry for the other servers)' : ''}`);
     }
-    if (s.container_name) add('info', `container_name ${s.container_name} is removed (Swarm names tasks ${project}_${name}.1 …)`);
-    if (s.depends_on && Object.values(s.depends_on).some(d => d && d.condition && d.condition !== 'service_started')) add('warn', 'depends_on with a condition: Swarm starts services without waiting — the app must retry its connections');
+    if (s.container_name && s.container_name !== name) add('info', `container_name ${s.container_name}: Swarm names tasks ${project}_${name}.1 …, but ${s.container_name} stays a name other services reach it by`);
+    for (const l of s.links || []) { const [svc, alias] = String(l).split(':'); if (alias && alias !== svc) add('info', `links ${l}: ${svc} also answers as ${alias}`); }
+    for (const vf of s.volumes_from || []) {
+      const src = String(vf).split(':')[0];
+      if (/^container:/.test(String(vf))) add('warn', `volumes_from ${vf}: a container outside the project — not possible on Swarm, mount its volumes by name instead`);
+      else add('info', `volumes_from ${src}: the volumes of ${src} are mounted here too, and both stay on this server`);
+    }
+    for (const [net, v] of Object.entries(s.networks || {})) {
+      const ip = v && (v.ipv4_address || v.ipv6_address);
+      if (!ip) continue;
+      const users = Object.entries(cfg.services || {}).filter(([n2, s2]) => n2 !== name && JSON.stringify(s2.environment || {}).includes(ip)).map(([n2]) => n2);
+      add('warn', `fixed address ${ip} on ${net}: Swarm gives addresses itself, so it is dropped — reach it by name (${name})${users.length ? `. ${users.join(', ')} use${users.length === 1 ? 's' : ''} ${ip} in environment: change it to ${name}` : ''}`);
+    }
+    const res = resourcesOf(s);
+    for (const n of res.notes) add('info', n);
+    if (s.depends_on && Object.keys(s.depends_on).length) {
+      const healthy = Object.entries(s.depends_on).filter(([, d]) => d && d.condition === 'service_healthy').map(([k]) => k);
+      add('info', `depends_on ${Object.keys(s.depends_on).join(', ')}: on the move DockGate starts it after ${Object.keys(s.depends_on).length === 1 ? 'that service runs' : 'those run'}${healthy.length ? ` (${healthy.join(', ')} healthy)` : ''}. Later, when a task restarts, Swarm does not wait — the app should retry its connections`);
+    }
     if (s.restart) add('info', `restart: ${s.restart} → restart policy ${restartPolicy(s.restart).condition}`);
-    for (const p of s.ports || []) if (p.host_ip) add('warn', `port ${p.published}: the host address ${p.host_ip} is dropped (Swarm publishes on every address)`);
+    for (const p of s.ports || []) {
+      const sc = portScope(p);
+      if (sc === 'local') add('warn', `port ${p.host_ip}:${p.published}: only this server could reach it. On Swarm it is not published — other services reach it inside as ${name}:${p.target}. If something on the server itself needs it, choose "this server only"`);
+      else if (sc === 'address') add('warn', `port ${p.host_ip}:${p.published}: tied to one address. Swarm can not bind an address, so it is published on this server only (host mode) — allow it only from that network in the firewall`);
+    }
     if (isDatabase(image)) add('warn', 'database: stays at 1 replica');
-    const ignored = IGNORED_BY_SWARM.filter(k => s[k] !== undefined && s[k] !== null);
-    if (ignored.length) add('warn', `ignored by Swarm: ${ignored.join(', ')}`);
+    const ignored = IGNORED_BY_SWARM.filter(k => s[k] !== undefined && s[k] !== null && !(Array.isArray(s[k]) && !s[k].length));
+    if (ignored.length) add('warn', `Swarm has no place for ${ignored.join(', ')} — ${ignored.length === 1 ? 'it is' : 'they are'} left out`);
     const binds = (s.volumes || []).filter(v => v.type === 'bind');
     const vols = (s.volumes || []).filter(v => v.type === 'volume');
     if (nodes > 1 && (binds.length || vols.length)) add('info', 'has data on this server: it is kept on this server (placement rule)');
@@ -141,9 +237,10 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
     if (secretish.length) add('info', `${secretish.join(', ')} look${secretish.length === 1 ? 's' : ''} like a password in plain environment. If the image reads ${secretish[0]}_FILE (postgres, mysql and many others do), it can become a Swarm secret later (Secrets & configs) — DockGate does not change it by itself.`);
     const stays = f.some(x => x.level === 'bad'); // this service can not run on Swarm: it stays in Compose
     if (!stays && out.status === 'ready' && f.some(x => x.level === 'warn')) out.status = 'attention';
-    out.services.push({ name, image, database: isDatabase(image), findings: f, ports: (s.ports || []).map(p => ({ published: Number(p.published) || null, target: p.target, protocol: p.protocol || 'tcp' })), healthcheck: !!(s.healthcheck && !s.healthcheck.disable), volumes: vols.map(v => v.source), binds: binds.map(v => v.source), stays });
+    out.services.push({ name, image, database: isDatabase(image), findings: f, ports: (s.ports || []).map(p => ({ published: Number(p.published) || null, target: p.target, protocol: p.protocol || 'tcp', hostIp: p.host_ip || null, scope: portScope(p) })), hostNetwork: s.network_mode === 'host', healthcheck: !!(s.healthcheck && !s.healthcheck.disable), volumes: vols.map(v => v.source), binds: binds.map(v => v.source), stays });
   }
   if (!out.services.length) block('The project has no services.');
+  if (out.bridges.length && out.status === 'ready') out.status = 'attention';
   out.stays = out.services.filter(x => x.stays).map(x => x.name);
   if (out.status !== 'impossible' && out.stays.length) {
     if (out.stays.length === out.services.length) { out.status = 'impossible'; out.reasons.push('No service of this project can run on Swarm.'); }
@@ -182,19 +279,57 @@ function adapt(cfg, settings = {}, ctx = {}) {
   const set = (settings && settings.services) || {};
   const out = { services: {}, networks: {}, volumes: {}, secrets: {}, configs: {} };
   const only = ctx.only ? new Set(ctx.only) : null; // part of a project: only these services
+  const aliases = aliasesOf(cfg);
+  let usesHostNet = false;
   for (const [name, s0] of Object.entries(cfg.services || {})) {
     if (only && !only.has(name)) continue;
     const s = JSON.parse(JSON.stringify(s0));
     const my = set[name] || {};
-    for (const k of ['container_name', 'build', 'profiles', 'pull_policy', 'links', 'external_links', 'restart', 'scale']) delete s[k];
+    const res = resourcesOf(s0);
+    // volumes_from: the other service's volumes and folders, mounted here too
+    for (const vf of s0.volumes_from || []) {
+      const [src, mode] = String(vf).split(':');
+      const from = (cfg.services || {})[src];
+      if (!from || /^container$/.test(src)) continue;
+      const have = new Set((s.volumes || []).map(v => v.target));
+      for (const v of from.volumes || []) if ((v.type === 'volume' || v.type === 'bind') && !have.has(v.target)) (s.volumes = s.volumes || []).push(mode === 'ro' ? { ...v, read_only: true } : { ...v });
+    }
+    for (const k of ['container_name', 'build', 'profiles', 'pull_policy', 'restart', 'scale', ...CONVERTED]) delete s[k];
     for (const k of IGNORED_BY_SWARM) delete s[k];
+    // /dev/shm: Swarm has no shm_size; a tmpfs of that size does the same
+    if (res.shm && !(s.volumes || []).some(v => v.target === '/dev/shm')) (s.volumes = s.volumes || []).push({ type: 'tmpfs', target: '/dev/shm', tmpfs: { size: res.shm } });
+    // network_mode: host → Docker's predefined host network (no other network, no published ports)
+    if (s0.network_mode === 'host') { delete s.network_mode; s.networks = { [HOST_NET]: {} }; delete s.ports; usesHostNet = true; }
+    else if (s.network_mode === 'bridge') delete s.network_mode;
+    // fixed addresses are Swarm's to give; old container names and link aliases stay reachable as aliases
+    if (s.networks && !Array.isArray(s.networks) && !s.networks[HOST_NET]) {
+      for (const k of Object.keys(s.networks)) {
+        const v = s.networks[k] = { ...(s.networks[k] || {}) };
+        delete v.ipv4_address; delete v.ipv6_address; delete v.link_local_ips;
+        if (aliases[name]) v.aliases = [...new Set([...(v.aliases || []), ...aliases[name]])];
+      }
+    }
     if (ctx.images && ctx.images[name]) s.image = ctx.images[name];
     if (s.depends_on && !Array.isArray(s.depends_on)) s.depends_on = Object.keys(s.depends_on);
     if (only && s.depends_on) { s.depends_on = s.depends_on.filter(x => only.has(x)); if (!s.depends_on.length) delete s.depends_on; }
     if (s.networks && !Array.isArray(s.networks)) for (const k of Object.keys(s.networks)) if (s.networks[k] === null) s.networks[k] = {};
-    const hostPorts = my.portMode === 'host';
-    if (s.ports) s.ports = s.ports.map(p => clean({ target: Number(p.target), published: p.published !== undefined && p.published !== '' ? Number(p.published) : undefined, protocol: p.protocol || 'tcp', mode: hostPorts ? 'host' : 'ingress' }));
+    // Ports: a loopback port stays inside unless "this server only" was chosen; one tied to an address is host mode.
+    let hostPorts = my.portMode === 'host';
+    if (s.ports) {
+      s.ports = s.ports.filter(p => portScope(p) !== 'local' || my.localPorts === 'host').map(p => {
+        const sc = portScope(p);
+        const host = hostPorts || sc !== 'any';
+        if (host) hostPorts = true;
+        return clean({ target: Number(p.target), published: p.published !== undefined && p.published !== '' ? Number(p.published) : undefined, protocol: p.protocol || 'tcp', mode: host ? 'host' : 'ingress' });
+      });
+      if (!s.ports.length) delete s.ports;
+    }
     const d = s.deploy || {};
+    if (Object.keys(res.limits).length || Object.keys(res.reservations).length) {
+      const r = d.resources = d.resources || {};
+      if (Object.keys(res.limits).length) r.limits = { ...res.limits, ...(r.limits || {}) }; // what deploy: already says wins
+      if (Object.keys(res.reservations).length) r.reservations = { ...res.reservations, ...(r.reservations || {}) };
+    }
     const db = isDatabase(s.image);
     const want = [my.replicas, d.replicas, 1].map(v => (v === '' || v === null || v === undefined ? NaN : Number(v))).find(v => Number.isInteger(v) && v >= 0 && v <= 100);
     if (!d.mode || d.mode === 'replicated') d.replicas = db ? 1 : (want ?? 1);
@@ -213,9 +348,15 @@ function adapt(cfg, settings = {}, ctx = {}) {
     s.deploy = d;
     out.services[name] = clean(s);
   }
+  if (usesHostNet) out.networks[HOST_NET] = { external: true, name: 'host' };
   for (const [k, n0] of Object.entries(cfg.networks || {})) {
+    if (usesHostNet && k === HOST_NET) continue;
     const n = { ...(n0 || {}) };
-    if (n.external) { out.networks[k] = clean(n); continue; }
+    if (n.external) {
+      const twin = ctx.twins && ctx.twins[n.name || k];
+      out.networks[k] = twin ? { external: true, name: twin } : clean(n); // a shared Compose bridge → its overlay twin
+      continue;
+    }
     delete n.ipam; if (n.driver === 'bridge' || !n.driver) n.driver = 'overlay';
     if (ctx.project) delete n.name; // part of a project: the Compose network keeps its name; the stack makes its own
     n.attachable = true;
@@ -336,6 +477,68 @@ async function verify(name, log, { since = Date.now(), timeoutMs = 180000 } = {}
   return ready;
 }
 
+/**
+ * depends_on as start levels, e.g. [["db"], ["api"], ["web"]] (a service starts after everything it depends on).
+ * null when nothing depends on anything, or the dependencies loop.
+ */
+function startLevels(stack) {
+  const svcs = Object.keys(stack.services || {});
+  const deps = Object.fromEntries(svcs.map(n => [n, (stack.services[n].depends_on || []).filter(d => svcs.includes(d) && d !== n)]));
+  if (!svcs.some(n => deps[n].length)) return null;
+  const levels = [], placed = new Set();
+  while (placed.size < svcs.length) {
+    const next = svcs.filter(n => !placed.has(n) && deps[n].every(d => placed.has(d)));
+    if (!next.length) return null; // a loop: start them all at once, as Swarm does
+    levels.push(next); next.forEach(n => placed.add(n));
+  }
+  return levels;
+}
+/** Wait until these services of a stack run all their tasks (a task with a health check counts once healthy). */
+async function waitServices(name, names, log, { since = Date.now(), timeoutMs = 180000 } = {}) {
+  const c = dockerService.docker;
+  const want = new Set(names.map(n => `${name}_${n}`));
+  const t0 = Date.now();
+  for (;;) {
+    const services = (await c.listServices({ filters: stackFilter(name), status: true })).filter(s => want.has(s.Spec.Name));
+    const tasks = await c.listTasks({ filters: stackFilter(name) });
+    const ids = new Set(services.map(s => s.ID));
+    const failed = tasks.find(t => ids.has(t.ServiceID) && ['failed', 'rejected'].includes(t.Status.State) && new Date(t.CreatedAt).getTime() >= since - 2000);
+    if (failed) throw new Error(`${(services.find(s => s.ID === failed.ServiceID) || { Spec: { Name: '?' } }).Spec.Name} failed while starting: ${failed.Status.Err || failed.Status.State}`);
+    const notReady = services.filter(s => s.ServiceStatus && s.ServiceStatus.RunningTasks < s.ServiceStatus.DesiredTasks);
+    if (services.length === want.size && !notReady.length) return;
+    if (Date.now() - t0 > timeoutMs) throw new Error(`not running (healthy) in time: ${notReady.map(s => s.Spec.Name).join(', ') || [...want].join(', ')} — what depends on it can not start`);
+    await sleep(2000);
+  }
+}
+/**
+ * First deploy in the order of depends_on (Swarm starts every service at once): the services that depend on
+ * others start with 0 replicas, then each level is raised once the one before runs (healthy, if it has a check).
+ * Only for a new stack — a redeploy keeps everything running.
+ */
+async function deployInOrder(name, stack, log, opts = {}) {
+  const levels = startLevels(stack);
+  if (!levels || levels.length < 2) return stackDeploy(name, stack, log);
+  log(`Starting in the order of depends_on: ${levels.map(l => l.join(' + ')).join(' → ')}`);
+  const staged = JSON.parse(JSON.stringify(stack));
+  const held = new Set(levels.slice(1).flat().filter(n => (staged.services[n].deploy || {}).mode !== 'global'));
+  for (const n of held) staged.services[n].deploy.replicas = 0;
+  await stackDeploy(name, staged, log);
+  // Raise each level by its replica count only: a second stack deploy would touch (and may restart) the rest.
+  const c = dockerService.docker;
+  for (let i = 1; i < levels.length; i++) {
+    log(`Waiting for ${levels[i - 1].join(', ')} before ${levels[i].join(', ')}…`);
+    await waitServices(name, levels[i - 1], log, opts);
+    for (const n of levels[i]) {
+      if (!held.has(n)) continue;
+      const want = stack.services[n].deploy.replicas;
+      const svc = await c.getService(`${name}_${n}`).inspect();
+      const spec = { ...svc.Spec, Mode: { Replicated: { Replicas: want } } };
+      await c.getService(svc.ID).update({ version: svc.Version.Index, ...spec });
+      log(`  ${name}_${n} → ${want} replica${want === 1 ? '' : 's'}`);
+    }
+  }
+}
+
 async function context() {
   const st = await swarm.status();
   if (st.state !== 'active' || !st.manager) throw bad(409, 'Swarm must be active and the server in use a manager');
@@ -421,6 +624,55 @@ async function connectStaying(project, stackName, stays, log) {
   }
 }
 
+/** A network by name on the server in use, or null. */
+async function netByName(name) {
+  const list = await dockerService.docker.listNetworks({ filters: JSON.stringify({ name: [name] }) });
+  return list.find(n => n.Name === name) || null;
+}
+/** Make (or find) the overlay twin of a shared bridge. */
+async function ensureTwin(bridge, encrypt, log) {
+  const twin = twinName(bridge);
+  const have = await netByName(twin);
+  if (have && have.Driver !== 'overlay') throw new Error(`A network ${twin} already exists and is not an overlay — rename or remove it first`);
+  if (!have) {
+    await dockerService.docker.createNetwork({ Name: twin, Driver: 'overlay', Attachable: true, CheckDuplicate: true, ...(encrypt ? { Options: { encrypted: '' } } : {}), Labels: { 'dockgate.twin-of': bridge } });
+    log(`  created overlay ${twin} — the Swarm twin of ${bridge}`);
+  }
+  qb.put.run(serverId(), bridge, twin, Date.now());
+  return twin;
+}
+/** Connect the running containers on a bridge to its twin, by their Compose service and container names. */
+async function connectToTwin(bridge, twin, log = () => {}, { except = null } = {}) {
+  const c = dockerService.docker;
+  const [b, t] = [await netByName(bridge), await netByName(twin)];
+  if (!b || !t) return 0;
+  const info = await c.getNetwork(b.Id).inspect();
+  let n = 0;
+  for (const id of Object.keys(info.Containers || {})) {
+    let ct;
+    try { ct = await c.getContainer(id).inspect(); } catch (e) { continue; }
+    const L = (ct.Config && ct.Config.Labels) || {};
+    if (!ct.State || !ct.State.Running || L['com.docker.swarm.task.id']) continue;
+    if (except && L['com.docker.compose.project'] === except) continue;
+    if ((ct.NetworkSettings.Networks || {})[twin]) continue;
+    const name = ct.Name.replace(/^\//, '');
+    const aliases = [...new Set([L['com.docker.compose.service'], name].filter(Boolean))];
+    try { await c.getNetwork(t.Id).connect({ Container: ct.Id, EndpointConfig: { Aliases: aliases } }); n++; log(`  ${name} (still in Compose) connected to ${twin} as ${aliases.join(', ')}`); }
+    catch (e) { log(`  ! ${name} could not join ${twin}: ${swarm.dockerMsg(e)}`); }
+  }
+  return n;
+}
+/** Every 30 s: containers Compose re-created on a shared bridge join its twin again. */
+let keeper = null;
+async function keepTwins() {
+  try {
+    const st = await swarm.status();
+    if (st.state !== 'active' || !st.manager) return;
+    for (const r of qb.all.all(serverId())) await connectToTwin(r.bridge, r.overlay).catch(() => {});
+  } catch (e) { /* the server is not reachable now */ }
+}
+function startBridgeKeeper() { if (!keeper) { keeper = setInterval(keepTwins, 30000); if (keeper.unref) keeper.unref(); } }
+
 /**
  * Move compose projects to Swarm, one at a time. plans: [{ project, hash, settings }].
  * A project that fails its check is put back in Compose; the others go on.
@@ -455,16 +707,22 @@ async function startMove(plans, { sourceIp } = {}) {
         }
         const images = {};
         for (const s of a.services) if (s.image && !(a.cfg.services[s.name] || {}).image) images[s.name] = s.image;
-        const stack = adapt(a.cfg, plan.settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, only: partial ? partial.services : null, project: partial ? p : null });
+        const twins = { ...twinsMap(sid), ...Object.fromEntries((a.bridges || []).map(x => [x.name, x.twin])) };
+        const stack = adapt(a.cfg, plan.settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, twins, only: partial ? partial.services : null, project: partial ? p : null });
         sk('check', 'done');
         deployId = q.addDeploy.run(sid, stackName, 'move', a.hash, JSON.stringify(stack), sourceIp || null, Date.now()).lastInsertRowid;
+        if ((a.bridges || []).length) {
+          sk('bridge', 'running', `Swarm twin of the shared network${a.bridges.length > 1 ? 's' : ''} ${a.bridges.map(x => x.name).join(', ')}`);
+          for (const br of a.bridges) { await ensureTwin(br.name, ctx.encrypt, log); await connectToTwin(br.name, br.twin, log, { except: partial ? null : p }); }
+          sk('bridge', 'done');
+        }
         sk('down', 'running', partial ? `docker compose rm -s -f ${partial.services.join(' ')} (volumes stay)` : 'docker compose down (volumes stay)');
         downAt = Date.now();
         await helpers().runResolved(r, p, partial ? ['rm', '-s', '-f', ...partial.services] : ['down'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
         sk('down', 'done');
         sk('deploy', 'running', 'docker stack deploy');
-        await stackDeploy(stackName, stack, log);
-        deployed = true;
+        deployed = true; // from here a failure removes the stack again
+        await deployInOrder(stackName, stack, log, { since: downAt });
         sk('deploy', 'done');
         sk('verify', 'running', 'check every service runs');
         const readyAt = await verify(stackName, log, { since: downAt });
@@ -535,7 +793,7 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
         const cfg = await readConfig(r, proj);
         hash = hashOf(cfg);
         const set = settings ? { ...settings, ...(part ? { partial: part } : {}) } : JSON.parse(row.settings || '{}');
-        stack = adapt(cfg, set, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images: imagesForBuilt(cfg, proj, ctx), only: part ? part.services.filter(x => cfg.services && cfg.services[x]) : null, project: part ? proj : null });
+        stack = adapt(cfg, set, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, twins: twinsMap(), images: imagesForBuilt(cfg, proj, ctx), only: part ? part.services.filter(x => cfg.services && cfg.services[x]) : null, project: part ? proj : null });
         if (settings) q.put.run({ server_id: sid, name, origin: row.origin, location: row.location, settings: JSON.stringify(set), now: Date.now() });
         step(job, 'read', 'done');
       }
@@ -597,6 +855,7 @@ async function startMoveBack(name, { sourceIp } = {}) {
       step(job, 'rm', 'done');
       step(job, 'up', 'running', part ? `docker compose up -d (${part.services.join(', ')} come back to ${proj})` : 'docker compose up -d');
       await helpers().runResolved(r, proj, ['up', '-d'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
+      await keepTwins(); // back on a shared bridge: it joins the twin, so the projects still on Swarm reach it
       step(job, 'up', 'done');
       q.del.run(sid, name);
       q.endDeploy.run('done', null, Date.now() - t, Date.now(), id);
@@ -635,9 +894,9 @@ async function preview(project, settings) {
   const images = {};
   for (const s of a.services) if (s.image && !(a.cfg.services[s.name] || {}).image) images[s.name] = s.image;
   const only = part ? part.services : a.status === 'partial' ? a.services.filter(x => !x.stays).map(x => x.name) : null;
-  const stack = adapt(a.cfg, settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, only, project: only ? proj : null });
+  const stack = adapt(a.cfg, settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, twins: { ...twinsMap(), ...Object.fromEntries((a.bridges || []).map(x => [x.name, x.twin])) }, only, project: only ? proj : null });
   const { cfg, ...rest } = a;
   return { ...rest, stack, settings: settings || {} };
 }
 
-module.exports = { isOnSwarm, stackOfProject, partialOf, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, remoteServer, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf } };
+module.exports = { startBridgeKeeper, keepTwins, twinName, startLevels, resourcesOf, aliasesOf, portScope, isOnSwarm, stackOfProject, partialOf, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, remoteServer, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf } };
