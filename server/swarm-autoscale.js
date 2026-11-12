@@ -299,15 +299,15 @@ function stateOf(rule, svc, seen, rm, now) {
   if (isPaused()) return ['off', 'all paused'];
   if (!rule.enabled) return ['off', 'paused'];
   if (seen && seen.pending) return ['bad', 'a replica does not fit'];
-  if (seen && seen.measured === 0) return ['warn', 'not measured — no replica on a server in DockGate'];
-  if (rule.lastAt) { const wait = (rule.lastDir === 'down' ? rule.coolDownMinutes : rule.coolUpMinutes) * 60000; if (now - rule.lastAt < wait) return ['info', `waiting ${Math.ceil((wait - (now - rule.lastAt)) / 60000)} min after the last change`]; }
+  if (seen && seen.measured === 0) return ['warn', 'not measured'];
+  if (rule.lastAt) { const wait = (rule.lastDir === 'down' ? rule.coolDownMinutes : rule.coolUpMinutes) * 60000; if (now - rule.lastAt < wait) return ['info', `next change in ${Math.ceil((wait - (now - rule.lastAt)) / 60000)} min`]; }
   const hotCpu = seen && seen.cpu !== null && seen.cpu >= rule.cpuUp, hotMem = seen && rule.memUp !== null && seen.mem !== null && seen.mem >= rule.memUp;
   if ((hotCpu || hotMem) && replicas >= rule.max) return ['warn', 'busy, at the maximum'];
-  if ((hotCpu || hotMem) && rm === 0) return ['bad', 'busy, no room for another replica'];
-  if (hotCpu || hotMem) return ['warn', `busy — adds a replica after ${rule.upMinutes} min`];
-  if (!seen) return ['info', 'first reading within a minute'];
+  if ((hotCpu || hotMem) && rm === 0) return ['bad', 'busy, no room'];
+  if (hotCpu || hotMem) return ['warn', `busy: adds after ${rule.upMinutes} min`];
+  if (!seen) return ['info', 'first reading soon'];
   const coldMem = rule.memDown === null || seen.mem === null || seen.mem <= rule.memDown;
-  if (seen.cpu !== null && seen.cpu <= rule.cpuDown && coldMem && replicas > rule.min) return ['info', `quiet — removes a replica after ${rule.downMinutes} min`];
+  if (seen.cpu !== null && seen.cpu <= rule.cpuDown && coldMem && replicas > rule.min) return ['info', `quiet: removes after ${rule.downMinutes} min`];
   return ['ok', 'steady'];
 }
 

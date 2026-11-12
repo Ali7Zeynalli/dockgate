@@ -48,6 +48,11 @@ const Router = {
     if (SECTION_OF[path]) { delete p.tab; return { path: SECTION_OF[path], params: { ...p, tab: TAB[path] || path } }; }
     if (path === 'settings' && p.tab === 'agent') return { path: 'infra', params: { tab: 'agent' } };
     if (path === 'settings' && p.tab === 'log') return { path: 'observe', params: { tab: 'notification-log' } }; // the log moved to Observe
+    // A section's tab opened by its own name (#swarm-scaling): open it inside its section
+    if (typeof navItems !== 'undefined' && !navItems[path]) {
+      const sec = Object.keys(navItems).find(k => (navItems[k].tabs || []).some(([t]) => t === path));
+      if (sec) return { path: sec, params: { ...p, tab: path } };
+    }
     return { path, params: p };
   },
 

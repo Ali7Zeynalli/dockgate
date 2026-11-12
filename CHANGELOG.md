@@ -2,6 +2,19 @@
 
 ---
 
+## [2.42.1] - 2026-11-12
+
+### Changed
+- **Swarm → Auto Scaling**: the rules table is narrower, so the ⋯ menu stays in view. *Add* and *remove* share one column, and *room* is shown under the state.
+- A rule's state says when a quiet service will lose a replica (*quiet: removes after 10 min*), and the other states are shorter.
+- On a service's **Autoscale** tab, Pause and *Edit on Auto Scaling* sit together on the right.
+
+### Fixed
+- Autoscale history entries saved before 2.42 showed no service name.
+- Opening a Swarm tab by its own address (for example `#swarm-scaling`) showed the raw name in the top bar instead of *Swarm / Auto Scaling*.
+
+---
+
 ## [2.42.0] - 2026-11-12
 
 ### Added
