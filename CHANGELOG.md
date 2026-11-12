@@ -2,6 +2,14 @@
 
 ---
 
+## [2.43.0] - 2026-11-12
+
+### Added
+- **Suggested values for an autoscale rule.** For a new rule, Swarm → Auto Scaling fills the limits, the guarantees, the minimum and maximum, and whether to watch memory, from what the chosen services used in the last 48 hours (the readings behind Services → Graphs). Each suggested field says why, e.g. *demo-api used up to 0.4 CPU per replica (95% of the time) — limit is 1.5×*. The maximum is cut to what fits on the servers. It needs about an hour of readings; with several services, the limits are sized for the busiest. **Suggest again** reads the history again, and **Suggest from use** resizes a rule that exists.
+- **A ? next to every field** of the rule dialog. Click it for what the field does, an example and a good value.
+
+---
+
 ## [2.42.2] - 2026-11-12
 
 ### Added

@@ -216,6 +216,85 @@ function room(cap, cpuRes, memRes) {
   }, 0);
 }
 
+
+// ---- suggestions from the last 48 hours (Services → Graphs samples, every 2 minutes) ----
+const MBy = 1048576;
+const pct = (arr, p) => { if (!arr.length) return 0; const a = [...arr].sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.max(0, Math.ceil(p / 100 * a.length) - 1))]; };
+const up = (v, step) => Math.ceil(v / step - 1e-9) * step;
+const r2 = (v) => Math.round(v * 100) / 100;
+/**
+ * Values for a rule from what the services really used. list: [{ name, replicas, samples: [{ t, cpu (% of a core, all tasks), mem (bytes, all tasks), tasks }] }].
+ * Pure: the caller passes the capacity. Returns { enough, hours, values, why, notes }.
+ */
+function suggestFrom(list, cap, thresholds = { cpuUp: 80, memUp: 70 }) {
+  const per = list.map((svc) => {
+    const rows = (svc.samples || []).filter(s => s.tasks > 0 && Number.isFinite(s.cpu));
+    const taskCpu = rows.map(s => s.cpu / 100 / s.tasks), taskMem = rows.map(s => (s.mem || 0) / s.tasks);
+    const totCpu = rows.map(s => s.cpu / 100), totMem = rows.map(s => s.mem || 0);
+    const span = rows.length ? (rows[rows.length - 1].t - rows[0].t) / 3600000 : 0;
+    return { name: svc.name, replicas: svc.replicas, n: rows.length, span,
+      cpu50: pct(taskCpu, 50), cpu95: pct(taskCpu, 95), mem50: pct(taskMem, 50), memMax: taskMem.length ? Math.max(...taskMem) : 0,
+      tot50: pct(totCpu, 50), tot95: pct(totCpu, 95), totMem50: pct(totMem, 50), totMemMax: totMem.length ? Math.max(...totMem) : 0 };
+  });
+  const enough = per.length > 0 && per.every(x => x.n >= 30); // about an hour of readings
+  const hours = per.length ? Math.round(Math.min(...per.map(x => x.span)) * 10) / 10 : 0;
+  if (!enough) return { enough, hours, per: per.map(x => ({ name: x.name, readings: x.n })), values: null, why: {}, notes: [] };
+  const big = per.reduce((a, x) => (x.cpu95 > a.cpu95 ? x : a), per[0]);
+  const bigMem = per.reduce((a, x) => (x.memMax > a.memMax ? x : a), per[0]);
+  const maxNode = Math.max(0.1, ...cap.nodes.filter(n => n.active).map(n => n.cpu));
+  const cpuLimit = r2(Math.min(maxNode, Math.max(0.1, up(big.cpu95 * 1.5, 0.05))));
+  const cpuReserve = r2(Math.min(cpuLimit, Math.max(0.05, up(big.cpu50, 0.05))));
+  const memLimitMb = Math.max(64, up(bigMem.memMax * 1.5 / MBy, 64));
+  const memReserveMb = Math.min(memLimitMb, Math.max(32, up(bigMem.mem50 / MBy, 32)));
+  const atCpu = cpuLimit * thresholds.cpuUp / 100, atMem = memLimitMb * MBy * thresholds.memUp / 100;
+  // memory counts towards the number of replicas only when it rises with load: a fixed amount per replica does not split
+  const memSwing = bigMem.mem50 > 0 && bigMem.memMax > bigMem.mem50 * 1.5;
+  const byMem = (v) => (memSwing ? Math.ceil(v / atMem - 1e-9) : 0);
+  const min = Math.max(1, ...per.map(x => Math.max(Math.ceil(x.tot50 / atCpu - 1e-9), byMem(x.totMem50))));
+  const need = Math.max(1, ...per.map(x => Math.max(Math.ceil(x.tot95 / atCpu - 1e-9), byMem(x.totMemMax))));
+  let max = Math.max(min + 1, 2, Math.ceil(need * 1.5));
+  const fit = room(cap, cpuReserve, memReserveMb * MBy);
+  const notes = [];
+  const running = per.reduce((a, x) => a + x.replicas, 0);
+  if (fit !== null && max > min && max - min > fit) {
+    const capped = Math.max(min, min + fit);
+    notes.push(`Only ${fit} more replica${fit === 1 ? '' : 's'} fit on the servers, so the maximum is ${capped} instead of ${max}.`);
+    max = capped;
+  }
+  if (per.length > 1) notes.push(`One rule gives every chosen service the same limits; they are sized for the busiest (${big.name}${bigMem !== big ? `, memory for ${bigMem.name}` : ''}).`);
+  if (big.cpu95 < 0.02) notes.push('These services were almost idle: the numbers are a safe start, check them again after a busy day.');
+  const cores = (v) => (v < 0.01 ? 'under 0.01 CPU' : `${r2(v)} CPU`);
+  const mbs = (v) => (v < MBy ? 'under 1 MB' : `${Math.round(v / MBy)} MB`);
+  const cpuFloor = big.cpu95 * 1.5 < 0.1, memFloor = bigMem.memMax * 1.5 / MBy < 64;
+  return {
+    enough, hours, notes,
+    values: { cpuLimit, cpuReserve, memLimit: memLimitMb, memReserve: memReserveMb, min, max, memOn: memSwing },
+    why: {
+      cpuLimit: `${big.name} used up to ${cores(big.cpu95)} per replica (95% of the time) — ${cpuFloor ? 'the smallest sensible limit' : 'limit is 1.5×'}`,
+      cpuReserve: `usual use per replica: ${cores(big.cpu50)}${big.cpu50 < 0.05 ? ' — the smallest sensible guarantee' : ''}`,
+      memLimit: `peak ${mbs(bigMem.memMax)} per replica — ${memFloor ? 'the smallest sensible limit' : 'limit is 1.5×'}`,
+      memReserve: `usual memory per replica: ${mbs(bigMem.mem50)}${bigMem.mem50 < 32 * MBy ? ' — the smallest sensible guarantee' : ''}`,
+      min: `the usual load fits in ${min} replica${min === 1 ? '' : 's'} at ${thresholds.cpuUp}% CPU`,
+      max: `the busiest moment needed ${need} — maximum is 1.5× that${notes.length && /fit on the servers/.test(notes[0]) ? ', cut to what fits' : ''}`,
+      memOn: memSwing ? `memory went from ${mbs(bigMem.mem50)} to ${mbs(bigMem.memMax)}: it rises with load` : 'memory stayed about the same: CPU alone is enough',
+    },
+    running,
+  };
+}
+async function suggest(serviceIds) {
+  const { clusterId, c } = await context();
+  const ids = [...new Set((Array.isArray(serviceIds) ? serviceIds : [serviceIds]).filter(Boolean))];
+  if (!ids.length) throw bad(400, 'Choose at least one service');
+  const since = Date.now() - 48 * 3600000;
+  const list = [];
+  for (const id of ids) {
+    const svc = await c.getService(id).inspect();
+    const samples = db.prepare('SELECT t, cpu, mem, tasks FROM swarm_service_samples WHERE cluster_id = ? AND service_id = ? AND t >= ? ORDER BY t').all(clusterId, svc.ID, since);
+    list.push({ name: svc.Spec.Name, replicas: svc.Spec.Mode.Replicated ? svc.Spec.Mode.Replicated.Replicas : 0, samples });
+  }
+  return suggestFrom(list, await capacity(c));
+}
+
 // ---- the engine ----
 const buffers = new Map(); // `${cluster}:${service}` → samples, last hour
 const lastSeen = new Map(); // same key → last measure
@@ -441,4 +520,4 @@ async function listRules() {
   return out;
 }
 
-module.exports = { DEFAULTS, validate, decide, room, overview, getRule, saveRule, saveRules, setEnabled, removeRule, saveSettings, listRules, tick, start, _measure: measure, _capacity: capacity };
+module.exports = { DEFAULTS, validate, decide, room, suggestFrom, suggest, overview, getRule, saveRule, saveRules, setEnabled, removeRule, saveSettings, listRules, tick, start, _measure: measure, _capacity: capacity };
