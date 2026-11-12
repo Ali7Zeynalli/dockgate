@@ -2,6 +2,99 @@
 
 ---
 
+## [2.42.2] - 2026-11-12
+
+### Added
+- **Documentation** in [`docs/`](docs/README.md): getting started, Resources (Containers, Images, Volumes, Networks, Builds, Prune), Swarm → Stacks and Migrate, and Swarm → Auto Scaling, with screenshots, settings and every error message with its fix. The README links to it (**Docs**).
+
+---
+
+## [2.42.1] - 2026-11-12
+
+### Changed
+- **Swarm → Auto Scaling**: the rules table is narrower, so the ⋯ menu stays in view. *Add* and *remove* share one column, and *room* is shown under the state.
+- A rule's state says when a quiet service will lose a replica (*quiet: removes after 10 min*), and the other states are shorter.
+- On a service's **Autoscale** tab, Pause and *Edit on Auto Scaling* sit together on the right.
+
+### Fixed
+- Autoscale history entries saved before 2.42 showed no service name.
+- Opening a Swarm tab by its own address (for example `#swarm-scaling`) showed the raw name in the top bar instead of *Swarm / Auto Scaling*.
+
+---
+
+## [2.42.0] - 2026-11-12
+
+### Added
+- **Swarm → Auto Scaling**, a new tab after Services, for all autoscale rules in one place:
+  - **Capacity**: CPU and memory of the active servers, how much tasks have reserved, and how many more replicas of each service fit.
+  - **Rules**: each service's range, its CPU and memory now, how many replicas fit, and its state (*steady*, *busy — adds a replica after 5 min*, *busy, no room for another replica* …). Edit, pause, resume or remove a rule from its ⋯ menu; **Pause all** stops every rule at once.
+  - **History** of every change, filtered by service.
+  - **New rule** in 4 steps: services (one rule can cover several services), what each replica gets (CPU and memory limit and reservation, spread over the servers), when to scale, and the range with a check of how many replicas fit.
+- **Memory** as a reason to scale: add a replica when the memory per replica stays above a % of its limit, with *CPU or memory* or *CPU and memory*. A memory rule needs a memory limit.
+- **Every replica busy**: scale on the least busy replica instead of the average, so one hot replica does not add more.
+- **Replicas per change** (1–5) and separate waits after adding and after removing.
+- Checks **every 30 seconds** or every minute, and what to do with a replica that fits nowhere: wait for room or skip. A replica that stays pending is recorded once (*not placed: …*) and sent through the **Swarm autoscale** notification.
+- **Cluster settings**:
+  - **Root CA → Rotate…** gives every node a new certificate.
+  - **Unlock key → Rotate…** (with autolock on) shows the new key once and keeps it in DockGate.
+  - **Tuning**: heartbeat period (1–60 s) and Raft snapshot interval.
+- **Resume the update…** for a service whose rolling update paused after a failure: on the service's Updates tab and in a banner at the top of its page.
+
+### Changed
+- A service's **Autoscale** tab shows a short summary of its rule, Pause/Resume and its history; the rule is edited on Swarm → Auto Scaling.
+- Rules made in 2.41 keep working: their wait is used after adding, and after removing too (at least 5 min).
+
+---
+
+## [2.41.1] - 2026-11-12
+
+### Changed
+- **Deploy → Compose stacks → Open stack** opens Swarm → Stacks with that project's stack marked and in view (it opened the list only). For a project moved in part, it opens the *project*-swarm stack.
+- **Move back to Compose…** is in a moved project's ⋯ menu on the Compose page too, not only in Swarm → Stacks.
+
+---
+
+## [2.41.0] - 2026-11-12
+
+### Added
+- **Swarm autoscale.** Docker Swarm does not scale services by itself; DockGate now can. On a service's page, the new **Autoscale** tab sets:
+  - minimum and maximum replicas;
+  - add a replica when the average CPU per task stays at or above a % for some minutes (default 75% for 5 min), remove one when it stays at or below a % (default 25% for 10 min);
+  - a wait between changes (default 5 min), so new replicas settle;
+  - spreading the replicas over the servers (placement preference `spread=node.id`).
+
+  CPU per task is the % of the service's CPU limit, or of one CPU core when it has none. DockGate checks every minute, changes one replica at a time, never during a rolling update, and keeps working whichever server is picked at the top. Each change is shown in the tab's History, in the audit log and through the new **Swarm autoscale** notification rule; the Services list marks services with a rule (*auto 2–5*). Not offered for global services or databases, and a warning is shown for services with volumes. Autoscale does not add servers: a replica that fits nowhere waits as pending.
+
+---
+
+## [2.40.0] - 2026-11-12
+
+### Added
+- **A page for each Swarm node**, like the service and container pages. Click a node's name in Swarm → Nodes or on Swarm → Overview. Tabs:
+  - **Overview** — role, state, availability, address, capacity, OS, Docker, DockGate server, joined, last change, labels.
+  - **Tasks** — every task Swarm placed on the node (running now, or with history), with errors; click a service to open it.
+  - **Resources** — CPU, memory, disk and network of the node's DockGate server, live and for 48 hours, with its alert rules.
+  - **Labels** — the labels and which services' placement rules use them; edit them here.
+  - **Events** — Docker events about the node in the last 24 hours. **History** — what was changed on it from DockGate. **Inspect** — the raw JSON.
+  - The buttons on top are the node actions: Activate, Pause, Drain…, Promote / Demote, Server console, Add to DockGate…, Remove….
+
+---
+
+## [2.39.0] - 2026-11-12
+
+### Added
+- **Swarm jobs can be reopened from every Swarm page.** While a job runs (move to Swarm, redeploy, add servers, rotate a secret …), a bar at the top of each Swarm tab names it — e.g. *Redeploy · shop is running* — with **Open log**; for 10 minutes after it ends the bar shows how it ended. The sidebar shows **Swarm ▶ 1** while it runs, as Deploy and Servers do for their jobs.
+- **Swarm → Overview → Recent jobs:** the Swarm jobs of the last 6 hours with their result and time; any of them opens its steps and log again. Before, a closed job window could only be reopened from Overview while the job was still running, and not at all once it had ended.
+
+### Fixed
+- **Back and Forward forgot where you were.**
+  - The tab of a container page and of a Swarm service page is now in the address, so Back, Forward and a refresh return to the same tab (it was always Overview).
+  - The list you came from keeps its filter, search, sort and scroll position (Containers, Images, Volumes).
+  - The **Back** button on a container or service page returns to the page you came from (it always opened the list, and added a history step).
+- **The sidebar showed nothing selected on a container or Swarm service page.** It now highlights Resources → Containers or Swarm → Services.
+
+---
+
 ## [2.38.13] - 2026-11-12
 
 ### Added

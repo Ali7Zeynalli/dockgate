@@ -175,8 +175,8 @@ async function checks({ pool, multi = false } = {}) {
 
 const jobs = new Map();
 let currentJob = null;
-function newJob(kind) {
-  const job = { id: crypto.randomBytes(8).toString('hex'), kind, serverId: serverId(), status: 'running', steps: [], log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
+function newJob(kind, subject = null) {
+  const job = { id: crypto.randomBytes(8).toString('hex'), kind, subject: subject ? String(subject).slice(0, 200) : null, serverId: serverId(), status: 'running', steps: [], log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
   jobs.set(job.id, job);
   for (const [k, j] of jobs) if (j.finishedAt && Date.now() - j.finishedAt > 6 * 3600000) jobs.delete(k);
   return job;
@@ -315,6 +315,12 @@ function getJob(id) {
   if (j.result && j.result.unlockKey && j.finishedAt && Date.now() - j.finishedAt > 10 * 60000) { j.result = { ...j.result, unlockKey: undefined }; }
   return j;
 }
+/** Swarm jobs of the server in use, newest first (kept 6 hours after they end), without their logs. */
+function listJobs() {
+  const sid = serverId();
+  return [...jobs.values()].filter(j => j.serverId === sid).sort((a, b) => b.startedAt - a.startedAt).slice(0, 30)
+    .map(j => ({ id: j.id, kind: j.kind, subject: j.subject || null, status: j.finishedAt ? j.status : 'running', error: j.error || null, startedAt: j.startedAt, finishedAt: j.finishedAt }));
+}
 function runningJob() { return currentJob && !currentJob.finishedAt && currentJob.serverId === serverId() ? currentJob : null; }
 
 // ---- overview ----
@@ -434,6 +440,9 @@ async function settings() {
       taskHistory: spec.Orchestration ? spec.Orchestration.TaskHistoryRetentionLimit : null,
       autolock: !!(spec.EncryptionConfig && spec.EncryptionConfig.AutoLockManagers),
       rootRotation: !!sw.RootRotationInProgress,
+      heartbeatSec: spec.Dispatcher && spec.Dispatcher.HeartbeatPeriod ? Math.round(spec.Dispatcher.HeartbeatPeriod / 1e9) : 5,
+      snapshotInterval: spec.Raft && spec.Raft.SnapshotInterval ? spec.Raft.SnapshotInterval : 10000,
+      caRotations: (spec.CAConfig && spec.CAConfig.ForceRotate) || 0,
     },
   };
 }
@@ -461,6 +470,16 @@ async function updateSettings(body = {}) {
     spec.Orchestration = { ...(spec.Orchestration || {}), TaskHistoryRetentionLimit: n };
   }
   if (body.autolock !== undefined) spec.EncryptionConfig = { ...(spec.EncryptionConfig || {}), AutoLockManagers: !!body.autolock };
+  if (body.heartbeatSec !== undefined) {
+    const h = Number(body.heartbeatSec);
+    if (!Number.isInteger(h) || h < 1 || h > 60) throw bad('Heartbeat period must be 1–60 seconds');
+    spec.Dispatcher = { ...(spec.Dispatcher || {}), HeartbeatPeriod: h * 1e9 };
+  }
+  if (body.snapshotInterval !== undefined) {
+    const n = Number(body.snapshotInterval);
+    if (!Number.isInteger(n) || n < 100 || n > 1000000) throw bad('Raft snapshot interval must be 100–1,000,000 log entries');
+    spec.Raft = { ...(spec.Raft || {}), SnapshotInterval: n };
+  }
   try { await dial(c, '/swarm/update?', 'POST', { _query: { version: sw.Version.Index }, _body: spec }); }
   catch (e) { throw bad(dockerMsg(e) || 'Swarm update failed'); }
   const out = { before, after: { autolock: !!(spec.EncryptionConfig && spec.EncryptionConfig.AutoLockManagers), certDays: spec.CAConfig && spec.CAConfig.NodeCertExpiry ? Math.round(spec.CAConfig.NodeCertExpiry / 1e9 / 86400) : null, taskHistory: spec.Orchestration ? spec.Orchestration.TaskHistoryRetentionLimit : null } };
@@ -486,6 +505,34 @@ async function joinTokens() {
 }
 
 /** Make a new join token for workers or managers; the old one stops working (servers already in stay). */
+/** docker swarm ca --rotate: a new root CA and new node certificates (ForceRotate + 1). */
+async function rotateCA() {
+  const c = client();
+  const st = await status();
+  if (st.state !== 'active' || !st.manager) throw Object.assign(new Error('Swarm must be active and this server a manager'), { statusCode: 409 });
+  const sw = await c.swarmInspect();
+  if (sw.RootRotationInProgress) throw Object.assign(new Error('A root CA rotation is already in progress — wait until every server has its new certificate'), { statusCode: 409 });
+  const spec = JSON.parse(JSON.stringify(sw.Spec || {}));
+  spec.CAConfig = { ...(spec.CAConfig || {}), ForceRotate: ((spec.CAConfig && spec.CAConfig.ForceRotate) || 0) + 1 };
+  try { await dial(c, '/swarm/update?', 'POST', { _query: { version: sw.Version.Index }, _body: spec }); }
+  catch (e) { throw Object.assign(new Error(dockerMsg(e) || 'CA rotation failed'), { statusCode: 400 }); }
+  return { ok: true, rotations: spec.CAConfig.ForceRotate };
+}
+
+/** docker swarm unlock-key --rotate: a new unlock key, stored encrypted; returned once. */
+async function rotateUnlockKey() {
+  const c = client();
+  const sw = await c.swarmInspect();
+  if (!(sw.Spec && sw.Spec.EncryptionConfig && sw.Spec.EncryptionConfig.AutoLockManagers)) throw Object.assign(new Error('Autolock is off: there is no unlock key to rotate'), { statusCode: 400 });
+  try { await dial(c, '/swarm/update?', 'POST', { _query: { version: sw.Version.Index, rotateManagerUnlockKey: true }, _body: sw.Spec }); }
+  catch (e) { throw Object.assign(new Error(dockerMsg(e) || 'Rotate failed'), { statusCode: 400 }); }
+  const k = await dial(c, '/swarm/unlockkey').catch(() => null);
+  const key = k && (k.UnlockKey || (typeof k === 'string' ? JSON.parse(k).UnlockKey : null));
+  if (!key) throw Object.assign(new Error('The key was rotated but could not be read back — see docker swarm unlock-key on the manager'), { statusCode: 500 });
+  stmts.setSetting.run(`swarm_unlock_key:${serverId()}`, encrypt(key));
+  return { key };
+}
+
 async function rotateToken(role) {
   if (!['worker', 'manager'].includes(role)) throw Object.assign(new Error('role must be worker or manager'), { statusCode: 400 });
   const c = client();
@@ -536,4 +583,4 @@ async function leave() {
 // Shared with server/swarm-cluster.js (one Swarm job at a time per DockGate).
 const _jobs = { newJob, logTo, step, setCurrent: (j) => { currentJob = j; }, busy: () => !!(currentJob && !currentJob.finishedAt) };
 
-module.exports = { _jobs, addressCandidates, isIPv4, isPrivate, dial, status, checks, startInit, getJob, runningJob, overview, settings, updateSettings, joinTokens, rotateToken, storedUnlockKey, unlock, leave, initOptions, _overlaps: overlaps, _parseCidr: parseCidr, _isPrivate: isPrivate, dockerMsg };
+module.exports = { _jobs, listJobs, rotateCA, rotateUnlockKey, addressCandidates, isIPv4, isPrivate, dial, status, checks, startInit, getJob, runningJob, overview, settings, updateSettings, joinTokens, rotateToken, storedUnlockKey, unlock, leave, initOptions, _overlaps: overlaps, _parseCidr: parseCidr, _isPrivate: isPrivate, dockerMsg };

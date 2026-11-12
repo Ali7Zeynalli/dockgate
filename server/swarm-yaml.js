@@ -260,7 +260,7 @@ async function startDeploy(body, { sourceIp } = {}) {
   const vars = parseEnv(body.env);
   await I.context(); // Swarm active and a manager
   await check(yaml, vars);
-  const { job, log, step } = I.newJob(body.create ? 'deploy' : 'redeploy');
+  const { job, log, step } = I.newJob(body.create ? 'deploy' : 'redeploy', name);
   (async () => {
     const hash = I.hashOf(yaml);
     const id = I.q.addDeploy.run(sid, name, body.create ? 'deploy' : 'redeploy', hash, yaml, sourceIp || null, Date.now()).lastInsertRowid;
@@ -320,7 +320,7 @@ async function startConvert(body, { sourceIp } = {}) {
   await check(yaml, vars);
   const cname = ct.Name.replace(/^\//, '');
   const restart = (ct.HostConfig.RestartPolicy || {}).Name || 'no';
-  const { job, log, step } = I.newJob('convert');
+  const { job, log, step } = I.newJob('convert', cname);
   (async () => {
     const id = I.q.addDeploy.run(sid, name, 'move', I.hashOf(yaml), yaml, sourceIp || null, Date.now()).lastInsertRowid;
     let stopped = false, deployed = false; const t = Date.now();
@@ -370,7 +370,7 @@ async function startBackToContainer(name, { sourceIp } = {}) {
   const from = JSON.parse(row.from_container);
   const ct = await c.getContainer(from.id).inspect().catch(() => null);
   if (!ct) throw bad(404, `The container ${from.name} is gone — remove the stack instead, or keep it on Swarm`);
-  const { job, log, step } = I.newJob('move-back');
+  const { job, log, step } = I.newJob('move-back', name);
   (async () => {
     const id = I.q.addDeploy.run(sid, name, 'move-back', null, null, sourceIp || null, Date.now()).lastInsertRowid;
     const t = Date.now();

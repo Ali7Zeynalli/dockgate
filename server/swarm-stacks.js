@@ -390,9 +390,9 @@ function history(name) { return q.history.all(serverId(), name); }
 
 // ---- jobs ----
 
-function newJob(kind) {
+function newJob(kind, subject = null) {
   if (swarm._jobs.busy()) throw bad(409, 'A Swarm job is already running');
-  const job = swarm._jobs.newJob(kind); swarm._jobs.setCurrent(job);
+  const job = swarm._jobs.newJob(kind, subject); swarm._jobs.setCurrent(job);
   return { job, log: swarm._jobs.logTo(job), step: swarm._jobs.step };
 }
 function finish(job, err) {
@@ -429,7 +429,7 @@ async function startMove(plans, { sourceIp } = {}) {
   if (!Array.isArray(plans) || !plans.length) throw bad(400, 'Choose at least one project');
   if (plans.length > 20) throw bad(400, 'At most 20 projects at a time');
   const ctx = await context();
-  const { job, log, step } = newJob('move');
+  const { job, log, step } = newJob('move', plans.map(p => p.project).join(', '));
   job.result = { projects: [] };
   const sid = serverId();
   (async () => {
@@ -521,7 +521,7 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
     try { stack = JSON.parse(d.stack); } catch (e) { stack = d.stack; } // a kept YAML file
     hash = d.hash;
   } else if (row.yaml) { stack = row.yaml; hash = hashOf(row.yaml); }
-  const { job, log, step } = newJob('redeploy');
+  const { job, log, step } = newJob('redeploy', name);
   (async () => {
     let id = null;
     try {
@@ -581,7 +581,7 @@ async function startMoveBack(name, { sourceIp } = {}) {
   const row = q.get.get(sid, name);
   if (!row || !row.location) throw bad(404, 'DockGate does not know the compose files of this stack');
   const loc = JSON.parse(row.location);
-  const { job, log, step } = newJob('move-back');
+  const { job, log, step } = newJob('move-back', name);
   (async () => {
     const id = q.addDeploy.run(sid, name, 'move-back', null, null, sourceIp || null, Date.now()).lastInsertRowid;
     const t = Date.now();

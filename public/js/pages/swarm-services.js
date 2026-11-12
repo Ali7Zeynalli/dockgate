@@ -321,8 +321,8 @@
     const stop = () => clearTimeout(timer);
     async function load() {
       if (!Router.isActiveNav(navId) || !content.isConnected) return stop();
-      let st = { services: {} };
-      try { [data, st] = await Promise.all([API.get('/swarm/services').then(r => r.services), API.get('/swarm/services/stats').catch(() => ({ services: {} }))]); }
+      let st = { services: {} }, auto = {};
+      try { [data, st, auto] = await Promise.all([API.get('/swarm/services').then(r => r.services), API.get('/swarm/services/stats').catch(() => ({ services: {} })), API.get('/swarm/autoscale/rules').then(r => r.rules).catch(() => ({}))]); }
       catch (e) {
         content.innerHTML = UI.header('Services', esc(e.message), UI.btn('Open Overview', 'data-go'));
         content.querySelector('[data-go]').onclick = () => Router.navigate('swarm', { tab: 'swarm-overview' });
@@ -350,7 +350,7 @@
           { label: 'Remove…', attrs: `data-a="remove" data-id="${s.id}"` },
         ];
         return { cells: [
-          `<a href="#" class="td-name" data-open-svc="${s.id}" title="Open the service: tasks, logs, terminal, files, settings"><b>${esc(s.name)}</b></a>${s.stack ? ` ${UI.chip(`stack ${esc(s.stack)}`)}` : ''}${s.database ? ' <span class="ui-sub">database</span>' : ''}`,
+          `<a href="#" class="td-name" data-open-svc="${s.id}" title="Open the service: tasks, logs, terminal, files, settings"><b>${esc(s.name)}</b></a>${s.stack ? ` ${UI.chip(`stack ${esc(s.stack)}`)}` : ''}${auto[s.id] ? ` <span title="Autoscale ${auto[s.id].enabled ? 'on' : 'paused'}: ${auto[s.id].min}–${auto[s.id].max} replicas by CPU">${UI.pill(auto[s.id].enabled ? 'info' : 'off', `auto ${auto[s.id].min}–${auto[s.id].max}`)}</span>` : ''}${s.database ? ' <span class="ui-sub">database</span>' : ''}`,
           `<span class="td-mono text-sm">${esc(s.image)}</span>${s.newer ? (s.newer.status === 'update' ? `<div>${UI.pill('info', 'newer image')}${s.newer.version ? ` <span class="ui-sub">${esc(s.newer.version)}</span>` : ''}</div>` : s.newer.status === 'error' ? `<div class="ui-sub" title="${esc(s.newer.error || '')}">check failed</div>` : '') : ''}`,
           `<span class="text-sm">${esc(s.mode)}</span>`,
           `<b style="color:${s.running < s.desired ? 'var(--warning,#d97706)' : 'inherit'}">${s.running}/${s.desired}</b><div style="margin-top:3px">${s.tasks.slice(0, 24).map(t => `<span class="svc-sq ${esc(t.state)}" title="${esc(`${s.name}${t.slot ? '.' + t.slot : ''} · ${t.state}${t.node ? ' · ' + t.node : ''}${t.error ? ' · ' + t.error : ''}`)}"></span>`).join('')}</div>`,

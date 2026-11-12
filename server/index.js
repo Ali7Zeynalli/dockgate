@@ -648,6 +648,7 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
   if (process.env.NODE_ENV !== 'test') require('./swarm-monitor').start();
   if (process.env.NODE_ENV !== 'test') require('./swarm-services').startSampler(); // Swarm → Services → Graphs (every 2 min, 48 h)
+  if (process.env.NODE_ENV !== 'test') require('./swarm-autoscale').start(); // autoscale rules, every minute
   if (process.env.NODE_ENV !== 'test') require('./swarm-backup').start(); // nightly Swarm backup (data/swarm-backups, last 7) // Swarm alerts: services short, nodes down, rolled back updates, quorum
   // Newer-image check for every server: 10 minutes after start, then once a day. New updates are announced
   // once per new digest when the "Newer image available" rule is on (off by default).

@@ -1,7 +1,8 @@
 // Images Page
 Router.register('images', async (content) => {
-  let currentFilter = 'all';
-  let currentSearch = '';
+  const view = Store.view('images'); // filter and search survive leaving the page
+  let currentFilter = view.get('filter', 'all');
+  let currentSearch = view.get('search', '');
   let selectedIds = new Set();
   let refreshTimer = null;
 
@@ -108,7 +109,7 @@ Router.register('images', async (content) => {
       `;
 
       // Filter buttons
-      content.querySelectorAll('[data-filter]').forEach(btn => btn.addEventListener('click', () => { currentFilter = btn.dataset.filter; render(); }));
+      content.querySelectorAll('[data-filter]').forEach(btn => btn.addEventListener('click', () => { currentFilter = btn.dataset.filter; view.set('filter', currentFilter); render(); }));
       // Unused images: the same prune as Resources → Prune, offered where the images are.
       document.getElementById('remove-unused-btn')?.addEventListener('click', () => {
         showDeleteConfirm('Remove unused images', { message: `${counts.unused} image${counts.unused === 1 ? '' : 's'} not used by any container (${formatBytes(unusedSize)}) will be deleted. Containers and volumes are not touched.`, phrase: 'delete', onConfirm: async () => {
@@ -124,7 +125,7 @@ Router.register('images', async (content) => {
         let timeout;
         searchInput.addEventListener('input', () => {
           clearTimeout(timeout);
-          timeout = setTimeout(() => { currentSearch = searchInput.value; render(); }, 300);
+          timeout = setTimeout(() => { currentSearch = searchInput.value; view.set('search', currentSearch); render(); }, 300);
         });
       }
 

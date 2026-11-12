@@ -325,6 +325,7 @@ insertHealthRule.run('swarm_service_down', 'Swarm service below its replicas', 0
 insertHealthRule.run('swarm_node_down', 'Swarm server down or back', 0, 1, '{}');
 insertHealthRule.run('swarm_update_rollback', 'Swarm update rolled back or paused', 0, 1, '{}');
 insertHealthRule.run('swarm_quorum', 'Swarm managers lost their majority', 0, 1, '{}');
+insertHealthRule.run('swarm_autoscale', 'Swarm autoscale changed a service', 0, 1, '{}');
 // "Newer image available" is opt-in: it was just inserted by defaultRules (enabled = 1) on databases that
 // did not have it yet — turn it off once, then leave it to the user.
 try {

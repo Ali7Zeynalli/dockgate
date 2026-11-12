@@ -17,6 +17,17 @@ router.post('/checks', async (req, res) => {
 router.post('/init', async (req, res) => {
   try { const j = await swarm.startInit(req.body || {}, { sourceIp: req.ip }); res.json({ jobId: j.id }); } catch (e) { fail(res, e); }
 });
+router.get('/jobs', (req, res) => { res.json({ jobs: swarm.listJobs() }); });
+// Autoscale rules (server/swarm-autoscale.js)
+const autoscale = require('../swarm-autoscale');
+router.get('/autoscale', async (req, res) => { try { res.json(await autoscale.overview()); } catch (e) { fail(res, e); } });
+router.get('/autoscale/rules', async (req, res) => { try { res.json({ rules: await autoscale.listRules() }); } catch (e) { fail(res, e); } });
+router.put('/autoscale/rules', async (req, res) => { try { res.json(await autoscale.saveRules((req.body || {}).services, req.body || {}, { sourceIp: req.ip })); } catch (e) { fail(res, e); } });
+router.put('/autoscale/settings', (req, res) => { try { res.json(autoscale.saveSettings(req.body || {}, { sourceIp: req.ip })); } catch (e) { fail(res, e); } });
+router.post('/services/:id/autoscale/enabled', async (req, res) => { try { res.json(await autoscale.setEnabled(req.params.id, !!(req.body || {}).on, { sourceIp: req.ip })); } catch (e) { fail(res, e); } });
+router.get('/services/:id/autoscale', async (req, res) => { try { res.json(await autoscale.getRule(req.params.id)); } catch (e) { fail(res, e); } });
+router.put('/services/:id/autoscale', async (req, res) => { try { res.json(await autoscale.saveRule(req.params.id, req.body || {}, { sourceIp: req.ip })); } catch (e) { fail(res, e); } });
+router.delete('/services/:id/autoscale', async (req, res) => { try { res.json(await autoscale.removeRule(req.params.id, { sourceIp: req.ip })); } catch (e) { fail(res, e); } });
 router.get('/job/:id', (req, res) => {
   const j = swarm.getJob(req.params.id);
   if (!j) return res.status(404).json({ error: 'Job not found (DockGate restarted?)' });
@@ -53,6 +64,9 @@ router.post('/cluster', async (req, res) => {
 router.post('/servers/add', async (req, res) => {
   try { const j = await cluster.startAddServers(req.body || {}, { sourceIp: req.ip }); res.json({ jobId: j.id }); } catch (e) { fail(res, e); }
 });
+router.get('/nodes/:id/detail', async (req, res) => { try { res.json(await cluster.nodeDetail(req.params.id)); } catch (e) { fail(res, e); } });
+router.get('/nodes/:id/events', async (req, res) => { try { res.json({ events: await cluster.nodeEvents(req.params.id, req.query.hours) }); } catch (e) { fail(res, e); } });
+router.get('/nodes/:id/audit', async (req, res) => { try { res.json({ audit: cluster.nodeAudit(String(req.query.name || '')) }); } catch (e) { fail(res, e); } });
 router.get('/nodes/:id/drain-impact', async (req, res) => { try { res.json(await cluster.drainImpact(req.params.id)); } catch (e) { fail(res, e); } });
 router.post('/nodes/:id/update', async (req, res) => {
   try { res.json(await cluster.updateNode(req.params.id, req.body || {}, { sourceIp: req.ip })); } catch (e) { fail(res, e); }
@@ -80,6 +94,7 @@ router.put('/services/:id', ok((req) => svc.save(req.params.id, (req.body || {})
 router.post('/services/:id/scale', ok((req) => svc.scale(req.params.id, (req.body || {}).replicas, { sourceIp: req.ip, confirmDb: !!(req.body || {}).confirmDb })));
 router.post('/services/:id/image', ok((req) => svc.setImage(req.params.id, (req.body || {}).image, { sourceIp: req.ip })));
 router.post('/services/:id/rollback', ok((req) => svc.rollback(req.params.id, { sourceIp: req.ip })));
+router.post('/services/:id/resume-update', ok((req) => svc.resumeUpdate(req.params.id, { sourceIp: req.ip })));
 router.post('/services/:id/restart', ok((req) => svc.restart(req.params.id, { sourceIp: req.ip })));
 router.delete('/services/:id', ok((req) => svc.remove(req.params.id, { sourceIp: req.ip })));
 router.get('/services/:id/tasks', ok(async (req) => ({ tasks: await svc.tasks(req.params.id) })));
@@ -185,7 +200,7 @@ router.get('/settings', async (req, res) => {
 router.put('/settings', async (req, res) => {
   try {
     const b = req.body || {};
-    const r = await swarm.updateSettings({ autolock: b.autolock, certDays: b.certDays, taskHistory: b.taskHistory });
+    const r = await swarm.updateSettings({ autolock: b.autolock, certDays: b.certDays, taskHistory: b.taskHistory, heartbeatSec: b.heartbeatSec, snapshotInterval: b.snapshotInterval });
     logAction({ req, server: dockerService.getActiveServerId() || 'local', resourceType: 'swarm', resourceName: 'swarm', action: 'swarm_settings', details: { before: r.before, after: r.after } });
     res.json(r);
   } catch (e) { fail(res, e); }
@@ -202,6 +217,23 @@ router.post('/join-tokens/:role/rotate', async (req, res) => {
   try {
     const r = await swarm.rotateToken(req.params.role);
     logAction({ req, server: dockerService.getActiveServerId() || 'local', resourceType: 'swarm', resourceName: `${req.params.role} join token`, action: 'swarm_join_token_rotate' });
+    res.json(r);
+  } catch (e) { fail(res, e); }
+});
+// Root CA rotation and unlock key rotation (audited).
+router.post('/ca/rotate', async (req, res) => {
+  try {
+    if (!(req.body || {}).confirm) return res.status(400).json({ error: 'confirm required' });
+    const r = await swarm.rotateCA();
+    logAction({ req, server: dockerService.getActiveServerId() || 'local', resourceType: 'swarm', resourceName: 'root CA', action: 'swarm_ca_rotate', details: r });
+    res.json(r);
+  } catch (e) { fail(res, e); }
+});
+router.post('/unlock-key/rotate', async (req, res) => {
+  try {
+    if (!(req.body || {}).confirm) return res.status(400).json({ error: 'confirm required' });
+    const r = await swarm.rotateUnlockKey();
+    logAction({ req, server: dockerService.getActiveServerId() || 'local', resourceType: 'swarm', resourceName: 'unlock key', action: 'swarm_unlock_key_rotate' });
     res.json(r);
   } catch (e) { fail(res, e); }
 });

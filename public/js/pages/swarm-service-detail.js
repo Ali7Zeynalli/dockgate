@@ -10,13 +10,13 @@ Router.register('swarm-service', async (content, params) => {
   const pageNavId = Router._navId;
   let cleanup = [];
   let s = null, form = null, tasks = [];
-  const TABS = [['overview', 'Overview'], ['tasks', 'Tasks'], ['logs', 'Logs'], ['terminal', 'Terminal'], ['files', 'Files'], ['stats', 'Stats'], ['environment', 'Environment'], ['ports', 'Ports'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['secrets', 'Secrets & configs'], ['placement', 'Placement'], ['updates', 'Updates'], ['events', 'Events'], ['inspect', 'Inspect']];
+  const TABS = [['overview', 'Overview'], ['tasks', 'Tasks'], ['logs', 'Logs'], ['terminal', 'Terminal'], ['files', 'Files'], ['stats', 'Stats'], ['environment', 'Environment'], ['ports', 'Ports'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['secrets', 'Secrets & configs'], ['placement', 'Placement'], ['updates', 'Updates'], ['autoscale', 'Autoscale'], ['events', 'Events'], ['inspect', 'Inspect']];
   const UPD = { updating: ['warn', 'updating'], completed: ['ok', 'updated'], paused: ['bad', 'update paused'], rollback_started: ['warn', 'rolling back'], rollback_paused: ['bad', 'roll back paused'], rollback_completed: ['warn', 'rolled back'] };
   const statePill = (st) => UI.pill(st === 'running' ? 'ok' : ['failed', 'rejected'].includes(st) ? 'bad' : ['shutdown', 'complete'].includes(st) ? 'off' : 'warn', esc(st));
   const runCleanup = () => { for (const f of cleanup) { try { f(); } catch (e) { /* gone */ } } cleanup = []; };
   const editBtn = (label = 'Edit…') => `<div style="margin-top:12px">${UI.btn(label, 'data-edit-svc')}</div>`;
   const kv = (rows) => `<div class="detail-grid">${rows.filter(Boolean).map(([k, v]) => `<div class="detail-item"><div class="detail-label">${esc(k)}</div><div class="detail-value" style="white-space:normal;overflow-wrap:anywhere">${v}</div></div>`).join('')}</div>`;
-  const done = (kind) => { if (kind === 'removed') Router.navigate('swarm', { tab: 'swarm-services' }); else render(); };
+  const done = (kind) => { if (kind === 'removed') Router.navigate('swarm', { tab: 'swarm-services' }, { replace: true }); else render(); };
 
   async function load() {
     const [sum, f, t] = await Promise.all([API.get(`/swarm/services/${encodeURIComponent(id)}/summary`), API.get(`/swarm/services/${encodeURIComponent(id)}`), API.get(`/swarm/services/${encodeURIComponent(id)}/tasks`)]);
@@ -57,13 +57,16 @@ Router.register('swarm-service', async (content, params) => {
         </div>
       </div>
       ${s.problem ? `<div class="insight-card danger" style="margin-bottom:12px"><div><b>Why it is not running:</b> ${esc(s.problem)}</div></div>` : ''}
+      ${s.update && ['paused', 'rollback_paused'].includes(s.update.state) ? `<div class="insight-card warning" style="margin-bottom:12px;align-items:center"><div style="flex:1"><b>The ${s.update.state === 'rollback_paused' ? 'roll back' : 'update'} is paused</b> because new tasks failed${s.update.message ? `: ${esc(s.update.message)}` : ''}.</div>${UI.btn('Resume…', 'data-resume-top', 'btn-primary btn-sm')}</div>` : ''}
       <div class="tabs" id="detail-tabs">${TABS.map(([k, l]) => `<button class="tab ${currentTab === k ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
       <div id="tab-content"></div>`;
-    content.querySelector('#back-btn').onclick = () => Router.navigate('swarm', { tab: 'swarm-services' });
+    content.querySelector('#back-btn').onclick = () => Router.back('swarm', { tab: 'swarm-services' }); // where you came from
+    content.querySelector('[data-resume-top]')?.addEventListener('click', () => resumeConfirm());
     content.querySelector('#tab-content').addEventListener('click', (e) => { if (e.target.closest('[data-edit-svc]')) SwarmUI.openServiceForm({ id: s.id, onDone: render }); });
     content.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => SwarmUI.serviceAction(b.dataset.act, s, done)));
     content.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
       currentTab = b.dataset.tab;
+      Router.setTab(currentTab); // in the URL: Back / Forward and a refresh come back to this tab
       content.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === currentTab));
       renderTab();
     }));
@@ -75,7 +78,7 @@ Router.register('swarm-service', async (content, params) => {
     const el = content.querySelector('#tab-content');
     if (!el) return;
     el.innerHTML = '<div class="text-sm text-muted" style="padding:12px 0">Loading…</div>';
-    const fn = { overview, tasks: tasksTab, logs, terminal, files, stats, environment, ports, volumes, networks, secrets, placement, updates, events, inspect }[currentTab];
+    const fn = { overview, tasks: tasksTab, logs, terminal, files, stats, environment, ports, volumes, networks, secrets, placement, updates, autoscale, events, inspect }[currentTab];
     Promise.resolve(fn(el)).catch(e => { el.innerHTML = UI.errorState(e, { compact: true }); });
   }
 
@@ -274,14 +277,46 @@ Router.register('swarm-service', async (content, params) => {
       ['Registry', n ? (n.status === 'update' ? `${UI.pill('info', 'newer image')}${n.version ? ` ${esc(n.version)}` : ''}${n.created ? ` <span class="ui-sub">built ${esc(n.created)}</span>` : ''}` : n.status === 'current' ? UI.pill('ok', 'this is the newest build') : n.status === 'error' ? `<span class="ui-sub">${esc(n.error)}</span>` : `<span class="ui-sub">${esc(n.error || 'not checked')}</span>`) + ` <span class="ui-sub">checked ${esc(timeAgo(Math.floor(n.checkedAt / 1000)))}</span>` : '<span class="ui-sub">not checked yet</span>'],
       ['Previous version', prevImg ? `<span class="td-mono" style="overflow-wrap:anywhere">${esc(prevImg)}</span>` : '<span class="ui-sub">none</span>'],
       ['Last update', s.update ? `${UI.pill(...(UPD[s.update.state] || ['off', esc(s.update.state)]))} ${esc(s.update.message || '')}` : '<span class="ui-sub">—</span>'],
-    ]) + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${UI.btn('Check for updates', 'data-u-check')} ${n && n.status === 'update' ? UI.primary('Update to newest…', 'data-u-newest') : ''} ${UI.btn('Update image…', 'data-u-image')} ${prevImg ? UI.btn('Roll back', 'data-u-rollback') : ''}</div>
+    ]) + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${UI.btn('Check for updates', 'data-u-check')} ${n && n.status === 'update' ? UI.primary('Update to newest…', 'data-u-newest') : ''} ${UI.btn('Update image…', 'data-u-image')} ${prevImg ? UI.btn('Roll back', 'data-u-rollback') : ''} ${s.update && ['paused', 'rollback_paused'].includes(s.update.state) ? UI.primary('Resume the update…', 'data-u-resume') : ''}</div>
       <div class="ui-ph-title" style="margin:18px 0 6px">Changed from DockGate</div>
       ${UI.table([{ label: 'When' }, { label: 'What' }, { label: 'Details' }], au.audit.map(a => ({ cells: [`<span class="ui-sub">${esc(formatTime(a.at))}</span>`, esc(String(a.action).replace(/^swarm_service_/, '').replace(/_/g, ' ')), `<span class="td-mono text-sm">${esc(Object.entries(a.details || {}).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · '))}</span>`] })), { minWidth: 0, empty: 'Nothing recorded yet.' })}`;
     el.querySelector('[data-u-check]').onclick = async (e) => { e.currentTarget.disabled = true; try { await API.post('/swarm/services/check-images', {}); render(); } catch (er) { showToast(er.message, 'error', 8000); e.currentTarget.disabled = false; } };
     el.querySelector('[data-u-newest]')?.addEventListener('click', () => SwarmUI.serviceAction('newest', s, done));
     el.querySelector('[data-u-image]').onclick = () => SwarmUI.serviceAction('image', s, done);
     el.querySelector('[data-u-rollback]')?.addEventListener('click', () => SwarmUI.serviceAction('rollback', s, done));
+    el.querySelector('[data-u-resume]')?.addEventListener('click', () => resumeConfirm());
   }
+  function resumeConfirm() {
+    secConfirm({ title: `Resume the update of ${s.name}`, change: `The ${s.update.state === 'rollback_paused' ? 'roll back' : 'update'} stopped because new tasks failed${s.update.message ? ` (${esc(s.update.message)})` : ''}. It starts again with the same settings, from where it stopped.`,
+      protects: 'If new tasks fail again it stops again (or rolls back, as the service is set). Fix the cause first — see Tasks and Logs.', undo: 'Roll back to the previous version.', confirmLabel: 'Resume',
+      onConfirm: async () => { try { await API.post(`/swarm/services/${encodeURIComponent(s.id)}/resume-update`, {}); showToast('Update resumed'); render(); } catch (e) { showToast(e.message, 'error', 9000); } } });
+  }
+  // Autoscale: this service's rule in short; rules are made and changed on Swarm → Auto Scaling.
+  async function autoscale(el) {
+    const a = await API.get(`/swarm/services/${encodeURIComponent(id)}/autoscale`);
+    if (!el.isConnected) return;
+    if (a.global) { el.innerHTML = '<div class="insight-card info"><div>This is a <b>global</b> service: it runs one task on every server, so there is nothing to scale.</div></div>'; return; }
+    if (a.database) { el.innerHTML = `<div class="insight-card warning"><div><b>Autoscale is not offered for databases.</b> More replicas of ${esc(s.image.split(':')[0])} would be separate databases with their own data, not copies of one.</div></div>`; return; }
+    const r = a.rule;
+    const go = () => Router.navigate('swarm', { tab: 'swarm-scaling', edit: s.id });
+    if (!r) {
+      el.innerHTML = `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Autoscale ${UI.pill('off', 'off')}</div><div class="ui-ph-desc">Docker Swarm does not scale by itself. On <b>Swarm → Auto Scaling</b> DockGate can add or remove replicas of this service when its own CPU or memory stays high or low.</div></div>${UI.primary('Add a rule…', 'data-as-go')}</div>`;
+      el.querySelector('[data-as-go]').onclick = go; return;
+    }
+    const n = a.now;
+    const up = `CPU &gt; ${r.cpuUp}%${r.memUp !== null ? ` ${r.logic} memory &gt; ${r.memUp}%` : ''} for ${r.upMinutes} min (${r.basis === 'every' ? 'every replica' : 'average'})`;
+    const down = `CPU &lt; ${r.cpuDown}%${r.memDown !== null ? ` and memory &lt; ${r.memDown}%` : ''} for ${r.downMinutes} min`;
+    el.innerHTML = `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Autoscale ${a.paused ? UI.pill('off', 'all paused') : r.enabled ? UI.pill('ok', 'on') : UI.pill('off', 'paused')}</div><div class="ui-ph-desc">Made and changed on Swarm → Auto Scaling.</div></div><div class="ui-ph-actions">${UI.btn(r.enabled ? 'Pause' : 'Resume', 'data-as-tog')} ${UI.primary('Edit on Auto Scaling', 'data-as-go')}</div></div>
+      ${kv([['Replicas', `<b>${a.replicas}</b> · ${r.min}–${r.max}${r.step > 1 ? ` · ${r.step} per change` : ''}`], ['Add when', up], ['Remove when', down], ['Waits', `${r.coolUpMinutes} min after adding · ${r.coolDownMinutes} min after removing`],
+        ['Each replica', `${a.limits.cpu ? `${a.limits.cpu} CPU` : 'no CPU limit'} · ${a.limits.mem ? formatBytes(a.limits.mem) : 'no memory limit'}${a.limits.cpuRes || a.limits.memRes ? ` · guaranteed ${a.limits.cpuRes || 0} CPU / ${formatBytes(a.limits.memRes || 0)}` : ''}`],
+        ['Now', n ? (n.cpu == null ? 'not measured — no replica on a server in DockGate' : `CPU ${n.cpu}%${n.mem != null ? ` · memory ${n.mem}%` : ''} per replica · ${n.measured} of ${n.tasks} measured`) : 'first reading within a minute'],
+        ['Last change', r.lastAt ? `${esc(r.lastAction || '')} · ${esc(timeAgo(new Date(r.lastAt).toISOString()))}<div class="ui-sub">${esc(r.lastReason || '')}</div>` : '—']])}
+      <div class="ui-ph" style="margin-top:16px"><div class="ui-ph-text"><div class="ui-ph-title">History</div></div></div>
+      ${UI.table([{ label: 'When' }, { label: 'Replicas' }, { label: 'Why' }], a.log.map(x => ({ cells: [`<span class="ui-sub" title="${esc(formatTime(new Date(x.t).toISOString()))}">${esc(timeAgo(new Date(x.t).toISOString()))}</span>`, `${x.ok ? '' : UI.pill('bad', x.reason.startsWith('not placed') ? 'not placed' : 'failed') + ' '}${x.from} → ${x.to}`, `<span class="text-sm">${esc(x.reason)}</span>`] })), { empty: 'No changes yet.', minWidth: 0 })}`;
+    el.querySelector('[data-as-go]').onclick = go;
+    el.querySelector('[data-as-tog]').onclick = async () => { try { await API.post(`/swarm/services/${encodeURIComponent(id)}/autoscale/enabled`, { on: !r.enabled }); showToast(r.enabled ? 'Autoscale paused for this service' : 'Autoscale resumed'); autoscale(el); } catch (e) { showToast(e.message, 'error'); } };
+  }
+
   async function events(el) {
     const r = await API.get(`/swarm/services/${s.id}/events?hours=24`);
     el.innerHTML = `<div class="ui-sub" style="margin-bottom:8px">Docker events of this service, last 24 hours.</div>` + UI.table([{ label: 'When' }, { label: 'What' }, { label: 'Detail' }], r.events.map(e => ({ cells: [`<span class="ui-sub" title="${esc(formatTime(new Date(e.time * 1000).toISOString()))}">${esc(timeAgo(e.time))}</span>`, esc(e.action), `<span class="td-mono text-sm" style="overflow-wrap:anywhere">${esc(e.detail)}</span>`] })), { minWidth: 0, empty: 'No events in the last 24 hours.' });

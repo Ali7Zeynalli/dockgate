@@ -39,11 +39,14 @@
   const banner = (level, html, actions = '') => `<div class="insight-card ${level === 'bad' ? 'danger' : level === 'warn' ? 'warning' : 'info'}" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:220px">${html}</div>${actions ? `<div style="display:flex;gap:6px">${actions}</div>` : ''}</div>`;
 
   // ---- the job window (Create Swarm, Add servers, Rebalance, Remove node) ----
-  const DONE_TEXT = { 'Create Swarm': '✓ Swarm is on', 'Add servers': '✓ Servers added', Rebalance: '✓ Rebalanced', 'Remove node': '✓ Node removed', 'Move to Swarm': '✓ Every project moved', 'Move back to Compose': '✓ Runs in Compose again', Redeploy: '✓ Deployed', 'Recover cluster': '✓ Recovered — one manager now; add managers again', 'Rotate secret': '✓ Rotated — the old version is removed', 'Edit config': '✓ Saved — the old version is removed' };
+  // What each kind of Swarm job is called (server/swarm*.js newJob(kind, subject)).
+  const JOB_KIND = { init: 'Create Swarm', join: 'Add servers', rebalance: 'Rebalance', remove: 'Remove node', rotate: 'Rotate', move: 'Move to Swarm', convert: 'Move to Swarm', redeploy: 'Redeploy', deploy: 'Deploy', 'move-back': 'Move back', recover: 'Recover cluster', restore: 'Restore from backup' };
+  const jobTitle = (j) => `${JOB_KIND[j.kind] || 'Swarm job'}${j.subject ? ` · ${j.subject}` : ''}`;
+  const DONE_TEXT = { 'Move back': '✓ Moved back', Deploy: '✓ Deployed', Rotate: '✓ Rotated — the old version is removed', 'Create Swarm': '✓ Swarm is on', 'Add servers': '✓ Servers added', Rebalance: '✓ Rebalanced', 'Remove node': '✓ Node removed', 'Move to Swarm': '✓ Every project moved', 'Move back to Compose': '✓ Runs in Compose again', Redeploy: '✓ Deployed', 'Recover cluster': '✓ Recovered — one manager now; add managers again', 'Rotate secret': '✓ Rotated — the old version is removed', 'Edit config': '✓ Saved — the old version is removed' };
   function openJob(jobId, onDone, title = 'Create Swarm') {
     const m = showModal(esc(title), `${serverContextBanner()}<div id="sw-job-steps" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px"></div><div id="sw-job-log"></div>
       <div id="sw-job-status" style="margin-top:10px;font-weight:600;font-size:13px;color:var(--text-muted)">⏳ Working…</div><div id="sw-job-extra"></div>
-      <div class="ui-sub" style="margin-top:4px">Closing this window does not stop the job. Reopen it from Swarm → Overview.</div>`, []);
+      <div class="ui-sub" style="margin-top:4px">Closing this window does not stop the job. Reopen it from the bar at the top of any Swarm page, or from Swarm → Overview → Recent jobs.</div>`, []);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     const close = document.createElement('button'); close.className = 'btn btn-secondary'; close.textContent = 'Close';
     let ended = null;
@@ -64,7 +67,7 @@
           ended = j;
           const se = m.overlay.querySelector('#sw-job-status');
           se.style.color = j.status === 'done' ? '#16a34a' : '#dc2626';
-          se.textContent = j.status === 'done' ? (DONE_TEXT[title] || '✓ Done') : `✗ ${j.error || 'Failed'}`;
+          se.textContent = j.status === 'done' ? (DONE_TEXT[title] || DONE_TEXT[String(title).split(' · ')[0]] || '✓ Done') : `✗ ${j.error || 'Failed'}`;
           const ex = m.overlay.querySelector('#sw-job-extra');
           if (j.result && j.result.projects) {
             const lbl = { moved: ['ok', 'moved'], rolled_back: ['warn', 'put back in Compose'], changed: ['warn', 'files changed — not moved'], skipped: ['off', 'not moved'], failed: ['bad', 'failed'] };
@@ -138,7 +141,48 @@
     const watch = setInterval(() => { if (!m.overlay.isConnected) { clearInterval(watch); close(); } }, 800);
   }
 
-  window.SwarmUI = { openJob: (...a) => openJob(...a), css, inspect: inspectDialog, terminal: taskTerminal, mountTerminal }; // used by the other Swarm tabs
+  // ---- Swarm jobs: the same on every Swarm page (like Compose deploys and Edge agent jobs) ----
+  const reopen = (j, onDone) => openJob(j.id, onDone, j.kind ? jobTitle(j) : 'Swarm job');
+  const ago = (ms) => timeAgo(new Date(ms).toISOString());
+  const took = (j) => { const s = Math.round(((j.finishedAt || Date.now()) - j.startedAt) / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
+  /** The bar at the top of the Swarm pages: the running job, or one that ended in the last 10 minutes. */
+  function jobBar(el) {
+    let timer = null, alive = true, last = '';
+    const hidden = () => { try { return JSON.parse(sessionStorage.getItem('dg_swjob_hidden') || '[]'); } catch (e) { return []; } };
+    const tick = async () => {
+      if (!alive || !el.isConnected) return;
+      let jobs = [];
+      try { jobs = (await API.get('/swarm/jobs')).jobs || []; } catch (e) { /* no access: show nothing */ }
+      const run = jobs.find(j => j.status === 'running');
+      const recent = !run && jobs.find(j => j.finishedAt && Date.now() - j.finishedAt < 10 * 60000 && !hidden().includes(j.id));
+      const j = run || recent;
+      const html = !j ? '' : run
+        ? `<div class="insight-card info" style="margin-bottom:12px;align-items:center"><div style="flex:1">⏳ <b>${esc(jobTitle(j))}</b> is running · started ${esc(ago(j.startedAt))}</div>${UI.btn('Open log', 'data-jb-open', 'btn-primary btn-sm')}</div>`
+        : `<div class="insight-card ${j.status === 'done' ? 'success' : 'danger'}" style="margin-bottom:12px;align-items:center"><div style="flex:1">${j.status === 'done' ? '✓' : '✗'} <b>${esc(jobTitle(j))}</b> ${j.status === 'done' ? 'finished' : 'failed'} ${esc(ago(j.finishedAt))}${j.error ? ` — <span class="text-sm">${esc(j.error)}</span>` : ''}</div>${UI.btn('Open log', 'data-jb-open', 'btn-sm')} ${UI.btn('Hide', 'data-jb-hide', 'btn-ghost btn-sm')}</div>`;
+      if (html !== last) {
+        last = html; el.innerHTML = html;
+        el.querySelector('[data-jb-open]')?.addEventListener('click', () => reopen(j));
+        el.querySelector('[data-jb-hide]')?.addEventListener('click', () => { try { sessionStorage.setItem('dg_swjob_hidden', JSON.stringify([...hidden(), j.id].slice(-50))); } catch (e) {} last = ''; el.innerHTML = ''; });
+      }
+      timer = setTimeout(tick, run ? 3000 : 8000);
+    };
+    tick();
+    return () => { alive = false; clearTimeout(timer); };
+  }
+  /** Recent jobs table (Swarm → Overview): each one reopens its log. */
+  async function recentJobs(el, onDone) {
+    let jobs = [];
+    try { jobs = (await API.get('/swarm/jobs')).jobs || []; } catch (e) { el.innerHTML = ''; return; }
+    if (!el.isConnected) return;
+    const ST = { running: ['warn', 'running'], done: ['ok', 'done'], error: ['bad', 'failed'] };
+    el.innerHTML = `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Recent jobs</div><div class="ui-ph-desc">Swarm jobs on this server in the last 6 hours. Open one to see its steps and log.</div></div></div>
+      ${UI.table([{ label: 'Started' }, { label: 'Job' }, { label: 'Result' }, { label: 'Took' }, { label: '', align: 'right' }], jobs.map(j => ({ cells: [
+        `<span class="ui-sub" title="${esc(formatTime(new Date(j.startedAt).toISOString()))}">${esc(ago(j.startedAt))}</span>`, `<b>${esc(jobTitle(j))}</b>`,
+        `${UI.pill(...(ST[j.status] || ['off', esc(j.status)]))}${j.error ? `<div class="ui-sub" style="max-width:320px;white-space:normal">${esc(j.error)}</div>` : ''}`, esc(took(j)), UI.btn('Open log', `data-rj="${esc(j.id)}"`)] })), { empty: 'No Swarm jobs in the last 6 hours.', minWidth: 640 })}`;
+    el.querySelectorAll('[data-rj]').forEach(b => b.onclick = () => reopen(jobs.find(x => x.id === b.dataset.rj), onDone));
+  }
+
+  window.SwarmUI = { openJob: (...a) => openJob(...a), jobBar, recentJobs, jobTitle, nodeAction: (...a) => nodeAction(...a), css, inspect: inspectDialog, terminal: taskTerminal, mountTerminal }; // used by the other Swarm tabs
 
   // ---- Set up Swarm… / Add servers… wizard ----
   // Modes: one (one server), several (create with several servers), add (join servers to the running swarm).
@@ -367,8 +411,8 @@
       catch (e) { content.innerHTML = UI.errorState(e, { title: 'Swarm status could not be read' }); return; }
       if (!Router.isActiveNav(navId)) return;
       const st = data.status;
-      const job = (await API.get('/swarm/status').catch(() => ({}))).job;
-      const jobBanner = job ? banner('info', '<b>A Swarm job is running.</b>', UI.btn('Open', 'data-open-job', 'btn-primary')) : '';
+      const job = (await API.get('/swarm/status').catch(() => ({}))).job; // the bar at the top shows it
+      const jobBanner = '';
 
       if (st.state === 'inactive' || st.state === 'error' && !st.nodeId) {
         content.innerHTML = `${UI.header('Swarm', `Docker Swarm is off on <b>${esc(st.serverName)}</b>.`, job ? '' : UI.primary('Set up Swarm…', 'data-setup'))}${jobBanner}
@@ -395,7 +439,7 @@
         const sentence = c.nodes === 1 ? `Single-server Swarm on <b>${esc(data.nodes[0].hostname)}</b>.` : `${c.nodes} servers in one cluster: ${plural(c.managers, 'manager')}, ${plural(c.nodes - c.managers, 'worker')}.`;
         const card = (k, v, tone) => `<div class="sw-card ${tone || ''}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
         const node = (n) => `<div class="sw-node ${n.state !== 'ready' ? 'down' : ''}">
-            <h4>${esc(n.hostname)} ${n.leader ? UI.pill('info', 'leader') : ''} ${UI.pill(n.state === 'ready' ? 'ok' : 'bad', esc(n.state))} ${n.availability !== 'active' ? UI.pill('warn', esc(n.availability)) : ''}</h4>
+            <h4>${n.id ? `<a href="#" data-node="${esc(n.id)}" title="Open the node page">${esc(n.hostname)}</a>` : esc(n.hostname)} ${n.leader ? UI.pill('info', 'leader') : ''} ${UI.pill(n.state === 'ready' ? 'ok' : 'bad', esc(n.state))} ${n.availability !== 'active' ? UI.pill('warn', esc(n.availability)) : ''}</h4>
             <div class="ui-sub">${esc(n.role)} · ${esc(n.addr)} · ${esc(n.arch)} · Docker ${esc(n.engine)}</div>${n.serverName ? `<div class="ui-sub">DockGate server: ${esc(n.serverName)}</div>` : data.nodes.length > 1 && n.serverId === null ? '<div class="ui-sub" style="color:var(--warning,#d97706)">not in DockGate</div>' : ''}
             <div class="sw-chips">${n.tasks.length ? n.tasks.map(t => {
               const cls = t.state === 'running' ? 'running' : ['failed', 'rejected'].includes(t.state) ? 'failed' : 'starting';
@@ -412,12 +456,14 @@
           </div>
           <div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Where tasks run</div><div class="ui-ph-desc">Green runs, amber is starting, red failed (hover for the error).</div></div></div>
           <div class="sw-nodes">${data.nodes.map(node).join('')}</div>
+          <div data-recent-jobs></div>
           <div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Recent Swarm events</div><div class="ui-ph-desc">Services, nodes, secrets and configs, last 24 hours.</div></div></div>
           ${UI.table([{ label: 'When' }, { label: 'What' }, { label: 'Name' }, { label: 'Detail' }], data.events.map(e => ({ cells: [
             `<span class="ui-sub" title="${esc(formatTime(new Date(e.time * 1000).toISOString()))}">${esc(timeAgo(e.time))}</span>`, `${esc(e.type)} ${esc(e.action)}`, `<b>${esc(e.name || String(e.id || '').slice(0, 12))}</b>`, `<span class="ui-sub td-mono">${esc(e.detail)}</span>`] })), { empty: 'No Swarm events in the last 24 hours.', minWidth: 560 })}`;
       }
       content.querySelector('[data-setup]')?.addEventListener('click', () => openWizard(st, load));
-      content.querySelector('[data-open-job]')?.addEventListener('click', () => openJob(job, load, 'Swarm job'));
+      const rj = content.querySelector('[data-recent-jobs]'); if (rj) recentJobs(rj, load);
+      content.querySelectorAll('.sw-node [data-node]').forEach(x => x.addEventListener('click', (e) => { e.preventDefault(); Router.navigate('swarm-node', { id: x.dataset.node }); }));
       content.querySelector('[data-addsrv]')?.addEventListener('click', () => openWizard(st, load, { add: true }));
       content.querySelector('[data-go-nodes]')?.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-nodes' }));
       content.querySelector('[data-go-migrate]')?.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-migrate' }));
@@ -466,7 +512,7 @@
           { label: 'Remove…', attrs: `data-act="remove" data-id="${esc(n.id)}"` },
         ].filter(Boolean);
         return { cells: [
-          `<b>${esc(n.hostname)}</b> ${n.leader ? UI.pill('info', 'leader') : ''}${n.self ? ' <span class="ui-sub">· DockGate manages through this one</span>' : ''}
+          `<a href="#" data-node="${esc(n.id)}" class="td-name" title="Open the node page"><b>${esc(n.hostname)}</b></a> ${n.leader ? UI.pill('info', 'leader') : ''}${n.self ? ' <span class="ui-sub">· DockGate manages through this one</span>' : ''}
             <div class="ui-sub">${n.serverId ? `DockGate server: ${esc(n.serverName)}` : '<span style="color:var(--warning,#d97706)">not in DockGate</span>'} · Docker ${esc(n.engine)} · ${esc(n.arch)}</div>`,
           `<span class="td-mono text-sm">${esc(n.addr)}</span>`,
           `${esc(n.role)}${n.role === 'manager' && n.reachability && n.reachability !== 'reachable' ? ` ${UI.pill('bad', esc(n.reachability))}` : ''}`,
@@ -483,7 +529,8 @@
       refreshUsage();
       content.querySelector('[data-add]').onclick = () => openWizard(null, load, { add: true });
       content.querySelector('[data-rebalance]')?.addEventListener('click', () => confirmRebalance(load));
-      content.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => nodeAction(b.dataset.act, data.nodes.find(n => n.id === b.dataset.id), load)));
+      content.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => nodeAction(b.dataset.act, data.nodes.find(n => n.id === b.dataset.id), data, load)));
+      content.querySelectorAll('[data-node]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); Router.navigate('swarm-node', { id: a.dataset.node }); }));
       stop(); timer = setTimeout(load, 10000);
     }
     // CPU and memory of each node's server, read from its DockGate server (host stats), every 30 s
@@ -511,55 +558,56 @@
         for (const n of data.nodes) { const el = content.querySelector(`[data-use="${CSS.escape(n.id)}"]`); if (el) el.innerHTML = useCell(n); }
       } finally { usageBusy = false; }
     }
-    async function nodeAction(act, n, done) {
-      if (!n) return;
-      const upd = async (body, msg) => { try { await API.post(`/swarm/nodes/${n.id}/update`, body); showToast(msg); done(); } catch (e) { showToast(e.message, 'error', 9000); } };
-      if (act === 'pause') return secConfirm({ title: `Pause ${n.hostname}`, change: 'The server keeps its running tasks but gets no new ones.', protects: 'Nothing stops. Safe on one server too.', undo: 'Activate.', confirmLabel: 'Pause', onConfirm: () => upd({ availability: 'pause' }, `${n.hostname} paused`) });
-      if (act === 'activate') return upd({ availability: 'active' }, data.nodes.length > 1 ? `${n.hostname} is active. Tasks do not move back by themselves — use Rebalance.` : `${n.hostname} is active`);
-      if (act === 'drain') {
-        let imp; try { imp = await API.get(`/swarm/nodes/${n.id}/drain-impact`); } catch (e) { return showToast(e.message, 'error'); }
-        if (!imp.others) return showToast('No other active server: draining would stop every service. Use Pause, or add a server first.', 'error', 9000);
-        return secConfirm({ title: `Drain ${n.hostname}`, danger: imp.stuck.length > 0,
-          change: `Its tasks stop here and start on the other ${plural(imp.others, 'server')}.${imp.moves.length ? `<div style="margin-top:4px">Moves: ${imp.moves.map(x => `<b>${esc(x.service)}</b>${x.volume ? ' <span style="color:var(--warning,#d97706)">(its data volume stays on this server — the new task starts with an empty volume)</span>' : ''}`).join(', ')}</div>` : ''}`,
-          protects: imp.stuck.length ? `<span style="color:var(--danger,#dc2626)">These stop and wait: ${imp.stuck.map(x => `<b>${esc(x.service)}</b> — ${esc(x.why)}`).join('; ')}</span>` : 'Every task has another server to run on.',
-          undo: 'Activate the server; then Rebalance to spread tasks again.', confirmLabel: 'Drain', onConfirm: () => upd({ availability: 'drain' }, `${n.hostname} drained`) });
-      }
-      if (act === 'promote' || act === 'demote') {
-        const after = data.managers + (act === 'promote' ? 1 : -1);
-        return secConfirm({ title: `${act === 'promote' ? 'Promote' : 'Demote'} ${n.hostname}`, danger: after === 2,
-          change: act === 'promote' ? 'The server becomes a manager: it keeps a copy of the cluster state and can take over as leader.' : 'The server becomes a worker: it only runs tasks.',
-          protects: `After this: ${tolerance(after)}.${after === 2 ? ' With 2 managers losing either one stops cluster changes — add or remove one more.' : ''}`,
-          undo: act === 'promote' ? 'Demote it again.' : 'Promote it again.', confirmLabel: act === 'promote' ? 'Promote' : 'Demote', onConfirm: () => upd({ role: act === 'promote' ? 'manager' : 'worker' }, `${n.hostname} is now a ${act === 'promote' ? 'manager' : 'worker'}`) });
-      }
-      if (act === 'inspect') return inspectDialog('node', n.id, n.hostname);
-      if (act === 'labels') {
-        const text = Object.entries(n.labels).map(([k, v]) => `${k}=${v}`).join('\n');
-        const used = Object.entries(data.labelUse || {}).map(([k, svcs]) => `<b>${esc(k)}</b>: ${svcs.map(esc).join(', ')}`).join('<br>');
-        return UI.dialog({ title: `Labels of ${n.hostname}`, body: `<p class="text-sm text-muted">One <span class="td-mono">key=value</span> per line, e.g. <span class="td-mono">db=true</span> or <span class="td-mono">zone=fsn1</span>. Services use them in placement rules (<span class="td-mono">node.labels.db==true</span>).</p>
-            <textarea class="input" data-labels rows="6" style="font-family:var(--font-mono,monospace)">${esc(text)}</textarea>${used ? `<div class="ui-sub" style="margin-top:8px">Used by services — ${used}</div>` : ''}`,
-          onSave: async (ov) => {
-            const labels = {};
-            for (const line of ov.querySelector('[data-labels]').value.split('\n').map(l => l.trim()).filter(Boolean)) {
-              const i = line.indexOf('='); if (i < 1) throw new Error(`"${line}": write key=value`);
-              labels[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-            }
-            const gone = Object.keys(n.labels).filter(k => !(k in labels) && (data.labelUse || {})[k]);
-            if (gone.length && !confirm(`${gone.join(', ')} ${gone.length > 1 ? 'are' : 'is'} used by services. Without it their tasks may have nowhere to run. Remove anyway?`)) return false;
-            await API.post(`/swarm/nodes/${n.id}/update`, { labels }); showToast('Labels saved'); done();
-          } });
-      }
-      if (act === 'adopt') return Router.navigate('infra', { tab: 'servers', addHost: n.addr });
-      if (act === 'remove') {
-        return showDeleteConfirm(`Remove ${n.hostname}`, {
-          message: `${n.role === 'manager' ? 'It is demoted, then ' : ''}its tasks move to other servers (drain), ${n.serverId ? `<b>${esc(n.serverName)}</b> leaves the swarm` : 'it is removed from the list (run <span class="td-mono">docker swarm leave</span> on it yourself)'} and DockGate deletes the firewall rules it added for it. Containers of compose projects on it are not touched.`,
-          phrase: n.hostname, confirmLabel: 'Remove',
-          onConfirm: () => startJob(`/swarm/nodes/${n.id}/remove`, { confirm: true }, 'Remove node', done),
-        });
-      }
-    }
     await load();
     return stop;
   });
+  // Node actions, shared by Swarm → Nodes and the node page. data: { nodes, managers, labelUse }.
+  async function nodeAction(act, n, data, done) {
+    if (!n) return;
+    const upd = async (body, msg) => { try { await API.post(`/swarm/nodes/${n.id}/update`, body); showToast(msg); done(); } catch (e) { showToast(e.message, 'error', 9000); } };
+    if (act === 'pause') return secConfirm({ title: `Pause ${n.hostname}`, change: 'The server keeps its running tasks but gets no new ones.', protects: 'Nothing stops. Safe on one server too.', undo: 'Activate.', confirmLabel: 'Pause', onConfirm: () => upd({ availability: 'pause' }, `${n.hostname} paused`) });
+    if (act === 'activate') return upd({ availability: 'active' }, data.nodes.length > 1 ? `${n.hostname} is active. Tasks do not move back by themselves — use Rebalance.` : `${n.hostname} is active`);
+    if (act === 'drain') {
+      let imp; try { imp = await API.get(`/swarm/nodes/${n.id}/drain-impact`); } catch (e) { return showToast(e.message, 'error'); }
+      if (!imp.others) return showToast('No other active server: draining would stop every service. Use Pause, or add a server first.', 'error', 9000);
+      return secConfirm({ title: `Drain ${n.hostname}`, danger: imp.stuck.length > 0,
+        change: `Its tasks stop here and start on the other ${plural(imp.others, 'server')}.${imp.moves.length ? `<div style="margin-top:4px">Moves: ${imp.moves.map(x => `<b>${esc(x.service)}</b>${x.volume ? ' <span style="color:var(--warning,#d97706)">(its data volume stays on this server — the new task starts with an empty volume)</span>' : ''}`).join(', ')}</div>` : ''}`,
+        protects: imp.stuck.length ? `<span style="color:var(--danger,#dc2626)">These stop and wait: ${imp.stuck.map(x => `<b>${esc(x.service)}</b> — ${esc(x.why)}`).join('; ')}</span>` : 'Every task has another server to run on.',
+        undo: 'Activate the server; then Rebalance to spread tasks again.', confirmLabel: 'Drain', onConfirm: () => upd({ availability: 'drain' }, `${n.hostname} drained`) });
+    }
+    if (act === 'promote' || act === 'demote') {
+      const after = data.managers + (act === 'promote' ? 1 : -1);
+      return secConfirm({ title: `${act === 'promote' ? 'Promote' : 'Demote'} ${n.hostname}`, danger: after === 2,
+        change: act === 'promote' ? 'The server becomes a manager: it keeps a copy of the cluster state and can take over as leader.' : 'The server becomes a worker: it only runs tasks.',
+        protects: `After this: ${tolerance(after)}.${after === 2 ? ' With 2 managers losing either one stops cluster changes — add or remove one more.' : ''}`,
+        undo: act === 'promote' ? 'Demote it again.' : 'Promote it again.', confirmLabel: act === 'promote' ? 'Promote' : 'Demote', onConfirm: () => upd({ role: act === 'promote' ? 'manager' : 'worker' }, `${n.hostname} is now a ${act === 'promote' ? 'manager' : 'worker'}`) });
+    }
+    if (act === 'inspect') return inspectDialog('node', n.id, n.hostname);
+    if (act === 'labels') {
+      const text = Object.entries(n.labels).map(([k, v]) => `${k}=${v}`).join('\n');
+      const used = Object.entries(data.labelUse || {}).map(([k, svcs]) => `<b>${esc(k)}</b>: ${svcs.map(esc).join(', ')}`).join('<br>');
+      return UI.dialog({ title: `Labels of ${n.hostname}`, body: `<p class="text-sm text-muted">One <span class="td-mono">key=value</span> per line, e.g. <span class="td-mono">db=true</span> or <span class="td-mono">zone=fsn1</span>. Services use them in placement rules (<span class="td-mono">node.labels.db==true</span>).</p>
+          <textarea class="input" data-labels rows="6" style="font-family:var(--font-mono,monospace)">${esc(text)}</textarea>${used ? `<div class="ui-sub" style="margin-top:8px">Used by services — ${used}</div>` : ''}`,
+        onSave: async (ov) => {
+          const labels = {};
+          for (const line of ov.querySelector('[data-labels]').value.split('\n').map(l => l.trim()).filter(Boolean)) {
+            const i = line.indexOf('='); if (i < 1) throw new Error(`"${line}": write key=value`);
+            labels[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+          }
+          const gone = Object.keys(n.labels).filter(k => !(k in labels) && (data.labelUse || {})[k]);
+          if (gone.length && !confirm(`${gone.join(', ')} ${gone.length > 1 ? 'are' : 'is'} used by services. Without it their tasks may have nowhere to run. Remove anyway?`)) return false;
+          await API.post(`/swarm/nodes/${n.id}/update`, { labels }); showToast('Labels saved'); done();
+        } });
+    }
+    if (act === 'adopt') return Router.navigate('infra', { tab: 'servers', addHost: n.addr });
+    if (act === 'remove') {
+      return showDeleteConfirm(`Remove ${n.hostname}`, {
+        message: `${n.role === 'manager' ? 'It is demoted, then ' : ''}its tasks move to other servers (drain), ${n.serverId ? `<b>${esc(n.serverName)}</b> leaves the swarm` : 'it is removed from the list (run <span class="td-mono">docker swarm leave</span> on it yourself)'} and DockGate deletes the firewall rules it added for it. Containers of compose projects on it are not touched.`,
+        phrase: n.hostname, confirmLabel: 'Remove',
+        onConfirm: () => startJob(`/swarm/nodes/${n.id}/remove`, { confirm: true }, 'Remove node', done),
+      });
+    }
+  }
   function confirmRebalance(done) {
     secConfirm({ title: 'Rebalance', change: 'Services that can move get their tasks restarted, one service at a time (<span class="td-mono">docker service update --force</span>), so Swarm spreads them over the active servers.',
       protects: 'Services pinned to a server, global services and services with a data volume are left alone. Each service updates with its own rolling update settings.', undo: 'Not needed.', confirmLabel: 'Rebalance',
@@ -630,6 +678,13 @@
           { label: 'Task history per slot', desc: 'How many stopped tasks Swarm keeps per slot (shown in Services → Tasks).', value: esc(c.taskHistory), action: UI.btn('Change…', 'data-edit="taskHistory"') },
           { label: 'Autolock', desc: c.autolock ? 'After a Docker restart the swarm is locked until it is unlocked with the key.' : 'Off: the swarm starts unlocked after a Docker restart.', value: c.autolock ? UI.pill('ok', 'on') : UI.pill('off', 'off'), action: `${c.autolock && st.hasStoredKey ? UI.btn('Show unlock key…', 'data-showkey') + ' ' : ''}${UI.btn(c.autolock ? 'Turn off…' : 'Turn on…', 'data-autolock')}` },
           { label: 'Join tokens', desc: 'To add a server by hand with docker swarm join. DockGate\'s Add servers… does this for you.', value: '', action: UI.btn('Show…', 'data-tokens') },
+          ...(c.autolock ? [{ label: 'Unlock key', desc: 'Make a new unlock key; the old one stops working. DockGate stores the new one (encrypted) and shows it once.', value: '', action: UI.btn('Rotate…', 'data-rotunlock') }] : []),
+          { label: 'Root CA', desc: c.rootRotation ? 'A rotation is in progress: servers are getting new certificates.' : 'Signs every node certificate. Rotate it after a manager was compromised or a key may have leaked.', value: c.rootRotation ? UI.pill('warn', 'rotating') : (c.caRotations ? `rotated ${c.caRotations}×` : ''), action: c.rootRotation ? '' : UI.btn('Rotate…', 'data-rotca') },
+        ])}
+        <div class="ui-ph" style="margin-top:18px"><div class="ui-ph-text"><div class="ui-ph-title">Tuning</div><div class="ui-ph-desc">The defaults suit most clusters. Change only with a reason.</div></div></div>
+        ${UI.settings([
+          { label: 'Heartbeat period', desc: 'How often servers report to the managers. Higher means less traffic but a lost server is noticed later.', value: `${esc(c.heartbeatSec)} s`, action: UI.btn('Change…', 'data-edit="heartbeatSec"') },
+          { label: 'Raft snapshot interval', desc: 'Log entries between snapshots of the cluster state. Lower means smaller logs and more frequent snapshots.', value: esc(c.snapshotInterval), action: UI.btn('Change…', 'data-edit="snapshotInterval"') },
         ])}
         <div class="ui-ph" style="margin-top:18px"><div class="ui-ph-text"><div class="ui-ph-title">Backups</div><div class="ui-ph-desc">The swarm state (Raft) of this manager and a plain description of services, networks, configs and nodes. Kept in DockGate's data folder, the last 7. Secrets are listed by name only — Swarm never gives their values out.</div></div><div class="ui-ph-actions">${UI.btn('How to restore', 'data-howto')} ${UI.primary('Back up now', 'data-backup')}</div></div>
         <div data-backups class="text-sm text-muted">Loading…</div>
@@ -685,10 +740,18 @@
       };
       content.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
         const k = b.dataset.edit;
-        const meta = k === 'certDays' ? { title: 'Node certificate lifetime', label: 'Days (1–3650)', cur: c.certExpiryDays } : { title: 'Task history per slot', label: 'Stopped tasks kept per slot (0–100)', cur: c.taskHistory };
+        const meta = { certDays: { title: 'Node certificate lifetime', label: 'Days (1–3650)', cur: c.certExpiryDays }, taskHistory: { title: 'Task history per slot', label: 'Stopped tasks kept per slot (0–100)', cur: c.taskHistory },
+          heartbeatSec: { title: 'Heartbeat period', label: 'Seconds (1–60, default 5)', cur: c.heartbeatSec }, snapshotInterval: { title: 'Raft snapshot interval', label: 'Log entries (100–1,000,000, default 10,000)', cur: c.snapshotInterval } }[k];
         UI.dialog({ title: meta.title, saveLabel: 'Save', body: `<label class="ui-field"><span class="ui-label">${meta.label}</span><input class="input" type="number" data-v value="${esc(meta.cur)}"></label>`,
           onSave: async (ov) => { await save({ [k]: Number(ov.querySelector('[data-v]').value) }, `${meta.title} saved`); } });
       }));
+      content.querySelector('[data-rotca]')?.addEventListener('click', () => secConfirm({ title: 'Rotate the root CA', danger: true,
+        change: 'Swarm makes a new root CA and gives every server a new certificate signed by it (docker swarm ca --rotate). Servers that are down get theirs when they come back.',
+        protects: 'Services keep running; servers trust the old and the new CA until every server has its new certificate.', undo: 'Not needed. Rotate again if you must.', confirmLabel: 'Rotate CA',
+        onConfirm: async () => { try { await API.post('/swarm/ca/rotate', { confirm: true }); showToast('Root CA rotation started'); load(); } catch (e) { showToast(e.message, 'error', 9000); } } }));
+      content.querySelector('[data-rotunlock]')?.addEventListener('click', () => secConfirm({ title: 'Rotate the unlock key', danger: true,
+        change: 'A new unlock key is made. The old key stops working once every manager has the new one.', protects: 'DockGate stores the new key (encrypted) and shows it once — save it somewhere safe too.', undo: 'Rotate again.', confirmLabel: 'Rotate',
+        onConfirm: async () => { try { const r = await API.post('/swarm/unlock-key/rotate', { confirm: true }); showModal('New unlock key', `<p class="text-sm">Save this key somewhere safe. A locked manager needs it after a Docker restart.</p><div class="sw-key" style="word-break:break-all">${esc(r.key)}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]); load(); } catch (e) { showToast(e.message, 'error', 9000); } } }));
       content.querySelector('[data-autolock]')?.addEventListener('click', () => secConfirm(c.autolock
         ? { title: 'Turn autolock off', change: 'The swarm starts unlocked after a Docker restart. The stored unlock key is removed.', protects: 'Services keep running; nothing restarts.', undo: 'Turn it on again (a new key is made).', confirmLabel: 'Turn off', onConfirm: () => save({ autolock: false }, 'Autolock is off') }
         : { title: 'Turn autolock on', change: 'Swarm encrypts its keys at rest. After every Docker restart a manager stays locked until it is unlocked with the key.', protects: 'DockGate stores the key (encrypted) and shows it once. Services keep running.', undo: 'Turn it off again.', confirmLabel: 'Turn on', onConfirm: () => save({ autolock: true }, 'Autolock is on') }));

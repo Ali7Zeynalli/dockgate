@@ -8,7 +8,7 @@ const navItems = {
   resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['builds', 'Builds'], ['prune', 'Prune']], default: 'containers' },
   deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose stacks'], ['templates', 'App templates'], ['registries', 'Registries']], default: 'compose' },
   observe: { label: 'Observe', icon: Icons.events, tabs: [['logs', 'Logs'], ['events', 'Events'], ['audit', 'Audit log'], ['notification-log', 'Notifications sent']], default: 'logs' },
-  swarm: { label: 'Swarm', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M12 8v4M5 16v-2h14v2"/></svg>', tabs: [['swarm-overview', 'Overview'], ['swarm-nodes', 'Nodes'], ['swarm-services', 'Services'], ['swarm-stacks', 'Stacks'], ['swarm-migrate', 'Migrate'], ['swarm-secrets', 'Secrets & configs'], ['swarm-networks', 'Networks'], ['swarm-settings', 'Cluster settings']], default: 'swarm-overview' },
+  swarm: { label: 'Swarm', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M12 8v4M5 16v-2h14v2"/></svg>', tabs: [['swarm-overview', 'Overview'], ['swarm-nodes', 'Nodes'], ['swarm-services', 'Services'], ['swarm-scaling', 'Auto Scaling'], ['swarm-stacks', 'Stacks'], ['swarm-migrate', 'Migrate'], ['swarm-secrets', 'Secrets & configs'], ['swarm-networks', 'Networks'], ['swarm-settings', 'Cluster settings']], default: 'swarm-overview' },
   tools: { label: 'Tools', icon: Icons.terminal, tabs: [['terminal', 'Terminal'], ['files', 'Files'], ['schedules', 'Schedules']], default: 'terminal' },
   infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH keys'], ['agent', 'Edge agent']], default: 'servers' },
   'server-console': { label: 'Server Console', icon: Icons.terminal, tabs: [['overview', 'Overview'], ['monitoring', 'Monitoring'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users & keys'], ['firewall', 'Firewall'], ['fail2ban', 'Fail2ban'], ['manage', 'Services'], ['logs', 'Logs'], ['settings', 'Settings']], default: 'overview' },
@@ -133,7 +133,10 @@ function initMacSidebar() {
 function syncSidebarTabs() {
   const nav = document.getElementById('sidebar-nav');
   if (!nav) return;
-  const tab = new URLSearchParams((location.hash.split('?')[1] || '')).get('tab') || '';
+  // The entry for the page shown: a detail page (a container, a Swarm service or node) lights up its list.
+  const target = (typeof Router !== 'undefined' && Router.currentPage) ? Router.navTarget() : null;
+  const tab = target ? (target.tab || '') : (new URLSearchParams((location.hash.split('?')[1] || '')).get('tab') || '');
+  if (target) nav.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.page === target.page));
   nav.querySelectorAll('.nav-parent').forEach(parent => {
     const on = parent.classList.contains('active');
     const sub = document.getElementById('nav-sub-' + parent.dataset.page);
@@ -390,6 +393,12 @@ async function checkRunningDeploys() {
     if (running) { badge.textContent = '▶ ' + running; badge.style.display = 'inline-flex'; }
     else badge.style.display = 'none';
   } catch (e) { /* not logged in / no access — leave the badge hidden */ }
+  // Swarm jobs (move to Swarm, redeploy, add servers …): every Swarm page shows the bar to reopen them.
+  try {
+    const n = (((await API.get('/swarm/jobs')) || {}).jobs || []).filter(j => j.status === 'running').length;
+    const b = document.getElementById('badge-swarm');
+    if (b) { if (n) { b.textContent = '▶ ' + n; b.style.display = 'inline-flex'; } else b.style.display = 'none'; }
+  } catch (e) { /* no access — leave it hidden */ }
   // The same for Edge agent jobs (install / update …) on Servers → Edge agent, where the job reopens.
   try {
     const n = ((await API.get('/agent/jobs')) || []).filter(j => j.status === 'running').length;

@@ -87,7 +87,7 @@ Router.register('compose', async (content) => {
                   <td>${p.swarmPart ? `${UI.pill('info', 'Part on Swarm')}<div class="ui-sub">${escapeHtml(p.swarmPart.services.join(', '))} in stack ${escapeHtml(p.swarmPart.stack)} · ${p.running}/${p.total} here</div>` : p.onSwarm ? `${UI.pill('info', 'Runs on Swarm')}<div class="ui-sub">Swarm → Stacks</div>` : p.total === 0 ? UI.pill('off', 'not deployed') : p.running === p.total ? UI.pill('ok', `${p.running}/${p.total} running`) : p.running > 0 ? UI.pill('warn', `${p.running}/${p.total} running`) : UI.pill('off', 'stopped')}${stackImageNote(p)}</td>
                   <td class="text-sm">${(p.services || []).map(x => escapeHtml(x)).join(', ') || '—'}</td>
                   <td><div class="td-actions" style="justify-content:flex-end">
-                    ${p.onSwarm ? `<button class="btn btn-xs btn-secondary" data-open-stack="${escapeHtml(p.name)}" title="Manage it in Swarm → Stacks">Open stack</button>`
+                    ${p.onSwarm ? `<button class="btn btn-xs btn-secondary" data-open-stack="${escapeHtml(p.swarmPart ? p.swarmPart.stack : p.name)}" title="Open its stack in Swarm → Stacks">Open stack</button>`
                       : p.running > 0 && p.running === p.total
                       ? (isGit ? `<button class="btn btn-xs btn-secondary" data-git-sync="${escapeHtml(p.name)}" title="Pull the latest code and rebuild / restart">Sync</button>` : `<button class="btn btn-xs btn-secondary" data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.restart} Restart</button>`)
                       : `<button class="btn btn-xs btn-secondary" data-action="up" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.play} Up</button>`}
@@ -95,6 +95,7 @@ Router.register('compose', async (content) => {
                     ${UI.menu([
                       { label: `${Icons.eye} Services and details`, attrs: `data-detail="${escapeHtml(p.name)}"` },
                       !p.onSwarm && p.total > 0 && window.__swarmActive ? { label: `${Icons.layers} Move to Swarm…`, attrs: `data-move-swarm="${escapeHtml(p.name)}"` } : null,
+                      p.onSwarm && window.__swarmActive ? { label: `${Icons.layers} Move back to Compose…`, attrs: `data-move-back="${escapeHtml(p.swarmPart ? p.swarmPart.stack : p.name)}"` } : null,
                       { label: `${Icons.refresh} Deploy history…`, attrs: `data-history="${escapeHtml(p.name)}"` },
                       { label: `${Icons.settings} Edit YAML`, attrs: `data-edit="${escapeHtml(p.name)}" ${dis}` },
                       { label: `${Icons.folder || Icons.compose} Files (Dockerfile, .env…)`, attrs: `data-files="${escapeHtml(p.name)}"` },
@@ -401,7 +402,8 @@ Router.register('compose', async (content) => {
       });
 
       content.querySelectorAll('[data-history]').forEach(btn => btn.addEventListener('click', () => openDeployHistory(btn.dataset.history)));
-      content.querySelectorAll('[data-open-stack]').forEach(btn => btn.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-stacks' })));
+      content.querySelectorAll('[data-open-stack]').forEach(btn => btn.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-stacks', stack: btn.dataset.openStack })));
+      content.querySelectorAll('[data-move-back]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveBack ? window.SwarmUI.moveBack(btn.dataset.moveBack, () => render()) : Router.navigate('swarm', { tab: 'swarm-stacks' }))));
       content.querySelectorAll('[data-move-swarm]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveProject ? window.SwarmUI.moveProject(btn.dataset.moveSwarm, () => render()) : Router.navigate('swarm', { tab: 'swarm-migrate', project: btn.dataset.moveSwarm }))));
 
       content.querySelectorAll('[data-detail]').forEach(btn => {

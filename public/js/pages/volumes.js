@@ -1,7 +1,8 @@
 // Volumes Page
 Router.register('volumes', async (content) => {
   let selectedNames = new Set();
-  let volFilter = 'all';
+  const view = Store.view('volumes');
+  let volFilter = view.get('filter', 'all');
   let refreshTimer = null;
 
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
@@ -69,7 +70,7 @@ Router.register('volumes', async (content) => {
       `;
 
       document.getElementById('vol-refresh')?.addEventListener('click', render);
-      content.querySelectorAll('[data-vfilter]').forEach(b => b.addEventListener('click', () => { volFilter = b.dataset.vfilter; render(); }));
+      content.querySelectorAll('[data-vfilter]').forEach(b => b.addEventListener('click', () => { volFilter = b.dataset.vfilter; view.set('filter', volFilter); render(); }));
       document.getElementById('vol-new')?.addEventListener('click', openVolumeCreate);
 
       // Backup → download tar.gz (V1)

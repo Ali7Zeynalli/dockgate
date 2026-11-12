@@ -507,6 +507,18 @@ async function rollback(id, { sourceIp } = {}) {
   return { ok: true };
 }
 
+/** A rolling update that stopped (update or roll back paused because new tasks failed): start it again
+ *  with the same settings. Swarm continues from where it stopped. */
+async function resumeUpdate(id, { sourceIp } = {}) {
+  const { c, serverId } = await mgr();
+  const s = await c.getService(id).inspect();
+  const state = s.UpdateStatus && s.UpdateStatus.State;
+  if (!['paused', 'rollback_paused'].includes(state)) throw bad('The update of this service is not paused');
+  await writeSpec(c, id, s.Version.Index, s.Spec);
+  audit(serverId, sourceIp, s.Spec.Name, 'swarm_service_resume_update', { was: state, message: (s.UpdateStatus && s.UpdateStatus.Message) || '' });
+  return { ok: true };
+}
+
 async function restart(id, { sourceIp } = {}) {
   const { c, serverId } = await mgr();
   const s = await c.getService(id).inspect();
@@ -573,7 +585,7 @@ async function stats() {
   return data;
 }
 
-module.exports = { checkImages, updateToNewest, writeSpec, stats, list, get, choices, tasks, logs, create, save, scale, setImage, rollback, restart, remove, progress, formFromSpec, specFromForm, newForm, parseDur, fmtDur, parseBytes, splitArgs, isDatabase };
+module.exports = { checkImages, updateToNewest, writeSpec, stats, list, get, choices, tasks, logs, create, save, scale, setImage, rollback, resumeUpdate, restart, remove, progress, formFromSpec, specFromForm, newForm, parseDur, fmtDur, parseBytes, splitArgs, isDatabase };
 
 // ---- service history (Services → Graphs): CPU and memory of each service, every 2 minutes, kept 48 hours ----
 const { db: hdb } = require('./db');

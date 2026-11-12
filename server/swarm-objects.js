@@ -111,7 +111,7 @@ async function startRotate(kind, id, value, { sourceIp } = {}) {
   const newName = `${v.base}_v${n}`;
   const users = ((await usage(c))[kind === 'secret' ? 'secrets' : 'configs'].get(id)) || [];
   if (swarm._jobs.busy()) throw bad(409, 'A Swarm job is already running');
-  const job = swarm._jobs.newJob('rotate'); swarm._jobs.setCurrent(job);
+  const job = swarm._jobs.newJob('rotate', v.base); swarm._jobs.setCurrent(job);
   const log = swarm._jobs.logTo(job), step = swarm._jobs.step;
   const K = kind === 'secret' ? 'Secret' : 'Config';
   (async () => {
