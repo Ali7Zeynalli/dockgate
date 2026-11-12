@@ -2,6 +2,19 @@
 
 ---
 
+## [2.41.0] - 2026-11-12
+
+### Added
+- **Swarm autoscale.** Docker Swarm does not scale services by itself; DockGate now can. On a service's page, the new **Autoscale** tab sets:
+  - minimum and maximum replicas;
+  - add a replica when the average CPU per task stays at or above a % for some minutes (default 75% for 5 min), remove one when it stays at or below a % (default 25% for 10 min);
+  - a wait between changes (default 5 min), so new replicas settle;
+  - spreading the replicas over the servers (placement preference `spread=node.id`).
+
+  CPU per task is the % of the service's CPU limit, or of one CPU core when it has none. DockGate checks every minute, changes one replica at a time, never during a rolling update, and keeps working whichever server is picked at the top. Each change is shown in the tab's History, in the audit log and through the new **Swarm autoscale** notification rule; the Services list marks services with a rule (*auto 2–5*). Not offered for global services or databases, and a warning is shown for services with volumes. Autoscale does not add servers: a replica that fits nowhere waits as pending.
+
+---
+
 ## [2.40.0] - 2026-11-12
 
 ### Added

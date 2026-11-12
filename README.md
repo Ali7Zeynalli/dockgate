@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.40.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.41.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.40.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.41.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
@@ -172,8 +172,9 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 ## Docker Swarm
 
 - **Set up** on one server or several at once: checks, firewall ports, undo on failure. Add servers later.
-- **Nodes** — pause, drain, promote, demote, labels, remove, rebalance; CPU and memory per node.
+- **Nodes** — pause, drain, promote, demote, labels, remove, rebalance. Each node has a **page** with its tasks, CPU and memory (live and 48 h), labels, events and history.
 - **Services** — full form, scale, update image, **Update to newest**, roll back, restart. Each service has a **page** with tasks, logs, terminal and files on any node, stats, settings, updates and events.
+- **Autoscale** — Swarm does not scale by itself: DockGate adds or removes one replica at a time when the CPU per task stays high or low (min / max, thresholds, wait between changes), and spreads replicas over the servers.
 - **Stacks** — move Compose projects (whole or in part) and `docker run` containers to Swarm and back; new stacks from a file or a template; take over stacks made elsewhere. Volumes keep their names, so data stays; a move that fails puts the project back.
 - **Secrets, configs, overlay networks** — create, rotate, remove; encrypted overlays.
 - **Cluster** — certificates, autolock, join tokens, nightly backups, restore of missing services, Recover cluster.
@@ -182,14 +183,14 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 
 ## Notifications
 
-Channels: **Telegram**, **SMTP email** and **webhook** (Slack, Discord, Teams, ntfy, JSON). There are 21 rules, each with an on / off switch and a cooldown:
+Channels: **Telegram**, **SMTP email** and **webhook** (Slack, Discord, Teams, ntfy, JSON). There are 22 rules, each with an on / off switch and a cooldown:
 
 | Group | Rules |
 |---|---|
 | Containers | stopped / crashed / OOM, restarted, unhealthy, started, paused, unpaused |
 | Docker | disk usage, build failed, newer image, image update failed, scheduled task failed |
 | Servers | down, back, disk, memory, CPU — shared or per-server limits |
-| Swarm | service short of replicas, node down / back, update rolled back, quorum lost |
+| Swarm | service short of replicas, node down / back, update rolled back, quorum lost, autoscale changed a service |
 
 The optional **Edge agent** runs on each server, makes only outbound connections and sends alerts directly — behind NAT, and when DockGate is offline.
 

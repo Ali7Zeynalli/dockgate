@@ -18,6 +18,12 @@ router.post('/init', async (req, res) => {
   try { const j = await swarm.startInit(req.body || {}, { sourceIp: req.ip }); res.json({ jobId: j.id }); } catch (e) { fail(res, e); }
 });
 router.get('/jobs', (req, res) => { res.json({ jobs: swarm.listJobs() }); });
+// Autoscale rules (server/swarm-autoscale.js)
+const autoscale = require('../swarm-autoscale');
+router.get('/autoscale', async (req, res) => { try { res.json({ rules: await autoscale.listRules() }); } catch (e) { fail(res, e); } });
+router.get('/services/:id/autoscale', async (req, res) => { try { res.json(await autoscale.getRule(req.params.id)); } catch (e) { fail(res, e); } });
+router.put('/services/:id/autoscale', async (req, res) => { try { res.json(await autoscale.saveRule(req.params.id, req.body || {}, { sourceIp: req.ip })); } catch (e) { fail(res, e); } });
+router.delete('/services/:id/autoscale', async (req, res) => { try { res.json(await autoscale.removeRule(req.params.id, { sourceIp: req.ip })); } catch (e) { fail(res, e); } });
 router.get('/job/:id', (req, res) => {
   const j = swarm.getJob(req.params.id);
   if (!j) return res.status(404).json({ error: 'Job not found (DockGate restarted?)' });

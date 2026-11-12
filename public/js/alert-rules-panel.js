@@ -22,6 +22,7 @@ function alertWhen(type, p) {
     case 'swarm_node_down': return 'a server of the swarm goes Down, and when it is Ready again';
     case 'swarm_update_rollback': return 'a Swarm service update is rolled back or paused because new tasks failed';
     case 'swarm_quorum': return 'most managers can not be reached — the cluster can not be changed';
+    case 'swarm_autoscale': return 'autoscale adds or removes a replica of a Swarm service (or can not)';
     default: return 'when Docker reports it';
   }
 }
