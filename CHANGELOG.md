@@ -2,6 +2,25 @@
 
 ---
 
+## [2.43.1] - 2026-11-12
+
+### Added
+- **The documentation is complete.** New pages in [`guide/`](guide/README.md), each with screenshots and an *Errors and fixes* table:
+  - How DockGate works (servers, Compose and Swarm, jobs, safety nets, data);
+  - Dashboard and Monitoring;
+  - Deploy → Compose stacks, App templates and Registries;
+  - Observe (the log viewer, Logs, Events, Audit log, Notifications sent) and Tools (Terminal, Files, Schedules);
+  - Swarm → Set up, Overview and Nodes; Services and the service page; Secrets & configs and Networks; Cluster settings;
+  - Servers (Servers, SSH keys, Edge agent), Server Console and Settings;
+  - Troubleshooting and FAQ.
+
+### Fixed
+- The documentation of 2.42.2 and 2.43.0 never reached the repository, because `docs/` is ignored by Git. It now lives in `guide/`, and the README's **Docs** link points there.
+- Two server messages were not in English: *Server not found* and *A server with the ID "…" already exists*.
+- Swarm → Services with no services pointed to stacks as a "next version"; it now points to Swarm → Stacks.
+
+---
+
 ## [2.43.0] - 2026-11-12
 
 ### Added
@@ -13,7 +32,7 @@
 ## [2.42.2] - 2026-11-12
 
 ### Added
-- **Documentation** in [`docs/`](docs/README.md): getting started, Resources (Containers, Images, Volumes, Networks, Builds, Prune), Swarm → Stacks and Migrate, and Swarm → Auto Scaling, with screenshots, settings and every error message with its fix. The README links to it (**Docs**).
+- **Documentation** in [`guide/`](guide/README.md): getting started, Resources (Containers, Images, Volumes, Networks, Builds, Prune), Swarm → Stacks and Migrate, and Swarm → Auto Scaling, with screenshots, settings and every error message with its fix. The README links to it (**Docs**).
 
 ---
 
