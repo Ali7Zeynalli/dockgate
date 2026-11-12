@@ -2,6 +2,14 @@
 
 ---
 
+## [2.41.1] - 2026-11-12
+
+### Changed
+- **Deploy → Compose stacks → Open stack** opens Swarm → Stacks with that project's stack marked and in view (it opened the list only). For a project moved in part, it opens the *project*-swarm stack.
+- **Move back to Compose…** is in a moved project's ⋯ menu on the Compose page too, not only in Swarm → Stacks.
+
+---
+
 ## [2.41.0] - 2026-11-12
 
 ### Added

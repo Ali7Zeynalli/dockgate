@@ -197,6 +197,17 @@
     }
   }
   window.SwarmUI.stackEditor = stackEditor;
+  /** Move a stack that came from Compose back to Compose (Stacks menu, and the Compose page). */
+  function moveBackConfirm(s, done) {
+    secConfirm({ title: `Move ${s.name} back to Compose`, danger: true, change: `The stack is removed, DockGate waits until its network is gone, then <span class="td-mono">docker compose up -d</span> runs in ${esc((s.location || {}).cwd || 'its folder')}. It is down for a short time (usually 20–60 s).`, protects: 'Volumes keep their data: Compose uses the same volume names.', undo: 'Move it to Swarm again with Migrate.', confirmLabel: 'Move back',
+      onConfirm: async () => { try { const r = await API.post(`/swarm/stacks/${encodeURIComponent(s.name)}/move-back`, { confirm: true }); job(r.jobId, done, 'Move back to Compose'); } catch (e) { showToast(e.message, 'error', 9000); } } });
+  }
+  window.SwarmUI.moveBack = async (name, done) => {
+    let list; try { list = (await API.get('/swarm/stacks')).stacks; } catch (e) { return showToast(e.message, 'error', 9000); }
+    const st = list.find(x => x.name === name);
+    if (!st || !st.managed || !st.location) return showToast(`${name} can not be moved back from here — open Swarm → Stacks`, 'error', 9000);
+    moveBackConfirm(st, done);
+  };
   /** Move one compose project to Swarm from anywhere (Deploy → Compose stacks): analyse it, then the usual dialog. */
   window.SwarmUI.moveProject = async (name, done) => {
     showToast(`Reading ${name}…`, 'info', 2500);
@@ -242,8 +253,9 @@
       onSave: async (ov) => { readSettings(ov, settings); const r = await API.post(`/swarm/stacks/${encodeURIComponent(s.name)}/redeploy`, { settings: settings[s.name] }); job(r.jobId, done, 'Redeploy'); } });
   }
 
-  Router.register('swarm-stacks', async (content) => {
+  Router.register('swarm-stacks', async (content, params) => {
     window.SwarmUI.css();
+    let focus = params && params.stack ? String(params.stack) : null; // opened for one stack: show it
     const navId = Router._navId;
     let timer = null, data = [];
     const stop = () => clearTimeout(timer);
@@ -273,6 +285,11 @@
       ] }));
       content.innerHTML = `${UI.header('Stacks', 'Stacks on Swarm. A stack moved from Compose reads its compose files again on each deploy (adapted in memory, the files are not changed); a stack file kept in DockGate is edited here.', `${UI.btn('Move projects to Swarm…', 'data-migrate')} ${UI.primary('New stack…', 'data-newstack')}`)}
         ${UI.table([{ label: 'Stack' }, { label: 'Origin' }, { label: 'Services' }, { label: 'Tasks' }, { label: 'Last deploy' }, { label: '', align: 'right' }], rows, { minWidth: 820, empty: 'No stacks yet. Move compose projects to Swarm with Migrate.' })}`;
+      if (focus) { // once: mark its row and bring it into view
+        const row = [...content.querySelectorAll('.ui-table tbody tr')].find(tr => tr.querySelector('td b')?.textContent === focus);
+        if (row) { row.style.outline = '2px solid var(--accent)'; row.style.outlineOffset = '-2px'; row.scrollIntoView({ block: 'center' }); setTimeout(() => { row.style.outline = ''; }, 4000); }
+        focus = null;
+      }
       content.querySelector('[data-migrate]').onclick = () => Router.navigate('swarm', { tab: 'swarm-migrate' });
       content.querySelector('[data-newstack]').onclick = () => stackEditor({ mode: 'new', yaml: 'services:\n  web:\n    image: nginx:1.27\n    ports:\n      - "8080:80"\n    deploy:\n      replicas: 2\n', onDone: load });
       content.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, data.find(x => x.name === b.dataset.n))));
@@ -289,8 +306,7 @@
         onConfirm: async () => { try { const r = await API.post(`/swarm/stacks/${encodeURIComponent(s.name)}/move-back`, { confirm: true }); job(r.jobId, load, 'Move back to the container'); } catch (e) { showToast(e.message, 'error', 9000); } } });
       if (a === 'redeploy') return secConfirm({ title: `Redeploy ${s.name}`, change: 'The compose files are read again and deployed (docker stack deploy --prune): changed services are updated, services removed from the files are removed.', protects: 'Services update one task at a time and go back by themselves when a new task fails. Volumes stay.', undo: 'History → Deploy this again on an earlier deploy.', confirmLabel: 'Redeploy',
         onConfirm: async () => { try { const r = await API.post(`/swarm/stacks/${encodeURIComponent(s.name)}/redeploy`, {}); job(r.jobId, load, 'Redeploy'); } catch (e) { showToast(e.message, 'error', 9000); } } });
-      if (a === 'back') return secConfirm({ title: `Move ${s.name} back to Compose`, danger: true, change: `The stack is removed, DockGate waits until its network is gone, then <span class="td-mono">docker compose up -d</span> runs in ${esc((s.location || {}).cwd || 'its folder')}. It is down for a short time (usually 20–60 s).`, protects: 'Volumes keep their data: Compose uses the same volume names.', undo: 'Move it to Swarm again with Migrate.', confirmLabel: 'Move back',
-        onConfirm: async () => { try { const r = await API.post(`/swarm/stacks/${encodeURIComponent(s.name)}/move-back`, { confirm: true }); job(r.jobId, load, 'Move back to Compose'); } catch (e) { showToast(e.message, 'error', 9000); } } });
+      if (a === 'back') return moveBackConfirm(s, load);
       if (a === 'remove') return showDeleteConfirm(`Remove stack ${s.name}`, { message: `Its ${s.services} service${s.services === 1 ? '' : 's'} and network${s.services === 1 ? '' : 's'} are removed. Volumes, secrets and configs stay; the compose files are not touched.${s.managed ? ' To run it in Compose again, use Move back to Compose instead.' : ''}`, phrase: s.name, confirmLabel: 'Remove',
         onConfirm: async () => { try { await API.del(`/swarm/stacks/${encodeURIComponent(s.name)}`); showToast(`${s.name} removed`); load(); } catch (e) { showToast(e.message, 'error', 9000); } } });
     }
