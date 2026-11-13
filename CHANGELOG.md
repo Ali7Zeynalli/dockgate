@@ -2,6 +2,18 @@
 
 ---
 
+## [2.46.0] - 2026-11-13
+
+### Added
+- **Auto-heal for Compose services.** Scaling & health has an **Auto-heal** switch per service: a replica that stays unhealthy is restarted after 3 failed checks in a row, not in its first 60 seconds, at most 3 times an hour — then it stops trying and tells you (new alert rule *Auto-heal restarted a Compose container*). It uses the service's own health check; without one, the Edge agent checks its port.
+- **The Edge agent keeps the Scaling & health rules, also while DockGate is offline.** It brings back replicas that are gone (made the way Compose makes them, so Compose takes them as its own) and heals unhealthy ones. The panel says who runs the rules right now: the agent, or DockGate when there is no up-to-date agent.
+- **A secure command channel to the agent, with no port.** Each install gets its own Ed25519 key; the private half stays in DockGate, encrypted. Every rule and command is signed and carries the server, a growing number and the time; the agent refuses anything else, and anything outside a short list of actions (restart a replica, add or remove one within the limits, reload nginx / Caddy, read its state). Limits are checked again on the agent. Messages go in through a unix socket inside the agent container, over `docker exec` — locally or over SSH. Refused messages are kept in the agent's history and sent as a notice. Guide: [Edge agent → How DockGate commands it, safely](guide/agent-security.md).
+
+### Changed
+- Edge agent 1.2.0 — update it from **Servers → Edge agent** to turn the new channel on.
+
+---
+
 ## [2.45.0] - 2026-11-12
 
 ### Added

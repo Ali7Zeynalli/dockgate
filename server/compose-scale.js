@@ -243,6 +243,7 @@ async function setReplicas(project, service, n, opts = {}) {
     throw Object.assign(bad(`${service} could not run ${n} replica${n === 1 ? '' : 's'}: ${String(e.message).slice(0, 300)} — the previous setting is back`, 500), { rolledBack: true });
   }
   saveRule(sid, project, service, rule);
+  require('./agent/control').pushSoon(sid); // the agent keeps this number from now on
   const traffic = require('./compose-traffic');
   await traffic.reloadProxies(c, await traffic.findProxies(c, project), log);
   h.recordDeploy({ project, kind: 'scale', status: 'done', sourceIp: opts.sourceIp, startedAt: started, finishedAt: Date.now(), details: { service, from: before.length, to: n, fixes: recreate ? ['dropPorts', 'dropName'].filter(f => rule[f]) : [] } });
@@ -250,4 +251,16 @@ async function setReplicas(project, service, n, opts = {}) {
   return { from: before.length, to: n };
 }
 
-module.exports = { setReplicas, configOf, replicasOf, FILE, MAX_REPLICAS, NAME, overridePath, buildOverride, readRules, saveRule, writeOverride, overrideFor, removeAll, composeVersion, verAtLeast, checkScalable, limitsOf, checkName, checkReplicas };
+/** Turn auto-heal on or off for a service. */
+function setHeal(project, service, on, { sourceIp, perHour } = {}) {
+  checkName(project, 'Project'); checkName(service, 'Service');
+  const sid = serverIdNow();
+  db.prepare(`INSERT INTO compose_scaling (server_id, project, service, heal, heal_per_hour, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(server_id, project, service) DO UPDATE SET heal = excluded.heal, heal_per_hour = excluded.heal_per_hour, updated_at = excluded.updated_at`)
+    .run(sid, project, service, on ? 1 : 0, Number.isInteger(perHour) && perHour >= 1 && perHour <= 20 ? perHour : 3, Date.now());
+  try { require('./audit').logAction({ sourceIp: sourceIp || 'dockgate', server: sid, resourceType: 'compose', resourceId: project, resourceName: `${project}/${service}`, action: on ? 'compose_heal_on' : 'compose_heal_off', details: {} }); } catch (e) { /* best effort */ }
+  require('./agent/control').pushSoon(sid);
+  return { ok: true, heal: !!on };
+}
+
+module.exports = { setHeal, setReplicas, configOf, replicasOf, FILE, MAX_REPLICAS, NAME, overridePath, buildOverride, readRules, saveRule, writeOverride, overrideFor, removeAll, composeVersion, verAtLeast, checkScalable, limitsOf, checkName, checkReplicas };

@@ -400,15 +400,17 @@ router.get('/:project/scaling', async (req, res) => {
         confs[p.id] = await new Promise((resolve) => { let b = ''; st.on('data', d => { b += d.toString('utf8'); }); st.on('end', () => resolve(b)); setTimeout(() => resolve(b), 8000); });
       } catch (e) { confs[p.id] = ''; }
     }
+    // A port the agent can check: from the compose file, or EXPOSE in the image.
+    const imageExposes = async (cl, image) => { if (!image) return false; try { const i = await cl.getImage(image).inspect(); return Object.keys((i.Config && i.Config.ExposedPorts) || {}).some(k => k.endsWith('/tcp')); } catch (e) { return false; } };
     const services = [];
     for (const [name, s] of Object.entries(cfg.services || {})) {
       const running = (await CS.replicasOf(c, project, name)).length;
       const rule = rules[name] || {};
       const wanted = rule.replicas ?? (s.deploy && Number.isInteger(s.deploy.replicas) ? s.deploy.replicas : 1);
       const behind = proxies.filter(p => p.kind === 'nginx' && new RegExp(`https?://${name}[:/;]`).test(confs[p.id] || '')).map(p => ({ name: p.name, usesResolver: T.nginxUsesResolver(confs[p.id], name) }));
-      services.push({ name, image: s.image || null, replicas: running, wanted, limits: CS.limitsOf(s), scalable: CS.checkScalable(s, name, version), fixes: { dropPorts: !!rule.dropPorts, dropName: !!rule.dropName }, ports: (s.ports || []).filter(p => p.published).map(p => `${p.host_ip ? `${p.host_ip}:` : ''}${p.published}→${p.target}`), containerName: s.container_name || null, aliases: rule.aliases || [], behind, drift: rule.replicas !== undefined && rule.replicas !== null && running !== rule.replicas });
+      services.push({ name, image: s.image || null, heal: !!rule.heal, healthcheck: !!(s.healthcheck && !s.healthcheck.disable && s.healthcheck.test), exposed: (s.expose || []).length > 0 || (s.ports || []).length > 0 || await imageExposes(c, s.image), replicas: running, wanted, limits: CS.limitsOf(s), scalable: CS.checkScalable(s, name, version), fixes: { dropPorts: !!rule.dropPorts, dropName: !!rule.dropName }, ports: (s.ports || []).filter(p => p.published).map(p => `${p.host_ip ? `${p.host_ip}:` : ''}${p.published}→${p.target}`), containerName: s.container_name || null, aliases: rule.aliases || [], behind, drift: rule.replicas !== undefined && rule.replicas !== null && running !== rule.replicas });
     }
-    res.json({ services, composeVersion: version, proxies: proxies.map(p => ({ name: p.name, kind: p.kind })), override: !!r.override, drift: services.some(x => x.drift) });
+    res.json({ services, composeVersion: version, proxies: proxies.map(p => ({ name: p.name, kind: p.kind })), override: !!r.override, drift: services.some(x => x.drift), control: require('../agent/control').statusOf(sid) });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 });
 router.put('/:project/scaling/:service/replicas', async (req, res) => {
@@ -418,6 +420,13 @@ router.put('/:project/scaling/:service/replicas', async (req, res) => {
     const r = await require('../compose-scale').setReplicas(req.params.project, req.params.service, n, { acceptFixes: !!(req.body || {}).acceptFixes, sourceIp: req.ip, log: (l) => out.push(l) });
     res.json({ ...r, log: out.join('\n') });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message, needFixes: e.needFixes, rolledBack: e.rolledBack, log: out.join('\n') }); }
+});
+router.put('/:project/scaling/:service/heal', (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    res.json(require('../compose-scale').setHeal(project, req.params.service, !!(req.body || {}).on, { sourceIp: req.ip, perHour: Number((req.body || {}).perHour) || undefined }));
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 });
 router.get('/:project/scaling/override', async (req, res) => {
   try {

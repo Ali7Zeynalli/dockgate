@@ -43,6 +43,7 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 ## Servers
 
 - [Servers → Servers, SSH keys, Edge agent](servers.md) — add a server, host keys, deploy keys, the outbound agent
+- [Edge agent → How DockGate commands it, safely](agent-security.md) — signed rules and commands, no port, what the agent may do
 - [Server Console](server-console.md) — setup, SSH access, users, firewall, fail2ban, services, logs
 
 ## Settings

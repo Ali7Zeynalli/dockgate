@@ -68,8 +68,12 @@ function buildEnv(serverId) {
   let diskGb = stmts.getSetting.get('disk_threshold_gb')?.value;
   try { const r = stmts.getRule.get('disk_threshold'); const gb = r && JSON.parse(r.params || '{}').gb; if (gb) diskGb = String(gb); } catch (e) { /* keep the setting */ }
 
+  // The control channel: the agent's server id and the public half of its key (server/agent/keys.js).
+  const pub = require('./keys').publicKeyFor(serverId);
   const env = [
     `SERVER_LABEL=${serverId}`,
+    `DG_SERVER_ID=${serverId}`,
+    `DG_PUBKEY=${Buffer.from(pub, 'utf8').toString('base64')}`,
     `TIMEZONE=${tz}`,
     `RULES_JSON=${JSON.stringify(rules)}`,
   ];
@@ -322,6 +326,8 @@ async function installOne(serverId, log, onPhase, kind = 'install') {
   onPhase('done');
   // Double-send guard: the on-host agent now covers this host, so stop the central monitor for it.
   try { monitorManager.stopMonitor(serverId); log('central monitor stopped for this host\n'); } catch (e) {}
+  // Control channel: give the new agent its rules (replicas to keep, healing) as soon as it listens.
+  setTimeout(() => require('./control').pushRules(serverId).then(v => { if (v) log(`rules v${v} acknowledged by the agent\n`); }).catch(() => {}), 4000);
   return { id: cont.id };
 }
 
@@ -358,7 +364,7 @@ async function statusOne(serverId) {
     const version = c.Labels?.['dockgate.version'] || null, build = c.Labels?.['dockgate.build'] || null;
     // An agent without a build label predates build tags (1.0.0): it is older than any current build.
     const updateAvailable = REGISTRY_IMAGE ? (c.Image !== IMAGE_REF) : build !== AGENT_BUILD;
-    return { installed: true, running, state: running ? 'running' : 'stopped', version, build, updateAvailable };
+    return { installed: true, running, state: running ? 'running' : 'stopped', version, build, updateAvailable, control: require('./control').statusOf(serverId) };
   } catch (e) {
     return { installed: false, running: false, state: 'unreachable', version: null, error: e.message };
   }

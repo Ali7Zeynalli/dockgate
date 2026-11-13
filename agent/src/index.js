@@ -43,11 +43,21 @@ const Docker = require('dockerode');
   const hostHarvester = new HostLogHarvester(storage, { intervalMs: 10000 });
   hostHarvester.start();
 
-  // 5. Start Query Server (Metrics, Logs, Health)
+  // 5. Local controller: signed rules and commands from DockGate (no port), heal and keep replicas.
+  const { Controller } = require('./control');
+  const pub = process.env.DG_PUBKEY ? Buffer.from(process.env.DG_PUBKEY, 'base64').toString('utf8') : '';
+  const notify = async (text) => {
+    if (telegram.isConfigured()) await telegram.sendMessage({ text: `<b>${cfg.serverLabel}</b>: ${text}` }).catch(() => {});
+    if (mailer.isConfigured()) await mailer.sendEmail({ subject: `DockGate agent — ${cfg.serverLabel}`, html: `<p>${text}</p>` }).catch(() => {});
+  };
+  const control = new Controller(docker, { serverId: process.env.DG_SERVER_ID || '', publicKeyPem: pub, notify });
+  control.start();
+
+  // 6. Start Query Server (Metrics, Logs, Health, Control state)
   const server = startQueryServer(storage, () => ({
     streamConnected: !!mon.stream && !mon.stopped,
     lastEventAt: mon.lastEventAt,
-  }));
+  }), () => control.view());
 
   const shutdown = () => {
     console.log('[agent] shutting down cleanly');
@@ -55,6 +65,7 @@ const Docker = require('dockerode');
     try { metricsCollector.stop(); } catch (e) {}
     try { logAggregator.stop(); } catch (e) {}
     try { hostHarvester.stop(); } catch (e) {}
+    try { control.stop(); } catch (e) {}
     try { server.close(); } catch (e) {}
     process.exit(0);
   };

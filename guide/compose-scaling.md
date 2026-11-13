@@ -14,6 +14,7 @@ Run a Compose service as several containers (replicas) with one click. Docker sp
 | **Replicas** | `−` and `+`. `+` is disabled with the reason when the service can not have more than one |
 | **Limits** | The CPU and memory limits **from your compose file** (`cpus`, `mem_limit`, `deploy.resources.limits`). DockGate does not change them |
 | **State** | Replicas running, or **drift** when they differ from what was set |
+| **Auto-heal** | On: a replica that stays unhealthy is restarted. Uses the service's own health check; without one, the Edge agent checks its port |
 
 ## Your files are not changed
 
@@ -45,6 +46,15 @@ A fix is shown before it is applied, written to the override only, and the servi
 4. **Proxies on the same networks are reloaded** — nginx after `nginx -t` passes (a config that fails its check is left alone), Caddy with `caddy reload`. A plain `proxy_pass http://api:8080;` only looks the name up when nginx starts; the reload makes it see the new replicas.
 5. **If compose fails** (an image that can not be pulled, a port taken), the previous override comes back and the service runs as before.
 6. Each change is in **Deploy history…** (*replicas*) and in **Observe → Audit log** (`compose_scale`).
+
+## Auto-heal, and who keeps the rules
+
+Turn **Auto-heal** on for a service and a replica that stays unhealthy is restarted: after 3 failed checks in a row, not in its first 60 seconds, at most 3 times an hour — then it stops trying and tells you (Settings → Notifications → *Auto-heal restarted a Compose container*).
+
+The note under the table says who keeps these rules:
+
+- **The Edge agent on that server**, when it runs the current version: it also brings back replicas that are gone (a `docker rm`, a crash with no restart), and keeps doing both while DockGate is offline. How it is commanded without a port: [Edge agent → How DockGate commands it, safely](agent-security.md).
+- **DockGate**, otherwise: it heals services that have their own health check while it is online.
 
 ## nginx in front
 

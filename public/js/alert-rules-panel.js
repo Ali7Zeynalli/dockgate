@@ -23,6 +23,7 @@ function alertWhen(type, p) {
     case 'swarm_update_rollback': return 'a Swarm service update is rolled back or paused because new tasks failed';
     case 'swarm_quorum': return 'most managers can not be reached — the cluster can not be changed';
     case 'swarm_autoscale': return 'autoscale adds or removes a replica of a Swarm service (or can not)';
+    case 'compose_heal': return 'auto-heal restarts an unhealthy Compose container, or stops trying after its hourly limit';
     default: return 'when Docker reports it';
   }
 }

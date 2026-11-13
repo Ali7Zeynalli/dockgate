@@ -4,7 +4,7 @@ const http = require('http');
 const url = require('url');
 const { cfg } = require('./config');
 
-function startQueryServer(storage, getState) {
+function startQueryServer(storage, getState, getControl = () => ({ enabled: false })) {
   const server = http.createServer((req, res) => {
     const parsed = url.parse(req.url, true);
     const pathname = parsed.pathname;
@@ -45,6 +45,12 @@ function startQueryServer(storage, getState) {
       });
       res.writeHead(200);
       res.end(JSON.stringify(logs));
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/control/state') {
+      res.writeHead(200);
+      res.end(JSON.stringify(getControl()));
       return;
     }
 

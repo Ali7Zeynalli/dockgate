@@ -28,23 +28,43 @@ window.ComposeScaling = (() => {
         for (const b of s.behind) notes.push(`<span class="ui-sub">behind ${esc(b.name)}${b.usesResolver ? ' (finds new replicas by itself)' : ' — reloaded after each change'}</span>`);
         const state = s.drift ? UI.pill('warn', `drift: ${s.replicas} running, ${s.wanted} wanted`) : s.replicas ? UI.pill('ok', `${s.replicas} running`) : UI.pill('off', 'stopped');
         return { cells: [
-          `<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '')}</div>${notes.length ? `<div style="margin-top:4px;white-space:normal;max-width:360px">${notes.join('<br>')}</div>` : ''}`,
+          `<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '')}</div>${notes.length ? `<div style="margin-top:4px;white-space:normal;max-width:280px">${notes.join('<br>')}</div>` : ''}`,
           `<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-xs btn-secondary" data-minus="${esc(s.name)}" ${s.wanted <= 0 ? 'disabled' : ''}>−</button><b style="min-width:22px;text-align:center">${s.wanted}</b><button class="btn btn-xs btn-secondary" data-plus="${esc(s.name)}" ${!canMore || s.wanted >= 20 ? 'disabled' : ''} title="${canMore ? 'Add a replica' : esc(sc.block)}">+</button></div>`,
           `<span class="text-sm">${lim}</span><div class="ui-sub">from your compose file</div>`,
           `${state}${s.drift ? ` <button class="btn btn-xs btn-secondary" data-fix="${esc(s.name)}" data-n="${s.wanted}">Fix</button>` : ''}`,
+          healCell(s),
         ] };
       });
       root.innerHTML = `${UI.header('Replicas', 'Docker runs each service as this many containers and spreads requests over them by name. Your compose files are not changed: DockGate keeps its choices in its own override file and shows what changes first.',
           `${data.override ? `${UI.btn('Show the override', 'data-ov')} ${UI.btn('Back to the files…', 'data-reset')}` : ''}`)}
-        ${UI.table([{ label: 'Service' }, { label: 'Replicas' }, { label: 'Limits' }, { label: 'State' }], rows, { minWidth: 640 })}
+        ${UI.table([{ label: 'Service' }, { label: 'Replicas' }, { label: 'Limits' }, { label: 'State' }, { label: 'Auto-heal' }], rows, { minWidth: 700 })}
+        ${executorNote()}
         ${data.services.some(s => s.drift) ? '<div class="insight-card warning" style="margin-top:10px"><div><b>Drift.</b> The running replicas differ from what was set — most often a <span class="td-mono">docker compose up</span> run on the server without DockGate\'s override. <b>Fix</b> sets them again.</div></div>' : ''}
         <div class="ui-sub" style="margin-top:8px">Docker Compose ${esc(data.composeVersion || '?')} on this server.</div>
         <div data-sc-log class="text-sm td-mono" style="white-space:pre-wrap;margin-top:8px"></div>`;
+      root.querySelectorAll('[data-heal]').forEach(t => t.onclick = () => heal(t.dataset.heal, t.getAttribute('aria-checked') !== 'true'));
       root.querySelectorAll('[data-plus]').forEach(b => b.onclick = () => change(b.dataset.plus, +1));
       root.querySelectorAll('[data-minus]').forEach(b => b.onclick = () => change(b.dataset.minus, -1));
       root.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => apply(b.dataset.fix, Number(b.dataset.n), false));
       const ov = root.querySelector('[data-ov]'); if (ov) ov.onclick = showOverride;
       const rs = root.querySelector('[data-reset]'); if (rs) rs.onclick = reset;
+    }
+    // Auto-heal: own health check, or the agent's port check; without either there is nothing to watch.
+    function healCell(s) {
+      const agent = data.control && data.control.executor === 'agent';
+      const how = s.healthcheck ? 'own health check' : agent ? (s.exposed ? 'agent checks the port' : 'no port to check') : 'needs a health check or the agent';
+      const can = s.healthcheck || (agent && s.exposed);
+      return `<div style="display:flex;align-items:center;gap:8px"><div class="toggle ${s.heal ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${s.heal}" data-heal="${esc(s.name)}" ${!can && !s.heal ? 'style="opacity:.4;pointer-events:none"' : ''}></div></div><div class="ui-sub" style="white-space:normal;max-width:130px">${esc(how)}</div>`;
+    }
+    function executorNote() {
+      const c = data.control || {};
+      if (c.executor === 'agent') return `<div class="insight-card success" style="margin-top:10px"><div><b>The agent on this server runs these rules</b> (rules v${esc(c.ackedVersion)}). It keeps the replicas and heals by them also while DockGate is offline.</div></div>`;
+      if (c.hasKey) return `<div class="insight-card warning" style="margin-top:10px"><div><b>DockGate runs these rules</b> — the agent has not taken the latest ones yet${c.error ? ` (${esc(c.error)})` : ''}. It retries every 10 minutes.</div></div>`;
+      return '<div class="ui-sub" style="margin-top:8px">DockGate runs these rules while it is online. With the <b>Edge agent</b> (Servers → Edge agent, updated) they keep working when DockGate is offline.</div>';
+    }
+    async function heal(name, on) {
+      try { await API.put(`/compose/${encodeURIComponent(project)}/scaling/${encodeURIComponent(name)}/heal`, { on }); showToast(`${name}: auto-heal ${on ? 'on' : 'off'}`); } catch (e) { showToast(e.message, 'error'); }
+      await load();
     }
     async function change(name, delta) {
       const s = data.services.find(x => x.name === name);
