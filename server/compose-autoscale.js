@@ -5,6 +5,7 @@
 // Auto Scaling chose is written to DockGate's override, so a later `docker compose up` through DockGate keeps it.
 const fs = require('fs');
 const { db, stmts } = require('./db');
+require('./compose-scale'); // makes the compose_scaling table this file adds columns to and reads — load it first
 const { Scaler, cleanAuto } = require('../agent/src/control/autoscale');
 const { hostCapFrom } = require('../agent/src/control/measure');
 

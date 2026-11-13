@@ -2,6 +2,14 @@
 
 ---
 
+## [2.53.2] - 2026-11-13
+
+### Fixed
+- **DockGate did not start after updating to 2.53.x** ("localhost refused to connect"): at boot the Compose Auto Scaling module read the `compose_scaling` table before the module that makes it had loaded, and the process stopped. It now loads that module first, so the table and its new columns are made in order. The data was not touched (the process stopped before writing anything).
+- A boot test now starts DockGate on an empty data folder with all its background modules, so a start-up crash can not pass the tests again.
+
+---
+
 ## [2.53.1] - 2026-11-13
 
 ### Docs

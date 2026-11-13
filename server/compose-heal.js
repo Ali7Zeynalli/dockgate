@@ -4,6 +4,7 @@
 // health check counts.
 const { db, stmts } = require('./db');
 const { healDecision } = require('../agent/src/control/heal-decision');
+require('./compose-scale'); // the compose_scaling table it reads
 
 const TICK_MS = 30000;
 const memory = new Map(); // container id → { fails, restarts, stopped }
