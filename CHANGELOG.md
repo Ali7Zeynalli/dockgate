@@ -2,6 +2,16 @@
 
 ---
 
+## [2.51.0] - 2026-11-13
+
+### Added
+- **Build & push on Move to Swarm.** Services with `build:` need their image in a registry to run on several servers. The plan now offers **Build & push** with the logins from Deploy → Registries: DockGate builds with Compose (your Dockerfile, context and build args), tags `<registry>/<project>-<service>:<time>` (Docker Hub: `<user>/<project>-<service>:<time>`), pushes it, and the stack uses that tag. The build runs before anything stops, so it adds no downtime.
+  - **Every Redeploy builds and pushes again**, so the servers run what the files say now; earlier tags stay in the registry, and Redeploy → an earlier deploy goes back to one.
+  - The servers pull with the same login. The compose files are not changed.
+  - On a cluster of several servers, a built service without a registry is explained in the plan with where to choose one.
+
+---
+
 ## [2.50.0] - 2026-11-13
 
 ### Added

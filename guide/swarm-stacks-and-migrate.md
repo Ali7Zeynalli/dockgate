@@ -117,6 +117,15 @@ Containers that belong to a Compose project are not listed here — move the pro
 
 ---
 
+## Build & push (services built from source)
+
+A service with `build:` runs on Swarm only from an image: Swarm does not build, and on **several servers** every server must pull it from a registry. When the project has such services, the plan shows **Build & push** with the registry logins from **Deploy → Registries**:
+
+- **Do not push** — the image Compose built on this server is used (fine with one server).
+- **A registry** — on the move DockGate runs `docker compose build <service>` (your Dockerfile, context and build args), tags the image `<registry>/<project>-<service>:<time>` (for Docker Hub `<user>/<project>-<service>:<time>`), pushes it with the stored login, and the stack uses that tag. The build runs **before** anything stops, so it does not add to the downtime.
+
+The choice is kept with the stack: every **Redeploy** builds and pushes again, so the servers run what the files say now (the registry keeps the earlier tags — **Redeploy → an earlier deploy** goes back to one). The servers pull with the same login (`--with-registry-auth`). Your compose files are not changed.
+
 ## Protected as before
 
 Before a service moves, DockGate compares how it is protected in Compose with how it will be on Swarm, field by field: the user it runs as, a read-only file system, `no-new-privileges`, seccomp and AppArmor, the capabilities it drops and adds, privileged, the host PID / IPC namespace, the user namespace, whether its mounts are read-only, and where its ports can be reached.
@@ -215,3 +224,6 @@ Before a service moves, DockGate compares how it is protected in Compose with ho
 | `security_opt: this Docker is older than 25 (API 1.44) …` | DockGate can not put no-new-privileges / seccomp back on the service | Update Docker on the managers, or *Move anyway* |
 | `nothing moves — every service would be less protected on Swarm` | Every service is weaker and none was ticked | Tick *Move anyway* for the ones that may move |
 | `less protected on Swarm than planned — …` (the project is put back) | A Swarm task came up weaker than the plan said | Read the field named; nothing changed in Compose |
+| `build: without image — on several servers the image must be in a registry: choose one under "Build & push"` | A built service on a cluster of several servers | Choose a registry under Build & push (add the login in Deploy → Registries first) |
+| `That registry login is no longer in Deploy → Registries` | The login chosen for the stack was removed | Add it again, then Redeploy with Build & push set |
+| Push fails: `denied` / `unauthorized` | The login can not push to that repository | Check the login in Deploy → Registries → Test |

@@ -30,6 +30,16 @@
       ] };
     }), { minWidth: 0 });
   }
+  // Build & push: services with build: need their image in a registry to run on several servers.
+  let registriesCache = [];
+  function buildNote(p, st) {
+    const built = p.services.filter(s => s.build && !(s.stays && !s.securityOnly)).map(s => s.name);
+    if (!built.length) return '';
+    const regs = registriesCache;
+    const cur = (st.build && st.build.registryId) || '';
+    return `<div class="insight-card ${cur ? 'info' : 'warning'}" style="margin-bottom:8px;display:block"><div><b>Build &amp; push</b> — ${built.map(esc).join(', ')} ${built.length === 1 ? 'is' : 'are'} built from source. Swarm does not build, and the other servers can only pull an image from a registry: DockGate builds with Compose, tags it <span class="td-mono">&lt;registry&gt;/${esc(p.project)}-&lt;service&gt;:&lt;time&gt;</span>, pushes it, and does so again on every Redeploy. Your files are not changed.</div>
+      <div style="margin-top:8px"><select class="select" data-set="${esc(p.project)}|__build|registryId" style="max-width:360px"><option value="">Do not push — use the image built on this server (one server only)</option>${regs.map(r => `<option value="${r.id}" ${String(r.id) === String(cur) ? 'selected' : ''}>${esc(r.name || r.server_address)} (${esc(r.server_address)})</option>`).join('')}</select>${regs.length ? '' : ' <span class="ui-sub">No registry logins yet — add one in Deploy → Registries.</span>'}</div></div>`;
+  }
   // What would be weaker on Swarm, field by field.
   function securityList(s) {
     return (s.security || []).filter(r => r.verdict === 'weaker').map(r => `<div class="text-sm" style="color:var(--danger,#dc2626);white-space:normal">✗ ${esc(r.field)}: ${esc(r.before)} → ${esc(r.after)}${r.why ? ` <span class="ui-sub">(${esc(r.why)})</span>` : ''}</div>`).join('');
@@ -53,6 +63,7 @@
   function readSettings(root, all) {
     root.querySelectorAll('[data-set]').forEach(el => {
       const [proj, svc, key] = el.dataset.set.split('|');
+      if (svc === '__build') { if (el.value) all[proj].build = { registryId: Number(el.value) }; else delete all[proj].build; return; }
       const st = all[proj].services[svc] = all[proj].services[svc] || {};
       if (el.type === 'checkbox') { if (el.checked) st[key] = true; else delete st[key]; return; }
       if (key === 'replicas') { const n = Number(el.value); if (el.value.trim() === '' || !Number.isInteger(n) || n < 0) { delete st[key]; return; } st[key] = n; } // empty → the default (1)
@@ -63,7 +74,7 @@
   // ---- Migrate ----
   function openMove(projects, done) {
     const settings = Object.fromEntries(projects.map(p => [p.project, { services: {} }]));
-    let step = 0, previews = null;
+    let step = 0, previews = null, registries = null;
     const m = showModal(`Move ${projects.length} project${projects.length > 1 ? 's' : ''} to Swarm`, '<div data-w></div>', []);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     const root = m.overlay.querySelector('[data-w]');
@@ -77,7 +88,8 @@
       const head = `${serverContextBanner()}<div class="sw-steps"><span class="${step === 0 ? 'on' : 'done'}">${step ? '✓' : '1.'} Settings</span><span class="${step === 1 ? 'on' : ''}">2. Plan</span></div>`;
       if (step === 0) {
         next.textContent = 'Review the plan'; next.disabled = false;
-        root.innerHTML = head + projects.map(p => `<div class="ui-ph-title" style="margin:10px 0 6px">${esc(p.project)} ${UI.pill(...STATUS[p.status])}</div>${bridgeNote(p)}${settingsTable(p, settings[p.project])}`).join('')
+        if (registries === null && projects.some(p => p.services.some(s => s.build))) { registries = await API.get('/registries').catch(() => []); registriesCache = Array.isArray(registries) ? registries : []; }
+        root.innerHTML = head + projects.map(p => `<div class="ui-ph-title" style="margin:10px 0 6px">${esc(p.project)} ${UI.pill(...STATUS[p.status])}</div>${bridgeNote(p)}${buildNote(p, settings[p.project])}${settingsTable(p, settings[p.project])}`).join('')
           + '<div class="ui-sub" style="margin-top:8px">Safe defaults are filled in: 1 replica, databases always 1. Host ports allow one task per server; with one server keep 1 replica for a service with host ports.</div>';
         return;
       }

@@ -199,13 +199,18 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
     if (s.network_mode === 'host') add('warn', 'network_mode: host → the service joins Docker\'s host network on Swarm (same as before); it can have no other network and no published ports');
     else if (s.network_mode && s.network_mode !== 'bridge') add('bad', `network_mode: ${s.network_mode} shares another container's network — Swarm has no such mode, so it stays in Compose`);
     let image = s.image || null;
-    if (s.build) {
+    const push = settings && settings.build && settings.build.registryId ? (() => { try { return require('./swarm-build').registryById(settings.build.registryId); } catch (e) { return null; } })() : null;
+    if (s.build && push) {
+      const ref = require('./swarm-build').repoFor(push, project, name);
+      image = `${ref}:<time>`;
+      add('info', `build: built with Compose and pushed to ${push.name || push.server_address} as ${ref}:<time> on every move and Redeploy — every server pulls it from there`);
+    } else if (s.build) {
       const built = `${project}-${name}`;
       if (!image) {
-        if (nodes > 1) add('bad', 'build: without image — on several servers the image must be in a registry (build and push it, then add image: to the file)');
+        if (nodes > 1) add('bad', 'build: without image — on several servers the image must be in a registry: choose one under "Build & push" in the plan (Deploy → Registries holds the logins)');
         else if (localImages && localImages.has(built)) { image = built; add('warn', `build: the image built by Compose (${built}) is used; Swarm does not build`); }
         else add('bad', `build: without image and no built image ${built} here — build it first (Compose → Build)`);
-      } else add('warn', `build: Swarm does not build — the image ${image} is used${nodes > 1 ? ' (it must be in a registry for the other servers)' : ''}`);
+      } else add('warn', `build: Swarm does not build — the image ${image} is used${nodes > 1 ? ' (it must be in a registry for the other servers — or choose one under "Build & push" in the plan)' : ''}`);
     }
     if (s.container_name && s.container_name !== name) add('info', `container_name ${s.container_name}: Swarm names tasks ${project}_${name}.1 …, but ${s.container_name} stays a name other services reach it by`);
     for (const l of s.links || []) { const [svc, alias] = String(l).split(':'); if (alias && alias !== svc) add('info', `links ${l}: ${svc} also answers as ${alias}`); }
@@ -259,7 +264,7 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
     }
     const stays = f.some(x => x.level === 'bad'); // this service can not run on Swarm: it stays in Compose
     if (!stays && out.status === 'ready' && f.some(x => x.level === 'warn')) out.status = 'attention';
-    out.services.push({ name, image, database: isDatabase(image), findings: f, ports: (s.ports || []).map(p => ({ published: Number(p.published) || null, target: p.target, protocol: p.protocol || 'tcp', hostIp: p.host_ip || null, scope: portScope(p) })), hostNetwork: s.network_mode === 'host', healthcheck: !!(s.healthcheck && !s.healthcheck.disable), volumes: vols.map(v => v.source), binds: binds.map(v => v.source), stays, security: secRows.filter(x => x.verdict !== 'same'), weaker: weaker.length > 0, securityOnly: !otherBad && weaker.length > 0 });
+    out.services.push({ name, image, database: isDatabase(image), findings: f, ports: (s.ports || []).map(p => ({ published: Number(p.published) || null, target: p.target, protocol: p.protocol || 'tcp', hostIp: p.host_ip || null, scope: portScope(p) })), hostNetwork: s.network_mode === 'host', healthcheck: !!(s.healthcheck && !s.healthcheck.disable), volumes: vols.map(v => v.source), binds: binds.map(v => v.source), build: !!s.build, stays, security: secRows.filter(x => x.verdict !== 'same'), weaker: weaker.length > 0, securityOnly: !otherBad && weaker.length > 0 });
   }
   if (!out.services.length) block('The project has no services.');
   if (out.bridges.length && out.status === 'ready') out.status = 'attention';
@@ -757,7 +762,7 @@ async function securityCheck(stackName, snap, planned, log) {
     const allowed = new Set(SEC.weakerRows((planned && planned[svc]) || []).map(x => x.field));
     const bad = SEC.weakerRows(cmp).filter(x => !allowed.has(x.field));
     for (const x of bad) failed.push(`${svc}: ${x.field} ${x.before} → ${x.after}`);
-    if (b.image !== a.image) log(`  ${svc}: runs image ${String(a.image).slice(7, 19)} (it ran ${String(b.image).slice(7, 19)} in Compose) — ${a.imageName} was pulled again`);
+    if (b.image !== a.image) log(`  ${svc}: runs image ${String(a.image).slice(7, 19)} (${String(a.imageName).split('@')[0]}); it ran ${String(b.image).slice(7, 19)} in Compose — pulled again, or built and pushed`);
     if (NGINX.test(String(a.imageName).replace(/^docker\.io\//, '').replace(/^library\//, ''))) {
       const t = await execIn(a.id, ['nginx', '-t']).catch(e => ({ code: 1, out: e.message }));
       if (t.code !== 0) failed.push(`${svc}: nginx -t fails in the Swarm task (${t.out.split('\n').pop()})`);
@@ -807,6 +812,12 @@ async function startMove(plans, { sourceIp } = {}) {
         }
         const images = {};
         for (const s of a.services) if (s.image && !(a.cfg.services[s.name] || {}).image) images[s.name] = s.image;
+        const reg = plan.settings && plan.settings.build && plan.settings.build.registryId;
+        if (reg && a.services.some(x => x.build && !x.stays)) { // build & push before anything stops
+          sk('build', 'running', 'build and push the images');
+          Object.assign(images, await require('./swarm-build').buildAll({ project: p, cfg: a.cfg, r, registryId: reg, only: a.services.filter(x => !x.stays).map(x => x.name), log }));
+          sk('build', 'done');
+        }
         const twins = { ...twinsMap(sid), ...Object.fromEntries((a.bridges || []).map(x => [x.name, x.twin])) };
         const stack = adapt(a.cfg, plan.settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, twins, only: partial ? partial.services : null, project: partial ? p : null });
         sk('check', 'done');
@@ -901,7 +912,13 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
         const cfg = await readConfig(r, proj);
         hash = hashOf(cfg);
         const set = settings ? { ...settings, ...(part ? { partial: part } : {}) } : JSON.parse(row.settings || '{}');
-        stack = adapt(cfg, set, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, twins: twinsMap(), images: imagesForBuilt(cfg, proj, ctx), only: part ? part.services.filter(x => cfg.services && cfg.services[x]) : null, project: part ? proj : null });
+        let images = imagesForBuilt(cfg, proj, ctx);
+        if (set.build && set.build.registryId && Object.values(cfg.services || {}).some(x => x.build)) { // build & push what the files say now
+          step(job, 'read', 'done'); step(job, 'build', 'running', 'Build and push the images');
+          images = { ...images, ...(await require('./swarm-build').buildAll({ project: proj, cfg, r, registryId: set.build.registryId, only: part ? part.services : null, log })) };
+          step(job, 'build', 'done');
+        }
+        stack = adapt(cfg, set, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, twins: twinsMap(), images, only: part ? part.services.filter(x => cfg.services && cfg.services[x]) : null, project: part ? proj : null });
         if (settings) q.put.run({ server_id: sid, name, origin: row.origin, location: row.location, settings: JSON.stringify(set), now: Date.now() });
         step(job, 'read', 'done');
       }
