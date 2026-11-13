@@ -2,6 +2,20 @@
 
 ---
 
+## [2.49.0] - 2026-11-13
+
+### Added
+- **Protected as before, on Move to Swarm and back.** The plan compares each service's protection in Compose with what it will have on Swarm — user, read-only file system, no-new-privileges, seccomp, AppArmor, dropped / added capabilities, privileged, host PID / IPC, user namespace, read-only mounts, where ports can be reached — as *same*, *changed* or *weaker*.
+  - **Kept on Swarm:** stack files drop `security_opt`; DockGate now sets `no-new-privileges`, the seccomp profile (your own file too) and AppArmor *unconfined* on the Swarm service itself (Docker 25+), and again on every Redeploy.
+  - **A weaker service stays in Compose** by default; **Move anyway — less protected on Swarm** in the plan moves it, and the choice is in the audit log.
+  - **Checked after the move:** every Swarm task is compared with the Compose container it replaced; weaker than planned, or `nginx -t` failing in an nginx task, puts the project back in Compose at once.
+  - **Move back** reports anything the services lose in Compose.
+
+### Changed
+- An ingress port that was open on all addresses in Compose is shown as *changed* (every server of the cluster answers on it), not as a risk; a port tied to one address that Swarm would open on all of them is *weaker*.
+
+---
+
 ## [2.48.0] - 2026-11-13
 
 ### Added

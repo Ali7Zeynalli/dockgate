@@ -152,7 +152,7 @@ const hashOf = (cfg) => crypto.createHash('sha256').update(JSON.stringify(cfg)).
  * Look at a compose project: can it move, and what changes? Returns
  * { project, status: ready|attention|impossible, reasons, services:[…], volumes, hash, location }.
  */
-async function analyze(project, { nodes = 1, localImages = null, location = null } = {}) {
+async function analyze(project, { nodes = 1, localImages = null, location = null, settings = null, privilegesOk = false } = {}) {
   const h = helpers();
   if (!h.validateProjectName(project)) throw bad(400, 'Invalid project name');
   const out = { project, status: 'ready', reasons: [], services: [], volumes: [], hash: null, location: null };
@@ -184,6 +184,13 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
     out.bridges.push({ key: k, name, twin: twinName(name), users });
   }
   const block = (m) => { out.status = 'impossible'; out.reasons.push(m); };
+  // What each service will look like on Swarm, to compare its protection with what it has in Compose.
+  const SEC = require('./swarm-security');
+  let onSwarm = { services: {} };
+  try { onSwarm = adapt(cfg, settings || {}, { nodes }); } catch (e) { /* the plan shows the other findings */ }
+  const readFile = r.remote && r.server ? async (f) => { const rc = require('./remote-compose'); const x = await rc.execRemote(r.server, `cat ${rc.shq(f)}`); if (x.code !== 0) throw new Error('not readable'); return x.stdout; } : null;
+  out.privileges = {}; // server side only: what DockGate sets on each Swarm service
+  out.security = {};   // server side only: the predicted comparison (rows)
   for (const [name, s] of Object.entries(cfg.services || {})) {
     const f = []; // findings: { level: info|warn|bad, text }
     const add = (level, text) => f.push({ level, text });
@@ -226,7 +233,7 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
       else if (sc === 'address') add('warn', `port ${p.host_ip}:${p.published}: tied to one address. Swarm can not bind an address, so it is published on this server only (host mode) — allow it only from that network in the firewall`);
     }
     if (isDatabase(image)) add('warn', 'database: stays at 1 replica');
-    const ignored = IGNORED_BY_SWARM.filter(k => s[k] !== undefined && s[k] !== null && !(Array.isArray(s[k]) && !s[k].length));
+    const ignored = IGNORED_BY_SWARM.filter(k => k !== 'security_opt' && s[k] !== undefined && s[k] !== null && !(Array.isArray(s[k]) && !s[k].length));
     if (ignored.length) add('warn', `Swarm has no place for ${ignored.join(', ')} — ${ignored.length === 1 ? 'it is' : 'they are'} left out`);
     const binds = (s.volumes || []).filter(v => v.type === 'bind');
     const vols = (s.volumes || []).filter(v => v.type === 'volume');
@@ -235,15 +242,31 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
     if (s.environment && Object.keys(s.environment).length) add('info', `environment (${Object.keys(s.environment).length}) taken from the files and .env`);
     const secretish = Object.keys(s.environment || {}).filter(k => /(PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|PRIVATE_KEY)$/i.test(k) && !/_FILE$/i.test(k));
     if (secretish.length) add('info', `${secretish.join(', ')} look${secretish.length === 1 ? 's' : ''} like a password in plain environment. If the image reads ${secretish[0]}_FILE (postgres, mysql and many others do), it can become a Swarm secret later (Secrets & configs) — DockGate does not change it by itself.`);
+    // Protection: the same on Swarm, or weaker? Weaker keeps the service in Compose unless "move anyway" was chosen.
+    const otherBad = f.some(x => x.level === 'bad');
+    let secRows = [], weaker = [];
+    if (!otherBad && onSwarm.services[name]) {
+      const kept = privilegesOk ? await SEC.privilegesFor(s, { cwd: r.cwd, readFile }) : { privileges: null, kept: [], lost: [] };
+      if (!privilegesOk && (s.security_opt || []).length) add('warn', 'security_opt: this Docker is older than 25 (API 1.44), so DockGate can not put it back on the Swarm service');
+      if (kept.privileges) out.privileges[name] = kept.privileges;
+      if (kept.kept.length) add('info', `kept on Swarm: ${kept.kept.join(', ')} — stack files drop security_opt, so DockGate sets ${kept.kept.length === 1 ? 'it' : 'them'} on the Swarm service itself`);
+      secRows = SEC.compareProfiles(SEC.profileOfService(s), SEC.predictOnSwarm(onSwarm.services[name], kept));
+      weaker = SEC.weakerRows(secRows);
+      out.security[name] = secRows;
+      const anyway = !!(settings && settings.services && settings.services[name] && settings.services[name].moveAnyway);
+      for (const w of weaker) add(anyway ? 'warn' : 'bad', `less protected on Swarm — ${w.field}: ${w.before} → ${w.after}${w.why ? ` (${w.why})` : ''}${anyway ? ' — moving anyway, as chosen' : ' — it stays in Compose unless you choose "Move anyway"'}`);
+      for (const c of secRows.filter(x => x.verdict === 'changed')) add('info', `${c.field}: ${c.before} → ${c.after}${c.why ? ` (${c.why})` : ''}`);
+    }
     const stays = f.some(x => x.level === 'bad'); // this service can not run on Swarm: it stays in Compose
     if (!stays && out.status === 'ready' && f.some(x => x.level === 'warn')) out.status = 'attention';
-    out.services.push({ name, image, database: isDatabase(image), findings: f, ports: (s.ports || []).map(p => ({ published: Number(p.published) || null, target: p.target, protocol: p.protocol || 'tcp', hostIp: p.host_ip || null, scope: portScope(p) })), hostNetwork: s.network_mode === 'host', healthcheck: !!(s.healthcheck && !s.healthcheck.disable), volumes: vols.map(v => v.source), binds: binds.map(v => v.source), stays });
+    out.services.push({ name, image, database: isDatabase(image), findings: f, ports: (s.ports || []).map(p => ({ published: Number(p.published) || null, target: p.target, protocol: p.protocol || 'tcp', hostIp: p.host_ip || null, scope: portScope(p) })), hostNetwork: s.network_mode === 'host', healthcheck: !!(s.healthcheck && !s.healthcheck.disable), volumes: vols.map(v => v.source), binds: binds.map(v => v.source), stays, security: secRows.filter(x => x.verdict !== 'same'), weaker: weaker.length > 0, securityOnly: !otherBad && weaker.length > 0 });
   }
   if (!out.services.length) block('The project has no services.');
   if (out.bridges.length && out.status === 'ready') out.status = 'attention';
   out.stays = out.services.filter(x => x.stays).map(x => x.name);
   if (out.status !== 'impossible' && out.stays.length) {
-    if (out.stays.length === out.services.length) { out.status = 'impossible'; out.reasons.push('No service of this project can run on Swarm.'); }
+    // Only "less protected" keeps them all: still plannable, so "Move anyway" can be chosen per service.
+    if (out.stays.length === out.services.length && !out.services.every(x => x.securityOnly)) { out.status = 'impossible'; out.reasons.push('No service of this project can run on Swarm.'); }
     else out.status = 'partial'; // the others move; these stay in Compose and are connected to the stack network
   }
   out.cfg = cfg; // server side only
@@ -548,7 +571,9 @@ async function context() {
   try { encrypt = !!(require('./db').stmts.getSetting.get(`swarm_overlay_encrypt:${st.clusterId}`) || {}).value; } catch (e) { /* off */ }
   const images = new Set();
   for (const i of await c.listImages()) for (const t of i.RepoTags || []) images.add(t.replace(/:latest$/, ''));
-  return { st, nodes, hostname: st.serverName, encrypt, localImages: images };
+  let privilegesOk = false; // Swarm services take no-new-privileges / seccomp / AppArmor from API 1.44 (Docker 25)
+  try { const v = await c.version(); const [ma, mi] = String(v.ApiVersion || '0.0').split('.').map(Number); privilegesOk = ma > 1 || (ma === 1 && mi >= 44); } catch (e) { /* older */ }
+  return { st, nodes, hostname: st.serverName, encrypt, localImages: images, privilegesOk };
 }
 
 // ---- listing ----
@@ -561,8 +586,8 @@ async function candidates() {
   for (const p of projects) {
     if (isOnSwarm(p.name)) continue;
     let a;
-    try { a = await analyze(p.name, { nodes: ctx.nodes, localImages: ctx.localImages }); } catch (e) { a = { project: p.name, status: 'impossible', reasons: [e.message], services: [] }; }
-    delete a.cfg;
+    try { a = await analyze(p.name, { nodes: ctx.nodes, localImages: ctx.localImages, privilegesOk: ctx.privilegesOk }); } catch (e) { a = { project: p.name, status: 'impossible', reasons: [e.message], services: [] }; }
+    delete a.cfg; delete a.privileges; delete a.security;
     out.push({ ...a, running: p.running, total: p.total });
   }
   return { projects: out, nodes: ctx.nodes };
@@ -677,6 +702,80 @@ function startBridgeKeeper() { if (!keeper) { keeper = setInterval(keepTwins, 30
  * Move compose projects to Swarm, one at a time. plans: [{ project, hash, settings }].
  * A project that fails its check is put back in Compose; the others go on.
  */
+// ---- protection before and after a move (server/swarm-security.js) ----
+const NGINX = /(^|\/)(nginx|openresty)(:|@|$)/i;
+/** { service: { profile, image, imageName, id } } of the running Compose containers of these services (first replica). */
+async function snapshotCompose(project, services) {
+  const SEC = require('./swarm-security'), out = {};
+  for (const svc of services) {
+    const list = await dockerService.docker.listContainers({ filters: JSON.stringify({ label: [`com.docker.compose.project=${project}`, `com.docker.compose.service=${svc}`] }) }).catch(() => []);
+    if (!list.length) continue;
+    const ct = await dockerService.docker.getContainer(list[0].Id).inspect().catch(() => null);
+    if (ct) out[svc] = { profile: SEC.profileOfContainer(ct), image: ct.Image, imageName: ct.Config.Image, id: ct.Id };
+  }
+  return out;
+}
+/** The same for the running tasks of a stack on this server, keyed by the service name inside the stack. */
+async function snapshotTasks(stackName) {
+  const SEC = require('./swarm-security'), out = {}, c = dockerService.docker;
+  for (const svc of await c.listServices({ filters: stackFilter(stackName) }).catch(() => [])) {
+    const short = svc.Spec.Name.replace(new RegExp(`^${stackName}_`), '');
+    const list = await c.listContainers({ filters: JSON.stringify({ label: [`com.docker.swarm.service.id=${svc.ID}`] }) }).catch(() => []);
+    if (!list.length) continue;
+    const ct = await c.getContainer(list[0].Id).inspect().catch(() => null);
+    if (ct) out[short] = { profile: SEC.profileOfContainer(ct, SEC.portsOfServiceSpec(svc)), image: ct.Image, imageName: ct.Config.Image, id: ct.Id };
+  }
+  return out;
+}
+/** Put no-new-privileges / seccomp / AppArmor on the Swarm services (stack files can not say them). */
+async function applyPrivileges(stackName, privileges, log) {
+  for (const [svc, priv] of Object.entries(privileges || {})) {
+    if (!priv) continue;
+    const s = dockerService.docker.getService(`${stackName}_${svc}`);
+    const info = await s.inspect().catch(() => null);
+    if (!info) continue;
+    const spec = info.Spec;
+    const cs = spec.TaskTemplate.ContainerSpec = spec.TaskTemplate.ContainerSpec || {};
+    cs.Privileges = { ...(cs.Privileges || {}), ...priv };
+    await s.update({ version: info.Version.Index, ...spec });
+    log(`  ${svc}: ${[priv.NoNewPrivileges ? 'no-new-privileges' : null, priv.Seccomp ? `seccomp ${priv.Seccomp.Mode}` : null, priv.AppArmor ? `AppArmor ${priv.AppArmor.Mode}` : null].filter(Boolean).join(', ')} set on the Swarm service`);
+  }
+}
+/**
+ * After a move: compare each running task with the Compose container it replaced. Weaker than the plan said (or
+ * than allowed with "move anyway") fails the move, so it is put back; so does nginx -t failing in a task.
+ */
+async function securityCheck(stackName, snap, planned, log) {
+  const SEC = require('./swarm-security');
+  const now = await snapshotTasks(stackName);
+  const failed = [], rows = {};
+  for (const [svc, b] of Object.entries(snap)) {
+    const a = now[svc];
+    if (!a) { log(`  ${svc}: its task runs on another server — checked by plan only`); continue; }
+    const cmp = SEC.compareProfiles(b.profile, a.profile);
+    rows[svc] = cmp.filter(x => x.verdict !== 'same');
+    const allowed = new Set(SEC.weakerRows((planned && planned[svc]) || []).map(x => x.field));
+    const bad = SEC.weakerRows(cmp).filter(x => !allowed.has(x.field));
+    for (const x of bad) failed.push(`${svc}: ${x.field} ${x.before} → ${x.after}`);
+    if (b.image !== a.image) log(`  ${svc}: runs image ${String(a.image).slice(7, 19)} (it ran ${String(b.image).slice(7, 19)} in Compose) — ${a.imageName} was pulled again`);
+    if (NGINX.test(String(a.imageName).replace(/^docker\.io\//, '').replace(/^library\//, ''))) {
+      const t = await execIn(a.id, ['nginx', '-t']).catch(e => ({ code: 1, out: e.message }));
+      if (t.code !== 0) failed.push(`${svc}: nginx -t fails in the Swarm task (${t.out.split('\n').pop()})`);
+      else log(`  ${svc}: nginx -t passes`);
+    }
+    if (!bad.length) log(`  ${svc}: protected as in Compose${SEC.weakerRows(cmp).length ? ' (apart from what you chose to accept)' : ''}`);
+  }
+  return { failed, rows };
+}
+async function execIn(id, cmd) {
+  const ex = await dockerService.docker.getContainer(id).exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true });
+  const stream = await ex.start({ hijack: true, stdin: false });
+  let out = '';
+  await new Promise((res) => { stream.on('data', d => { out += d.toString('utf8').replace(/[\x00-\x08]/g, ''); }); stream.on('end', res); stream.on('close', res); setTimeout(res, 15000); });
+  const info = await ex.inspect().catch(() => ({ ExitCode: -1 }));
+  return { code: info.ExitCode, out: out.trim() };
+}
+
 async function startMove(plans, { sourceIp } = {}) {
   if (!Array.isArray(plans) || !plans.length) throw bad(400, 'Choose at least one project');
   if (plans.length > 20) throw bad(400, 'At most 20 projects at a time');
@@ -695,11 +794,12 @@ async function startMove(plans, { sourceIp } = {}) {
         log(`\n=== ${p} ===`);
         sk('check', 'running', 'read the compose files again');
         if (isOnSwarm(p, sid)) throw new Error('already runs on Swarm');
-        const a = await analyze(p, { nodes: ctx.nodes, localImages: ctx.localImages });
+        const a = await analyze(p, { nodes: ctx.nodes, localImages: ctx.localImages, settings: plan.settings || {}, privilegesOk: ctx.privilegesOk });
         if (a.status === 'impossible') throw new Error(a.reasons.concat(a.services.flatMap(s => s.findings.filter(f => f.level === 'bad').map(f => `${s.name}: ${f.text}`))).join('; '));
         if (plan.hash && a.hash !== plan.hash) { res.status = 'changed'; throw new Error('the compose files changed after the plan was made — review it again'); }
         r = { files: a.location.files, cwd: a.location.cwd, remote: a.location.remote, server: a.location.serverId ? require('./db').stmts.getServer.get(a.location.serverId) : null };
         partial = a.status === 'partial' ? { project: p, services: a.services.filter(x => !x.stays).map(x => x.name), stays: a.stays } : null;
+        if (partial && !partial.services.length) throw new Error('nothing moves — every service would be less protected on Swarm (choose "Move anyway" for the ones that may)');
         stackName = partial ? `${p}-swarm` : p;
         if (partial) {
           if (q.get.get(sid, stackName) || (await dockerService.docker.listServices({ filters: stackFilter(stackName) })).length) throw new Error(`a stack named ${stackName} already exists`);
@@ -716,6 +816,8 @@ async function startMove(plans, { sourceIp } = {}) {
           for (const br of a.bridges) { await ensureTwin(br.name, ctx.encrypt, log); await connectToTwin(br.name, br.twin, log, { except: partial ? null : p }); }
           sk('bridge', 'done');
         }
+        const moving = partial ? partial.services : a.services.filter(x => !x.stays).map(x => x.name);
+        const snap = await snapshotCompose(p, moving); // the protection it has now, to check the Swarm tasks against
         sk('down', 'running', partial ? `docker compose rm -s -f ${partial.services.join(' ')} (volumes stay)` : 'docker compose down (volumes stay)');
         downAt = Date.now();
         await helpers().runResolved(r, p, partial ? ['rm', '-s', '-f', ...partial.services] : ['down'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
@@ -723,16 +825,22 @@ async function startMove(plans, { sourceIp } = {}) {
         sk('deploy', 'running', 'docker stack deploy');
         deployed = true; // from here a failure removes the stack again
         await deployInOrder(stackName, stack, log, { since: downAt });
+        await applyPrivileges(stackName, a.privileges, log);
         sk('deploy', 'done');
         sk('verify', 'running', 'check every service runs');
         const readyAt = await verify(stackName, log, { since: downAt });
         sk('verify', 'done');
+        sk('secure', 'running', 'check the Swarm tasks are protected as before');
+        const report = await securityCheck(stackName, snap, a.security, log);
+        res.security = report;
+        if (report.failed.length) throw new Error(`less protected on Swarm than planned — ${report.failed.join('; ')}`);
+        sk('secure', 'done');
         if (partial) { sk('connect', 'running', 'connect the services that stay in Compose'); await connectStaying(p, stackName, partial.stays, log); sk('connect', 'done'); }
         res.status = 'moved'; res.downtimeMs = readyAt - downAt;
         q.put.run({ server_id: sid, name: stackName, origin: 'compose', location: JSON.stringify({ files: r.files, cwd: r.cwd, remote: r.remote, serverId: a.location.serverId }), settings: JSON.stringify({ ...(plan.settings || {}), ...(partial ? { partial: { project: p, services: partial.services } } : {}) }), now: Date.now() });
         q.endDeploy.run('done', null, res.downtimeMs, Date.now(), deployId);
         log(`✓ ${partial ? `${partial.services.join(', ')} of ${p} run` : `${p} runs`} on Swarm (down for about ${Math.round(res.downtimeMs / 1000)}s)`);
-        logAction({ sourceIp, server: sid, resourceType: 'swarm-stack', resourceName: stackName, action: 'swarm_move_to_swarm', details: { services: Object.keys(stack.services), downtimeMs: res.downtimeMs, ...(partial ? { project: p, stays: partial.stays } : {}) } });
+        logAction({ sourceIp, server: sid, resourceType: 'swarm-stack', resourceName: stackName, action: 'swarm_move_to_swarm', details: { services: Object.keys(stack.services), downtimeMs: res.downtimeMs, ...(partial ? { project: p, stays: partial.stays } : {}), movedAnyway: Object.entries((plan.settings || {}).services || {}).filter(([, v]) => v && v.moveAnyway).map(([k]) => k), security: res.security ? res.security.rows : undefined } });
       } catch (e) {
         res.error = e.message;
         log(`✗ ${p}: ${e.message}`);
@@ -801,6 +909,19 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
       step(job, 'deploy', 'running', 'docker stack deploy');
       const t = Date.now();
       await stackDeploy(name, stack, log, vars);
+      // stack deploy wrote the services without no-new-privileges / seccomp / AppArmor: put them back
+      if (row.origin === 'compose' && row.location && ctx.privilegesOk) {
+        const part = partialOf(row);
+        const cfg2 = await readConfigSafe(row, part ? part.project : name);
+        const loc = JSON.parse(row.location || 'null') || {};
+        const priv = {};
+        for (const svcName of Object.keys((typeof stack === 'object' && stack.services) || cfg2.services || {})) {
+          const s0 = (cfg2.services || {})[svcName]; if (!s0) continue;
+          const k = await require('./swarm-security').privilegesFor(s0, { cwd: loc.cwd }).catch(() => null);
+          if (k && k.privileges) priv[svcName] = k.privileges;
+        }
+        await applyPrivileges(name, priv, log);
+      }
       step(job, 'deploy', 'done');
       step(job, 'verify', 'running', 'Check every service runs');
       await verify(name, log, { since: t });
@@ -850,6 +971,7 @@ async function startMoveBack(name, { sourceIp } = {}) {
       step(job, 'read', 'running', 'Check the compose files are still there');
       await readConfig(r, proj);
       step(job, 'read', 'done');
+      const before = await snapshotTasks(name);
       step(job, 'rm', 'running', 'Remove the stack (volumes stay)');
       await stackRemove(name, log);
       step(job, 'rm', 'done');
@@ -857,9 +979,19 @@ async function startMoveBack(name, { sourceIp } = {}) {
       await helpers().runResolved(r, proj, ['up', '-d'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
       await keepTwins(); // back on a shared bridge: it joins the twin, so the projects still on Swarm reach it
       step(job, 'up', 'done');
+      // Back in Compose: report any protection the services had on Swarm and lost (the compose files decide; nothing is undone)
+      const after = await snapshotCompose(proj, Object.keys(before));
+      const backRows = [];
+      for (const [svcName, b] of Object.entries(before)) {
+        if (!after[svcName]) continue;
+        const w = require('./swarm-security').weakerRows(require('./swarm-security').compareProfiles(b.profile, after[svcName].profile));
+        for (const x of w) { backRows.push(`${svcName}: ${x.field} ${x.before} → ${x.after}`); log(`  ! ${svcName} is less protected in Compose — ${x.field}: ${x.before} → ${x.after}${x.why ? ` (${x.why})` : ''}`); }
+      }
+      if (!backRows.length && Object.keys(before).length) log('  ✓ protected as on Swarm');
+      job.result = { ...(job.result || {}), security: backRows };
       q.del.run(sid, name);
       q.endDeploy.run('done', null, Date.now() - t, Date.now(), id);
-      logAction({ sourceIp, server: sid, resourceType: 'swarm-stack', resourceName: name, action: 'swarm_move_back', details: { downtimeMs: Date.now() - t } });
+      logAction({ sourceIp, server: sid, resourceType: 'swarm-stack', resourceName: name, action: 'swarm_move_back', details: { downtimeMs: Date.now() - t, lessProtected: (job.result && job.result.security) || [] } });
       log(`✓ ${name} runs in Compose again (down for about ${Math.round((Date.now() - t) / 1000)}s)`);
       finish(job);
     } catch (e) {
@@ -887,16 +1019,16 @@ async function preview(project, settings) {
   const row = q.get.get(serverId(), project); // a stack DockGate keeps (Swarm settings of a moved project)
   const part = row ? partialOf(row) : null;
   const proj = part ? part.project : project;
-  const a = await analyze(proj, { nodes: ctx.nodes, localImages: ctx.localImages, location: row ? JSON.parse(row.location || 'null') : null });
   if (row && !settings) settings = JSON.parse(row.settings || '{}');
-  if (a.status === 'impossible') return { ...a, cfg: undefined, stack: null };
+  const a = await analyze(proj, { nodes: ctx.nodes, localImages: ctx.localImages, location: row ? JSON.parse(row.location || 'null') : null, settings, privilegesOk: ctx.privilegesOk });
+  if (a.status === 'impossible') return { ...a, cfg: undefined, privileges: undefined, security: undefined, stack: null };
   if (part) { a.services = a.services.filter(x => part.services.includes(x.name)); a.status = 'partial'; }
   const images = {};
   for (const s of a.services) if (s.image && !(a.cfg.services[s.name] || {}).image) images[s.name] = s.image;
   const only = part ? part.services : a.status === 'partial' ? a.services.filter(x => !x.stays).map(x => x.name) : null;
   const stack = adapt(a.cfg, settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, twins: { ...twinsMap(), ...Object.fromEntries((a.bridges || []).map(x => [x.name, x.twin])) }, only, project: only ? proj : null });
-  const { cfg, ...rest } = a;
+  const { cfg, privileges, security, ...rest } = a;
   return { ...rest, stack, settings: settings || {} };
 }
 
-module.exports = { startBridgeKeeper, keepTwins, twinName, startLevels, resourcesOf, aliasesOf, portScope, isOnSwarm, stackOfProject, partialOf, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, remoteServer, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf } };
+module.exports = { startBridgeKeeper, keepTwins, twinName, startLevels, resourcesOf, aliasesOf, portScope, isOnSwarm, stackOfProject, partialOf, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, remoteServer, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf, securityCheck, snapshotTasks } };

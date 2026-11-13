@@ -1,6 +1,6 @@
 {
   "name": "dockgate",
-  "version": "2.48.0",
+  "version": "2.49.0",
   "description": "DockGate — A lightweight, browser-based Docker control panel",
   "main": "server/index.js",
   "author": "Ali Zeynalli",

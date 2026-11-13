@@ -117,6 +117,21 @@ Containers that belong to a Compose project are not listed here — move the pro
 
 ---
 
+## Protected as before
+
+Before a service moves, DockGate compares how it is protected in Compose with how it will be on Swarm, field by field: the user it runs as, a read-only file system, `no-new-privileges`, seccomp and AppArmor, the capabilities it drops and adds, privileged, the host PID / IPC namespace, the user namespace, whether its mounts are read-only, and where its ports can be reached.
+
+| Verdict | Meaning |
+|---|---|
+| same | Nothing changes |
+| changed | Different, not weaker — e.g. more isolated, or an ingress port that every server of the cluster answers on |
+| **weaker** | Less protected on Swarm — e.g. a port tied to one address would be open on all of them, a custom AppArmor profile would be replaced by Docker's default |
+
+- **Kept for you:** stack files drop `security_opt`. DockGate sets `no-new-privileges`, the seccomp profile (also your own file) and AppArmor *unconfined* on the Swarm service itself (Docker 25 or newer), and sets them again on every **Redeploy**. The plan says *kept on Swarm: …*.
+- **A weaker service stays in Compose** by default. In the plan it shows what would be weaker, and a **Move anyway — less protected on Swarm** box. Ticking it moves the service; the choice is written to the audit log.
+- **Checked after the move:** each Swarm task is compared with the Compose container it replaced. Weaker than the plan said, or `nginx -t` failing in an nginx task, puts the project back in Compose at once (the stack is removed, `docker compose up -d` runs). An image that was pulled again is noted.
+- **Move back** compares the other way and reports, in its log and the audit log, anything the services had on Swarm and lost in Compose. Nothing is undone: your compose files decide.
+
 ## Stacks
 
 ![Stacks](images/stacks.png)
@@ -195,3 +210,8 @@ Containers that belong to a Compose project are not listed here — move the pro
 | `This container belongs to a compose project — move the project with Migrate` | Container move used on a Compose container | Use Migrate for the project |
 | `The container <name> is gone — remove the stack instead, or keep it on Swarm` | Move back to the container, but the container was deleted | Keep the stack, or remove it |
 | `Job not found (DockGate restarted?)` | DockGate restarted while a job ran | Check **History** for the result |
+| `less protected on Swarm — published ports: 10.0.0.5:8080/tcp → 0.0.0.0:8080/tcp …` | A port tied to one address; Swarm can not bind an address | Keep it in Compose, or tick *Move anyway* and allow the port only from that network in the firewall |
+| `less protected on Swarm — AppArmor: custom → default` | A custom AppArmor profile; Swarm has only Docker's default | Keep it in Compose, or *Move anyway* |
+| `security_opt: this Docker is older than 25 (API 1.44) …` | DockGate can not put no-new-privileges / seccomp back on the service | Update Docker on the managers, or *Move anyway* |
+| `nothing moves — every service would be less protected on Swarm` | Every service is weaker and none was ticked | Tick *Move anyway* for the ones that may move |
+| `less protected on Swarm than planned — …` (the project is put back) | A Swarm task came up weaker than the plan said | Read the field named; nothing changed in Compose |

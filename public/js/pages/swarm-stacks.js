@@ -17,8 +17,10 @@
   function settingsTable(p, settings) {
     const set = settings.services = settings.services || {};
     return UI.table([{ label: 'Service' }, { label: 'Replicas' }, { label: 'Ports' }, { label: 'Updates' }], p.services.map(s => {
-      if (s.stays) return { cells: [`<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '?')}</div>`, '<span class="text-sm" style="color:var(--warning,#d97706)">stays in Compose</span>', `<span class="ui-sub">${esc((s.findings.find(f => f.level === 'bad') || {}).text || '')}</span>`, '<span class="ui-sub">connected to the stack network</span>'] };
       const my = set[s.name] = set[s.name] || {};
+      // Less protected on Swarm only: it stays unless "Move anyway" is ticked (recorded in the audit log).
+      const anyway = s.securityOnly ? `<label class="text-sm" style="display:flex;gap:6px;align-items:center;margin-top:6px;white-space:normal"><input type="checkbox" data-set="${esc(p.project)}|${esc(s.name)}|moveAnyway" ${my.moveAnyway ? 'checked' : ''}> Move anyway — less protected on Swarm</label>` : '';
+      if (s.stays && !(s.securityOnly && my.moveAnyway)) return { cells: [`<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '?')}</div>`, '<span class="text-sm" style="color:var(--warning,#d97706)">stays in Compose</span>', `${s.securityOnly ? securityList(s) : `<span class="ui-sub">${esc((s.findings.find(f => f.level === 'bad') || {}).text || '')}</span>`}${anyway}`, '<span class="ui-sub">connected to the stack network</span>'] };
       const data = s.volumes.length || s.binds.length || s.database;
       return { cells: [
         `<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '?')}</div>`,
@@ -27,6 +29,10 @@
         data ? '<span class="text-sm">stop-first</span><div class="ui-sub">has data: never two copies at once</div>' : `<select class="select" data-set="${esc(p.project)}|${esc(s.name)}|order" style="max-width:200px"><option value="start-first" ${my.order !== 'stop-first' ? 'selected' : ''}>start-first (no downtime)</option><option value="stop-first" ${my.order === 'stop-first' ? 'selected' : ''}>stop-first</option></select>`,
       ] };
     }), { minWidth: 0 });
+  }
+  // What would be weaker on Swarm, field by field.
+  function securityList(s) {
+    return (s.security || []).filter(r => r.verdict === 'weaker').map(r => `<div class="text-sm" style="color:var(--danger,#dc2626);white-space:normal">✗ ${esc(r.field)}: ${esc(r.before)} → ${esc(r.after)}${r.why ? ` <span class="ui-sub">(${esc(r.why)})</span>` : ''}</div>`).join('');
   }
   // Ports: open ones get ingress / host; ones only this server could reach (127.0.0.1) stay inside unless asked.
   function portsCell(p, s, my) {
@@ -48,6 +54,7 @@
     root.querySelectorAll('[data-set]').forEach(el => {
       const [proj, svc, key] = el.dataset.set.split('|');
       const st = all[proj].services[svc] = all[proj].services[svc] || {};
+      if (el.type === 'checkbox') { if (el.checked) st[key] = true; else delete st[key]; return; }
       if (key === 'replicas') { const n = Number(el.value); if (el.value.trim() === '' || !Number.isInteger(n) || n < 0) { delete st[key]; return; } st[key] = n; } // empty → the default (1)
       else st[key] = el.value;
     });
@@ -92,7 +99,7 @@
           }), { minWidth: 760 })}
           <div class="text-sm" style="margin-top:6px"><b>Volumes that stay the same:</b> ${pv.volumes.length ? pv.volumes.map(v => `<span class="td-mono">${esc(v.name)}</span>`).join(', ') : 'none'}. <b>Network:</b> ${Object.entries(pv.stack.networks || {}).map(([k, n]) => `<span class="td-mono">${esc(n.name || `${sname}_${k}`)}</span> (overlay)`).join(', ') || `${esc(sname)}_default (overlay)`}.</div>`;
       }).join('') + `<div class="insight-card info" style="margin-top:12px"><div><b>What happens, one project at a time:</b> the files are read again (if they changed since this plan, the project is not moved) → <span class="td-mono">docker compose down</span> (volumes stay) → <span class="td-mono">docker stack deploy</span> under the same name → every service must run and stay up for 30 s. If not, it is put back: the stack is removed and <span class="td-mono">docker compose up -d</span> runs. <b>The project is down from compose down until its services run on Swarm</b> — usually 10–60 s. The compose files are not changed.${previews.some(pv => pv.status === 'partial') ? ' <b>For part of a project</b> only the moving services are stopped, and the stack gets the name <i>project</i>-swarm.' : ''}</div></div>`;
-      next.disabled = previews.every(pv => !pv.stack);
+      next.disabled = previews.every(pv => !pv.stack || !Object.keys(pv.stack.services || {}).length);
     }
     back.onclick = () => { step = 0; render(); };
     next.onclick = async () => {
