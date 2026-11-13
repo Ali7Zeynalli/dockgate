@@ -47,12 +47,15 @@ async function run(c, id, cmd) {
 }
 
 /** Reload the proxies so they see the replicas now running. A config that does not pass its check is left alone. */
-async function reloadProxies(c, proxies, log = () => {}) {
-  for (const p of proxies) {
+// opts.tested: { [proxyId]: true } — nginx -t already passed (a rolling update checks once, then reloads fast).
+async function reloadProxies(c, proxies, log = () => {}, opts = {}) {
+  await Promise.all(proxies.map(async (p) => {
     try {
       if (p.kind === 'nginx') {
-        const t = await run(c, p.id, ['nginx', '-t']);
-        if (t.code !== 0) { log(`  ! ${p.name}: nginx -t failed — not reloaded: ${t.out.split('\n').pop()}`); continue; }
+        if (!(opts.tested && opts.tested[p.id])) {
+          const t = await run(c, p.id, ['nginx', '-t']);
+          if (t.code !== 0) { log(`  ! ${p.name}: nginx -t failed — not reloaded: ${t.out.split('\n').pop()}`); return; }
+        }
         const r = await run(c, p.id, ['nginx', '-s', 'reload']);
         log(r.code === 0 ? `  ${p.name}: nginx reloaded` : `  ! ${p.name}: reload failed: ${r.out}`);
       } else if (p.kind === 'caddy') {
@@ -60,7 +63,25 @@ async function reloadProxies(c, proxies, log = () => {}) {
         log(r.code === 0 ? `  ${p.name}: caddy reloaded` : `  ! ${p.name}: caddy reload failed: ${r.out.split('\n').pop()}`);
       } // traefik and haproxy (with Docker DNS) follow Docker by themselves
     } catch (e) { log(`  ! ${p.name}: ${e.message}`); }
+  }));
+}
+/** nginx -t on each nginx; returns { [id]: true } for those that pass (for reloadProxies' opts.tested). */
+async function testProxies(c, proxies, log = () => {}) {
+  const ok = {};
+  for (const p of proxies.filter(x => x.kind === 'nginx')) {
+    const t = await run(c, p.id, ['nginx', '-t']).catch(e => ({ code: 1, out: e.message }));
+    if (t.code === 0) ok[p.id] = true; else log(`  ! ${p.name}: nginx -t failed — it will not be reloaded: ${t.out.split('\n').pop()}`);
   }
+  return ok;
+}
+/**
+ * How long nginx waits to connect to a replica (proxy_connect_timeout, seconds; nginx's default is 60). A replica
+ * that just went away does not refuse — the connection hangs this long before nginx tries another one.
+ */
+function connectTimeoutOf(conf) {
+  const m = [...String(conf || '').matchAll(/^\s*proxy_connect_timeout\s+(\d+)(ms|s|m)?\s*;/gm)];
+  if (!m.length) return 60;
+  return Math.max(...m.map(x => (x[2] === 'ms' ? Number(x[1]) / 1000 : x[2] === 'm' ? Number(x[1]) * 60 : Number(x[1]))));
 }
 
 /**
@@ -79,4 +100,4 @@ async function drainAndStop(c, ids, log = () => {}) {
   }
 }
 
-module.exports = { kindOf, findProxies, nginxUsesResolver, reloadProxies, drainAndStop };
+module.exports = { kindOf, findProxies, nginxUsesResolver, reloadProxies, testProxies, connectTimeoutOf, drainAndStop };

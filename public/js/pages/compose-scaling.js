@@ -26,9 +26,10 @@ window.ComposeScaling = (() => {
         if (s.fixes.dropPorts) notes.push('<span class="ui-sub">host port moved behind the proxy</span>');
         if (s.fixes.dropName) notes.push(`<span class="ui-sub">still answers as ${esc((s.aliases || []).join(', ') || s.containerName || 'its old name')}</span>`);
         for (const b of s.behind) notes.push(`<span class="ui-sub">behind ${esc(b.name)}${b.usesResolver ? ' (finds new replicas by itself)' : ' — reloaded after each change'}</span>`);
+        for (const b of s.behind.filter(x => x.connectTimeout > 5)) notes.push(`<span class="ui-sub" style="color:var(--warning)">${esc(b.name)} waits ${b.connectTimeout} s for a replica that just stopped — add <span class="td-mono">proxy_connect_timeout 2s;</span> so a request moves on to another replica at once</span>`);
         const state = s.drift ? UI.pill('warn', `drift: ${s.replicas} running, ${s.wanted} wanted`) : s.replicas ? UI.pill('ok', `${s.replicas} running`) : UI.pill('off', 'stopped');
         return { cells: [
-          `<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '')}</div>${notes.length ? `<div style="margin-top:4px;white-space:normal;max-width:280px">${notes.join('<br>')}</div>` : ''}`,
+          `<b>${esc(s.name)}</b>${s.rollable ? ` <button class="btn btn-xs btn-secondary" data-roll="${esc(s.name)}" title="New replicas with the current compose file and image, one at a time, without downtime">Roll out…</button>` : ''}<div class="ui-sub td-mono">${esc(s.image || '')}</div>${notes.length ? `<div style="margin-top:4px;white-space:normal;max-width:280px">${notes.join('<br>')}</div>` : ''}`,
           `${s.auto && s.auto.mode === 'auto' ? `<b>${s.replicas}</b> <span class="ui-sub">of ${s.auto.min}–${s.auto.max}</span>` : `<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-xs btn-secondary" data-minus="${esc(s.name)}" ${s.wanted <= 0 ? 'disabled' : ''}>−</button><b style="min-width:22px;text-align:center">${s.wanted}</b><button class="btn btn-xs btn-secondary" data-plus="${esc(s.name)}" ${!canMore || s.wanted >= 20 ? 'disabled' : ''} title="${canMore ? 'Add a replica' : esc(sc.block)}">+</button></div>`}${autoChip(s)}`,
           `<span class="text-sm">${lim}</span><div class="ui-sub">from your compose file</div>`,
           `${state}${s.drift ? ` <button class="btn btn-xs btn-secondary" data-fix="${esc(s.name)}" data-n="${s.wanted}">Fix</button>` : ''}`,
@@ -43,6 +44,7 @@ window.ComposeScaling = (() => {
         <div class="ui-sub" style="margin-top:8px">Docker Compose ${esc(data.composeVersion || '?')} on this server.</div>
         ${historyBlock()}
         <div data-sc-log class="text-sm td-mono" style="white-space:pre-wrap;margin-top:8px"></div>`;
+      root.querySelectorAll('[data-roll]').forEach(b => b.onclick = () => rollOut(b.dataset.roll));
       root.querySelectorAll('[data-rule]').forEach(b => b.onclick = () => ruleDialog(b.dataset.rule));
       root.querySelectorAll('[data-apply]').forEach(b => b.onclick = () => applySuggestion(b.dataset.apply, Number(b.dataset.to)));
       root.querySelectorAll('[data-heal]').forEach(t => t.onclick = () => heal(t.dataset.heal, t.getAttribute('aria-checked') !== 'true'));
@@ -82,6 +84,21 @@ window.ComposeScaling = (() => {
         `<span class="ui-sub">${esc(e.executor === 'agent' ? 'agent' : 'DockGate')}</span>`,
       ] }));
       return `<div style="margin-top:16px">${UI.header('Auto Scaling history', 'What Auto Scaling did, would do (Suggest, Simulating), or could not do (server full).')}${UI.table([{ label: 'When' }, { label: 'Service' }, { label: 'What' }, { label: 'Why' }, { label: 'By' }], rows, { minWidth: 700 })}</div>`;
+    }
+    async function rollOut(name) {
+      const s = data.services.find(x => x.name === name);
+      window.__dgRollPull = true;
+      const ok = await confirmDialog(`Roll out ${name}`, `<div class="text-sm">DockGate starts a new replica of <b>${esc(name)}</b> with the compose file and image as they are now, waits until it is ready (healthy, or running steadily), then stops one old replica gracefully — ${s.replicas} time${s.replicas === 1 ? '' : 's'}. Requests keep being served the whole time.<br><br>If the first new replica is not ready, it is removed and nothing old is touched.</div><label class="text-sm" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" checked onchange="window.__dgRollPull=this.checked"> Pull the image first</label>`, 'Roll out');
+      if (!ok) return;
+      const pull = window.__dgRollPull !== false;
+      const logEl = root.querySelector('[data-sc-log]');
+      root.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      if (logEl) logEl.textContent = `Rolling out ${name}…`;
+      try { const r = await API.post(`/compose/${encodeURIComponent(project)}/scaling/${encodeURIComponent(name)}/rollout`, { pull }); showToast(`${name}: ${r.replaced} replica${r.replaced === 1 ? '' : 's'} updated without downtime`); if (logEl) logEl.textContent = r.log || ''; }
+      catch (e) { showToast(e.message, 'error'); if (logEl) logEl.textContent = e.message; }
+      const keep = logEl ? logEl.textContent : '';
+      await load();
+      const l2 = root.querySelector('[data-sc-log]'); if (l2) l2.textContent = keep;
     }
     async function applySuggestion(name, to) {
       root.querySelectorAll('button').forEach(b => { b.disabled = true; });

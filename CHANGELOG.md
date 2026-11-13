@@ -2,6 +2,22 @@
 
 ---
 
+## [2.48.0] - 2026-11-13
+
+### Added
+- **Rolling updates of Compose services, without downtime.** A service that can run as several replicas is updated one replica at a time: Compose starts one new replica with the current compose file and image, DockGate waits until it is ready (healthy, or running steadily), reloads nginx / Caddy, stops one old replica gracefully, and repeats.
+  - **Roll out…** next to each such service in Scaling & health (after changing the image tag or the compose file), with *Pull the image first*.
+  - **Newer image → Update** of a Compose service now rolls out instead of recreating the whole service.
+  - **If the first new replica is not ready, it is removed and nothing old was touched** (for an image update the tag is pointed back). If a later one fails, the message says how many were updated; an image update then puts every replica back on the previous image.
+  - Recorded in Deploy history (*rollout*) and the audit log.
+  - In tests with a request every 100 ms through nginx, 3 replicas were rolled out several times with no failed request.
+- **nginx warning in Scaling & health:** an nginx in front without a short `proxy_connect_timeout` waits up to 60 s for a replica that just stopped; the panel says so and what to add.
+
+### Changed
+- During a roll out, `nginx -t` runs once before the switch and the reloads are then immediate, and the proxies are reloaded in parallel — the moment in which nginx can still send a request to a replica that just stopped is as short as possible.
+
+---
+
 ## [2.47.0] - 2026-11-13
 
 ### Added

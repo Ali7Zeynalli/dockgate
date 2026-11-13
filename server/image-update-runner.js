@@ -366,6 +366,15 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
   // Recreate with the image the tag points at now; returns { ids, undo, commit }.
   const recreate = async () => {
     if (isCompose) {
+      // Several replicas possible: replace them one by one, so the service never goes down (compose-rollout.js).
+      const RO = require('./compose-rollout');
+      const can = await RO.canRoll(project, service).catch(() => ({ ok: false }));
+      if (can.ok) {
+        sameServer();
+        log(`Updating ${service} replica by replica, without downtime (${can.replicas} running)`);
+        const out = await RO.rollout(project, service, { log, record: false });
+        return { ids: out.ids, all: out.ids, rolled: true };
+      }
       await composeUp();
       const list = await serviceContainers(client, project, service);
       return { ids: list.filter(c => c.State === 'running').map(c => c.Id), all: list.map(c => c.Id) };
@@ -416,7 +425,23 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
       const after = await imageFacts(client, toId, ref);
       log(`${kind === 'update' ? 'Update' : 'Roll back'}: ${before.version || short(before.id)} → ${after.version || short(after.id)}`);
       step(job, 'recreate', 'running', isCompose ? `Recreate service ${service}` : `Recreate ${name}`);
-      const rc = await recreate();
+      let rc;
+      try { rc = await recreate(); } catch (e) {
+        if (!e.kept && !(e.replaced > 0)) throw e;
+        if (!e.kept) { // stopped part way: put every replica back on the previous image
+          step(job, 'recreate', 'failed');
+          await retag(before.id); await composeUp();
+          log(`✓ The previous image (${before.version || short(before.id)}) is running again on every replica`);
+          result = { status: 'rolled_back', to: after, newId: null, error: e.message };
+          return;
+        }
+        // The rolling update stopped at its first new replica: the old ones never stopped. Point the tag back.
+        step(job, 'recreate', 'failed');
+        await retag(before.id);
+        log(`✓ The previous image (${before.version || short(before.id)}) keeps running — nothing was stopped`);
+        result = { status: 'rolled_back', to: after, newId: null, error: e.message };
+        return;
+      }
       step(job, 'recreate', 'done');
       step(job, 'watch', 'running', 'Check the new container');
       try {

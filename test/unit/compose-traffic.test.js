@@ -21,3 +21,11 @@ test('nginxUsesResolver: static proxy_pass needs a reload, resolver + variable o
   assert.equal(T.nginxUsesResolver('resolver 127.0.0.11; upstream b { zone b 64k; server api:8080 resolve; }', 'api'), true);
   assert.equal(T.nginxUsesResolver('# resolver 127.0.0.11;\nset $u http://api:8080; proxy_pass $u;', 'api'), false, 'a commented resolver does not count');
 });
+
+test('connectTimeoutOf reads proxy_connect_timeout (nginx default 60 s)', () => {
+  const T = require('../../server/compose-traffic');
+  assert.equal(T.connectTimeoutOf('server { location / { proxy_pass http://api; } }'), 60);
+  assert.equal(T.connectTimeoutOf('  proxy_connect_timeout 2s;\n'), 2);
+  assert.equal(T.connectTimeoutOf('proxy_connect_timeout 500ms;'), 0.5);
+  assert.equal(T.connectTimeoutOf('# proxy_connect_timeout 2s;'), 60, 'a comment does not count');
+});

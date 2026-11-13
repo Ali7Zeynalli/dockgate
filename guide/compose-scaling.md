@@ -83,6 +83,33 @@ The rule has the same fields as Swarm Auto Scaling: add at CPU % (and/or memory 
 
 **Who runs it:** the Edge agent on that server, every 30 seconds — also while DockGate is offline; DockGate reads what it did into the history. On a server without an up-to-date agent, DockGate runs the same loop every minute while it is online. The **By** column of the history says which.
 
+## Updates without downtime (Roll out)
+
+A service that can run as several replicas is updated **one replica at a time**, so requests keep being served:
+
+1. Compose starts **one new replica** with the compose file and image as they are now (`up --no-recreate --scale <service>=N+1` — the running ones are not touched).
+2. DockGate waits until it is **ready**: healthy by its own health check, or running for 10 seconds without restarting (up to 3 minutes).
+3. The proxies are reloaded, **one old replica stops gracefully**, the proxies are reloaded again, and the old container is removed.
+4. Repeat until every replica is new.
+
+**If the first new replica is not ready** (it exits, keeps restarting, or is unhealthy), it is removed and **nothing old was touched**. If a later one fails, the new ones that passed stay and the rest still run the previous version; the message says how many were updated.
+
+Where it is used:
+
+- **Roll out…** next to a service in Scaling & health — after you changed the image tag or anything else in the compose file. *Pull the image first* is on by default.
+- **Newer image → Update** (Containers, Updates) of a Compose service that can run as several replicas: it rolls out instead of recreating the whole service. If the update fails at the first new replica, the image tag is pointed back and the old replicas never stopped; if it fails later, every replica is put back on the previous image.
+
+A service that can not run as several replicas (a database, a writable volume, a host port or `container_name` that was not fixed) is updated the usual way, with a short stop.
+
+**nginx and the switch:** a plain `proxy_pass http://api:80;` keeps the addresses it found at its last reload. In the moment between an old replica stopping and the reload, a request can be sent to the address that just went away; that address does not refuse, so nginx waits `proxy_connect_timeout` — **60 s by default** — before it tries another replica. DockGate keeps that moment as short as it can (it checks `nginx -t` once before, then reloads at once), and the panel warns when an nginx in front still has the long default. Add this to the `location`:
+
+```nginx
+proxy_connect_timeout 2s;
+proxy_next_upstream error timeout;
+```
+
+In tests with a request every 100 ms through nginx, 3 replicas were rolled out with no failed request (with the 2 s setting none took longer than a few milliseconds).
+
 ## nginx in front
 
 For replicas to share the traffic, nginx must reach the service by its name. Two ways, both work with DockGate:
@@ -124,5 +151,9 @@ If someone runs `docker compose up` on the server without DockGate's override, t
 | `This service has no CPU or memory limit in its compose file — Auto Scaling needs one…` | No `cpus` / `mem_limit` | Add a limit to the compose file and redeploy |
 | `… needs its host port moved behind the proxy before it can have more than one replica — press + once…` | A rule with a maximum above 1 on a service that needs a fix | Press `+` once and accept the fix, then set the rule |
 | `Remove at a CPU % at least 10 below the add %…` | The two thresholds are too close | Keep 10 or more between them |
+| `… can not be updated without downtime: it takes a host port …` | Roll out on a service with an unfixed host port or `container_name` | Press `+` once in Scaling & health and accept the fix |
+| `… the new container stopped (exit code N) — nothing was changed, the previous replicas keep running` | The new image or config does not start | Read the container's logs; fix and roll out again |
+| `… after 1 of 3 replicas were updated — the others still run the previous version` | A later new replica was not ready | Fix and roll out again |
+| nginx warning: *waits 60 s for a replica that just stopped* | `proxy_connect_timeout` not set | Add `proxy_connect_timeout 2s;` (above) |
 | History: *server full* | No room for one more replica's limits | Free memory / CPU, lower the limit, or accept fewer replicas |
 | nginx: `host not found in upstream "api"` when nginx restarts | A static `proxy_pass` needs the service up when nginx starts | Add `depends_on: [api]` to nginx, or use the resolver form above |
