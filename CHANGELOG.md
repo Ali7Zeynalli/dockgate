@@ -2,6 +2,14 @@
 
 ---
 
+## [2.53.1] - 2026-11-13
+
+### Docs
+- README: Scaling & health (replicas, auto-heal, Auto Scaling, Roll out — without Swarm), Swarm protection on the move, Build & push, secrets from files, privileged → cap_add, macvlan, Swarm → Firewall, the Edge agent's signed control channel, and the 2 new alert rules (24 in all).
+- Guide: Scaling & health intro and columns, Settings → alert rules (Compose), Containers → Update… on Compose replicas, Compose menu and index descriptions.
+
+---
+
 ## [2.53.0] - 2026-11-13
 
 ### Added
