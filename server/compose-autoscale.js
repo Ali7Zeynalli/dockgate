@@ -14,6 +14,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS compose_scaling_log (
   from_r INTEGER, to_r INTEGER, reason TEXT, mode TEXT, ok INTEGER, executor TEXT
 )`);
 db.exec('CREATE INDEX IF NOT EXISTS compose_scaling_log_p ON compose_scaling_log (server_id, project, t)');
+// Every 2 minutes, for services with a row in Scaling & health: replicas and their use against their own limits (48 h).
+db.exec(`CREATE TABLE IF NOT EXISTS compose_service_samples (
+  server_id TEXT NOT NULL, project TEXT NOT NULL, service TEXT NOT NULL, t INTEGER NOT NULL,
+  replicas INTEGER, cpu REAL, cpu_max REAL, mem REAL, mem_max REAL
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS compose_service_samples_k ON compose_service_samples (server_id, project, service, t)');
 const q = {
   log: db.prepare('INSERT INTO compose_scaling_log (server_id, project, service, t, from_r, to_r, reason, mode, ok, executor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
   history: db.prepare('SELECT service, t, from_r, to_r, reason, mode, ok, executor FROM compose_scaling_log WHERE server_id = ? AND project = ? ORDER BY t DESC LIMIT 100'),
@@ -183,6 +189,78 @@ async function tick(now = Date.now()) {
     q.trim.run(now - 30 * 24 * 3600 * 1000);
   } finally { running = false; }
 }
-function start() { if (!timer) { timer = setInterval(() => tick().catch(() => {}), EVERY_MS); if (timer.unref) timer.unref(); } }
+// ---- suggestions from the last 48 hours ----
+const SAMPLE_MS = 2 * 60 * 1000;
+async function sampleTick(now = Date.now()) {
+  const { measureService } = require('../agent/src/control/measure');
+  const ins = db.prepare('INSERT INTO compose_service_samples (server_id, project, service, t, replicas, cpu, cpu_max, mem, mem_max) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const rows = db.prepare('SELECT DISTINCT server_id, project, service FROM compose_scaling').all();
+  const clients = {};
+  for (const r of rows) {
+    const c = clients[r.server_id] = clients[r.server_id] || clientFor(r.server_id);
+    if (!c) continue;
+    const m = await measureService(c, r.project, r.service).catch(() => null);
+    if (m && Number.isFinite(m.cpu)) ins.run(r.server_id, r.project, r.service, now, m.replicas, m.cpu, m.cpuMax, m.mem, m.memMax);
+  }
+  db.prepare('DELETE FROM compose_service_samples WHERE t < ?').run(now - 48 * 3600 * 1000);
+}
+const pctl = (arr, p) => { if (!arr.length) return 0; const a = [...arr].sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.max(0, Math.ceil(p / 100 * a.length) - 1))]; };
+/**
+ * Replicas for a rule from what the service really did. samples: [{ t, replicas, cpu, mem }] — cpu / mem as % of one
+ * replica's own limit (mem null without a memory limit). lim: the limits from the compose file (never suggested: they
+ * are the user's). fits: replicas more that fit on the server, or Infinity. Pure.
+ */
+function suggestFrom(samples, lim = {}, fits = Infinity, { cpuUp = 70, cpuDown = 25, current = 1 } = {}) {
+  const rows = (samples || []).filter(s => s.replicas > 0 && Number.isFinite(s.cpu));
+  const hours = rows.length > 1 ? Math.round((rows[rows.length - 1].t - rows[0].t) / 360000) / 10 : 0;
+  if (rows.length < 30) return { enough: false, readings: rows.length, hours, values: null, why: {}, notes: [] };
+  // the whole load counted in replicas running at 100 % of their limit
+  const load = rows.map(s => s.cpu * s.replicas / 100), per = rows.map(s => s.cpu);
+  const memRows = rows.filter(s => Number.isFinite(s.mem));
+  const memLoad = memRows.map(s => s.mem * s.replicas / 100), memPer = memRows.map(s => s.mem);
+  const memSwing = memPer.length >= 30 && pctl(memPer, 95) > 50 && pctl(memPer, 95) > pctl(memPer, 50) * 1.5;
+  const memUp = memSwing ? 75 : null;
+  const by = (v, at) => Math.ceil(v / (at / 100) - 1e-9);
+  const min = Math.max(1, by(pctl(load, 50), cpuUp), memSwing ? by(pctl(memLoad, 50), memUp) : 0);
+  const need = Math.max(1, by(pctl(load, 95), cpuUp), memSwing ? by(pctl(memLoad, 95), memUp) : 0);
+  let max = Math.min(20, Math.max(min + 1, 2, Math.ceil(need * 1.5)));
+  const notes = [];
+  if (Number.isFinite(fits) && max > current + fits) { const capped = Math.max(min, current + fits); notes.push(`Only ${fits} more replica${fits === 1 ? '' : 's'} fit on the server, so the maximum is ${capped} instead of ${max}.`); max = capped; }
+  const p95 = Math.round(pctl(per, 95));
+  if (p95 < 20 && lim.cpu) notes.push(`Each replica used at most ${p95}% of its ${lim.cpu} CPU limit — the limit is much higher than it needs. That is your choice in the compose file; DockGate does not change it, but a lower limit would let more replicas fit.`);
+  if (pctl(per, 95) < 2) notes.push('The service was almost idle: these numbers are a safe start — look again after a busy day.');
+  return {
+    enough: true, readings: rows.length, hours, notes,
+    values: { min, max, cpuUp, cpuDown, memUp, memDown: memUp ? memUp - 30 : null },
+    why: {
+      min: `usually ${Math.round(pctl(load, 50) * 100)}% of one replica's CPU limit in all — fits in ${min} at ${cpuUp}%`,
+      max: `at its busiest (95% of the time) ${Math.round(pctl(load, 95) * 100)}% — needs ${need}; the maximum is 1.5× that`,
+      cpuUp: `per replica it used ${Math.round(pctl(per, 50))}% usually and ${p95}% at most`,
+      memUp: memSwing ? `memory rose from ${Math.round(pctl(memPer, 50))}% to ${Math.round(pctl(memPer, 95))}% of its limit with load` : 'memory stayed about the same: CPU alone is enough',
+    },
+  };
+}
+async function suggest(project, service) {
+  const S = CS();
+  S.checkName(project, 'Project'); S.checkName(service, 'Service');
+  const sid = require('./docker').getActiveServerId() || 'local';
+  if (!q.row.get(sid, project, service)) db.prepare('INSERT OR IGNORE INTO compose_scaling (server_id, project, service, updated_at) VALUES (?, ?, ?, ?)').run(sid, project, service, Date.now()); // start collecting
+  const samples = db.prepare('SELECT t, replicas, cpu, mem FROM compose_service_samples WHERE server_id = ? AND project = ? AND service = ? AND t >= ? ORDER BY t').all(sid, project, service, Date.now() - 48 * 3600 * 1000);
+  const docker = require('./docker').docker;
+  const reps = await S.replicasOf(docker, project, service).catch(() => []);
+  let lim = { cpu: 0, mem: 0 }, fits = Infinity;
+  if (reps.length) {
+    lim = await require('../agent/src/control/measure').limitsOfContainer(docker, reps[0].id).catch(() => lim);
+    const cap = await readCap(sid, docker).catch(() => null);
+    if (cap && (lim.cpu || lim.mem)) fits = require('../agent/src/control/scale-decision').hostRoom(cap, lim).fits;
+  }
+  return suggestFrom(samples, lim, fits, { current: reps.length || 1 });
+}
 
-module.exports = { ruleOf, validateRule, saveRule, syncOverride, importAgent, history, record, tick, start, SIM_MS };
+let sampler = null;
+function start() {
+  if (!timer) { timer = setInterval(() => tick().catch(() => {}), EVERY_MS); if (timer.unref) timer.unref(); }
+  if (!sampler) { sampler = setInterval(() => sampleTick().catch(() => {}), SAMPLE_MS); if (sampler.unref) sampler.unref(); }
+}
+
+module.exports = { suggest, suggestFrom, sampleTick, ruleOf, validateRule, saveRule, syncOverride, importAgent, history, record, tick, start, SIM_MS };

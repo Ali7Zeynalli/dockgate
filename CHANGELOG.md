@@ -2,6 +2,13 @@
 
 ---
 
+## [2.53.0] - 2026-11-13
+
+### Added
+- **Suggest from the last 48 h** in the Compose Auto Scaling rule: minimum, maximum and thresholds from what the service really did. DockGate reads each service in Scaling & health every 2 minutes and keeps 48 hours (asking for a suggestion starts it; about an hour is needed). Each value says why; the maximum is cut to what fits on the server. Only replicas are suggested — the limits stay yours, with a note when a replica uses far less than its limit.
+
+---
+
 ## [2.52.0] - 2026-11-13
 
 ### Added

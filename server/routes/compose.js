@@ -429,6 +429,9 @@ router.put('/:project/scaling/:service/rule', async (req, res) => {
     res.json(await require('../compose-autoscale').saveRule(req.params.project, req.params.service, req.body || {}, { sourceIp: req.ip }));
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 });
+router.get('/:project/scaling/:service/suggest', async (req, res) => {
+  try { res.json(await require('../compose-autoscale').suggest(req.params.project, req.params.service)); } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
 router.get('/:project/scaling/history', async (req, res) => {
   try {
     const project = req.params.project;

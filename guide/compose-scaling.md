@@ -70,6 +70,8 @@ The chip under the replicas (**Auto scaling: off**) opens the rule of a service.
 
 ![The rule](images/compose-autoscale-rule.png)
 
+**Suggest from the last 48 h** (in the rule) fills in the minimum, maximum and thresholds from what the service really did: DockGate reads its replicas every 2 minutes (once a service is in Scaling & health; asking for a suggestion starts it) and keeps 48 hours. It needs about an hour of readings. Each value says why; it only suggests replicas — **your limits are never changed**, but when a replica uses far less than its limit the suggestion says so (a lower limit would let more replicas fit). The maximum is cut to what fits on the server.
+
 The rule has the same fields as Swarm Auto Scaling: add at CPU % (and/or memory %), remove at a % at least 10 lower, for how many minutes, the wait after each change, and how many replicas per change.
 
 **It is safe by design:**

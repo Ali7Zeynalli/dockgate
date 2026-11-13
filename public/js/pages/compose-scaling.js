@@ -111,6 +111,8 @@ window.ComposeScaling = (() => {
       const num = (k, label, help, v, lo, hi) => `<label class="ui-field"><span class="ui-label">${label}</span><input class="input" type="number" min="${lo}" max="${hi}" data-k="${k}" value="${v ?? ''}"><span class="ui-sub">${help}</span></label>`;
       const sim = a.mode === 'auto' && a.simulateUntil > Date.now();
       const body = `
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><button class="btn btn-xs btn-secondary" data-suggest>Suggest from the last 48 h</button><span class="ui-sub" data-sug-msg></span></div>
+        <div data-sug-why class="text-sm" style="display:none;margin-bottom:10px;white-space:normal"></div>
         <div class="text-sm" style="margin-bottom:10px">Measured against the limits in your compose file: <b>${s.limits.cpu ? `${s.limits.cpu} CPU` : 'no CPU limit'}</b> · <b>${s.limits.mem ? mb(s.limits.mem) : 'no memory limit'}</b> per replica. A replica is added only when the server has room for its limits.</div>
         <label class="ui-field" style="margin-bottom:10px"><span class="ui-label">Mode</span><select class="select" data-k="mode">
           <option value="off" ${a.mode === 'off' ? 'selected' : ''}>Off</option>
@@ -135,6 +137,20 @@ window.ComposeScaling = (() => {
           return true;
         } },
       ]);
+      // Values from what the service really did (replicas only — the limits are yours).
+      const sb = d.overlay.querySelector('[data-suggest]');
+      sb.onclick = async () => {
+        const msg = d.overlay.querySelector('[data-sug-msg]'), why = d.overlay.querySelector('[data-sug-why]');
+        sb.disabled = true; msg.textContent = 'Reading the last 48 hours…';
+        try {
+          const r = await API.get(`/compose/${encodeURIComponent(project)}/scaling/${encodeURIComponent(name)}/suggest`);
+          if (!r.enough) { msg.textContent = `Not enough readings yet (${r.readings} of 30 — DockGate reads every 2 minutes, so about an hour). It is collecting now.`; return; }
+          for (const [k, v] of Object.entries(r.values)) { const el = d.overlay.querySelector(`[data-k="${k}"]`); if (el && v !== null && v !== undefined) el.value = v; }
+          msg.textContent = `From ${r.readings} readings over ${r.hours} h — check and Save.`;
+          why.style.display = '';
+          why.innerHTML = Object.entries(r.why).map(([k, t]) => `<div><b>${esc(k)}</b>: ${esc(t)}</div>`).join('') + (r.notes || []).map(n => `<div class="ui-sub" style="margin-top:4px">${esc(n)}</div>`).join('');
+        } catch (e) { msg.textContent = e.message; } finally { sb.disabled = false; }
+      };
     }
     // Auto-heal: own health check, or the agent's port check; without either there is nothing to watch.
     function healCell(s) {

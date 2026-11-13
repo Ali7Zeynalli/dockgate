@@ -70,3 +70,19 @@ test('limitsOf reads every way limits are written', () => {
   assert.deepEqual(S.limitsOf({}), { cpu: 0, mem: 0 });
   assert.equal(S.verAtLeast('5.6.1', '2.24.4'), true); assert.equal(S.verAtLeast('2.24.3', '2.24.4'), false);
 });
+
+test('Compose Auto Scaling suggestions: replicas from the real load, limits left alone', () => {
+  const CA = require('../../server/compose-autoscale');
+  const t0 = 1_800_000_000_000;
+  // 40 readings: 2 replicas, usually 60 % of their limit each, busy hour at 95 %
+  const samples = Array.from({ length: 40 }, (_, i) => ({ t: t0 + i * 120000, replicas: 2, cpu: i >= 36 ? 95 : 60, mem: 40 }));
+  const r = CA.suggestFrom(samples, { cpu: 0.5, mem: 256 * 1048576 }, Infinity, { current: 2 });
+  assert.equal(r.enough, true);
+  assert.equal(r.values.min, 2);       // 1.2 replicas of load at 70 % → 2
+  assert.equal(r.values.max, 5);       // 1.9 at the 95th percentile → 3, × 1.5 → 5
+  assert.equal(r.values.memUp, null);  // memory flat
+  assert.equal(CA.suggestFrom(samples, {}, 1, { current: 2 }).values.max, 3, 'capped by what fits');
+  assert.equal(CA.suggestFrom(samples.slice(0, 10)).enough, false);
+  const idle = Array.from({ length: 40 }, (_, i) => ({ t: t0 + i * 120000, replicas: 1, cpu: 5, mem: 10 }));
+  assert.match(CA.suggestFrom(idle, { cpu: 2 }).notes.join(' '), /much higher than it needs/);
+});
