@@ -326,6 +326,9 @@ insertHealthRule.run('swarm_node_down', 'Swarm server down or back', 0, 1, '{}')
 insertHealthRule.run('swarm_update_rollback', 'Swarm update rolled back or paused', 0, 1, '{}');
 insertHealthRule.run('swarm_quorum', 'Swarm managers lost their majority', 0, 1, '{}');
 insertHealthRule.run('swarm_autoscale', 'Swarm autoscale changed a service', 0, 1, '{}');
+// Compose without Swarm: auto-heal restarted a container, or gave up (the agent sends these itself when it runs the rules).
+insertHealthRule.run('compose_heal', 'Auto-heal restarted a Compose container', 0, 1, '{}');
+insertHealthRule.run('compose_autoscale', 'Auto Scaling changed a Compose service, or the server was full', 0, 1, '{}');
 // "Newer image available" is opt-in: it was just inserted by defaultRules (enabled = 1) on databases that
 // did not have it yet — turn it off once, then leave it to the user.
 try {

@@ -105,47 +105,8 @@ const fromRow = (row) => row && ({
   lastAt: row.last_at || null, lastAction: row.last_action || null, lastReason: row.last_reason || null, lastDir: row.last_dir || null,
 });
 
-/**
- * The change due now, or null. Pure (unit tested).
- * samples: [{ t, cpu, cpuMin, cpuMax, mem, memMin, memMax }] one per check (cpu/mem are averages; mem null = no limit).
- * last: { at, dir: 'up'|'down' } of the last change. Out of the min–max range is put right at once.
- */
-function decide(rule, samples, replicas, now = Date.now(), last = {}, everyMs = 60000) {
-  if (replicas < rule.min) return { to: rule.min, action: 'up', reason: `below the minimum of ${rule.min}` };
-  if (replicas > rule.max) return { to: rule.max, action: 'down', reason: `above the maximum of ${rule.max}` };
-  if (last.at) {
-    const wait = (last.dir === 'down' ? rule.coolDownMinutes : rule.coolUpMinutes) * 60000;
-    if (now - last.at < wait) return null;
-  }
-  const win = (m) => samples.filter(s => s.t > now - m * 60000 && Number.isFinite(s.cpu));
-  const enough = (l, m) => l.length >= Math.max(2, Math.floor(m * 60000 / everyMs) - 1); // allow one missed check
-  const avg = (l, k) => Math.round(l.reduce((a, s) => a + (s[k] ?? 0), 0) / l.length);
-  const every = rule.basis === 'every';
-  const memOn = rule.memUp !== null && rule.memUp !== undefined;
-  const up = win(rule.upMinutes);
-  if (replicas < rule.max && enough(up, rule.upMinutes)) {
-    const cpuV = avg(up, every ? 'cpuMin' : 'cpu');
-    const memL = up.filter(s => Number.isFinite(s.mem));
-    const memV = memOn && memL.length >= Math.ceil(up.length / 2) ? avg(memL, every ? 'memMin' : 'mem') : null;
-    const cpuHot = cpuV >= rule.cpuUp, memHot = memV !== null && memV >= rule.memUp;
-    const hot = rule.logic === 'and' && memOn ? (cpuHot && memHot) : (cpuHot || memHot);
-    if (hot) {
-      const what = [cpuHot ? `CPU ${cpuV}%` : null, memHot ? `memory ${memV}%` : null].filter(Boolean).join(' and ');
-      return { to: Math.min(rule.max, replicas + rule.step), action: 'up', reason: `${what} ${every ? 'on every replica' : 'per replica'} for ${rule.upMinutes} min (add at CPU ${rule.cpuUp}%${memOn ? ` ${rule.logic} memory ${rule.memUp}%` : ''})` };
-    }
-  }
-  const down = win(rule.downMinutes);
-  if (replicas > rule.min && enough(down, rule.downMinutes)) {
-    const cpuV = avg(down, every ? 'cpuMax' : 'cpu');
-    const memL = down.filter(s => Number.isFinite(s.mem));
-    const memV = memOn && memL.length ? avg(memL, every ? 'memMax' : 'mem') : null;
-    const cpuLow = cpuV <= rule.cpuDown, memLow = !memOn || (memV !== null && memV <= rule.memDown);
-    if (cpuLow && memLow) {
-      return { to: Math.max(rule.min, replicas - rule.step), action: 'down', reason: `CPU ${cpuV}%${memOn ? ` and memory ${memV}%` : ''} ${every ? 'on every replica' : 'per replica'} for ${rule.downMinutes} min (remove at CPU ${rule.cpuDown}%${memOn ? ` and memory ${rule.memDown}%` : ''})` };
-    }
-  }
-  return null;
-}
+// The decision itself is shared with Compose Auto Scaling and the Edge agent.
+const { decide } = require('../agent/src/control/scale-decision');
 
 // ---- reading on the rule's manager ----
 function serverRow(id) { return !id || id === 'local' ? { id: 'local', type: 'local', name: 'Local' } : stmts.getServer.get(id); }

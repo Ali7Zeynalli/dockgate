@@ -58,6 +58,8 @@ A small, **outbound-only** container on each server. It collects metrics and log
 | **Channel override** | Per server: send that server's alerts to another Telegram chat, email or webhook. Empty fields use the global channel |
 | **Remove** | Removes the agent from the server |
 
+It also keeps the **Scaling & health** rules of Compose stacks (replicas, auto-heal) while DockGate is offline. It has no port for this either: DockGate signs each rule and command with a key only it holds — see [How DockGate commands the agent, safely](agent-security.md).
+
 Installs and updates run as **agent jobs** with a log; closing the window does not stop them. Without a notification channel the agent installs in *metrics-only* mode: set up a channel in **Settings → Notifications** first.
 
 ## Good to know

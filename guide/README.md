@@ -23,6 +23,7 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 - [Resources → Builds](builds.md) — build from Git or an inline Dockerfile, steps and cache
 - [Resources → Prune](prune.md) — free disk space safely
 - [Deploy → Compose stacks](compose.md) — deploy from the editor, Git, a folder or the server; history, rebuild, Git sync
+- [Deploy → Compose stacks → Scaling & health](compose-scaling.md) — replicas with one click, auto-heal, Auto Scaling and updates without downtime, without Swarm; your files stay as they are
 - [Deploy → App templates and Registries](templates-and-registries.md) — 500+ ready-made apps; private registry logins
 
 ## Docker Swarm
@@ -30,7 +31,8 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 - [Swarm → Set up, Overview and Nodes](swarm-setup-and-nodes.md) — one server or several, firewall, the node page
 - [Swarm → Services and the service page](swarm-services.md) — scale, update, roll back, the full service form, 16 tabs
 - [Swarm → Auto Scaling](swarm-auto-scaling.md) — add and remove replicas by CPU and memory, suggested values, capacity
-- [Swarm → Stacks and Migrate](swarm-stacks-and-migrate.md) — move Compose projects and containers to Swarm and back
+- [Swarm → Stacks and Migrate](swarm-stacks-and-migrate.md) — move Compose projects and containers to Swarm and back, protected as before; build & push, secrets from files, privileged, macvlan
+- [Swarm → Firewall](swarm-firewall.md) — published ports on every server, opened and closed together
 - [Swarm → Secrets & configs and Networks](swarm-secrets-and-networks.md) — passwords and files for services, overlay networks
 - [Swarm → Cluster settings](swarm-cluster.md) — autolock, keys and certificates, tuning, backups, recover
 
@@ -42,6 +44,7 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 ## Servers
 
 - [Servers → Servers, SSH keys, Edge agent](servers.md) — add a server, host keys, deploy keys, the outbound agent
+- [Edge agent → How DockGate commands it, safely](agent-security.md) — signed rules and commands, no port, what the agent may do
 - [Server Console](server-console.md) — setup, SSH access, users, firewall, fail2ban, services, logs
 
 ## Settings

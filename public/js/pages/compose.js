@@ -96,6 +96,7 @@ Router.register('compose', async (content) => {
                       { label: `${Icons.eye} Services and details`, attrs: `data-detail="${escapeHtml(p.name)}"` },
                       !p.onSwarm && p.total > 0 && window.__swarmActive ? { label: `${Icons.layers} Move to Swarm…`, attrs: `data-move-swarm="${escapeHtml(p.name)}"` } : null,
                       p.onSwarm && window.__swarmActive ? { label: `${Icons.layers} Move back to Compose…`, attrs: `data-move-back="${escapeHtml(p.swarmPart ? p.swarmPart.stack : p.name)}"` } : null,
+                      !p.onSwarm && p.total > 0 ? { label: `${Icons.layers} Scaling & health…`, attrs: `data-scaling="${escapeHtml(p.name)}"` } : null,
                       { label: `${Icons.refresh} Deploy history…`, attrs: `data-history="${escapeHtml(p.name)}"` },
                       { label: `${Icons.settings} Edit YAML`, attrs: `data-edit="${escapeHtml(p.name)}" ${dis}` },
                       { label: `${Icons.folder || Icons.compose} Files (Dockerfile, .env…)`, attrs: `data-files="${escapeHtml(p.name)}"` },
@@ -402,6 +403,7 @@ Router.register('compose', async (content) => {
       });
 
       content.querySelectorAll('[data-history]').forEach(btn => btn.addEventListener('click', () => openDeployHistory(btn.dataset.history)));
+      content.querySelectorAll('[data-scaling]').forEach(btn => btn.addEventListener('click', () => window.ComposeScaling.open(btn.dataset.scaling)));
       content.querySelectorAll('[data-open-stack]').forEach(btn => btn.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-stacks', stack: btn.dataset.openStack })));
       content.querySelectorAll('[data-move-back]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveBack ? window.SwarmUI.moveBack(btn.dataset.moveBack, () => render()) : Router.navigate('swarm', { tab: 'swarm-stacks' }))));
       content.querySelectorAll('[data-move-swarm]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveProject ? window.SwarmUI.moveProject(btn.dataset.moveSwarm, () => render()) : Router.navigate('swarm', { tab: 'swarm-migrate', project: btn.dataset.moveSwarm }))));
@@ -1668,7 +1670,7 @@ Router.register('compose', async (content) => {
     try { rows = (await API.get(`/compose/${encodeURIComponent(project)}/deploys`)).deploys || []; }
     catch (e) { showToast(e.message, 'error'); return; }
     const when = (ms) => (ms ? formatTime(new Date(ms).toISOString()) : '—'); // stored in milliseconds
-    const kindLabel = { editor: 'editor', redeploy: 'earlier version', up: 'Up', rebuild: 'rebuild', deploy: 'deploy', 'image update': 'image update', 'image rollback': 'image roll back' };
+    const kindLabel = { scale: 'replicas', 'scale-reset': 'back to the files', editor: 'editor', redeploy: 'earlier version', up: 'Up', rebuild: 'rebuild', deploy: 'deploy', 'image update': 'image update', 'image rollback': 'image roll back' };
     const detailText = (d) => { try { const x = JSON.parse(d.details || 'null'); return x && x.service ? `<div class="ui-sub">${escapeHtml(x.service)}: ${escapeHtml(x.from || '?')} → ${escapeHtml(x.to || '?')}</div>` : ''; } catch (e) { return ''; } };
     const srcText = (d) => d.source === 'git' ? `git${d.git_commit ? ` <span class="td-mono">${escapeHtml(d.git_commit.slice(0, 7))}</span>` : ''}` : escapeHtml(d.source || '');
     const withFiles = rows.filter(d => d.has_files);

@@ -263,7 +263,22 @@ router.get('/:project', async (req, res) => {
 //   4) filesystem discovery (findComposeFile → recursive findComposeFiles; local only)  5) fail-closed.
 // Each file is reduced to (cwd = its dir, -f = basename) so relative build contexts / bind-mounts resolve
 // exactly as they did at deploy time.
+// Every compose command DockGate runs goes through here, so DockGate's override (replicas and the fixes a replica
+// needs — server/compose-scale.js) is appended last; the user's files are never written.
 async function resolveComposeFiles(project) {
+  const r = await resolveComposeFilesBase(project);
+  if (r && r.files && r.files.length) {
+    const CS = require('../compose-scale');
+    // After an up with the override, Compose lists it in the container labels too; that entry is dropped here
+    // (the label gives it relative to the project folder) and the real path is added once.
+    r.files = r.files.filter(f => path.posix.basename(f) !== CS.FILE);
+    const ov = CS.overrideFor(dockerService.getActiveServerId() || 'local', project);
+    if (ov) { r.files = [...r.files, ov]; r.override = ov; }
+    if (!r.files.length) return { files: [], reason: r.reason || 'DockGate can not find the compose files of this project' };
+  }
+  return r;
+}
+async function resolveComposeFilesBase(project) {
   const isLocal = dockerService.isLocalActive();
   const server = remoteCompose.getActiveRemoteServer();
   const activeId = dockerService.getActiveServerId();
@@ -362,6 +377,130 @@ function startComposeActionJob(req, res, action, label) {
 
 // A project that runs on Swarm must not be started by Compose too (two copies on the same ports and volumes).
 const SWARM_BLOCKED = new Set(['up', 'restart', 'update-service', 'rebuild', 'redeploy', 'redeploy-prepare', 'git-sync', 'adopt-redeploy']);
+// ---- Scaling & health (replicas without Swarm; server/compose-scale.js) ----
+router.get('/:project/scaling', async (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    try { const row = require('../swarm-stacks').stackOfProject(project); if (row) return res.json({ onSwarm: true, stack: row.name, services: [] }); } catch (e) { /* no Swarm */ }
+    const CS = require('../compose-scale'), T = require('../compose-traffic');
+    const r = await resolveComposeFiles(project);
+    if (!r.files || !r.files.length) return res.json({ unresolved: r.reason || 'DockGate can not find the compose files of this project', services: [] });
+    const [cfg, version] = await Promise.all([CS.configOf(r, project), CS.composeVersion(r)]);
+    const sid = dockerService.getActiveServerId() || 'local';
+    const rules = CS.readRules(sid, project);
+    const c = dockerService.docker;
+    const proxies = await T.findProxies(c, project).catch(() => []);
+    // What each nginx does with new replicas: read its whole config once.
+    const confs = {};
+    for (const p of proxies.filter(x => x.kind === 'nginx')) {
+      try {
+        const ex = await c.getContainer(p.id).exec({ Cmd: ['nginx', '-T'], AttachStdout: true, AttachStderr: true });
+        const st = await ex.start({ hijack: true, stdin: false });
+        confs[p.id] = await new Promise((resolve) => { let b = ''; st.on('data', d => { b += d.toString('utf8'); }); st.on('end', () => resolve(b)); setTimeout(() => resolve(b), 8000); });
+      } catch (e) { confs[p.id] = ''; }
+    }
+    // A port the agent can check: from the compose file, or EXPOSE in the image.
+    const imageExposes = async (cl, image) => { if (!image) return false; try { const i = await cl.getImage(image).inspect(); return Object.keys((i.Config && i.Config.ExposedPorts) || {}).some(k => k.endsWith('/tcp')); } catch (e) { return false; } };
+    const services = [];
+    for (const [name, s] of Object.entries(cfg.services || {})) {
+      const running = (await CS.replicasOf(c, project, name)).length;
+      const rule = rules[name] || {};
+      const auto = require('../compose-autoscale').ruleOf(sid, project, name); // under Auto Scaling the number moves within min–max
+      const wanted = rule.replicas ?? (s.deploy && Number.isInteger(s.deploy.replicas) ? s.deploy.replicas : 1);
+      const behind = proxies.filter(p => p.kind === 'nginx' && new RegExp(`https?://${name}[:/;]`).test(confs[p.id] || '')).map(p => ({ name: p.name, usesResolver: T.nginxUsesResolver(confs[p.id], name), connectTimeout: T.connectTimeoutOf(confs[p.id]) }));
+      services.push({ name, image: s.image || null, heal: !!rule.heal, healthcheck: !!(s.healthcheck && !s.healthcheck.disable && s.healthcheck.test), exposed: (s.expose || []).length > 0 || (s.ports || []).length > 0 || await imageExposes(c, s.image), replicas: running, wanted, limits: CS.limitsOf(s), scalable: CS.checkScalable(s, name, version), fixes: { dropPorts: !!rule.dropPorts, dropName: !!rule.dropName }, ports: (s.ports || []).filter(p => p.published).map(p => `${p.host_ip ? `${p.host_ip}:` : ''}${p.published}→${p.target}`), containerName: s.container_name || null, aliases: rule.aliases || [], behind, auto, rollable: running > 0 && CS.checkScalable(s, name, version).ok && CS.checkScalable(s, name, version).fixes.every(f => rule[f]), drift: auto ? (running < auto.min || running > auto.max) : (rule.replicas !== undefined && rule.replicas !== null && running !== rule.replicas) });
+    }
+    res.json({ services, composeVersion: version, proxies: proxies.map(p => ({ name: p.name, kind: p.kind })), override: !!r.override, drift: services.some(x => x.drift), control: require('../agent/control').statusOf(sid) });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+router.put('/:project/scaling/:service/replicas', async (req, res) => {
+  const out = [];
+  try {
+    const n = Number((req.body || {}).replicas);
+    const r = await require('../compose-scale').setReplicas(req.params.project, req.params.service, n, { acceptFixes: !!(req.body || {}).acceptFixes, sourceIp: req.ip, log: (l) => out.push(l) });
+    res.json({ ...r, log: out.join('\n') });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message, needFixes: e.needFixes, rolledBack: e.rolledBack, log: out.join('\n') }); }
+});
+// Auto Scaling: the rule of a service, what it did (and would do), and applying a suggestion.
+router.put('/:project/scaling/:service/rule', async (req, res) => {
+  try {
+    if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
+    res.json(await require('../compose-autoscale').saveRule(req.params.project, req.params.service, req.body || {}, { sourceIp: req.ip }));
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+router.get('/:project/scaling/:service/suggest', async (req, res) => {
+  try { res.json(await require('../compose-autoscale').suggest(req.params.project, req.params.service)); } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+router.get('/:project/scaling/history', async (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const CA = require('../compose-autoscale');
+    const sid = dockerService.getActiveServerId() || 'local';
+    if (require('../agent/control').executorFor(sid) === 'agent') await CA.importAgent(sid).catch(() => {});
+    res.json({ history: CA.history(sid, project) });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+router.post('/:project/scaling/:service/apply', async (req, res) => {
+  const out = [];
+  try {
+    const { project, service } = req.params;
+    const n = Number((req.body || {}).to);
+    const auto = require('../compose-autoscale').ruleOf(dockerService.getActiveServerId() || 'local', project, service);
+    if (auto && (n < auto.min || n > auto.max)) return res.status(400).json({ error: `Outside the rule's ${auto.min}–${auto.max} replicas` });
+    const r = await require('../compose-scale').setReplicas(project, service, n, { sourceIp: req.ip, log: (l) => out.push(l) });
+    res.json({ ...r, log: out.join('\n') });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message, log: out.join('\n') }); }
+});
+// Rolling update: new replicas with the current config (and image), one at a time, without downtime.
+router.post('/:project/scaling/:service/rollout', async (req, res) => {
+  const out = [];
+  try {
+    const r = await require('../compose-rollout').rollout(req.params.project, req.params.service, { pull: !!(req.body || {}).pull, sourceIp: req.ip, log: (l) => out.push(l) });
+    res.json({ ...r, log: out.join('\n') });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message, kept: e.kept, log: out.join('\n') }); }
+});
+router.put('/:project/scaling/:service/heal', (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    res.json(require('../compose-scale').setHeal(project, req.params.service, !!(req.body || {}).on, { sourceIp: req.ip, perHour: Number((req.body || {}).perHour) || undefined }));
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+router.get('/:project/scaling/override', async (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const CS = require('../compose-scale');
+    const sid = dockerService.getActiveServerId() || 'local';
+    const ov = CS.overrideFor(sid, project);
+    let text = '';
+    if (ov) {
+      if (dockerService.isLocalActive()) text = fs.readFileSync(ov, 'utf8');
+      else { const x = await remoteCompose.execRemote(remoteCompose.getActiveRemoteServer(), `cat ${remoteCompose.shq(ov)} 2>/dev/null`); text = x.stdout || ''; }
+    }
+    res.json({ path: ov, text });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+// Back to the compose files as they are: the override goes, compose brings the services to what the files say.
+router.delete('/:project/scaling', async (req, res) => {
+  try {
+    const project = req.params.project;
+    if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const CS = require('../compose-scale');
+    const sid = dockerService.getActiveServerId() || 'local';
+    const r0 = await resolveComposeFiles(project);
+    await CS.removeAll(r0, sid, project);
+    const r = await resolveComposeFiles(project);
+    const t0 = Date.now();
+    await runResolved(r, project, ['up', '-d'], null);
+    recordDeploy({ project, kind: 'scale-reset', status: 'done', sourceIp: req.ip, startedAt: t0, finishedAt: Date.now() });
+    logAction({ req, server: sid, resourceId: project, resourceType: 'compose', resourceName: project, action: 'compose_scale_reset', details: {} });
+    res.json({ ok: true });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+
 router.post('/:project/:action', (req, res, next) => {
   if (!SWARM_BLOCKED.has(req.params.action)) return next();
   try {
@@ -511,6 +650,9 @@ router.delete('/:project', async (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
     const project = req.params.project;
+    // A deleted stack takes DockGate's replica choices and override file with it.
+    const sidAtStart = dockerService.getActiveServerId() || 'local', remoteAtStart = !dockerService.isLocalActive() ? remoteCompose.getActiveRemoteServer() : null;
+    res.on('finish', () => { if (res.statusCode < 300) require('../compose-scale').removeAll({ remote: !!remoteAtStart, server: remoteAtStart }, sidAtStart, project).catch(() => {}); });
     const removeVolumes = req.query.volumes === '1' || req.query.volumes === 'true';
     const removeFiles = !(req.query.files === '0' || req.query.files === 'false'); // default: remove files
     const downArgs = removeVolumes ? ['down', '-v'] : ['down'];
@@ -711,7 +853,7 @@ const HISTORY_MAX_BYTES = 256 * 1024;
 async function captureComposeFiles(project) {
   const r = await resolveComposeFiles(project).catch(() => null);
   if (!r || !r.files || !r.files.length) return null;
-  const names = [...new Set([...r.files.map(f => path.posix.basename(f)), '.env'])];
+  const names = [...new Set([...r.files.filter(f => f !== r.override).map(f => path.posix.basename(f)), '.env'])]; // DockGate's override is not the project's file
   const out = {}; let total = 0;
   for (const name of names) {
     let content = null;
@@ -2653,4 +2795,4 @@ router.scheduledGitSync = scheduledGitSync;
 // Image updates of compose services run compose through the same file resolution.
 require('../image-update-runner').setComposeExec(execComposeAction, recordDeploy);
 module.exports = router;
-module.exports.composeHelpers = { resolveComposeFiles: (p) => resolveComposeFiles(p), runResolved: (...a) => runResolved(...a), validateProjectName: (p) => validateProjectName(p) };
+module.exports.composeHelpers = { resolveComposeFiles: (p) => resolveComposeFiles(p), runResolved: (...a) => runResolved(...a), validateProjectName: (p) => validateProjectName(p), recordDeploy: (o) => recordDeploy(o), busy: (p) => [...deployJobs.values()].some(j => j.project === p && j.status === 'running') };

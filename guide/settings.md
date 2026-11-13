@@ -48,6 +48,7 @@ Which events send an alert. Each rule has an on/off switch and a **quiet period*
 | Containers | stopped / crashed / out of memory, restarted, unhealthy, started, paused, unpaused |
 | Docker | disk usage, build failed, newer image, image update failed, scheduled task failed |
 | Servers | down, back, disk, memory, CPU |
+| Compose | auto-heal restarted a container (or gave up), Auto Scaling changed a service or the server was full — see [Scaling & health](compose-scaling.md) |
 | Swarm | service short of replicas, node down / back, update rolled back, quorum lost, autoscale changed a service |
 
 Server limits (CPU %, memory %, disk %) are **shared** by every server. A server can have its own in **Server Console → Monitoring → Alerts**; the rule then shows *This server*.

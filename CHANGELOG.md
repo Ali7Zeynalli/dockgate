@@ -2,6 +2,156 @@
 
 ---
 
+## [2.53.1] - 2026-11-13
+
+### Docs
+- README: Scaling & health (replicas, auto-heal, Auto Scaling, Roll out — without Swarm), Swarm protection on the move, Build & push, secrets from files, privileged → cap_add, macvlan, Swarm → Firewall, the Edge agent's signed control channel, and the 2 new alert rules (24 in all).
+- Guide: Scaling & health intro and columns, Settings → alert rules (Compose), Containers → Update… on Compose replicas, Compose menu and index descriptions.
+
+---
+
+## [2.53.0] - 2026-11-13
+
+### Added
+- **Suggest from the last 48 h** in the Compose Auto Scaling rule: minimum, maximum and thresholds from what the service really did. DockGate reads each service in Scaling & health every 2 minutes and keeps 48 hours (asking for a suggestion starts it; about an hour is needed). Each value says why; the maximum is cut to what fits on the server. Only replicas are suggested — the limits stay yours, with a note when a replica uses far less than its limit.
+
+---
+
+## [2.52.0] - 2026-11-13
+
+### Added
+- **Secrets and configs from files keep working on Redeploy.** DockGate reads each file (also over SSH for a project on a remote server, which was not possible before) and makes the Swarm object itself, named by its content; a changed file becomes a new version the services switch to, instead of `docker stack deploy` failing. The 3 newest versions are kept.
+- **privileged → cap_add.** For known image families (WireGuard, VPNs, Pi-hole / AdGuard, firewalls, network checks, time) the plan offers **Run with cap_add …** with only the rights such an image needs; used only when ticked, and the move is put back if the service does not start.
+- **macvlan / ipvlan networks on Swarm.** DockGate makes a config-only network with the subnet and parent interface on every server and a Swarm network from it, which the stack joins; Move back removes them and Compose makes its own again.
+
+### Fixed
+- A stack file kept the macvlan / ipvlan driver without its subnet, so such a project could not move.
+
+---
+
+## [2.51.0] - 2026-11-13
+
+### Added
+- **Build & push on Move to Swarm.** Services with `build:` need their image in a registry to run on several servers. The plan now offers **Build & push** with the logins from Deploy → Registries: DockGate builds with Compose (your Dockerfile, context and build args), tags `<registry>/<project>-<service>:<time>` (Docker Hub: `<user>/<project>-<service>:<time>`), pushes it, and the stack uses that tag. The build runs before anything stops, so it adds no downtime.
+  - **Every Redeploy builds and pushes again**, so the servers run what the files say now; earlier tags stay in the registry, and Redeploy → an earlier deploy goes back to one.
+  - The servers pull with the same login. The compose files are not changed.
+  - On a cluster of several servers, a built service without a registry is explained in the plan with where to choose one.
+
+---
+
+## [2.50.0] - 2026-11-13
+
+### Added
+- **Swarm → Firewall.** The ports Swarm services publish, on every server of the cluster, in one table: open (to whom), closed, or open to everyone because nothing filters Docker traffic there (no firewall, firewalld, or Docker port isolation off).
+  - **Open… / Close** writes the same `ufw route allow` rule on every server with UFW and Docker port isolation, for anyone, an IP list or addresses. Ingress ports are filtered by their published port, host-mode ports by the container port.
+  - **Kept:** a server that joins later gets the same rules; a port that moves between ingress and host mode gets the right rule; the rule of a port no service publishes any more is removed everywhere. Checked every 10 minutes, or with **Check now**.
+  - In the audit log (`swarm_fw_open`, `swarm_fw_close`). The SSH port of a server is never changed here.
+
+---
+
+## [2.49.0] - 2026-11-13
+
+### Added
+- **Protected as before, on Move to Swarm and back.** The plan compares each service's protection in Compose with what it will have on Swarm — user, read-only file system, no-new-privileges, seccomp, AppArmor, dropped / added capabilities, privileged, host PID / IPC, user namespace, read-only mounts, where ports can be reached — as *same*, *changed* or *weaker*.
+  - **Kept on Swarm:** stack files drop `security_opt`; DockGate now sets `no-new-privileges`, the seccomp profile (your own file too) and AppArmor *unconfined* on the Swarm service itself (Docker 25+), and again on every Redeploy.
+  - **A weaker service stays in Compose** by default; **Move anyway — less protected on Swarm** in the plan moves it, and the choice is in the audit log.
+  - **Checked after the move:** every Swarm task is compared with the Compose container it replaced; weaker than planned, or `nginx -t` failing in an nginx task, puts the project back in Compose at once.
+  - **Move back** reports anything the services lose in Compose.
+
+### Changed
+- An ingress port that was open on all addresses in Compose is shown as *changed* (every server of the cluster answers on it), not as a risk; a port tied to one address that Swarm would open on all of them is *weaker*.
+
+---
+
+## [2.48.0] - 2026-11-13
+
+### Added
+- **Rolling updates of Compose services, without downtime.** A service that can run as several replicas is updated one replica at a time: Compose starts one new replica with the current compose file and image, DockGate waits until it is ready (healthy, or running steadily), reloads nginx / Caddy, stops one old replica gracefully, and repeats.
+  - **Roll out…** next to each such service in Scaling & health (after changing the image tag or the compose file), with *Pull the image first*.
+  - **Newer image → Update** of a Compose service now rolls out instead of recreating the whole service.
+  - **If the first new replica is not ready, it is removed and nothing old was touched** (for an image update the tag is pointed back). If a later one fails, the message says how many were updated; an image update then puts every replica back on the previous image.
+  - Recorded in Deploy history (*rollout*) and the audit log.
+  - In tests with a request every 100 ms through nginx, 3 replicas were rolled out several times with no failed request.
+- **nginx warning in Scaling & health:** an nginx in front without a short `proxy_connect_timeout` waits up to 60 s for a replica that just stopped; the panel says so and what to add.
+
+### Changed
+- During a roll out, `nginx -t` runs once before the switch and the reloads are then immediate, and the proxies are reloaded in parallel — the moment in which nginx can still send a request to a replica that just stopped is as short as possible.
+
+---
+
+## [2.47.0] - 2026-11-13
+
+### Added
+- **Auto Scaling for Compose services, without Swarm.** In Scaling & health, the chip under a service's replicas opens its rule: **Off**, **Suggest** (writes what it would do; **Apply** does it) or **Auto** (changes the replicas, after a 24-hour **simulation** that only writes *would scale 2 → 3* — skippable).
+  - Measured against **the limits in your compose file** (CPU % of `cpus`, memory % of `mem_limit`); your limits are never changed, and a service without a limit can not have a rule.
+  - **A replica is added only when the server has room for its limits** (free memory minus 10 %, CPU load under 80 % of the cores). Without room: *server full* in the history and one notice.
+  - Never during a deploy or right after one; one change per project at a time; fewer replicas stop gracefully; nginx / Caddy reloaded after each change.
+  - The chosen number is written to DockGate's override, so a later deploy keeps it.
+  - **Run by the Edge agent** every 30 s, also while DockGate is offline; DockGate reads its history. Without an up-to-date agent, DockGate runs the same loop while it is online.
+  - **Auto Scaling history** in the panel: what it did, would do, or could not do, why, and by whom (agent or DockGate). New alert rule *Auto Scaling changed a Compose service, or the server was full*.
+  - Same rule fields as Swarm Auto Scaling (thresholds, minutes, waits, replicas per change).
+
+### Fixed
+- **Auto Scaling with a check every minute and "add after 1 minute" never acted** (Swarm too): the sample from a minute ago fell just outside the window. The window now allows half a check of slack.
+
+### Changed
+- Edge agent 1.3.0 — update it from **Servers → Edge agent** for Compose Auto Scaling.
+
+---
+
+## [2.46.0] - 2026-11-13
+
+### Added
+- **Auto-heal for Compose services.** Scaling & health has an **Auto-heal** switch per service: a replica that stays unhealthy is restarted after 3 failed checks in a row, not in its first 60 seconds, at most 3 times an hour — then it stops trying and tells you (new alert rule *Auto-heal restarted a Compose container*). It uses the service's own health check; without one, the Edge agent checks its port.
+- **The Edge agent keeps the Scaling & health rules, also while DockGate is offline.** It brings back replicas that are gone (made the way Compose makes them, so Compose takes them as its own) and heals unhealthy ones. The panel says who runs the rules right now: the agent, or DockGate when there is no up-to-date agent.
+- **A secure command channel to the agent, with no port.** Each install gets its own Ed25519 key; the private half stays in DockGate, encrypted. Every rule and command is signed and carries the server, a growing number and the time; the agent refuses anything else, and anything outside a short list of actions (restart a replica, add or remove one within the limits, reload nginx / Caddy, read its state). Limits are checked again on the agent. Messages go in through a unix socket inside the agent container, over `docker exec` — locally or over SSH. Refused messages are kept in the agent's history and sent as a notice. Guide: [Edge agent → How DockGate commands it, safely](guide/agent-security.md).
+
+### Changed
+- Edge agent 1.2.0 — update it from **Servers → Edge agent** to turn the new channel on.
+
+---
+
+## [2.45.0] - 2026-11-12
+
+### Added
+- **Replicas for Compose services, with one click and without Swarm.** Deploy → Compose stacks → ⋯ → **Scaling & health…** lists each service with its replicas (`−` / `+`), the limits from your compose file, and its state.
+  - **Your compose files are not changed.** DockGate keeps its choices in its own override file (`docker-compose.dockgate.yml`) outside the project folder and any Git checkout, private to its owner, and adds it to every compose command it runs (Up, Rebuild, image updates, Move to Swarm). **Show the override** shows it; **Back to the files…** removes it.
+  - **Checked first:** a database or a service that writes to a volume stays at 1. A host port or a `container_name` is fixed only after you see the fix (the port goes behind the proxy; the name stays a name others reach it by). The fixes need Docker Compose 2.24.4 or newer, and the panel shows the server's version.
+  - **Nothing else is touched:** only that service is scaled; the replicas already running stay.
+  - **Fewer replicas stop gracefully**, and nginx / Caddy on the same networks are reloaded after each change (nginx only when `nginx -t` passes). In a test with a request every 200 ms through nginx, none failed while scaling 3 → 1 → 3.
+  - **If compose fails,** the previous setting comes back by itself.
+  - **Drift:** replicas that differ from what was set (a `docker compose up` without the override) are shown with a **Fix** button.
+  - Each change is in Deploy history (*replicas*) and the audit log.
+
+---
+
+## [2.44.0] - 2026-11-12
+
+### Added
+- **Projects that share a network move to Swarm.** Several Compose projects often talk over one network made with `docker network create` and declared `external` (nginx, landing, frontend, app, api). A stack can not join such a bridge, so moving any of them failed and was put back. Now DockGate makes its Swarm twin, an attachable overlay `<name>-swarm`:
+  - the moved services join the twin;
+  - the containers still in Compose are connected to it, by their service and container names, so both sides keep finding each other and nothing stops;
+  - containers Compose re-creates are connected again within 30 seconds, and a project moved back joins the twin again.
+
+  The projects can move one at a time; the plan says which network is shared and with whom.
+- **Start order on the move.** Services start in the order of `depends_on`: each one waits until the services it depends on run, and are healthy when they have a health check. Only the waiting service is scaled up, so nothing else restarts.
+
+### Changed
+- **Nothing in a compose file is dropped silently on the move.**
+  - `mem_limit`, `mem_reservation`, `cpus`, `cpu_quota` / `cpu_period` and `pids_limit` become Swarm resource limits and reservations (they were lost).
+  - `shm_size` becomes a tmpfs of that size at `/dev/shm`.
+  - `container_name` and `links` aliases stay names other services reach it by.
+  - `volumes_from` mounts the other service's volumes.
+  - `network_mode: host` joins Docker's host network (it was refused).
+  - A fixed `ipv4_address` is dropped with a note of which services use it.
+  - Fields Swarm has no place for are named in the plan.
+- `privileged` and `devices` now suggest what to do instead (`cap_add`, Swarm generic resources for a GPU).
+
+### Fixed
+- **A port only on `127.0.0.1` in the compose file opened on every server after the move.** It now stays inside (other services reach it by name), or, if you choose *this server only*, is published in host mode. A port tied to another address is published in host mode on that server.
+
+---
+
 ## [2.43.1] - 2026-11-12
 
 ### Added

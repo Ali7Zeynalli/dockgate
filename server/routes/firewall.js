@@ -295,4 +295,5 @@ router.post('/:id/firewall/reload', send(async (req) => {
 
 module.exports = router;
 module.exports.firewallOf = firewallOf; // used by Swarm (server/swarm-cluster.js) to open the cluster ports
+module.exports.runFirewallOp = runFirewallOp; // used by Swarm → Firewall (server/swarm-firewall.js)
 module.exports._test = { parseDefaults, firewallOf };

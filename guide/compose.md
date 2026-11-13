@@ -48,6 +48,7 @@ When a deploy or **Rebuild…** builds images, you can tick:
 |---|---|
 | **Up** / **Restart** / **Down** | `docker compose up -d`, restart all services, or stop and remove the containers (volumes stay) |
 | **Services and details** | The services, their state, the folder and the compose files used |
+| **Scaling & health…** | Replicas with one click, auto-heal, Auto Scaling and updates without downtime (Roll out), without Swarm — see [Scaling & health](compose-scaling.md) |
 | **Deploy history…** | Every deploy of this stack with the compose files it used and what changed. **Redeploy this** puts those files back and runs `docker compose up -d`. Volumes and data stay |
 | **Edit YAML** | Edit the compose file and redeploy |
 | **Files (Dockerfile, .env…)** | Browse, edit, upload and delete the files of the project folder |

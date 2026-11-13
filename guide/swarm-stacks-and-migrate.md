@@ -48,23 +48,58 @@ Every move can be undone: **Stacks → ⋯ → Move back to Compose…** (also i
 | **Ports** | `ingress` — every server answers · `host` — the real client IP | With `host`, only one task per server can use the port. On a single server keep 1 replica for such a service. |
 | **Updates** | `start-first` (no downtime) · `stop-first` | A service with a volume or bind mount is always `stop-first`, so two copies never write the same data. |
 
+A port that was only on `127.0.0.1` in the compose file gets its own choice: **inside only — not published** (default; other services reach it by name) or **this server only (host mode)**. Swarm can not bind an address, so without this choice such a port would open on every server.
+
 **Step 2 — Plan.** DockGate builds the Swarm version of each project and shows it before anything happens.
 
 ![Move plan](images/migrate-plan.png)
 
 The plan lists every service with its replicas, ports, update order and *Changes for Swarm*, then the **volumes that stay the same** and the new **overlay network**.
 
+### What changes for Swarm
+
+Nothing in the compose file is dropped silently. Each field is turned into its Swarm form, or named in the plan:
+
+| In the compose file | On Swarm |
+|---|---|
+| `mem_limit`, `mem_reservation`, `cpus`, `cpu_quota` / `cpu_period`, `pids_limit` | `deploy.resources` limits and reservations (what `deploy:` already says wins) |
+| `shm_size` | a tmpfs of that size at `/dev/shm` |
+| `container_name`, `links: [db:database]` | kept as names other services reach it by (network aliases) |
+| `volumes_from` | the other service's volumes are mounted too, and both stay on one server |
+| `depends_on` | on the move, services start in that order: each waits until the ones it depends on run (healthy, if they have a health check) |
+| `ports: "127.0.0.1:…"` | not published (inside only), or host mode on this server — your choice |
+| `ports: "10.0.0.5:…"` (one address) | host mode on this server; allow it in the firewall |
+| `network_mode: host` | Docker's host network (no other network, no published ports) |
+| `ipv4_address` (fixed address) | dropped; reach the service by name. The plan says which services use that address in their environment |
+| `restart` | the restart policy |
+| `privileged`, `devices`, `network_mode: service:…` | not possible on Swarm: that service stays in Compose, the rest move |
+| `cpu_shares`, `cpuset`, `security_opt`, `pid`, `ipc`… | Swarm has no place for them: named in the plan as left out |
+
+### Projects that share a network
+
+Several projects often talk over one network made with `docker network create web` and declared `external: true` in each compose file (nginx, landing, frontend, app, api…). That network is a local bridge, and a stack can not join it.
+
+DockGate makes its **Swarm twin**, an attachable overlay `web-swarm`:
+
+- the moved services join `web-swarm` instead of `web`;
+- the containers still in Compose on `web` are connected to `web-swarm` too, by their service and container names, so both sides keep finding each other by name. Nothing stops;
+- if Compose re-creates one of them, DockGate connects it again within 30 seconds;
+- a project moved back to Compose joins the twin again.
+
+So the projects can move **one at a time**. Move the one that publishes the ports (nginx) last.
+
 ### What happens when you press Move
 
 One project at a time:
 
 1. The compose files are read again. **If they changed since the plan, that project is not moved** — review it again.
-2. `docker compose down` — volumes stay.
-3. `docker stack deploy` under the same name.
-4. Every service must run its replicas and **stay up for 30 seconds**.
-5. If it does not, DockGate puts it back by itself: the stack is removed and `docker compose up -d` runs.
+2. A shared network gets its Swarm twin (see above), and the containers still in Compose join it.
+3. `docker compose down` — volumes stay.
+4. `docker stack deploy` under the same name, in the order of `depends_on`.
+5. Every service must run its replicas and **stay up for 30 seconds**.
+6. If it does not, DockGate puts it back by itself: the stack is removed and `docker compose up -d` runs.
 
-The project is **down from step 2 until its services run on Swarm** — usually 10–60 seconds.
+The project is **down from step 3 until its services run on Swarm** — usually 10–60 seconds.
 A live log of each step opens while the job runs. Only one Swarm job runs at a time.
 
 > **Data is kept.** Volumes keep their names (`<project>_<volume>`), so the stack uses the same data.
@@ -81,6 +116,49 @@ A live log of each step opens while the job runs. Only one Swarm job runs at a t
 Containers that belong to a Compose project are not listed here — move the project instead.
 
 ---
+
+## Build & push (services built from source)
+
+A service with `build:` runs on Swarm only from an image: Swarm does not build, and on **several servers** every server must pull it from a registry. When the project has such services, the plan shows **Build & push** with the registry logins from **Deploy → Registries**:
+
+- **Do not push** — the image Compose built on this server is used (fine with one server).
+- **A registry** — on the move DockGate runs `docker compose build <service>` (your Dockerfile, context and build args), tags the image `<registry>/<project>-<service>:<time>` (for Docker Hub `<user>/<project>-<service>:<time>`), pushes it with the stored login, and the stack uses that tag. The build runs **before** anything stops, so it does not add to the downtime.
+
+The choice is kept with the stack: every **Redeploy** builds and pushes again, so the servers run what the files say now (the registry keeps the earlier tags — **Redeploy → an earlier deploy** goes back to one). The servers pull with the same login (`--with-registry-auth`). Your compose files are not changed.
+
+## Secrets, privileged services and macvlan
+
+**Secrets and configs from files** (`secrets: token: { file: ./token.txt }`). Swarm can not change a secret or config once made, so a stack file that names a file fails on Redeploy as soon as the file changed. DockGate reads each file — locally, or over SSH for a project on a remote server — and makes the Swarm object itself, named by its content (`<stack>_<key>_<hash>`). A changed file becomes a new object on the next Redeploy and the services switch to it; the 3 newest versions per secret are kept (an earlier deploy can go back to them), older unused ones are removed.
+
+**privileged.** Swarm has no privileged services, so such a service stays in Compose. For images whose family DockGate knows, the plan offers **Run with cap_add …** instead — only the rights such an image needs:
+
+| Image family | cap_add |
+|---|---|
+| WireGuard (wireguard, wg-easy, …) | NET_ADMIN, SYS_MODULE |
+| VPN (OpenVPN, Tailscale, ZeroTier, NetBird, Headscale, Gluetun) | NET_ADMIN |
+| DNS / DHCP (Pi-hole, AdGuard) | NET_ADMIN |
+| Firewall (iptables, CrowdSec, fail2ban) | NET_ADMIN, NET_RAW |
+| Network checks (Uptime Kuma, Smokeping, Gatus, blackbox) | NET_RAW |
+| Time (chrony, ntpd) | SYS_TIME |
+
+It is used only when ticked; if the service does not come up that way, the move is put back. Other privileged images (Docker-in-Docker, device access) stay in Compose.
+
+**macvlan / ipvlan networks.** A stack file can not carry their subnet and parent interface. DockGate makes a **config-only network** with them on every server of the cluster (the parent interface must have the same name on each) and a Swarm network from it, `<stack>_<key>-swarm`, which the stack joins. **Move back** removes both, and Compose makes its own network again. Fixed addresses (`ipv4_address`) are Swarm's to give, as for any network.
+
+## Protected as before
+
+Before a service moves, DockGate compares how it is protected in Compose with how it will be on Swarm, field by field: the user it runs as, a read-only file system, `no-new-privileges`, seccomp and AppArmor, the capabilities it drops and adds, privileged, the host PID / IPC namespace, the user namespace, whether its mounts are read-only, and where its ports can be reached.
+
+| Verdict | Meaning |
+|---|---|
+| same | Nothing changes |
+| changed | Different, not weaker — e.g. more isolated, or an ingress port that every server of the cluster answers on |
+| **weaker** | Less protected on Swarm — e.g. a port tied to one address would be open on all of them, a custom AppArmor profile would be replaced by Docker's default |
+
+- **Kept for you:** stack files drop `security_opt`. DockGate sets `no-new-privileges`, the seccomp profile (also your own file) and AppArmor *unconfined* on the Swarm service itself (Docker 25 or newer), and sets them again on every **Redeploy**. The plan says *kept on Swarm: …*.
+- **A weaker service stays in Compose** by default. In the plan it shows what would be weaker, and a **Move anyway — less protected on Swarm** box. Ticking it moves the service; the choice is written to the audit log.
+- **Checked after the move:** each Swarm task is compared with the Compose container it replaced. Weaker than the plan said, or `nginx -t` failing in an nginx task, puts the project back in Compose at once (the stack is removed, `docker compose up -d` runs). An image that was pulled again is noted.
+- **Move back** compares the other way and reports, in its log and the audit log, anything the services had on Swarm and lost in Compose. Nothing is undone: your compose files decide.
 
 ## Stacks
 
@@ -137,6 +215,8 @@ Containers that belong to a Compose project are not listed here — move the pro
 
 | You see | Why | What to do |
 |---|---|---|
+| `A network <name>-swarm already exists and is not an overlay — rename or remove it first` | The name of the Swarm twin is taken | Rename or remove that network, then move again |
+| `<service> failed while starting: …` / `not running (healthy) in time: …` | A service others depend on did not start (or never became healthy) | Fix that service; the project is put back in Compose |
 | `Swarm must be active and the server in use a manager` | Swarm is off on this server, or it is a worker | Set up Swarm in **Swarm → Overview**, or pick a manager in the top bar |
 | `A Swarm job is already running` | Only one move/deploy runs at a time | Wait for the open job to finish |
 | `the compose files changed after the plan was made — review it again` | Files edited between Review and Move | Open **Review…** again |
@@ -158,3 +238,15 @@ Containers that belong to a Compose project are not listed here — move the pro
 | `This container belongs to a compose project — move the project with Migrate` | Container move used on a Compose container | Use Migrate for the project |
 | `The container <name> is gone — remove the stack instead, or keep it on Swarm` | Move back to the container, but the container was deleted | Keep the stack, or remove it |
 | `Job not found (DockGate restarted?)` | DockGate restarted while a job ran | Check **History** for the result |
+| `less protected on Swarm — published ports: 10.0.0.5:8080/tcp → 0.0.0.0:8080/tcp …` | A port tied to one address; Swarm can not bind an address | Keep it in Compose, or tick *Move anyway* and allow the port only from that network in the firewall |
+| `less protected on Swarm — AppArmor: custom → default` | A custom AppArmor profile; Swarm has only Docker's default | Keep it in Compose, or *Move anyway* |
+| `security_opt: this Docker is older than 25 (API 1.44) …` | DockGate can not put no-new-privileges / seccomp back on the service | Update Docker on the managers, or *Move anyway* |
+| `nothing moves — every service would be less protected on Swarm` | Every service is weaker and none was ticked | Tick *Move anyway* for the ones that may move |
+| `less protected on Swarm than planned — …` (the project is put back) | A Swarm task came up weaker than the plan said | Read the field named; nothing changed in Compose |
+| `build: without image — on several servers the image must be in a registry: choose one under "Build & push"` | A built service on a cluster of several servers | Choose a registry under Build & push (add the login in Deploy → Registries first) |
+| `That registry login is no longer in Deploy → Registries` | The login chosen for the stack was removed | Add it again, then Redeploy with Build & push set |
+| Push fails: `denied` / `unauthorized` | The login can not push to that repository | Check the login in Deploy → Registries → Test |
+| `network lan (macvlan) has no subnet in ipam …` | Swarm needs the subnet to make the network on every server | Add `ipam: config: [{ subnet: … }]` to the network |
+| `network lan: server … is not in DockGate, so its config-only network can not be made` | A node DockGate does not manage | Add the server in Servers |
+| `can not read … on the server` | The secret/config file is not readable over SSH | Check the file and the SSH user's rights |
+| `privileged: … it stays in Compose` (no cap_add offered) | DockGate does not know what that image needs | Find the capabilities it needs, add them as cap_add in the file and remove privileged |
