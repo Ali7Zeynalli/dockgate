@@ -2,6 +2,16 @@
 
 ---
 
+## [2.50.0] - 2026-11-13
+
+### Added
+- **Swarm → Firewall.** The ports Swarm services publish, on every server of the cluster, in one table: open (to whom), closed, or open to everyone because nothing filters Docker traffic there (no firewall, firewalld, or Docker port isolation off).
+  - **Open… / Close** writes the same `ufw route allow` rule on every server with UFW and Docker port isolation, for anyone, an IP list or addresses. Ingress ports are filtered by their published port, host-mode ports by the container port.
+  - **Kept:** a server that joins later gets the same rules; a port that moves between ingress and host mode gets the right rule; the rule of a port no service publishes any more is removed everywhere. Checked every 10 minutes, or with **Check now**.
+  - In the audit log (`swarm_fw_open`, `swarm_fw_close`). The SSH port of a server is never changed here.
+
+---
+
 ## [2.49.0] - 2026-11-13
 
 ### Added

@@ -32,6 +32,7 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 - [Swarm → Services and the service page](swarm-services.md) — scale, update, roll back, the full service form, 16 tabs
 - [Swarm → Auto Scaling](swarm-auto-scaling.md) — add and remove replicas by CPU and memory, suggested values, capacity
 - [Swarm → Stacks and Migrate](swarm-stacks-and-migrate.md) — move Compose projects and containers to Swarm and back
+- [Swarm → Firewall](swarm-firewall.md) — published ports on every server, opened and closed together
 - [Swarm → Secrets & configs and Networks](swarm-secrets-and-networks.md) — passwords and files for services, overlay networks
 - [Swarm → Cluster settings](swarm-cluster.md) — autolock, keys and certificates, tuning, backups, recover
 

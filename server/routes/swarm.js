@@ -139,6 +139,10 @@ router.post('/stacks/:name/move-back', ok(async (req) => {
   if (row && row.origin === 'container') return jobOf(await sy.startBackToContainer(req.params.name, { sourceIp: req.ip }));
   return jobOf(await stacks.startMoveBack(req.params.name, { sourceIp: req.ip }));
 }));
+// ---- Swarm → Firewall: published ports on every server (server/swarm-firewall.js) ----
+router.get('/firewall', ok(() => require('../swarm-firewall').overview()));
+router.post('/firewall/apply', ok((req) => require('../swarm-firewall').apply(req.body || {}, { sourceIp: req.ip })));
+router.post('/firewall/sync', ok(() => require('../swarm-firewall').sync()));
 // ---- stack files kept in DockGate, taking over outside stacks, docker run containers (server/swarm-yaml.js) ----
 const sy = require('../swarm-yaml');
 router.post('/stacks', ok(async (req) => jobOf(await sy.startDeploy({ ...(req.body || {}), create: true }, { sourceIp: req.ip }))));
