@@ -11,7 +11,6 @@
 
 ### Fixed
 - A stack file kept the macvlan / ipvlan driver without its subnet, so such a project could not move.
-- privileged was left in the stack file of a service that stays in Compose; it is no longer written.
 
 ---
 
