@@ -6,12 +6,21 @@
 
 Run a Compose service as several containers (replicas) with one click. Docker spreads the requests over them by the service's name, so a proxy in front (nginx, Caddy) or another service reaches all of them as `http://api:8080`.
 
+On this panel, without Swarm:
+
+- **[Replicas](#what-happens-when-you-click)** with `−` / `+` — your compose files are not changed;
+- **[Auto-heal](#auto-heal-and-who-keeps-the-rules)** — a replica that stays unhealthy is restarted;
+- **[Auto Scaling](#auto-scaling)** — replicas follow the load, within your limits and the server's room;
+- **[Roll out](#updates-without-downtime-roll-out)** — updates one replica at a time, without downtime.
+
+With the [Edge agent](agent-security.md) on the server, these keep running while DockGate is offline.
+
 ![Scaling & health](images/compose-scaling.png)
 
 | Column | What it shows |
 |---|---|
-| **Service** | Name and image, and notes: what it needs to run as several replicas, the old name it still answers to, the proxy in front of it |
-| **Replicas** | `−` and `+`. `+` is disabled with the reason when the service can not have more than one |
+| **Service** | Name and image, **Roll out…**, and notes: what it needs to run as several replicas, the old name it still answers to, the proxy in front of it (and whether it waits too long for a replica that stopped) |
+| **Replicas** | `−` and `+` (`+` is disabled with the reason when the service can not have more than one). Under it the **Auto Scaling** chip (Off / Suggest / Simulating / Auto) opens the rule; under Auto the cell shows *2 of 1–3* |
 | **Limits** | The CPU and memory limits **from your compose file** (`cpus`, `mem_limit`, `deploy.resources.limits`). DockGate does not change them |
 | **State** | Replicas running, or **drift** when they differ from what was set |
 | **Auto-heal** | On: a replica that stays unhealthy is restarted. Uses the service's own health check; without one, the Edge agent checks its port |
