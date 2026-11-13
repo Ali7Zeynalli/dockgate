@@ -126,6 +126,25 @@ A service with `build:` runs on Swarm only from an image: Swarm does not build, 
 
 The choice is kept with the stack: every **Redeploy** builds and pushes again, so the servers run what the files say now (the registry keeps the earlier tags — **Redeploy → an earlier deploy** goes back to one). The servers pull with the same login (`--with-registry-auth`). Your compose files are not changed.
 
+## Secrets, privileged services and macvlan
+
+**Secrets and configs from files** (`secrets: token: { file: ./token.txt }`). Swarm can not change a secret or config once made, so a stack file that names a file fails on Redeploy as soon as the file changed. DockGate reads each file — locally, or over SSH for a project on a remote server — and makes the Swarm object itself, named by its content (`<stack>_<key>_<hash>`). A changed file becomes a new object on the next Redeploy and the services switch to it; the 3 newest versions per secret are kept (an earlier deploy can go back to them), older unused ones are removed.
+
+**privileged.** Swarm has no privileged services, so such a service stays in Compose. For images whose family DockGate knows, the plan offers **Run with cap_add …** instead — only the rights such an image needs:
+
+| Image family | cap_add |
+|---|---|
+| WireGuard (wireguard, wg-easy, …) | NET_ADMIN, SYS_MODULE |
+| VPN (OpenVPN, Tailscale, ZeroTier, NetBird, Headscale, Gluetun) | NET_ADMIN |
+| DNS / DHCP (Pi-hole, AdGuard) | NET_ADMIN |
+| Firewall (iptables, CrowdSec, fail2ban) | NET_ADMIN, NET_RAW |
+| Network checks (Uptime Kuma, Smokeping, Gatus, blackbox) | NET_RAW |
+| Time (chrony, ntpd) | SYS_TIME |
+
+It is used only when ticked; if the service does not come up that way, the move is put back. Other privileged images (Docker-in-Docker, device access) stay in Compose.
+
+**macvlan / ipvlan networks.** A stack file can not carry their subnet and parent interface. DockGate makes a **config-only network** with them on every server of the cluster (the parent interface must have the same name on each) and a Swarm network from it, `<stack>_<key>-swarm`, which the stack joins. **Move back** removes both, and Compose makes its own network again. Fixed addresses (`ipv4_address`) are Swarm's to give, as for any network.
+
 ## Protected as before
 
 Before a service moves, DockGate compares how it is protected in Compose with how it will be on Swarm, field by field: the user it runs as, a read-only file system, `no-new-privileges`, seccomp and AppArmor, the capabilities it drops and adds, privileged, the host PID / IPC namespace, the user namespace, whether its mounts are read-only, and where its ports can be reached.
@@ -227,3 +246,7 @@ Before a service moves, DockGate compares how it is protected in Compose with ho
 | `build: without image — on several servers the image must be in a registry: choose one under "Build & push"` | A built service on a cluster of several servers | Choose a registry under Build & push (add the login in Deploy → Registries first) |
 | `That registry login is no longer in Deploy → Registries` | The login chosen for the stack was removed | Add it again, then Redeploy with Build & push set |
 | Push fails: `denied` / `unauthorized` | The login can not push to that repository | Check the login in Deploy → Registries → Test |
+| `network lan (macvlan) has no subnet in ipam …` | Swarm needs the subnet to make the network on every server | Add `ipam: config: [{ subnet: … }]` to the network |
+| `network lan: server … is not in DockGate, so its config-only network can not be made` | A node DockGate does not manage | Add the server in Servers |
+| `can not read … on the server` | The secret/config file is not readable over SSH | Check the file and the SSH user's rights |
+| `privileged: … it stays in Compose` (no cap_add offered) | DockGate does not know what that image needs | Find the capabilities it needs, add them as cap_add in the file and remove privileged |

@@ -2,6 +2,19 @@
 
 ---
 
+## [2.52.0] - 2026-11-13
+
+### Added
+- **Secrets and configs from files keep working on Redeploy.** DockGate reads each file (also over SSH for a project on a remote server, which was not possible before) and makes the Swarm object itself, named by its content; a changed file becomes a new version the services switch to, instead of `docker stack deploy` failing. The 3 newest versions are kept.
+- **privileged → cap_add.** For known image families (WireGuard, VPNs, Pi-hole / AdGuard, firewalls, network checks, time) the plan offers **Run with cap_add …** with only the rights such an image needs; used only when ticked, and the move is put back if the service does not start.
+- **macvlan / ipvlan networks on Swarm.** DockGate makes a config-only network with the subnet and parent interface on every server and a Swarm network from it, which the stack joins; Move back removes them and Compose makes its own again.
+
+### Fixed
+- A stack file kept the macvlan / ipvlan driver without its subnet, so such a project could not move.
+- privileged was left in the stack file of a service that stays in Compose; it is no longer written.
+
+---
+
 ## [2.51.0] - 2026-11-13
 
 ### Added

@@ -50,3 +50,8 @@ test('a running container reads the same as its compose service', () => {
   const rows = SEC.compareProfiles(SEC.profileOfService(hardened), SEC.profileOfContainer(ct));
   assert.deepEqual(rows.filter(r => r.verdict !== 'same'), []);
 });
+test('privileged → cap_add is not "more capabilities"', () => {
+  const rows = SEC.compareProfiles(SEC.profileOfService({ privileged: true }), SEC.profileOfService({ cap_add: ['NET_ADMIN'] }, { onSwarm: true }));
+  assert.deepEqual(SEC.weakerRows(rows), []);
+  assert.equal(rows.find(r => r.field === 'privileged').verdict, 'changed');
+});

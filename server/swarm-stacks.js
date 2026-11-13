@@ -103,6 +103,20 @@ const IGNORED_BY_SWARM = ['security_opt', 'cgroup_parent', 'pid', 'ipc', 'userns
 const CONVERTED = ['mem_limit', 'mem_reservation', 'cpus', 'cpu_quota', 'cpu_period', 'pids_limit', 'shm_size', 'links', 'volumes_from'];
 const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|localhost)$/;
 const HOST_NET = 'host_net'; // the stack's name for Docker's predefined "host" network
+// privileged → the capabilities images of a family usually need (offered in the plan, used only when accepted)
+const CAP_HINTS = [
+  [/wireguard|wg-easy|wg-portal|wg-access/i, ['NET_ADMIN', 'SYS_MODULE'], 'WireGuard'],
+  [/openvpn|tailscale|zerotier|netbird|headscale|gluetun/i, ['NET_ADMIN'], 'VPN'],
+  [/pihole|pi-hole|adguard/i, ['NET_ADMIN'], 'DNS / DHCP'],
+  [/iptables|crowdsec|fail2ban/i, ['NET_ADMIN', 'NET_RAW'], 'firewall'],
+  [/uptime-kuma|smokeping|gatus|blackbox/i, ['NET_RAW'], 'network checks'],
+  [/chrony|ntpd|(^|\/)ntp(:|$)/i, ['SYS_TIME'], 'time'],
+];
+function capHint(image) { const h = CAP_HINTS.find(([re]) => re.test(String(image || ''))); return h ? { caps: h[1], family: h[2] } : null; }
+const LAN_DRIVERS = ['macvlan', 'ipvlan'];
+/** The Swarm network a macvlan / ipvlan network of a stack becomes (made from a config-only network on each server). */
+// not <project>_<key>: that is the name Compose gives its own network, and it would pick the Swarm one up on Move back
+const lanNetName = (stack, key) => `${`${stack}_${key}`.slice(0, 50)}-swarm`;
 const bytesOf = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; };
 const mbText = (b) => `${Math.round(b / 1048576)} MB`;
 /** Memory for a stack file: whole MiB when it is one, else bytes. */
@@ -194,7 +208,11 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
   for (const [name, s] of Object.entries(cfg.services || {})) {
     const f = []; // findings: { level: info|warn|bad, text }
     const add = (level, text) => f.push({ level, text });
-    if (s.privileged) add('bad', 'privileged: Swarm services can not be privileged — it stays in Compose. Often only some rights are needed: give them with cap_add (e.g. NET_ADMIN) and it can move');
+    const hint = s.privileged ? capHint(s.image) : null;
+    const capInstead = !!(hint && settings && settings.services && settings.services[name] && settings.services[name].capInstead);
+    if (s.privileged && capInstead) add('warn', `privileged → cap_add ${hint.caps.join(', ')} (accepted): it runs on Swarm without privileged, with only what a ${hint.family} image needs. If it does not start, the move is put back`);
+    else if (s.privileged && hint) add('bad', `privileged: Swarm services can not be privileged — it stays in Compose. A ${hint.family} image usually needs only cap_add ${hint.caps.join(', ')}: choose "Run with cap_add" in the plan to move it`);
+    else if (s.privileged) add('bad', 'privileged: Swarm services can not be privileged — it stays in Compose. Often only some rights are needed: give them with cap_add (e.g. NET_ADMIN) and it can move');
     if (s.devices && s.devices.length) add('bad', 'devices: Swarm services can not use host devices — it stays in Compose (a GPU can use Swarm generic resources instead)');
     if (s.network_mode === 'host') add('warn', 'network_mode: host → the service joins Docker\'s host network on Swarm (same as before); it can have no other network and no published ports');
     else if (s.network_mode && s.network_mode !== 'bridge') add('bad', `network_mode: ${s.network_mode} shares another container's network — Swarm has no such mode, so it stays in Compose`);
@@ -243,7 +261,14 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
     const binds = (s.volumes || []).filter(v => v.type === 'bind');
     const vols = (s.volumes || []).filter(v => v.type === 'volume');
     if (nodes > 1 && (binds.length || vols.length)) add('info', 'has data on this server: it is kept on this server (placement rule)');
-    for (const sec of [...(s.secrets || []), ...(s.configs || [])]) { const top = (cfg.secrets || {})[sec.source] || (cfg.configs || {})[sec.source]; if (top && top.file && r.remote) add('bad', `secret/config ${sec.source} from a file: not possible for a project on a remote server yet`); }
+    for (const sec of [...(s.secrets || []), ...(s.configs || [])]) { const top = (cfg.secrets || {})[sec.source] || (cfg.configs || {})[sec.source]; if (top && top.file) add('info', `secret/config ${sec.source} from ${top.file}: DockGate reads the file${r.remote ? ' over SSH' : ''} and makes it a Swarm object named by its content — a new version when the file changes, so Redeploy never fails on it`); }
+    for (const net of Object.keys(s.networks || {})) {
+      const n = (cfg.networks || {})[net];
+      if (!n || n.external || !LAN_DRIVERS.includes(n.driver)) continue;
+      const sub = (((n.ipam || {}).config) || [])[0] || {};
+      if (!sub.subnet) add('bad', `network ${net} (${n.driver}) has no subnet in ipam — Swarm needs one to make it on every server; it stays in Compose`);
+      else add('info', `network ${net} (${n.driver} on ${(n.driver_opts || {}).parent || 'the default interface'}, ${sub.subnet}): DockGate makes it on every server as a config-only network and the stack joins it${nodes > 1 ? ' — the interface must have that name on each server' : ''}`);
+    }
     if (s.environment && Object.keys(s.environment).length) add('info', `environment (${Object.keys(s.environment).length}) taken from the files and .env`);
     const secretish = Object.keys(s.environment || {}).filter(k => /(PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|PRIVATE_KEY)$/i.test(k) && !/_FILE$/i.test(k));
     if (secretish.length) add('info', `${secretish.join(', ')} look${secretish.length === 1 ? 's' : ''} like a password in plain environment. If the image reads ${secretish[0]}_FILE (postgres, mysql and many others do), it can become a Swarm secret later (Secrets & configs) — DockGate does not change it by itself.`);
@@ -264,7 +289,7 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
     }
     const stays = f.some(x => x.level === 'bad'); // this service can not run on Swarm: it stays in Compose
     if (!stays && out.status === 'ready' && f.some(x => x.level === 'warn')) out.status = 'attention';
-    out.services.push({ name, image, database: isDatabase(image), findings: f, ports: (s.ports || []).map(p => ({ published: Number(p.published) || null, target: p.target, protocol: p.protocol || 'tcp', hostIp: p.host_ip || null, scope: portScope(p) })), hostNetwork: s.network_mode === 'host', healthcheck: !!(s.healthcheck && !s.healthcheck.disable), volumes: vols.map(v => v.source), binds: binds.map(v => v.source), build: !!s.build, stays, security: secRows.filter(x => x.verdict !== 'same'), weaker: weaker.length > 0, securityOnly: !otherBad && weaker.length > 0 });
+    out.services.push({ name, image, database: isDatabase(image), findings: f, ports: (s.ports || []).map(p => ({ published: Number(p.published) || null, target: p.target, protocol: p.protocol || 'tcp', hostIp: p.host_ip || null, scope: portScope(p) })), hostNetwork: s.network_mode === 'host', healthcheck: !!(s.healthcheck && !s.healthcheck.disable), volumes: vols.map(v => v.source), binds: binds.map(v => v.source), build: !!s.build, capHint: hint, capFixable: !!hint && f.filter(x => x.level === 'bad').every(x => /^privileged/.test(x.text)), stays, security: secRows.filter(x => x.verdict !== 'same'), weaker: weaker.length > 0, securityOnly: !otherBad && weaker.length > 0 });
   }
   if (!out.services.length) block('The project has no services.');
   if (out.bridges.length && out.status === 'ready') out.status = 'attention';
@@ -322,6 +347,8 @@ function adapt(cfg, settings = {}, ctx = {}) {
       const have = new Set((s.volumes || []).map(v => v.target));
       for (const v of from.volumes || []) if ((v.type === 'volume' || v.type === 'bind') && !have.has(v.target)) (s.volumes = s.volumes || []).push(mode === 'ro' ? { ...v, read_only: true } : { ...v });
     }
+    if (s0.privileged && my.capInstead) { const h = capHint(s0.image); if (h) s.cap_add = [...new Set([...(s.cap_add || []), ...h.caps])]; }
+    delete s.privileged; // Swarm has none (a privileged service stays in Compose unless cap_add was accepted)
     for (const k of ['container_name', 'build', 'profiles', 'pull_policy', 'restart', 'scale', ...CONVERTED]) delete s[k];
     for (const k of IGNORED_BY_SWARM) delete s[k];
     // /dev/shm: Swarm has no shm_size; a tmpfs of that size does the same
@@ -380,6 +407,7 @@ function adapt(cfg, settings = {}, ctx = {}) {
   for (const [k, n0] of Object.entries(cfg.networks || {})) {
     if (usesHostNet && k === HOST_NET) continue;
     const n = { ...(n0 || {}) };
+    if (LAN_DRIVERS.includes(n.driver) && ctx.stackName) { out.networks[k] = { external: true, name: lanNetName(ctx.stackName, k) }; continue; } // made by DockGate (ensureLanNets)
     if (n.external) {
       const twin = ctx.twins && ctx.twins[n.name || k];
       out.networks[k] = twin ? { external: true, name: twin } : clean(n); // a shared Compose bridge → its overlay twin
@@ -707,6 +735,108 @@ function startBridgeKeeper() { if (!keeper) { keeper = setInterval(keepTwins, 30
  * Move compose projects to Swarm, one at a time. plans: [{ project, hash, settings }].
  * A project that fails its check is put back in Compose; the others go on.
  */
+// ---- secrets / configs from files, and macvlan / ipvlan networks ----
+/**
+ * Swarm secrets and configs can not change, so a stack file that names a file fails on Redeploy once the file
+ * changed. DockGate reads each file (locally, or over SSH for a remote project) and makes the object itself, named by
+ * its content (<stack>_<key>_<hash>); the stack names it as external. A changed file is a new object.
+ */
+async function fileObjects(stack, r, stackName, log) {
+  if (!stack || typeof stack !== 'object') return;
+  const c = dockerService.docker, crypto = require('crypto');
+  const read = async (f) => {
+    if (r && r.remote && r.server) {
+      const rc = require('./remote-compose');
+      const x = await rc.execRemote(r.server, `base64 -w0 ${rc.shq(f)} 2>/dev/null || base64 ${rc.shq(f)} | tr -d '\\n'`);
+      if (x.code !== 0 || !String(x.stdout).trim()) throw new Error(`can not read ${f} on the server`);
+      return Buffer.from(String(x.stdout).trim(), 'base64');
+    }
+    return require('fs').readFileSync(f);
+  };
+  for (const kind of ['secrets', 'configs']) {
+    for (const [key, def] of Object.entries(stack[kind] || {})) {
+      if (!def || !def.file) continue;
+      const data = await read(def.file);
+      const name = `${`${stackName}_${key}`.slice(0, 50)}_${crypto.createHash('sha256').update(data).digest('hex').slice(0, 10)}`;
+      const list = kind === 'secrets' ? await c.listSecrets({ filters: JSON.stringify({ name: [name] }) }) : await c.listConfigs({ filters: JSON.stringify({ name: [name] }) });
+      if (!list.some(x => x.Spec.Name === name)) {
+        const spec = { Name: name, Data: data.toString('base64'), Labels: { 'dockgate.stack': stackName, 'dockgate.key': key } };
+        if (kind === 'secrets') await c.createSecret(spec); else await c.createConfig(spec);
+        log(`  ${kind === 'secrets' ? 'secret' : 'config'} ${name} made from ${def.file}`);
+      }
+      stack[kind][key] = { external: true, name };
+    }
+  }
+}
+/** Old versions of those objects: keep the 3 newest per key (earlier deploys may go back to them), remove the rest that nothing uses. */
+async function pruneFileObjects(stackName, log) {
+  const c = dockerService.docker;
+  for (const kind of ['secrets', 'configs']) {
+    const list = kind === 'secrets' ? await c.listSecrets({ filters: JSON.stringify({ label: [`dockgate.stack=${stackName}`] }) }).catch(() => []) : await c.listConfigs({ filters: JSON.stringify({ label: [`dockgate.stack=${stackName}`] }) }).catch(() => []);
+    const byKey = {};
+    for (const o of list) (byKey[o.Spec.Labels['dockgate.key']] = byKey[o.Spec.Labels['dockgate.key']] || []).push(o);
+    for (const objs of Object.values(byKey)) {
+      for (const o of objs.sort((a, b) => new Date(b.CreatedAt) - new Date(a.CreatedAt)).slice(3)) {
+        try { if (kind === 'secrets') await c.getSecret(o.ID).remove(); else await c.getConfig(o.ID).remove(); log(`  removed old ${kind === 'secrets' ? 'secret' : 'config'} ${o.Spec.Name}`); } catch (e) { /* still in use */ }
+      }
+    }
+  }
+}
+/**
+ * macvlan / ipvlan on Swarm: a config-only network (parent interface, subnet) on every server, and one Swarm network
+ * made from it on the manager. The stack joins that network as external.
+ */
+async function ensureLanNets(cfg, stackName, ctx, log) {
+  const nets = Object.entries(cfg.networks || {}).filter(([, n]) => n && !n.external && LAN_DRIVERS.includes(n.driver));
+  if (!nets.length) return [];
+  const st = await swarm.status();
+  const servers = await require('./swarm-firewall').clusterServers(dockerService.docker);
+  const made = [];
+  for (const [key, n] of nets) {
+    const name = lanNetName(stackName, key), cfgName = `${name.replace(/-swarm$/, '')}-cfg`;
+    const sub = (((n.ipam || {}).config) || [])[0] || {};
+    const IPAM = { Driver: 'default', Config: [{ Subnet: sub.subnet, ...(sub.gateway ? { Gateway: sub.gateway } : {}), ...(sub.ip_range ? { IPRange: sub.ip_range } : {}) }] };
+    for (const s of servers.servers) {
+      if (!s.row) throw new Error(`network ${key}: server ${s.hostname} is not in DockGate, so its config-only network can not be made — add it in Servers`);
+      const c = s.row.id === 'local' || s.row.type === 'local' ? dockerService.createLocalClient() : (s.row.id === serverId() ? dockerService.docker : dockerService.createSshClient(s.row));
+      const have = await c.listNetworks({ filters: JSON.stringify({ name: [cfgName] }) });
+      if (!have.some(x => x.Name === cfgName)) {
+        await c.createNetwork({ Name: cfgName, ConfigOnly: true, Options: n.driver_opts || {}, IPAM, Labels: { 'dockgate.lan': stackName } });
+        log(`  ${s.hostname}: config-only network ${cfgName} (${(n.driver_opts || {}).parent || 'default interface'}, ${sub.subnet})`);
+      }
+    }
+    const have = await dockerService.docker.listNetworks({ filters: JSON.stringify({ name: [name] }) });
+    if (!have.some(x => x.Name === name)) {
+      // Docker takes nothing else for a network made from a config-only one (no labels, no attachable)
+      await dockerService.docker.createNetwork({ Name: name, Driver: n.driver, Scope: 'swarm', ConfigFrom: { Network: cfgName } });
+      log(`  Swarm network ${name} (${n.driver}) made from ${cfgName}`);
+    }
+    made.push(name);
+  }
+  void st; void ctx;
+  return made;
+}
+/** Remove those networks again (Move back, or a move that was put back). */
+async function removeLanNets(stackName, log) {
+  // the Swarm networks carry no label: they are the config-only names without -cfg
+  const cfgs = await dockerService.docker.listNetworks({ filters: JSON.stringify({ label: [`dockgate.lan=${stackName}`] }) }).catch(() => []);
+  for (const name of [...new Set(cfgs.map(n => `${n.Name.replace(/-cfg$/, '')}-swarm`))]) {
+    const sw = (await dockerService.docker.listNetworks({ filters: JSON.stringify({ name: [name] }) }).catch(() => [])).find(n => n.Name === name && n.Scope === 'swarm');
+    if (!sw) continue;
+    for (let i = 0; i < 15; i++) { // the tasks of a removed stack leave it a few seconds later
+      try { await dockerService.docker.getNetwork(sw.Id).remove(); log(`  removed Swarm network ${name}`); break; } catch (e) { await new Promise(r => setTimeout(r, 2000)); }
+    }
+  }
+  const servers = await require('./swarm-firewall').clusterServers(dockerService.docker).catch(() => ({ servers: [] }));
+  for (const s of servers.servers) {
+    if (!s.row) continue;
+    const c = s.row.id === 'local' || s.row.type === 'local' ? dockerService.createLocalClient() : (s.row.id === serverId() ? dockerService.docker : dockerService.createSshClient(s.row));
+    for (const n of await c.listNetworks({ filters: JSON.stringify({ label: [`dockgate.lan=${stackName}`] }) }).catch(() => [])) {
+      for (let i = 0; i < 10; i++) { try { await c.getNetwork(n.Id).remove(); log(`  ${s.hostname}: removed ${n.Name}`); break; } catch (e) { await new Promise(r => setTimeout(r, 2000)); } }
+    }
+  }
+}
+
 // ---- protection before and after a move (server/swarm-security.js) ----
 const NGINX = /(^|\/)(nginx|openresty)(:|@|$)/i;
 /** { service: { profile, image, imageName, id } } of the running Compose containers of these services (first replica). */
@@ -819,7 +949,8 @@ async function startMove(plans, { sourceIp } = {}) {
           sk('build', 'done');
         }
         const twins = { ...twinsMap(sid), ...Object.fromEntries((a.bridges || []).map(x => [x.name, x.twin])) };
-        const stack = adapt(a.cfg, plan.settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, twins, only: partial ? partial.services : null, project: partial ? p : null });
+        const stack = adapt(a.cfg, plan.settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, twins, only: partial ? partial.services : null, project: partial ? p : null, stackName });
+        await fileObjects(stack, r, stackName, log);
         sk('check', 'done');
         deployId = q.addDeploy.run(sid, stackName, 'move', a.hash, JSON.stringify(stack), sourceIp || null, Date.now()).lastInsertRowid;
         if ((a.bridges || []).length) {
@@ -833,6 +964,7 @@ async function startMove(plans, { sourceIp } = {}) {
         downAt = Date.now();
         await helpers().runResolved(r, p, partial ? ['rm', '-s', '-f', ...partial.services] : ['down'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
         sk('down', 'done');
+        if (Object.values(a.cfg.networks || {}).some(n => n && !n.external && LAN_DRIVERS.includes(n.driver))) { sk('lan', 'running', 'make the macvlan / ipvlan networks on every server'); await ensureLanNets(a.cfg, stackName, ctx, log); sk('lan', 'done'); }
         sk('deploy', 'running', 'docker stack deploy');
         deployed = true; // from here a failure removes the stack again
         await deployInOrder(stackName, stack, log, { since: downAt });
@@ -847,6 +979,7 @@ async function startMove(plans, { sourceIp } = {}) {
         if (report.failed.length) throw new Error(`less protected on Swarm than planned — ${report.failed.join('; ')}`);
         sk('secure', 'done');
         if (partial) { sk('connect', 'running', 'connect the services that stay in Compose'); await connectStaying(p, stackName, partial.stays, log); sk('connect', 'done'); }
+        await pruneFileObjects(stackName, log).catch(() => {});
         res.status = 'moved'; res.downtimeMs = readyAt - downAt;
         q.put.run({ server_id: sid, name: stackName, origin: 'compose', location: JSON.stringify({ files: r.files, cwd: r.cwd, remote: r.remote, serverId: a.location.serverId }), settings: JSON.stringify({ ...(plan.settings || {}), ...(partial ? { partial: { project: p, services: partial.services } } : {}) }), now: Date.now() });
         q.endDeploy.run('done', null, res.downtimeMs, Date.now(), deployId);
@@ -861,6 +994,7 @@ async function startMove(plans, { sourceIp } = {}) {
           try {
             if (deployed) await stackRemove(stackName, log);
             else await stackRemove(stackName, log).catch(() => {});
+            await removeLanNets(stackName, log).catch(() => {});
             await helpers().runResolved(r, p, ['up', '-d'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
             res.status = 'rolled_back';
             sk('back', 'done');
@@ -918,7 +1052,9 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
           images = { ...images, ...(await require('./swarm-build').buildAll({ project: proj, cfg, r, registryId: set.build.registryId, only: part ? part.services : null, log })) };
           step(job, 'build', 'done');
         }
-        stack = adapt(cfg, set, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, twins: twinsMap(), images, only: part ? part.services.filter(x => cfg.services && cfg.services[x]) : null, project: part ? proj : null });
+        stack = adapt(cfg, set, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, twins: twinsMap(), images, only: part ? part.services.filter(x => cfg.services && cfg.services[x]) : null, project: part ? proj : null, stackName: name });
+        await fileObjects(stack, r, name, log);
+        await ensureLanNets(cfg, name, ctx, log);
         if (settings) q.put.run({ server_id: sid, name, origin: row.origin, location: row.location, settings: JSON.stringify(set), now: Date.now() });
         step(job, 'read', 'done');
       }
@@ -943,6 +1079,7 @@ async function startRedeploy(name, { deployId = null, settings = null, sourceIp 
       step(job, 'verify', 'running', 'Check every service runs');
       await verify(name, log, { since: t });
       step(job, 'verify', 'done');
+      await pruneFileObjects(name, log).catch(() => {});
       const part = partialOf(row);
       if (part) { // a new network in the file: connect the Compose part to it too
         const others = Object.keys((await readConfigSafe(row, part.project)).services || {}).filter(x => !part.services.includes(x));
@@ -991,6 +1128,7 @@ async function startMoveBack(name, { sourceIp } = {}) {
       const before = await snapshotTasks(name);
       step(job, 'rm', 'running', 'Remove the stack (volumes stay)');
       await stackRemove(name, log);
+      await removeLanNets(name, log); // Compose makes its own macvlan / ipvlan network again
       step(job, 'rm', 'done');
       step(job, 'up', 'running', part ? `docker compose up -d (${part.services.join(', ')} come back to ${proj})` : 'docker compose up -d');
       await helpers().runResolved(r, proj, ['up', '-d'], (c) => String(c).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
@@ -1043,9 +1181,9 @@ async function preview(project, settings) {
   const images = {};
   for (const s of a.services) if (s.image && !(a.cfg.services[s.name] || {}).image) images[s.name] = s.image;
   const only = part ? part.services : a.status === 'partial' ? a.services.filter(x => !x.stays).map(x => x.name) : null;
-  const stack = adapt(a.cfg, settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, twins: { ...twinsMap(), ...Object.fromEntries((a.bridges || []).map(x => [x.name, x.twin])) }, only, project: only ? proj : null });
+  const stack = adapt(a.cfg, settings || {}, { nodes: ctx.nodes, hostname: ctx.hostname, encrypt: ctx.encrypt, images, twins: { ...twinsMap(), ...Object.fromEntries((a.bridges || []).map(x => [x.name, x.twin])) }, only, project: only ? proj : null, stackName: row ? project : (only ? `${proj}-swarm` : proj) });
   const { cfg, privileges, security, ...rest } = a;
   return { ...rest, stack, settings: settings || {} };
 }
 
-module.exports = { startBridgeKeeper, keepTwins, twinName, startLevels, resourcesOf, aliasesOf, portScope, isOnSwarm, stackOfProject, partialOf, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, remoteServer, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf, securityCheck, snapshotTasks } };
+module.exports = { capHint, startBridgeKeeper, keepTwins, twinName, startLevels, resourcesOf, aliasesOf, portScope, isOnSwarm, stackOfProject, partialOf, stackRows, analyze, adapt, restartPolicy, candidates, list, history, preview, startMove, startRedeploy, startMoveBack, removeStack, _clean: clean, _internal: { q, remoteServer, stackDeploy, stackRemove, verify, newJob, finish, context, serverId, hashOf, securityCheck, snapshotTasks } };

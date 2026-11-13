@@ -84,7 +84,8 @@ function compareProfiles(a, b) {
     const v = a[k] === b[k] ? 'same' : lvl[b[k]] < lvl[a[k]] ? 'weaker' : 'changed';
     row(label, a[k], b[k], v, v === 'weaker' ? (b[k] === 'unconfined' ? 'no filter at all' : 'its own profile would be replaced by Docker\'s default') : '');
   }
-  const lost = a.capDrop.filter(c => !b.capDrop.includes(c)), gained = b.capAdd.filter(c => !a.capAdd.includes(c));
+  // privileged had every capability: the ones cap_add gives instead are not more than before
+  const lost = a.capDrop.filter(c => !b.capDrop.includes(c)), gained = a.privileged ? [] : b.capAdd.filter(c => !a.capAdd.includes(c));
   row('dropped capabilities', a.capDrop.join(', ') || '—', b.capDrop.join(', ') || '—', lost.length ? 'weaker' : a.capDrop.join() === b.capDrop.join() ? 'same' : 'changed', lost.length ? `it would keep ${lost.join(', ')}` : '');
   row('added capabilities', a.capAdd.join(', ') || '—', b.capAdd.join(', ') || '—', gained.length ? 'weaker' : a.capAdd.join() === b.capAdd.join() ? 'same' : 'changed', gained.length ? `it would also get ${gained.join(', ')}` : '');
   row('privileged', yes(a.privileged), yes(b.privileged), a.privileged === b.privileged ? 'same' : b.privileged ? 'weaker' : 'changed');

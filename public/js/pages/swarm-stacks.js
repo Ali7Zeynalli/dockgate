@@ -20,7 +20,9 @@
       const my = set[s.name] = set[s.name] || {};
       // Less protected on Swarm only: it stays unless "Move anyway" is ticked (recorded in the audit log).
       const anyway = s.securityOnly ? `<label class="text-sm" style="display:flex;gap:6px;align-items:center;margin-top:6px;white-space:normal"><input type="checkbox" data-set="${esc(p.project)}|${esc(s.name)}|moveAnyway" ${my.moveAnyway ? 'checked' : ''}> Move anyway — less protected on Swarm</label>` : '';
-      if (s.stays && !(s.securityOnly && my.moveAnyway)) return { cells: [`<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '?')}</div>`, '<span class="text-sm" style="color:var(--warning,#d97706)">stays in Compose</span>', `${s.securityOnly ? securityList(s) : `<span class="ui-sub">${esc((s.findings.find(f => f.level === 'bad') || {}).text || '')}</span>`}${anyway}`, '<span class="ui-sub">connected to the stack network</span>'] };
+      // privileged with a known image family: run with only the capabilities it needs, when accepted
+      const caps = s.capFixable && s.capHint ? `<label class="text-sm" style="display:flex;gap:6px;align-items:center;margin-top:6px;white-space:normal"><input type="checkbox" data-set="${esc(p.project)}|${esc(s.name)}|capInstead" ${my.capInstead ? 'checked' : ''}> Run with cap_add ${esc(s.capHint.caps.join(', '))} instead of privileged</label>` : '';
+      if (s.stays && !(s.securityOnly && my.moveAnyway) && !(s.capFixable && my.capInstead)) return { cells: [`<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '?')}</div>`, '<span class="text-sm" style="color:var(--warning,#d97706)">stays in Compose</span>', `${s.securityOnly ? securityList(s) : `<span class="ui-sub">${esc((s.findings.find(f => f.level === 'bad') || {}).text || '')}</span>`}${anyway}${caps}`, '<span class="ui-sub">connected to the stack network</span>'] };
       const data = s.volumes.length || s.binds.length || s.database;
       return { cells: [
         `<b>${esc(s.name)}</b><div class="ui-sub td-mono">${esc(s.image || '?')}</div>`,
