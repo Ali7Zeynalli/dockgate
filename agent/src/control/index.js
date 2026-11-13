@@ -8,6 +8,8 @@ const path = require('path');
 const { verify } = require('./verify');
 const { healDecision } = require('./heal-decision');
 const ex = require('./executor');
+const { Scaler, cleanAuto } = require('./autoscale');
+const { hostCapFrom } = require('./measure');
 
 const STATE_DIR = process.env.DG_STATE_DIR || '/var/lib/dockgate-agent';
 const SOCK_DIR = process.env.DG_SOCK_DIR || '/run/dockgate-agent';
@@ -26,7 +28,7 @@ function cleanRules(body) {
       const int = (v, lo, hi) => (Number.isInteger(v) && v >= lo && v <= hi ? v : undefined);
       (out.projects[p] = out.projects[p] || {})[s] = {
         replicas: int(r.replicas, 0, ex.MAX_REPLICAS), min: int(r.min, 0, ex.MAX_REPLICAS), max: int(r.max, 1, ex.MAX_REPLICAS),
-        heal: r.heal === true, healPerHour: int(r.healPerHour, 1, 20) ?? 3, keep: r.keep !== false,
+        heal: r.heal === true, healPerHour: int(r.healPerHour, 1, 20) ?? 3, keep: r.keep !== false, auto: cleanAuto(r.auto),
       };
     }
   }
@@ -41,7 +43,14 @@ class Controller {
     try { Object.assign(this.state, JSON.parse(fs.readFileSync(path.join(STATE_DIR, 'state.json'), 'utf8'))); } catch (e) { /* first start */ }
     // A new key (agent reinstalled by another DockGate, or the key rotated): its numbers start over, and the old rules go.
     const fp = publicKeyPem ? require('crypto').createHash('sha256').update(publicKeyPem).digest('hex').slice(0, 16) : null;
-    if (this.state.key !== fp) Object.assign(this.state, { key: fp, lastSeq: 0, rules: null, rulesAt: 0 });
+    if (this.state.key !== fp) Object.assign(this.state, { key: fp, lastSeq: 0, rules: null, rulesAt: 0, scale: {} });
+    const proc = process.env.HOST_PROC || '/host/proc';
+    const read = (f) => { try { return fs.readFileSync(path.join(proc, f), 'utf8'); } catch (e) { return ''; } };
+    this.scaler = new Scaler({
+      docker, everyMs: TICK_MS, state: (this.state.scale = this.state.scale || {}),
+      readCap: async () => { this.info = this.info || await docker.info(); return hostCapFrom(this.info, read('meminfo'), read('loadavg')); },
+      notify: (t) => this.notify(t), record: (e) => this.record(e), onChange: async () => {},
+    });
   }
   save() {
     try { fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 }); const f = path.join(STATE_DIR, 'state.json'); fs.writeFileSync(`${f}.tmp`, JSON.stringify(this.state), { mode: 0o600 }); fs.renameSync(`${f}.tmp`, f); } catch (e) { this.log('[control] state not saved:', e.message); }
@@ -137,9 +146,13 @@ class Controller {
       for (const [service, rule] of Object.entries(svcs)) {
         const reps = await ex.replicasOf(this.docker, project, service).catch(() => []);
         if (rule.heal) for (const rep of reps) await this.healOne(project, service, rule, rep).catch(e => this.log('[control] heal:', e.message));
-        if (rule.keep && Number.isInteger(rule.replicas)) await this.keepReplicas(project, service, rule, reps).catch(e => this.log('[control] replicas:', e.message));
+        // Under Auto Scaling the number moves; only the minimum is kept.
+        const want = rule.auto && rule.auto.mode === 'auto' ? rule.auto.min : rule.replicas;
+        if (rule.keep && Number.isInteger(want)) await this.keepReplicas(project, service, { ...rule, replicas: want }, reps).catch(e => this.log('[control] replicas:', e.message));
       }
     }
+    await this.scaler.tick(rules, Date.now(), (p) => this.busy(p)).catch(e => this.log('[control] autoscale:', e.message));
+    this.save();
   }
 
   async healOne(project, service, rule, rep) {

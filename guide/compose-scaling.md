@@ -56,6 +56,33 @@ The note under the table says who keeps these rules:
 - **The Edge agent on that server**, when it runs the current version: it also brings back replicas that are gone (a `docker rm`, a crash with no restart), and keeps doing both while DockGate is offline. How it is commanded without a port: [Edge agent → How DockGate commands it, safely](agent-security.md).
 - **DockGate**, otherwise: it heals services that have their own health check while it is online.
 
+## Auto Scaling
+
+The chip under the replicas (**Auto scaling: off**) opens the rule of a service. Auto Scaling measures each replica against **the limits in your compose file** — CPU as a % of its `cpus`, memory as a % of its `mem_limit` — and adds or removes replicas within your minimum and maximum.
+
+![Auto Scaling](images/compose-autoscale.png)
+
+| Mode | What it does |
+|---|---|
+| **Off** | Nothing. You set the replicas with `−` / `+` |
+| **Suggest** | Writes what it would do in the history (*suggests 2 → 3* and why); **Apply** does it |
+| **Auto** | Changes the replicas itself. The first 24 hours it only **simulates** — writes *would scale 2 → 3* — so you see what it would have done before it acts. Tick *skip the 24 h simulation*, or later *start acting now*, to begin at once |
+
+![The rule](images/compose-autoscale-rule.png)
+
+The rule has the same fields as Swarm Auto Scaling: add at CPU % (and/or memory %), remove at a % at least 10 lower, for how many minutes, the wait after each change, and how many replicas per change.
+
+**It is safe by design:**
+
+- **Your limits are never changed.** A service with no CPU or memory limit can not have a rule — there is nothing to measure against.
+- **A replica is added only when the server has room for its limits** — the free memory minus 10 % for the server itself, and the CPU load below 80 % of the cores. Without room it adds none, writes *server full* in red, and tells you once (Settings → Notifications → *Auto Scaling changed a Compose service, or the server was full*).
+- **Never during a deploy:** nothing changes while a deploy, rebuild or image update of the project runs, or a container of it was made in the last 2 minutes.
+- **One change at a time per project**, then the wait you set.
+- **Fewer replicas stop gracefully** (the highest numbers go), and nginx / Caddy are reloaded after each change.
+- **The number Auto Scaling chose is written to DockGate's override**, so a later deploy through DockGate keeps it. Under Auto, the panel shows *2 of 1–3* instead of `−` / `+`, and drift means only *outside min–max*.
+
+**Who runs it:** the Edge agent on that server, every 30 seconds — also while DockGate is offline; DockGate reads what it did into the history. On a server without an up-to-date agent, DockGate runs the same loop every minute while it is online. The **By** column of the history says which.
+
 ## nginx in front
 
 For replicas to share the traffic, nginx must reach the service by its name. Two ways, both work with DockGate:
@@ -94,4 +121,8 @@ If someone runs `docker compose up` on the server without DockGate's override, t
 | `A deploy of this project is running — try again when it ends` | A deploy or rebuild is running | Wait for it |
 | `<service> could not run N replicas: … — the previous setting is back` | Compose failed (image, port…) | Read the message; nothing changed |
 | `Replicas: a whole number from 0–20` | Out of range | 0 to 20 |
+| `This service has no CPU or memory limit in its compose file — Auto Scaling needs one…` | No `cpus` / `mem_limit` | Add a limit to the compose file and redeploy |
+| `… needs its host port moved behind the proxy before it can have more than one replica — press + once…` | A rule with a maximum above 1 on a service that needs a fix | Press `+` once and accept the fix, then set the rule |
+| `Remove at a CPU % at least 10 below the add %…` | The two thresholds are too close | Keep 10 or more between them |
+| History: *server full* | No room for one more replica's limits | Free memory / CPU, lower the limit, or accept fewer replicas |
 | nginx: `host not found in upstream "api"` when nginx restarts | A static `proxy_pass` needs the service up when nginx starts | Add `depends_on: [api]` to nginx, or use the resolver form above |

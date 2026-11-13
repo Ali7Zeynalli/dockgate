@@ -2,6 +2,26 @@
 
 ---
 
+## [2.47.0] - 2026-11-13
+
+### Added
+- **Auto Scaling for Compose services, without Swarm.** In Scaling & health, the chip under a service's replicas opens its rule: **Off**, **Suggest** (writes what it would do; **Apply** does it) or **Auto** (changes the replicas, after a 24-hour **simulation** that only writes *would scale 2 → 3* — skippable).
+  - Measured against **the limits in your compose file** (CPU % of `cpus`, memory % of `mem_limit`); your limits are never changed, and a service without a limit can not have a rule.
+  - **A replica is added only when the server has room for its limits** (free memory minus 10 %, CPU load under 80 % of the cores). Without room: *server full* in the history and one notice.
+  - Never during a deploy or right after one; one change per project at a time; fewer replicas stop gracefully; nginx / Caddy reloaded after each change.
+  - The chosen number is written to DockGate's override, so a later deploy keeps it.
+  - **Run by the Edge agent** every 30 s, also while DockGate is offline; DockGate reads its history. Without an up-to-date agent, DockGate runs the same loop while it is online.
+  - **Auto Scaling history** in the panel: what it did, would do, or could not do, why, and by whom (agent or DockGate). New alert rule *Auto Scaling changed a Compose service, or the server was full*.
+  - Same rule fields as Swarm Auto Scaling (thresholds, minutes, waits, replicas per change).
+
+### Fixed
+- **Auto Scaling with a check every minute and "add after 1 minute" never acted** (Swarm too): the sample from a minute ago fell just outside the window. The window now allows half a check of slack.
+
+### Changed
+- Edge agent 1.3.0 — update it from **Servers → Edge agent** for Compose Auto Scaling.
+
+---
+
 ## [2.46.0] - 2026-11-13
 
 ### Added

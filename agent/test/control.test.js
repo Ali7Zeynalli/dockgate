@@ -45,7 +45,7 @@ test('rules keep only the known shape and limits', () => {
   const r = cleanRules({ version: 4, projects: { 'ok': { web: { replicas: 3, max: 99, heal: 'yes', extra: 'x', healPerHour: 0 } }, '../bad': { x: {} }, p: { 'a b': {} } } });
   assert.equal(r.version, 4);
   assert.deepEqual(Object.keys(r.projects), ['ok']);
-  assert.deepEqual(r.projects.ok.web, { replicas: 3, min: undefined, max: undefined, heal: false, healPerHour: 3, keep: true });
+  assert.deepEqual(r.projects.ok.web, { replicas: 3, min: undefined, max: undefined, heal: false, healPerHour: 3, keep: true, auto: undefined });
 });
 test('healing waits for the start period, then gives up after the hourly limit', () => {
   const now = 10_000_000;

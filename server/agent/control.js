@@ -51,10 +51,11 @@ function buildRules(serverId) {
   require('../compose-scale'); // owns the compose_scaling table
   for (const r of db.prepare('SELECT * FROM compose_scaling WHERE server_id = ?').all(serverId)) {
     const keep = Number.isInteger(r.replicas) && r.replicas > 0;
-    if (!keep && !r.heal) continue;
+    const auto = r.mode && r.mode !== 'off' ? require('../compose-autoscale').ruleOf(serverId, r.project, r.service) : null;
+    if (!keep && !r.heal && !auto) continue;
     (projects[r.project] = projects[r.project] || {})[r.service] = {
       ...(keep ? { replicas: r.replicas } : {}), ...(Number.isInteger(r.min_r) ? { min: r.min_r } : {}), ...(Number.isInteger(r.max_r) ? { max: r.max_r } : {}),
-      heal: !!r.heal, healPerHour: r.heal_per_hour || 3, keep,
+      heal: !!r.heal, healPerHour: r.heal_per_hour || 3, keep, ...(auto ? { auto } : {}),
     };
   }
   return { projects };
@@ -94,7 +95,11 @@ let timer = null;
 /** Every 10 minutes: push the rules to every server that has a keyed agent (so they stay fresh and acknowledged). */
 function start() {
   if (timer) return;
-  const tick = async () => { for (const r of db.prepare('SELECT server_id FROM agent_keys').all()) await pushRules(r.server_id).catch(() => {}); };
+  const tick = async () => {
+    for (const r of db.prepare('SELECT server_id FROM agent_keys').all()) {
+      if (await pushRules(r.server_id).catch(() => null)) await require('../compose-autoscale').importAgent(r.server_id).catch(() => {}); // what it scaled meanwhile
+    }
+  };
   timer = setInterval(tick, PUSH_EVERY_MS); if (timer.unref) timer.unref();
   setTimeout(tick, 15000).unref?.();
 }
