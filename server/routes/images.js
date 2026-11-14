@@ -30,6 +30,31 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /updates — tags that have a newer image in their registry (the daily check, server/image-updates.js)
+router.get('/updates', (req, res) => {
+  try { res.json(require('../image-updates').resultsFor(dockerService.getActiveServerId() || 'local').filter(r => r.status === 'update').map(r => ({ image: r.image, localVersion: r.local_version, remoteVersion: r.remote_version }))); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /refresh { image } — pull the newer image of a tag. Containers keep the image they were made from until they
+// are recreated, so the answer lists the ones still on the previous image (each can be updated safely from there).
+router.post('/refresh', async (req, res) => {
+  try {
+    const image = String((req.body || {}).image || '').trim();
+    if (!image || image.includes('<none>')) return res.status(400).json({ error: 'A tagged image is needed' });
+    const d = dockerService.docker;
+    const before = await d.getImage(image).inspect().catch(() => null);
+    await dockerService.pullImage(image);
+    const after = await d.getImage(image).inspect();
+    const changed = !before || before.Id !== after.Id;
+    try { require('../image-updates').refreshLocal(dockerService.getActiveServerId() || 'local', image, { digests: after.RepoDigests || [], version: (after.Config.Labels || {})['org.opencontainers.image.version'] || null, created: after.Created }); } catch (e) { /* no stored row */ }
+    const all = await d.listContainers({ all: true });
+    const onPrevious = before && changed ? all.filter(c => c.ImageID === before.Id).map(c => ({ id: c.Id, name: (c.Names[0] || '').replace(/^\//, ''), state: c.State, project: c.Labels['com.docker.compose.project'] || null })) : [];
+    logAction({ req, resourceType: 'image', resourceName: image, action: 'pull_newer', details: { changed, from: before && before.Id, to: after.Id } });
+    res.json({ image, changed, from: before ? before.Id : null, to: after.Id, containers: onPrevious });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /search?q= — proxy Docker Hub image search (browser CORS blocks calling Hub directly).
 // Defined before "/:id" so "search" isn't captured as an image id. Returns normalized results.
 router.get('/search', async (req, res) => {

@@ -81,5 +81,6 @@ Installs and updates run as **agent jobs** with a log; closing the window does n
 | `Current access password is incorrect — cannot change or remove this server` | The server has an access password | Enter the right one |
 | `SSH key not found` | The key was deleted | Pick another key |
 | *No notification channel is set up yet, so the agent installs in metrics-only mode.* | No channel | Set up Telegram, email or a webhook first |
+| The Edge agent's memory looks high (e.g. 26 %) | The percentage is of the agent's **own limit of 96 MB** (and 0.25 CPU), not of the server — about 25 MB. It can not use more than its limit | Nothing to do |
 | Edge agent: **Moved to Swarm** | The agent container was moved to Swarm (docker run → Swarm, before DockGate kept its own containers out). DockGate can not find, update or command it that way | **Update** — DockGate removes that Swarm service and runs the agent as a container on the server again |
 | Many *High Error Spike* alerts from Caddy (`"level":"warn"`, `aborting with incomplete response`) | Agents older than 1.1.1 counted Caddy's warnings as errors. The line itself usually means a visitor closed the page before the answer ended | **Update all servers** on the Edge agent page |

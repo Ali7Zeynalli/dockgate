@@ -290,7 +290,11 @@ function parseStats(stats) {
   const numCpus = stats.cpu_stats.online_cpus || stats.cpu_stats.cpu_usage?.percpu_usage?.length || 1;
   const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * numCpus * 100 : 0;
 
-  const memUsage = stats.memory_stats?.usage || 0;
+  // Memory the way `docker stats` shows it: usage minus the page cache the kernel can drop (cgroup v2 inactive_file,
+  // v1 total_inactive_file, old daemons cache) — otherwise a container that reads files looks much fuller than it is.
+  const ms = stats.memory_stats || {}, mst = ms.stats || {};
+  const reclaim = mst.inactive_file ?? mst.total_inactive_file ?? mst.cache ?? 0;
+  const memUsage = Math.max(0, (ms.usage || 0) - (reclaim < (ms.usage || 0) ? reclaim : 0));
   const memLimit = stats.memory_stats?.limit || 1;
   const memPercent = (memUsage / memLimit) * 100;
 

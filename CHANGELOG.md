@@ -2,6 +2,18 @@
 
 ---
 
+## [2.55.0] - 2026-11-14
+
+### Added
+- **Images → ⋯ → Pull newer version.** Pulls the tag again; containers keep the image they were made from until recreated, so DockGate lists the ones still on the previous image, each with a safe **Update**. A tag the daily check found newer shows **newer available**.
+
+### Fixed
+- **An image update of a Compose service could say *Updated* while the old image still ran.** When Compose left the container running (`Running` instead of `Recreated`), DockGate only checked that a container ran. It now checks each replica's image, recreates it by force if needed, and reports a failure (putting the previous image back) if the old image still runs — so the *update available* badge no longer stays after an "Updated".
+- **Memory of containers** is counted the way `docker stats` does (without the page cache the kernel can drop), so containers that read files no longer look much fuller than they are.
+- **Monitoring → containers** showed `— MB` for servers with the Edge agent; it shows the memory now.
+
+---
+
 ## [2.54.0] - 2026-11-14
 
 ### Added
