@@ -10,6 +10,7 @@ On this panel, without Swarm:
 
 - **[Replicas](#what-happens-when-you-click)** with `−` / `+` — your compose files are not changed;
 - **[Auto-heal](#auto-heal-and-who-keeps-the-rules)** — a replica that stays unhealthy is restarted;
+- **[Keep running](#keep-running)** — a service that is stopped or removed comes back by itself;
 - **[Auto Scaling](#auto-scaling)** — replicas follow the load, within your limits and the server's room;
 - **[Roll out](#updates-without-downtime-roll-out)** — updates one replica at a time, without downtime.
 
@@ -23,7 +24,7 @@ With the [Edge agent](agent-security.md) on the server, these keep running while
 | **Replicas** | `−` and `+` (`+` is disabled with the reason when the service can not have more than one). Under it the **Auto Scaling** chip (Off / Suggest / Simulating / Auto) opens the rule; under Auto the cell shows *2 of 1–3* |
 | **Limits** | The CPU and memory limits **from your compose file** (`cpus`, `mem_limit`, `deploy.resources.limits`). DockGate does not change them |
 | **State** | Replicas running, or **drift** when they differ from what was set |
-| **Auto-heal** | On: a replica that stays unhealthy is restarted. Uses the service's own health check; without one, the Edge agent checks its port |
+| **Health** | **Auto-heal**: a replica that stays unhealthy is restarted (its own health check; without one, the Edge agent checks its port). **Keep running**: a stopped or removed service comes back |
 
 ## Your files are not changed
 
@@ -64,6 +65,22 @@ The note under the table says who keeps these rules:
 
 - **The Edge agent on that server**, when it runs the current version: it also brings back replicas that are gone (a `docker rm`, a crash with no restart), and keeps doing both while DockGate is offline. How it is commanded without a port: [Edge agent → How DockGate commands it, safely](agent-security.md).
 - **DockGate**, otherwise: it heals services that have their own health check while it is online.
+
+## Keep running
+
+Docker brings a container back after a **crash** (with `restart: always` / `unless-stopped`), but not after you **stop** or **remove** it — that is taken as "keep it stopped". Turn **Keep running** on for a service that must always run, whatever happens to it:
+
+| What happened | What comes back |
+|---|---|
+| Stopped (Stop, `docker stop`, …) | It is **started** again |
+| Removed (Remove, `docker rm`, …) | It is **made again** from its kept config — the same name, host ports, environment, limits, networks and named volumes |
+| Some replicas of several gone | The missing ones are added, copied from one that runs |
+
+- Its config is kept while it runs (refreshed every 10 minutes), so it can be made again even when nothing of it is left. Without the agent, DockGate keeps it encrypted in its database.
+- It acts after two checks in a row (30 s apart), and not while a deploy of the project runs — usually within a minute; right after it made one again, it waits 2 minutes.
+- **A Down or Delete from DockGate turns it off** for the project, so what you stop on purpose stays stopped. Stopping or removing a container any other way brings it back — turn Keep running off first.
+- With the **Edge agent** on the server it works also while DockGate is offline; otherwise DockGate does it while it is online. Each time you get a notice (*Auto-heal restarted a Compose container* rule).
+- Data in **anonymous** volumes is not kept when a container is made again — use named volumes for data.
 
 ## Auto Scaling
 

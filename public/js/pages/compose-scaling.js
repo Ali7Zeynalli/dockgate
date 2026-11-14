@@ -38,7 +38,7 @@ window.ComposeScaling = (() => {
       });
       root.innerHTML = `${UI.header('Replicas', 'Docker runs each service as this many containers and spreads requests over them by name. Your compose files are not changed: DockGate keeps its choices in its own override file and shows what changes first.',
           `${data.override ? `${UI.btn('Show the override', 'data-ov')} ${UI.btn('Back to the files…', 'data-reset')}` : ''}`)}
-        ${UI.table([{ label: 'Service' }, { label: 'Replicas' }, { label: 'Limits' }, { label: 'State' }, { label: 'Auto-heal' }], rows, { minWidth: 700 })}
+        ${UI.table([{ label: 'Service' }, { label: 'Replicas' }, { label: 'Limits' }, { label: 'State' }, { label: 'Health' }], rows, { minWidth: 720 })}
         ${executorNote()}
         ${data.services.some(s => s.drift) ? '<div class="insight-card warning" style="margin-top:10px"><div><b>Drift.</b> The running replicas differ from what was set — most often a <span class="td-mono">docker compose up</span> run on the server without DockGate\'s override. <b>Fix</b> sets them again.</div></div>' : ''}
         <div class="ui-sub" style="margin-top:8px">Docker Compose ${esc(data.composeVersion || '?')} on this server.</div>
@@ -47,6 +47,7 @@ window.ComposeScaling = (() => {
       root.querySelectorAll('[data-roll]').forEach(b => b.onclick = () => rollOut(b.dataset.roll));
       root.querySelectorAll('[data-rule]').forEach(b => b.onclick = () => ruleDialog(b.dataset.rule));
       root.querySelectorAll('[data-apply]').forEach(b => b.onclick = () => applySuggestion(b.dataset.apply, Number(b.dataset.to)));
+      root.querySelectorAll('[data-keep]').forEach(t => t.onclick = () => keep(t.dataset.keep, t.getAttribute('aria-checked') !== 'true'));
       root.querySelectorAll('[data-heal]').forEach(t => t.onclick = () => heal(t.dataset.heal, t.getAttribute('aria-checked') !== 'true'));
       root.querySelectorAll('[data-plus]').forEach(b => b.onclick = () => change(b.dataset.plus, +1));
       root.querySelectorAll('[data-minus]').forEach(b => b.onclick = () => change(b.dataset.minus, -1));
@@ -157,13 +158,18 @@ window.ComposeScaling = (() => {
       const agent = data.control && data.control.executor === 'agent';
       const how = s.healthcheck ? 'own health check' : agent ? (s.exposed ? 'agent checks the port' : 'no port to check') : 'needs a health check or the agent';
       const can = s.healthcheck || (agent && s.exposed);
-      return `<div style="display:flex;align-items:center;gap:8px"><div class="toggle ${s.heal ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${s.heal}" data-heal="${esc(s.name)}" ${!can && !s.heal ? 'style="opacity:.4;pointer-events:none"' : ''}></div></div><div class="ui-sub" style="white-space:normal;max-width:130px">${esc(how)}</div>`;
+      return `<div style="display:flex;align-items:center;gap:8px"><div class="toggle ${s.heal ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${s.heal}" data-heal="${esc(s.name)}" ${!can && !s.heal ? 'style="opacity:.4;pointer-events:none"' : ''}></div><span class="text-sm">Auto-heal</span></div><div class="ui-sub" style="white-space:normal;max-width:150px">${esc(how)}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px" title="Stopped → started again; removed → made again from its kept config. A Down or Delete from DockGate turns it off."><div class="toggle ${s.keepRunning ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${s.keepRunning}" data-keep="${esc(s.name)}"></div><span class="text-sm">Keep running</span></div><div class="ui-sub" style="white-space:normal;max-width:150px">comes back if stopped or removed</div>`;
     }
     function executorNote() {
       const c = data.control || {};
       if (c.executor === 'agent') return `<div class="insight-card success" style="margin-top:10px"><div><b>The agent on this server runs these rules</b> (rules v${esc(c.ackedVersion)}). It keeps the replicas and heals by them also while DockGate is offline.</div></div>`;
       if (c.hasKey) return `<div class="insight-card warning" style="margin-top:10px"><div><b>DockGate runs these rules</b> — the agent has not taken the latest ones yet${c.error ? ` (${esc(c.error)})` : ''}. It retries every 10 minutes.</div></div>`;
       return '<div class="ui-sub" style="margin-top:8px">DockGate runs these rules while it is online. With the <b>Edge agent</b> (Servers → Edge agent, updated) they keep working when DockGate is offline.</div>';
+    }
+    async function keep(name, on) {
+      try { await API.put(`/compose/${encodeURIComponent(project)}/scaling/${encodeURIComponent(name)}/keep`, { on }); showToast(`${name}: keep running ${on ? 'on' : 'off'}`); } catch (e) { showToast(e.message, 'error'); }
+      await load();
     }
     async function heal(name, on) {
       try { await API.put(`/compose/${encodeURIComponent(project)}/scaling/${encodeURIComponent(name)}/heal`, { on }); showToast(`${name}: auto-heal ${on ? 'on' : 'off'}`); } catch (e) { showToast(e.message, 'error'); }

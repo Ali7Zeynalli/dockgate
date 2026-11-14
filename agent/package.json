@@ -1,6 +1,6 @@
 {
   "name": "dockgate-agent",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Outbound-only per-server Docker event notifier for DockGate",
   "author": "Ali Zeynalli",

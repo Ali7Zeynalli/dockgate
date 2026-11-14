@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.53.3-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.54.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.53.3-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.54.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
@@ -164,7 +164,7 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 | **Images · Volumes · Networks · Builds** | Pull, push, tag, Docker Hub search; volume backup, restore, clone and file editing; networks of every driver; builds from a Dockerfile or Git with live logs; one Prune table. |
 | **Image updates** | A daily check of every tag against its registry; safe update with a health check, automatic roll back, version names and history. |
 | **Compose** | Discover, create and edit projects; deploy a folder, adopt a project already on a server, or deploy from Git. On a remote server Compose runs on that server over SSH. Deploy history with changes and redeploy. |
-| **[Scaling & health](guide/compose-scaling.md)** (Compose, without Swarm) | **Replicas** with one click — DockGate writes its own override file, your compose files stay as they are; host ports and `container_name` fixed only after you see the fix; proxies reloaded. **Auto-heal** restarts a replica that stays unhealthy. **Auto Scaling** — Off / Suggest / Auto (24 h simulation first), measured against your own limits, adds a replica only when the server has room, values suggested from the last 48 hours. **Roll out** — updates replica by replica without downtime, also for *newer image* updates. |
+| **[Scaling & health](guide/compose-scaling.md)** (Compose, without Swarm) | **Replicas** with one click — DockGate writes its own override file, your compose files stay as they are; host ports and `container_name` fixed only after you see the fix; proxies reloaded. **Auto-heal** restarts a replica that stays unhealthy. **Keep running** brings a service back when it is stopped or removed (made again from its kept config). **Auto Scaling** — Off / Suggest / Auto (24 h simulation first), measured against your own limits, adds a replica only when the server has room, values suggested from the last 48 hours. **Roll out** — updates replica by replica without downtime, also for *newer image* updates. |
 | **App templates · Registries** | 500+ apps as a container, a Compose project or a Swarm stack; private registry logins used everywhere. |
 | **Observe · Tools** | Logs, Docker events, audit log, notifications sent; container and host terminal (`` Ctrl+` ``); SFTP file manager with two-pane transfers; scheduled prune, volume backup and Git sync. |
 | **Servers** | Hosts over SSH (password, key, key with passphrase); provisioning presets; deploy user; SSH access; users and keys; firewall (UFW / firewalld, IP lists, Docker port isolation); fail2ban; time sync; auto updates; host logs; pinned host keys. |

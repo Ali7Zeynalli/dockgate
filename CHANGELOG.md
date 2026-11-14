@@ -2,6 +2,22 @@
 
 ---
 
+## [2.54.0] - 2026-11-14
+
+### Added
+- **Keep running** for Compose services (Scaling & health → Health). Docker does not bring back a container you stop or remove; with Keep running a stopped service is started again and a removed one is made again from its kept config — the same name, host ports, environment, limits, networks and named volumes. Missing replicas of several are added too.
+  - Done by the Edge agent (also while DockGate is offline), or by DockGate itself on servers without an up-to-date agent; the kept config is encrypted in DockGate's database. Two checks in a row first; never during a deploy.
+  - **A Down or Delete from DockGate turns it off** for the project, so what you stop on purpose stays stopped.
+  - A notice each time, and an audit entry.
+
+### Fixed
+- **Agent updates could be missed:** the agent's build id was a hash of the top-level files of `agent/src/` only, so changes in `agent/src/control/` (the control channel, Auto Scaling, Keep running) did not make a new build. Every file under `src/` counts now.
+
+### Changed
+- Edge agent 1.4.0 — update it from Servers → Edge agent for Keep running.
+
+---
+
 ## [2.53.3] - 2026-11-14
 
 ### Fixed

@@ -10,6 +10,7 @@ const { healDecision } = require('./heal-decision');
 const ex = require('./executor');
 const { Scaler, cleanAuto } = require('./autoscale');
 const { hostCapFrom } = require('./measure');
+const { keepAlive } = require('./keep');
 
 const STATE_DIR = process.env.DG_STATE_DIR || '/var/lib/dockgate-agent';
 const SOCK_DIR = process.env.DG_SOCK_DIR || '/run/dockgate-agent';
@@ -28,7 +29,7 @@ function cleanRules(body) {
       const int = (v, lo, hi) => (Number.isInteger(v) && v >= lo && v <= hi ? v : undefined);
       (out.projects[p] = out.projects[p] || {})[s] = {
         replicas: int(r.replicas, 0, ex.MAX_REPLICAS), min: int(r.min, 0, ex.MAX_REPLICAS), max: int(r.max, 1, ex.MAX_REPLICAS),
-        heal: r.heal === true, healPerHour: int(r.healPerHour, 1, 20) ?? 3, keep: r.keep !== false, auto: cleanAuto(r.auto),
+        heal: r.heal === true, healPerHour: int(r.healPerHour, 1, 20) ?? 3, keep: r.keep !== false, auto: cleanAuto(r.auto), keepRunning: r.keepRunning === true,
       };
     }
   }
@@ -148,6 +149,14 @@ class Controller {
         if (rule.heal) for (const rep of reps) await this.healOne(project, service, rule, rep).catch(e => this.log('[control] heal:', e.message));
         // Under Auto Scaling the number moves; only the minimum is kept.
         const want = rule.auto && rule.auto.mode === 'auto' ? rule.auto.min : rule.replicas;
+        if (rule.keepRunning) { // stopped → started, removed → made again from its kept config
+          const r = await keepAlive({ docker: this.docker, project, service, target: Math.max(1, Number.isInteger(want) ? want : 1), state: (this.state.keepAlive = this.state.keepAlive || {}) }).catch(e => ({ action: 'keep', ok: false, reason: e.message }));
+          if (r) {
+            this.record({ kind: 'keep', project, service, ...r });
+            if (r.ok) await this.notify(`♻️ ${project}/${service}: ${r.reason}${r.container ? ` (${r.container})` : ''}.`).catch(() => {});
+          }
+          continue; // it covers the replica count too
+        }
         if (rule.keep && Number.isInteger(want)) await this.keepReplicas(project, service, { ...rule, replicas: want }, reps).catch(e => this.log('[control] replicas:', e.message));
       }
     }

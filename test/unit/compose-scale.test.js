@@ -48,7 +48,7 @@ test('writeOverride (local) is atomic, private, recorded and removable', async (
 
 test('rules are saved per server, project and service', () => {
   S.saveRule('local', 'shop', 'api', { replicas: 3, dropPorts: true, aliases: ['shop-api'] });
-  assert.deepEqual(S.readRules('local', 'shop').api, { replicas: 3, dropPorts: true, dropName: false, aliases: ['shop-api'], mode: 'off', heal: false });
+  assert.deepEqual(S.readRules('local', 'shop').api, { replicas: 3, dropPorts: true, dropName: false, aliases: ['shop-api'], mode: 'off', heal: false, keepRunning: false });
   assert.deepEqual(S.readRules('web-1', 'shop'), {});
 });
 

@@ -31,6 +31,7 @@ DockGate sends the rules whenever you change them in the panel, right after an i
 |---|---|
 | **Replicas** | Every 30 s it counts the replicas of each service. If some are gone (two checks in a row, and no deploy in the last 2 minutes), it starts new ones the way Compose does — same config, limits, networks and names — and reloads the proxies. It only does this while the running replicas were started with DockGate's override; otherwise it is drift, and the panel shows it |
 | **Auto Scaling** | Every 30 s it measures the services that have a rule and adds or removes replicas — with the same actions and limits as above, only when the server has room, never during a deploy. What it did goes into its history, which DockGate reads into **Scaling & health → Auto Scaling history** |
+| **Keep running** | A service that is stopped is started; one that was removed is made again from its config, which the agent keeps while it runs |
 | **Auto-heal** | A container whose own health check says *unhealthy* — or, without a health check, whose port does not answer — is restarted after 3 failed checks in a row, not in its first 60 s. After 3 restarts in an hour it stops trying and tells you to look at the logs |
 
 The port check runs from a tiny helper container that shares the checked container's network, read-only and without privileges; it is removed right after.
