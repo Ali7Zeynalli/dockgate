@@ -250,3 +250,4 @@ Before a service moves, DockGate compares how it is protected in Compose with ho
 | `network lan: server … is not in DockGate, so its config-only network can not be made` | A node DockGate does not manage | Add the server in Servers |
 | `can not read … on the server` | The secret/config file is not readable over SSH | Check the file and the SSH user's rights |
 | `privileged: … it stays in Compose` (no cap_add offered) | DockGate does not know what that image needs | Find the capabilities it needs, add them as cap_add in the file and remove privileged |
+| `… is part of DockGate (the Edge agent or DockGate itself) — it stays a container on its server` | The Edge agent and DockGate are never moved to Swarm (they are not offered either) | Nothing to do |
