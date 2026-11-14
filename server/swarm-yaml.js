@@ -314,6 +314,7 @@ async function startConvert(body, { sourceIp } = {}) {
   if (I.q.get.get(sid, name) || (await c.listServices({ filters: JSON.stringify({ label: [`com.docker.stack.namespace=${name}`] }) })).length) throw bad(409, `A stack named ${name} already exists`);
   if ((await dockerService.listComposeProjects().catch(() => [])).some(p => p.name === name)) throw bad(409, `A compose project named ${name} runs on this server — choose another name`);
   const ct = await c.getContainer(String(body.containerId || '')).inspect().catch(() => { throw bad(404, 'Container not found'); });
+  if (isOwn(ct.Config.Labels || {}, ct.Config.Image, ct.Name)) throw bad(409, `${ct.Name.replace(/^\//, '')} is part of DockGate (the Edge agent or DockGate itself) — it stays a container on its server`);
   const yaml = String(body.yaml || '');
   const vars = parseEnv(body.env);
   await I.context();
@@ -396,13 +397,22 @@ async function startBackToContainer(name, { sourceIp } = {}) {
   return job;
 }
 
+/**
+ * DockGate's own containers never move to Swarm: the Edge agent (DockGate finds, updates and commands it as the
+ * container dockgate-agent, and it watches the server it runs on), the probe helper, and DockGate itself.
+ */
+const OWN_IMAGE = /(^|\/)ali7zeynalli\/dockgate(-agent)?(:|@|$)|^dockgate-agent(:|$)|^dockgate\/agent(:|$)/i;
+function isOwn(labels = {}, image = '', name = '') {
+  return !!(labels['dockgate.role'] || labels['dockgate.helper'] || OWN_IMAGE.test(String(image)) || /^\/?(dockgate-agent|dockgate-control-panel)$/.test(String(name)));
+}
+
 /** Containers started with docker run on the server in use (candidates for Move to Swarm). */
 async function containers() {
   const list = await dockerService.docker.listContainers({ all: true });
   const moved = new Set(I.q.all.all(I.serverId()).filter(r => r.from_container).map(r => JSON.parse(r.from_container).id));
-  return list.filter(x => !x.Labels['com.docker.compose.project'] && !x.Labels['com.docker.swarm.service.id'] && !x.Labels['dockgate.helper'] && !moved.has(x.Id))
+  return list.filter(x => !x.Labels['com.docker.compose.project'] && !x.Labels['com.docker.swarm.service.id'] && !isOwn(x.Labels, x.Image, x.Names[0]) && !moved.has(x.Id))
     .map(x => ({ id: x.Id, name: (x.Names[0] || '').replace(/^\//, ''), image: x.Image, state: x.State, status: x.Status }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-module.exports = { toYaml: dump, parseEnv, envOf, check, yamlFromStack, yamlFromContainer, startDeploy, getFile, takeOver, startConvert, startBackToContainer, containers, _servicePart: servicePart };
+module.exports = { isOwn, toYaml: dump, parseEnv, envOf, check, yamlFromStack, yamlFromContainer, startDeploy, getFile, takeOver, startConvert, startBackToContainer, containers, _servicePart: servicePart };

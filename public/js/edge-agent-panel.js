@@ -4,7 +4,7 @@
 (function () {
   // Status pill + version (used by the install picker and the fleet table).
   function pill(st) {
-    const [lv, txt] = { running: ['ok', 'Running'], stopped: ['warn', 'Stopped'], absent: ['off', 'Not installed'], unreachable: ['bad', 'Unreachable'] }[st.state] || ['off', 'Not installed'];
+    const [lv, txt] = { running: ['ok', 'Running'], stopped: ['warn', 'Stopped'], swarm: ['warn', 'Moved to Swarm'], absent: ['off', 'Not installed'], unreachable: ['bad', 'Unreachable'] }[st.state] || ['off', 'Not installed'];
     return UI.pill(lv, txt) + (st.version ? ` <span class="ui-sub">v${escapeHtml(st.version)}</span>` : '');
   }
 
@@ -13,7 +13,12 @@
     const sid = escapeHtml(s.id);
     const state = st.state || 'absent';
     const installed = state === 'running' || state === 'stopped';
-    const pillOf = { running: ['ok', 'Running'], stopped: ['warn', 'Stopped'], absent: ['off', 'Not installed'], unreachable: ['bad', 'Unreachable'] }[state] || ['off', 'Not installed'];
+    if (state === 'swarm') { // the agent was moved to Swarm: Update makes it a container on this server again
+      return [`<b>${escapeHtml(s.name || s.id)}</b>${s.name ? `<div class="ui-sub td-mono">${sid}</div>` : ''}`, `<span class="td-mono text-xs">${escapeHtml(s.host || '')}</span>`,
+        `${UI.pill('warn', 'Moved to Swarm')}<div class="ui-sub" style="white-space:normal;max-width:260px">${escapeHtml(st.error || '')}</div>`, `<span class="ui-sub">v${escapeHtml(st.version || '?')}</span>`,
+        UI.btn('Update', `data-act="update" data-sid="${sid}"`, 'btn-primary')];
+    }
+    const pillOf = { running: ['ok', 'Running'], stopped: ['warn', 'Stopped'], swarm: ['warn', 'Moved to Swarm'], absent: ['off', 'Not installed'], unreachable: ['bad', 'Unreachable'] }[state] || ['off', 'Not installed'];
     const actions = !installed
       ? `${UI.btn('Install', `data-act="install" data-sid="${sid}"`, 'btn-primary')}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="0"`)}`
       : `${UI.btn(state === 'running' ? 'Stop' : 'Start', `data-act="${state === 'running' ? 'stop' : 'start'}" data-sid="${sid}"`)}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="1"`)}${UI.btn('Update', `data-act="update" data-sid="${sid}"`, st.updateAvailable ? 'btn-primary' : '')}${UI.btn('Remove', `data-act="remove" data-sid="${sid}"`, 'btn-danger')}`;

@@ -2,6 +2,17 @@
 
 ---
 
+## [2.53.3] - 2026-11-14
+
+### Fixed
+- **The Edge agent could be moved to Swarm** with docker run → Swarm. As a Swarm service DockGate could no longer find, update or command it, and it stayed on its old version. DockGate's own containers (the agent, its probe helper, DockGate itself) are no longer offered, and a move of one is refused.
+- **An agent already moved to Swarm** shows as *Moved to Swarm* on the Edge agent page; **Update** removes that Swarm service and runs the agent as a container on its server again (before, Update would have left a second agent running next to the Swarm task).
+
+### Docs
+- Servers → Edge agent: what *Moved to Swarm* means, and why agents older than 1.1.1 sent *High Error Spike* alerts for Caddy warnings (update them).
+
+---
+
 ## [2.53.2] - 2026-11-13
 
 ### Fixed

@@ -298,6 +298,17 @@ async function installOne(serverId, log, onPhase, kind = 'install') {
     await ensureImage(client, log, kind === 'update', isLocal, serverId);
   }
   onPhase('creating');
+  // An agent moved to Swarm: remove its service (Swarm would start the task again), so it is a container again.
+  for (const t of existing.filter(c => (c.Labels || {})['com.docker.swarm.service.id'])) {
+    const svcId = t.Labels['com.docker.swarm.service.id'], svcName = t.Labels['com.docker.swarm.service.name'] || svcId;
+    try {
+      await client.getService(svcId).remove();
+      log(`removed the Swarm service ${svcName} the agent had been moved to — it runs as a container again\n`);
+      const ns = t.Labels['com.docker.stack.namespace'];
+      if (ns) { try { require('../db').db.prepare('DELETE FROM swarm_stacks WHERE name = ?').run(ns); } catch (e) { /* not kept by DockGate */ } }
+    } catch (e) { throw new Error(`The agent runs as the Swarm service ${svcName}, and it could not be removed from this server (${e.message.split('\n')[0]}). Remove it in Swarm → Stacks (or on a manager: docker service rm ${svcName}), then Update again.`); }
+  }
+  existing = existing.filter(c => !(c.Labels || {})['com.docker.swarm.service.id']);
   const backups = [];
   for (const c of existing) {
     const cont = client.getContainer(c.Id);
@@ -359,7 +370,14 @@ async function statusOne(serverId) {
   try {
     const list = await client.listContainers({ all: true, filters: { label: LABEL_FILTER } });
     if (!list.length) return { installed: false, running: false, state: 'absent', version: null };
-    const c = list[0];
+    // Moved to Swarm by mistake (docker run → Swarm, before DockGate kept its own containers out): its task is not
+    // the container DockGate finds, updates and commands. Update turns it back into one.
+    const task = list.find(x => x.Labels && x.Labels['com.docker.swarm.service.id']);
+    if (task && !list.some(x => x !== task && !(x.Labels || {})['com.docker.swarm.service.id'])) {
+      return { installed: true, running: task.State === 'running', state: 'swarm', version: task.Labels['dockgate.version'] || null, build: task.Labels['dockgate.build'] || null, updateAvailable: true,
+        error: `The agent runs as the Swarm service ${task.Labels['com.docker.swarm.service.name'] || ''} — Update makes it a container on this server again` };
+    }
+    const c = list.find(x => !(x.Labels || {})['com.docker.swarm.service.id']) || list[0];
     const running = c.State === 'running';
     const version = c.Labels?.['dockgate.version'] || null, build = c.Labels?.['dockgate.build'] || null;
     // An agent without a build label predates build tags (1.0.0): it is older than any current build.
