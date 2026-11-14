@@ -11,7 +11,8 @@ Router.register('images', async (content) => {
 
   async function render() {
     try {
-      const [imgList, ctrs] = await Promise.all([API.get('/images'), API.get('/containers').catch(() => [])]);
+      const [imgList, ctrs, upd] = await Promise.all([API.get('/images'), API.get('/containers').catch(() => []), API.get('/images/updates').catch(() => [])]);
+      const newer = new Set((upd || []).map(u => u.image)); // tags with a newer image in their registry
       let images = imgList;
       // Which containers use each image ("Used by"), by image ID.
       const usedBy = {};
@@ -81,7 +82,7 @@ Router.register('images', async (content) => {
                 return `<tr class="${selectedIds.has(img.id) ? 'selected' : ''}">
                   <td><div class="checkbox ${selectedIds.has(img.id) ? 'checked' : ''}" data-select="${img.id}"></div></td>
                   <td class="td-name">${escapeHtml(repo)}</td>
-                  <td><span class="badge badge-created">${escapeHtml(tag || 'latest')}</span></td>
+                  <td><span class="badge badge-created">${escapeHtml(tag || 'latest')}</span>${newer.has(full) ? ` ${UI.pill('warn', 'newer available')}` : ''}</td>
                   <td class="td-mono">${img.shortId}</td>
                   <td class="text-sm">${formatBytes(img.size)}</td>
                   <td>${(usedBy[img.id] || []).length ? (usedBy[img.id]).slice(0, 3).map(n => UI.chip(escapeHtml(n))).join('') + (usedBy[img.id].length > 3 ? ` <span class="text-xs text-muted">+${usedBy[img.id].length - 3}</span>` : '') : img.inUse ? UI.chip(String(img.containers)) : UI.pill('off', 'unused')}</td>
@@ -93,6 +94,7 @@ Router.register('images', async (content) => {
                         { label: `${Icons.eye} Inspect`, attrs: `data-inspect="${img.id}"` },
                         { label: `${Icons.layers} Layers and history`, attrs: `data-layers="${img.id}"` },
                         { label: `${Icons.tag} Tags…`, attrs: `data-tags="${img.id}"` },
+                        repo !== '<none>' ? { label: `${Icons.download} Pull newer version`, attrs: `data-refresh="${escapeHtml(full)}"` } : null,
                         repo !== '<none>' ? { label: `${Icons.arrowUp} Push to registry…`, attrs: `data-push="${escapeHtml(full)}" data-pushid="${img.id}"` } : null,
                         { label: `${Icons.compose} Build from this (FROM)…`, attrs: `data-buildfrom="${escapeHtml(full)}"` },
                         { label: `${Icons.download} Save as .tar`, attrs: `data-save="${img.id}"` },
@@ -203,6 +205,24 @@ Router.register('images', async (content) => {
       });
 
       // Layers / history (I1)
+      // Pull the newer image of a tag; containers on the previous image are listed with a safe Update each.
+      content.querySelectorAll('[data-refresh]').forEach(btn => btn.addEventListener('click', async () => {
+        const image = btn.dataset.refresh;
+        showToast(`Pulling ${image}…`, 'info');
+        let r;
+        try { r = await API.post('/images/refresh', { image }); } catch (e) { return showToast(e.message, 'error'); }
+        if (!r.changed) { showToast(`${image} is already the newest`); return render(); }
+        const list = r.containers.length
+          ? `<div class="text-sm" style="margin:8px 0">These containers still run the previous image — a container keeps the image it was made from until it is recreated. <b>Update</b> recreates it with the new one, checks it, and puts the previous image back if it does not start:</div>`
+            + UI.table([{ label: 'Container' }, { label: 'State' }, { label: '' }], r.containers.map(c => ({ cells: [`<b>${escapeHtml(c.name)}</b>${c.project ? `<div class="ui-sub">${escapeHtml(c.project)}</div>` : ''}`, escapeHtml(c.state), `<button class="btn btn-xs btn-primary" data-upd="${c.id}">Update</button>`] })), { minWidth: 0 })
+          : '<div class="text-sm">No container uses the previous image.</div>';
+        const m = showModal(`${escapeHtml(image)}: newer image pulled`, `<div class="ui-sub td-mono">${escapeHtml(String(r.from || '').slice(7, 19))} → ${escapeHtml(String(r.to).slice(7, 19))}</div>${list}`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+        m.overlay.querySelectorAll('[data-upd]').forEach(b => b.onclick = async () => {
+          b.disabled = true; b.textContent = 'Updating…';
+          try { const j = await API.post(`/containers/${b.dataset.upd}/image-update`, {}); b.textContent = 'Started'; showToast('Update started — see Containers → Update history'); void j; } catch (e) { b.disabled = false; b.textContent = 'Update'; showToast(e.message, 'error'); }
+        });
+        render();
+      }));
       content.querySelectorAll('[data-layers]').forEach(btn => {
         btn.addEventListener('click', async () => {
           try {

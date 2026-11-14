@@ -362,7 +362,8 @@ const MonitoringPage = {
         tbody.innerHTML = items.map((c) => {
           const name = c.name || c.id || 'container';
           const cpuP = c.cpuPercent ?? 0;
-          const memMb = c.memUsageBytes ? (c.memUsageBytes / (1024 * 1024)).toFixed(1) : (c.memMb ? c.memMb : '—');
+          const memBytes = c.memUsageBytes ?? c.memUsedBytes; // the Edge agent sends memUsedBytes
+          const memMb = memBytes ? (memBytes / (1024 * 1024)).toFixed(1) : (c.memMb ? c.memMb : '—');
           const memP = c.memPercent ?? 0;
 
           return `

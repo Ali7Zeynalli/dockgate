@@ -32,6 +32,7 @@ Type a reference such as `nginx:1.27`, or click **Search Docker Hub** to find on
 | **Inspect** | The raw `docker image inspect` JSON |
 | **Layers and history** | Each layer with its size and the Dockerfile command that made it |
 | **Tags…** | Add a tag (`repo:tag`) or **Untag** one |
+| **Pull newer version** | Pulls the tag again from its registry. A container keeps the image it was made from until it is recreated, so DockGate then lists the containers still on the previous image, each with **Update** (recreate with the new image, check it, put the previous one back if it does not start). A tag the daily check found newer shows **newer available** |
 | **Push to registry…** | Push to a target reference such as `ghcr.io/owner/app:tag`, with a live log. The login is picked by the registry host from **Deploy → Registries** |
 | **Build from this (FROM)…** | Opens **Builds** with an inline Dockerfile starting `FROM` this image |
 | **Save as .tar** | Downloads the image as a `.tar` (load it elsewhere with **Load .tar** or `docker load`) |

@@ -7,8 +7,10 @@ const path = require('path');
 
 function buildInfo(dir = __dirname) {
   const h = crypto.createHash('sha256');
-  const files = ['package.json', 'package-lock.json', 'Dockerfile'].map(f => path.join(dir, f))
-    .concat(fs.readdirSync(path.join(dir, 'src')).filter(f => f.endsWith('.js')).sort().map(f => path.join(dir, 'src', f)));
+  // every .js file under src/, sub-folders too (src/control/ is part of the image): a change anywhere is a new build
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))
+    .flatMap(e => (e.isDirectory() ? walk(path.join(d, e.name)) : e.name.endsWith('.js') ? [path.join(d, e.name)] : []));
+  const files = ['package.json', 'package-lock.json', 'Dockerfile'].map(f => path.join(dir, f)).concat(walk(path.join(dir, 'src')));
   for (const f of files) { if (!fs.existsSync(f)) continue; h.update(path.relative(dir, f) + '\0'); h.update(fs.readFileSync(f)); h.update('\0'); }
   let version = '0.0.0';
   try { version = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version || version; } catch (e) { /* keep 0.0.0 */ }

@@ -364,7 +364,7 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
   const retag = async (imageId) => { const { repo, tag } = splitTag(ref); await client.getImage(imageId).tag({ repo, tag }); log(`Tagged ${short(imageId)} as ${ref}`); };
   const composeUp = async () => { sameServer(); log(`$ docker compose up -d --no-deps ${service}`); await composeExec(project, ['up', '-d', '--no-deps', service], (c) => log(String(c).replace(/\n$/, ''))); };
   // Recreate with the image the tag points at now; returns { ids, undo, commit }.
-  const recreate = async () => {
+  const recreate = async (targetId) => {
     if (isCompose) {
       // Several replicas possible: replace them one by one, so the service never goes down (compose-rollout.js).
       const RO = require('./compose-rollout');
@@ -376,6 +376,24 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
         return { ids: out.ids, all: out.ids, rolled: true };
       }
       await composeUp();
+      // Compose can leave a container running on the old image ("Running" instead of "Recreated"): check what each
+      // replica runs, force a recreate if needed, and never call it updated while the old image still runs.
+      const onOld = async () => {
+        const out = [];
+        for (const c of (await serviceContainers(client, project, service)).filter(x => x.State === 'running')) {
+          const i = await client.getContainer(c.Id).inspect().catch(() => null);
+          if (i && targetId && i.Image !== targetId) out.push(i.Name.replace(/^\//, ''));
+        }
+        return out;
+      };
+      let old = await onOld();
+      if (old.length) {
+        log(`${old.join(', ')} still run${old.length === 1 ? 's' : ''} the previous image — recreating`);
+        sameServer(); log(`$ docker compose up -d --no-deps --force-recreate ${service}`);
+        await composeExec(project, ['up', '-d', '--no-deps', '--force-recreate', service], (c) => log(String(c).replace(/\n$/, '')));
+        old = await onOld();
+        if (old.length) throw Object.assign(new Error(`${old.join(', ')} still run${old.length === 1 ? 's' : ''} the previous image after a forced recreate — check that the compose file DockGate uses for this project defines ${service} with image ${ref}`), { kept: true });
+      }
       const list = await serviceContainers(client, project, service);
       return { ids: list.filter(c => c.State === 'running').map(c => c.Id), all: list.map(c => c.Id) };
     }
@@ -426,7 +444,7 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
       log(`${kind === 'update' ? 'Update' : 'Roll back'}: ${before.version || short(before.id)} → ${after.version || short(after.id)}`);
       step(job, 'recreate', 'running', isCompose ? `Recreate service ${service}` : `Recreate ${name}`);
       let rc;
-      try { rc = await recreate(); } catch (e) {
+      try { rc = await recreate(toId); } catch (e) {
         if (!e.kept && !(e.replaced > 0)) throw e;
         if (!e.kept) { // stopped part way: put every replica back on the previous image
           step(job, 'recreate', 'failed');

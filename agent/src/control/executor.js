@@ -30,14 +30,16 @@ const minOf = (r) => Math.max(0, Number.isInteger(r.min) ? r.min : (Number.isInt
  * A new replica made the way Compose makes one: the config of a running replica, the next container number,
  * the same networks with the service's aliases. Compose later sees it as one of its own.
  */
-async function cloneReplica(docker, from, project, service, number) {
-  const src = await docker.getContainer(from).inspect();
-  const name = `${project}-${service}-${number}`;
+async function cloneReplica(docker, from, project, service, number, opts = {}) {
+  // from: a container id, or a saved inspect (Keep running: the container is gone, its config was kept)
+  const src = typeof from === 'string' ? await docker.getContainer(from).inspect() : from;
+  const name = opts.name || `${project}-${service}-${number}`;
   const labels = { ...(src.Config.Labels || {}), 'com.docker.compose.container-number': String(number), 'com.docker.compose.oneoff': 'False' };
   delete labels['com.docker.compose.replace']; // says which container the template replaced; not true of the copy
   const nets = Object.entries(src.NetworkSettings.Networks || {});
   const endpoint = ([, ep]) => ({ Aliases: [...new Set((ep.Aliases || []).filter(a => a !== short(src.Name) && a !== src.Id.slice(0, 12) && a !== src.Config.Hostname).concat([service, name]))] });
-  const hc = { ...src.HostConfig }; delete hc.PortBindings; delete hc.Links;
+  const hc = { ...src.HostConfig }; delete hc.Links;
+  if (!opts.keepPorts) delete hc.PortBindings; // a second replica can not take the same host port; the only one keeps it
   const spec = {
     name, Image: src.Config.Image, Env: src.Config.Env, Cmd: src.Config.Cmd, Entrypoint: src.Config.Entrypoint, WorkingDir: src.Config.WorkingDir,
     User: src.Config.User, Labels: labels, ExposedPorts: src.Config.ExposedPorts, Healthcheck: src.Config.Healthcheck, StopSignal: src.Config.StopSignal,

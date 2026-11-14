@@ -22,6 +22,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS compose_scaling (
   heal INTEGER DEFAULT 0, heal_per_hour INTEGER, heal_rollback INTEGER DEFAULT 0, last_at INTEGER, last_dir TEXT,
   updated_at INTEGER, PRIMARY KEY (server_id, project, service)
 )`);
+try { db.exec('ALTER TABLE compose_scaling ADD COLUMN keep_running INTEGER DEFAULT 0'); } catch (e) { /* there */ }
 // Where the override of a project is (so resolveComposeFiles needs no SSH round trip to know).
 db.exec(`CREATE TABLE IF NOT EXISTS compose_overrides (
   server_id TEXT NOT NULL, project TEXT NOT NULL, path TEXT NOT NULL, updated_at INTEGER, PRIMARY KEY (server_id, project)
@@ -74,7 +75,7 @@ function readRules(serverId, project) {
   const out = {};
   for (const r of q.rules.all(serverId, project)) {
     let aliases = []; try { aliases = JSON.parse(r.aliases || '[]'); } catch (e) { /* none */ }
-    out[r.service] = { replicas: r.replicas, dropPorts: !!r.fix_ports, dropName: !!r.fix_name, aliases, mode: r.mode, heal: !!r.heal };
+    out[r.service] = { replicas: r.replicas, dropPorts: !!r.fix_ports, dropName: !!r.fix_name, aliases, mode: r.mode, heal: !!r.heal, keepRunning: !!r.keep_running };
   }
   return out;
 }
@@ -263,4 +264,27 @@ function setHeal(project, service, on, { sourceIp, perHour } = {}) {
   return { ok: true, heal: !!on };
 }
 
-module.exports = { setHeal, setReplicas, configOf, replicasOf, FILE, MAX_REPLICAS, NAME, overridePath, buildOverride, readRules, saveRule, writeOverride, overrideFor, removeAll, composeVersion, verAtLeast, checkScalable, limitsOf, checkName, checkReplicas };
+/** Keep running: a stopped service is started again, a removed one made again from its kept config. */
+function setKeep(project, service, on, { sourceIp } = {}) {
+  checkName(project, 'Project'); checkName(service, 'Service');
+  const sid = serverIdNow();
+  db.prepare(`INSERT INTO compose_scaling (server_id, project, service, keep_running, updated_at) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(server_id, project, service) DO UPDATE SET keep_running = excluded.keep_running, updated_at = excluded.updated_at`).run(sid, project, service, on ? 1 : 0, Date.now());
+  try { require('./audit').logAction({ sourceIp: sourceIp || 'dockgate', server: sid, resourceType: 'compose', resourceName: `${project}/${service}`, resourceId: project, action: on ? 'compose_keep_on' : 'compose_keep_off', details: {} }); } catch (e) { /* best effort */ }
+  require('./agent/control').pushSoon(sid);
+  return { ok: true, keepRunning: !!on };
+}
+/**
+ * Before a Down or Delete from DockGate: Keep running is turned off for the project, and the agent is told at once,
+ * so the containers that go are not made again. Returns the services that had it.
+ */
+async function pauseKeep(serverId, project) {
+  const had = db.prepare('SELECT service FROM compose_scaling WHERE server_id = ? AND project = ? AND keep_running = 1').all(serverId, project).map(r => r.service);
+  if (!had.length) return [];
+  db.prepare('UPDATE compose_scaling SET keep_running = 0, updated_at = ? WHERE server_id = ? AND project = ?').run(Date.now(), serverId, project);
+  await require('./agent/control').pushRules(serverId).catch(() => null);
+  try { require('./audit').logAction({ sourceIp: 'dockgate', server: serverId, resourceType: 'compose', resourceName: project, resourceId: project, action: 'compose_keep_off', details: { services: had, reason: 'down' } }); } catch (e) { /* best effort */ }
+  return had;
+}
+
+module.exports = { setKeep, pauseKeep, setHeal, setReplicas, configOf, replicasOf, FILE, MAX_REPLICAS, NAME, overridePath, buildOverride, readRules, saveRule, writeOverride, overrideFor, removeAll, composeVersion, verAtLeast, checkScalable, limitsOf, checkName, checkReplicas };

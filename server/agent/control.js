@@ -52,10 +52,10 @@ function buildRules(serverId) {
   for (const r of db.prepare('SELECT * FROM compose_scaling WHERE server_id = ?').all(serverId)) {
     const keep = Number.isInteger(r.replicas) && r.replicas > 0;
     const auto = r.mode && r.mode !== 'off' ? require('../compose-autoscale').ruleOf(serverId, r.project, r.service) : null;
-    if (!keep && !r.heal && !auto) continue;
+    if (!keep && !r.heal && !auto && !r.keep_running) continue;
     (projects[r.project] = projects[r.project] || {})[r.service] = {
       ...(keep ? { replicas: r.replicas } : {}), ...(Number.isInteger(r.min_r) ? { min: r.min_r } : {}), ...(Number.isInteger(r.max_r) ? { max: r.max_r } : {}),
-      heal: !!r.heal, healPerHour: r.heal_per_hour || 3, keep, ...(auto ? { auto } : {}),
+      heal: !!r.heal, healPerHour: r.heal_per_hour || 3, keep, ...(auto ? { auto } : {}), ...(r.keep_running ? { keepRunning: true } : {}),
     };
   }
   return { projects };
