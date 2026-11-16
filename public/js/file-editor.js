@@ -60,7 +60,7 @@ window.FileEditor = (() => {
         <h3 style="margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)} <span data-dirty style="color:var(--warning);display:none" title="Not saved">●</span></h3>
         ${sudo ? UI.pill('warn', 'sudo') : ''}
         <button class="btn btn-xs btn-secondary" data-versions title="Earlier versions saved from here">Versions</button>
-        <button class="modal-close" data-close title="Close (Esc)">×</button>
+        <button class="btn-icon modal-close" data-close title="Close (Esc)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="text-xs text-muted td-mono" style="padding:0 20px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(path)} · ${formatBytes(data.size || 0)}</div>
       <div style="flex:1;min-height:0;display:flex;margin:0 20px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg-primary)">

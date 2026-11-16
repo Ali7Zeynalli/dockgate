@@ -41,6 +41,7 @@
       { group: 'Actions', name: 'Prune unused data', hint: 'Resources', run: () => Router.navigate('resources', { tab: 'prune' }) },
       { group: 'Actions', name: 'Add server', hint: 'Servers', run: () => navigateThenClick('infra', { tab: 'servers' }, '[data-add]') },
       { group: 'Actions', name: 'Open quick terminal', hint: 'Ctrl+`', run: () => document.getElementById('btn-quick-terminal')?.click() },
+      { group: 'Actions', name: 'Open quick files', hint: 'Ctrl+Shift+F', run: () => QuickFiles.open() },
     );
     return out;
   }
