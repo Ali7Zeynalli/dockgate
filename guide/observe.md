@@ -78,7 +78,15 @@ Are your sites answering? A container can be *running* while the site behind it 
 | Certificate expires soon | 30, 14, 7 and 1 days before (once each; a renewed certificate starts over) |
 | Certificate invalid | expired, not for this name, or not trusted |
 
-**Keep in mind:** the checks run from the machine DockGate runs on. When DockGate is on the same server as the site, a check shows whether the site answers there, not whether the internet can reach it (a firewall or DNS problem outside is not seen). Cloud metadata addresses (`169.254.169.254`) are never checked. Results are kept for 48 hours, then one row per hour for 90 days.
+**Linked to** a container, Compose project or Swarm service (of the server in the top bar): a *Site down* alert then includes its state and the last log lines (*"shop-web-1 restarting · ECONNREFUSED db:5432"*), the check's page shows them with **Restart**, and the check **waits while DockGate deploys, restarts or updates it** (and 3 minutes after), so a planned restart is not reported as down.
+
+**Check from** other servers: tick servers DockGate manages, and they run the same check over SSH (`curl`, `nc` / `bash`, `openssl`, `getent`). With several places a check is **down only when every place fails**; the check's page shows each place's last result, and the list says *"1 place failing"* when only some fail.
+
+**Found in your proxies:** domains in Traefik `Host()` rules and Caddy labels of the server in the top bar that have no check yet are offered — **Add** creates HTTPS checks linked to their containers.
+
+**Pause all…** pauses every check for planned work; **Resume all** brings them back. The Dashboard shows *Sites · 11/12 up* (red when one is down) and opens Uptime.
+
+**Keep in mind:** the checks run from the machine DockGate runs on unless other places are ticked. When DockGate is on the same server as the site, a check shows whether the site answers there, not whether the internet can reach it (a firewall or DNS problem outside is not seen). Cloud metadata addresses (`169.254.169.254`) are never checked. Results are kept for 48 hours, then one row per hour for 90 days.
 
 ## Audit log
 

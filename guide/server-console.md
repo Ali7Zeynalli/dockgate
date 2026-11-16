@@ -4,7 +4,7 @@
 >
 > **Works on:** one remote (SSH) server. Opening a server's console also makes it the server in use in the top bar.
 
-The console manages the **server itself**, not Docker: what is installed, who can log in, the firewall, fail2ban, system services and logs. It works over SSH; most changes need a user with passwordless `sudo` (the deploy user has it).
+The console manages the **server itself**, not Docker: what is installed, who can log in, the firewall, fail2ban, system services, cron jobs and logs. It works over SSH; most changes need a user with passwordless `sudo` (the deploy user has it).
 
 **Safety first:** every change that could lock you out (SSH port, password login, firewall) is tested with a **new SSH login** before it is kept. If DockGate can not log in again, it rolls the change back by itself.
 
@@ -85,6 +85,30 @@ Bans addresses that fail to log in over SSH too often.
 
 System services DockGate manages on the server (Docker, SSH, the firewall, fail2ban, time sync…). Select one for its state, **Start at boot**, start / stop / restart, its settings and its log.
 
+## Cron
+
+The server's scheduled jobs in one table: the SSH user's crontab, root's crontab, `/etc/cron.d/*`, `/etc/crontab`, the scripts in `/etc/cron.hourly | daily | weekly | monthly`, and **systemd timers** (many distributions run apt, logrotate, fstrim and certbot with timers instead of cron).
+
+- Each job: on / off switch, the schedule in words (*Every day at 03:30*) and as written, the command, user and file, the **next run** and the **last run** (✓ / ✗ exit code, from DockGate's wrapper or the cron log).
+- The top shows the **server's time** next to yours — cron runs on the server's clock — and whether a cron daemon runs at all.
+- Chips filter by source, read-only system files, timers and failed jobs.
+
+**What DockGate writes:** the SSH user's crontab, root's crontab (passwordless `sudo`) and its own file `/etc/cron.d/dockgate`. Files of the system and of packages are shown, not changed — ⋯ → **Open in Files** to edit one yourself.
+
+**+ New job / Edit:** name, runs as (SSH user, root, or a user of your choice in `/etc/cron.d/dockgate`), quick choices (every 5 min, hourly, daily, weekly, monthly, at reboot) or your own expression with the **next 5 runs**, the command. **Review changes…** shows what changes in the crontab before it is written; the crontab before each change is kept (**Earlier versions…**). Turning a job off keeps it as a comment (`#dg-off# …`), so it can be turned on again.
+
+Options for a named job:
+
+| Option | What it does |
+|---|---|
+| Keep its output in a log | `>> /var/log/dockgate-cron/NAME.log 2>&1` (root) or `~/.dockgate/cron-logs/NAME.log`; ⋯ → **Open its log** follows it |
+| Notify when it fails | the job runs through DockGate's small wrapper `dg-cron`, which records the exit code; an exit code other than 0 sends **Cron job failed** with the last output lines |
+| Notify when it does not run | no start within 30 minutes of its time sends **Cron job did not run** (cron stopped, the server was off) |
+
+The wrapper of root's jobs is a root-owned copy (`/usr/local/lib/dockgate/dg-cron`), so a job of root never runs a file another user could change. DockGate checks the jobs with alerts every 5 minutes; the rules are in Settings → Notifications → *Cron jobs*.
+
+⋯ → **Run now…** runs the command once as its user and shows the output and exit code (up to 2 minutes).
+
 ## Logs
 
 The system journal and log files of the server in the [log viewer](observe.md#the-log-viewer). Most sources need passwordless `sudo`.
@@ -108,6 +132,9 @@ The system journal and log files of the server in the [log viewer](observe.md#th
 | You see | Why | What to do |
 |---|---|---|
 | `sudo: a password is required` | The SSH user has no passwordless `sudo` | Use the deploy user (Setup), or allow `sudo` without a password for this user |
+| Cron: *No cron daemon is running* | cron / crond is stopped or not installed | Start it in **Services**, or install `cron` (Debian/Ubuntu) / `cronie` (RHEL) |
+| Cron: `The crontab changed after it was read` | Someone edited the crontab meanwhile | The tab reloads; make the change again |
+| Cron: `Give the job a name to keep its log or to be notified` | Log or alerts ticked without a name | Fill in **Name** |
 | `Provisioning targets a remote SSH server` | Setup on *Local* | Pick a remote server |
 | `Scan failed — the server may be unreachable, or the login cannot be used for the scan` | SSH failed, or the user can not read the system | Check **Settings → Connection test** |
 | `Tick the confirmation for the risky components first` | A risky component without the tick | Read it, tick it, run again |
