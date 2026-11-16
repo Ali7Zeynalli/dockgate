@@ -78,6 +78,7 @@ app.use('/api/monitoring', require('./routes/monitoring'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/meta', require('./routes/settings'));
 app.use('/api/schedules', require('./routes/schedules')); // Tools → Schedules
+app.use('/api/uptime', require('./routes/uptime')); // Observe → Uptime
 
 // Startup-da saxlanmış aktiv server-i bərpa et (yalnız "local" olmadıqda)
 try {
@@ -645,6 +646,7 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   monitorManager.startAll();
   // Server health: reachability, disk, memory and CPU alerts for every server, checked once a minute.
   if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
+  if (process.env.NODE_ENV !== 'test') require('./uptime').start(); // Observe → Uptime checks
   if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
   if (process.env.NODE_ENV !== 'test') { require('./swarm-monitor').start(); require('./swarm-stacks').startBridgeKeeper(); require('./agent/control').start(); require('./compose-heal').start(); require('./compose-autoscale').start(); require('./swarm-firewall').start(); require('./compose-keep').start(); }
   if (process.env.NODE_ENV !== 'test') require('./swarm-services').startSampler(); // Swarm → Services → Graphs (every 2 min, 48 h)

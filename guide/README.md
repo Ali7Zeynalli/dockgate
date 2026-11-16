@@ -38,7 +38,7 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 
 ## Observe and tools
 
-- [Observe → Logs, Events, Audit log, Notifications sent](observe.md) — the log viewer, Log Doctor, history of changes and alerts
+- [Observe → Logs, Events, Uptime, Audit log, Notifications sent](observe.md) — the log viewer, Log Doctor, site checks (uptime, response time, certificates), history of changes and alerts
 - [Tools → Terminal, Files, Schedules](tools.md) — shells, files over SSH, prune / backup / Git sync on a schedule
 
 ## Servers

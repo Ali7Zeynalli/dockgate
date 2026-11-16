@@ -38,7 +38,7 @@ const Router = {
     const SECTION_OF = {
       containers: 'resources', images: 'resources', volumes: 'resources', networks: 'resources', builds: 'resources', prune: 'resources', cleanup: 'resources',
       compose: 'deploy', templates: 'deploy', registries: 'deploy',
-      logs: 'observe', events: 'observe', audit: 'observe', 'notification-log': 'observe',
+      logs: 'observe', events: 'observe', uptime: 'observe', audit: 'observe', 'notification-log': 'observe',
       terminal: 'tools', files: 'tools', schedules: 'tools',
     };
     const TAB = { cleanup: 'prune' };

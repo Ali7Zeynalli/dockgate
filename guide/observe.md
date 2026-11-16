@@ -1,8 +1,8 @@
-# Observe → Logs, Events, Audit log, Notifications sent
+# Observe → Logs, Events, Uptime, Audit log, Notifications sent
 
 > **Where:** sidebar **Observe**
 >
-> **Works on:** the server picked in the top bar (**SERVERS ▾**). The audit log and the notification log cover all servers.
+> **Works on:** the server picked in the top bar (**SERVERS ▾**). Uptime, the audit log and the notification log cover all servers.
 
 ---
 
@@ -51,6 +51,35 @@ What Docker did on the server: containers created, started, stopped, killed and 
 
 ---
 
+## Uptime
+
+Are your sites answering? A container can be *running* while the site behind it is down. Uptime checks the address itself, from DockGate, every 30 seconds to 1 hour.
+
+| Type | What it checks |
+|---|---|
+| **HTTP(S)** | The status code (`200`, `200-399`, `2xx`, `200,301`), the response time, optionally a text the page must or must not contain (`OK`, `Error`, `maintenance`), and the certificate of an `https://` address |
+| **SSL only** | The certificate of `host` or `host:port`: days left, valid for the name, issuer, trusted |
+| **TCP port** | `host:port` accepts a connection — a database, SMTP, Redis |
+| **DNS** | A name resolves, optionally to an expected address |
+
+**+ New check** → type, address, name, how often, after how many failures in a row it counts as down (default 2), timeout, *slow above* (ms, on 3 checks in a row). **Test now** tries it before saving. *Advanced*: follow redirects, ignore certificate errors (self-signed — the certificate is still shown), extra headers.
+
+**The list** shows each check's status (Up, Slow, Down for how long, Paused), uptime for 24 hours and 30 days, the last response time, the last 24 hours as small bars (green all up, orange some failed, red down) and the certificate's days left. The chips filter Down, Slow, Paused and certificates. A red number on **Uptime** in the sidebar counts checks that are down.
+
+**A check's page:** uptime for 24 h / 7 d / 30 d / 90 d, the response time graph (red where checks failed), **incidents** (when it went down, how long, why — timeout, HTTP 502, DNS, TLS), and the certificate. **Check now**, **Pause…** (30 min to a day, or until resumed — paused time does not count against uptime), **Edit…**, **Delete…**.
+
+**Alerts** (Settings → Notifications → *Sites (Uptime)*), through the same channels as every other alert:
+
+| Alert | When |
+|---|---|
+| Site down | the check failed the set number of times in a row — with the reason |
+| Site back up | it answers again — with how long it was down |
+| Site slow | slower than its limit on 3 checks in a row (once, until it is fast again) |
+| Certificate expires soon | 30, 14, 7 and 1 days before (once each; a renewed certificate starts over) |
+| Certificate invalid | expired, not for this name, or not trusted |
+
+**Keep in mind:** the checks run from the machine DockGate runs on. When DockGate is on the same server as the site, a check shows whether the site answers there, not whether the internet can reach it (a firewall or DNS problem outside is not seen). Cloud metadata addresses (`169.254.169.254`) are never checked. Results are kept for 48 hours, then one row per hour for 90 days.
+
 ## Audit log
 
 ![Audit log](images/audit.png)
@@ -77,4 +106,8 @@ Every alert DockGate sent: when, the event, the subject, the channel and recipie
 | *No container log lines.* | The container wrote nothing, or the time range is too short | Choose *Newest lines* |
 | Host logs: `sudo: a password is required` | The SSH user has no passwordless `sudo` | Give the user passwordless `sudo`, or use the deploy user (Server Console → Setup) |
 | Events empty after a Docker restart | Docker keeps events only in memory | They appear again as Docker reports them |
+| Uptime: `Timeout after 10 s` | The site did not answer in time — or a firewall drops DockGate's requests | Open the address from DockGate's server (`curl -v`), check the firewall |
+| Uptime: `TLS: self-signed certificate` | The site uses its own certificate | Tick *Ignore certificate errors* in Advanced |
+| Uptime: `DNS: the name does not resolve` | No DNS record, or DockGate's server uses another DNS | Check the record; try `getent hosts <name>` on DockGate's server |
+| Uptime: `points to a cloud metadata address — not checked` | The name resolves to `169.254.x.x` | Use the real address of the site |
 | Notifications sent: *failed* | The channel refused the message | Read the error, then fix the channel in **Settings → Notifications** and press **Test** |

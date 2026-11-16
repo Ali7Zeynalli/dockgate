@@ -2,6 +2,19 @@
 
 ---
 
+## [2.59.0] - 2026-11-16
+
+### Added
+- **Observe → Uptime: are your sites answering?** A container can run while the site behind it is down; Uptime checks the address itself every 30 s – 1 h.
+  - **HTTP(S)** (status code, response time, a text the page must / must not contain, the certificate), **SSL only** (days left, name, issuer), **TCP port** (database, SMTP, Redis) and **DNS**.
+  - Down after N failures in a row (default 2), back up after one success; *slow above* a limit on 3 checks in a row. **Test now** before saving; pause for planned work (paused time does not count).
+  - The list: status, uptime 24 h / 30 d, response time, the last 24 hours as bars, certificate days left; a red count on **Uptime** in the sidebar.
+  - A check's page: uptime 24 h / 7 d / 30 d / 90 d, response time graph, incidents (when, how long, why), the certificate.
+  - New alerts in Settings → Notifications → *Sites (Uptime)*: site down (with the reason), back up (with how long), slow, certificate expires soon (30 · 14 · 7 · 1 days), certificate invalid.
+  - Results for 48 hours, then hourly for 90 days. Cloud metadata addresses are never checked.
+
+---
+
 ## [2.58.0] - 2026-11-16
 
 ### Added
