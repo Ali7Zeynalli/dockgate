@@ -313,4 +313,13 @@ function fromTemplate(id, answers = {}) {
   return { name: t.name, title: t.title, steps, schedule: t.schedule };
 }
 
-module.exports = { BLOCKS, TEMPLATES, build, stepShell, fromTemplate, NAME_RE };
+/** One block as shell to paste into your own script (Insert block in the code editor). */
+function snippet(step) {
+  const b = BLOCKS[step && step.type]; if (!b) throw bad(`Unknown block: ${step && step.type}`);
+  const body = stepShell(step);
+  const label = (step.title || b.label).replace(/[\r\n]/g, ' ');
+  const pre = /SCRIPT_NAME|SCRIPT_STATUS/.test(body) ? ': "${SCRIPT_NAME:=$(basename "$0" .sh)}"; : "${SCRIPT_STATUS:=ok}"\n' : '';
+  return `# --- ${label} (DockGate block) ---\n${pre}(\n  set -e\n${body.split('\n').map(l => '  ' + l).join('\n')}\n) || { echo "✗ ${label.replace(/["`$\\]/g, '')} failed"; exit 1; }\n`;
+}
+
+module.exports = { BLOCKS, TEMPLATES, build, stepShell, snippet, fromTemplate, NAME_RE };

@@ -135,14 +135,29 @@ Build a shell script from **blocks** — DockGate writes the script, safely quot
 - Each step says what happens **if it fails**: *stop* (default) or *go on*. A step stops at its first failing command.
 - A step can **run only if an earlier step failed** — a fix: *check the site → (only if it failed) restart the container → wait until healthy → check again*. When the fix works the run ends as *fixed*; when the last check still fails, the run fails and Cron's alert says so.
 - The script it writes is shown next to the steps while you edit.
-- **Templates** (18, by category) ask a few questions first — containers, volumes and project folders of the server are offered — then open with the answers filled in:
+- **Templates** (18, by category — always shown below your scripts, and under **+ New script**) ask a few questions first — containers, volumes and project folders of the server are offered — then open with the answers filled in:
   - *Updates and upkeep:* daily security updates with a night reboot when needed · weekly full update (system, Docker images, reboot when needed) · update a Compose project's images and check the site · monthly cleanup (Docker, journal, old logs) · weekly Docker cleanup.
   - *Backups:* PostgreSQL (keep 7 days, copy off the server) · MySQL / MariaDB · volume · `/etc` and the projects folder · weekly database maintenance.
   - *Health and self-repair:* restart a container when its site does not answer · start a system service again when it stopped · free disk space when the disk gets full · show the busiest containers when memory runs low · renew a certificate that expires soon.
   - *Deploy:* deploy from Git (pull, build, start, check) · pull and redeploy a Compose project · restart a container every night.
 - Steps that need root are marked; such scripts need passwordless sudo (they are written root-owned). Services → Auto updates still handles daily security updates by itself — the update templates add full updates and Docker on your schedule.
-- **Save** writes `/opt/dockgate/scripts/NAME.sh` (root-owned, when the SSH user has passwordless sudo) or `~/.dockgate/scripts/NAME.sh`. Edit scripts here; a change made to the file on the server is replaced on the next save.
+- **Save** writes `/opt/dockgate/scripts/NAME.sh` (root-owned, when the SSH user has passwordless sudo) or `~/.dockgate/scripts/NAME.sh`. Every write is checked with `bash -n` first — a script with a syntax error is not written.
+- If the file of a blocks script was changed on the server by hand, **Save** asks first: **Keep the server's version** (the script becomes your own code, the file stays as it is) or **Write my steps over it**.
 - **Run** runs it once and shows the output and exit code (up to 5 minutes). **Schedule…** adds it to the **Cron** tab with its log and *failed / did not run* alerts.
+
+### Your own code
+
+A script does not have to be made of blocks:
+
+- **+ New script → Write my own code** — give it a name and write (or paste) the whole script. It is written like a blocks script (`/opt/dockgate/scripts/NAME.sh` or `~/.dockgate/scripts/NAME.sh`).
+- **Edit** opens the file in the file editor: highlighting, **Ctrl+S**, the changes shown before saving, **Versions** (the content before each save, to compare or put back), **Check** (`bash -n`), and a warning when the file changed on the server after you opened it. **+ Insert block** puts any block (a backup, a check, a restart, a Telegram message…) at the cursor as plain shell, with its values quoted.
+- **⋯ → Convert to code** turns a blocks script into your own code (one way — the steps are not kept).
+
+### Scripts already on the server
+
+**Add existing…** lists the shell scripts DockGate finds on the server — in `/opt`, `/root`, `/home`, `/usr/local/bin`, `/srv`, `/var/www` and `/etc/cron.*`, plus every `.sh` a crontab runs (marked *in cron*) — or takes a path you type. The file **stays where it is**: DockGate edits, runs and schedules it there, and **Remove from the list** never deletes it. A root-owned script runs as root (sudo).
+
+Run, Schedule…, the log and the alerts work the same for every kind.
 
 Only *Custom command* carries your own shell; every other value is checked and quoted, so a name, path, URL or message can not run a command.
 
