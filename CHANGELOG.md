@@ -2,6 +2,13 @@
 
 ---
 
+## [2.61.1] - 2026-11-16
+
+### Fixed
+- **The /etc/fstab check could let a broken line through on servers with an older `findmnt`.** Older versions report a bad line only as "parse error at line N -- ignored" (no `[E]` line), which the check did not count. Every form now counts — `[E]` lines, parse errors, the error totals and a non-zero exit — in Server Console → System → Disks and in the editor. (This also made the v2.61.0 image build fail its tests on GitHub's runner.)
+
+---
+
 ## [2.61.0] - 2026-11-16
 
 ### Added
