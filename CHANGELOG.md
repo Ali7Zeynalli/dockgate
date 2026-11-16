@@ -2,6 +2,13 @@
 
 ---
 
+## [2.63.1] - 2026-11-16
+
+### Docs
+- README: the Servers row describes Scripts as they are now (templates, block builder with fix steps, your own shell, scripts already on the server, `bash -n`), and the Files editor row names all its checks (compose, nginx, sshd, visudo, findmnt, `bash -n`).
+
+---
+
 ## [2.63.0] - 2026-11-16
 
 ### Added
