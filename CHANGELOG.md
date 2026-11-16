@@ -2,6 +2,13 @@
 
 ---
 
+## [2.64.1] - 2026-11-16
+
+### Fixed
+- **Databases → Backups:** after a restore, the dialog's buttons no longer run off its edge ("Close" was cut off); they are shorter and wrap.
+
+---
+
 ## [2.64.0] - 2026-11-16
 
 ### Added
