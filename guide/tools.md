@@ -1,4 +1,4 @@
-# Tools → Terminal, Files, Schedules
+# Tools → Terminal, Files, Databases, Schedules
 
 > **Where:** sidebar **Tools**
 >
@@ -98,6 +98,40 @@ Files inside containers and volumes are edited on their own pages: **Resources �
 
 ---
 
+## Databases
+
+PostgreSQL running in containers on the server picked in the top bar — browse and edit tables, run SQL, manage users, back up and restore. A PostgreSQL container's page has **Open in Databases** too.
+
+**How DockGate reaches it:** it runs `psql` (and `pg_dump`, `pg_restore`) **inside the container** with `docker exec`. No port is published, no tunnel, no client to install — the same on this machine and on SSH servers. It finds containers of the `postgres`, `postgis`, `timescaledb`, `pgvector`, `supabase/postgres`, `bitnami/postgresql` and similar images, and logs in as the container's `POSTGRES_USER` (or `postgres`) to its `POSTGRES_DB`. **Connection…** sets another user, login database or password (stored encrypted) — usually not needed, because inside the container the local socket trusts its users.
+
+**Safety**
+
+| | |
+|---|---|
+| **Read-only by default** | Every session runs with `default_transaction_read_only = on` until you turn on **Allow changes** (the button in the header). It is a guard against mistakes, not a permission system — the admin can always turn it on |
+| **Asks first** | `DROP`, `TRUNCATE`, `ALTER … DROP`, and `DELETE` / `UPDATE` without `WHERE`. A connection marked **Production** asks before every statement that changes data |
+| **Edits by primary key only** | A cell, a new row or deleted rows touch exactly the rows meant (a table without a primary key is changed with SQL) |
+| **Limits** | 30 s per statement in the editor and the table view, `lock_timeout` 10 s; psql commands (`\…`) are not run |
+| **Audit log** | Every change: SQL that writes, row edits, users, databases, backups, restores |
+
+**The page:** pick the container and database on the left; tables, views, materialized views, sequences and functions are listed by schema (with a finder). On the right:
+
+- **Data** — the table, 50–500 rows a page; click a column to sort; filters (`=`, `≠`, contains, starts with, `<`, `>`, in, is NULL…) and any `WHERE` condition; **Count rows** for the exact number; **Export** CSV or JSON lines (the whole table, streamed). With **Allow changes**: double-click a cell to edit it (or set it NULL), **+ Row**, tick rows and **Delete selected**. NULL and an empty text are told apart; big numbers stay exact.
+- **Structure** — columns (type, NULL, default, identity), primary key, indexes with their size, constraints, foreign keys pointing here, triggers, a view's definition, a sequence's settings; VACUUM / ANALYZE of the table.
+- **SQL** — write one or more statements, **Ctrl+Enter** runs them (the selection only, if any). Each statement shows its rows (up to 1000 — add `LIMIT` for more) or its result (`UPDATE 3`); an error names the statement and stops there, and an open transaction is rolled back. History of your last 30 queries; **Copy CSV** of a result.
+- **Admin** — connections used of `max_connections`, uptime and key settings; **sessions** (user, database, state, how long, the query) with **Cancel** (stop the query) and **Terminate** (close the connection); **users and roles** — **+ New user** (password, read-write or read-only access to a database, also for tables made later), **Set password…**, **Grant on a database…**, **Drop…**; **databases** — open, **+ New database** (with an owner), **Drop…** (type the name; its sessions are closed first); **tables** largest first with dead rows, last VACUUM / ANALYZE, and VACUUM ANALYZE / ANALYZE / REINDEX / VACUUM FULL; the slowest queries when the `pg_stat_statements` extension is installed.
+- **Backups** — next to the database:
+
+| | |
+|---|---|
+| **Back up now** | One database as `pg_dump` custom (`.dump`, compressed, a single table can be restored from it) or plain SQL (`.sql.gz`), or **the whole server** (`pg_dumpall`: every database and the users). It runs while the database is in use (a consistent snapshot) |
+| **Where** | SSH server: `/var/backups/dockgate/postgres` on that server (made with sudo once, owned by the SSH user; `~/dockgate-backups/postgres` without sudo) — the dump runs there and never passes through DockGate. This machine: DockGate's data folder (`data/backups/postgres`) |
+| **Names** | `<container>-<database or all>-<date-time>.dump` / `.sql.gz` — the same as Scripts' *Database backup* block, so scheduled backups show in the same list |
+| **Restore…** | Always into a **new database** first (nothing that exists changes); then **Swap it in place of …** renames the current one to `<name>_before_<date>` and puts the restored one in its place (its sessions are closed for a moment). "Keep owners and grants" can be turned off when the backup's users do not exist here. A failed restore removes the new database |
+| **Whole-server backup** | Restored by hand into an empty PostgreSQL (a new container) — **How to restore** shows the command |
+| **Schedule…** | SSH servers: makes the script `pg-backup-<container>-<db>` in Server Console → Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
+| **Download / Delete** | The file itself |
+
 ## Schedules
 
 Jobs DockGate runs by itself on a server.
@@ -134,3 +168,9 @@ The list shows each task's server, schedule, last run (with its result) and next
 | `Keep between 1 and 365 copies` | Value out of range | e.g. `7` |
 | `Tick at least one thing to prune` | Prune task with nothing ticked | Tick images, containers or networks |
 | `Choose a volume` / `Choose a server` / `Choose a day of the week` | Empty field | Fill it in |
+| Databases: *Could not log in* / `password authentication failed` | The container's user needs a password over the network, or another user is wanted | **Connection…** → user / password |
+| Databases: *This connection is read-only* | Statements that change data are refused until you allow them | **🔒 Read-only** → **Allow changes** |
+| Databases: *psql is not in this container* | The image is not a PostgreSQL server | Pick the database container itself |
+| Databases: *This table has no primary key* | Rows can not be told apart for an edit | Change it with SQL, or add a primary key |
+| Databases: *The query took too long and was stopped* | Over 30 s | Add `LIMIT` / an index; long maintenance runs from the Admin tab |
+| Databases: restore fails with `role … does not exist` | The backup's owners are not on this server | Restore again with **Keep owners and grants** off |

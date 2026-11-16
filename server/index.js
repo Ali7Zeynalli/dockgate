@@ -82,6 +82,7 @@ app.use('/api/templates', require('./routes/templates'));
 app.use('/api/meta', require('./routes/settings'));
 app.use('/api/schedules', require('./routes/schedules')); // Tools → Schedules
 app.use('/api/uptime', require('./routes/uptime')); // Observe → Uptime
+app.use('/api/databases', require('./routes/databases')); // Tools → Databases (PostgreSQL)
 
 // Startup-da saxlanmış aktiv server-i bərpa et (yalnız "local" olmadıqda)
 try {

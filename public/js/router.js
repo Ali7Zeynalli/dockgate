@@ -39,7 +39,7 @@ const Router = {
       containers: 'resources', images: 'resources', volumes: 'resources', networks: 'resources', builds: 'resources', prune: 'resources', cleanup: 'resources',
       compose: 'deploy', templates: 'deploy', registries: 'deploy',
       logs: 'observe', events: 'observe', uptime: 'observe', audit: 'observe', 'notification-log': 'observe',
-      terminal: 'tools', files: 'tools', schedules: 'tools',
+      terminal: 'tools', files: 'tools', databases: 'tools', schedules: 'tools',
     };
     const TAB = { cleanup: 'prune' };
     if (path === 'activity') { const t = p.tab || 'logs'; return { path: SECTION_OF[t] || 'observe', params: { ...p, tab: TAB[t] || t } }; }
