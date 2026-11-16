@@ -67,6 +67,7 @@ async function mount(content, opts = {}) {
     }
 
     content.innerHTML = `${header()}
+      <div class="fb-layout"><aside class="fb-places card" id="f-places"><div class="ui-sub">Loading…</div></aside><div class="fb-main">
       <div class="card mb-2" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px">
         <button class="btn btn-secondary btn-sm" id="f-up" title="Up one level">⬆</button>
         <div id="f-crumbs" style="flex:1;min-width:200px;font-family:var(--font-mono,monospace);font-size:12.5px;overflow-x:auto;white-space:nowrap"></div>
@@ -91,11 +92,12 @@ async function mount(content, opts = {}) {
           <th style="width:28px"><input type="checkbox" id="f-all" title="Select all"></th>
           <th>Name</th><th>Size</th><th>Modified</th><th>Permissions</th><th style="text-align:right">Actions</th>
         </tr></thead>
-        <tbody id="f-tbody"><tr><td colspan="5" class="text-muted" style="padding:14px">Loading…</td></tr></tbody>
-      </table></div>`;
+        <tbody id="f-tbody"><tr><td colspan="6" class="text-muted" style="padding:14px">Loading…</td></tr></tbody>
+      </table></div></div></div>`;
 
     wireToolbar();
     list();
+    loadPlaces();
   }
 
   function wireToolbar() {
@@ -210,14 +212,17 @@ async function mount(content, opts = {}) {
     try {
       const d = await API.get(`/files?path=${encodeURIComponent(cwd)}`);
       cwd = d.path; if (opts.onCwd) opts.onCwd(cwd);
+      renderPlaces();
       renderCrumbs();
       entries = d.entries;
       tbody.innerHTML = d.entries.length ? d.entries.map(e => {
         const isDir = e.type === 'dir';
         const icon = isDir ? '📁' : (e.type === 'link' ? '🔗' : '📄');
         const nm = escapeHtml(e.name);
+        const img = !isDir && isImage(e.name), log = !isDir && isLog(e.name);
         const nameCell = isDir
           ? `<a href="#" data-cd="${nm}" class="td-name">${icon} ${nm}</a>`
+          : img ? `<a href="#" data-img="${nm}" class="td-name" title="Preview">🖼 ${nm}</a>`
           : `<a href="#" data-edit="${nm}" class="td-name" title="Open / edit">${icon} ${nm}</a>`;
         return `<tr>
           <td><input type="checkbox" data-sel="${nm}" data-isdir="${isDir ? 1 : 0}"></td>
@@ -228,7 +233,8 @@ async function mount(content, opts = {}) {
           <td style="text-align:right"><div class="td-actions">
             ${isDir
               ? `<button class="btn btn-xs btn-secondary" data-dlf="${nm}" title="Download folder (.tar.gz)">${Icons.download || '↓'}</button>`
-              : `<button class="btn btn-xs btn-secondary" data-edit="${nm}" title="Edit">✎</button>
+              : `${img ? `<button class="btn btn-xs btn-secondary" data-img="${nm}" title="Preview">👁</button>` : `<button class="btn btn-xs btn-secondary" data-edit="${nm}" title="Edit">✎</button>`}
+                 ${log ? `<button class="btn btn-xs btn-secondary" data-tail="${nm}" title="Follow the end of this log (tail)">📜</button>` : ''}
                  <button class="btn btn-xs btn-secondary" data-dl="${nm}" title="Download">${Icons.download || '↓'}</button>
                  ${archiveKind(e.name) ? `<button class="btn btn-xs btn-secondary" data-extract="${nm}" title="Extract archive">📦</button>` : ''}`}
             <button class="btn btn-xs btn-ghost" data-cp="${nm}" data-isdir="${isDir ? 1 : 0}" title="Copy">📋</button>
@@ -247,6 +253,8 @@ async function mount(content, opts = {}) {
     const tbody = $id('f-tbody');
     tbody.querySelectorAll('[data-cd]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); cwd = joinPath(a.dataset.cd); list(); }));
     tbody.querySelectorAll('[data-edit]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); openEditor(a.dataset.edit); }));
+    tbody.querySelectorAll('[data-img]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); openImage(a.dataset.img); }));
+    tbody.querySelectorAll('[data-tail]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); openTail(a.dataset.tail); }));
     tbody.querySelectorAll('[data-perm]').forEach(a => a.addEventListener('click', (ev) => { ev.preventDefault(); const e = entries.find(x => x.name === a.dataset.perm); if (e) openPerms(e); }));
     tbody.querySelectorAll('[data-sel]').forEach(cb => cb.addEventListener('change', () => {
       if (cb.checked) selected.set(cb.dataset.sel, { isDir: cb.dataset.isdir === '1' }); else selected.delete(cb.dataset.sel);
@@ -278,6 +286,80 @@ async function mount(content, opts = {}) {
   function download(url, filename) {
     const a = document.createElement('a'); a.href = url; if (filename) a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  const IMG_RE = /\.(png|jpe?g|gif|webp|svg|ico|bmp|avif)$/i;
+  const isImage = (n) => IMG_RE.test(n);
+  // Logs: *.log, rotated *.log.1 (not .gz), and the usual names in /var/log.
+  const isLog = (n) => /\.log(\.\d+)?$/i.test(n) || /^(syslog|messages|kern|auth|daemon|dmesg|secure|maillog|cron)(\.\d+)?$/i.test(n) || /^\/var\/log(\/|$)/.test(cwd) && !/\.(gz|xz|bz2|zst)$/i.test(n);
+
+  // ---- Places: Home, common folders that exist, Compose project folders, your bookmarks (per server) ----
+  const bmKey = () => 'dg_fb_bm_' + ((Store.get('activeServer') || {}).id || 'local');
+  const bookmarks = () => { try { return JSON.parse(localStorage.getItem(bmKey()) || '[]'); } catch (e) { return []; } };
+  const setBookmarks = (l) => { try { localStorage.setItem(bmKey(), JSON.stringify(l)); } catch (e) {} };
+  let placesData = null;
+  async function loadPlaces() {
+    try { placesData = await API.get('/files/places'); } catch (e) { placesData = { home: '/', common: [], projects: [] }; }
+    renderPlaces();
+  }
+  function renderPlaces() {
+    const el = $id('f-places'); if (!el || !placesData) return;
+    const item = (p, label, extra = '') => `<a href="#" class="fb-place${p === cwd ? ' active' : ''}" data-go="${escapeHtml(p)}" title="${escapeHtml(p)}">${label}${extra}</a>`;
+    const short = (p) => escapeHtml(p.split('/').filter(Boolean).pop() || '/');
+    const bm = bookmarks();
+    el.innerHTML = `
+      <div class="fb-places-h">Places</div>
+      ${item(placesData.home, `🏠 ${ctx.remote ? 'Home' : 'Shared folders'}`)}
+      ${ctx.remote ? item('/', '🖥 /') : ''}
+      ${(placesData.common || []).filter(p => p !== placesData.home).map(p => item(p, `📁 ${escapeHtml(ctx.remote ? p : short(p))}`)).join('')}
+      ${(placesData.projects || []).length ? `<div class="fb-places-h">Compose projects</div>${placesData.projects.map(p => item(p.dir, `🐳 ${escapeHtml(p.name)}`)).join('')}` : ''}
+      <div class="fb-places-h" style="display:flex;align-items:center">Bookmarks <span style="flex:1"></span><button class="btn btn-xs btn-ghost" data-bm-add title="Bookmark this folder">${bm.includes(cwd) ? '★' : '☆'}</button></div>
+      ${bm.length ? bm.map(p => `<div class="fb-bm">${item(p, `⭐ ${short(p)}`)}<button class="btn btn-xs btn-ghost" data-bm-rm="${escapeHtml(p)}" title="Remove bookmark">×</button></div>`).join('') : '<div class="ui-sub" style="padding:2px 8px">☆ bookmarks the folder you are in</div>'}`;
+    el.querySelectorAll('[data-go]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); cwd = a.dataset.go; list(); }));
+    el.querySelector('[data-bm-add]').onclick = () => { const l = bookmarks(); setBookmarks(l.includes(cwd) ? l.filter(x => x !== cwd) : [...l, cwd]); renderPlaces(); };
+    el.querySelectorAll('[data-bm-rm]').forEach(b => { b.onclick = () => { setBookmarks(bookmarks().filter(x => x !== b.dataset.bmRm)); renderPlaces(); }; });
+  }
+
+  // ---- Image preview (fetched as a blob: an SVG is shown as an image, its scripts never run) ----
+  async function openImage(name) {
+    const p = joinPath(name), e = entries.find(x => x.name === name);
+    if (e && e.size > 15 * 1024 * 1024) return showToast('Larger than 15 MB — download it instead', 'warning');
+    const m = showModal(`🖼 ${escapeHtml(name)}`, `<div class="text-xs text-muted td-mono" style="margin-bottom:8px">${escapeHtml(p)}${e ? ' · ' + formatBytes(e.size) : ''}</div>
+      <div data-img-box style="display:flex;align-items:center;justify-content:center;min-height:200px;max-height:70vh;overflow:auto;background:repeating-conic-gradient(rgba(128,128,128,.15) 0 25%,transparent 0 50%) 0 0/16px 16px;border-radius:8px"><span class="ui-sub">Loading…</span></div>
+      <div class="ui-sub" data-img-dim style="margin-top:6px"></div>`, [{ label: 'Download', className: 'btn btn-secondary', onClick: () => download(`/api/files/download?path=${encodeURIComponent(p)}`, name) }, { label: 'Close', className: 'btn btn-primary' }]);
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    try {
+      const r = await fetch(`/api/files/download?path=${encodeURIComponent(p)}`, { credentials: 'same-origin' });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+      const ext = name.split('.').pop().toLowerCase();
+      const type = { svg: 'image/svg+xml', jpg: 'image/jpeg', jpeg: 'image/jpeg', ico: 'image/x-icon' }[ext] || `image/${ext}`;
+      const url = URL.createObjectURL(new Blob([await r.arrayBuffer()], { type }));
+      const img = new Image(); img.style.maxWidth = '100%'; img.style.maxHeight = '68vh';
+      img.onload = () => { const d = m.overlay.querySelector('[data-img-dim]'); if (d) d.textContent = `${img.naturalWidth} × ${img.naturalHeight} px`; };
+      img.onerror = () => { const b = m.overlay.querySelector('[data-img-box]'); if (b) b.innerHTML = '<span class="ui-sub">This image can not be shown in the browser.</span>'; };
+      img.src = url;
+      const box = m.overlay.querySelector('[data-img-box]'); box.innerHTML = ''; box.appendChild(img);
+      new MutationObserver((_, o) => { if (!document.body.contains(m.overlay)) { URL.revokeObjectURL(url); o.disconnect(); } }).observe(document.getElementById('modal-root'), { childList: true });
+    } catch (err) { const b = m.overlay.querySelector('[data-img-box]'); if (b) b.innerHTML = `<span class="text-danger">${escapeHtml(err.message)}</span>`; }
+  }
+
+  // ---- Follow a log (tail) in the shared log viewer; sudo for root-owned logs ----
+  function openTail(name) {
+    const p = joinPath(name);
+    let sudo = false;
+    const m = showModal(`📜 ${escapeHtml(name)}`, `<div class="text-xs text-muted td-mono" style="margin-bottom:8px">${escapeHtml(p)}</div><div data-tail-lv></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    const viewer = LogViewer.mount(m.overlay.querySelector('[data-tail-lv]'), {
+      key: 'file-tail', fileName: name.replace(/\.log$/i, ''), live: true, poll: 3000, height: '48vh', compact: true,
+      load: async (limit) => {
+        try { return { text: (await API.get(`/files/tail?path=${encodeURIComponent(p)}&lines=${limit}${sudo ? '&sudo=1' : ''}`)).text, format: 'auto' }; }
+        catch (e) {
+          if (e.code === 'EACCES' && !sudo) { sudo = true; showToast('Not readable for the SSH user — reading it with sudo', 'info', 5000); return { text: (await API.get(`/files/tail?path=${encodeURIComponent(p)}&lines=${limit}&sudo=1`)).text, format: 'auto' }; }
+          throw e;
+        }
+      },
+    });
+    new MutationObserver((_, o) => { if (!document.body.contains(m.overlay)) { viewer.destroy(); o.disconnect(); } }).observe(document.getElementById('modal-root'), { childList: true });
   }
 
   // Text editor (file-editor.js): Ctrl+S, Esc, diff before save, Versions, sudo, conflict check.

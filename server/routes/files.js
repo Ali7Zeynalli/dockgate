@@ -130,6 +130,28 @@ router.get('/version', (req, res) => {
   res.json(v);
 });
 
+// Places (Home, common folders that exist, Compose project folders), log tail, checks before / after a save.
+const fx = require('../file-extras');
+router.get('/places', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try { res.json(await fx.places(a)); } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+router.get('/tail', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try { res.json(await fx.tail(a, String(req.query.path || ''), req.query.lines, { sudo: req.query.sudo === '1' })); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message, code: err.code }); }
+});
+// body { path, content, kind: 'compose' | 'nginx' } → { ok: true | false | null (tool missing), tool, output }
+router.post('/check', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try {
+    const { path: p, content, kind } = req.body || {};
+    if (kind === 'compose') return res.json(await fx.checkCompose(a, String(p || ''), content == null ? '' : String(content)));
+    if (kind === 'nginx') return res.json(await fx.checkNginx(a));
+    res.status(400).json({ error: 'kind: compose or nginx' });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 // Permissions: chmod (mode, recursive, sudo) and chown (owner, group, recursive — with sudo on a remote server).
 router.post('/chmod', async (req, res) => {
   const a = activeRemote(res); if (!a) return;

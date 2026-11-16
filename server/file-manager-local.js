@@ -188,7 +188,7 @@ async function extract(_s, archivePath, opts = {}) {
 }
 
 module.exports = {
-  chmod, chown,
+  chmod, chown, safe,
   ROOT, roots, available, inside, listDir, downloadTo, uploadFrom, mkdir, rename, remove, normRemote: remote.normRemote, joinRemote: remote.joinRemote,
   homeDir, listTree, readFileText, writeFileText, removeRecursive, copy, move, archiveDirTo, extract, classifyArchive: remote.classifyArchive,
 };

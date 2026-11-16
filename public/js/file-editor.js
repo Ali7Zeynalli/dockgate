@@ -40,6 +40,43 @@ window.FileEditor = (() => {
     obs.observe(m.overlay.parentNode || document.body, { childList: true });
   });
 
+  // ---- light syntax colouring (an overlay under a transparent textarea; off above 300 KB) ----
+  function langOf(path, name) {
+    const n = name.toLowerCase();
+    if (/\.ya?ml$/.test(n)) return 'yaml';
+    if (/\.json$/.test(n)) return 'json';
+    if (n === 'nginx.conf' || /\/nginx\//.test(path) && /\.conf$|^default$/.test(n) || /\/sites-(available|enabled)\//.test(path)) return 'nginx';
+    if (/^dockerfile/.test(n) || /\.(sh|bash|zsh)$/.test(n)) return 'shell';
+    if (/^\.env/.test(n) || /\.(env|ini|cfg|toml|properties|conf|cnf)$/.test(n) || n === 'caddyfile') return 'conf';
+    return null;
+  }
+  const RULES = {
+    yaml: [[/#.*/y, 'c'], [/"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'/y, 's'], [/^(\s*-\s+|\s*)[^\s#:'"][^:#]*?(?=:(\s|$))/y, 'k'], [/\b(true|false|yes|no|null|on|off)\b/yi, 'b'], [/-?\b\d+(\.\d+)?\b/y, 'n']],
+    json: [[/"(?:[^"\\]|\\.)*"(?=\s*:)/y, 'k'], [/"(?:[^"\\]|\\.)*"/y, 's'], [/\b(true|false|null)\b/y, 'b'], [/-?\b\d+(\.\d+)?([eE][+-]?\d+)?\b/y, 'n']],
+    nginx: [[/#.*/y, 'c'], [/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/y, 's'], [/^\s*[a-z_][a-z0-9_]*/y, 'k'], [/\$[a-zA-Z_][\w]*/y, 'b'], [/\b\d+[kmgs]?\b/yi, 'n']],
+    shell: [[/#.*/y, 'c'], [/"(?:[^"\\]|\\.)*"|'[^']*'/y, 's'], [/^\s*(FROM|RUN|CMD|COPY|ADD|ENV|ARG|EXPOSE|WORKDIR|ENTRYPOINT|USER|VOLUME|LABEL|HEALTHCHECK|SHELL|ONBUILD|STOPSIGNAL)\b/y, 'k'], [/\$\{?[a-zA-Z_]\w*\}?/y, 'b'], [/\b(if|then|else|fi|for|do|done|case|esac|while|function|export|local|return|in)\b/y, 'k']],
+    conf: [[/[#;].*/y, 'c'], [/^\s*\[[^\]]*\]/y, 'k'], [/^\s*[\w.\-]+(?=\s*[=:])/y, 'k'], [/"(?:[^"\\]|\\.)*"|'[^']*'/y, 's'], [/\$\{?[a-zA-Z_]\w*\}?/y, 'b'], [/\b(true|false|yes|no|on|off)\b/yi, 'b'], [/-?\b\d+(\.\d+)?\b/y, 'n']],
+  };
+  /** One line → HTML with <span class="hl-x"> tokens. Rules anchored with ^ only match at the line start. */
+  function hlLine(line, rules) {
+    let out = '', i = 0, plain = '';
+    while (i < line.length) {
+      let hit = null;
+      for (const [re, cls] of rules) {
+        if (re.source.startsWith('^') && i !== 0) continue;
+        re.lastIndex = i;
+        const m = re.exec(line);
+        if (m && m.index === i && m[0].length) { hit = [m[0], cls]; break; }
+      }
+      if (hit) { out += esc(plain) + `<span class="hl-${hit[1]}">${esc(hit[0])}</span>`; plain = ''; i += hit[0].length; }
+      else { plain += line[i]; i++; }
+    }
+    return out + esc(plain);
+  }
+  function highlight(text, lang) { const r = RULES[lang]; return text.split('\n').map(l => hlLine(l, r)).join('\n'); }
+  const isCompose = (name) => /^(docker-)?compose([.-][\w-]+)?\.ya?ml$/i.test(name);
+  const isNginx = (path) => /^\/etc\/nginx\//.test(path);
+
   async function open({ path, name, onSaved }) {
     let data, sudo = false;
     try { data = await API.get(`/files/read?path=${encodeURIComponent(path)}`); }
@@ -65,21 +102,29 @@ window.FileEditor = (() => {
       <div class="text-xs text-muted td-mono" style="padding:0 20px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(path)} · ${formatBytes(data.size || 0)}</div>
       <div style="flex:1;min-height:0;display:flex;margin:0 20px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg-primary)">
         <pre data-gutter class="td-mono" style="margin:0;padding:10px 8px;text-align:right;color:var(--text-muted);opacity:.6;user-select:none;overflow:hidden;font-size:12.5px;line-height:1.5;min-width:44px;border-right:1px solid var(--border)"></pre>
-        <textarea data-text spellcheck="false" wrap="off" style="flex:1;border:0;outline:0;resize:none;padding:10px;background:transparent;color:inherit;font-family:var(--font-mono,monospace);font-size:12.5px;line-height:1.5;white-space:pre;overflow:auto;tab-size:2"></textarea>
+        <div style="position:relative;flex:1;min-width:0">
+          <pre data-hl aria-hidden="true" class="fe-hl" style="position:absolute;inset:0;margin:0;padding:10px;overflow:hidden;pointer-events:none;font-family:var(--font-mono,monospace);font-size:12.5px;line-height:1.5;white-space:pre;tab-size:2;color:var(--text-primary)"></pre>
+          <textarea data-text spellcheck="false" wrap="off" style="position:absolute;inset:0;width:100%;height:100%;border:0;outline:0;resize:none;padding:10px;background:transparent;color:inherit;font-family:var(--font-mono,monospace);font-size:12.5px;line-height:1.5;white-space:pre;overflow:auto;tab-size:2"></textarea>
+        </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;padding:12px 20px">
         <span class="ui-sub" style="flex:1">Ctrl+S saves · Esc closes · the earlier content is kept under Versions</span>
+        ${isCompose(name) ? '<button class="btn btn-secondary" data-check title="docker compose config on what is in the editor">Check</button>' : ''}
         <button class="btn btn-secondary" data-cancel>Close</button>
         <button class="btn btn-primary" data-save>Save…</button>
       </div></div>`;
     document.body.appendChild(ov);
-    const ta = ov.querySelector('[data-text]'), gutter = ov.querySelector('[data-gutter]'), dot = ov.querySelector('[data-dirty]');
+    const ta = ov.querySelector('[data-text]'), gutter = ov.querySelector('[data-gutter]'), dot = ov.querySelector('[data-dirty]'), hlEl = ov.querySelector('[data-hl]');
     ta.value = original;
-    const lines = () => { const n = ta.value.split('\n').length; gutter.textContent = Array.from({ length: n }, (_, i) => i + 1).join('\n'); };
+    const lang = original.length <= 300 * 1024 ? langOf(path, name) : null;
+    if (lang) ta.style.color = 'transparent', ta.style.caretColor = 'var(--text-primary)'; else hlEl.style.display = 'none';
+    let hlTimer = null;
+    const paint = () => { if (!lang) return; clearTimeout(hlTimer); hlTimer = setTimeout(() => { hlEl.innerHTML = highlight(ta.value, lang) + '\n\n'; hlEl.scrollTop = ta.scrollTop; hlEl.scrollLeft = ta.scrollLeft; }, ta.value.length > 50000 ? 120 : 0); };
+    const lines = () => { const n = ta.value.split('\n').length; gutter.textContent = Array.from({ length: n }, (_, i) => i + 1).join('\n'); paint(); };
     const dirty = () => ta.value !== original;
     const mark = () => { dot.style.display = dirty() ? '' : 'none'; };
     ta.addEventListener('input', () => { lines(); mark(); });
-    ta.addEventListener('scroll', () => { gutter.scrollTop = ta.scrollTop; });
+    ta.addEventListener('scroll', () => { gutter.scrollTop = ta.scrollTop; hlEl.scrollTop = ta.scrollTop; hlEl.scrollLeft = ta.scrollLeft; });
     ta.addEventListener('keydown', (e) => { // Tab inserts two spaces instead of leaving the editor
       if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); const s = ta.selectionStart; ta.setRangeText('  ', s, ta.selectionEnd, 'end'); lines(); mark(); }
     });
@@ -95,10 +140,12 @@ window.FileEditor = (() => {
     const write = async (force = false) => {
       const body = { path, content: ta.value, sudo, baseMtime, force };
       try {
+        const before = original;
         const r = await API.post('/files/write', body);
         original = ta.value; baseMtime = r.mtime || baseMtime; mark();
         showToast(`Saved${r.versionKept ? ' — the earlier version is under Versions' : ''}`);
         if (onSaved) onSaved();
+        if (isNginx(path)) await nginxCheck(before);
         return true;
       } catch (e) {
         if (e.code === 'CHANGED') {
@@ -115,10 +162,34 @@ window.FileEditor = (() => {
         showToast(e.message, 'error', 10000); return false;
       }
     };
+    // nginx -t after a save under /etc/nginx: a broken config is offered to be put back before nginx reloads it.
+    const nginxCheck = async (before) => {
+      let r; try { r = await API.post('/files/check', { path, kind: 'nginx' }); } catch (e) { return; }
+      if (r.ok === null) return;
+      if (r.ok) { showToast('nginx -t: the configuration is valid — reload nginx to use it', 'success', 7000); return; }
+      const v = await ask('nginx -t failed', `<div class="text-sm" style="margin-bottom:8px">The file is saved, but nginx would not accept the configuration now. nginx keeps running with the old one until it is reloaded.</div><pre class="td-mono" style="white-space:pre-wrap;font-size:12px;max-height:40vh;overflow:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:8px;margin:0">${esc(r.output)}</pre>`, [{ label: 'Keep editing', className: 'btn btn-secondary', value: false }, { label: 'Put the previous content back', className: 'btn btn-danger', value: true }]);
+      if (v) { const mine = ta.value; ta.value = before; lines(); const ok = await write(true); if (!ok) { ta.value = mine; lines(); } else showToast('The previous content is back; your edit is under Versions', 'info', 8000); mark(); }
+    };
+    const checkHtml = (r) => r.ok === null ? `<div class="ui-sub" style="margin-bottom:8px">${esc(r.tool)}: ${esc(r.output)}</div>`
+      : `<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;border:1px solid ${r.ok ? 'var(--success)' : 'var(--danger)'};background:${r.ok ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)'}"><b style="color:${r.ok ? 'var(--success)' : 'var(--danger)'}">${r.ok ? '✓' : '✗'} ${esc(r.tool)}</b>${r.ok ? ' — valid' : `<pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:6px 0 0;max-height:24vh;overflow:auto">${esc(r.output)}</pre>`}</div>`;
+    const runChecks = async () => {
+      if (/\.json$/i.test(name)) { try { JSON.parse(ta.value); return { ok: true, tool: 'JSON', output: '' }; } catch (e) { return { ok: false, tool: 'JSON', output: e.message }; } }
+      if (isCompose(name)) { try { return await API.post('/files/check', { path, content: ta.value, kind: 'compose' }); } catch (e) { return { ok: null, tool: 'docker compose config', output: e.message }; } }
+      return null;
+    };
+    const check = async () => {
+      const b = ov.querySelector('[data-check]'); if (b) { b.disabled = true; b.textContent = 'Checking…'; }
+      const r = await runChecks();
+      if (b) { b.disabled = false; b.textContent = 'Check'; }
+      if (r) await ask(r.ok ? 'Valid' : r.ok === null ? 'Could not check' : 'Not valid', checkHtml(r), [{ label: 'Close', className: 'btn btn-secondary', value: null }]);
+    };
     const save = async () => {
       if (!dirty()) { showToast('Nothing changed'); return; }
+      const sb = ov.querySelector('[data-save]'); sb.disabled = true;
+      const chk = await runChecks();
+      sb.disabled = false;
       const d = diffHtml(diffLines(original, ta.value));
-      const ok = await ask(`Save ${esc(name)}?`, `<div class="text-sm" style="margin-bottom:8px"><span style="color:var(--success)">+${d.add}</span> · <span style="color:var(--danger)">−${d.del}</span> lines. The file is replaced in one step (never half written); its current content is kept under Versions.</div>${d.html}`, [{ label: 'Back', className: 'btn btn-secondary', value: false }, { label: sudo ? 'Save with sudo' : 'Save', className: 'btn btn-primary', value: true }]);
+      const ok = await ask(`Save ${esc(name)}?`, `${chk ? checkHtml(chk) : ''}<div class="text-sm" style="margin-bottom:8px"><span style="color:var(--success)">+${d.add}</span> · <span style="color:var(--danger)">−${d.del}</span> lines. The file is replaced in one step (never half written); its current content is kept under Versions.${isNginx(path) ? ' After saving, <span class="td-mono">nginx -t</span> checks the configuration.' : ''}</div>${d.html}`, [{ label: 'Back', className: 'btn btn-secondary', value: false }, { label: sudo ? 'Save with sudo' : 'Save', className: 'btn btn-primary', value: true }]);
       if (ok) await write();
     };
     const showVersion = async (id) => {
@@ -148,8 +219,9 @@ window.FileEditor = (() => {
     ov.querySelector('[data-cancel]').onclick = close;
     ov.querySelector('[data-save]').onclick = save;
     ov.querySelector('[data-versions]').onclick = versions;
+    const cb = ov.querySelector('[data-check]'); if (cb) cb.onclick = check;
     ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
   }
 
-  return { open, diffLines };
+  return { open, diffLines, highlight, langOf };
 })();
