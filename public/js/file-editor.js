@@ -3,7 +3,7 @@
 //   · Save shows what changes (a line diff) before it writes; the server keeps the earlier version (Versions)
 //   · a file the SSH user may not read or write can be opened / saved with sudo
 //   · a file changed on the server after it was opened is not overwritten silently
-// FileEditor.open({ path, name, onSaved })
+// FileEditor.open({ path, name, onSaved, actions: [{ label, title, run(api) }] }) — api.insert(text) at the cursor
 window.FileEditor = (() => {
   const esc = (s) => escapeHtml(String(s ?? ''));
 
@@ -77,9 +77,9 @@ window.FileEditor = (() => {
   const isCompose = (name) => /^(docker-)?compose([.-][\w-]+)?\.ya?ml$/i.test(name);
   const isNginx = (path) => /^\/etc\/nginx\//.test(path);
   // System files checked before saving, with the tool that owns them (on the server).
-  const sysKind = (path) => /^\/etc\/ssh\/sshd_config(\.d\/[^/]+\.conf)?$/.test(path) ? 'sshd' : /^\/etc\/sudoers(\.d\/[^/]+)?$/.test(path) ? 'sudoers' : path === '/etc/fstab' ? 'fstab' : null;
+  const sysKind = (path) => /\.(sh|bash)$/i.test(path) ? 'bash' : /^\/etc\/ssh\/sshd_config(\.d\/[^/]+\.conf)?$/.test(path) ? 'sshd' : /^\/etc\/sudoers(\.d\/[^/]+)?$/.test(path) ? 'sudoers' : path === '/etc/fstab' ? 'fstab' : null;
 
-  async function open({ path, name, onSaved }) {
+  async function open({ path, name, onSaved, actions = [] }) {
     let data, sudo = false;
     try { data = await API.get(`/files/read?path=${encodeURIComponent(path)}`); }
     catch (e) {
@@ -98,6 +98,7 @@ window.FileEditor = (() => {
       <div class="modal-header" style="display:flex;align-items:center;gap:10px">
         <h3 style="margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)} <span data-dirty style="color:var(--warning);display:none" title="Not saved">●</span></h3>
         ${sudo ? UI.pill('warn', 'sudo') : ''}
+        ${actions.map((a, i) => `<button class="btn btn-xs btn-secondary" data-act="${i}" title="${esc(a.title || '')}">${esc(a.label)}</button>`).join('')}
         <button class="btn btn-xs btn-secondary" data-versions title="Earlier versions saved from here">Versions</button>
         <button class="btn-icon modal-close" data-close title="Close (Esc)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
@@ -224,6 +225,9 @@ window.FileEditor = (() => {
     ov.querySelector('[data-save]').onclick = save;
     ov.querySelector('[data-versions]').onclick = versions;
     const cb = ov.querySelector('[data-check]'); if (cb) cb.onclick = check;
+    // Extra buttons from the caller (e.g. Scripts → Insert block): insert text at the cursor.
+    const api = { insert(text) { const s = ta.selectionStart; ta.setRangeText(text, s, ta.selectionEnd, 'end'); lines(); mark(); ta.focus(); }, get value() { return ta.value; } };
+    ov.querySelectorAll('[data-act]').forEach(b => { b.onclick = () => actions[Number(b.dataset.act)].run(api); });
     ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
   }
 

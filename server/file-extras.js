@@ -100,14 +100,22 @@ async function checkNginx(a) {
 }
 
 // Check the unsaved content of a system file with the tool that owns it, on the server:
-//   sshd → sshd -t -f   · sudoers → visudo -cf   · fstab → findmnt --verify --tab-file
+//   bash (.sh) → bash -n   · sshd → sshd -t -f   · sudoers → visudo -cf   · fstab → findmnt --verify --tab-file
 const TOOLS = {
   sshd: { tool: 'sshd -t', cmd: (t) => `sudo -n sshd -t -f ${t} 2>&1 || sshd -t -f ${t} 2>&1`, missing: /sshd: (command )?not found/ },
   sudoers: { tool: 'visudo -c', cmd: (t) => `sudo -n visudo -cf ${t} 2>&1 || visudo -cf ${t} 2>&1`, missing: /visudo: (command )?not found/ },
+  bash: { tool: 'bash -n', cmd: (t) => `bash -n ${t} 2>&1`, missing: /bash: (command )?not found/ },
   fstab: { tool: 'findmnt --verify', cmd: (t) => `${require('./sysconf').fstabVerify(t)}; echo "$out"; [ "$bad" = 1 ] && exit 1; exit 0`, missing: /findmnt: (command )?not found/ },
 };
 async function checkFile(a, kind, content) {
   const T = TOOLS[kind]; if (!T) throw Object.assign(new Error('Unknown check'), { statusCode: 400 });
+  if (isLocal(a) && kind === 'bash') { // bash -n needs nothing of the server: check it here
+    const tmp = path.join(require('os').tmpdir(), `.dg-check-${rand()}.sh`);
+    fs.writeFileSync(tmp, String(content), { mode: 0o600 });
+    try { const r = await runLocal('bash', ['-n', tmp]); if (r.missing) return { ok: null, tool: T.tool, output: 'bash is not available here' };
+      const out = r.out.split(tmp).join('(this file)').trim(); return { ok: r.code === 0, tool: T.tool, output: out || (r.code === 0 ? 'OK' : 'failed') }; }
+    finally { try { fs.unlinkSync(tmp); } catch (e) {} }
+  }
   if (isLocal(a)) return { ok: null, tool: T.tool, output: `${T.tool} runs on remote servers only` };
   const tmp = `/tmp/.dg-check-${rand()}`;
   const b64 = Buffer.from(String(content), 'utf8').toString('base64');

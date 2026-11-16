@@ -2,6 +2,20 @@
 
 ---
 
+## [2.63.0] - 2026-11-16
+
+### Added
+- **Scripts: your own code.** **+ New script → Write my own code** creates a script from shell you write or paste. **Edit** opens it in the file editor — highlighting, Ctrl+S, the diff before saving, Versions, a `bash -n` check, the "changed on the server" warning — with **+ Insert block** to put any Script Builder block at the cursor as plain, quoted shell.
+- **Scripts: add one that is already on the server.** **Add existing…** finds the `.sh` files in the usual places and the ones crontabs run, or takes a path. The file stays where it is (never moved or deleted); Run, Schedule, the log and the alerts work on it. Root-owned scripts run as root.
+- **Convert to code** (⋯ menu) turns a blocks script into your own code.
+- The file editor checks `.sh` files with `bash -n` (Check, and before saving) — in Files too.
+
+### Changed
+- Every script write is checked with `bash -n` first; a syntax error is shown and nothing is written.
+- A blocks script whose file was changed on the server by hand is no longer replaced silently: Save offers to keep the server's version (as own code) or write the steps over it.
+
+---
+
 ## [2.62.1] - 2026-11-16
 
 ### Fixed
