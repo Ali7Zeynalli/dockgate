@@ -1,0 +1,189 @@
+'use strict';
+// Tools → Databases. pg-sql.js is pure (runs everywhere). pg-studio.js runs against a real PostgreSQL when one
+// is reachable (DG_TEST_PG=socketdir:port, default /var/tmp/dgpg:55432) — "docker exec" becomes a local psql.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { spawn, execFileSync } = require('child_process');
+const P = require('../../server/pg-sql');
+
+test('split: top-level ; only — strings, $$ bodies, comments and quoted names kept whole', () => {
+  const sql = `select 'a;b', "x;y" from t; -- c;d
+  create function f() returns int as $body$ begin return 1; end; $body$ language plpgsql;
+  /* a /* nested ; */ ; */ select E'it\\'s;' ; select $$;$$;  ;  -- only a comment`;
+  const st = P.split(sql).map(s => s.sql);
+  assert.equal(st.length, 4);
+  assert.match(st[0], /^select 'a;b', "x;y" from t$/);
+  assert.match(st[1], /\$body\$ language plpgsql$/);
+  assert.match(st[2], /select E'it\\'s;'$/);
+  assert.equal(st[3], 'select $$;$$');
+});
+
+test('kind: reads vs writes, rows, and what needs a confirm', () => {
+  assert.deepEqual(P.kind('SELECT 1'), { first: 'SELECT', rows: true, write: false, danger: null });
+  assert.equal(P.kind("select 'drop table x'").write, false, 'words in strings do not count');
+  assert.equal(P.kind('with x as (delete from t returning *) select * from x').write, true);
+  assert.equal(P.kind('insert into t values (1) returning id').rows, true);
+  assert.equal(P.kind('update t set a = 1').danger, 'UPDATE without WHERE changes every row');
+  assert.equal(P.kind('update t set a = 1 where id = 2').danger, null);
+  assert.match(P.kind('DROP TABLE t').danger, /DROP/);
+  assert.match(P.kind('truncate t').danger, /TRUNCATE/);
+  assert.match(P.kind('alter table t drop column a').danger, /ALTER/);
+  assert.equal(P.kind('explain select 1').write, false);
+  assert.equal(P.kind('vacuum').write, true);
+});
+
+test('quoting and CSV reading (NULL vs empty string, quotes, new lines)', () => {
+  assert.equal(P.ident('we"ird'), '"we""ird"');
+  assert.equal(P.lit("it's"), "'it''s'"); assert.equal(P.lit(null), 'NULL');
+  assert.throws(() => P.lit('a\0b'));
+  assert.deepEqual(P.parseCsv(`a,b,c\n1,${P.NULL_MARK},""\n"x,y","l1\nl2","q""q"\n`), [['a', 'b', 'c'], ['1', null, ''], ['x,y', 'l1\nl2', 'q"q']]);
+  assert.deepEqual(P.readResult('UPDATE 3', 'update t set a=1'), { kind: 'tag', tag: 'UPDATE 3' });
+  assert.deepEqual(P.readResult('id\n9\nINSERT 0 1', 'insert into t values (9) returning id'), { kind: 'rows', columns: ['id'], rows: [['9']], tag: 'INSERT 0 1' });
+  assert.deepEqual(P.readResult('n\n', 'select 1 as n where false'), { kind: 'rows', columns: ['n'], rows: [] });
+});
+
+// ---------- against a real PostgreSQL ----------
+const [PGHOST, PGPORT] = (process.env.DG_TEST_PG || '/var/tmp/dgpg:55432').split(':');
+let pgUp = false;
+try { execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-At', '-c', 'select 1'], { stdio: 'pipe', timeout: 5000 }); pgUp = true; } catch (e) { /* not here */ }
+const skip = pgUp ? false : 'no PostgreSQL here (set DG_TEST_PG)';
+
+function setup() {
+  const dockerPath = require.resolve('../../server/docker');
+  const fake = {
+    getActiveServerId: () => 'local',
+    docker: {
+      listContainers: async () => [{ Id: 'c1', Names: ['/shop-db-1'], Image: 'postgres:16-alpine', State: 'running', Status: 'Up', Labels: { 'com.docker.compose.project': 'shop' } }, { Id: 'c2', Names: ['/redis'], Image: 'redis:7', State: 'running', Labels: {} }],
+      getContainer: (n) => ({ inspect: async () => { if (n !== 'shop-db-1') throw new Error('no'); return { Id: 'c1', State: { Running: true }, Config: { Image: 'postgres:16-alpine', Env: ['POSTGRES_USER=postgres', 'POSTGRES_DB=dgtest'] } }; } }),
+    },
+  };
+  require.cache[dockerPath] = { id: dockerPath, filename: dockerPath, loaded: true, exports: fake };
+  const S = require('../../server/pg-studio');
+  S._setExec((id, cmd, env, { onStdout, timeoutMs, stdin } = {}) => new Promise((res) => {
+    const args = cmd.slice(1); args.splice(0, 0, '-h', PGHOST, '-p', PGPORT);
+    const e = { ...process.env }; for (const kv of env) { const i = kv.indexOf('='); e[kv.slice(0, i)] = kv.slice(i + 1); }
+    const p = spawn(cmd[0], args, { env: e });
+    let out = '', er = '';
+    p.stdout.on('data', d => { if (onStdout) onStdout(d); else out += d; }); p.stderr.on('data', d => { er += d; });
+    if (stdin) stdin.pipe(p.stdin); else p.stdin.end();
+    const timer = setTimeout(() => p.kill(), timeoutMs || 60000);
+    p.on('close', (code) => { clearTimeout(timer); res({ code: code || 0, stdout: out, stderr: er, truncated: false, timedOut: false }); });
+  }));
+  return S;
+}
+
+test('Databases against PostgreSQL: find, browse, edit by key, SQL with confirms, read-only', { skip }, async () => {
+  execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-c', 'drop database if exists dgtest', '-c', 'create database dgtest'], { stdio: 'pipe' });
+  execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest', '-c', `create schema shop;
+    create table shop.items (id bigserial primary key, name text not null, price numeric(20,2), note text, made timestamptz default now());
+    insert into shop.items (name, price, note) values ('Apple', 1.5, null), ('Pear', 2, ''), ('Big', 9007199254740993, 'it''s');
+    create table shop.log (msg text); insert into shop.log values ('x');
+    create view shop.cheap as select * from shop.items where price < 2;`], { stdio: 'pipe' });
+  const S = setup();
+  const t = await S.targets();
+  assert.equal(t.length, 1); assert.equal(t[0].name, 'shop-db-1'); assert.equal(t[0].settings.allowWrite, false);
+  const info = await S.info('shop-db-1');
+  assert.equal(info.user, 'postgres'); assert.ok(info.databases.some(d => d.name === 'dgtest'));
+  const o = await S.objects('shop-db-1', 'dgtest');
+  assert.ok(o.schemas.includes('shop'));
+  assert.deepEqual(o.relations.filter(r => r.schema === 'shop').map(r => `${r.name}:${r.kind}`).sort(), ['cheap:v', 'items:r', 'items_id_seq:S', 'log:r']);
+  const st = await S.structure('shop-db-1', 'dgtest', 'shop', 'items');
+  assert.deepEqual(st.pk, ['id']); assert.equal(st.columns.find(c => c.name === 'price').type, 'numeric(20,2)');
+  // rows: text values, NULL vs '', big numbers exact, sort + filter
+  let r = await S.rows('shop-db-1', 'dgtest', { schema: 'shop', table: 'items', sort: [{ col: 'id', dir: 'asc' }] });
+  assert.equal(r.editable, true);
+  const idx = (n) => r.columns.findIndex(c => c.name === n);
+  assert.equal(r.rows[0][idx('note')], null); assert.equal(r.rows[1][idx('note')], '');
+  assert.equal(r.rows[2][idx('price')], '9007199254740993.00');
+  r = await S.rows('shop-db-1', 'dgtest', { schema: 'shop', table: 'items', filters: [{ col: 'name', op: 'contains', value: 'p' }] });
+  assert.deepEqual(r.rows.map(x => x[idx('name')]).sort(), ['Apple', 'Pear']);
+  assert.equal((await S.count('shop-db-1', 'dgtest', { schema: 'shop', table: 'items', filters: [{ col: 'note', op: 'null' }] })).count, 1);
+  await assert.rejects(S.rows('shop-db-1', 'dgtest', { schema: 'shop', table: 'items', where: '1=1; drop table shop.log' }), /one condition/);
+  // read-only by default
+  await assert.rejects(S.updateRow('shop-db-1', 'dgtest', { schema: 'shop', table: 'items', pk: { id: '1' }, set: { name: 'x' } }), (e) => e.code === 'READ_ONLY');
+  await assert.rejects(S.runSql('shop-db-1', 'dgtest', 'delete from shop.log where true'), (e) => e.code === 'READ_ONLY');
+  // a write hidden in a function call is still stopped by the read-only session
+  const ro = await S.runSql('shop-db-1', 'dgtest', "select 1 as a; select set_config('x.y', '1', false)");
+  assert.equal(ro.error, null); assert.equal(ro.results.length, 2);
+  // SQL: several results, NULL, an error names its statement and stops there
+  let q = await S.runSql('shop-db-1', 'dgtest', "select id, note from shop.items order by id; select count(*) as n from shop.log; select * from nope; select 2");
+  assert.equal(q.results[0].kind, 'rows'); assert.deepEqual(q.results[0].columns, ['id', 'note']); assert.equal(q.results[0].rows[0][1], null);
+  assert.deepEqual(q.results[1].rows, [['1']]);
+  assert.equal(q.error.statement, 3); assert.match(q.error.message, /nope/); assert.equal(q.results.length, 2);
+  await assert.rejects(S.runSql('shop-db-1', 'dgtest', '\\! id'), /psql commands/);
+  // allow changes: edits by key, dangerous statements ask first
+  S.saveSettings('shop-db-1', { allowWrite: true });
+  assert.deepEqual(await S.updateRow('shop-db-1', 'dgtest', { schema: 'shop', table: 'items', pk: { id: '2' }, set: { note: null, name: "O'Neil" } }).then(x => x.updated), 1);
+  await assert.rejects(S.updateRow('shop-db-1', 'dgtest', { schema: 'shop', table: 'items', pk: { id: '99' }, set: { name: 'x' } }), (e) => e.code === 'GONE');
+  await assert.rejects(S.updateRow('shop-db-1', 'dgtest', { schema: 'shop', table: 'log', pk: { msg: 'x' }, set: { msg: 'y' } }), (e) => e.code === 'NO_PK');
+  const ins = await S.insertRow('shop-db-1', 'dgtest', { schema: 'shop', table: 'items', values: { name: 'New', price: '3.25' } });
+  assert.equal(ins.inserted, 1); assert.ok(ins.key.id);
+  assert.equal((await S.deleteRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'items', pks: [{ id: ins.key.id }, { id: '1' }] })).deleted, 2);
+  await assert.rejects(S.runSql('shop-db-1', 'dgtest', 'delete from shop.log'), (e) => e.code === 'NEEDS_CONFIRM' && e.danger[0].why.includes('WHERE'));
+  q = await S.runSql('shop-db-1', 'dgtest', "insert into shop.log values ('a'), ('b') returning msg; delete from shop.log", { confirm: true });
+  assert.equal(q.error, null); assert.deepEqual(q.results[0].rows, [['a'], ['b']]); assert.equal(q.results[0].tag, 'INSERT 0 2'); assert.equal(q.results[1].tag, 'DELETE 3');
+  // a transaction across statements; an error rolls the open one back
+  q = await S.runSql('shop-db-1', 'dgtest', "begin; insert into shop.log values ('t'); select 1/0; commit");
+  assert.equal(q.error.statement, 3);
+  assert.equal((await S.count('shop-db-1', 'dgtest', { schema: 'shop', table: 'log' })).count, 0);
+  // export
+  let csv = ''; await S.exportTable('shop-db-1', 'dgtest', 'shop', 'items', 'csv', (c) => { csv += c; });
+  assert.match(csv, /^id,name,price,note,made\n/); assert.match(csv, /O'Neil/);
+  let jl = ''; await S.exportTable('shop-db-1', 'dgtest', 'shop', 'items', 'json', (c) => { jl += c; });
+  assert.ok(jl.trim().split('\n').map(l => JSON.parse(l)).some(x => x.name === "O'Neil" && x.note === null));
+  S.saveSettings('shop-db-1', { allowWrite: false });
+});
+
+test('Admin and backups against PostgreSQL: roles, sessions, vacuum, backup → restore to a new database → swap', { skip }, async () => {
+  const S = setup();
+  const A = require('../../server/pg-admin');
+  const BK = require('../../server/pg-backup');
+  for (const d of ['dgtest_copy', 'dgtest_sql']) execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-c', `drop database if exists ${d}`], { stdio: 'pipe' });
+  const pq = (...a) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-At', ...a], { stdio: 'pipe' }).toString();
+  pq('-c', "select pg_terminate_backend(pid) from pg_stat_activity where datname like 'dgtest%' and pid <> pg_backend_pid()");
+  for (const d of pq('-c', "select datname from pg_database where datname like 'dgtest\\_%'").split('\n').filter(Boolean)) pq('-c', `drop database "${d}"`);
+  pq('-c', 'drop role if exists dg_app');
+  const o = await A.overview('shop-db-1', 'dgtest');
+  assert.ok(o.maxConnections > 0); assert.ok(o.roles.some(r => r.name === 'postgres' && r.super));
+  assert.ok(o.tables.some(t => t.name === 'items')); assert.ok(o.sessions.some(x => x.me));
+  await assert.rejects(A.createRole('shop-db-1', { role: 'dg_app', password: 'longpassword1' }), (e) => e.code === 'READ_ONLY');
+  S.saveSettings('shop-db-1', { allowWrite: true });
+  await A.createRole('shop-db-1', { role: 'dg_app', password: 'longpassword1', database: 'dgtest', access: 'read' });
+  await assert.rejects(A.createRole('shop-db-1', { role: 'bad name' }), /letters/);
+  await A.setPassword('shop-db-1', { role: 'dg_app', password: 'another-pass-2' });
+  assert.equal(execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest', '-At', '-c', "select has_table_privilege('dg_app', 'shop.items', 'SELECT')::text || has_table_privilege('dg_app', 'shop.items', 'DELETE')::text"]).toString().trim(), 'truefalse');
+  const m = await A.maintain('shop-db-1', 'dgtest', { action: 'vacuum', schema: 'shop', table: 'items' });
+  assert.match(m.sql, /^VACUUM \(ANALYZE\) "shop"\."items"$/);
+  await assert.rejects(A.dropDatabase('shop-db-1', { database: 'dgtest', confirm: 'nope' }), (e) => e.code === 'CONFIRM');
+  // the login database itself can be swapped / dropped: DockGate stands in another database meanwhile
+  execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-c', 'drop database if exists dgtest_tmp', '-c', 'create database dgtest_tmp'], { stdio: 'pipe' });
+  await A.dropDatabase('shop-db-1', { database: 'dgtest_tmp', confirm: 'dgtest_tmp' });
+  // backups (this machine → DockGate's data folder)
+  const b1 = await BK.create('shop-db-1', { database: 'dgtest', kind: 'custom' });
+  assert.match(b1.file, /^shop-db-1-dgtest-\d{4}-\d\d-\d\d-\d{6}\.dump$/); assert.ok(b1.size > 100);
+  const b2 = await BK.create('shop-db-1', { database: 'dgtest', kind: 'sql' });
+  const b3 = await BK.create('shop-db-1', { kind: 'all' });
+  assert.match(b3.file, /-all-.*\.sql\.gz$/);
+  const l = await BK.list('shop-db-1');
+  assert.deepEqual(l.files.map(f => f.name).sort(), [b1.file, b2.file, b3.file].sort());
+  assert.equal(l.files.find(f => f.name === b3.file).restorable, false);
+  await assert.rejects(BK.restore('shop-db-1', { file: b3.file, target: 'x' }), (e) => e.code === 'WHOLE');
+  await assert.rejects(BK.restore('shop-db-1', { file: b1.file, target: 'dgtest' }), /exists/);
+  const r1 = await BK.restore('shop-db-1', { file: b1.file, target: 'dgtest_copy' });
+  assert.equal(r1.database, 'dgtest_copy');
+  await BK.restore('shop-db-1', { file: b2.file, target: 'dgtest_sql' });
+  const n = (db) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', db, '-At', '-c', 'select count(*) from shop.items']).toString().trim();
+  assert.equal(n('dgtest_copy'), n('dgtest')); assert.equal(n('dgtest_sql'), n('dgtest'));
+  execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest_copy', '-c', "insert into shop.items (name) values ('only-in-copy')"], { stdio: 'pipe' });
+  const sw = await BK.swap('shop-db-1', { restored: 'dgtest_copy', into: 'dgtest_sql' });
+  assert.match(sw.kept, /^dgtest_sql_before_\d+$/);
+  assert.equal(execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest_sql', '-At', '-c', "select count(*) from shop.items where name = 'only-in-copy'"]).toString().trim(), '1');
+  for (const f of [b1.file, b2.file, b3.file]) await BK.remove('shop-db-1', f);
+  assert.equal((await BK.list('shop-db-1')).files.length, 0);
+  await assert.rejects(BK.remove('shop-db-1', '../etc.dump'), /Unknown backup|Not a backup/);
+  // the scheduled backup is a Scripts entry that writes where the list looks
+  const spec = BK.scheduleSpec('shop-db-1', { database: 'dgtest', keepDays: 14 });
+  const text = require('../../server/script-builder').build(spec);
+  assert.match(text, /\/var\/backups\/dockgate\/postgres\/shop-db-1-dgtest-/); assert.match(text, /-mtime \+14/);
+  S.saveSettings('shop-db-1', { allowWrite: false });
+});

@@ -44,6 +44,7 @@ Router.register('container-detail', async (content, params) => {
               <button class="btn btn-primary" data-action="start">${Icons.play} Start</button>
             `}
             ${iu && ((iu.check && iu.check.status === 'update') || iu.stale) ? `<button class="btn btn-primary" id="image-update-btn" title="Pull the newer image of the same tag and recreate">${Icons.download} Update…</button>` : ''}
+            ${state === 'running' && /(^|\/)(postgres|postgresql|postgis|timescaledb[\w-]*|pgvector|supabase\/postgres|bitnami\/postgresql[\w-]*|paradedb)(:|@|$)/i.test(String(info.Config?.Image || '')) ? `<button class="btn btn-secondary" id="open-db-btn" title="Tables, SQL, users and backups of this PostgreSQL">${Icons.layers} Open in Databases</button>` : ''}
             <button class="btn btn-secondary" id="update-btn" title="Edit CPU / memory / restart">${Icons.settings} Resources</button>
             <button class="btn btn-secondary" id="recreate-btn" title="Recreate with a new image">${Icons.restart} Recreate</button>
             <button class="btn btn-secondary" id="commit-btn" title="Commit to an image">${Icons.layers} Commit</button>
@@ -75,6 +76,7 @@ Router.register('container-detail', async (content, params) => {
       });
 
       // Edit resources (C1) — live CPU / memory / restart-policy update
+      document.getElementById('open-db-btn')?.addEventListener('click', () => Router.navigate('tools', { tab: 'databases', c: name }));
       document.getElementById('update-btn')?.addEventListener('click', () => {
         const hc = info.HostConfig || {};
         const curCpus = hc.NanoCpus ? (hc.NanoCpus / 1e9) : '';

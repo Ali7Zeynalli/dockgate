@@ -2,6 +2,27 @@
 
 ---
 
+## [2.64.0] - 2026-11-16
+
+### Added
+- **Tools → Databases: PostgreSQL in your containers**, on the server picked in the top bar. DockGate runs `psql` inside the container (`docker exec`) — no published port, no tunnel — and logs in as the container's `POSTGRES_USER` / `POSTGRES_DB` (another user, database or an encrypted password under **Connection…**). PostgreSQL containers also get **Open in Databases** on their page.
+  - **Data:** tables page by page, sort by a column, filters and any `WHERE`, exact count, export CSV / JSON lines; edit a cell (or set NULL), add rows, delete ticked rows — by primary key only, each checked to touch exactly the rows meant.
+  - **Structure:** columns, primary key, indexes, constraints, foreign keys pointing here, triggers, view definitions, sequences.
+  - **SQL:** several statements at once with a result each (rows or `UPDATE 3`), an error names its statement and stops there (an open transaction rolls back), history, Copy CSV.
+  - **Admin:** connections and key settings, sessions with Cancel / Terminate, users (new user with read-write or read-only access, password, grants, drop), databases (new, drop), table health (dead rows, last vacuum / analyze) with VACUUM / ANALYZE / REINDEX, the slowest queries with `pg_stat_statements`.
+  - **Backups:** `pg_dump` (custom or SQL) of a database or `pg_dumpall` of the server, kept next to it (`/var/backups/dockgate/postgres` on SSH servers — the dump never passes through DockGate); download, delete; **restore into a new database**, then **swap** it in place of the old one (kept, renamed); **Schedule…** makes a Scripts entry and a Cron job with alerts.
+  - **Safety:** read-only sessions until **Allow changes**; DROP, TRUNCATE, ALTER … DROP and DELETE / UPDATE without WHERE ask first; a **Production** connection asks before every change; 30 s statement timeout; psql meta commands refused; every change in the audit log.
+
+---
+
+## [2.63.1] - 2026-11-16
+
+### Docs
+- README: "What is DockGate?" names Uptime, scripts, cron alerts, system settings and the file manager.
+- README: the Servers row describes Scripts as they are now (templates, block builder with fix steps, your own shell, scripts already on the server, `bash -n`), and the Files editor row names all its checks (compose, nginx, sshd, visudo, findmnt, `bash -n`).
+
+---
+
 ## [2.63.0] - 2026-11-16
 
 ### Added
