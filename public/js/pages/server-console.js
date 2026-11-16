@@ -24,7 +24,7 @@ Router.register('server-console', async (content, params) => {
   try { const data = await API.get('/servers'); server = (data.servers || []).find(s => s.id === id) || { id }; } catch (e) {}
 
   window.__consoleServer = { ...server, type: server.type || 'ssh' }; // confirm dialogs name THIS server
-  const tabs = [['overview', 'Overview'], ['monitoring', 'Monitoring'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users & keys'], ['firewall', 'Firewall'], ['fail2ban', 'Fail2ban'], ['manage', 'Services'], ['cron', 'Cron'], ['system', 'System'], ['logs', 'Logs'], ['settings', 'Settings']];
+  const tabs = [['overview', 'Overview'], ['monitoring', 'Monitoring'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users & keys'], ['firewall', 'Firewall'], ['fail2ban', 'Fail2ban'], ['manage', 'Services'], ['cron', 'Cron'], ['scripts', 'Scripts'], ['system', 'System'], ['logs', 'Logs'], ['settings', 'Settings']];
   const validTabs = tabs.map(t => t[0]);
   let active = (params && validTabs.includes(params.tab)) ? params.tab : 'overview';
 
@@ -59,6 +59,7 @@ Router.register('server-console', async (content, params) => {
     else if (tab === 'manage') renderServicesPanel(id, con); // id kept as 'manage' for old deep links
     else if (tab === 'cron') renderCronPanel(id, con);
     else if (tab === 'system') renderSystemPanel(id, con);
+    else if (tab === 'scripts') renderScriptsPanel(id, con);
     else if (tab === 'logs') renderHostLogs(id, con);
     else if (tab === 'settings') renderServerSettings(id, con);
     else if (tab === 'monitoring') renderServerMonitoring(id, con);
