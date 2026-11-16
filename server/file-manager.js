@@ -8,6 +8,15 @@ const { Client } = require('ssh2');              // still used by archiveDirTo's
 const remoteExec = require('./remote-compose');  // execRemote + shq — reused so SSH-exec/quoting isn't duplicated
 const pool = require('./ssh-pool');
 const { withSftp, authFor } = pool;              // metadata ops go through the pooled connection
+const crypto = require('crypto');
+
+// SFTP status 3 = PERMISSION_DENIED. The UI then offers to do the same with sudo.
+const isDenied = (e) => !!e && (e.code === 3 || /permission denied/i.test(String(e.message || '')));
+const accessErr = (file) => Object.assign(new Error(`Permission denied: ${file} belongs to another user — open it with sudo`), { statusCode: 403, code: 'EACCES' });
+const sudoErr = (out) => (/password is required|no tty present|askpass|a terminal is required/i.test(out)
+  ? Object.assign(new Error('sudo asks this user for a password — DockGate needs passwordless sudo (the deploy user from Server Console → Setup has it)'), { statusCode: 403, code: 'SUDO' })
+  : null);
+const rand = () => crypto.randomBytes(5).toString('hex');
 
 // Normalize a remote absolute path, resolving '.'/'..' segments (can't escape '/').
 function normRemote(p) {
@@ -38,7 +47,9 @@ async function listDir(server, p) {
   const entries = list.map(e => {
     const a = e.attrs;
     const type = a.isDirectory() ? 'dir' : (typeof a.isSymbolicLink === 'function' && a.isSymbolicLink() ? 'link' : 'file');
-    return { name: e.filename, type, size: a.size, mtime: a.mtime, mode: a.mode };
+    // owner and group by name, from the ls-style long name the server sends with each entry
+    const lp = String(e.longname || '').split(/\s+/);
+    return { name: e.filename, type, size: a.size, mtime: a.mtime, mode: a.mode, uid: a.uid, gid: a.gid, owner: lp[2] || String(a.uid ?? ''), group: lp[3] || String(a.gid ?? '') };
   }).sort((x, y) => x.type === y.type ? x.name.localeCompare(y.name) : (x.type === 'dir' ? -1 : 1));
   return { path: dir, entries };
 }
@@ -151,34 +162,128 @@ function listTree(server, baseDir) {
 }
 
 // Read a remote file as text (binary/oversized → metadata only), for the in-project editor.
-function readFileText(server, p) {
+function readFileText(server, p, { sudo = false } = {}) {
   const file = normRemote(p);
+  if (sudo) return readFileSudo(server, file);
   return withSftp(server, sftp => new Promise((resolve, reject) => {
     sftp.stat(file, (e, st) => {
-      if (e) return reject(e);
+      if (e) return reject(isDenied(e) ? accessErr(file) : e);
       const size = st.size;
       if (size > 2 * 1024 * 1024) return resolve({ isBinary: true, size });
       const chunks = [];
       const rs = sftp.createReadStream(file);
       rs.on('data', d => chunks.push(d));
-      rs.on('error', reject);
+      rs.on('error', (err) => reject(isDenied(err) ? accessErr(file) : err));
       rs.on('end', () => {
         const buf = Buffer.concat(chunks);
         const isBinary = buf.subarray(0, 8000).includes(0);
-        resolve(isBinary ? { isBinary: true, size } : { isBinary: false, size, content: buf.toString('utf8') });
+        resolve(isBinary ? { isBinary: true, size, mtime: st.mtime } : { isBinary: false, size, mtime: st.mtime, content: buf.toString('utf8') });
       });
     });
   }));
 }
 
-// Write text to a remote file (create/overwrite).
-function writeFileText(server, p, content) {
+// A file read with sudo (root-owned configs): size and time first, then the content as base64.
+async function readFileSudo(server, file) {
+  const q = remoteExec.shq(file);
+  const st = await remoteExec.execRemote(server, `sudo -n stat -c '%s %Y' ${q} 2>&1`);
+  const out = String(st.stdout || st.stderr || '');
+  if (st.code !== 0) throw sudoErr(out) || Object.assign(new Error(`sudo could not read ${file}: ${out.trim().slice(0, 200)}`), { statusCode: 404 });
+  const [size, mtime] = out.trim().split(/\s+/).map(Number);
+  if (size > 2 * 1024 * 1024) return { isBinary: true, size, mtime, sudo: true };
+  const r = await remoteExec.execRemote(server, `sudo -n base64 -w0 ${q} 2>/dev/null || sudo -n base64 ${q} | tr -d '\\n'`);
+  if (r.code !== 0) throw Object.assign(new Error(`sudo could not read ${file}`), { statusCode: 500 });
+  const buf = Buffer.from(String(r.stdout || '').trim(), 'base64');
+  const isBinary = buf.subarray(0, 8000).includes(0);
+  return isBinary ? { isBinary: true, size, mtime, sudo: true } : { isBinary: false, size, mtime, sudo: true, content: buf.toString('utf8') };
+}
+
+const changedErr = (file) => Object.assign(new Error(`${file} changed on the server after you opened it — reload it, or save anyway`), { statusCode: 409, code: 'CHANGED' });
+
+/**
+ * Write text to a remote file without ever leaving it half written: the content goes to a temporary file next to
+ * it, which gets the file's mode (and owner, where the user may set it), then replaces the file in one rename.
+ * When the file belongs to someone else and its owner can not be kept, it is written in place instead (its owner
+ * and mode stay) — a config owned by www-data must not become the SSH user's.
+ * opts: { sudo, baseMtime (mtime when it was opened: a newer one means someone changed it), force }
+ */
+function writeFileText(server, p, content, opts = {}) {
   const file = normRemote(p);
+  if (opts.sudo) return writeFileSudo(server, file, content, opts);
+  const data = Buffer.from(String(content), 'utf8');
+  const dir = file.replace(/\/[^/]*$/, '') || '/', base = file.split('/').pop();
+  const tmp = `${dir === '/' ? '' : dir}/.${base}.dg-${rand()}`;
   return withSftp(server, sftp => new Promise((resolve, reject) => {
-    const ws = sftp.createWriteStream(file);
-    ws.on('close', resolve); ws.on('error', reject);
-    ws.end(Buffer.from(String(content), 'utf8'));
+    const fail = (e) => reject(isDenied(e) ? accessErr(file) : e);
+    const inPlace = () => { const ws = sftp.createWriteStream(file); ws.on('close', () => resolve({ atomic: false })); ws.on('error', fail); ws.end(data); };
+    sftp.stat(file, (se, st) => {
+      if (se && se.code !== 2) return fail(se); // 2 = no such file: a new file
+      if (st && opts.baseMtime && !opts.force && Number(opts.baseMtime) !== st.mtime) return reject(changedErr(file));
+      const ws = sftp.createWriteStream(tmp, st ? { mode: st.mode & 0o7777 } : {});
+      ws.on('error', (e) => { if (isDenied(e) && st) return inPlace(); fail(e); }); // folder not writable, file is: in place
+      ws.on('close', () => {
+        const swap = () => {
+          const done = (e) => { if (e) { sftp.unlink(tmp, () => {}); return fail(e); } resolve({ atomic: true }); };
+          if (typeof sftp.ext_openssh_rename === 'function') sftp.ext_openssh_rename(tmp, file, (e) => { if (!e) return done(); remoteExec.execRemote(server, `mv -f ${remoteExec.shq(tmp)} ${remoteExec.shq(file)}`).then(r => done(r.code === 0 ? null : new Error(r.stdout || 'rename failed'))).catch(done); });
+          else remoteExec.execRemote(server, `mv -f ${remoteExec.shq(tmp)} ${remoteExec.shq(file)}`).then(r => done(r.code === 0 ? null : new Error(r.stdout || 'rename failed'))).catch(done);
+        };
+        if (!st) return swap();
+        sftp.chmod(tmp, st.mode & 0o7777, () => {
+          sftp.stat(tmp, (te, tst) => {
+            if (!te && (tst.uid !== st.uid || tst.gid !== st.gid)) {
+              return sftp.setstat(tmp, { uid: st.uid, gid: st.gid }, (ce) => {
+                if (!ce) return swap();
+                sftp.unlink(tmp, () => inPlace()); // can not keep its owner: write it in place
+              });
+            }
+            swap();
+          });
+        });
+      });
+      ws.end(data);
+    });
   }));
+}
+
+/** The same with sudo: owner and mode of the file are kept, then one rename (mv) puts it in place. */
+async function writeFileSudo(server, file, content, opts = {}) {
+  const q = remoteExec.shq(file);
+  if (opts.baseMtime && !opts.force) {
+    const st = await remoteExec.execRemote(server, `sudo -n stat -c '%Y' ${q} 2>/dev/null`);
+    if (st.code === 0 && Number(String(st.stdout).trim()) !== Number(opts.baseMtime)) throw changedErr(file);
+  }
+  const up = `/tmp/.dg-edit-${rand()}`;
+  await withSftp(server, sftp => new Promise((resolve, reject) => { const ws = sftp.createWriteStream(up, { mode: 0o600 }); ws.on('close', resolve); ws.on('error', reject); ws.end(Buffer.from(String(content), 'utf8')); }));
+  const T = remoteExec.shq(`${file}.dg-${rand()}`), U = remoteExec.shq(up);
+  const script = `O=""; M=""; if sudo -n test -e ${q}; then O=$(sudo -n stat -c '%u:%g' ${q}); M=$(sudo -n stat -c '%a' ${q}); fi; `
+    + `sudo -n cp ${U} ${T} && { [ -z "$O" ] || { sudo -n chown "$O" ${T} && sudo -n chmod "$M" ${T}; }; } && sudo -n mv -f ${T} ${q}; rc=$?; rm -f ${U}; sudo -n rm -f ${T} 2>/dev/null; exit $rc`;
+  const r = await remoteExec.execRemote(server, `${script} 2>&1`);
+  if (r.code !== 0) throw sudoErr(String(r.stdout || '')) || Object.assign(new Error(`sudo could not save ${file}: ${String(r.stdout || '').trim().slice(0, 200)}`), { statusCode: 500 });
+  return { atomic: true, sudo: true };
+}
+
+// ---- permissions ----
+const MODE_RE = /^[0-7]{3,4}$/;
+const NAME_RE = /^([a-z_][a-z0-9_.-]{0,31}\$?|\d{1,10})$/i;
+/** chmod a path (recursive for a folder when asked). Without sudo a denied change says so (403 EACCES). */
+async function chmod(server, p, mode, { recursive = false, sudo = false } = {}) {
+  const file = normRemote(p);
+  if (!MODE_RE.test(String(mode))) throw Object.assign(new Error('Mode: 3 or 4 octal digits, e.g. 644 or 0755'), { statusCode: 400 });
+  const r = await remoteExec.execRemote(server, `${sudo ? 'sudo -n ' : ''}chmod ${recursive ? '-R ' : ''}${mode} ${remoteExec.shq(file)} 2>&1`);
+  if (r.code !== 0) {
+    const out = String(r.stdout || '');
+    if (!sudo && /not permitted|permission denied/i.test(out)) throw accessErr(file);
+    throw sudoErr(out) || Object.assign(new Error(`chmod failed: ${out.trim().slice(0, 200)}`), { statusCode: 500 });
+  }
+  return { path: file, mode };
+}
+/** chown a path to user[:group] — needs root, so it runs with sudo (passwordless). */
+async function chown(server, p, owner, group, { recursive = false } = {}) {
+  const file = normRemote(p);
+  if (!NAME_RE.test(String(owner || '')) || (group && !NAME_RE.test(String(group)))) throw Object.assign(new Error('Owner and group: a user / group name or number'), { statusCode: 400 });
+  const r = await remoteExec.execRemote(server, `sudo -n chown ${recursive ? '-R ' : ''}${owner}${group ? `:${group}` : ''} ${remoteExec.shq(file)} 2>&1`);
+  if (r.code !== 0) { const out = String(r.stdout || ''); throw sudoErr(out) || Object.assign(new Error(`chown failed: ${out.trim().slice(0, 200)}`), { statusCode: 500 }); }
+  return { path: file, owner, group: group || null };
 }
 
 // ---- Heavier ops that need a shell (SFTP has no copy / recursive-delete / archive) ----
@@ -344,5 +449,5 @@ async function extract(server, archivePath, opts = {}, run = remoteExec.execRemo
 
 module.exports = {
   listDir, downloadTo, uploadFrom, mkdir, rename, remove, normRemote, joinRemote, homeDir, listTree,
-  readFileText, writeFileText, removeRecursive, copy, move, archiveDirTo, extract, classifyArchive,
+  readFileText, writeFileText, chmod, chown, removeRecursive, copy, move, archiveDirTo, extract, classifyArchive,
 };

@@ -2,6 +2,20 @@
 
 ---
 
+## [2.56.0] - 2026-11-16
+
+### Added
+- **A safer editor in Tools → Files.** Ctrl+S saves, Esc closes (asking first when something is not saved), line numbers, and a ● for unsaved changes. **Save…** shows the changed lines before anything is written.
+- **Versions:** the content a file had before each save from DockGate is kept — the last 5 per file, up to 512 KB each — encrypted in DockGate's database, not next to the file. Compare one with the editor and put it back.
+- **Open with sudo / Save with sudo** for files of another user (root-owned configs), with passwordless sudo. The owner and mode stay.
+- **Permissions column** (`rw-r--r--` and owner:group). Click it to change the mode and the owner, for a folder optionally everything inside too.
+
+### Fixed
+- **A save could leave a file half written** (a dropped connection, a full disk), and could change a file's mode. A save now writes a temporary file with the same mode and owner and replaces the file in one step; when the owner can not be kept it writes in place, so a file of `www-data` does not become the SSH user's.
+- **A save could overwrite someone else's change made after the file was opened.** DockGate now asks: load theirs, or save anyway.
+
+---
+
 ## [2.55.0] - 2026-11-14
 
 ### Added

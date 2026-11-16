@@ -43,11 +43,27 @@ They then appear under `/host/…`. Remote servers need nothing: pick one in the
 | Open a folder, **Up one level** | Move around; the path bar shows where you are |
 | **New folder** / **New file** | Create in the current folder |
 | **Upload** | Files or whole folders, with progress. Drop them on the page |
-| **Edit** | Text files open in an editor; **Save** writes them back |
+| **Edit** | Text files open in an editor (see below) |
+| **Permissions** | Click the `rw-r--r--` in a row: change the mode (ticks or a number like `644`) and the owner and group; for a folder, optionally everything inside too |
 | **Rename** / **Delete** | One item, or tick several and **Delete selected** |
 | **Download** | A file, or a folder as `.tar.gz` |
 | **📦 Extract** | Unpacks `.zip`, `.tar`, `.tar.gz`, `.tar.bz2` and `.tar.xz` in place |
 | **Two-pane transfer** | Your computer on one side, the server on the other: tick items and move them across |
+
+### The editor
+
+| | |
+|---|---|
+| **Ctrl+S** (⌘S) | Save |
+| **Esc** | Close — if something is not saved, DockGate asks first. A ● after the name means unsaved changes |
+| **Save…** | Shows the changed lines (green added, red removed) before anything is written |
+| **Versions** | The content the file had before each save from DockGate — the last 5 per file (up to 512 KB each). Pick one to compare it with the editor, then **Put it in the editor** and save. Kept encrypted in DockGate's database, not next to the file (a `default.conf.bak` in nginx's `conf.d/` would be loaded too) |
+
+A save is never half written: the new content goes to a temporary file next to it, which gets the file's mode and owner, then replaces the file in one step. If the owner can not be kept (the file belongs to another user), the file is written in place, so its owner stays.
+
+**Files of another user** (for example `/etc/nginx/nginx.conf` owned by root): DockGate offers **Open with sudo** / **Save with sudo**. This needs passwordless sudo for the SSH user — the deploy user made in Server Console → Setup has it. Owner and mode stay the same. Changing the owner (Permissions) always uses sudo on a remote server; on *Local* use numbers (uid and gid).
+
+**Changed on the server:** if someone changed the file after you opened it, Save stops and asks: **Load theirs**, or **Save mine anyway**.
 
 Files inside containers and volumes are edited on their own pages: **Resources → Containers →** a container **→ Files**, and **Resources → Volumes → Browse**.
 
@@ -74,6 +90,11 @@ The list shows each task's server, schedule, last run (with its result) and next
 | You see | Why | What to do |
 |---|---|---|
 | *No folder of this machine is shared with DockGate yet* | Files on *Local* with no folder shared | Add a volume under `/host` as shown above, or pick a remote server |
+| `Permission denied: … belongs to another user — open it with sudo` | The SSH user may not read or write this file | **Open with sudo** / **Save with sudo**, or tick **Use sudo** in Permissions |
+| `sudo asks this user for a password — DockGate needs passwordless sudo` | The SSH user has sudo only with a password | Connect with the deploy user (Server Console → Setup), or allow passwordless sudo for this user |
+| *Changed on the server* | The file changed after you opened it | **Load theirs** to see it, or **Save mine anyway** |
+| `Mode: 3 or 4 octal digits, e.g. 644 or 0755` | Wrong mode in Permissions | e.g. `644` for files, `755` for folders |
+| `Owner and group: a user / group name or number` | Wrong owner or group | A user name like `www-data`, or a number like `33` |
 | `Session expired — sign in again` | You were signed out during a transfer | Sign in and start the transfer again |
 | *— session ended (press Reconnect) —* | The shell exited, or the connection dropped | **Reconnect** |
 | `Time must look like 03:30` | Wrong time format | `HH:MM`, 24-hour |

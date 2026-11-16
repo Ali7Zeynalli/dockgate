@@ -42,7 +42,7 @@ async function listDir(_s, p) {
   const entries = fs.readdirSync(dir, { withFileTypes: true }).map(e => {
     let st = null; try { st = fs.lstatSync(path.join(dir, e.name)); } catch (x) { /* vanished */ }
     const type = e.isDirectory() ? 'dir' : e.isSymbolicLink() ? 'link' : 'file';
-    return { name: e.name, type, size: st ? st.size : 0, mtime: st ? Math.floor(st.mtimeMs / 1000) : 0, mode: st ? st.mode : 0 };
+    return { name: e.name, type, size: st ? st.size : 0, mtime: st ? Math.floor(st.mtimeMs / 1000) : 0, mode: st ? st.mode : 0, uid: st ? st.uid : null, gid: st ? st.gid : null, owner: st ? String(st.uid) : '', group: st ? String(st.gid) : '' };
   }).sort((x, y) => x.type === y.type ? x.name.localeCompare(y.name) : (x.type === 'dir' ? -1 : 1));
   return { path: dir, entries };
 }
@@ -124,9 +124,44 @@ async function readFileText(_s, p) {
   const st = fs.statSync(file);
   if (st.size > 2 * 1024 * 1024) return { isBinary: true, size: st.size };
   const buf = fs.readFileSync(file);
-  return buf.subarray(0, 8000).includes(0) ? { isBinary: true, size: st.size } : { isBinary: false, size: st.size, content: buf.toString('utf8') };
+  const mtime = Math.floor(st.mtimeMs / 1000);
+  return buf.subarray(0, 8000).includes(0) ? { isBinary: true, size: st.size, mtime } : { isBinary: false, size: st.size, mtime, content: buf.toString('utf8') };
 }
-async function writeFileText(_s, p, content) { fs.writeFileSync(safe(p, { mustExist: false }), String(content), 'utf8'); }
+/**
+ * Never half written: a temporary file next to it gets the file's mode and owner, then replaces it in one rename.
+ * (DockGate runs as root here, so owner and mode can always be kept; sudo is not needed.)
+ */
+async function writeFileText(_s, p, content, opts = {}) {
+  const file = safe(p, { mustExist: false });
+  let st = null; try { st = fs.statSync(file); } catch (e) { /* a new file */ }
+  if (st && opts.baseMtime && !opts.force && Number(opts.baseMtime) !== Math.floor(st.mtimeMs / 1000)) {
+    throw Object.assign(new Error(`${file} changed after you opened it — reload it, or save anyway`), { statusCode: 409, code: 'CHANGED' });
+  }
+  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.dg-${require('crypto').randomBytes(5).toString('hex')}`);
+  try {
+    fs.writeFileSync(tmp, String(content), { encoding: 'utf8', mode: st ? st.mode & 0o7777 : 0o644 });
+    if (st) { fs.chmodSync(tmp, st.mode & 0o7777); try { fs.chownSync(tmp, st.uid, st.gid); } catch (e) { /* not root: keeps ours */ } }
+    fs.renameSync(tmp, file);
+  } catch (e) { try { fs.unlinkSync(tmp); } catch (x) { /* gone */ } throw e; }
+  return { atomic: true };
+}
+const MODE_RE = /^[0-7]{3,4}$/;
+const walkAll = (p, fn) => { fn(p); const st = fs.lstatSync(p); if (st.isDirectory()) for (const n of fs.readdirSync(p)) walkAll(path.join(p, n), fn); };
+async function chmod(_s, p, mode, { recursive = false } = {}) {
+  const file = safe(p);
+  if (!MODE_RE.test(String(mode))) throw Object.assign(new Error('Mode: 3 or 4 octal digits, e.g. 644 or 0755'), { statusCode: 400 });
+  const m = parseInt(mode, 8);
+  if (recursive) walkAll(file, (x) => { if (!fs.lstatSync(x).isSymbolicLink()) fs.chmodSync(x, m); }); else fs.chmodSync(file, m);
+  return { path: file, mode };
+}
+async function chown(_s, p, owner, group, { recursive = false } = {}) {
+  const file = safe(p);
+  const num = (v, what) => { if (!/^\d{1,10}$/.test(String(v))) throw Object.assign(new Error(`${what}: a number here (DockGate's container does not know the host's user names)`), { statusCode: 400 }); return Number(v); };
+  const uid = num(owner, 'Owner'), gid = group === undefined || group === null || group === '' ? -1 : num(group, 'Group');
+  const one = (x) => fs.lchownSync(x, uid, gid);
+  if (recursive) walkAll(file, one); else one(file);
+  return { path: file, owner, group: group || null };
+}
 
 function archiveDirTo(_s, dir, res) {
   const target = safe(dir);
@@ -153,6 +188,7 @@ async function extract(_s, archivePath, opts = {}) {
 }
 
 module.exports = {
+  chmod, chown,
   ROOT, roots, available, inside, listDir, downloadTo, uploadFrom, mkdir, rename, remove, normRemote: remote.normRemote, joinRemote: remote.joinRemote,
   homeDir, listTree, readFileText, writeFileText, removeRecursive, copy, move, archiveDirTo, extract, classifyArchive: remote.classifyArchive,
 };

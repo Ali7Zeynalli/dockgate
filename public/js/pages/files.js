@@ -4,6 +4,7 @@
 Router.register('files', async (content) => {
   let ctx = { remote: false };
   let cwd = '/';
+  let entries = [];
   let clipboard = null;            // { mode:'copy'|'cut', items:[{path,name,isDir}] }
   const selected = new Map();      // name -> { isDir } for rows ticked in the current dir
   const pageNavId = Router._navId;
@@ -83,7 +84,7 @@ Router.register('files', async (content) => {
       <div class="table-wrapper"><table>
         <thead><tr>
           <th style="width:28px"><input type="checkbox" id="f-all" title="Select all"></th>
-          <th>Name</th><th>Size</th><th>Modified</th><th style="text-align:right">Actions</th>
+          <th>Name</th><th>Size</th><th>Modified</th><th>Permissions</th><th style="text-align:right">Actions</th>
         </tr></thead>
         <tbody id="f-tbody"><tr><td colspan="5" class="text-muted" style="padding:14px">Loading…</td></tr></tbody>
       </table></div>`;
@@ -205,6 +206,7 @@ Router.register('files', async (content) => {
       const d = await API.get(`/files?path=${encodeURIComponent(cwd)}`);
       cwd = d.path;
       renderCrumbs();
+      entries = d.entries;
       tbody.innerHTML = d.entries.length ? d.entries.map(e => {
         const isDir = e.type === 'dir';
         const icon = isDir ? '📁' : (e.type === 'link' ? '🔗' : '📄');
@@ -217,6 +219,7 @@ Router.register('files', async (content) => {
           <td>${nameCell}</td>
           <td class="text-xs text-muted">${isDir ? '' : formatBytes(e.size)}</td>
           <td class="text-xs text-muted">${e.mtime ? formatTime(e.mtime) : ''}</td>
+          <td class="text-xs"><a href="#" data-perm="${nm}" class="td-mono" title="Change permissions / owner" style="color:inherit">${modeStr(e.mode)}</a> <span class="text-muted">${escapeHtml(e.owner || '')}${e.group ? ':' + escapeHtml(e.group) : ''}</span></td>
           <td style="text-align:right"><div class="td-actions">
             ${isDir
               ? `<button class="btn btn-xs btn-secondary" data-dlf="${nm}" title="Download folder (.tar.gz)">${Icons.download || '↓'}</button>`
@@ -228,10 +231,10 @@ Router.register('files', async (content) => {
             <button class="btn btn-xs btn-secondary" data-rn="${nm}">Rename</button>
             <button class="btn btn-xs btn-ghost text-danger" data-rm="${nm}" data-isdir="${isDir ? 1 : 0}" title="Delete">${Icons.trash}</button>
           </div></td></tr>`;
-      }).join('') : '<tr><td colspan="5" class="text-muted" style="padding:14px">Empty directory.</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="text-muted" style="padding:14px">Empty directory.</td></tr>';
       wireRows();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="5" class="text-danger" style="padding:14px">${escapeHtml(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-danger" style="padding:14px">${escapeHtml(e.message)}</td></tr>`;
     }
   }
 
@@ -239,6 +242,7 @@ Router.register('files', async (content) => {
     const tbody = document.getElementById('f-tbody');
     tbody.querySelectorAll('[data-cd]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); cwd = joinPath(a.dataset.cd); list(); }));
     tbody.querySelectorAll('[data-edit]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); openEditor(a.dataset.edit); }));
+    tbody.querySelectorAll('[data-perm]').forEach(a => a.addEventListener('click', (ev) => { ev.preventDefault(); const e = entries.find(x => x.name === a.dataset.perm); if (e) openPerms(e); }));
     tbody.querySelectorAll('[data-sel]').forEach(cb => cb.addEventListener('change', () => {
       if (cb.checked) selected.set(cb.dataset.sel, { isDir: cb.dataset.isdir === '1' }); else selected.delete(cb.dataset.sel);
       updateBulk();
@@ -271,27 +275,63 @@ Router.register('files', async (content) => {
     document.body.appendChild(a); a.click(); a.remove();
   }
 
-  // In-browser text editor for a file in the current dir.
-  async function openEditor(name) {
-    const p = joinPath(name);
-    let data;
-    try { data = await API.get(`/files/read?path=${encodeURIComponent(p)}`); }
-    catch (e) { showToast(e.message, 'error', 9000); return; }
-    if (data.isBinary) { showToast(`"${name}" is binary or larger than 2 MB — can't edit here. Download it instead.`, 'warning', 8000); return; }
-    const m = showModal(`Edit — ${escapeHtml(name)}`, `
-      <div class="text-xs text-muted" style="margin-bottom:6px">${escapeHtml(p)} · ${formatBytes(data.size || 0)}</div>
-      <textarea id="fe-text" class="input" spellcheck="false" style="width:100%;height:55vh;font-family:var(--font-mono,monospace);font-size:12px;white-space:pre;overflow:auto"></textarea>
-      <div style="margin-top:10px;display:flex;justify-content:flex-end;gap:8px">
-        <button class="btn btn-secondary" id="fe-cancel" type="button">Cancel</button>
-        <button class="btn btn-primary" id="fe-save" type="button">Save</button>
+  // Text editor (file-editor.js): Ctrl+S, Esc, diff before save, Versions, sudo, conflict check.
+  function openEditor(name) { FileEditor.open({ path: joinPath(name), name, onSaved: list }); }
+
+  // rwxr-xr-x from a numeric mode (setuid/setgid/sticky shown as s/t).
+  function modeStr(m) {
+    if (m == null) return '';
+    const r = (b, c) => (m & b ? c : '-');
+    let s = r(0o400, 'r') + r(0o200, 'w') + r(0o100, 'x') + r(0o40, 'r') + r(0o20, 'w') + r(0o10, 'x') + r(0o4, 'r') + r(0o2, 'w') + r(0o1, 'x');
+    if (m & 0o4000) s = s.slice(0, 2) + (m & 0o100 ? 's' : 'S') + s.slice(3);
+    if (m & 0o2000) s = s.slice(0, 5) + (m & 0o10 ? 's' : 'S') + s.slice(6);
+    if (m & 0o1000) s = s.slice(0, 8) + (m & 0o1 ? 't' : 'T');
+    return s;
+  }
+  const octal = (m) => (m & 0o7777).toString(8).padStart(3, '0');
+
+  // Permissions dialog: mode (octal + checkboxes), owner:group, recursive for folders, sudo on a remote server.
+  function openPerms(e) {
+    const p = joinPath(e.name), isDir = e.type === 'dir', remote = !!ctx.remote;
+    const bits = [['Owner', 0o400, 0o200, 0o100], ['Group', 0o40, 0o20, 0o10], ['Others', 0o4, 0o2, 0o1]];
+    const m = showModal(`Permissions — ${escapeHtml(e.name)}`, `
+      ${serverContextBanner()}
+      <div class="text-xs text-muted td-mono" style="margin-bottom:10px">${escapeHtml(p)}</div>
+      <table class="table" style="margin-bottom:10px"><thead><tr><th></th><th>Read</th><th>Write</th><th>${isDir ? 'Enter' : 'Run'}</th></tr></thead><tbody>
+        ${bits.map(([w, rb, wb, xb]) => `<tr><td>${w}</td>${[rb, wb, xb].map(b => `<td><input type="checkbox" data-bit="${b}" ${e.mode & b ? 'checked' : ''}></td>`).join('')}</tr>`).join('')}
+      </tbody></table>
+      <label class="form-label">Mode <input class="input td-mono" id="pm-mode" value="${octal(e.mode || 0)}" style="width:90px;margin-left:8px" maxlength="4"></label>
+      <div class="form-group" style="display:flex;gap:8px;margin-top:10px">
+        <label style="flex:1">Owner <input class="input" id="pm-owner" value="${escapeHtml(e.owner || '')}"></label>
+        <label style="flex:1">Group <input class="input" id="pm-group" value="${escapeHtml(e.group || '')}"></label>
+      </div>
+      <div class="ui-sub">${remote ? 'Changing the owner needs passwordless sudo on the server.' : 'On this machine use numbers (uid / gid), e.g. 1000.'}</div>
+      ${isDir ? '<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:10px"><input type="checkbox" id="pm-rec"> Apply to everything inside too</label>' : ''}
+      ${remote ? '<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px"><input type="checkbox" id="pm-sudo"> Use sudo for the mode (the file belongs to another user)</label>' : ''}
+      <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-secondary" id="pm-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="pm-save" type="button">Apply</button>
       </div>`, []);
-    const ta = m.overlay.querySelector('#fe-text');
-    ta.value = data.content || '';
-    m.overlay.querySelector('#fe-cancel').onclick = () => m.close();
-    m.overlay.querySelector('#fe-save').onclick = async (e) => {
-      const b = e.target; b.disabled = true; b.textContent = 'Saving…';
-      try { await API.post('/files/write', { path: p, content: ta.value }); showToast('Saved'); m.close(); list(); }
-      catch (err) { showToast(err.message, 'error', 9000); b.disabled = false; b.textContent = 'Save'; }
+    const o = m.overlay, modeIn = o.querySelector('#pm-mode');
+    const special = (e.mode || 0) & 0o7000;
+    const fromBits = () => { let v = special; o.querySelectorAll('[data-bit]').forEach(c => { if (c.checked) v |= Number(c.dataset.bit); }); modeIn.value = octal(v); };
+    o.querySelectorAll('[data-bit]').forEach(c => c.addEventListener('change', fromBits));
+    modeIn.addEventListener('input', () => { if (!/^[0-7]{3,4}$/.test(modeIn.value)) return; const v = parseInt(modeIn.value, 8); o.querySelectorAll('[data-bit]').forEach(c => { c.checked = !!(v & Number(c.dataset.bit)); }); });
+    o.querySelector('#pm-cancel').onclick = () => m.close();
+    o.querySelector('#pm-save').onclick = async (ev) => {
+      const b = ev.target, mode = modeIn.value.trim(), owner = o.querySelector('#pm-owner').value.trim(), group = o.querySelector('#pm-group').value.trim();
+      const recursive = !!o.querySelector('#pm-rec')?.checked, sudo = !!o.querySelector('#pm-sudo')?.checked;
+      if (!/^[0-7]{3,4}$/.test(mode)) return showToast('Mode: 3 or 4 octal digits, e.g. 644', 'error');
+      b.disabled = true; b.textContent = 'Applying…';
+      try {
+        if (mode !== octal(e.mode || 0) || recursive) await API.post('/files/chmod', { path: p, mode, recursive, sudo });
+        if (owner && (owner !== (e.owner || '') || group !== (e.group || '') || recursive)) await API.post('/files/chown', { path: p, owner, group, recursive });
+        showToast('Permissions changed'); m.close(); list();
+      } catch (err) {
+        if (err.code === 'EACCES' && remote && !sudo) { const c = o.querySelector('#pm-sudo'); if (c) c.checked = true; showToast('Not allowed for the SSH user — "Use sudo" is now ticked; Apply again.', 'warning', 9000); }
+        else showToast(err.message, 'error', 10000);
+        b.disabled = false; b.textContent = 'Apply';
+      }
     };
   }
 

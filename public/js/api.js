@@ -9,7 +9,8 @@ const API = {
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
+      // the message as before; the HTTP status and the server's error code (EACCES, CHANGED…) ride along
+      throw Object.assign(new Error(err.error || res.statusText), { status: res.status, code: err.code, data: err });
     }
     return res.json();
   },
