@@ -122,11 +122,25 @@ Build a shell script from **blocks** — DockGate writes the script, safely quot
 | Container: restart / stop / start · Pull an image · Docker cleanup · Compose: pull and redeploy | the Docker work |
 | Check a URL · Check disk space | fail when the status is not the expected one, or the disk is fuller than the limit |
 | Send a message | POST to a webhook (Slack, Discord, ntfy, Teams); `$(hostname)` and `$SCRIPT_STATUS` can be used |
+| Update the system | `apt` / `dnf` / `yum`: security updates only or everything, optionally remove unused packages (needs root) |
+| Reboot if an update needs it | only when the system asks for it (`/var/run/reboot-required`, `needs-restarting`), optionally only in a time window such as 04:00-05:00 |
+| System service: restart / reload / check | `systemctl`; *check* fails when the service is not running |
+| Shrink the system journal | `journalctl --vacuum-size`, and rotated logs in `/var/log` older than N days |
+| Wait until a container is healthy · Git pull · Database maintenance | health check (or running) with a time limit · `git pull --ff-only` · Postgres `vacuumdb --analyze`, MySQL / MariaDB `--optimize` |
+| Check a port · memory · CPU load · an SSL certificate | fail when the port does not answer, more memory or load than the limit, fewer days left than the limit |
+| Report the busiest containers | `docker stats` sorted by memory |
+| Telegram message | with a bot token and chat ID |
 | Wait · Custom command | a pause; any shell, run as written |
 
 - Each step says what happens **if it fails**: *stop* (default) or *go on*. A step stops at its first failing command.
+- A step can **run only if an earlier step failed** — a fix: *check the site → (only if it failed) restart the container → wait until healthy → check again*. When the fix works the run ends as *fixed*; when the last check still fails, the run fails and Cron's alert says so.
 - The script it writes is shown next to the steps while you edit.
-- **Templates:** daily database backup (keep 7 days, copy off the server), volume backup, weekly Docker cleanup, restart a container when its site does not answer, pull and redeploy a Compose project.
+- **Templates** (18, by category) ask a few questions first — containers, volumes and project folders of the server are offered — then open with the answers filled in:
+  - *Updates and upkeep:* daily security updates with a night reboot when needed · weekly full update (system, Docker images, reboot when needed) · update a Compose project's images and check the site · monthly cleanup (Docker, journal, old logs) · weekly Docker cleanup.
+  - *Backups:* PostgreSQL (keep 7 days, copy off the server) · MySQL / MariaDB · volume · `/etc` and the projects folder · weekly database maintenance.
+  - *Health and self-repair:* restart a container when its site does not answer · start a system service again when it stopped · free disk space when the disk gets full · show the busiest containers when memory runs low · renew a certificate that expires soon.
+  - *Deploy:* deploy from Git (pull, build, start, check) · pull and redeploy a Compose project · restart a container every night.
+- Steps that need root are marked; such scripts need passwordless sudo (they are written root-owned). Services → Auto updates still handles daily security updates by itself — the update templates add full updates and Docker on your schedule.
 - **Save** writes `/opt/dockgate/scripts/NAME.sh` (root-owned, when the SSH user has passwordless sudo) or `~/.dockgate/scripts/NAME.sh`. Edit scripts here; a change made to the file on the server is replaced on the next save.
 - **Run** runs it once and shows the output and exit code (up to 5 minutes). **Schedule…** adds it to the **Cron** tab with its log and *failed / did not run* alerts.
 

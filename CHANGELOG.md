@@ -2,6 +2,15 @@
 
 ---
 
+## [2.62.0] - 2026-11-16
+
+### Added
+- **18 script templates in Server Console → Scripts**, by category, each asking a few questions first (the server's containers, volumes and project folders are offered): daily security updates with a night reboot when needed, a weekly full update (system, Docker images, reboot), Compose image updates with a site check, monthly cleanup, PostgreSQL / MySQL / volume / config backups, database maintenance, restart a container when its site is down, restart a stopped system service, free disk space when the disk fills, report the busiest containers when memory runs low, renew a certificate that expires soon, deploy from Git, nightly restart.
+- **New blocks:** update the system (apt / dnf / yum, security or all), reboot only if an update needs it (optionally in a time window), system service restart / reload / check, shrink the journal, wait until a container is healthy, git pull, database maintenance, port / memory / CPU load / SSL certificate checks, report the busiest containers, Telegram message.
+- **Steps that run only if an earlier step failed** — fixes: when the fix works the run ends as *fixed*; when a later check still fails, the run fails and the Cron alert says so.
+
+---
+
 ## [2.61.1] - 2026-11-16
 
 ### Fixed
