@@ -83,6 +83,7 @@ The **Files** button in the top bar (or **Ctrl+Shift+F**, or ⌘K → *Open quic
 **Colours:** YAML, JSON, nginx, shell / Dockerfile and `.env` / ini files are coloured (keys, strings, numbers, comments). Files over 300 KB are shown without colours.
 
 **Checks:**
+- **System files:** `sshd_config` (`sshd -t`), `sudoers` (`visudo -c`) and `/etc/fstab` (`findmnt --verify`) are checked on the server before saving.
 - **Compose files** (`docker-compose.yml`, `compose.yaml` …): **Check** — and every Save — runs `docker compose config` on what is in the editor, with the file's folder as the project folder. A mistake is shown before anything is written.
 - **JSON:** Save says when the content is not valid JSON.
 - **nginx** (files under `/etc/nginx/`): after Save, `nginx -t` checks the whole configuration. If nginx would not accept it, **Put the previous content back** restores the file (your edit stays under Versions). nginx keeps running with the old configuration until it is reloaded.

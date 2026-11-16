@@ -4,7 +4,7 @@
 >
 > **Works on:** one remote (SSH) server. Opening a server's console also makes it the server in use in the top bar.
 
-The console manages the **server itself**, not Docker: what is installed, who can log in, the firewall, fail2ban, system services, cron jobs and logs. It works over SSH; most changes need a user with passwordless `sudo` (the deploy user has it).
+The console manages the **server itself**, not Docker: what is installed, who can log in, the firewall, fail2ban, system services, cron jobs, scripts, system settings (network, DNS, kernel, disks) and logs. It works over SSH; most changes need a user with passwordless `sudo` (the deploy user has it).
 
 **Safety first:** every change that could lock you out (SSH port, password login, firewall) is tested with a **new SSH login** before it is kept. If DockGate can not log in again, it rolls the change back by itself.
 
@@ -109,6 +109,50 @@ The wrapper of root's jobs is a root-owned copy (`/usr/local/lib/dockgate/dg-cro
 
 ⋯ → **Run now…** runs the command once as its user and shows the output and exit code (up to 2 minutes).
 
+## Scripts
+
+Build a shell script from **blocks** — DockGate writes the script, safely quoted — then save it to the server, run it once, or schedule it.
+
+| Block | What it does |
+|---|---|
+| Database backup | `pg_dump` / `mysqldump` / `mariadb-dump` from a database container into a `.sql.gz` file |
+| Volume backup / Folder backup | a Docker volume or a folder into a `.tar.gz` file |
+| Copy to another place | `rsync` to another server (`user@host:/path`) or folder |
+| Delete old files | files older than N days in a folder (never in `/`, `/etc`, `/usr` …) |
+| Container: restart / stop / start · Pull an image · Docker cleanup · Compose: pull and redeploy | the Docker work |
+| Check a URL · Check disk space | fail when the status is not the expected one, or the disk is fuller than the limit |
+| Send a message | POST to a webhook (Slack, Discord, ntfy, Teams); `$(hostname)` and `$SCRIPT_STATUS` can be used |
+| Wait · Custom command | a pause; any shell, run as written |
+
+- Each step says what happens **if it fails**: *stop* (default) or *go on*. A step stops at its first failing command.
+- The script it writes is shown next to the steps while you edit.
+- **Templates:** daily database backup (keep 7 days, copy off the server), volume backup, weekly Docker cleanup, restart a container when its site does not answer, pull and redeploy a Compose project.
+- **Save** writes `/opt/dockgate/scripts/NAME.sh` (root-owned, when the SSH user has passwordless sudo) or `~/.dockgate/scripts/NAME.sh`. Edit scripts here; a change made to the file on the server is replaced on the next save.
+- **Run** runs it once and shows the output and exit code (up to 5 minutes). **Schedule…** adds it to the **Cron** tab with its log and *failed / did not run* alerts.
+
+Only *Custom command* carries your own shell; every other value is checked and quoted, so a name, path, URL or message can not run a command.
+
+## System
+
+The server's own settings, each through a form. Every change shows what changes in the file, is checked by the tool that owns it, and is restored when a check fails. DockGate writes its own files where the system has a `.d` folder, so the distribution's files stay as they are.
+
+| Setting | Written to | Checked by |
+|---|---|---|
+| **Hostname** | `hostnamectl`, and the `127.0.1.1` line of `/etc/hosts` | — |
+| **/etc/hosts** (table) | `/etc/hosts` — localhost lines stay | `localhost` still resolves |
+| **DNS servers** and search domains | `/etc/systemd/resolved.conf.d/99-dockgate.conf` (systemd-resolved) or `/etc/resolv.conf` | a name you choose must resolve, else the previous DNS is restored |
+| **Network** (per interface): DHCP or static addresses, gateway, DNS, MTU | `/etc/netplan/99-dockgate.yaml` (netplan) or the NetworkManager connection | `netplan generate` / NetworkManager; **kept only when a new SSH login works** — otherwise the server restores it by itself after 120 s |
+| **Kernel** (ip_forward, somaxconn, swappiness, inotify, max_map_count …) | `/etc/sysctl.d/99-dockgate.conf` | the kernel (`sysctl -p`) |
+| **Open files limit** | `/etc/security/limits.d/99-dockgate.conf` and systemd `DefaultLimitNOFILE` | — (services get it when they restart) |
+| **Journal size** | `/etc/systemd/journald.conf.d/99-dockgate.conf` | journald restarts; the journal is shrunk to it |
+| **Disks** (`/etc/fstab`): add or remove a mount | `/etc/fstab` | `findmnt --verify`, and a new mount is mounted once — a failure restores the file. `/`, `/boot` are not removed here |
+
+**The address DockGate connects to** is protected: changing it needs the new address, and DockGate then tests a login to it and switches to it.
+
+**Config files** lists where things are set (SSH, sudoers, network, fstab, sysctl, journald, logrotate, Docker, nginx, Caddy, HAProxy) and opens them in the [editor](tools.md#the-editor). The editor checks `sshd_config` (`sshd -t`), `sudoers` (`visudo -c`) and `/etc/fstab` (`findmnt --verify`) before saving, as it already does for compose files and nginx.
+
+Docker daemon settings (log size limits, live-restore) stay in **Services → Docker**.
+
 ## Logs
 
 The system journal and log files of the server in the [log viewer](observe.md#the-log-viewer). Most sources need passwordless `sudo`.
@@ -132,6 +176,11 @@ The system journal and log files of the server in the [log viewer](observe.md#th
 | You see | Why | What to do |
 |---|---|---|
 | `sudo: a password is required` | The SSH user has no passwordless `sudo` | Use the deploy user (Setup), or allow `sudo` without a password for this user |
+| System: `Names do not resolve with these servers — restored` | The DNS servers did not answer | Check the addresses; the previous DNS is back |
+| System: network change *restored* | The new SSH login failed after the change | Nothing to do — the previous settings are back; check the address, gateway and firewall |
+| System: `DockGate connects to … — keep that address` | The change would remove DockGate's address | Keep it, or fill in the new address DockGate should use |
+| System: `findmnt found errors — restored` / `mount failed — restored` | The new fstab line is wrong, or the disk / share can not be mounted | Check source, type and options (`nofail` keeps the server starting without it) |
+| Scripts: `step N failed — stopping` | A command of that step failed | Run it with **Run**, read the output; set *if it fails: go on* for optional steps |
 | Cron: *No cron daemon is running* | cron / crond is stopped or not installed | Start it in **Services**, or install `cron` (Debian/Ubuntu) / `cronie` (RHEL) |
 | Cron: `The crontab changed after it was read` | Someone edited the crontab meanwhile | The tab reloads; make the change again |
 | Cron: `Give the job a name to keep its log or to be notified` | Log or alerts ticked without a name | Fill in **Name** |

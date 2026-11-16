@@ -72,6 +72,8 @@ app.use('/api/firewall-lists', require('./routes/ip-lists')); // IP lists used a
 app.use('/api/servers', require('./routes/firewall')); // Firewall: inbound/outbound rules, defaults, Docker isolation
 app.use('/api/servers', require('./routes/security')); // Access & SSH · Users · Firewall · deploy user · reboot
 app.use('/api/servers', require('./routes/cron')); // Server Console → Cron
+app.use('/api/servers', require('./routes/sysconf')); // Server Console → System
+app.use('/api/servers', require('./routes/scripts')); // Server Console → Scripts
 app.use('/api/registries', require('./routes/registries'));
 app.use('/api/ssh-keys', require('./routes/ssh-keys'));
 app.use('/api/agent', require('./routes/agent'));

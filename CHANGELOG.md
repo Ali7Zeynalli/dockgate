@@ -2,6 +2,20 @@
 
 ---
 
+## [2.61.0] - 2026-11-16
+
+### Added
+- **Server Console → System.** The server's own settings through forms, each one checked by the tool that owns the file and restored when a check fails:
+  - hostname (and the `127.0.1.1` line of `/etc/hosts`), `/etc/hosts` as a table, DNS servers and search domains (systemd-resolved drop-in or `/etc/resolv.conf`, tested with a lookup);
+  - **network interfaces** (netplan or NetworkManager): DHCP or static addresses, gateway, DNS, MTU — kept only when a new SSH login works, otherwise the server restores the previous settings by itself after 120 seconds; the address DockGate connects to is protected;
+  - kernel settings (sysctl), open-files limit, journal size;
+  - disks: add or remove `/etc/fstab` mounts, checked with `findmnt` and mounted once before they are kept;
+  - a catalog of the server's config files that opens them in the editor.
+- **Server Console → Scripts (Script Builder).** Build a script from blocks — database / volume / folder backup, copy to another server, delete old files, container actions, Compose redeploy, URL and disk checks, webhook message, custom command — with *stop* or *go on* per step and the written script shown live. Templates for common jobs. Save it to the server (root-owned under `/opt/dockgate/scripts`), run it once, or schedule it in Cron with its log and alerts. Values are checked and quoted, so they can not run commands.
+- **The editor checks system files** before saving: `sshd_config` (`sshd -t`), `sudoers` (`visudo -c`), `/etc/fstab` (`findmnt --verify`).
+
+---
+
 ## [2.60.0] - 2026-11-16
 
 ### Added
