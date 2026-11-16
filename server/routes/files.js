@@ -92,22 +92,62 @@ router.delete('/', async (req, res) => {
 });
 
 // Read a file as text for the in-browser editor (binary/oversized → metadata only).
+// ?sudo=1 reads a file the SSH user may not (root-owned configs), with passwordless sudo.
 router.get('/read', async (req, res) => {
   const a = activeRemote(res); if (!a) return;
-  try { res.json(await a.fm.readFileText(a.s, req.query.path || '')); }
-  catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+  try { res.json(await a.fm.readFileText(a.s, req.query.path || '', { sudo: req.query.sudo === '1' })); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message, code: err.code }); }
 });
 
 // Save edited text back to a file (create/overwrite).
+// Save: the content the file had is kept as an earlier version (DockGate's database), then the file is written
+// atomically. body: { path, content, sudo, baseMtime (when it was opened), force (save although it changed) }
 router.post('/write', async (req, res) => {
   const a = activeRemote(res); if (!a) return;
   try {
-    const { path: p, content } = req.body || {};
+    const { path: p, content, sudo, baseMtime, force } = req.body || {};
     if (!p) return res.status(400).json({ error: 'path is required' });
-    await a.fm.writeFileText(a.s, p, content == null ? '' : content);
-    logAction({ req, server: a.id, resourceType: 'file', resourceName: p, action: 'edit' });
-    res.json({ success: true });
-  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+    const text = content == null ? '' : String(content);
+    const before = await a.fm.readFileText(a.s, p, { sudo: !!sudo }).catch(() => null);
+    const r = await a.fm.writeFileText(a.s, p, text, { sudo: !!sudo, baseMtime, force: !!force });
+    let kept = false;
+    if (before && !before.isBinary && typeof before.content === 'string' && before.content !== text) kept = require('../file-versions').save(a.id, a.fm.normRemote(p), before.content);
+    const after = await a.fm.readFileText(a.s, p, { sudo: !!sudo }).catch(() => null);
+    logAction({ req, server: a.id, resourceType: 'file', resourceName: p, action: sudo ? 'edit_sudo' : 'edit', details: { atomic: r && r.atomic, versionKept: kept } });
+    res.json({ success: true, atomic: !!(r && r.atomic), versionKept: kept, mtime: after ? after.mtime : null });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message, code: err.code }); }
+});
+
+// Earlier versions of a file (kept on each save from the editor) and one of them.
+router.get('/versions', (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  res.json(require('../file-versions').list(a.id, a.fm.normRemote(String(req.query.path || ''))));
+});
+router.get('/version', (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  const v = require('../file-versions').get(a.id, req.query.id);
+  if (!v) return res.status(404).json({ error: 'That version is gone' });
+  res.json(v);
+});
+
+// Permissions: chmod (mode, recursive, sudo) and chown (owner, group, recursive — with sudo on a remote server).
+router.post('/chmod', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try {
+    const { path: p, mode, recursive, sudo } = req.body || {};
+    const r = await a.fm.chmod(a.s, p, String(mode || ''), { recursive: !!recursive, sudo: !!sudo });
+    logAction({ req, server: a.id, resourceType: 'file', resourceName: p, action: 'chmod', details: { mode, recursive: !!recursive, sudo: !!sudo } });
+    res.json({ success: true, ...r });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message, code: err.code }); }
+});
+router.post('/chown', async (req, res) => {
+  const a = activeRemote(res); if (!a) return;
+  try {
+    const { path: p, owner, group, recursive } = req.body || {};
+    const r = await a.fm.chown(a.s, p, String(owner || '').trim(), group ? String(group).trim() : '', { recursive: !!recursive });
+    logAction({ req, server: a.id, resourceType: 'file', resourceName: p, action: 'chown', details: { owner, group, recursive: !!recursive } });
+    res.json({ success: true, ...r });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message, code: err.code }); }
 });
 
 // Copy a file/folder into destDir (auto-suffixes "-copy" when pasted into its own directory).
