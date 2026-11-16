@@ -150,7 +150,7 @@ async function runOne(c, { record = true, force = false } = {}) {
   delete state.deploying;
   if (r.places) state.places = r.places; else delete state.places;
   const down = alerts.find(a => a.type === 'site_down');
-  if (down && link) { down.data.context = await Promise.race([L.context(link), new Promise(res => setTimeout(() => res({ kind: link.kind, name: link.name, error: 'no answer from Docker in 10 s' }), 10000))]); state.context = down.data.context; }
+  if (down && link) { let tm; down.data.context = await Promise.race([L.context(link), new Promise(res => { tm = setTimeout(() => res({ kind: link.kind, name: link.name, error: 'no answer from Docker in 10 s' }), 10000); })]).finally(() => clearTimeout(tm)); state.context = down.data.context; }
   if (r.ok) delete state.context;
   q.addResult.run(c.id, now, r.ok ? 1 : 0, r.ms || 0, r.status || null, r.ok ? null : String(r.error || '').slice(0, 300));
   q.addHour.run(c.id, Math.floor(now / HOUR) * HOUR, r.ok ? 1 : 0, r.ms || 0, r.ms || 0);

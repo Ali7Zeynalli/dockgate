@@ -57,10 +57,11 @@ function parse(check, out) {
 
 async function probeOn(server, check) {
   try {
+    let timer;
     const r = await Promise.race([
       remoteExec.execRemote(server, script(check)),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('SSH: no answer in time')), ((check.config && check.config.timeout) || 10) * 1000 + 15000)),
-    ]);
+      new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('SSH: no answer in time')), ((check.config && check.config.timeout) || 10) * 1000 + 15000); }),
+    ]).finally(() => clearTimeout(timer));
     return parse(check, String(r.stdout || '') + String(r.stderr || ''));
   } catch (e) { return { ok: false, ms: 0, error: `SSH: ${e.message}`, ssh: true }; }
 }
