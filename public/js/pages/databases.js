@@ -453,9 +453,10 @@ Router.register('databases', async (content, params = {}) => {
         const r = await API.post(`${base()}/backups/restore`, { file: f.name, target, keepOwners: o ? o.checked : true });
         st.info = await API.get(`${base()}/info`);
         const can = st.info.databases.some(x => x.name === f.database);
-        showModal('Restored', `<div class="text-sm">The backup is in the new database <b>${esc(r.database)}</b> (${(r.ms / 1000).toFixed(1)} s). Open it to check it.${can ? ` When it looks right, <b>Swap</b> puts it in place of <b>${esc(f.database)}</b> — the current one is kept, renamed <span class="td-mono">${esc(f.database)}_before_…</span>. Apps connected to ${esc(f.database)} are disconnected for a moment.` : ''}</div>`,
-          [{ label: 'Close', className: 'btn btn-secondary' }, { label: `Open ${r.database}`, className: 'btn btn-secondary', onClick: () => { st.db = r.database; st.t = null; st.view = 'data'; save(); drawShell(); loadObjects(); } },
-           ...(can ? [{ label: `Swap it in place of ${f.database}`, className: 'btn btn-danger', onClick: () => swap(r.database, f.database) }] : [])]);
+        const rm = showModal('Restored', `<div class="text-sm">The backup is in the new database <b>${esc(r.database)}</b> (${(r.ms / 1000).toFixed(1)} s). Open it to check it.${can ? ` When it looks right, <b>Swap</b> puts it in place of <b>${esc(f.database)}</b> — the current one is kept, renamed <span class="td-mono">${esc(f.database)}_before_…</span>. Apps connected to ${esc(f.database)} are disconnected for a moment.` : ''}</div>`,
+          [{ label: 'Close', className: 'btn btn-secondary' }, { label: 'Open it', className: 'btn btn-secondary', onClick: () => { st.db = r.database; st.t = null; st.view = 'data'; save(); drawShell(); loadObjects(); } },
+           ...(can ? [{ label: `Swap in place of ${f.database}`, className: 'btn btn-danger', onClick: () => swap(r.database, f.database) }] : [])]);
+        const ft = rm.overlay.querySelector('.modal-footer'); if (ft) { ft.style.flexWrap = 'wrap'; ft.style.gap = '8px'; }
         drawShell(); drawTree(); drawBackups();
       } });
   }
