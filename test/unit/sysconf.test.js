@@ -127,3 +127,22 @@ test('editor: /etc/fstab checked with findmnt before saving', async () => {
     assert.deepEqual(fs.readdirSync('/tmp').filter(n => /^\.dg-check-[0-9a-f]+$/.test(n)), [], 'temporary file removed, also when the check fails');
   } finally { require.cache[rcPath].exports = real; delete require.cache[require.resolve('../../server/file-extras')]; }
 });
+
+// findmnt versions answer differently (CI runners and servers have older or newer ones): every form must count.
+test('fstab check: errors from old and new findmnt versions are caught; a clean summary passes', async () => {
+  const cases = [
+    ['Entry /tmp\n0 parse errors, 0 errors, 1 warning', 0, 0],
+    ['findmnt: f: parse error at line 2 -- ignored', 1, 0],          // older findmnt: parse error only
+    ['   [E] unreachable source\n0 parse errors, 1 error, 0 warnings', 1, 0],
+    ['1 parse error, 0 errors, 0 warnings', 1, 0],
+    ['all fine', 1, 1],                                               // a non-zero exit counts too
+  ];
+  for (const [out, want, rc] of cases) {
+    const f = path.join(os.tmpdir(), `dg-fm-${process.pid}.txt`);
+    fs.writeFileSync(f, out + '\n');
+    const cmd = X.fstabVerify('/x').replace(/^out=\$\(findmnt --verify --tab-file \/x 2>&1\); rc=\$\?/, `out=$(cat ${f}); (exit ${rc}); rc=$?`);
+    const r = await runSh(`${cmd}; echo "bad=$bad"`);
+    fs.unlinkSync(f);
+    assert.match(r.stdout, new RegExp(`bad=${want}`), `${JSON.stringify(out)} → ${r.stdout}`);
+  }
+});

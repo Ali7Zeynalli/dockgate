@@ -15,6 +15,12 @@ const backup = (f) => `if {{S}}test -e ${f}; then {{S}}cp -pP ${f} ${f}.dockgate
 const restore = (f) => `if {{S}}test -e ${f}.dockgate-prev; then {{S}}mv -f ${f}.dockgate-prev ${f}; else {{S}}rm -f ${f}; fi`;
 const drop = (f) => `{{S}}rm -f ${f}.dockgate-prev`;
 const bad = (msg) => P.httpError(400, msg);
+/**
+ * Shell that runs findmnt --verify on a tab file and sets bad=1 when it found a problem. findmnt versions report
+ * differently: newer ones print "[E] …" lines and a summary ("0 parse errors, 1 error"), older ones only
+ * "parse error at line N -- ignored" — any of them, or a non-zero exit, counts. Output is in $out.
+ */
+const fstabVerify = (file, sudo = '') => `out=$(${sudo}findmnt --verify --tab-file ${file} 2>&1); rc=$?; bad=0; [ $rc -ne 0 ] && bad=1; echo "$out" | grep -qE '^\\s*\\[E\\]|parse error at' && bad=1; echo "$out" | grep -qE '(^|[^0-9])[1-9][0-9]* (parse )?errors?' && bad=1`;
 
 const F = {
   hosts: '/etc/hosts',
@@ -340,7 +346,7 @@ function fstabPlan(op, currentText) {
     { label: 'Back up /etc/fstab', cmd: backup(F.fstab) },
     ...(mountTarget ? [{ label: `Create ${mountTarget}`, cmd: `{{S}}mkdir -p ${shq(mountTarget)}` }] : []),
     { label: 'Write /etc/fstab', cmd: writeFile(F.fstab, text) },
-    { label: 'Check (findmnt --verify)', cmd: `out=$({{S}}findmnt --verify --tab-file ${F.fstab} 2>&1); if echo "$out" | grep -qE '^\\s*\\[E\\]'; then ${restore(F.fstab)}; echo "findmnt found errors — restored: $(echo "$out" | grep -E '\\[E\\]' | head -3)"; exit 1; fi` },
+    { label: 'Check (findmnt --verify)', cmd: `${fstabVerify(F.fstab, '{{S}}')}; if [ "$bad" = 1 ]; then ${restore(F.fstab)}; echo "findmnt found errors — restored: $(echo "$out" | grep -E '\\[E\\]|parse error at|[1-9][0-9]* (parse )?errors?' | head -3)"; exit 1; fi` },
     ...(mountTarget ? [{ label: `Mount ${mountTarget} now (a failure restores the file)`, cmd: `{{S}}systemctl daemon-reload 2>/dev/null; out=$({{S}}mount ${shq(mountTarget)} 2>&1) || { ${restore(F.fstab)}; {{S}}systemctl daemon-reload 2>/dev/null; echo "mount failed — restored: $out"; exit 1; }` }] : []),
     { label: 'Done', cmd: `{{S}}systemctl daemon-reload 2>/dev/null; ${drop(F.fstab)}` },
   ] } };
@@ -355,4 +361,4 @@ const CATALOG = [
   { group: 'Web servers', items: [['/etc/nginx/nginx.conf', 'nginx (checked with nginx -t)', 'nginx'], ['/etc/nginx/sites-available', 'nginx sites (folder)', 'nginx'], ['/etc/caddy/Caddyfile', 'Caddy', null], ['/etc/haproxy/haproxy.cfg', 'HAProxy', null]] },
 ];
 
-module.exports = { F, READ, SYSCTL_INFO, CATALOG, sections, parseRead, parseHosts, parseFstab, hostnamePlan, hostsPlan, dnsPlan, sysctlPlan, nofilePlan, journaldPlan, networkPlan, fstabPlan };
+module.exports = { fstabVerify, F, READ, SYSCTL_INFO, CATALOG, sections, parseRead, parseHosts, parseFstab, hostnamePlan, hostsPlan, dnsPlan, sysctlPlan, nofilePlan, journaldPlan, networkPlan, fstabPlan };

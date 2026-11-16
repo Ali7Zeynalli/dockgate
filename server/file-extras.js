@@ -104,7 +104,7 @@ async function checkNginx(a) {
 const TOOLS = {
   sshd: { tool: 'sshd -t', cmd: (t) => `sudo -n sshd -t -f ${t} 2>&1 || sshd -t -f ${t} 2>&1`, missing: /sshd: (command )?not found/ },
   sudoers: { tool: 'visudo -c', cmd: (t) => `sudo -n visudo -cf ${t} 2>&1 || visudo -cf ${t} 2>&1`, missing: /visudo: (command )?not found/ },
-  fstab: { tool: 'findmnt --verify', cmd: (t) => `out=$(findmnt --verify --tab-file ${t} 2>&1); echo "$out"; echo "$out" | grep -qE '^\\s*\\[E\\]' && exit 1; exit 0`, missing: /findmnt: (command )?not found/ },
+  fstab: { tool: 'findmnt --verify', cmd: (t) => `${require('./sysconf').fstabVerify(t)}; echo "$out"; [ "$bad" = 1 ] && exit 1; exit 0`, missing: /findmnt: (command )?not found/ },
 };
 async function checkFile(a, kind, content) {
   const T = TOOLS[kind]; if (!T) throw Object.assign(new Error('Unknown check'), { statusCode: 400 });
