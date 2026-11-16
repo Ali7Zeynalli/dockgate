@@ -38,7 +38,8 @@
 - **Docker** — containers, images, volumes, networks and builds, with logs, a terminal and file editing inside containers.
 - **Compose** — create, edit and deploy projects locally or on a remote server, with deploy history and image updates. Replicas, auto-heal, Auto Scaling and updates without downtime — **without Swarm**, your compose files untouched.
 - **Docker Swarm** — set up a cluster and move Compose projects and containers to it and back, as well protected as before. Each service gets its own page; published ports are firewalled on every server at once.
-- **Servers** — provision, secure (SSH, users, firewall, fail2ban, cron jobs) and monitor any number of hosts over SSH.
+- **Servers** — provision, secure (SSH, users, firewall, fail2ban) and monitor any number of hosts over SSH; cron jobs with alerts, **scripts** (templates, blocks or your own shell), system settings (network with automatic rollback, DNS, kernel, disks) and a file manager with a safe editor.
+- **Uptime** — checks your sites (HTTP, SSL, TCP, DNS) from DockGate and from your other servers, linked to the containers behind them.
 - **Alerts** — Telegram, email and webhook, plus an optional Edge agent that keeps alerting — and keeps replicas, healing and Auto Scaling running — when DockGate is offline.
 - **Light** — at most 256 MB RAM and 0.5 CPU; plain JavaScript, no build step, works offline.
 

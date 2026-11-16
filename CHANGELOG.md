@@ -5,6 +5,7 @@
 ## [2.63.1] - 2026-11-16
 
 ### Docs
+- README: "What is DockGate?" names Uptime, scripts, cron alerts, system settings and the file manager.
 - README: the Servers row describes Scripts as they are now (templates, block builder with fix steps, your own shell, scripts already on the server, `bash -n`), and the Files editor row names all its checks (compose, nginx, sshd, visudo, findmnt, `bash -n`).
 
 ---
