@@ -44,7 +44,7 @@ router.post('/:id/restart', async (req, res) => {
 });
 // Try settings without saving them.
 router.post('/test', async (req, res) => {
-  try { const v = P.normalize(req.body || {}); res.json(await P.probe(v)); } catch (e) { fail(res, e); }
+  try { const b = req.body || {}; const v = P.normalize(b); v.config.from = U.normalizeFrom(b.config && b.config.from); res.json(await U.probeAll(v)); } catch (e) { fail(res, e); }
 });
 router.post('/', async (req, res) => {
   try {

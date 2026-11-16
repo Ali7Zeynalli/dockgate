@@ -216,3 +216,38 @@ test('proxy suggestions: Traefik Host() and caddy labels, without checks that ex
     assert.equal(s.find(x => x.host === 'grafana.example.com').via, 'Caddy label');
   } finally { L._setClient(null); }
 });
+
+// The scripts other servers run (over SSH) — run here with bash, the same commands.
+const runSh = (cmd) => new Promise((res) => require('child_process').execFile('bash', ['-c', cmd], { timeout: 30000, env: { ...process.env, http_proxy: '', https_proxy: '', HTTP_PROXY: '', HTTPS_PROXY: '', no_proxy: '*' } }, (e, so, se) => res(String(so) + String(se))));
+test('from other servers: the curl / nc / openssl / getent scripts and their answers', async () => {
+  const R = require('../../server/uptime-remote');
+  const srv = http.createServer((req, res) => { if (req.url === '/bad') { res.statusCode = 503; return res.end('no'); } res.end('hello world'); });
+  const port = await listen(srv);
+  const tcp = net.createServer((s) => s.end()); const tport = await listen(tcp);
+  try {
+    const h = (p, config = {}) => ({ type: 'http', target: `http://127.0.0.1:${port}${p}`, config: { expect: '200', timeout: 5, ...config } });
+    let c = h('/'); let r = R.parse(c, await runSh(R.script(c))); assert.equal(r.ok, true, JSON.stringify(r)); assert.equal(r.status, 200);
+    c = h('/bad'); r = R.parse(c, await runSh(R.script(c))); assert.equal(r.ok, false); assert.match(r.error, /HTTP 503/);
+    c = h('/', { contains: 'world' }); r = R.parse(c, await runSh(R.script(c))); assert.equal(r.ok, true);
+    c = h('/', { contains: 'nope' }); r = R.parse(c, await runSh(R.script(c))); assert.equal(r.ok, false); assert.match(r.error, /does not contain/);
+    c = { type: 'http', target: `http://127.0.0.1:1/`, config: { timeout: 3 } }; r = R.parse(c, await runSh(R.script(c))); assert.equal(r.ok, false); assert.match(r.error, /connect|refused|Failed/i);
+    c = { type: 'tcp', target: `127.0.0.1:${tport}`, config: { timeout: 3 } }; r = R.parse(c, await runSh(R.script(c))); assert.equal(r.ok, true, JSON.stringify(r));
+    c = { type: 'tcp', target: '127.0.0.1:1', config: { timeout: 3 } }; r = R.parse(c, await runSh(R.script(c))); assert.equal(r.ok, false);
+    c = { type: 'dns', target: 'localhost', config: { timeout: 3 } }; r = R.parse(c, await runSh(R.script(c))); assert.equal(r.ok, true); assert.match(r.detail, /127\.0\.0\.1|::1/);
+    // a URL with a quote cannot break out of the command
+    c = { type: 'http', target: `http://127.0.0.1:${port}/x';touch /tmp/dg-pwned;'`, config: { timeout: 3 } };
+    await runSh(R.script(c)); assert.equal(require('fs').existsSync('/tmp/dg-pwned'), false);
+  } finally { srv.close(); tcp.close(); }
+  assert.match(R.parse({ type: 'http', config: {} }, `${R.MARK}nocurl`).error, /curl is not installed/);
+});
+
+test('several places: down only when every place fails', () => {
+  const R = require('../../server/uptime-remote');
+  let m = R.merge([['dockgate', 'DockGate', { ok: false, error: 'Timeout' }], ['s1', 'prod-2', { ok: true, ms: 80, status: 200 }]]);
+  assert.equal(m.ok, true); assert.equal(m.partial, true); assert.equal(m.ms, 80); assert.equal(m.places.dockgate.error, 'Timeout');
+  m = R.merge([['dockgate', 'DockGate', { ok: false, error: 'Timeout' }], ['s1', 'prod-2', { ok: false, error: 'HTTP 502' }]]);
+  assert.equal(m.ok, false); assert.equal(m.error, 'DockGate: Timeout · prod-2: HTTP 502');
+  const U = require('../../server/uptime');
+  assert.throws(() => U.normalizeFrom([]), /at least one/);
+  assert.deepEqual(U.normalizeFrom(['dockgate', 'no-such-server', 'local']), ['dockgate']);
+});

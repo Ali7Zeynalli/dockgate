@@ -5,6 +5,7 @@
 const { db } = require('./db');
 const P = require('./uptime-probe');
 const L = require('./uptime-link');
+const R = require('./uptime-remote');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS uptime_checks (
@@ -54,7 +55,31 @@ const row = (r) => !r ? null : ({ id: r.id, name: r.name, type: r.type, target: 
 function list() { return q.all.all().map(row); }
 function get(id) { return row(q.get.get(Number(id))); }
 // The link (container / Compose project / Swarm service) is kept in config.link.
-function withLink(v, input) { v.config.link = L.normalizeLink(input.config && input.config.link !== undefined ? input.config.link : input.link); if (!v.config.link) delete v.config.link; return v; }
+function withLink(v, input) {
+  v.config.link = L.normalizeLink(input.config && input.config.link !== undefined ? input.config.link : input.link); if (!v.config.link) delete v.config.link;
+  v.config.from = normalizeFrom(input.config && input.config.from);
+  return v;
+}
+// Where a check runs: 'dockgate' (this DockGate) and / or servers DockGate manages (over SSH).
+function normalizeFrom(list) {
+  const { stmts } = require('./db');
+  const out = [...new Set((Array.isArray(list) ? list : ['dockgate']).map(String))].filter(id => id === 'dockgate' || (id !== 'local' && stmts.getServer.get(id)));
+  if (!out.length) throw new Error('Check from: tick at least one place');
+  return out.slice(0, 5);
+}
+/** Run a check from each of its places and merge: down only when every place fails. */
+async function probeAll(c) {
+  const from = (c.config && c.config.from) || ['dockgate'];
+  if (from.length === 1 && from[0] === 'dockgate') return P.probe(c);
+  const { stmts } = require('./db');
+  const results = await Promise.all(from.map(async id => {
+    if (id === 'dockgate') return [id, 'DockGate', await P.probe(c)];
+    const srv = stmts.getServer.get(id);
+    if (!srv) return [id, id, { ok: false, ms: 0, error: 'server removed' }];
+    return [id, srv.name || id, await R.probeOn(srv, c)];
+  }));
+  return R.merge(results);
+}
 function create(input) {
   const v = withLink(P.normalize(input), input);
   const id = q.insert.run({ ...v, config: JSON.stringify(v.config), now: Date.now() }).lastInsertRowid;
@@ -118,11 +143,12 @@ async function runOne(c, { record = true, force = false } = {}) {
     q.setState.run(JSON.stringify({ ...(c.state || {}), deploying: Date.now(), lastAt: Date.now() }), c.id);
     return { skipped: true, reason: 'deploying' };
   }
-  const r = await P.probe(c);
+  const r = await probeAll(c);
   const now = Date.now();
   if (!record) return r;
   const { state, alerts } = P.evaluate(c.state && c.state.status !== 'paused' ? c.state : {}, r, c, now);
   delete state.deploying;
+  if (r.places) state.places = r.places; else delete state.places;
   const down = alerts.find(a => a.type === 'site_down');
   if (down && link) { down.data.context = await Promise.race([L.context(link), new Promise(res => setTimeout(() => res({ kind: link.kind, name: link.name, error: 'no answer from Docker in 10 s' }), 10000))]); state.context = down.data.context; }
   if (r.ok) delete state.context;
@@ -196,4 +222,4 @@ function detail(id, range = DAY) {
   return { ...c, periods: { d1: stats(c.id, DAY, now), d7: stats(c.id, 7 * DAY, now), d30: stats(c.id, 30 * DAY, now), d90: stats(c.id, 90 * DAY, now) }, series: series(c.id, range, now), incidents: q.incidents.all(c.id, 50) };
 }
 
-module.exports = { L, list, get, create, update, remove, setPaused, runOne, tick, start, stop, stats, series, bar24, summary, detail, message, RAW_KEEP, HOUR, DAY };
+module.exports = { L, probeAll, normalizeFrom, list, get, create, update, remove, setPaused, runOne, tick, start, stop, stats, series, bar24, summary, detail, message, RAW_KEEP, HOUR, DAY };
