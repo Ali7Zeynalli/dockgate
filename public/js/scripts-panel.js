@@ -23,13 +23,13 @@ async function renderScriptsPanel(serverId, container) {
       ] })), { minWidth: 900 })
       : `<div class="card" style="padding:22px">
           <div style="font-weight:700;margin-bottom:6px">Start from a template</div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">${d.templates.map(t => `<button type="button" class="card" data-tpl="${esc(t.id)}" style="text-align:left;padding:12px 14px;cursor:pointer;border:1px solid var(--border);color:var(--text-primary);font:inherit"><b>${esc(t.title)}</b><div class="ui-sub" style="margin-top:4px">${t.steps.map(x => esc(B[x.type].label)).join(' → ')}</div></button>`).join('')}</div>
+          ${templateCards()}
         </div>`}
     <div class="ui-sub" style="margin-top:10px">Scripts are written root-owned to <span class="td-mono">/opt/dockgate/scripts</span> when the SSH user has passwordless sudo (else to <span class="td-mono">~/.dockgate/scripts</span>). Edit them here — a change made to the file on the server is replaced on the next save.</div>`;
 
   const byId = (id) => d.scripts.find(s => String(s.id) === String(id));
   container.querySelector('[data-new]').addEventListener('click', () => pickTemplate());
-  container.querySelectorAll('[data-tpl]').forEach(b => b.addEventListener('click', () => { const t = d.templates.find(x => x.id === b.dataset.tpl); editor(null, { name: t.name, title: t.title, steps: JSON.parse(JSON.stringify(t.steps)) }, t.schedule); }));
+  container.querySelectorAll('[data-tpl]').forEach(b => b.addEventListener('click', () => useTemplate(b.dataset.tpl)));
   container.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => { const s = byId(b.dataset.edit); editor(s, JSON.parse(JSON.stringify(s.spec))); }));
   container.querySelectorAll('[data-file]').forEach(b => b.addEventListener('click', () => { const s = byId(b.dataset.file); if (s.path) FileEditor.open({ path: s.path, name: s.path.split('/').pop() }); }));
   container.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => { const s = byId(b.dataset.del);
@@ -37,12 +37,36 @@ async function renderScriptsPanel(serverId, container) {
   container.querySelectorAll('[data-run]').forEach(b => b.addEventListener('click', () => runNow(byId(b.dataset.run))));
   container.querySelectorAll('[data-sched]').forEach(b => b.addEventListener('click', () => schedule(byId(b.dataset.sched))));
 
+  // Templates grouped by category; each card names its steps.
+  function templateCards() {
+    const cats = [...new Set(d.templates.map(t => t.category || 'Other'))];
+    return cats.map(c => `<div class="ui-label" style="margin:12px 0 6px">${esc(c)}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">${d.templates.filter(t => (t.category || 'Other') === c).map(t => `<button type="button" class="card" data-tpl="${esc(t.id)}" style="text-align:left;padding:12px 14px;cursor:pointer;border:1px solid var(--border);color:var(--text-primary);font:inherit"><b>${esc(t.title)}</b><div class="ui-sub" style="margin-top:4px">${t.steps.map(x => esc(B[x.type].label)).join(' → ')}</div>${t.steps.some(x => B[x.type].root) ? '<div class="ui-sub" style="margin-top:4px;color:var(--warning)">needs root (passwordless sudo)</div>' : ''}</button>`).join('')}</div>`).join('');
+  }
   function pickTemplate() {
-    const m = showModal('New script', `<div class="text-sm" style="margin-bottom:10px">Start empty or from a template — every step can be changed.</div>
-      <button type="button" class="btn btn-secondary" data-empty style="width:100%;margin-bottom:8px">Empty script</button>
-      ${d.templates.map(t => `<button type="button" class="btn btn-secondary" data-t="${esc(t.id)}" style="display:block;width:100%;text-align:left;margin-bottom:6px"><b>${esc(t.title)}</b><br><span class="ui-sub">${t.steps.map(x => esc(B[x.type].label)).join(' → ')}</span></button>`).join('')}`, [{ label: 'Cancel', className: 'btn btn-secondary' }]);
+    const m = showModal('New script', `<div class="text-sm" style="margin-bottom:10px">Start empty or from a template — every step can be changed afterwards.</div>
+      <button type="button" class="btn btn-secondary" data-empty style="width:100%;margin-bottom:4px">Empty script</button>
+      <div style="max-height:60vh;overflow:auto">${templateCards()}</div>`, [{ label: 'Cancel', className: 'btn btn-secondary' }]);
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     m.overlay.querySelector('[data-empty]').onclick = () => { m.close(); editor(null, { name: '', title: '', steps: [] }); };
-    m.overlay.querySelectorAll('[data-t]').forEach(x => { x.onclick = () => { m.close(); const t = d.templates.find(y => y.id === x.dataset.t); editor(null, { name: t.name, title: t.title, steps: JSON.parse(JSON.stringify(t.steps)) }, t.schedule); }; });
+    m.overlay.querySelectorAll('[data-tpl]').forEach(x => { x.onclick = () => { m.close(); useTemplate(x.dataset.tpl); }; });
+  }
+  // Ask the template's questions first (containers, volumes and project folders of this server to pick from).
+  async function useTemplate(id) {
+    const t = d.templates.find(x => x.id === id);
+    const fill = (answers) => {
+      const steps = JSON.parse(JSON.stringify(t.steps));
+      for (const p of t.params || []) { const v = answers[p.key] != null ? answers[p.key] : p.def; for (const [i, f] of p.targets) if (steps[i]) steps[i][f] = v; }
+      editor(null, { name: t.name, title: t.title, steps }, t.schedule);
+    };
+    if (!(t.params || []).length) return fill({});
+    const [containers, volumes, projects] = await Promise.all([API.get('/containers').catch(() => []), API.get('/volumes').catch(() => []), API.get('/compose').catch(() => [])]);
+    const opts = { container: (containers || []).map(c => c.name), volume: (volumes || []).map(v => v.name), compose: (projects || []).map(p => p.workingDir).filter(Boolean) };
+    const field = (p) => {
+      const list = opts[p.kind] || [];
+      return `<label class="ui-field"><span class="ui-label">${esc(p.label)}</span><input class="input td-mono" data-ans="${esc(p.key)}" value="${esc(list.includes(p.def) || !list.length ? p.def : list[0])}" list="tp-${esc(p.key)}">${list.length ? `<datalist id="tp-${esc(p.key)}">${list.map(v => `<option value="${esc(v)}">`).join('')}</datalist><span class="ui-sub">${list.length} on this server — type or pick</span>` : ''}</label>`;
+    };
+    UI.dialog({ title: esc(t.title), saveLabel: 'Next: review the steps', body: `<div class="text-sm" style="margin-bottom:8px">A few answers, then the script opens with them — every step can still be changed.</div>${t.params.map(field).join('')}`,
+      onSave: async (ov) => { const a = {}; ov.querySelectorAll('[data-ans]').forEach(i => { a[i.dataset.ans] = i.value.trim(); }); setTimeout(() => fill(a), 0); } });
   }
 
   function editor(script, spec, suggestSchedule) {
@@ -55,9 +79,13 @@ async function renderScriptsPanel(serverId, container) {
       return `<label class="ui-field" style="margin:0"><span class="ui-label">${esc(label)}${req ? '' : ' <span class="ui-sub">(optional)</span>'}</span>${input}</label>`;
     }).join('');
     const stepsHtml = () => spec.steps.map((s, i) => `<div class="card" style="padding:10px 12px;margin-bottom:8px" data-step="${i}">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><b style="flex:1">${i + 1}. ${esc(B[s.type].label)}</b>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><b style="flex:1">${i + 1}. ${esc(B[s.type].label)}</b><button type="button" class="btn btn-xs btn-ghost" data-up="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button><button type="button" class="btn btn-xs btn-ghost" data-down="${i}" ${i === spec.steps.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button><button type="button" class="btn btn-xs btn-ghost text-danger" data-rm="${i}" aria-label="Remove">×</button></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          <select class="input" data-when="${i}" style="width:auto;padding:2px 6px;font-size:12px" title="When this step runs"><option value="always" ${s.when !== 'if_failed' ? 'selected' : ''}>run always</option><option value="if_failed" ${s.when === 'if_failed' ? 'selected' : ''}>run only if an earlier step failed</option></select>
           <select class="input" data-onfail="${i}" style="width:auto;padding:2px 6px;font-size:12px" title="If this step fails"><option value="stop" ${s.onFail !== 'continue' ? 'selected' : ''}>if it fails: stop</option><option value="continue" ${s.onFail === 'continue' ? 'selected' : ''}>if it fails: go on</option></select>
-          <button type="button" class="btn btn-xs btn-ghost" data-up="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button><button type="button" class="btn btn-xs btn-ghost" data-down="${i}" ${i === spec.steps.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button><button type="button" class="btn btn-xs btn-ghost text-danger" data-rm="${i}" aria-label="Remove">×</button></div>
+        </div>
+        ${s.when === 'if_failed' ? '<div class="ui-sub" style="margin-bottom:6px;color:var(--warning)">Runs only when an earlier step failed (a fix). If it works, the run counts as fixed.</div>' : ''}
+        ${B[s.type].root ? '<div class="ui-sub" style="margin-bottom:6px">Needs root — the script is written root-owned when the SSH user has passwordless sudo.</div>' : ''}
         ${B[s.type].desc ? `<div class="ui-sub" style="margin-bottom:6px">${esc(B[s.type].desc)}</div>` : ''}
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">${fieldHtml(s, i)}</div></div>`).join('') || '<div class="ui-sub" style="padding:10px">No steps yet — add one below.</div>';
     const dlg = UI.dialog({ title: script ? `Edit ${esc(script.name)}` : 'New script', saveLabel: script ? 'Save to the server' : 'Create on the server', wide: true,
@@ -81,6 +109,7 @@ async function renderScriptsPanel(serverId, container) {
         const wire = () => {
           box.querySelectorAll('[data-f]').forEach(inp => inp.addEventListener('input', () => { const s = spec.steps[Number(inp.dataset.i)]; s[inp.dataset.f] = inp.type === 'number' ? (inp.value === '' ? '' : Number(inp.value)) : inp.value; preview(); }));
           box.querySelectorAll('[data-onfail]').forEach(sel => sel.addEventListener('change', () => { spec.steps[Number(sel.dataset.onfail)].onFail = sel.value; preview(); }));
+          box.querySelectorAll('[data-when]').forEach(sel => sel.addEventListener('change', () => { spec.steps[Number(sel.dataset.when)].when = sel.value; redraw(); }));
           box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { spec.steps.splice(Number(b.dataset.rm), 1); redraw(); });
           box.querySelectorAll('[data-up]').forEach(b => b.onclick = () => { const i = Number(b.dataset.up); [spec.steps[i - 1], spec.steps[i]] = [spec.steps[i], spec.steps[i - 1]]; redraw(); });
           box.querySelectorAll('[data-down]').forEach(b => b.onclick = () => { const i = Number(b.dataset.down); [spec.steps[i + 1], spec.steps[i]] = [spec.steps[i], spec.steps[i + 1]]; redraw(); });
