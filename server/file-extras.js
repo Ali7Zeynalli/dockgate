@@ -99,4 +99,22 @@ async function checkNginx(a) {
   return { ok: r.code === 0, tool: 'nginx -t', output: out };
 }
 
-module.exports = { places, tail, checkCompose, checkNginx, COMMON, MAX_LINES };
+// Check the unsaved content of a system file with the tool that owns it, on the server:
+//   sshd → sshd -t -f   · sudoers → visudo -cf   · fstab → findmnt --verify --tab-file
+const TOOLS = {
+  sshd: { tool: 'sshd -t', cmd: (t) => `sudo -n sshd -t -f ${t} 2>&1 || sshd -t -f ${t} 2>&1`, missing: /sshd: (command )?not found/ },
+  sudoers: { tool: 'visudo -c', cmd: (t) => `sudo -n visudo -cf ${t} 2>&1 || visudo -cf ${t} 2>&1`, missing: /visudo: (command )?not found/ },
+  fstab: { tool: 'findmnt --verify', cmd: (t) => `out=$(findmnt --verify --tab-file ${t} 2>&1); echo "$out"; echo "$out" | grep -qE '^\\s*\\[E\\]' && exit 1; exit 0`, missing: /findmnt: (command )?not found/ },
+};
+async function checkFile(a, kind, content) {
+  const T = TOOLS[kind]; if (!T) throw Object.assign(new Error('Unknown check'), { statusCode: 400 });
+  if (isLocal(a)) return { ok: null, tool: T.tool, output: `${T.tool} runs on remote servers only` };
+  const tmp = `/tmp/.dg-check-${rand()}`;
+  const b64 = Buffer.from(String(content), 'utf8').toString('base64');
+  const r = await remoteExec.execRemote(a.s, `umask 077; printf %s ${shq(b64)} | base64 -d > ${tmp}; ( ${T.cmd(tmp)} ); rc=$?; rm -f ${tmp}; exit $rc`);
+  const out = String(r.stdout || r.stderr || '').split(tmp).join('(this file)').trim();
+  if (T.missing.test(out)) return { ok: null, tool: T.tool, output: `${T.tool.split(' ')[0]} is not available on this server` };
+  return { ok: r.code === 0, tool: T.tool, output: out || (r.code === 0 ? 'OK' : 'failed') };
+}
+
+module.exports = { places, tail, checkCompose, checkNginx, checkFile, COMMON, MAX_LINES };

@@ -669,3 +669,6 @@ function sourcesLifelinePlan({ id, backend, zone, cmds, test }) {
 Object.assign(module.exports, { sourcesCmds, sourcesLifelinePlan });
 module.exports.UFW_DISABLE = UFW_DISABLE;
 module.exports.READ_F2B_FILES = READ_F2B_FILES;
+
+// Lifeline helpers for other plan builders (server/sysconf.js: network changes).
+Object.assign(module.exports, { _armRollback: armRollback, _commitRollback: commitRollback, _rollbackNow: rollbackNow });

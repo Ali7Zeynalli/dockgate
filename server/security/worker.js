@@ -47,7 +47,7 @@ function connect(opts) {
 // key, or the new SSH port). Proves the server still accepts logins before the change is kept.
 async function testLogin(t) {
   const opts = workerConnectOpts({
-    host: cfg.host, port: t.port || cfg.port, username: t.username || cfg.username,
+    host: (t.host && require('net').isIP(t.host)) ? t.host : cfg.host, port: t.port || cfg.port, username: t.username || cfg.username,
     keyPath: t.keyPath || (t.password ? null : cfg.keyPath), password: t.password || (t.keyPath ? null : cfg.password),
     passphrase: t.keyPath ? null : cfg.passphrase, hostKey: cfg.hostKey,
   }, { readyTimeout: 15000 });

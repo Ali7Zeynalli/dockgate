@@ -76,6 +76,8 @@ window.FileEditor = (() => {
   function highlight(text, lang) { const r = RULES[lang]; return text.split('\n').map(l => hlLine(l, r)).join('\n'); }
   const isCompose = (name) => /^(docker-)?compose([.-][\w-]+)?\.ya?ml$/i.test(name);
   const isNginx = (path) => /^\/etc\/nginx\//.test(path);
+  // System files checked before saving, with the tool that owns them (on the server).
+  const sysKind = (path) => /^\/etc\/ssh\/sshd_config(\.d\/[^/]+\.conf)?$/.test(path) ? 'sshd' : /^\/etc\/sudoers(\.d\/[^/]+)?$/.test(path) ? 'sudoers' : path === '/etc/fstab' ? 'fstab' : null;
 
   async function open({ path, name, onSaved }) {
     let data, sudo = false;
@@ -109,7 +111,7 @@ window.FileEditor = (() => {
       </div>
       <div style="display:flex;align-items:center;gap:8px;padding:12px 20px">
         <span class="ui-sub" style="flex:1">Ctrl+S saves · Esc closes · the earlier content is kept under Versions</span>
-        ${isCompose(name) ? '<button class="btn btn-secondary" data-check title="docker compose config on what is in the editor">Check</button>' : ''}
+        ${isCompose(name) || sysKind(path) ? '<button class="btn btn-secondary" data-check title="Check what is in the editor with the tool that owns this file">Check</button>' : ''}
         <button class="btn btn-secondary" data-cancel>Close</button>
         <button class="btn btn-primary" data-save>Save…</button>
       </div></div>`;
@@ -175,6 +177,8 @@ window.FileEditor = (() => {
     const runChecks = async () => {
       if (/\.json$/i.test(name)) { try { JSON.parse(ta.value); return { ok: true, tool: 'JSON', output: '' }; } catch (e) { return { ok: false, tool: 'JSON', output: e.message }; } }
       if (isCompose(name)) { try { return await API.post('/files/check', { path, content: ta.value, kind: 'compose' }); } catch (e) { return { ok: null, tool: 'docker compose config', output: e.message }; } }
+      const sk = sysKind(path);
+      if (sk) { try { return await API.post('/files/check', { path, content: ta.value, kind: sk }); } catch (e) { return { ok: null, tool: sk, output: e.message }; } }
       return null;
     };
     const check = async () => {

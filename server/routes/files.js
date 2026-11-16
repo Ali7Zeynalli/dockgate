@@ -148,6 +148,7 @@ router.post('/check', async (req, res) => {
     const { path: p, content, kind } = req.body || {};
     if (kind === 'compose') return res.json(await fx.checkCompose(a, String(p || ''), content == null ? '' : String(content)));
     if (kind === 'nginx') return res.json(await fx.checkNginx(a));
+    if (['sshd', 'sudoers', 'fstab'].includes(kind)) return res.json(await fx.checkFile(a, kind, content == null ? '' : String(content)));
     res.status(400).json({ error: 'kind: compose or nginx' });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
