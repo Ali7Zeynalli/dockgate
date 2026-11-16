@@ -50,6 +50,14 @@ They then appear under `/host/…`. Remote servers need nothing: pick one in the
 | **📦 Extract** | Unpacks `.zip`, `.tar`, `.tar.gz`, `.tar.bz2` and `.tar.xz` in place |
 | **Two-pane transfer** | Your computer on one side, the server on the other: tick items and move them across |
 
+### Quick Files
+
+The **Files** button in the top bar (or **Ctrl+Shift+F**, or ⌘K → *Open quick files*) opens the same file browser in a window over any page — like the Terminal button. It works on the server picked in the top bar and switches with it.
+
+- **—** or **Esc** minimizes it: the folder stays, and a dot on the Files button shows it is still open. Click the button to bring it back.
+- **⤢** fills the screen; **Open page** goes to Tools → Files; **×** closes it.
+- It opens in the folder you were last in on that server.
+
 ### The editor
 
 | | |

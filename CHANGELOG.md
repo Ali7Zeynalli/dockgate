@@ -2,6 +2,16 @@
 
 ---
 
+## [2.57.0] - 2026-11-16
+
+### Added
+- **Quick Files.** A **Files** button in the top bar (or Ctrl+Shift+F, or ⌘K → *Open quick files*) opens the file browser in a window over any page, like the Terminal. Everything of Tools → Files works there: the editor, Versions, sudo, permissions, upload, Explorer. Esc or **—** minimizes it and keeps the folder; it follows the server picked in the top bar and opens in the last folder used on that server.
+
+### Changed
+- Tools → Files and Quick Files are one component (`file-browser.js`), so both always offer the same.
+
+---
+
 ## [2.56.0] - 2026-11-16
 
 ### Added
