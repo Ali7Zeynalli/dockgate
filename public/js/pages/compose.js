@@ -101,6 +101,7 @@ Router.register('compose', async (content) => {
                       { label: `${Icons.settings} Edit YAML`, attrs: `data-edit="${escapeHtml(p.name)}" ${dis}` },
                       { label: `${Icons.folder || Icons.compose} Files (Dockerfile, .env…)`, attrs: `data-files="${escapeHtml(p.name)}"` },
                       { label: `${Icons.terminal} Terminal in this folder`, attrs: `data-term="${escapeHtml(p.name)}" data-cwd="${escapeHtml(p.workingDir || '')}"` },
+                      p.workingDir ? { label: '📁 Open folder in Files', attrs: `data-openfolder="${escapeHtml(p.workingDir)}"` } : null,
                       '-',
                       { label: `${Icons.play} Up`, attrs: `data-action="up" data-project="${escapeHtml(p.name)}" ${dis}` },
                       { label: `${Icons.restart} Restart`, attrs: `data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}` },
@@ -215,6 +216,7 @@ Router.register('compose', async (content) => {
       document.getElementById('global-git-manage-btn')?.addEventListener('click', () => openGlobalGitManageModal(projects));
       document.getElementById('global-git-pull-custom')?.addEventListener('click', () => openCustomPathGitPullModal());
       content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
+      content.querySelectorAll('[data-openfolder]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); QuickFiles.open(btn.dataset.openfolder); }));
       content.querySelectorAll('[data-term]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectTerminal(btn.dataset.term, btn.dataset.cwd); }));
       content.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote, !!btn.dataset.adopted); }));
       content.querySelectorAll('[data-update]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openFolderDeploy({ update: btn.dataset.update, remotePath: btn.dataset.rpath, services: (btn.dataset.services || '').split(',').filter(Boolean) }); }));
@@ -438,7 +440,7 @@ Router.register('compose', async (content) => {
             const dm = showModal(`Compose: ${escapeHtml(data.name)}`, `
               ${gitSection}
               <div class="detail-grid mb-2">
-                <div class="detail-item"><div class="detail-label">Working Directory</div><div class="detail-value mono">${escapeHtml(data.workingDir)}</div></div>
+                <div class="detail-item"><div class="detail-label">Working Directory</div><div class="detail-value mono">${data.workingDir ? `<a href="#" data-dm-open="${escapeHtml(data.workingDir)}" title="Open in Quick Files">📁 ${escapeHtml(data.workingDir)}</a>` : '—'}</div></div>
                 <div class="detail-item"><div class="detail-label">Config Files</div><div class="detail-value mono">${escapeHtml(data.configFiles)}</div></div>
               </div>
               <div class="table-wrapper">
@@ -452,6 +454,7 @@ Router.register('compose', async (content) => {
                 </table>
               </div>
             `, [{ label: 'Close', className: 'btn btn-secondary' }]);
+            dm.overlay.querySelector('[data-dm-open]')?.addEventListener('click', (e) => { e.preventDefault(); dm.close(); QuickFiles.open(e.currentTarget.dataset.dmOpen); });
             dm.overlay.querySelector('#cd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
 
             dm.overlay.querySelector('#cd-pull')?.addEventListener('click', async (e) => {

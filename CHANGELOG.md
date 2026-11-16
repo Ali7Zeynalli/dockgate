@@ -2,6 +2,18 @@
 
 ---
 
+## [2.58.0] - 2026-11-16
+
+### Added
+- **Places** in Tools → Files and Quick Files: Home, `/`, the usual folders that exist on the server (`/srv`, `/opt`, `/etc`, `/etc/nginx`, `/var/log` …), the folders of this server's Compose projects, and your bookmarks (☆, per server).
+- **Open folder in Files** for Compose projects (⋯ menu and the project's Working Directory) — opens it in Quick Files.
+- **Follow a log (📜 Tail):** `*.log` and files in `/var/log` open in the log viewer and show new lines every 3 seconds; sudo when the SSH user may not read the log.
+- **Image preview (👁):** PNG, JPG, GIF, WebP, SVG, ICO … with the size in pixels. An SVG is shown as a picture; its scripts never run.
+- **Colours in the editor** for YAML, JSON, nginx, shell / Dockerfile and `.env` / ini files.
+- **Checks in the editor:** compose files run `docker compose config` on the unsaved content (**Check**, and before every Save); JSON is checked before Save; after a save under `/etc/nginx/`, `nginx -t` checks the configuration and offers to put the previous content back if nginx would not accept it.
+
+---
+
 ## [2.57.0] - 2026-11-16
 
 ### Added

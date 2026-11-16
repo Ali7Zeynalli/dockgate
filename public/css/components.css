@@ -1639,3 +1639,22 @@ tr.pv-open .pv-chev { transform: rotate(90deg); }
   .lv-actions { margin-left: 0; }
   .lv-detail { left: 8px; right: 8px; width: auto; }
 }
+
+/* File browser (Tools → Files, Quick Files): Places panel + main column */
+.fb-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 12px; align-items: start; }
+.fb-places { padding: 8px; display: flex; flex-direction: column; gap: 1px; position: sticky; top: 0; max-height: calc(100vh - 160px); overflow: auto; }
+.fb-places-h { font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text-muted); padding: 8px 8px 4px; }
+.fb-place { display: block; padding: 5px 8px; border-radius: 6px; font-size: 12.5px; color: var(--text-primary); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fb-place:hover { background: var(--bg-hover, var(--accent-dim)); }
+.fb-place.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
+.fb-bm { display: flex; align-items: center; }
+.fb-bm .fb-place { flex: 1; min-width: 0; }
+.fb-bm .btn { opacity: 0; }
+.fb-bm:hover .btn { opacity: 1; }
+@media (max-width: 900px) { .fb-layout { grid-template-columns: 1fr; } .fb-places { position: static; max-height: 180px; } }
+.fe-hl .hl-k { color: var(--accent); }
+.fe-hl .hl-s { color: #10b981; }
+.fe-hl .hl-n { color: #f59e0b; }
+.fe-hl .hl-b { color: #c084fc; }
+.fe-hl .hl-c { color: var(--text-muted); font-style: italic; }
+.fb-main .td-actions { flex-wrap: nowrap; }

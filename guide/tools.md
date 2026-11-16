@@ -44,11 +44,24 @@ They then appear under `/host/…`. Remote servers need nothing: pick one in the
 | **New folder** / **New file** | Create in the current folder |
 | **Upload** | Files or whole folders, with progress. Drop them on the page |
 | **Edit** | Text files open in an editor (see below) |
+| **👁 Preview** | Images (PNG, JPG, GIF, WebP, SVG, ICO…) open as a picture with their size in pixels |
+| **📜 Tail** | Logs (`*.log`, files in `/var/log`) open in the log viewer and follow new lines every 3 s: search, levels, Live / Pause, Download. A log the SSH user may not read is read with sudo |
 | **Permissions** | Click the `rw-r--r--` in a row: change the mode (ticks or a number like `644`) and the owner and group; for a folder, optionally everything inside too |
 | **Rename** / **Delete** | One item, or tick several and **Delete selected** |
 | **Download** | A file, or a folder as `.tar.gz` |
 | **📦 Extract** | Unpacks `.zip`, `.tar`, `.tar.gz`, `.tar.bz2` and `.tar.xz` in place |
 | **Two-pane transfer** | Your computer on one side, the server on the other: tick items and move them across |
+
+### Places
+
+The panel on the left jumps to:
+
+- **Home** of the SSH user and **/**; on *Local*, the shared folders;
+- folders that exist on this server: `/srv`, `/opt`, `/etc`, `/etc/nginx`, `/var/log`, `/var/www`, Docker volumes …;
+- **Compose projects** of this server (their folders);
+- your **Bookmarks** — ☆ bookmarks the folder you are in (kept in this browser, per server).
+
+Deploy → Compose stacks → ⋯ → **Open folder in Files** (or the project's *Working Directory*) opens that folder in Quick Files.
 
 ### Quick Files
 
@@ -66,6 +79,13 @@ The **Files** button in the top bar (or **Ctrl+Shift+F**, or ⌘K → *Open quic
 | **Esc** | Close — if something is not saved, DockGate asks first. A ● after the name means unsaved changes |
 | **Save…** | Shows the changed lines (green added, red removed) before anything is written |
 | **Versions** | The content the file had before each save from DockGate — the last 5 per file (up to 512 KB each). Pick one to compare it with the editor, then **Put it in the editor** and save. Kept encrypted in DockGate's database, not next to the file (a `default.conf.bak` in nginx's `conf.d/` would be loaded too) |
+
+**Colours:** YAML, JSON, nginx, shell / Dockerfile and `.env` / ini files are coloured (keys, strings, numbers, comments). Files over 300 KB are shown without colours.
+
+**Checks:**
+- **Compose files** (`docker-compose.yml`, `compose.yaml` …): **Check** — and every Save — runs `docker compose config` on what is in the editor, with the file's folder as the project folder. A mistake is shown before anything is written.
+- **JSON:** Save says when the content is not valid JSON.
+- **nginx** (files under `/etc/nginx/`): after Save, `nginx -t` checks the whole configuration. If nginx would not accept it, **Put the previous content back** restores the file (your edit stays under Versions). nginx keeps running with the old configuration until it is reloaded.
 
 A save is never half written: the new content goes to a temporary file next to it, which gets the file's mode and owner, then replaces the file in one step. If the owner can not be kept (the file belongs to another user), the file is written in place, so its owner stays.
 
@@ -101,6 +121,9 @@ The list shows each task's server, schedule, last run (with its result) and next
 | `Permission denied: … belongs to another user — open it with sudo` | The SSH user may not read or write this file | **Open with sudo** / **Save with sudo**, or tick **Use sudo** in Permissions |
 | `sudo asks this user for a password — DockGate needs passwordless sudo` | The SSH user has sudo only with a password | Connect with the deploy user (Server Console → Setup), or allow passwordless sudo for this user |
 | *Changed on the server* | The file changed after you opened it | **Load theirs** to see it, or **Save mine anyway** |
+| *✗ docker compose config* | The compose file has a mistake (the message says where) | Fix it, **Check** again |
+| *nginx -t failed* | nginx would not accept the configuration | Fix it, or **Put the previous content back** |
+| *nginx is not installed on this server* | nginx runs in a container, or not at all | Check it in its container |
 | `Mode: 3 or 4 octal digits, e.g. 644 or 0755` | Wrong mode in Permissions | e.g. `644` for files, `755` for folders |
 | `Owner and group: a user / group name or number` | Wrong owner or group | A user name like `www-data`, or a number like `33` |
 | `Session expired — sign in again` | You were signed out during a transfer | Sign in and start the transfer again |
