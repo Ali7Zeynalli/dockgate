@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.58.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.60.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.58.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.60.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
@@ -38,7 +38,7 @@
 - **Docker** — containers, images, volumes, networks and builds, with logs, a terminal and file editing inside containers.
 - **Compose** — create, edit and deploy projects locally or on a remote server, with deploy history and image updates. Replicas, auto-heal, Auto Scaling and updates without downtime — **without Swarm**, your compose files untouched.
 - **Docker Swarm** — set up a cluster and move Compose projects and containers to it and back, as well protected as before. Each service gets its own page; published ports are firewalled on every server at once.
-- **Servers** — provision, secure (SSH, users, firewall, fail2ban) and monitor any number of hosts over SSH.
+- **Servers** — provision, secure (SSH, users, firewall, fail2ban, cron jobs) and monitor any number of hosts over SSH.
 - **Alerts** — Telegram, email and webhook, plus an optional Edge agent that keeps alerting — and keeps replicas, healing and Auto Scaling running — when DockGate is offline.
 - **Light** — at most 256 MB RAM and 0.5 CPU; plain JavaScript, no build step, works offline.
 
@@ -166,8 +166,8 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 | **Compose** | Discover, create and edit projects; deploy a folder, adopt a project already on a server, or deploy from Git. On a remote server Compose runs on that server over SSH. Deploy history with changes and redeploy. |
 | **[Scaling & health](guide/compose-scaling.md)** (Compose, without Swarm) | **Replicas** with one click — DockGate writes its own override file, your compose files stay as they are; host ports and `container_name` fixed only after you see the fix; proxies reloaded. **Auto-heal** restarts a replica that stays unhealthy. **Keep running** brings a service back when it is stopped or removed (made again from its kept config). **Auto Scaling** — Off / Suggest / Auto (24 h simulation first), measured against your own limits, adds a replica only when the server has room, values suggested from the last 48 hours. **Roll out** — updates replica by replica without downtime, also for *newer image* updates. |
 | **App templates · Registries** | 500+ apps as a container, a Compose project or a Swarm stack; private registry logins used everywhere. |
-| **Observe · Tools** | Logs, Docker events, audit log, notifications sent; container and host terminal (`` Ctrl+` ``); SFTP file manager (also as **Quick Files** over any page, Ctrl+Shift+F) with two-pane transfers, a safe editor (colours, compose / nginx checks, diff before save, earlier versions, sudo for root-owned files, never half written), Places and bookmarks, log tail, image preview, and permissions / owner; scheduled prune, volume backup and Git sync. |
-| **Servers** | Hosts over SSH (password, key, key with passphrase); provisioning presets; deploy user; SSH access; users and keys; firewall (UFW / firewalld, IP lists, Docker port isolation); fail2ban; time sync; auto updates; host logs; pinned host keys. |
+| **Observe · Tools** | Logs, Docker events, **Uptime** (HTTP / SSL / TCP / DNS checks of your sites from DockGate and other servers: uptime %, response time, incidents, certificate days left, linked containers with their logs and Restart, alerts), audit log, notifications sent; container and host terminal (`` Ctrl+` ``); SFTP file manager (also as **Quick Files** over any page, Ctrl+Shift+F) with two-pane transfers, a safe editor (colours, compose / nginx checks, diff before save, earlier versions, sudo for root-owned files, never half written), Places and bookmarks, log tail, image preview, and permissions / owner; scheduled prune, volume backup and Git sync. |
+| **Servers** | Hosts over SSH (password, key, key with passphrase); provisioning presets; deploy user; SSH access; users and keys; firewall (UFW / firewalld, IP lists, Docker port isolation); fail2ban; **cron jobs** (crontabs, cron.d, systemd timers, edit with diff, run now, failed / did not run alerts); time sync; auto updates; host logs; pinned host keys. |
 
 ---
 

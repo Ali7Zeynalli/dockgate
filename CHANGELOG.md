@@ -2,6 +2,32 @@
 
 ---
 
+## [2.60.0] - 2026-11-16
+
+### Added
+- **Uptime, linked to Docker.** A check can be linked to a container, Compose project or Swarm service: *Site down* includes its state and last log lines, the check's page shows them with **Restart**, and the check waits while DockGate deploys, restarts or updates it (and 3 minutes after) — no false "down" for a planned restart.
+- **Uptime from other servers.** Tick servers DockGate manages and they run the same check over SSH (curl, nc, openssl, getent); with several places a check is down only when every place fails. Each place's last result is shown.
+- **Uptime: domains found in your proxies** (Traefik `Host()` rules, Caddy labels) are offered as checks; **Pause all / Resume all**; the Dashboard shows *Sites · 11/12 up* (red when one is down).
+- **Server Console → Cron.** The server's scheduled jobs in one table — the SSH user's and root's crontabs, `/etc/cron.d`, `/etc/crontab`, cron.daily…, systemd timers — with the schedule in words, next and last run, and the server's time next to yours.
+  - Add, edit, turn off (kept as a comment) and delete jobs in the SSH user's crontab, root's crontab (sudo) and `/etc/cron.d/dockgate`; the change is shown as a diff before it is written and the earlier crontab is kept. System and package files are shown, not rewritten.
+  - **Run now** shows a job's output and exit code; **Keep its output in a log** (follow it from the tab).
+  - New alerts **Cron job failed** (exit code, last lines) and **Cron job did not run** (no start within 30 minutes of its time), through a small wrapper DockGate installs (root's is root-owned).
+
+---
+
+## [2.59.0] - 2026-11-16
+
+### Added
+- **Observe → Uptime: are your sites answering?** A container can run while the site behind it is down; Uptime checks the address itself every 30 s – 1 h.
+  - **HTTP(S)** (status code, response time, a text the page must / must not contain, the certificate), **SSL only** (days left, name, issuer), **TCP port** (database, SMTP, Redis) and **DNS**.
+  - Down after N failures in a row (default 2), back up after one success; *slow above* a limit on 3 checks in a row. **Test now** before saving; pause for planned work (paused time does not count).
+  - The list: status, uptime 24 h / 30 d, response time, the last 24 hours as bars, certificate days left; a red count on **Uptime** in the sidebar.
+  - A check's page: uptime 24 h / 7 d / 30 d / 90 d, response time graph, incidents (when, how long, why), the certificate.
+  - New alerts in Settings → Notifications → *Sites (Uptime)*: site down (with the reason), back up (with how long), slow, certificate expires soon (30 · 14 · 7 · 1 days), certificate invalid.
+  - Results for 48 hours, then hourly for 90 days. Cloud metadata addresses are never checked.
+
+---
+
 ## [2.58.0] - 2026-11-16
 
 ### Added

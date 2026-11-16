@@ -25,6 +25,13 @@ function alertWhen(type, p) {
     case 'swarm_autoscale': return 'autoscale adds or removes a replica of a Swarm service (or can not)';
     case 'compose_heal': return 'auto-heal restarts an unhealthy Compose container, or stops trying after its hourly limit';
     case 'compose_autoscale': return 'Auto Scaling added or removed replicas of a Compose service, or needed more but the server was full';
+    case 'cron_failed': return 'a cron job with "Notify when it fails" ends with an exit code other than 0 (Server Console → Cron)';
+    case 'cron_missed': return 'a cron job with "Notify when it does not run" has not started 30 minutes after its time';
+    case 'site_down': return 'an Uptime check fails the number of times in a row set on the check (Observe → Uptime)';
+    case 'site_up': return 'a check that was down answers again — with how long it was down';
+    case 'site_slow': return 'a check answers slower than its "slow above" limit on several checks in a row';
+    case 'cert_expiring': return 'a certificate has 30, 14, 7 or 1 days left (once each)';
+    case 'cert_invalid': return 'a certificate has expired, is not for the name, or is not trusted';
     default: return 'when Docker reports it';
   }
 }
@@ -52,12 +59,15 @@ async function renderAlertRules(el) {
       `<div class="toggle ${r.enabled ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${!!r.enabled}" aria-label="${escapeHtml(r.description || r.event_type)}" data-rule-toggle="${escapeHtml(r.event_type)}"></div>`,
       UI.btn('Edit', `data-rule-edit="${escapeHtml(r.event_type)}"`),
     ] })), { minWidth: 680 });
-  const health = rules.filter(r => r.health), docker = rules.filter(r => !r.health);
+  const isSite = (r) => /^(site_|cert_)/.test(r.event_type), isCron = (r) => /^cron_/.test(r.event_type);
+  const health = rules.filter(r => r.health), sites = rules.filter(isSite), crons = rules.filter(isCron), docker = rules.filter(r => !r.health && !isSite(r) && !isCron(r));
   el.innerHTML = `${UI.header('Rules', 'Which events send an alert. They apply to every server; a server can use its own limits in its console → Monitoring. Switches save at once.')}
     <div class="ui-ph" style="margin-top:4px"><div class="ui-ph-text"><div class="ui-ph-title">Server</div><div class="ui-ph-desc">Checked once a minute for every server over its existing SSH login: does it answer, how full are the disks, memory and CPU.</div></div></div>
     ${table(health)}
     <div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Docker</div></div></div>
-    ${table(docker)}`;
+    ${table(docker)}
+    ${sites.length ? `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Sites (Uptime)</div><div class="ui-ph-desc">From the checks of Observe → Uptime: when a site stops answering, comes back, gets slow, or its certificate is about to expire.</div></div></div>${table(sites)}` : ''}
+    ${crons.length ? `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Cron jobs</div><div class="ui-ph-desc">For the jobs of Server Console → Cron that ask for it: failed, or did not run.</div></div></div>${table(crons)}` : ''}`;
 
   const save = async (type, body, msg) => {
     await API.put(`/meta/notifications/rules/${encodeURIComponent(type)}`, body);
