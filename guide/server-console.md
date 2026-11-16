@@ -135,7 +135,7 @@ Build a shell script from **blocks** — DockGate writes the script, safely quot
 - Each step says what happens **if it fails**: *stop* (default) or *go on*. A step stops at its first failing command.
 - A step can **run only if an earlier step failed** — a fix: *check the site → (only if it failed) restart the container → wait until healthy → check again*. When the fix works the run ends as *fixed*; when the last check still fails, the run fails and Cron's alert says so.
 - The script it writes is shown next to the steps while you edit.
-- **Templates** (18, by category) ask a few questions first — containers, volumes and project folders of the server are offered — then open with the answers filled in:
+- **Templates** (18, by category — always shown below your scripts, and under **+ New script**) ask a few questions first — containers, volumes and project folders of the server are offered — then open with the answers filled in:
   - *Updates and upkeep:* daily security updates with a night reboot when needed · weekly full update (system, Docker images, reboot when needed) · update a Compose project's images and check the site · monthly cleanup (Docker, journal, old logs) · weekly Docker cleanup.
   - *Backups:* PostgreSQL (keep 7 days, copy off the server) · MySQL / MariaDB · volume · `/etc` and the projects folder · weekly database maintenance.
   - *Health and self-repair:* restart a container when its site does not answer · start a system service again when it stopped · free disk space when the disk gets full · show the busiest containers when memory runs low · renew a certificate that expires soon.

@@ -20,11 +20,12 @@ async function renderScriptsPanel(serverId, container) {
         s.path ? `<span class="td-mono" style="font-size:12px">${esc(s.path)}</span>` : '<span class="ui-sub">not written</span>',
         s.lastRunAt ? `${s.lastCode === 0 ? '<span style="color:var(--success)">✓</span>' : `<span style="color:var(--danger);font-weight:600">✗ exit ${s.lastCode}</span>`} <span class="ui-sub">${when(s.lastRunAt)}</span>` : '<span class="ui-sub">—</span>',
         `${UI.btn('Run', `data-run="${s.id}"`)} ${UI.btn('Schedule…', `data-sched="${s.id}"`)} ${UI.btn('Edit', `data-edit="${s.id}"`)} ${UI.menu([{ label: 'Open the file', attrs: `data-file="${s.id}"` }, '-', { label: `${Icons.trash} Delete…`, attrs: `data-del="${s.id}"`, danger: true }])}`,
-      ] })), { minWidth: 900 })
-      : `<div class="card" style="padding:22px">
-          <div style="font-weight:700;margin-bottom:6px">Start from a template</div>
-          ${templateCards()}
-        </div>`}
+      ] })), { minWidth: 900 }) : ''}
+    <div class="card" style="padding:22px;margin-top:${d.scripts.length ? '16px' : '0'}">
+      <div style="font-weight:700;margin-bottom:2px">Templates (${d.templates.length})</div>
+      <div class="ui-sub">Pick one — DockGate asks only what it needs (which container, which site…), then opens it in the editor.</div>
+      ${templateCards()}
+    </div>
     <div class="ui-sub" style="margin-top:10px">Scripts are written root-owned to <span class="td-mono">/opt/dockgate/scripts</span> when the SSH user has passwordless sudo (else to <span class="td-mono">~/.dockgate/scripts</span>). Edit them here — a change made to the file on the server is replaced on the next save.</div>`;
 
   const byId = (id) => d.scripts.find(s => String(s.id) === String(id));

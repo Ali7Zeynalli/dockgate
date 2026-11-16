@@ -2,6 +2,13 @@
 
 ---
 
+## [2.62.1] - 2026-11-16
+
+### Fixed
+- **Script templates were hidden once a server had a script.** Server Console → Scripts showed the template library only while the list was empty; after that it was reachable only through **+ New script**. The **Templates** section now always shows below the scripts.
+
+---
+
 ## [2.62.0] - 2026-11-16
 
 ### Added
