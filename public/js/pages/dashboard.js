@@ -30,13 +30,25 @@ Router.register('dashboard', async (content) => {
     return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:18px">${cards}</div>`;
   }
 
+  // Observe → Uptime at a glance: "Sites · 11/12 up" (red when one is down).
+  function uptimeButton(list) {
+    if (!Array.isArray(list) || !list.length) return '';
+    const on = list.filter(c => c.enabled);
+    const down = on.filter(c => c.state && c.state.status === 'down');
+    const up = on.filter(c => c.state && c.state.status === 'up').length;
+    const tone = down.length ? 'color:var(--danger);border-color:var(--danger)' : '';
+    const text = down.length ? `Sites · ${down.length} down (${escapeHtml(down[0].name)}${down.length > 1 ? '…' : ''})` : `Sites · ${up}/${on.length} up`;
+    return `<button class="btn btn-secondary btn-sm" onclick="Router.navigate('observe', {tab:'uptime'})" title="Open Observe → Uptime" style="${tone}">● ${text}</button>`;
+  }
+
   async function render() {
     try {
-      const [data, srvData, fleetOv, swarmSum] = await Promise.all([
+      const [data, srvData, fleetOv, swarmSum, uptime] = await Promise.all([
         API.get('/dashboard'),
         API.get('/servers').catch(() => ({ servers: [], activeId: 'local' })),
         API.get('/servers/overview').catch(() => ({ servers: {} })),
         API.get('/swarm/summary').catch(() => null),
+        API.get('/uptime').catch(() => []),
       ]);
 
       // Abort if user navigated away during API call / API çağırışı zamanı istifadəçi başqa səhifəyə keçibsə dayandır
@@ -61,6 +73,7 @@ Router.register('dashboard', async (content) => {
               const text = swarmSum.quorumLost ? 'Swarm · no leader' : `Swarm · ${swarmSum.running}/${swarmSum.desired} tasks${swarmSum.nodes > 1 ? ` · ${swarmSum.ready}/${swarmSum.nodes} servers` : ''}`;
               return `<button class="btn btn-secondary btn-sm" onclick="Router.navigate('swarm', {tab:'swarm-overview'})" title="Open Swarm" style="${bad ? 'color:var(--warning,#d97706);border-color:var(--warning,#d97706)' : ''}">${Icons.layers} ${text}</button>`;
             })() : ''}
+           ${uptimeButton(uptime)}
            <button class="btn btn-secondary btn-sm" onclick="Router.navigate('resources', {tab:'prune'})">${Icons.cleanup} Prune…</button>
            <button class="btn btn-secondary btn-sm" id="dash-refresh" title="Refresh">${Icons.refresh}</button>`)}
 

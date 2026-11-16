@@ -4,6 +4,7 @@
 // Results: every check for 48 hours, then one row per hour for 90 days (so 7 / 30 / 90 day figures stay cheap).
 const { db } = require('./db');
 const P = require('./uptime-probe');
+const L = require('./uptime-link');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS uptime_checks (
@@ -52,14 +53,17 @@ const row = (r) => !r ? null : ({ id: r.id, name: r.name, type: r.type, target: 
 
 function list() { return q.all.all().map(row); }
 function get(id) { return row(q.get.get(Number(id))); }
+// The link (container / Compose project / Swarm service) is kept in config.link.
+function withLink(v, input) { v.config.link = L.normalizeLink(input.config && input.config.link !== undefined ? input.config.link : input.link); if (!v.config.link) delete v.config.link; return v; }
 function create(input) {
-  const v = P.normalize(input);
+  const v = withLink(P.normalize(input), input);
   const id = q.insert.run({ ...v, config: JSON.stringify(v.config), now: Date.now() }).lastInsertRowid;
   return get(id);
 }
 function update(id, input) {
   const cur = get(id); if (!cur) throw Object.assign(new Error('Check not found'), { statusCode: 404 });
-  const v = P.normalize({ ...cur, ...input, config: { ...cur.config, ...(input.config || {}) } });
+  const merged = { ...cur, ...input, config: { ...cur.config, ...(input.config || {}) } };
+  const v = withLink(P.normalize(merged), merged);
   q.update.run({ ...v, id: cur.id, config: JSON.stringify(v.config) });
   return get(id);
 }
@@ -82,10 +86,17 @@ function setPaused(id, paused, minutes) {
 // ---- alerts ----
 const fmtDur = (ms) => { const m = Math.max(1, Math.round(ms / 60000)); return m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 1440)} d ${Math.floor((m % 1440) / 60)} h`; };
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function ctxText(x) {
+  if (!x) return ['', ''];
+  if (x.error) return [`\nLinked ${x.kind} ${x.name}: ${x.error}`, `<p>Linked ${esc(x.kind)} <b>${esc(x.name)}</b>: ${esc(x.error)}</p>`];
+  const bad = (x.items || []).filter(i => i.state !== 'running' || /unhealthy|restarting/i.test(i.detail || '')).slice(0, 3);
+  const t = `\nLinked ${x.kind === 'compose' ? 'Compose' : x.kind === 'swarm' ? 'Swarm service' : 'container'} ${x.name}: ${x.summary}${bad.length ? ' — ' + bad.map(i => `${i.name} ${i.state}${i.detail ? ' (' + i.detail + ')' : ''}`).join(', ') : ''}${x.logs ? `\nLast lines${x.from ? ' of ' + x.from : ''}:\n${x.logs.split('\n').slice(-4).join('\n')}` : ''}`;
+  return [t, `<p>${esc(t.trim()).replace(/\n/g, '<br>')}</p>`];
+}
 function message(type, c, d) {
   const t = c.target;
   switch (type) {
-    case 'site_down': return [`Site down — ${c.name}`, `🔴 Site down — ${c.name}\n${d.error || 'failed'} (${d.fails} checks in a row)\n${t}`, `<p><b>${esc(c.name)}</b> is down: ${esc(d.error || 'failed')} (${d.fails} checks in a row).</p><p>${esc(t)}</p>`];
+    case 'site_down': { const [ct, ch] = ctxText(d.context); return [`Site down — ${c.name}`, `🔴 Site down — ${c.name}\n${d.error || 'failed'} (${d.fails} checks in a row)\n${t}${ct}`, `<p><b>${esc(c.name)}</b> is down: ${esc(d.error || 'failed')} (${d.fails} checks in a row).</p><p>${esc(t)}</p>${ch}`]; }
     case 'site_up': return [`Back up — ${c.name}`, `🟢 Back up — ${c.name}\nDown for ${fmtDur(d.until - d.since)}. Now ${d.status ? d.status + ' in ' : ''}${d.ms} ms.`, `<p><b>${esc(c.name)}</b> is back up after ${fmtDur(d.until - d.since)}.</p>`];
     case 'site_slow': return [`Slow — ${c.name}`, `🟠 Slow — ${c.name}\n${d.ms} ms on ${d.count} checks in a row (limit ${d.limit} ms)`, `<p><b>${esc(c.name)}</b> answers slowly: ${d.ms} ms on ${d.count} checks in a row (limit ${d.limit} ms).</p>`];
     case 'cert_expiring': { const x = d.cert; const day = new Date(x.validTo).toISOString().slice(0, 10); return [`Certificate expires in ${x.daysLeft} days — ${c.name}`, `🟡 Certificate expires in ${x.daysLeft} days — ${c.name}\n${x.issuer || 'certificate'} · until ${day}. Check that auto-renewal (certbot / Traefik / Caddy) works.`, `<p>The certificate of <b>${esc(c.name)}</b> expires in <b>${x.daysLeft} days</b> (${day}, ${esc(x.issuer)}).</p>`]; }
@@ -100,11 +111,21 @@ async function alert(type, c, d) {
 }
 
 // ---- running checks ----
-async function runOne(c, { record = true } = {}) {
+async function runOne(c, { record = true, force = false } = {}) {
+  const link = c.config && c.config.link;
+  // DockGate is deploying / restarting what this check is linked to: wait, so a planned restart is no incident.
+  if (record && !force && link && L.busy(link)) {
+    q.setState.run(JSON.stringify({ ...(c.state || {}), deploying: Date.now(), lastAt: Date.now() }), c.id);
+    return { skipped: true, reason: 'deploying' };
+  }
   const r = await P.probe(c);
   const now = Date.now();
   if (!record) return r;
   const { state, alerts } = P.evaluate(c.state && c.state.status !== 'paused' ? c.state : {}, r, c, now);
+  delete state.deploying;
+  const down = alerts.find(a => a.type === 'site_down');
+  if (down && link) { down.data.context = await Promise.race([L.context(link), new Promise(res => setTimeout(() => res({ kind: link.kind, name: link.name, error: 'no answer from Docker in 10 s' }), 10000))]); state.context = down.data.context; }
+  if (r.ok) delete state.context;
   q.addResult.run(c.id, now, r.ok ? 1 : 0, r.ms || 0, r.status || null, r.ok ? null : String(r.error || '').slice(0, 300));
   q.addHour.run(c.id, Math.floor(now / HOUR) * HOUR, r.ok ? 1 : 0, r.ms || 0, r.ms || 0);
   for (const a of alerts) {
@@ -175,4 +196,4 @@ function detail(id, range = DAY) {
   return { ...c, periods: { d1: stats(c.id, DAY, now), d7: stats(c.id, 7 * DAY, now), d30: stats(c.id, 30 * DAY, now), d90: stats(c.id, 90 * DAY, now) }, series: series(c.id, range, now), incidents: q.incidents.all(c.id, 50) };
 }
 
-module.exports = { list, get, create, update, remove, setPaused, runOne, tick, start, stop, stats, series, bar24, summary, detail, message, RAW_KEEP, HOUR, DAY };
+module.exports = { L, list, get, create, update, remove, setPaused, runOne, tick, start, stop, stats, series, bar24, summary, detail, message, RAW_KEEP, HOUR, DAY };

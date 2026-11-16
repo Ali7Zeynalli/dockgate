@@ -151,3 +151,68 @@ test('alert texts', () => {
   assert.match(U.message('cert_expiring', c, { cert: { validTo: Date.parse('2026-12-01'), daysLeft: 9, issuer: "Let's Encrypt R11" } })[0], /9 days/);
   assert.match(U.message('cert_invalid', c, { cert: { daysLeft: -1, nameOk: true } })[1], /expired/);
 });
+
+test('link to Docker: state and last log lines in the down alert, restart, waiting while DockGate deploys', async () => {
+  const U = require('../../server/uptime');
+  const L = require('../../server/uptime-link');
+  const { stmts } = require('../../server/db');
+  const restarted = [];
+  const logBuf = (txt) => { const b = Buffer.from(txt); const h = Buffer.alloc(8); h[0] = 2; h.writeUInt32BE(b.length, 4); return Buffer.concat([h, b]); };
+  L._setClient(() => ({
+    listContainers: async (o) => { const f = JSON.parse(o.filters); assert.deepEqual(f.label, ['com.docker.compose.project=shop']); return [
+      { Id: 'a1', Names: ['/shop-web-1'], State: 'restarting', Status: 'Restarting (1) 5 seconds ago' },
+      { Id: 'b2', Names: ['/shop-db-1'], State: 'running', Status: 'Up 2 hours' }]; },
+    getContainer: (id) => ({ logs: async () => logBuf('boot\nError: connect ECONNREFUSED 172.18.0.4:5432\n'), restart: async () => restarted.push(id) }),
+  }));
+  assert.throws(() => L.normalizeLink({ kind: 'compose', name: 'bad name;rm' }), /Linked to/);
+  assert.equal(L.normalizeLink(null), null);
+  const sent = [];
+  const hm = require('../../server/notifications/health-monitor');
+  const orig = hm.deliver;
+  hm.deliver = async (type, s, subject, text) => { sent.push({ type, text }); return true; };
+  const srv = http.createServer((req, res) => { res.statusCode = 502; res.end(); });
+  const port = await listen(srv);
+  try {
+    const c = U.create({ type: 'http', name: 'shop', target: `http://127.0.0.1:${port}/`, interval: 30, fails: 1, link: { server: 'local', kind: 'compose', name: 'shop' }, config: { timeout: 3 } });
+    assert.deepEqual(c.config.link, { server: 'local', kind: 'compose', name: 'shop' });
+    const r = await U.runOne(U.get(c.id));
+    assert.equal(r.state.status, 'down');
+    assert.match(r.state.context.summary, /1\/2 running/);
+    await new Promise(x => setTimeout(x, 20));
+    assert.equal(sent[0].type, 'site_down');
+    assert.match(sent[0].text, /Linked Compose shop: 1\/2 running — shop-web-1 restarting/);
+    assert.match(sent[0].text, /ECONNREFUSED/);
+    const rs = await L.restart(c.config.link);
+    assert.deepEqual(rs.restarted, ['shop-web-1', 'shop-db-1']); assert.deepEqual(restarted, ['a1', 'b2']);
+    // a deploy from DockGate a moment ago: the check waits
+    stmts.logActivityFull.run('', 'compose', 'shop', 'redeploy', '', 'local', null);
+    assert.equal(L.busy(c.config.link), true);
+    const w = await U.runOne(U.get(c.id));
+    assert.equal(w.skipped, true);
+    assert.ok(U.get(c.id).state.deploying);
+    // automatic keep-running restarts do not count as a deploy
+    const c2 = U.create({ type: 'tcp', name: 'x', target: '127.0.0.1:1', link: { server: 'local', kind: 'container', name: 'other' } });
+    stmts.logActivityFull.run('', 'compose', 'other', 'compose_keep_keep', '', 'local', null);
+    assert.equal(L.busy(c2.config.link), false);
+    // Check now is not held back
+    assert.equal((await U.runOne(U.get(c.id), { force: true })).skipped, undefined);
+    // unlink
+    const e = U.update(c.id, { link: null, config: { link: null } });
+    assert.equal(e.config.link, undefined);
+  } finally { srv.close(); hm.deliver = orig; L._setClient(null); }
+});
+
+test('proxy suggestions: Traefik Host() and caddy labels, without checks that exist', async () => {
+  const L = require('../../server/uptime-link');
+  L._setClient(() => ({ listContainers: async () => [
+    { Names: ['/blog-web-1'], Labels: { 'com.docker.compose.project': 'blog', 'traefik.http.routers.blog.rule': 'Host(`blog.example.com`) || Host(`www.blog.example.com`)' } },
+    { Names: ['/grafana'], Labels: { caddy: 'grafana.example.com' } },
+    { Names: ['/api'], Labels: { 'traefik.http.routers.api.rule': 'Host(`api.example.com`)' } },
+  ] }));
+  try {
+    const s = await L.suggestions([{ target: 'https://api.example.com/health' }], 'local');
+    assert.deepEqual(s.map(x => x.host).sort(), ['blog.example.com', 'grafana.example.com', 'www.blog.example.com']);
+    assert.deepEqual(s.find(x => x.host === 'blog.example.com').link, { server: 'local', kind: 'compose', name: 'blog' });
+    assert.equal(s.find(x => x.host === 'grafana.example.com').via, 'Caddy label');
+  } finally { L._setClient(null); }
+});

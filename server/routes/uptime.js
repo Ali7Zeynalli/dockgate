@@ -11,10 +11,36 @@ const fail = (res, e) => res.status(e.statusCode || (/^[A-Z][a-z]/.test(e.messag
 router.get('/', (req, res) => {
   try { const now = Date.now(); res.json(U.list().map(c => U.summary(c, now))); } catch (e) { fail(res, e); }
 });
+// Pause or resume every check (planned work on the whole site). body { paused, minutes? }
+router.post('/pause-all', (req, res) => {
+  const { paused, minutes } = req.body || {};
+  const list = U.list().filter(c => (paused ? c.enabled : !c.enabled));
+  for (const c of list) U.setPaused(c.id, !!paused, minutes);
+  logAction({ req, resourceType: 'uptime', resourceName: 'all checks', action: paused ? 'uptime_pause_all' : 'uptime_resume_all', details: { count: list.length, minutes: minutes || null } });
+  res.json({ success: true, count: list.length });
+});
+router.get('/suggest/proxies', async (req, res) => {
+  try { res.json(await U.L.suggestions(U.list(), require('../docker').getActiveServerId())); } catch (e) { res.json([]); }
+});
 router.get('/:id', (req, res) => {
   const d = U.detail(req.params.id, RANGES[req.query.range] || U.DAY);
   if (!d) return res.status(404).json({ error: 'Check not found' });
   res.json(d);
+});
+// What the check is linked to, now (containers, state, last log lines), and restarting it.
+router.get('/:id/context', async (req, res) => {
+  const c = U.get(req.params.id); if (!c) return res.status(404).json({ error: 'Check not found' });
+  if (!c.config.link) return res.json(null);
+  res.json(await U.L.context(c.config.link, { lines: 40 }));
+});
+router.post('/:id/restart', async (req, res) => {
+  const c = U.get(req.params.id); if (!c) return res.status(404).json({ error: 'Check not found' });
+  if (!c.config.link) return res.status(400).json({ error: 'This check is not linked to a container' });
+  try {
+    const r = await U.L.restart(c.config.link);
+    logAction({ req, server: c.config.link.server, resourceType: c.config.link.kind === 'swarm' ? 'service' : c.config.link.kind, resourceName: c.config.link.name, action: 'uptime_restart', details: { check: c.name, restarted: r.restarted } });
+    res.json(r);
+  } catch (e) { fail(res, e); }
 });
 // Try settings without saving them.
 router.post('/test', async (req, res) => {
@@ -40,7 +66,7 @@ router.delete('/:id', (req, res) => {
 });
 router.post('/:id/check', async (req, res) => {
   const c = U.get(req.params.id); if (!c) return res.status(404).json({ error: 'Check not found' });
-  try { res.json(await U.runOne(c, { record: c.enabled })); } catch (e) { fail(res, e); }
+  try { res.json(await U.runOne(c, { record: c.enabled, force: true })); } catch (e) { fail(res, e); }
 });
 // body { paused: true|false, minutes? }
 router.post('/:id/pause', (req, res) => {

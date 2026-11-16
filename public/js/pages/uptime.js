@@ -37,6 +37,26 @@ const UptimePage = (() => {
     return `SSL ${c.target}`;
   };
 
+  // ---- link to Docker ----
+  const linkLabel = (l) => `${l.kind === 'compose' ? 'Compose' : l.kind === 'swarm' ? 'Swarm service' : 'Container'}: ${l.name}${l.server && l.server !== 'local' ? ` (${l.server})` : ''}`;
+  async function fillLinks(sel, current) {
+    const server = (Store.get('activeServer') || {}).id || 'local';
+    const add = (label, items) => { if (!items.length) return; const g = document.createElement('optgroup'); g.label = label; items.forEach(([l, txt]) => { const o = document.createElement('option'); o.value = JSON.stringify(l); o.textContent = txt; if (current && current.kind === l.kind && current.name === l.name && current.server === l.server) o.selected = true; g.appendChild(o); }); sel.appendChild(g); };
+    if (current) [...sel.options].forEach(o => { if (o.value && o.value !== '' && o.selected) o.remove(); });
+    const [projects, containers, services] = await Promise.all([API.get('/compose').catch(() => []), API.get('/containers').catch(() => []), API.get('/swarm/services').then(r => r.services || []).catch(() => [])]);
+    add('Compose projects', (projects || []).filter(p => p.name && !p.onSwarm).map(p => [{ server, kind: 'compose', name: p.name }, p.name]));
+    add('Swarm services', (services || []).map(x => [{ server, kind: 'swarm', name: x.name || x.Spec?.Name }, x.name || x.Spec?.Name]).filter(x => x[1]));
+    add('Containers', (containers || []).filter(c => !c.composeProject).map(c => [{ server, kind: 'container', name: c.name }, c.name]));
+    if (current && ![...sel.options].some(o => o.selected && o.value)) { const o = document.createElement('option'); o.value = JSON.stringify(current); o.textContent = linkLabel(current) + ' (not on this server)'; o.selected = true; sel.appendChild(o); }
+  }
+  function contextHtml(x, c) {
+    if (!x) return '';
+    if (x.error) return `<div class="ui-sub text-danger">${esc(x.error)}</div>`;
+    return `<div class="text-sm" style="margin-bottom:6px">${esc(x.summary || '')}</div>
+      ${(x.items || []).slice(0, 8).map(i => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px"><span class="td-mono">${esc(i.name)}</span><span style="color:${i.state === 'running' && !/unhealthy|restarting/i.test(i.detail || '') ? 'var(--success)' : 'var(--danger)'}">${esc(i.state)}${i.detail ? ` · ${esc(i.detail)}` : ''}</span></div>`).join('')}
+      ${x.logs ? `<div class="ui-sub" style="margin-top:8px">Last lines${x.from ? ` of <span class="td-mono">${esc(x.from)}</span>` : ''}</div><pre class="td-mono" style="margin:4px 0 0;padding:8px;border-radius:8px;background:var(--bg-primary);border:1px solid var(--border);font-size:11.5px;white-space:pre-wrap;max-height:220px;overflow:auto">${esc(x.logs)}</pre>` : ''}`;
+  }
+
   // ---- list ----
   async function renderList(content) {
     let list = [];
@@ -50,7 +70,7 @@ const UptimePage = (() => {
     const downList = list.filter(c => statusOf(c).key === 'down');
     content.innerHTML = `
       ${UI.header('Uptime', 'Are your sites answering? DockGate checks them from outside the container: status code, response time, the SSL certificate. Alerts go to the channels of Settings → Notifications.',
-        `${UI.btn('Alert rules', 'id="ut-rules"')} ${UI.primary('+ New check', 'id="ut-new"')}`)}
+        `${UI.btn('Alert rules', 'id="ut-rules"')} ${list.length ? (list.some(c => c.enabled) ? UI.btn('Pause all…', 'id="ut-pauseall"') : UI.btn('Resume all', 'id="ut-resumeall"')) : ''} ${UI.primary('+ New check', 'id="ut-new"')}`)}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px">
         <div class="card" style="padding:14px 16px"><div class="ui-sub">Checks</div><div style="font-size:24px;font-weight:700">${list.length}</div></div>
         <div class="card" style="padding:14px 16px"><div class="ui-sub">Up</div><div style="font-size:24px;font-weight:700;color:var(--success)">${up}</div></div>
@@ -79,9 +99,28 @@ const UptimePage = (() => {
         }), { empty: 'Nothing matches this filter.', minWidth: 900 })
         : `<div class="card" style="padding:28px;text-align:center;display:grid;gap:10px;justify-items:center"><div style="font-weight:700;font-size:16px">No checks yet</div><div class="text-sm text-muted" style="max-width:560px">Add the address of a site, an API, a database port or a certificate. DockGate checks it every minute and tells you when it stops answering, gets slow, or its certificate is about to expire.</div>${UI.primary('+ New check', 'data-new2')}</div>`}`;
     const reload = () => renderList(content);
+    // Domains found in proxy labels of the active server, without a check yet.
+    API.get('/uptime/suggest/proxies').then(sug => {
+      if (!sug.length || !document.body.contains(content) || st.get('hideSug', '') === sug.map(x => x.host).join(',')) return;
+      const box = document.createElement('div');
+      box.className = 'insight-card info'; box.style.marginTop = '14px';
+      box.innerHTML = `<div style="flex:1"><b>Found in your proxies — add a check?</b><div class="text-sm" style="margin:4px 0 8px">${sug.slice(0, 6).map(x => `<span class="td-mono">${esc(x.host)}</span> <span class="ui-sub">(${esc(x.via)} of ${esc(x.container)})</span>`).join(' · ')}</div>
+        <div style="display:flex;gap:8px">${UI.btn(sug.length > 1 ? `Add ${Math.min(sug.length, 6)} checks` : 'Add check', 'data-sug-add', 'btn-primary')} ${UI.btn('Not now', 'data-sug-hide')}</div></div>`;
+      content.appendChild(box);
+      box.querySelector('[data-sug-hide]').onclick = () => { st.set('hideSug', sug.map(x => x.host).join(',')); box.remove(); };
+      box.querySelector('[data-sug-add]').onclick = async () => {
+        for (const x of sug.slice(0, 6)) { try { await API.post('/uptime', { type: 'http', name: x.host, target: `https://${x.host}/`, interval: 60, fails: 2, link: x.link, config: { certAlerts: true } }); } catch (e) { showToast(`${x.host}: ${e.message}`, 'error'); } }
+        showToast('Checks added'); setTimeout(reload, 2500);
+      };
+    }).catch(() => {});
     content.querySelector('#ut-new')?.addEventListener('click', () => openForm(null, reload));
     content.querySelector('[data-new2]')?.addEventListener('click', () => openForm(null, reload));
     content.querySelector('#ut-rules')?.addEventListener('click', () => Router.navigate('settings', { tab: 'notifications' }));
+    content.querySelector('#ut-resumeall')?.addEventListener('click', async () => { try { const r = await API.post('/uptime/pause-all', { paused: false }); showToast(`${r.count} resumed`); reload(); } catch (e) { showToast(e.message, 'error'); } });
+    content.querySelector('#ut-pauseall')?.addEventListener('click', () => UI.dialog({ title: 'Pause all checks', saveLabel: 'Pause all', context: false,
+      body: `<div class="text-sm" style="margin-bottom:10px">No checks and no alerts while paused — for planned work on everything. Paused time does not count against uptime.</div>
+        <label class="ui-field"><span class="ui-label">For</span><select class="input" id="ut-pamin"><option value="30">30 minutes</option><option value="60" selected>1 hour</option><option value="240">4 hours</option><option value="1440">1 day</option><option value="0">Until I resume them</option></select></label>`,
+      onSave: async (ov) => { const r = await API.post('/uptime/pause-all', { paused: true, minutes: Number(ov.querySelector('#ut-pamin').value) || null }); showToast(`${r.count} paused`); reload(); } }));
     content.querySelectorAll('[data-chip]').forEach(b => b.addEventListener('click', () => { st.set('filter', b.dataset.chip); reload(); }));
     content.querySelectorAll('[data-open]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); Router.navigate('observe', { tab: 'uptime', id: a.dataset.open }); }));
     content.querySelectorAll('[data-run]').forEach(b => b.addEventListener('click', async () => {
@@ -124,6 +163,7 @@ const UptimePage = (() => {
       <div class="ui-sub" style="margin-bottom:8px"><a href="#" data-back>Observe / Uptime</a> / <b>${esc(c.name)}</b></div>
       ${UI.header(`${esc(c.name)} ${statusOf(c).pill}`, `<span class="td-mono">${esc(targetLine(c))}</span> · every ${c.interval >= 60 ? c.interval / 60 + ' min' : c.interval + ' s'} · down after ${c.fails} failure${c.fails > 1 ? 's' : ''} in a row`,
         `${UI.btn('Check now', `data-run="${c.id}"`)} ${c.enabled ? UI.btn('Pause…', `data-pause="${c.id}"`) : UI.btn('Resume', `data-resume="${c.id}"`)} ${UI.btn('Edit…', `data-edit="${c.id}"`)} ${UI.menu([{ label: `${Icons.trash} Delete…`, attrs: `data-del="${c.id}"`, danger: true }])}`)}
+      ${s.deploying && Date.now() - s.deploying < 5 * 60000 ? `<div class="insight-card info" style="margin-bottom:14px"><div>Waiting — DockGate is deploying or restarting <b>${esc(c.config.link ? c.config.link.name : '')}</b>; checks start again 3 minutes after.</div></div>` : ''}
       ${down ? `<div class="insight-card danger" style="margin-bottom:14px"><div><b>Down since ${when(s.since)} (${dur(Date.now() - s.since)})</b><div class="text-sm" style="margin-top:4px">${esc(s.lastError || '')}</div></div></div>` : ''}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px">
         ${tiles.map(([l, p]) => `<div class="card" style="padding:14px 16px"><div class="ui-sub">Uptime ${l}</div><div style="font-size:22px;font-weight:700">${pctTxt(p.uptime)}</div><div class="ui-sub">${p.avgMs != null ? `avg ${p.avgMs} ms · ` : ''}${p.n} checks</div></div>`).join('')}
@@ -151,6 +191,11 @@ const UptimePage = (() => {
             <div style="display:flex;justify-content:space-between;gap:8px"><span class="ui-sub">Trusted</span><span style="color:${x.authorized ? 'var(--success)' : 'var(--warning)'}">${x.authorized ? 'yes' : esc(x.error || 'no')}</span></div>
             ${c.config.certAlerts ? '<span class="ui-sub">Alerts at 30 · 14 · 7 · 1 days left</span>' : '<span class="ui-sub">Certificate alerts are off for this check</span>'}
           </div>` : ''}
+          ${c.config.link ? `<div class="card" style="padding:14px 16px;display:grid;gap:8px;font-size:13px">
+            <div style="display:flex;align-items:center;gap:8px"><b style="flex:1">${esc(linkLabel(c.config.link))}</b>${UI.btn('Restart', 'data-restart')} ${UI.btn('Refresh', 'data-ctx')}</div>
+            <div data-ctxbox><span class="ui-sub">Loading…</span></div>
+            <span class="ui-sub">While DockGate deploys, restarts or updates it (and for 3 minutes after), this check waits — no false "down".</span>
+          </div>` : ''}
           <div class="card" style="padding:14px 16px;display:grid;gap:6px;font-size:13px">
             <b>Alerts</b>
             <span class="ui-sub">Down after ${c.fails} failure${c.fails > 1 ? 's' : ''} in a row, back up after one success${c.config.slowMs ? ` · slow above ${c.config.slowMs} ms on ${c.config.slowCount} checks` : ''}${c.config.certAlerts ? ' · certificate' : ''}. Sent to the channels of Settings → Notifications.</span>
@@ -166,6 +211,15 @@ const UptimePage = (() => {
     });
     wireCommon(content, [c], () => renderDetail(content, id, range));
     drawChart(content, c, range);
+    if (c.config.link) {
+      const box = content.querySelector('[data-ctxbox]');
+      const load = () => API.get(`/uptime/${c.id}/context`).then(x => { if (box) box.innerHTML = contextHtml(x, c) || '<span class="ui-sub">—</span>'; }).catch(e => { if (box) box.innerHTML = `<span class="text-danger">${esc(e.message)}</span>`; });
+      load();
+      content.querySelector('[data-ctx]').onclick = load;
+      content.querySelector('[data-restart]').onclick = () => showConfirm('Restart', `Restart <b>${esc(linkLabel(c.config.link))}</b>?`, async () => {
+        try { const r = await API.post(`/uptime/${c.id}/restart`, {}); showToast(`Restarted: ${r.restarted.join(', ')}`); setTimeout(load, 3000); } catch (e) { showToast(e.message, 'error'); }
+      });
+    }
   }
   function drawChart(content, c, range) {
     if (chart) { try { chart.destroy(); } catch (e) {} chart = null; }
@@ -203,6 +257,7 @@ const UptimePage = (() => {
           <label class="ui-field"><span class="ui-label">Timeout</span><select class="input" id="ut-timeout">${sel(k.timeout || 10, [[5, '5 s'], [10, '10 s'], [20, '20 s'], [30, '30 s']])}</select></label>
           <label class="ui-field"><span class="ui-label">Slow above (ms)</span><input class="input td-mono" id="ut-slow" type="number" min="0" value="${esc(k.slowMs || '')}" placeholder="off"><span class="ui-sub">on 3 checks in a row</span></label>
         </div>
+        <label class="ui-field"><span class="ui-label">Linked to (optional)</span><select class="input" id="ut-link"><option value="">Nothing</option>${k.link ? `<option value="${esc(JSON.stringify(k.link))}" selected>${esc(linkLabel(k.link))}</option>` : ''}</select><span class="ui-sub">A container, Compose project or Swarm service of the server picked in the top bar. Alerts then show its state and last log lines, the page offers Restart, and the check waits while DockGate deploys it.</span></label>
         <label data-only="http ssl" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="ut-cert" ${k.certAlerts === false ? '' : 'checked'}> Certificate alerts: 30 · 14 · 7 · 1 days before it expires, and when it is invalid</label>
         <details data-only="http"><summary class="text-sm" style="cursor:pointer">Advanced</summary>
           <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:8px"><input type="checkbox" id="ut-follow" ${k.follow === false ? '' : 'checked'}> Follow redirects</label>
@@ -221,6 +276,7 @@ const UptimePage = (() => {
         ov.querySelectorAll('[data-type]').forEach(b => b.addEventListener('click', () => { t = b.dataset.type; ov.querySelectorAll('[data-type]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); show(); }));
         show();
         ov._type = () => t;
+        fillLinks(ov.querySelector('#ut-link'), k.link);
         ov.querySelector('#ut-test').addEventListener('click', async (e) => {
           const b = e.currentTarget, out = ov.querySelector('#ut-tres');
           b.disabled = true; out.textContent = 'Checking…'; out.style.color = '';
@@ -245,9 +301,10 @@ const UptimePage = (() => {
     const ch = (id) => !!(ov.querySelector('#' + id) || {}).checked;
     const headers = {};
     String(v('ut-headers') || '').split('\n').forEach(l => { const i = l.indexOf(':'); if (i > 0) headers[l.slice(0, i).trim()] = l.slice(i + 1).trim(); });
-    return { type: ov._type(), target: v('ut-target'), name: v('ut-name'), interval: Number(v('ut-int')), fails: Number(v('ut-fails')),
+    let link = null; try { link = v('ut-link') ? JSON.parse(v('ut-link')) : null; } catch (e) { link = null; }
+    return { type: ov._type(), target: v('ut-target'), link, name: v('ut-name'), interval: Number(v('ut-int')), fails: Number(v('ut-fails')),
       config: { method: v('ut-method'), expect: v('ut-expect'), contains: v('ut-contains'), notContains: v('ut-notcontains'), expectIp: v('ut-expectip'),
-        timeout: Number(v('ut-timeout')), slowMs: v('ut-slow') === '' ? 0 : Number(v('ut-slow')), slowCount: 3, certAlerts: ch('ut-cert'), follow: ch('ut-follow'), ignoreTls: ch('ut-ignoretls'), headers } };
+        link, timeout: Number(v('ut-timeout')), slowMs: v('ut-slow') === '' ? 0 : Number(v('ut-slow')), slowCount: 3, certAlerts: ch('ut-cert'), follow: ch('ut-follow'), ignoreTls: ch('ut-ignoretls'), headers } };
   }
 
   // Sidebar badge: how many checks are down (every minute).
