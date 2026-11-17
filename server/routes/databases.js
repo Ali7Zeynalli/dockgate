@@ -25,6 +25,15 @@ router.get('/:c/db/:db/objects', send(async (req) => S.objects(req.params.c, req
 router.get('/:c/db/:db/structure', send(async (req) => S.structure(req.params.c, req.params.db, req.query.schema, req.query.table)));
 // body { schema, table, limit, offset, sort: [{ col, dir }], filters: [{ col, op, value }], where }
 router.post('/:c/db/:db/rows', send(async (req) => S.rows(req.params.c, req.params.db, req.body || {})));
+// Design: structure changes as operations → SQL (preview), run in one transaction (test: rolled back) — pg-ddl.js
+const D = require('../pg-ddl');
+router.post('/:c/db/:db/ddl/preview', send(async (req) => D.preview(req.params.c, req.params.db, req.body || {})));
+router.post('/:c/db/:db/ddl/apply', send(async (req) => {
+  const b = req.body || {};
+  const r = await D.apply(req.params.c, req.params.db, b);
+  if (!r.test) audit(req, 'db_ddl', { table: b.table ? `${b.schema}.${b.table}` : ((b.ops || [])[0] || {}).name, statements: r.statements.map(x => x.sql).join(';\n').slice(0, 3000) });
+  return r;
+}));
 router.post('/:c/db/:db/count', send(async (req) => S.count(req.params.c, req.params.db, req.body || {})));
 // body { sql, confirm }
 router.post('/:c/db/:db/sql', send(async (req) => {

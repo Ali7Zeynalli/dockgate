@@ -2,6 +2,17 @@
 
 ---
 
+## [2.72.0] - 2026-11-17
+
+### Added
+- **Databases → Design: edit a table's structure.** Columns as a sheet — name, type (with a list of the usual ones), not null, default, identity, comment; add, rename, change the type (cast with `USING`), drop. Indexes (columns, unique, method, partial `WHERE`, `CONCURRENTLY`), foreign keys (the referenced table and column, ON DELETE / ON UPDATE, NOT VALID; a warning when the types differ), unique, check and primary keys, enable / disable triggers, and the table's DDL to copy or open in a query.
+- Changes wait (yellow = changed, green = new, struck = dropped) until **Save**: **Show SQL**, **🧪 Test** (runs them and rolls back — a type that does not fit the data or a duplicate for a new unique index is seen before), **Discard**, Save — all in **one transaction**; when one fails, the message says which change and nothing is kept. Read-only connections can still Test.
+- **New table** (database, schema or Tables menu, or the database overview): schema, name, comment, columns with primary key, identity, unique.
+- **Table ▾**: rename, move to another schema, duplicate (structure, with or without the rows), comment — each shows its SQL and can be tested first.
+- Every structure change is in the audit log with its SQL.
+
+---
+
 ## [2.71.0] - 2026-11-17
 
 ### Changed

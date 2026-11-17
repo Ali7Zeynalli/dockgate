@@ -348,6 +348,7 @@ Router.register('databases', async (content, params = {}) => {
       return showMenu(x, y, [{ header: `${c} › ${db}` },
         { label: 'New query', act: () => newQuery(c, db) },
         { label: 'Open — tables, sizes, rows', act: () => openTab({ type: 'overview', c, db }, { pin: true }) },
+        { label: 'New table…', act: () => newTable(c, db, 'public') },
         { label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } },
         '-',
         { label: 'Users, sessions, VACUUM', act: () => openTab({ type: 'admin', c, db }, { pin: true }) },
@@ -356,11 +357,11 @@ Router.register('databases', async (content, params = {}) => {
     }
     if (p[0] === 's') {
       const [, c, db, s] = p;
-      return showMenu(x, y, [{ header: `${db} › ${s}` }, { label: 'New query', act: () => newQuery(c, db, `SET search_path TO ${quoteId(s)};\n\n`) }, { label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } }, '-', { label: 'Copy name', act: () => copy(s) }]);
+      return showMenu(x, y, [{ header: `${db} › ${s}` }, { label: 'New query', act: () => newQuery(c, db, `SET search_path TO ${quoteId(s)};\n\n`) }, { label: 'New table…', act: () => newTable(c, db, s) }, { label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } }, '-', { label: 'Copy name', act: () => copy(s) }]);
     }
     if (p[0] === 'f') {
-      const [, c, db] = p;
-      return showMenu(x, y, [{ label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } }]);
+      const [, c, db, s, kind] = p;
+      return showMenu(x, y, [kind === 'tables' ? { label: 'New table…', act: () => newTable(c, db, s) } : null, { label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } }]);
     }
     if (p[0] === 't') {
       const [, c, db, s, t] = p; const r = relOf(c, db, s, t) || { kind: 'r' }; const isTable = r.kind === 'r' || r.kind === 'p'; const isSeq = r.kind === 'S';
@@ -409,6 +410,7 @@ Router.register('databases', async (content, params = {}) => {
     const n = st.tabs.filter(t => t.type === 'sql').length + 1;
     return openTab({ type: 'sql', c, db, wb: rid(), title: title || `Query ${n}`, sql: sql || `-- ${db}\nSELECT now();\n` }, { pin: true, fresh: true });
   }
+  function newTable(c, db, s) { return openTab({ type: 'create', c, db, s: s || 'public' }, { pin: true, fresh: true }); }
   async function genSql(kind, c, db, s, t) {
     const x = await ensureStruct(c, db, s, t);
     if (!x || x.error) throw new Error(x ? x.error : 'Could not read the table');
@@ -450,10 +452,10 @@ Router.register('databases', async (content, params = {}) => {
   }
 
   // ---------- tabs ----------
-  const keyOf = (t) => (t.type === 'sql' ? `sql|${t.wb}` : t.type === 'backups' ? `backups|${t.c}` : t.type === 'data' || t.type === 'design' ? `${t.type}|${t.c}|${t.db}|${t.s}|${t.t}` : `${t.type}|${t.c}|${t.db}`);
-  const tabIcon = (t) => ({ data: relIcon((relOf(t.c, t.db, t.s, t.t) || {}).kind), design: IC.design, sql: IC.sql, overview: IC.db, admin: IC.admin, backups: IC.backup }[t.type] || IC.table);
-  const tabTitle = (t) => (t.type === 'data' ? t.t : t.type === 'design' ? `${t.t}` : t.type === 'sql' ? t.title : t.type === 'overview' ? t.db : t.type === 'admin' ? `Admin · ${t.db}` : `Backups · ${t.c}`);
-  const tabSub = (t) => (t.type === 'design' ? 'design' : t.type === 'sql' || t.type === 'overview' ? t.db : t.type === 'data' ? (t.s !== 'public' ? t.s : '') : '');
+  const keyOf = (t) => (t.type === 'sql' ? `sql|${t.wb}` : t.type === 'create' ? `create|${t.id}` : t.type === 'backups' ? `backups|${t.c}` : t.type === 'data' || t.type === 'design' ? `${t.type}|${t.c}|${t.db}|${t.s}|${t.t}` : `${t.type}|${t.c}|${t.db}`);
+  const tabIcon = (t) => ({ data: relIcon((relOf(t.c, t.db, t.s, t.t) || {}).kind), design: IC.design, create: IC.plus, sql: IC.sql, overview: IC.db, admin: IC.admin, backups: IC.backup }[t.type] || IC.table);
+  const tabTitle = (t) => (t.type === 'create' ? 'New table' : t.type === 'data' ? t.t : t.type === 'design' ? `${t.t}` : t.type === 'sql' ? t.title : t.type === 'overview' ? t.db : t.type === 'admin' ? `Admin · ${t.db}` : `Backups · ${t.c}`);
+  const tabSub = (t) => (t.type === 'design' ? 'design' : t.type === 'sql' || t.type === 'overview' || t.type === 'create' ? t.db : t.type === 'data' ? (t.s !== 'public' ? t.s : '') : '');
   function persistTabs() {
     lsSet('tabs', st.tabs.map(t => ({ id: t.id, type: t.type, c: t.c, db: t.db, s: t.s, t: t.t, wb: t.wb, title: t.title, preview: !!t.preview, grid: t.grid ? { limit: t.grid.limit, sort: t.grid.sort, filters: t.grid.filters, where: t.grid.where } : undefined })));
     lsSet('active', st.active);
@@ -563,7 +565,7 @@ Router.register('databases', async (content, params = {}) => {
       });
       delete t.sql;
       if (st.tabs.includes(t) && alive()) t.inst = w; else w.destroy();
-    } else if (t.type === 'design') await drawDesign(t, pane);
+    } else if (t.type === 'design' || t.type === 'create') await drawDesign(t, pane);
     else if (t.type === 'overview') await drawOverview(t, pane);
     else if (t.type === 'admin') { await withCtx(t.c, t.db, () => drawAdmin(pane)); }
     else if (t.type === 'backups') { await withCtx(t.c, t.db || info.database, () => drawBackups(pane)); }
@@ -598,35 +600,258 @@ Router.register('databases', async (content, params = {}) => {
     el.querySelector('[data-s-conn]').onclick = () => connection(t.c);
   }
 
-  // ---------- design (structure) ----------
-  async function drawDesign(t, pane) {
-    pane.innerHTML = '<div class="card"><div class="skeleton" style="width:100%;height:240px"></div></div>';
-    const s = await ensureStruct(t.c, t.db, t.s, t.t, true);
-    if (!pane.isConnected) return;
-    if (!s || s.error) { pane.innerHTML = `<div class="card text-danger" style="padding:16px">${esc(s ? s.error : 'Not found')}</div>`; return; }
-    const info = st.infos[t.c];
-    const pre = (x) => `<pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:0;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px">${esc(x)}</pre>`;
-    const ctype = { p: 'primary key', f: 'foreign key', u: 'unique', c: 'check', x: 'exclusion', t: 'trigger', n: 'not null' };
-    const canData = s.kind !== 'S';
-    pane.innerHTML = `
-      <div class="dbx-head"><span class="dbx-ic">${relIcon(s.kind)}</span><b>${esc(s.schema)}.${esc(s.name)}</b><span class="ui-sub">${esc(kindName[s.kind] || s.kind)} · ${formatBytes(s.size)}${s.rows >= 0 && s.kind !== 'v' && s.kind !== 'S' ? ` · ≈ ${Number(s.rows).toLocaleString()} rows` : ''}</span><span style="flex:1"></span>
-        ${canData ? UI.btn('Open data', 'data-d-data', 'btn-primary') : ''} ${UI.btn('New query', 'data-d-q')} ${info.allowWrite && (s.kind === 'r' || s.kind === 'p' || s.kind === 'm') ? `${UI.btn('VACUUM', 'data-mt="vacuum"')} ${UI.btn('ANALYZE', 'data-mt="analyze"')}` : ''} ${UI.btn('Refresh', 'data-d-ref')}</div>
-      ${s.comment ? `<div class="ui-sub" style="margin-bottom:8px">${esc(s.comment)}</div>` : ''}
-      ${s.columns.length ? UI.table([{ label: '#' }, { label: 'Column' }, { label: 'Type' }, { label: 'Null' }, { label: 'Default' }, { label: 'Comment' }], s.columns.map((c, n) => ({ cells: [
-        `<span class="ui-sub">${n + 1}</span>`, `${s.pk.includes(c.name) ? IC.key + ' ' : ''}<b class="td-mono">${esc(c.name)}</b>`, `<span class="td-mono">${esc(c.type)}</span>`, c.notnull ? 'NOT NULL' : '<span class="ui-sub">null</span>',
-        `<span class="td-mono" style="font-size:12px">${c.identity ? 'identity ' + (c.identity === 'a' ? 'always' : 'by default') : c.generated ? 'generated' : esc(c.default || '')}</span>`, `<span class="ui-sub">${esc(c.comment || '')}</span>`] })), { minWidth: 600 }) : ''}
-      ${s.indexes.length ? `<div class="ui-label" style="margin:16px 0 6px">Indexes</div>${UI.table([{ label: 'Name' }, { label: 'Definition' }, { label: 'Size' }], s.indexes.map(i => ({ cells: [`<span class="td-mono">${esc(i.name)}</span> ${i.primary ? UI.pill('info', 'primary') : i.unique ? UI.pill('off', 'unique') : ''}`, `<span class="td-mono" style="font-size:12px">${esc(i.def)}</span>`, formatBytes(i.size)] })))}` : ''}
-      ${s.constraints.filter(c => c.type !== 'n').length ? `<div class="ui-label" style="margin:16px 0 6px">Constraints</div>${UI.table([{ label: 'Name' }, { label: 'Type' }, { label: 'Definition' }], s.constraints.filter(c => c.type !== 'n').map(c => ({ cells: [`<span class="td-mono">${esc(c.name)}</span>`, esc(ctype[c.type] || c.type), `<span class="td-mono" style="font-size:12px">${esc(c.def)}</span>`] })))}` : ''}
-      ${s.referencedBy.length ? `<div class="ui-label" style="margin:16px 0 6px">Referenced by</div>${UI.table([{ label: 'Table' }, { label: 'Constraint' }], s.referencedBy.map(c => ({ cells: [`<a href="#" class="td-mono" data-d-ref-t="${esc(c.table)}">${esc(c.table)}</a>`, `<span class="td-mono" style="font-size:12px">${esc(c.name)}: ${esc(c.def)}</span>`] })))}` : ''}
-      ${s.triggers.length ? `<div class="ui-label" style="margin:16px 0 6px">Triggers</div>${s.triggers.map(x => pre(x.def + (x.enabled ? '' : '  -- disabled'))).join('<div style="height:6px"></div>')}` : ''}
-      ${s.viewdef ? `<div class="ui-label" style="margin:16px 0 6px">Definition</div>${pre(s.viewdef)}` : ''}
-      ${s.sequence ? `<div class="ui-label" style="margin:16px 0 6px">Sequence</div>${pre(Object.entries(s.sequence).map(([k, v]) => `${k}: ${v}`).join('\n'))}` : ''}`;
-    const d = pane.querySelector('[data-d-data]'); if (d) d.onclick = () => openTab({ type: 'data', c: t.c, db: t.db, s: t.s, t: t.t }, { pin: true });
-    pane.querySelector('[data-d-q]').onclick = () => genSql('select', t.c, t.db, t.s, t.t).catch(e => showToast(e.message, 'error'));
-    pane.querySelector('[data-d-ref]').onclick = () => renderTab(t, true);
-    pane.querySelectorAll('[data-mt]').forEach(b => b.onclick = () => withCtx(t.c, t.db, () => maintain(b.dataset.mt, t.s, t.t)));
-    pane.querySelectorAll('[data-d-ref-t]').forEach(a => a.onclick = (e) => { e.preventDefault(); const [sch, tb] = a.dataset.dRefT.includes('.') ? a.dataset.dRefT.split('.') : ['public', a.dataset.dRefT]; openTab({ type: 'design', c: t.c, db: t.db, s: sch.replace(/"/g, ''), t: tb.replace(/"/g, '') }, { pin: true }); });
+  // ---------- design: the table's structure, edited like a sheet (server/pg-ddl.js) ----------
+  // Changes wait (yellow = changed, green = new, struck = dropped) until Save: Show SQL, 🧪 Test (rolled back),
+  // Discard, Save — all in one transaction. "New table" is the same editor with a name.
+  const TYPES = ['bigint', 'integer', 'smallint', 'numeric(12,2)', 'real', 'double precision', 'boolean', 'text', 'varchar(255)', 'char(1)', 'uuid', 'date', 'timestamptz', 'timestamp', 'time', 'interval', 'jsonb', 'json', 'bytea', 'inet', 'cidr', 'text[]', 'integer[]', 'bigint[]'];
+  const DZ_CSS = `<style>
+    .dz-sub{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 12px}
+    .dz-sub button{border:0;background:none;color:var(--text-secondary);padding:7px 12px;cursor:pointer;font:inherit;font-size:13px;border-bottom:2px solid transparent;margin-bottom:-1px}
+    .dz-sub button.on{color:var(--text-primary);border-bottom-color:var(--accent,#3b82f6)}
+    .dz-grid{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+    .dz-grid th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);padding:6px 6px;border-bottom:1px solid var(--border);white-space:nowrap;font-weight:600}
+    .dz-grid td{padding:3px 4px;border-bottom:1px solid var(--border);vertical-align:middle}
+    .dz-grid input[type=text]{width:100%;min-width:60px;background:transparent;border:1px solid transparent;border-radius:5px;color:var(--text-primary);padding:4px 6px;font:inherit;font-family:var(--font-mono,monospace);font-size:12.5px}
+    .dz-grid input[type=text]:hover{border-color:var(--border)} .dz-grid input[type=text]:focus{border-color:var(--accent,#3b82f6);outline:none;background:var(--bg-secondary)}
+    .dz-grid tr.chg td{background:rgba(234,179,8,.08)} .dz-grid td.chg input{background:rgba(234,179,8,.16)} .dz-grid tr.new td{background:rgba(34,197,94,.09)}
+    .dz-grid tr.del td{background:rgba(239,68,68,.08)} .dz-grid tr.del input{text-decoration:line-through;opacity:.6}
+    .dz-grid .dz-c{text-align:center;width:1%} .dz-n{color:var(--text-muted);width:1%;text-align:right;padding-right:8px!important}
+    .dz-bar{position:sticky;bottom:-14px;margin:14px -16px -14px;padding:10px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--bg-secondary);border-top:1px solid var(--border);z-index:2}
+    .dz-pend{padding:6px 10px;border:1px dashed var(--success,#22c55e);border-radius:8px;margin:6px 0;display:flex;gap:8px;align-items:center;font-size:12.5px}
+    .dz-pend.drop{border-color:var(--danger)} .dz-x{border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:15px;padding:0 4px} .dz-x:hover{color:var(--danger)}
+  </style>`;
+  const dzCol = (c, pk) => ({ orig: c ? { ...c, pk: pk.includes(c.name) } : null, name: c ? c.name : '', type: c ? c.type : 'text', notnull: c ? !!c.notnull : false, default: c ? (c.default || '') : '', comment: c ? (c.comment || '') : '', identity: c ? !!c.identity : false, pk: c ? pk.includes(c.name) : false, unique: false, del: false, isNew: !c });
+  function dzOps(t) {
+    const z = t.dz; const ops = [];
+    if (t.type === 'create') {
+      const list = z.draft.filter(c => !c.del && c.name.trim());
+      return [{ op: 'createTable', schema: z.schema, name: z.name.trim(), comment: z.comment || undefined, columns: list.map(c => ({ name: c.name.trim(), type: c.type, notnull: c.notnull, default: c.default, comment: c.comment, identity: c.identity, pk: c.pk, unique: c.unique })) }];
+    }
+    for (const c of z.draft) {
+      if (c.isNew) { if (!c.del && c.name.trim()) ops.push({ op: 'addColumn', name: c.name.trim(), type: c.type, notnull: c.notnull, default: c.default || undefined, comment: c.comment || undefined, identity: c.identity, unique: c.unique }); continue; }
+      const o = c.orig;
+      if (c.del) { ops.push({ op: 'dropColumn', name: o.name }); continue; }
+      const a = { op: 'alterColumn', name: o.name }; let any = false;
+      if (c.type.trim() !== o.type) { a.type = c.type.trim(); a.using = `${quoteId(o.name)}::${c.type.trim()}`; any = true; }
+      if (c.notnull !== !!o.notnull) { a.notnull = c.notnull; any = true; }
+      if ((c.default || '') !== (o.default || '') && !o.identity) { a.default = c.default.trim() === '' ? null : c.default; any = true; }
+      if (c.identity !== !!o.identity) { a.identity = c.identity; any = true; }
+      if ((c.comment || '') !== (o.comment || '')) { a.comment = c.comment; any = true; }
+      if (c.name.trim() !== o.name) { a.rename = c.name.trim(); any = true; }
+      if (any) ops.push(a);
+    }
+    return ops.concat(z.queued.map(({ label, ...op }) => op));
   }
+  const dzDirty = (t) => !!(t.dz && (t.type === 'create' || dzOps(t).length));
+
+  async function drawDesign(t, pane) {
+    const creating = t.type === 'create';
+    let s = null;
+    if (!creating) {
+      if (!t.dz || t.dzReload) { pane.innerHTML = '<div class="card"><div class="skeleton" style="width:100%;height:240px"></div></div>'; }
+      s = await ensureStruct(t.c, t.db, t.s, t.t, !!t.dzReload || !t.dz);
+      if (!pane.isConnected) return;
+      if (!s || s.error) { pane.innerHTML = `<div class="card text-danger" style="padding:16px">${esc(s ? s.error : 'Not found')}</div>`; return; }
+    }
+    const editableKind = creating || s.kind === 'r' || s.kind === 'p';
+    if (!t.dz || t.dzReload) {
+      t.dz = creating
+        ? { sub: 'cols', schema: t.s || 'public', name: '', comment: '', draft: [{ ...dzCol(null, []), name: 'id', type: 'bigint', identity: true, pk: true, notnull: true }, { ...dzCol(null, []), name: 'created_at', type: 'timestamptz', default: 'now()', notnull: true }, { ...dzCol(null, []), name: '' }], queued: [] }
+        : { sub: (t.dz && t.dz.sub) || 'cols', draft: s.columns.map(c => dzCol(c, s.pk || [])), queued: [] };
+      t.dzReload = false;
+    }
+    const z = t.dz; const info = st.infos[t.c];
+    if (!t.inst) t.inst = { dirty: () => dzDirty(t), guardLeave: (go) => showConfirm('Changes not saved', 'The structure changes of this tab are not saved. Close it and drop them?', go, true), destroy() {}, reload: () => { t.dzReload = true; drawDesign(t, pane); } };
+    const ctype = { p: 'primary key', f: 'foreign key', u: 'unique', c: 'check', x: 'exclusion' };
+    const pre = (x) => `<pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:0;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px">${esc(x)}</pre>`;
+    const schemas = () => { const o = st.objects[`${t.c}|${t.db}`]; return o && o.schemas ? o.schemas : [...new Set(['public', ...((o && o.relations) || []).map(r => r.schema)])]; };
+    const draw = () => {
+      const ops = editableKind ? (() => { try { return dzOps(t); } catch (e) { return []; } })() : [];
+      const cons = creating ? [] : s.constraints.filter(c => c.type !== 'n');
+      const subs = creating ? [['cols', `Columns (${z.draft.filter(c => !c.del && c.name).length})`]]
+        : [['cols', `Columns (${s.columns.length})`], ['idx', `Indexes (${s.indexes.length})`], ['keys', `Keys & checks (${cons.length})`], ...(s.triggers.length ? [['trg', `Triggers (${s.triggers.length})`]] : []), ['ddl', 'DDL']];
+      const head = creating
+        ? `<div class="dbx-head"><span class="dbx-ic">${IC.plus}</span><b>New table</b><span class="ui-sub">in ${esc(t.db)}</span></div>
+           <div class="dbg-bar"><label class="ui-field" style="margin:0"><span class="ui-label">Schema</span><select class="input" data-z-schema style="width:auto">${schemas().map(x => `<option ${x === z.schema ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+             <label class="ui-field" style="margin:0;flex:1;min-width:200px"><span class="ui-label">Table name</span><input class="input td-mono" data-z-name value="${esc(z.name)}" placeholder="orders"></label>
+             <label class="ui-field" style="margin:0;flex:2;min-width:200px"><span class="ui-label">Comment</span><input class="input" data-z-comment value="${esc(z.comment)}" placeholder="(optional)"></label></div>`
+        : `<div class="dbx-head"><span class="dbx-ic">${relIcon(s.kind)}</span><b>${esc(s.schema)}.${esc(s.name)}</b><span class="ui-sub">${esc(kindName[s.kind] || s.kind)} · ${formatBytes(s.size)}${s.rows >= 0 && s.kind !== 'v' && s.kind !== 'S' ? ` · ≈ ${Number(s.rows).toLocaleString()} rows` : ''}</span><span style="flex:1"></span>
+            ${s.kind !== 'S' ? UI.btn('Open data', 'data-d-data', 'btn-primary') : ''} ${UI.btn('New query', 'data-d-q')} ${editableKind ? UI.btn('Table ▾', 'data-d-tbl') : ''} ${UI.btn('Refresh', 'data-d-ref')}</div>
+           ${s.comment ? `<div class="ui-sub" style="margin:-4px 0 8px">${esc(s.comment)}</div>` : ''}`;
+      let body = '';
+      if (z.sub === 'cols' && (creating || editableKind)) {
+        body = `<datalist id="dz-types-${t.id}">${TYPES.map(x => `<option value="${x}">`).join('')}</datalist>
+          <div style="overflow-x:auto"><table class="dz-grid"><thead><tr><th></th>${creating ? '<th class="dz-c" title="Primary key">PK</th>' : '<th></th>'}<th>Name</th><th>Type</th><th class="dz-c" title="NOT NULL">Not null</th><th>Default</th><th class="dz-c" title="Generated by default as identity (auto number)">Identity</th>${creating ? '<th class="dz-c">Unique</th>' : ''}<th>Comment</th><th></th></tr></thead><tbody>
+          ${z.draft.map((c, i) => {
+            const o = c.orig; const ch = (k) => (!c.isNew && o && String(c[k] ?? '') !== String(k === 'notnull' || k === 'identity' ? !!o[k] : (o[k] ?? '')) ? 'chg' : '');
+            const rowCls = c.del ? 'del' : c.isNew && !creating ? 'new' : ['name', 'type', 'notnull', 'default', 'identity', 'comment'].some(k => ch(k)) ? 'chg' : '';
+            return `<tr class="${rowCls}" data-r="${i}"><td class="dz-n">${i + 1}</td>
+              <td class="dz-c">${creating ? `<input type="checkbox" data-f="pk" ${c.pk ? 'checked' : ''}>` : c.pk ? IC.key : ''}</td>
+              <td class="${ch('name')}"><input type="text" data-f="name" value="${esc(c.name)}" placeholder="column_name" ${c.del ? 'disabled' : ''}></td>
+              <td class="${ch('type')}"><input type="text" data-f="type" value="${esc(c.type)}" list="dz-types-${t.id}" ${c.del ? 'disabled' : ''}></td>
+              <td class="dz-c ${ch('notnull')}"><input type="checkbox" data-f="notnull" ${c.notnull || c.pk ? 'checked' : ''} ${c.del || (creating && c.pk) ? 'disabled' : ''}></td>
+              <td class="${ch('default')}"><input type="text" data-f="default" value="${esc(c.identity ? '' : c.default)}" placeholder="${c.identity ? 'auto number' : 'none'}" ${c.del || c.identity ? 'disabled' : ''}></td>
+              <td class="dz-c ${ch('identity')}"><input type="checkbox" data-f="identity" ${c.identity ? 'checked' : ''} ${c.del ? 'disabled' : ''}></td>
+              ${creating ? `<td class="dz-c"><input type="checkbox" data-f="unique" ${c.unique ? 'checked' : ''}></td>` : ''}
+              <td class="${ch('comment')}"><input type="text" data-f="comment" value="${esc(c.comment)}" placeholder="" ${c.del ? 'disabled' : ''}></td>
+              <td class="dz-c"><button type="button" class="dz-x" data-del="${i}" title="${c.del ? 'Keep it' : c.isNew ? 'Remove' : 'Drop this column'}">${c.del ? '↺' : '×'}</button></td></tr>`;
+          }).join('')}</tbody></table></div>
+          <div style="margin-top:8px">${UI.btn('+ Add column', 'data-z-add')}</div>`;
+      } else if (z.sub === 'cols') {
+        body = UI.table([{ label: '#' }, { label: 'Column' }, { label: 'Type' }, { label: 'Null' }, { label: 'Default' }, { label: 'Comment' }], s.columns.map((c, n) => ({ cells: [`<span class="ui-sub">${n + 1}</span>`, `<b class="td-mono">${esc(c.name)}</b>`, `<span class="td-mono">${esc(c.type)}</span>`, c.notnull ? 'NOT NULL' : '<span class="ui-sub">null</span>', `<span class="td-mono" style="font-size:12px">${esc(c.default || '')}</span>`, `<span class="ui-sub">${esc(c.comment || '')}</span>`] })), { minWidth: 600 })
+          + (s.viewdef ? `<div class="ui-label" style="margin:16px 0 6px">Definition</div>${pre(s.viewdef)}` : '') + (s.sequence ? `<div class="ui-label" style="margin:16px 0 6px">Sequence</div>${pre(Object.entries(s.sequence).map(([k, v]) => `${k}: ${v}`).join('\n'))}` : '');
+      } else if (z.sub === 'idx') {
+        const dropped = new Set(z.queued.filter(q => q.op === 'dropIndex').map(q => q.name));
+        body = `${UI.table([{ label: 'Name' }, { label: 'Definition' }, { label: 'Size' }, { label: '', align: 'right' }], s.indexes.map(i => ({ cls: dropped.has(i.name) ? 'dz-dropped' : '', cells: [`<span class="td-mono" style="${dropped.has(i.name) ? 'text-decoration:line-through;opacity:.6' : ''}">${esc(i.name)}</span> ${i.primary ? UI.pill('info', 'primary') : i.unique ? UI.pill('off', 'unique') : ''}`, `<span class="td-mono" style="font-size:12px">${esc(i.def)}</span>`, formatBytes(i.size), i.primary || !editableKind ? '' : dropped.has(i.name) ? UI.btn('Keep', `data-undrop-idx="${esc(i.name)}"`) : UI.btn('Drop', `data-drop-idx="${esc(i.name)}"`, 'btn-danger')] })), { empty: 'No indexes.', minWidth: 560 })}
+          ${z.queued.filter(q => q.op === 'addIndex').map(q => `<div class="dz-pend">+ <span class="td-mono">${esc(q.label)}</span><span style="flex:1"></span><button type="button" class="dz-x" data-unq="${z.queued.indexOf(q)}">×</button></div>`).join('')}
+          ${editableKind ? `<div style="margin-top:8px">${UI.btn('+ Add index', 'data-z-idx')}</div>` : ''}`;
+      } else if (z.sub === 'keys') {
+        const dropped = new Set(z.queued.filter(q => q.op === 'dropConstraint').map(q => q.name));
+        body = `${UI.table([{ label: 'Name' }, { label: 'Kind' }, { label: 'Definition' }, { label: '', align: 'right' }], cons.map(c => ({ cells: [`<span class="td-mono" style="${dropped.has(c.name) ? 'text-decoration:line-through;opacity:.6' : ''}">${esc(c.name)}</span>`, esc(ctype[c.type] || c.type), `<span class="td-mono" style="font-size:12px">${esc(c.def)}</span>`, !editableKind ? '' : dropped.has(c.name) ? UI.btn('Keep', `data-undrop-con="${esc(c.name)}"`) : UI.btn('Drop', `data-drop-con="${esc(c.name)}"`, 'btn-danger')] })), { empty: 'No keys or checks.', minWidth: 560 })}
+          ${z.queued.filter(q => /^add(ForeignKey|Unique|Check|PrimaryKey)$/.test(q.op)).map(q => `<div class="dz-pend">+ <span class="td-mono">${esc(q.label)}</span><span style="flex:1"></span><button type="button" class="dz-x" data-unq="${z.queued.indexOf(q)}">×</button></div>`).join('')}
+          ${editableKind ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${UI.btn('+ Foreign key', 'data-z-fk')} ${UI.btn('+ Unique', 'data-z-uq')} ${UI.btn('+ Check', 'data-z-ck')} ${!s.pk.length ? UI.btn('+ Primary key', 'data-z-pk') : ''}</div>` : ''}
+          ${s.referencedBy.length ? `<div class="ui-label" style="margin:16px 0 6px">Referenced by</div>${UI.table([{ label: 'Table' }, { label: 'Constraint' }], s.referencedBy.map(c => ({ cells: [`<a href="#" class="td-mono" data-d-ref-t="${esc(c.table)}">${esc(c.table)}</a>`, `<span class="td-mono" style="font-size:12px">${esc(c.name)}: ${esc(c.def)}</span>`] })))}` : ''}`;
+      } else if (z.sub === 'trg') {
+        const tq = new Map(z.queued.filter(q => q.op === 'enableTrigger').map(q => [q.name, q.enable]));
+        body = s.triggers.map(x => { const on = tq.has(x.name) ? tq.get(x.name) : x.enabled; return `<div style="display:flex;gap:8px;align-items:center;margin:10px 0 4px"><b class="td-mono">${esc(x.name)}</b>${on ? UI.pill('ok', 'enabled') : UI.pill('off', 'disabled')}${tq.has(x.name) ? UI.pill('warn', 'changed') : ''}<span style="flex:1"></span>${editableKind ? UI.btn(on ? 'Disable' : 'Enable', `data-trg="${esc(x.name)}" data-on="${on ? 1 : 0}" data-was="${x.enabled ? 1 : 0}"`) : ''}</div>${pre(x.def)}`; }).join('');
+      } else if (z.sub === 'ddl') {
+        const lines = s.columns.map(c => `  ${quoteId(c.name)} ${c.type}${c.identity ? ` GENERATED ${c.identity === 'a' ? 'ALWAYS' : 'BY DEFAULT'} AS IDENTITY` : ''}${c.notnull ? ' NOT NULL' : ''}${c.default && !c.identity ? ` DEFAULT ${c.default}` : ''}`)
+          .concat(cons.filter(c => c.type !== 't').map(c => `  CONSTRAINT ${quoteId(c.name)} ${c.def}`));
+        const ddl = `CREATE TABLE ${qn(s.schema, s.name)} (\n${lines.join(',\n')}\n);\n${s.indexes.filter(i => !i.primary && !cons.some(c => c.name === i.name)).map(i => i.def + ';').join('\n')}${s.comment ? `\nCOMMENT ON TABLE ${qn(s.schema, s.name)} IS '${s.comment.replace(/'/g, "''")}';` : ''}${s.columns.filter(c => c.comment).map(c => `\nCOMMENT ON COLUMN ${qn(s.schema, s.name)}.${quoteId(c.name)} IS '${c.comment.replace(/'/g, "''")}';`).join('')}`;
+        body = `<div class="dbg-bar">${UI.btn('Copy', 'data-z-copyddl')} ${UI.btn('Open in a query', 'data-z-ddlq')}<span class="ui-sub">Made from the catalog — sequences, grants and triggers are not in it.</span></div>${pre(ddl)}`;
+        t._ddl = ddl;
+      }
+      const n = creating ? (z.name.trim() ? 1 : 0) : ops.length;
+      pane.innerHTML = DZ_CSS + head + (subs.length > 1 ? `<div class="dz-sub">${subs.map(([k, l]) => `<button type="button" data-sub="${k}" class="${z.sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : '') + body
+        + (editableKind && (creating || n) ? `<div class="dz-bar"><b>${creating ? 'New table' : `${n} change${n === 1 ? '' : 's'}`}</b><span class="ui-sub">${info.allowWrite ? (creating ? '' : 'saved together, in one transaction') : '🔒 read-only — Test works; allow changes to save'}</span><span style="flex:1"></span>
+            ${UI.btn('Show SQL', 'data-z-sql')} ${UI.btn('🧪 Test', 'data-z-test')} ${creating ? '' : UI.btn('Discard', 'data-z-discard')} ${UI.primary(creating ? 'Create table' : 'Save', 'data-z-save')}</div>` : '');
+      bind();
+    };
+    const qOp = (op, label) => { z.queued.push({ ...op, label }); draw(); };
+    const tablesOfDb = () => { const o = st.objects[`${t.c}|${t.db}`]; return o ? o.relations.filter(r => r.kind === 'r' || r.kind === 'p') : []; };
+    const colOpts = (sel) => (creating ? [] : s.columns).map(c => `<option ${c.name === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+    const colChecks = (cls) => s.columns.map(c => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" class="${cls}" value="${esc(c.name)}"> <span class="td-mono">${esc(c.name)}</span> <span class="ui-sub">${esc(c.type)}</span></label>`).join('');
+    const picked = (ov, cls) => [...ov.querySelectorAll(`.${cls}:checked`)].map(x => x.value);
+    function bind() {
+      pane.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { z.sub = b.dataset.sub; draw(); });
+      // columns sheet
+      pane.querySelectorAll('tr[data-r] [data-f]').forEach(inp => {
+        const ev = inp.type === 'checkbox' ? 'change' : 'input';
+        inp.addEventListener(ev, () => {
+          const c = z.draft[Number(inp.closest('tr').dataset.r)]; const f = inp.dataset.f;
+          c[f] = inp.type === 'checkbox' ? inp.checked : inp.value;
+          if (f === 'pk' && c.pk) c.notnull = true;
+          if (inp.type === 'checkbox') draw(); else { const tr = inp.closest('tr'); const o = c.orig; if (o) { const same = String(c[f] ?? '') === String(o[f] ?? ''); inp.closest('td').classList.toggle('chg', !same); } refreshBar(); if (c === z.draft[z.draft.length - 1] && creating && c.name) { z.draft.push(dzCol(null, [])); draw(); const ni = pane.querySelector(`tr[data-r="${z.draft.length - 2}"] [data-f="${f}"]`); if (ni) { ni.focus(); ni.setSelectionRange(ni.value.length, ni.value.length); } } }
+        });
+      });
+      pane.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const i = Number(b.dataset.del); const c = z.draft[i]; if (c.isNew) z.draft.splice(i, 1); else c.del = !c.del; draw(); });
+      const add = pane.querySelector('[data-z-add]'); if (add) add.onclick = () => { z.draft.push(dzCol(null, [])); draw(); const r = pane.querySelector(`tr[data-r="${z.draft.length - 1}"] [data-f="name"]`); if (r) r.focus(); };
+      const zs = pane.querySelector('[data-z-schema]'); if (zs) zs.onchange = () => { z.schema = zs.value; };
+      const zn = pane.querySelector('[data-z-name]'); if (zn) zn.oninput = () => { z.name = zn.value; refreshBar(); };
+      const zc = pane.querySelector('[data-z-comment]'); if (zc) zc.oninput = () => { z.comment = zc.value; };
+      // indexes, keys, triggers
+      pane.querySelectorAll('[data-drop-idx]').forEach(b => b.onclick = () => qOp({ op: 'dropIndex', name: b.dataset.dropIdx }, `drop index ${b.dataset.dropIdx}`));
+      pane.querySelectorAll('[data-undrop-idx]').forEach(b => b.onclick = () => { z.queued = z.queued.filter(q => !(q.op === 'dropIndex' && q.name === b.dataset.undropIdx)); draw(); });
+      pane.querySelectorAll('[data-drop-con]').forEach(b => b.onclick = () => qOp({ op: 'dropConstraint', name: b.dataset.dropCon }, `drop ${b.dataset.dropCon}`));
+      pane.querySelectorAll('[data-undrop-con]').forEach(b => b.onclick = () => { z.queued = z.queued.filter(q => !(q.op === 'dropConstraint' && q.name === b.dataset.undropCon)); draw(); });
+      pane.querySelectorAll('[data-unq]').forEach(b => b.onclick = () => { z.queued.splice(Number(b.dataset.unq), 1); draw(); });
+      pane.querySelectorAll('[data-trg]').forEach(b => b.onclick = () => { const want = b.dataset.on !== '1'; z.queued = z.queued.filter(q => !(q.op === 'enableTrigger' && q.name === b.dataset.trg)); if (want !== (b.dataset.was === '1')) z.queued.push({ op: 'enableTrigger', name: b.dataset.trg, enable: want, label: `${want ? 'enable' : 'disable'} trigger ${b.dataset.trg}` }); draw(); });
+      const zi = pane.querySelector('[data-z-idx]'); if (zi) zi.onclick = () => UI.dialog({ title: 'Add index', saveLabel: 'Add',
+        body: `<div class="ui-label">Columns (in this order)</div><div style="max-height:220px;overflow:auto;margin-bottom:8px">${colChecks('zi-c')}</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="ui-field" style="flex:1"><span class="ui-label">Name (optional)</span><input class="input td-mono" id="zi-n"></label><label class="ui-field"><span class="ui-label">Method</span><select class="input" id="zi-m"><option>btree</option><option>hash</option><option>gin</option><option>gist</option><option>brin</option></select></label></div>
+          <label class="ui-field"><span class="ui-label">Only rows where (optional, a partial index)</span><input class="input td-mono" id="zi-w" placeholder="deleted_at IS NULL"></label>
+          <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="zi-u"> Unique</label>
+          <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin-top:4px"><input type="checkbox" id="zi-cc"> CONCURRENTLY — does not block writes on a busy table (made after the other changes, not in a transaction)</label>`,
+        onSave: async (ov) => { const c = picked(ov, 'zi-c'); if (!c.length) throw new Error('Pick at least one column'); const op = { op: 'addIndex', columns: c, unique: ov.querySelector('#zi-u').checked, method: ov.querySelector('#zi-m').value, name: ov.querySelector('#zi-n').value.trim() || undefined, where: ov.querySelector('#zi-w').value.trim() || undefined, concurrently: ov.querySelector('#zi-cc').checked }; qOp(op, `${op.unique ? 'unique ' : ''}index on (${c.join(', ')})${op.method !== 'btree' ? ' using ' + op.method : ''}`); } });
+      const zf = pane.querySelector('[data-z-fk]'); if (zf) zf.onclick = () => UI.dialog({ title: 'Add foreign key', saveLabel: 'Add',
+        body: `<label class="ui-field"><span class="ui-label">Column</span><select class="input td-mono" id="zf-c">${colOpts()}</select></label>
+          <label class="ui-field"><span class="ui-label">Points to the table</span><select class="input td-mono" id="zf-t">${tablesOfDb().map(r => `<option value="${esc(r.schema)}|${esc(r.name)}">${r.schema !== 'public' ? esc(r.schema) + '.' : ''}${esc(r.name)}</option>`).join('')}</select></label>
+          <label class="ui-field"><span class="ui-label">Its column</span><select class="input td-mono" id="zf-rc"><option>…</option></select></label>
+          <div style="display:flex;gap:10px"><label class="ui-field" style="flex:1"><span class="ui-label">When that row is deleted</span><select class="input" id="zf-d"><option value="NO ACTION">refuse (no action)</option><option value="CASCADE">delete these rows too (cascade)</option><option value="SET NULL">set this column to NULL</option><option value="RESTRICT">refuse at once (restrict)</option></select></label>
+            <label class="ui-field" style="flex:1"><span class="ui-label">When its key changes</span><select class="input" id="zf-u"><option value="NO ACTION">refuse (no action)</option><option value="CASCADE">change these too (cascade)</option><option value="SET NULL">set NULL</option></select></label></div>
+          <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="zf-nv"> Do not check the rows there now (NOT VALID) — only new rows</label><div data-zf-warn class="ui-sub" style="color:var(--warning);margin-top:6px"></div>`,
+        onOpen: (ov) => {
+          const ts = ov.querySelector('#zf-t'), rc = ov.querySelector('#zf-rc'), cc = ov.querySelector('#zf-c'), warn = ov.querySelector('[data-zf-warn]'); let ref = null;
+          const check = () => { const a = s.columns.find(c => c.name === cc.value); const b = ref && (ref.columns || []).find(c => c.name === rc.value); const base = (x) => String(x || '').replace(/\(.*$/, '').replace(/^character varying$/, 'varchar').trim();
+            warn.textContent = a && b && base(a.type) !== base(b.type) ? `⚠ ${a.name} is ${a.type} and ${b.name} is ${b.type} — PostgreSQL refuses a key between different types. Change one of the types first.` : b && ref && !(ref.pk || []).includes(b.name) && !(ref.indexes || []).some(i => i.unique && new RegExp('\\(' + b.name + '\\)').test(i.def)) ? `⚠ ${b.name} is not a primary key or unique there — PostgreSQL needs one of those.` : ''; };
+          const load = async () => { const [rs, rt] = ts.value.split('|'); rc.innerHTML = '<option>…</option>'; ref = await ensureStruct(t.c, t.db, rs, rt); rc.innerHTML = (ref.columns || []).map(c => `<option ${(ref.pk || []).includes(c.name) ? 'selected' : ''}>${esc(c.name)}</option>`).join(''); check(); };
+          ts.onchange = load; rc.onchange = check; cc.onchange = check; if (ts.value) load();
+        },
+        onSave: async (ov) => { const [rs, rt] = ov.querySelector('#zf-t').value.split('|'); const c = ov.querySelector('#zf-c').value, rc = ov.querySelector('#zf-rc').value; if (!rt || !rc || rc === '…') throw new Error('Pick the table and its column'); qOp({ op: 'addForeignKey', columns: [c], refSchema: rs, refTable: rt, refColumns: [rc], onDelete: ov.querySelector('#zf-d').value, onUpdate: ov.querySelector('#zf-u').value, notValid: ov.querySelector('#zf-nv').checked }, `${c} → ${rt}.${rc}`); } });
+      const zu = pane.querySelector('[data-z-uq]'); if (zu) zu.onclick = () => UI.dialog({ title: 'Add unique', saveLabel: 'Add', body: `<div class="ui-sub" style="margin-bottom:6px">No two rows may have the same values in these columns.</div>${colChecks('zu-c')}`, onSave: async (ov) => { const c = picked(ov, 'zu-c'); if (!c.length) throw new Error('Pick at least one column'); qOp({ op: 'addUnique', columns: c }, `unique (${c.join(', ')})`); } });
+      const zp = pane.querySelector('[data-z-pk]'); if (zp) zp.onclick = () => UI.dialog({ title: 'Add primary key', saveLabel: 'Add', body: `<div class="ui-sub" style="margin-bottom:6px">Rows are found and edited by it; its columns become NOT NULL and unique.</div>${colChecks('zp-c')}`, onSave: async (ov) => { const c = picked(ov, 'zp-c'); if (!c.length) throw new Error('Pick at least one column'); qOp({ op: 'addPrimaryKey', columns: c }, `primary key (${c.join(', ')})`); } });
+      const zk = pane.querySelector('[data-z-ck]'); if (zk) zk.onclick = () => UI.dialog({ title: 'Add check', saveLabel: 'Add', body: `<label class="ui-field"><span class="ui-label">Every row must satisfy</span><input class="input td-mono" id="zk-e" placeholder="price >= 0"></label><label class="ui-field"><span class="ui-label">Name (optional)</span><input class="input td-mono" id="zk-n"></label>`, onSave: async (ov) => { const e = ov.querySelector('#zk-e').value.trim(); if (!e) throw new Error('Write the condition'); qOp({ op: 'addCheck', expr: e, name: ov.querySelector('#zk-n').value.trim() || undefined }, `check (${e})`); } });
+      // header
+      const d = pane.querySelector('[data-d-data]'); if (d) d.onclick = () => openTab({ type: 'data', c: t.c, db: t.db, s: t.s, t: t.t }, { pin: true });
+      const nq = pane.querySelector('[data-d-q]'); if (nq) nq.onclick = () => genSql('select', t.c, t.db, t.s, t.t).catch(e => showToast(e.message, 'error'));
+      const rf = pane.querySelector('[data-d-ref]'); if (rf) rf.onclick = () => (dzDirty(t) ? showConfirm('Refresh', 'Drop the changes not saved and read the table again?', () => { t.dzReload = true; drawDesign(t, pane); }, true) : (t.dzReload = true, drawDesign(t, pane)));
+      const tb = pane.querySelector('[data-d-tbl]'); if (tb) tb.onclick = () => { const r = tb.getBoundingClientRect(); tableMenu(t, r.left, r.bottom + 2); };
+      pane.querySelectorAll('[data-d-ref-t]').forEach(a => a.onclick = (e) => { e.preventDefault(); const v = a.dataset.dRefT.replace(/"/g, ''); const [sch, tbl] = v.includes('.') ? v.split('.') : ['public', v]; openTab({ type: 'design', c: t.c, db: t.db, s: sch, t: tbl }, { pin: true }); });
+      const cd = pane.querySelector('[data-z-copyddl]'); if (cd) cd.onclick = () => copy(t._ddl);
+      const dq = pane.querySelector('[data-z-ddlq]'); if (dq) dq.onclick = () => newQuery(t.c, t.db, t._ddl, `DDL ${t.t}`);
+      // the bar
+      const bs = pane.querySelector('[data-z-sql]'); if (bs) bs.onclick = () => showSql();
+      const bt = pane.querySelector('[data-z-test]'); if (bt) bt.onclick = () => run(true);
+      const bd = pane.querySelector('[data-z-discard]'); if (bd) bd.onclick = () => showConfirm('Discard', 'Drop every change not saved in this tab?', () => { t.dz = null; t.dzReload = false; drawDesign(t, pane); });
+      const bv = pane.querySelector('[data-z-save]'); if (bv) bv.onclick = () => save();
+    }
+    function refreshBar() { const had = !!pane.querySelector('.dz-bar'); const now = creating || dzOps(t).length > 0; if (had !== now) draw(); else { const b = pane.querySelector('.dz-bar b'); if (b && !creating) { const n = dzOps(t).length; b.textContent = `${n} change${n === 1 ? '' : 's'}`; } } }
+    const body = () => ({ schema: creating ? z.schema : t.s, table: creating ? undefined : t.t, ops: dzOps(t) });
+    async function showSql() {
+      try {
+        const r = await API.post(`${dbBaseOf(t.c, t.db)}/ddl/preview`, body());
+        const text = r.statements.map(x => x.sql + ';').join('\n\n');
+        showModal('The SQL of these changes', `<div class="ui-sub" style="margin-bottom:6px">${r.statements.length} statement${r.statements.length === 1 ? '' : 's'}, run in one transaction${r.statements.some(x => x.concurrent) ? ' (CONCURRENTLY ones after it)' : ''}.</div>${pre(text)}`, [{ label: 'Copy', className: 'btn btn-secondary', onClick: () => copy(text) }, { label: 'Open in a query', className: 'btn btn-secondary', onClick: () => newQuery(t.c, t.db, text, creating ? 'CREATE TABLE' : `ALTER ${t.t}`) }, { label: 'Close', className: 'btn btn-primary' }]);
+      } catch (e) { showToast(e.message, 'error', 9000); }
+    }
+    async function run(test) {
+      try {
+        const r = await API.post(`${dbBaseOf(t.c, t.db)}/ddl/apply`, { ...body(), test, confirm: !test });
+        if (test) return showToast(`🧪 Test passed — ${r.statements.length} statement${r.statements.length === 1 ? '' : 's'} ran and were rolled back. Nothing changed.`, 'success', 6000);
+        showToast(creating ? `Created ${z.schema}.${z.name}` : 'Saved', 'success');
+        forgetDb(t.c, t.db); ensureObjects(t.c, t.db, true);
+        if (creating) { const name = z.name.trim(), sch = z.schema; closeTab(t.id, true); openTab({ type: 'design', c: t.c, db: t.db, s: sch, t: name }, { pin: true }); return; }
+        st.tabs.filter(x => x !== t && x.c === t.c && x.db === t.db && x.s === t.s && x.t === t.t && x.type === 'data' && x.inst && x.inst.reload).forEach(x => x.inst.reload());
+        t.dzReload = true; drawDesign(t, pane);
+      } catch (e) { showModal(test ? 'Test failed' : 'Not saved', `<div class="text-sm" style="color:var(--danger);white-space:pre-wrap">${esc(e.message)}</div>${e.data && e.data.statement ? `<div class="ui-label" style="margin-top:10px">The statement</div>${pre(e.data.statement)}` : ''}`, [{ label: 'Close', className: 'btn btn-secondary' }]); }
+    }
+    async function save() {
+      if (creating && !z.name.trim()) return showToast('Name the table first', 'info');
+      if (!info.allowWrite) return showConfirm('Allow changes?', `The connection to <b>${esc(t.c)}</b> is read-only. Allow changes and save?`, async () => { await setWrite(true, t.c); save(); });
+      let r; try { r = await API.post(`${dbBaseOf(t.c, t.db)}/ddl/preview`, body()); } catch (e) { return showToast(e.message, 'error', 9000); }
+      const risky = r.statements.some(x => /DROP|TYPE /.test(x.sql));
+      showConfirm(creating ? 'Create table' : 'Save structure changes', `${r.statements.length} statement${r.statements.length === 1 ? '' : 's'} in one transaction${info.production ? ' — <b style="color:var(--danger)">production</b>' : ''}${risky ? '. <b>Dropping columns or changing types can lose data</b> — 🧪 Test first, back up if in doubt.' : ''}:${pre(r.statements.map(x => x.sql + ';').join('\n'))}`, () => run(false), risky || !!info.production);
+    }
+    draw();
+  }
+
+  // Table ▾ (and the tree): rename, move, duplicate, comment — each shows its SQL, can be tested, then runs
+  function quickDdl(t, ops, title, done) {
+    UI.dialog({ title, saveLabel: 'Run', wide: false, body: '<div data-q-sql><div class="skeleton" style="height:60px"></div></div>',
+      onOpen: async (ov, { save }) => {
+        try { const r = await API.post(`${dbBaseOf(t.c, t.db)}/ddl/preview`, { schema: t.s, table: t.t, ops }); ov.querySelector('[data-q-sql]').innerHTML = `<pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:0">${esc(r.statements.map(x => x.sql + ';').join('\n'))}</pre><div style="margin-top:8px">${UI.btn('🧪 Test', 'data-q-test')}</div>`;
+          ov.querySelector('[data-q-test]').onclick = async () => { try { await API.post(`${dbBaseOf(t.c, t.db)}/ddl/apply`, { schema: t.s, table: t.t, ops, test: true }); showToast('🧪 Test passed — rolled back', 'success'); } catch (e) { showToast(e.message, 'error', 9000); } };
+        } catch (e) { ov.querySelector('[data-q-sql]').innerHTML = `<div class="text-danger">${esc(e.message)}</div>`; save.disabled = true; }
+      },
+      onSave: async () => {
+        if (!(st.infos[t.c] || {}).allowWrite) throw new Error('Allow changes first (status bar)');
+        await API.post(`${dbBaseOf(t.c, t.db)}/ddl/apply`, { schema: t.s, table: t.t, ops, confirm: true });
+        showToast('Done'); forgetDb(t.c, t.db); await ensureObjects(t.c, t.db, true); if (done) done();
+      } });
+  }
+  function tableMenu(t, x, y) {
+    const retarget = (s2, t2) => { st.tabs.filter(o => o.c === t.c && o.db === t.db && o.s === t.s && o.t === t.t).forEach(o => { o.s = s2; o.t = t2; o.dzReload = true; destroyTab(o); }); persistTabs(); const a = activeTab(); if (a) { panesEl().querySelectorAll('.dbx-pane').forEach(p => p.classList.remove('on')); activate(a.id); } drawTabs(); };
+    const ask = (title, label, value, fn) => UI.dialog({ title, saveLabel: 'Next', body: `<label class="ui-field"><span class="ui-label">${label}</span><input class="input td-mono" id="qa-v" value="${esc(value)}"></label>`, onSave: async (ov) => { const v = ov.querySelector('#qa-v').value.trim(); if (!v) throw new Error('Needed'); setTimeout(() => fn(v), 50); } });
+    showMenu(x, y, [{ header: `${t.s}.${t.t}` },
+      { label: 'Rename…', act: () => ask('Rename table', 'New name', t.t, (v) => quickDdl(t, [{ op: 'renameTable', name: v }], `Rename ${t.t}`, () => retarget(t.s, v))) },
+      { label: 'Move to another schema…', act: () => ask('Move to schema', 'Schema (must exist)', t.s, (v) => quickDdl(t, [{ op: 'setSchema', schema: v }], `Move ${t.t}`, () => retarget(v, t.t))) },
+      { label: 'Duplicate…', act: () => UI.dialog({ title: `Duplicate ${t.t}`, saveLabel: 'Next', body: `<label class="ui-field"><span class="ui-label">New table</span><input class="input td-mono" id="du-n" value="${esc(t.t)}_copy"></label><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="du-d" checked> With the rows</label><div class="ui-sub" style="margin-top:6px">Columns, defaults, constraints and indexes are copied (LIKE … INCLUDING ALL); serial columns keep using the old sequence.</div>`, onSave: async (ov) => { const n = ov.querySelector('#du-n').value.trim(), wd = ov.querySelector('#du-d').checked; setTimeout(() => quickDdl(t, [{ op: 'duplicate', name: n, withData: wd }], `Duplicate ${t.t}`, () => openTab({ type: 'design', c: t.c, db: t.db, s: t.s, t: n }, { pin: true })), 50); } }) },
+      { label: 'Comment…', act: () => ask('Table comment', 'Comment (empty removes it)', (st.structs[`${t.c}|${t.db}|${t.s}|${t.t}`] || {}).comment || ' ', (v) => quickDdl(t, [{ op: 'comment', text: v.trim() }], 'Comment', () => { t.dzReload = true; renderTab(t, true); })) },
+      '-',
+      ...(nodeMenuItems(`t|${t.c}|${t.db}|${t.s}|${t.t}`).filter(it => it && it !== '-' && /VACUUM|ANALYZE|TRUNCATE|Drop/.test(it.label || ''))),
+    ]);
+  }
+  const nodeMenuItems = (key) => { let items = null; const real = showMenu; showMenu = (x, y, list) => { items = list; }; try { nodeMenu(key, 0, 0); } finally { showMenu = real; } return items || []; };
 
   // ---------- database overview (the tables of a database, like a file list) ----------
   async function drawOverview(t, pane) {
@@ -643,7 +868,7 @@ Router.register('databases', async (content, params = {}) => {
       const q = view.q.toLowerCase(); const list = rels.filter(r => !q || `${r.schema}.${r.name}`.toLowerCase().includes(q));
       pane.innerHTML = `
         <div class="dbx-head"><span class="dbx-ic">${IC.db}</span><b>${esc(t.db)}</b><span class="ui-sub">${d.size != null ? formatBytes(d.size) : ''} · ${rels.filter(r => r.kind === 'r' || r.kind === 'p').length} tables · ${rels.filter(r => r.kind === 'v' || r.kind === 'm').length} views · ${o.functions.length} functions · owner ${esc(d.owner || '?')}</span><span style="flex:1"></span>
-          ${UI.btn('New query', 'data-o-q', 'btn-primary')} ${UI.btn('Admin', 'data-o-adm')} ${UI.btn('Backups', 'data-o-bk')} ${UI.btn('Refresh', 'data-o-ref')}</div>
+          ${UI.btn('New query', 'data-o-q', 'btn-primary')} ${UI.btn('+ New table', 'data-o-nt')} ${UI.btn('Admin', 'data-o-adm')} ${UI.btn('Backups', 'data-o-bk')} ${UI.btn('Refresh', 'data-o-ref')}</div>
         <div class="dbg-bar"><input class="input" data-o-find placeholder="Filter…" value="${esc(view.q)}" style="max-width:280px;padding:4px 10px">
           <span class="ui-sub" data-o-n>${list.length} of ${rels.length}</span><span style="flex:1"></span>
           <span class="ui-sub">With the ticked:</span> ${UI.btn('ANALYZE', `data-o-bulk="analyze" ${w ? '' : 'disabled title="Allow changes first"'}`)} ${UI.btn('VACUUM ANALYZE', `data-o-bulk="vacuum" ${w ? '' : 'disabled title="Allow changes first"'}`)} ${UI.btn('Empty…', `data-o-bulk="truncate" ${w ? '' : 'disabled title="Allow changes first"'}`, 'btn-danger')} ${UI.btn('Drop…', `data-o-bulk="drop" ${w ? '' : 'disabled title="Allow changes first"'}`, 'btn-danger')}</div>
@@ -663,6 +888,7 @@ Router.register('databases', async (content, params = {}) => {
       pane.querySelectorAll('[data-o-ck]').forEach(c => c.onchange = () => { if (c.checked) view.sel.add(c.dataset.oCk); else view.sel.delete(c.dataset.oCk); });
       const all = pane.querySelector('[data-o-all]'); if (all) all.onchange = () => { list.filter(r => r.kind !== 'S').forEach(r => { if (all.checked) view.sel.add(`${r.schema}|${r.name}`); else view.sel.delete(`${r.schema}|${r.name}`); }); draw(); };
       pane.querySelector('[data-o-q]').onclick = () => newQuery(t.c, t.db);
+      pane.querySelector('[data-o-nt]').onclick = () => newTable(t.c, t.db, 'public');
       pane.querySelector('[data-o-adm]').onclick = () => openTab({ type: 'admin', c: t.c, db: t.db }, { pin: true });
       pane.querySelector('[data-o-bk]').onclick = () => openTab({ type: 'backups', c: t.c }, { pin: true });
       pane.querySelector('[data-o-ref]').onclick = () => { forgetDb(t.c, t.db); renderTab(t, true); };
