@@ -248,16 +248,16 @@ Router.register('databases', async (content, params = {}) => {
     if (!want) return;
     const p = parts(key);
     if (p[0] === 'c') await ensureInfo(p[1]);
-    if (p[0] === 'd') {
-      const o = await ensureObjects(p[1], p[2]);
-      const seen = new Set(lsGet('seenDb', []));
-      if (o && !o.error && !seen.has(`${p[1]}|${p[2]}`)) { // the first time: show public → Tables at once
-        seen.add(`${p[1]}|${p[2]}`); lsSet('seenDb', [...seen].slice(-200));
-        const sch = o.relations.some(r => r.schema === 'public') ? 'public' : (o.relations[0] || {}).schema;
-        if (sch) { st.open.add(`s|${p[1]}|${p[2]}|${sch}`); st.open.add(`f|${p[1]}|${p[2]}|${sch}|tables`); saveOpen(); drawTree(); }
-      }
-    }
+    if (p[0] === 'd') firstOpen(p[1], p[2], await ensureObjects(p[1], p[2]));
     if (p[0] === 't') await ensureStruct(p[1], p[2], p[3], p[4]);
+  }
+  /** The first time a database is opened: show public → Tables at once. */
+  function firstOpen(c, db, o) {
+    const seen = new Set(lsGet('seenDb', []));
+    if (!o || o.error || seen.has(`${c}|${db}`)) return;
+    seen.add(`${c}|${db}`); lsSet('seenDb', [...seen].slice(-200));
+    const sch = o.relations.some(r => r.schema === 'public') ? 'public' : (o.relations[0] || {}).schema;
+    if (sch) { st.open.add(`s|${c}|${db}|${sch}`); st.open.add(`f|${c}|${db}|${sch}|tables`); saveOpen(); drawTree(); }
   }
   function select(key) { st.sel = key; treeEl().querySelectorAll('.dbx-n.sel').forEach(x => x.classList.remove('sel')); const n = treeEl().querySelector(`[data-k="${CSS.escape(key)}"]`); if (n) n.classList.add('sel'); }
   const relOf = (c, db, s, t) => { const o = st.objects[`${c}|${db}`]; return o && o.relations ? o.relations.find(r => r.schema === s && r.name === t) : null; };
@@ -349,6 +349,10 @@ Router.register('databases', async (content, params = {}) => {
         { label: 'New query', act: () => newQuery(c, db) },
         { label: 'Open — tables, sizes, rows', act: () => openTab({ type: 'overview', c, db }, { pin: true }) },
         { label: 'New table…', act: () => newTable(c, db, 'public') },
+        '-',
+        { label: 'Export… (SQL, CSV, Excel)', act: () => exportDialog(c, db) },
+        { label: 'Import a .sql file…', act: () => importDialog(c, db) },
+        { label: 'New table from a CSV…', act: () => csvNewTable(c, db) },
         { label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } },
         '-',
         { label: 'Users, sessions, VACUUM', act: () => openTab({ type: 'admin', c, db }, { pin: true }) },
@@ -378,6 +382,8 @@ Router.register('databases', async (content, params = {}) => {
         r.kind === 'v' || r.kind === 'm' ? { label: 'New query: view definition', act: () => newQuery(c, db, `SELECT pg_get_viewdef('${qn(s, t).replace(/'/g, "''")}'::regclass, true);\n`) } : null,
         '-',
         isSeq ? null : { label: 'Count rows', act: () => countRows(c, db, s, t) },
+        isSeq ? null : { label: 'Export… (SQL, CSV, Excel)', act: () => exportDialog(c, db, [`${s}.${t}`]) },
+        isTable ? { label: 'Fill with test data…', act: () => mockDialog(c, db, s, t) } : null,
         isSeq ? null : { label: 'Export CSV', act: () => { window.location.href = `/api${dbBaseOf(c, db)}/export?schema=${enc(s)}&table=${enc(t)}&format=csv`; } },
         isSeq ? null : { label: 'Export JSON lines', act: () => { window.location.href = `/api${dbBaseOf(c, db)}/export?schema=${enc(s)}&table=${enc(t)}&format=json`; } },
         { label: 'Copy name', act: () => copy(qn(s, t)) },
@@ -810,7 +816,11 @@ Router.register('databases', async (content, params = {}) => {
         if (test) return showToast(`🧪 Test passed — ${r.statements.length} statement${r.statements.length === 1 ? '' : 's'} ran and were rolled back. Nothing changed.`, 'success', 6000);
         showToast(creating ? `Created ${z.schema}.${z.name}` : 'Saved', 'success');
         forgetDb(t.c, t.db); ensureObjects(t.c, t.db, true);
-        if (creating) { const name = z.name.trim(), sch = z.schema; closeTab(t.id, true); openTab({ type: 'design', c: t.c, db: t.db, s: sch, t: name }, { pin: true }); return; }
+        if (creating) {
+          const name = z.name.trim(), sch = z.schema;
+          if (t.csv) { try { showToast(`Loading ${t.csv.data.length.toLocaleString()} rows…`, 'info', 4000); const n = await loadCsvRows(t, sch, name); showToast(`Created ${sch}.${name} with ${n.toLocaleString()} rows from ${t.csv.file}`, 'success', 8000); } catch (e) { showModal('The table is made, the rows are not', `<div class="text-sm" style="color:var(--danger)">${esc(e.message)}</div><div class="ui-sub" style="margin-top:8px">Change the column types in Design, then load the file with the table's Import CSV.</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]); } }
+          closeTab(t.id, true); openTab({ type: t.csv ? 'data' : 'design', c: t.c, db: t.db, s: sch, t: name }, { pin: true }); return;
+        }
         st.tabs.filter(x => x !== t && x.c === t.c && x.db === t.db && x.s === t.s && x.t === t.t && x.type === 'data' && x.inst && x.inst.reload).forEach(x => x.inst.reload());
         t.dzReload = true; drawDesign(t, pane);
       } catch (e) { showModal(test ? 'Test failed' : 'Not saved', `<div class="text-sm" style="color:var(--danger);white-space:pre-wrap">${esc(e.message)}</div>${e.data && e.data.statement ? `<div class="ui-label" style="margin-top:10px">The statement</div>${pre(e.data.statement)}` : ''}`, [{ label: 'Close', className: 'btn btn-secondary' }]); }
@@ -848,7 +858,7 @@ Router.register('databases', async (content, params = {}) => {
       { label: 'Duplicate…', act: () => UI.dialog({ title: `Duplicate ${t.t}`, saveLabel: 'Next', body: `<label class="ui-field"><span class="ui-label">New table</span><input class="input td-mono" id="du-n" value="${esc(t.t)}_copy"></label><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="du-d" checked> With the rows</label><div class="ui-sub" style="margin-top:6px">Columns, defaults, constraints and indexes are copied (LIKE … INCLUDING ALL); serial columns keep using the old sequence.</div>`, onSave: async (ov) => { const n = ov.querySelector('#du-n').value.trim(), wd = ov.querySelector('#du-d').checked; setTimeout(() => quickDdl(t, [{ op: 'duplicate', name: n, withData: wd }], `Duplicate ${t.t}`, () => openTab({ type: 'design', c: t.c, db: t.db, s: t.s, t: n }, { pin: true })), 50); } }) },
       { label: 'Comment…', act: () => ask('Table comment', 'Comment (empty removes it)', (st.structs[`${t.c}|${t.db}|${t.s}|${t.t}`] || {}).comment || ' ', (v) => quickDdl(t, [{ op: 'comment', text: v.trim() }], 'Comment', () => { t.dzReload = true; renderTab(t, true); })) },
       '-',
-      ...(nodeMenuItems(`t|${t.c}|${t.db}|${t.s}|${t.t}`).filter(it => it && it !== '-' && /VACUUM|ANALYZE|TRUNCATE|Drop/.test(it.label || ''))),
+      ...(nodeMenuItems(`t|${t.c}|${t.db}|${t.s}|${t.t}`).filter(it => it && it !== '-' && /VACUUM|ANALYZE|TRUNCATE|Drop|Export…|test data/.test(it.label || ''))),
     ]);
   }
   const nodeMenuItems = (key) => { let items = null; const real = showMenu; showMenu = (x, y, list) => { items = list; }; try { nodeMenu(key, 0, 0); } finally { showMenu = real; } return items || []; };
@@ -868,7 +878,7 @@ Router.register('databases', async (content, params = {}) => {
       const q = view.q.toLowerCase(); const list = rels.filter(r => !q || `${r.schema}.${r.name}`.toLowerCase().includes(q));
       pane.innerHTML = `
         <div class="dbx-head"><span class="dbx-ic">${IC.db}</span><b>${esc(t.db)}</b><span class="ui-sub">${d.size != null ? formatBytes(d.size) : ''} · ${rels.filter(r => r.kind === 'r' || r.kind === 'p').length} tables · ${rels.filter(r => r.kind === 'v' || r.kind === 'm').length} views · ${o.functions.length} functions · owner ${esc(d.owner || '?')}</span><span style="flex:1"></span>
-          ${UI.btn('New query', 'data-o-q', 'btn-primary')} ${UI.btn('+ New table', 'data-o-nt')} ${UI.btn('Admin', 'data-o-adm')} ${UI.btn('Backups', 'data-o-bk')} ${UI.btn('Refresh', 'data-o-ref')}</div>
+          ${UI.btn('New query', 'data-o-q', 'btn-primary')} ${UI.btn('+ New table', 'data-o-nt')} ${UI.btn('Export…', 'data-o-ex')} ${UI.btn('Import…', 'data-o-im')} ${UI.btn('Admin', 'data-o-adm')} ${UI.btn('Backups', 'data-o-bk')} ${UI.btn('Refresh', 'data-o-ref')}</div>
         <div class="dbg-bar"><input class="input" data-o-find placeholder="Filter…" value="${esc(view.q)}" style="max-width:280px;padding:4px 10px">
           <span class="ui-sub" data-o-n>${list.length} of ${rels.length}</span><span style="flex:1"></span>
           <span class="ui-sub">With the ticked:</span> ${UI.btn('ANALYZE', `data-o-bulk="analyze" ${w ? '' : 'disabled title="Allow changes first"'}`)} ${UI.btn('VACUUM ANALYZE', `data-o-bulk="vacuum" ${w ? '' : 'disabled title="Allow changes first"'}`)} ${UI.btn('Empty…', `data-o-bulk="truncate" ${w ? '' : 'disabled title="Allow changes first"'}`, 'btn-danger')} ${UI.btn('Drop…', `data-o-bulk="drop" ${w ? '' : 'disabled title="Allow changes first"'}`, 'btn-danger')}</div>
@@ -889,6 +899,8 @@ Router.register('databases', async (content, params = {}) => {
       const all = pane.querySelector('[data-o-all]'); if (all) all.onchange = () => { list.filter(r => r.kind !== 'S').forEach(r => { if (all.checked) view.sel.add(`${r.schema}|${r.name}`); else view.sel.delete(`${r.schema}|${r.name}`); }); draw(); };
       pane.querySelector('[data-o-q]').onclick = () => newQuery(t.c, t.db);
       pane.querySelector('[data-o-nt]').onclick = () => newTable(t.c, t.db, 'public');
+      pane.querySelector('[data-o-ex]').onclick = () => exportDialog(t.c, t.db, [...view.sel].map(x => x.replace('|', '.')));
+      pane.querySelector('[data-o-im]').onclick = () => importDialog(t.c, t.db);
       pane.querySelector('[data-o-adm]').onclick = () => openTab({ type: 'admin', c: t.c, db: t.db }, { pin: true });
       pane.querySelector('[data-o-bk]').onclick = () => openTab({ type: 'backups', c: t.c }, { pin: true });
       pane.querySelector('[data-o-ref]').onclick = () => { forgetDb(t.c, t.db); renderTab(t, true); };
@@ -910,6 +922,163 @@ Router.register('databases', async (content, params = {}) => {
       });
     };
     draw();
+  }
+
+  // ---------- export, import, test data (server/pg-io.js) ----------
+  async function exportDialog(c, db, preset) {
+    const o = await ensureObjects(c, db);
+    const rels = (o.relations || []).filter(r => r.kind === 'r' || r.kind === 'p' || r.kind === 'm' || r.kind === 'f').sort((a, b) => a.schema.localeCompare(b.schema) || a.name.localeCompare(b.name));
+    const pre = new Set(preset && preset.length ? preset : rels.map(r => `${r.schema}.${r.name}`));
+    UI.dialog({ title: `Export from ${esc(db)}`, saveLabel: 'Download', wide: true,
+      body: `<div style="display:grid;grid-template-columns:minmax(220px,1fr) minmax(260px,1.2fr);gap:16px">
+        <div><div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><b>Tables</b><span class="ui-sub" data-ex-n></span><span style="flex:1"></span>${UI.btn('All', 'data-ex-all')} ${UI.btn('None', 'data-ex-none')}</div>
+          <input class="input" data-ex-find placeholder="Filter…" style="padding:3px 8px;margin-bottom:6px">
+          <div style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px" data-ex-list>${rels.map(r => `<label style="display:flex;gap:6px;align-items:center;font-weight:400" data-ex-row="${esc(r.schema + '.' + r.name)}"><input type="checkbox" class="ex-t" value="${esc(r.schema + '.' + r.name)}" ${pre.has(`${r.schema}.${r.name}`) ? 'checked' : ''}> <span class="td-mono">${r.schema !== 'public' ? esc(r.schema) + '.' : ''}${esc(r.name)}</span><span class="ui-sub" style="margin-left:auto">${r.rows >= 0 ? '≈' + Number(r.rows).toLocaleString() : ''}</span></label>`).join('')}</div></div>
+        <div><div class="ui-label">Format</div>
+          ${[['sql', 'SQL — CREATE and INSERT (pg_dump)', 'Load it into any PostgreSQL with psql or Import .sql'], ['csv', 'CSV — one file per table, in a .zip', 'For spreadsheets and other tools'], ['xlsx', 'Excel (.xlsx) — one sheet per table', 'Up to 1 048 576 rows a sheet']].map(([v, l, h], i) => `<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:6px 0"><input type="radio" name="ex-f" value="${v}" ${i === 0 ? 'checked' : ''} style="margin-top:3px"><span><b>${l}</b><br><span class="ui-sub">${h}</span></span></label>`).join('')}
+          <div data-ex-sql style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
+            <label class="ui-field"><span class="ui-label">What</span><select class="input" id="ex-w"><option value="both">Structure and data</option><option value="schema">Structure only (CREATE TABLE, indexes, keys)</option><option value="data">Data only</option></select></label>
+            <label class="ui-field"><span class="ui-label">Rows as</span><select class="input" id="ex-r"><option value="insert">INSERT statements — readable, work everywhere</option><option value="copy">COPY — much faster to load, psql only</option></select></label>
+            <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="ex-c"> Drop the tables first (DROP … IF EXISTS) — to replace them where it is loaded</label>
+            <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin-top:4px"><input type="checkbox" id="ex-g" checked> Compress (.sql.gz)</label>
+          </div></div></div>`,
+      onOpen: (ov) => {
+        const n = () => { ov.querySelector('[data-ex-n]').textContent = `${ov.querySelectorAll('.ex-t:checked').length} of ${rels.length}`; };
+        ov.querySelectorAll('.ex-t').forEach(x => x.onchange = n); n();
+        ov.querySelector('[data-ex-all]').onclick = () => { ov.querySelectorAll('[data-ex-row]:not([hidden]) .ex-t').forEach(x => { x.checked = true; }); n(); };
+        ov.querySelector('[data-ex-none]').onclick = () => { ov.querySelectorAll('.ex-t').forEach(x => { x.checked = false; }); n(); };
+        ov.querySelector('[data-ex-find]').oninput = (e) => { const q = e.target.value.toLowerCase(); ov.querySelectorAll('[data-ex-row]').forEach(r => { r.hidden = !!q && !r.dataset.exRow.toLowerCase().includes(q); }); };
+        ov.querySelectorAll('[name="ex-f"]').forEach(x => x.onchange = () => { ov.querySelector('[data-ex-sql]').style.display = ov.querySelector('[name="ex-f"]:checked').value === 'sql' ? '' : 'none'; });
+      },
+      onSave: async (ov) => {
+        const picked = [...ov.querySelectorAll('.ex-t:checked')].map(x => x.value);
+        if (!picked.length) throw new Error('Tick at least one table');
+        const all = picked.length === rels.length;
+        const fmt = ov.querySelector('[name="ex-f"]:checked').value;
+        const tq = all && fmt === 'sql' ? '' : `tables=${enc(picked.join(','))}`;
+        if (fmt === 'sql') {
+          const url = `/api${dbBaseOf(c, db)}/dump?${tq}&what=${ov.querySelector('#ex-w').value}&rows=${ov.querySelector('#ex-r').value}&clean=${ov.querySelector('#ex-c').checked ? 1 : 0}&gz=${ov.querySelector('#ex-g').checked ? 1 : 0}`;
+          window.location.href = url; showToast('The export is downloading…', 'info');
+          return;
+        }
+        showToast(`Making the ${fmt === 'xlsx' ? 'Excel file' : 'zip'}…`, 'info', 3000);
+        const r = await fetch(`/api${dbBaseOf(c, db)}/export-zip?${tq}&format=${fmt}`, { credentials: 'same-origin' });
+        if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error; } catch (e) {} throw new Error(m); }
+        const blob = await r.blob(); const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = ((r.headers.get('content-disposition') || '').match(/filename="([^"]+)"/) || [])[1] || `${db}.${fmt === 'xlsx' ? 'xlsx' : 'zip'}`;
+        document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+      } });
+  }
+
+  function importDialog(c, db) {
+    UI.dialog({ title: `Import into ${esc(db)}`, saveLabel: 'Import',
+      body: `<div class="ui-label">A SQL file</div>
+        <input type="file" class="input" id="im-f" accept=".sql,.gz,.sql.gz,.txt">
+        <div class="ui-sub" style="margin:4px 0 10px">.sql or .sql.gz — a pg_dump in plain format, or any SQL. psql runs it and stops at the first error. (A .dump in custom format goes through Backups → Restore.)</div>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="im-1" checked> In one transaction — if a statement fails, nothing of the file stays</label>
+        <div data-im-prog style="display:none;margin-top:10px"><div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden"><div data-im-bar style="height:100%;width:0;background:var(--accent,#3b82f6)"></div></div><div class="ui-sub" data-im-txt style="margin-top:4px"></div></div>
+        <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:10px"><div class="ui-label">CSV</div>
+          <div class="ui-sub">Into a table that exists: open its data → <b>Export / import → Import CSV…</b> (match columns, upsert, Test). Into a <b>new</b> table: ${UI.btn('New table from a CSV…', 'data-im-csv')}</div></div>`,
+      onOpen: (ov) => { ov.querySelector('[data-im-csv]').onclick = () => { const m = ov.closest('.modal-overlay'); if (m) m.querySelector('.modal-footer .btn-secondary').click(); csvNewTable(c, db); }; },
+      onSave: async (ov) => {
+        const f = ov.querySelector('#im-f').files[0]; if (!f) throw new Error('Pick a file');
+        const info = await ensureInfo(c); if (!info.allowWrite) throw new Error('Allow changes first (status bar)');
+        const gz = /\.gz$/i.test(f.name) ? 1 : 0; const single = ov.querySelector('#im-1').checked ? 1 : 0;
+        const prog = ov.querySelector('[data-im-prog]'), bar = ov.querySelector('[data-im-bar]'), txt = ov.querySelector('[data-im-txt]'); prog.style.display = '';
+        const r = await new Promise((res, rej) => {
+          const x = new XMLHttpRequest();
+          x.open('POST', `/api${dbBaseOf(c, db)}/import-sql?gz=${gz}&single=${single}&name=${enc(f.name)}`);
+          x.setRequestHeader('Content-Type', 'application/octet-stream');
+          x.upload.onprogress = (e) => { if (e.lengthComputable) { bar.style.width = `${Math.round(e.loaded / e.total * 100)}%`; txt.textContent = e.loaded < e.total ? `Sending ${formatBytes(e.loaded)} of ${formatBytes(e.total)}…` : 'Running it in the database…'; } };
+          x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch (e) {} if (x.status >= 200 && x.status < 300) res(j); else rej(new Error(j.error || x.statusText)); };
+          x.onerror = () => rej(new Error('The upload failed'));
+          x.send(f);
+        });
+        const tags = Object.entries(r.tags || {}).map(([k, v]) => `${v} ${k}`).join(', ');
+        showToast(`Imported ${f.name} in ${(r.ms / 1000).toFixed(1)} s${tags ? ' — ' + tags : ''}`, 'success', 8000);
+        forgetDb(c, db); await ensureObjects(c, db, true);
+        st.tabs.filter(x => x.c === c && x.db === db && x.type === 'overview').forEach(x => { if (x.id === st.active) renderTab(x, true); else destroyTab(x); });
+      } });
+  }
+
+  // CSV → a new table: columns and types guessed from the file, edited in the New table tab, the rows loaded after CREATE
+  function parseCsvText(text) {
+    const first = text.split(/\r?\n/, 1)[0] || '';
+    const sep = [',', ';', '\t', '|'].map(s => [s, first.split(s).length]).sort((a, b) => b[1] - a[1])[0][0];
+    const rows = []; let row = [], cur = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; continue; }
+      if (ch === '"') q = true; else if (ch === sep) { row.push(cur); cur = ''; } else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; } else cur += ch;
+    }
+    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+    return rows.filter(r => r.length > 1 || r[0] !== '');
+  }
+  function guessType(vals) {
+    const v = vals.filter(x => x !== '' && x != null).slice(0, 2000);
+    if (!v.length) return 'text';
+    if (v.every(x => /^-?\d{1,18}$/.test(x))) return v.every(x => Math.abs(Number(x)) < 2147483647) ? 'integer' : 'bigint';
+    if (v.every(x => /^-?\d+([.,]\d+)?$/.test(x))) return 'numeric';
+    if (v.every(x => /^(true|false|t|f|yes|no)$/i.test(x))) return 'boolean';
+    if (v.every(x => /^\d{4}-\d{2}-\d{2}$/.test(x))) return 'date';
+    if (v.every(x => /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)?$/.test(x))) return 'timestamptz';
+    if (v.every(x => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x))) return 'uuid';
+    return 'text';
+  }
+  function csvNewTable(c, db) {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.csv,.tsv,.txt';
+    inp.onchange = async () => {
+      const f = inp.files[0]; if (!f) return;
+      if (f.size > 80 * 1024 * 1024) return showToast('Up to 80 MB', 'error');
+      const rows = parseCsvText(await f.text());
+      if (rows.length < 1) return showToast('The file is empty', 'error');
+      const head = rows[0].map((h, i) => (String(h).trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || `col${i + 1}`).replace(/^(\d)/, 'c$1').slice(0, 63));
+      const data = rows.slice(1);
+      const tname = f.name.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 63) || 'imported';
+      const t = await openTab({ type: 'create', c, db, s: 'public' }, { pin: true, fresh: true });
+      const tab = activeTab();
+      tab.dz = { sub: 'cols', schema: 'public', name: tname, comment: `Imported from ${f.name}`, draft: head.map((h, i) => ({ ...dzCol(null, []), name: h, type: guessType(data.map(r => r[i])) })), queued: [] };
+      tab.csv = { head, data, file: f.name };
+      renderTab(tab, true); void t;
+      showToast(`${data.length.toLocaleString()} rows read — check the column names and types, then Create table: the rows are loaded right after`, 'info', 9000);
+    };
+    inp.click();
+  }
+  async function loadCsvRows(tab, schema, name) {
+    const { head, data } = tab.csv; const cols = tab.dz.draft.filter(c => !c.del && c.name.trim());
+    const map = cols.map(c => head.indexOf(c.name)).map((i, k) => (i >= 0 ? i : k));
+    const chunk = 20000; let done = 0;
+    for (let i = 0; i < data.length; i += chunk) {
+      const part = data.slice(i, i + chunk).map(r => map.map(j => (r[j] == null ? '' : String(r[j]).replace(/^(-?\d+),(\d+)$/, '$1.$2'))));
+      await API.post(`${dbBaseOf(tab.c, tab.db)}/import`, { schema, table: name, columns: cols.map(c => c.name.trim()), rows: part, mode: 'insert', emptyNull: true });
+      done += part.length;
+    }
+    return done;
+  }
+
+  function mockDialog(c, db, s, t) {
+    UI.dialog({ title: `Test data for ${esc(s)}.${esc(t)}`, saveLabel: 'Add the rows', wide: true,
+      body: `<div class="ui-sub" style="margin-bottom:8px">Rows of made-up values that fit the columns: names, e-mails and phones by column name, numbers within the column's size, dates, enums, JSON; foreign keys get keys that exist in the other table; unique columns get unique values. Columns with a default or identity keep it.</div>
+        <label class="ui-field"><span class="ui-label">How many rows</span><input class="input" type="number" id="mk-n" value="100" min="1" max="100000"></label>
+        <div>${UI.btn('🧪 Preview — made and rolled back', 'data-mk-test')}</div><div data-mk-out style="margin-top:10px"></div>`,
+      onOpen: (ov) => {
+        ov.querySelector('[data-mk-test]').onclick = async () => {
+          const out = ov.querySelector('[data-mk-out]'); out.innerHTML = '<div class="skeleton" style="height:80px"></div>';
+          try {
+            const r = await API.post(`${dbBaseOf(c, db)}/mock`, { schema: s, table: t, rows: Number(ov.querySelector('#mk-n').value), test: true });
+            const cols = Object.keys(r.sample[0] || {});
+            out.innerHTML = `<div class="ui-sub">${r.rows} rows made and rolled back — filled: ${r.columns.map(esc).join(', ')}${r.skipped.length ? ` · left to their default: ${r.skipped.map(esc).join(', ')}` : ''}</div>
+              <div style="overflow:auto;max-height:220px;margin-top:6px">${UI.table(cols.map(k => ({ label: esc(k) })), r.sample.map(x => ({ cells: cols.map(k => `<span class="td-mono" style="font-size:11.5px">${esc(x[k] == null ? 'NULL' : typeof x[k] === 'object' ? JSON.stringify(x[k]) : x[k])}</span>`) })), { minWidth: 400 })}</div>`;
+          } catch (e) { out.innerHTML = `<div class="text-danger text-sm">${esc(e.message)}</div>`; }
+        };
+      },
+      onSave: async (ov) => {
+        const info = await ensureInfo(c); if (!info.allowWrite) throw new Error('Allow changes first (status bar)');
+        const r = await API.post(`${dbBaseOf(c, db)}/mock`, { schema: s, table: t, rows: Number(ov.querySelector('#mk-n').value) });
+        showToast(`Added ${r.rows.toLocaleString()} rows to ${s}.${t}`, 'success');
+        forgetDb(c, db); ensureObjects(c, db, true);
+        st.tabs.filter(x => x.c === c && x.db === db && x.s === s && x.t === t && x.type === 'data' && x.inst && x.inst.reload).forEach(x => x.inst.reload());
+      } });
   }
 
   // ---------- connection, read-only ----------
@@ -1117,7 +1286,7 @@ Router.register('databases', async (content, params = {}) => {
     const i = await ensureInfo(c);
     if (i) {
       const db = params.db && i.databases.some(d => d.name === params.db) ? params.db : i.database;
-      st.open.add(`d|${c}|${db}`); saveOpen(); ensureObjects(c, db);
+      st.open.add(`d|${c}|${db}`); saveOpen(); ensureObjects(c, db).then(o => firstOpen(c, db, o));
       if (params.t) await openTab({ type: params.view === 'design' ? 'design' : 'data', c, db, s: params.s || 'public', t: params.t }, { pin: true });
       else if (params.view === 'sql') await newQuery(c, db);
       else { const ex = st.tabs.find(t => t.c === c && (t.db === db || !t.db)); if (ex) await activate(ex.id); else await openTab({ type: 'overview', c, db }, { pin: true }); }

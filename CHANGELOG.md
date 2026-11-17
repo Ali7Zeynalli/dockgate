@@ -2,6 +2,20 @@
 
 ---
 
+## [2.73.0] - 2026-11-17
+
+### Added
+- **Databases → Export…** (database, overview or a table's menu): tick tables, then **SQL** with `pg_dump` in the container — structure and data, structure or data only, rows as `INSERT` or `COPY`, drop the tables first, `.sql.gz` (streamed, any size) — or **CSV** files in a `.zip`, or one **Excel (.xlsx)** file with a sheet per table (header frozen, numbers as numbers).
+- **Import a .sql file** (`.sql` / `.sql.gz`, a plain pg_dump or any SQL) with progress; psql stops at the first error and tells the line; **in one transaction** nothing of a failed file stays.
+- **New table from a CSV**: the separator is found by itself, column names made SQL-friendly, types guessed (integer, bigint, numeric, boolean, date, timestamptz, uuid, text) and shown in the New table tab to change; the rows are loaded right after **Create table**.
+- **Fill with test data…**: made-up rows that fit the columns — names, e-mails, phones, cities, URLs and statuses by column name, numbers within the column's size, dates, enums, JSON, arrays; foreign keys get keys that exist; unique columns stay unique; **🧪 Preview** makes them and rolls back.
+- README: screenshots of Databases and Tasks; the guide's Databases part describes the new layout, Design, and export / import / test data.
+
+### Fixed
+- Opening a database from a link expands `public` → Tables the first time, as opening it in the Explorer does.
+
+---
+
 ## [2.72.0] - 2026-11-17
 
 ### Added

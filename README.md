@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.72.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.73.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.72.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.73.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
@@ -39,7 +39,7 @@
 - **Compose** — create, edit and deploy projects locally or on a remote server, with deploy history and image updates. **Tasks** runs your Makefile, justfile, npm scripts and deploy.sh, and **deploy recipes** deploy on a GitHub / GitLab / Bitbucket push with checks and rollback. Replicas, auto-heal, Auto Scaling and updates without downtime — **without Swarm**, your compose files untouched.
 - **Docker Swarm** — set up a cluster and move Compose projects and containers to it and back, as well protected as before. Each service gets its own page; published ports are firewalled on every server at once.
 - **Servers** — provision, secure (SSH, users, firewall, fail2ban) and monitor any number of hosts over SSH; cron jobs with alerts, **scripts** (templates, blocks or your own shell), system settings (network with automatic rollback, DNS, kernel, disks) and a file manager with a safe editor.
-- **Databases** — PostgreSQL in your containers, on any server: browse and edit tables, run SQL, manage users and sessions, back up, restore into a new database and swap it in — read-only until you allow changes, no port opened.
+- **Databases** — a database client for PostgreSQL in your containers, on any server: an Explorer tree, tabs and right-click menus; tables edited like a spreadsheet, a SQL editor with autocomplete and plans, table design (columns, indexes, keys) with a rolled-back Test, export to SQL / CSV / Excel, `.sql` and CSV import, test data, users, backups — read-only until you allow changes, no port opened.
 - **Uptime** — checks your sites (HTTP, SSL, TCP, DNS) from DockGate and from your other servers, linked to the containers behind them.
 - **Alerts** — Telegram, email and webhook, plus an optional Edge agent that keeps alerting — and keeps replicas, healing and Auto Scaling running — when DockGate is offline.
 - **Light** — at most 256 MB RAM and 0.5 CPU; plain JavaScript, no build step, works offline.
@@ -111,6 +111,10 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 <td width="50%"><img src="screenshots/10-logs.png" alt="Logs"><br><sub><b>Logs</b> — one viewer everywhere</sub></td>
 <td width="50%"><img src="screenshots/08-compose.png" alt="Compose stacks"><br><sub><b>Compose stacks</b> — history, Move to Swarm</sub></td>
 </tr>
+<tr>
+<td width="50%"><img src="screenshots/34-databases.png" alt="Databases"><br><sub><b>Databases</b> — Explorer, tabs, right-click menus, data, design, SQL</sub></td>
+<td width="50%"><img src="screenshots/35-tasks.png" alt="Tasks"><br><sub><b>Tasks</b> — Makefile, npm, scripts, deploy recipes</sub></td>
+</tr>
 </table>
 
 **Docker Swarm**
@@ -170,7 +174,7 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 | **[Tasks](guide/tasks.md)** (SSH servers) | Finds the tasks of a project folder — `Makefile` targets, `justfile`, `Taskfile.yml`, `package.json` scripts (npm / pnpm / yarn / bun), `*.sh`, Ansible playbooks, Kamal — and runs them with a live log: dry run, variables, run as root, cancel, one run per folder, history. **Env & secrets** per folder (encrypted, masked in logs). **Deploy recipes:** Git pull → your tasks → docker compose up → check a URL / a container's health; **recovery steps** (back to the commit before, your rollback) when a step fails; several servers; schedule; alerts. Started by **GitHub, GitLab, Bitbucket Cloud / Server webhooks** (signatures checked, branch filter) or **CI** with a token, and the result marked on the commit. |
 | **App templates · Registries** | 500+ apps as a container, a Compose project or a Swarm stack; private registry logins used everywhere. |
 | **Observe · Tools** | Logs, Docker events, **Uptime** (HTTP / SSL / TCP / DNS checks of your sites from DockGate and other servers: uptime %, response time, incidents, certificate days left, linked containers with their logs and Restart, alerts), audit log, notifications sent; container and host terminal (`` Ctrl+` ``); SFTP file manager (also as **Quick Files** over any page, Ctrl+Shift+F) with two-pane transfers, a safe editor (colours, checks with compose / nginx / sshd / visudo / findmnt / `bash -n`, diff before save, earlier versions, sudo for root-owned files, never half written), Places and bookmarks, log tail, image preview, and permissions / owner; scheduled prune, volume backup and Git sync. |
-| **[Databases](guide/tools.md#databases)** | PostgreSQL in containers (postgres, postgis, timescaledb, pgvector, supabase, bitnami…) reached with `docker exec psql` — no published port. Tables with sort, filters, export; edit cells, add and delete rows by primary key; structure (indexes, constraints, foreign keys, triggers); a SQL editor with several results, history and confirms for DROP / TRUNCATE / DELETE without WHERE; sessions (cancel, terminate), users and grants, databases, VACUUM / ANALYZE, slow queries; backups (`pg_dump`, `pg_dumpall`) next to the database, restore into a new database and swap, scheduled backups through Scripts + Cron. Read-only until you allow changes, every change in the audit log. |
+| **[Databases](guide/tools.md#databases)** | A database client for PostgreSQL in containers (postgres, postgis, timescaledb, pgvector, supabase, bitnami…), reached with `docker exec psql` — no published port. **Explorer** (container → database → schema → tables, views, functions → columns, indexes, keys), **tabs** and **right-click menus** (generated SELECT / INSERT / UPDATE / DELETE, count, export, truncate, drop), database overview with bulk actions, status bar. **Data** edited like a spreadsheet in one transaction with Test, foreign-key links, who wrote a row, CSV import, bulk changes. **SQL workbench** (autocomplete, Ctrl+Enter, transactions across runs, EXPLAIN, saved queries). **Design**: columns, indexes, foreign keys, checks, triggers, new tables, rename / duplicate — Show SQL, 🧪 Test (rolled back), Save in one transaction. **Export** to SQL (pg_dump), CSV zip or Excel; **import** `.sql` files and CSV into new tables; **test data** that fits the columns and foreign keys. Users and grants, sessions, VACUUM, backups with restore and swap. Read-only until you allow changes, every change in the audit log. |
 | **Servers** | Hosts over SSH (password, key, key with passphrase); provisioning presets; deploy user; SSH access; users and keys; firewall (UFW / firewalld, IP lists, Docker port isolation); fail2ban; **cron jobs** (crontabs, cron.d, systemd timers, edit with diff, run now, failed / did not run alerts); **scripts** — 18 templates (updates and reboots, database / volume / folder backups, self-repair, deploy) with a few questions, a block builder (fix steps that run only if an earlier step failed), **your own shell** with blocks to insert, and scripts **already on the server** added where they are — run once or scheduled in Cron, checked with `bash -n`; **system settings** (hostname, hosts, DNS, network with automatic rollback, kernel, limits, journal, fstab); time sync; auto updates; host logs; pinned host keys. |
 
 ---
