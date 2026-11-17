@@ -131,6 +131,10 @@ Give a token under **Show the result on the commit** and DockGate marks the push
 
 GitHub.com, GitLab.com and Bitbucket Cloud call DockGate from the internet: DockGate needs a **public HTTPS address** (a domain with a reverse proxy, or a tunnel such as Cloudflare Tunnel). The dialog warns when you opened DockGate on `localhost` or a local address. A self-hosted GitLab / Bitbucket or a CI runner on the same network can use a local address.
 
+## A folder that is not a Git clone
+
+The **Git pull** step needs a Git checkout. A folder that was uploaded as files can become one in place: the folder's **⋯ → Connect to Git…** — see [Connect to Git](git-connect.md). When the repository is empty, the same dialog makes the first commit from the folder and pushes it.
+
 ## Templates
 
 Starting files for a folder that has none: a **Makefile** (help, pull, build, up, deploy, logs, ps, down), a **deploy.sh** (pull, build, up, health check, roll back on failure) and a **justfile**. A file that exists is not overwritten unless you say so; edit it afterwards in Files.

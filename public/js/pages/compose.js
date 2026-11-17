@@ -108,6 +108,7 @@ Router.register('compose', async (content) => {
                       { label: `${Icons.restart} Restart`, attrs: `data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}` },
                       { label: `${Icons.layers} Rebuild…`, attrs: `data-action="rebuild" data-project="${escapeHtml(p.name)}" data-services="${escapeHtml((p.services || []).join(','))}" ${dis}` },
                       p.deploySource === 'folder' ? { label: `${Icons.refresh} Update from folder…`, attrs: `data-update="${escapeHtml(p.name)}" data-rpath="${escapeHtml(p.workingDir || '')}" data-services="${escapeHtml((p.services || []).join(','))}"` } : null,
+                      !isGit && !p.onSwarm && (p.workingDir || p.deploySource === 'folder') ? { label: 'Connect to Git…', attrs: `data-git-connect="${escapeHtml(p.name)}"` } : null,
                       isGit ? { label: 'Git pull (files only)', attrs: `data-git-pull="${escapeHtml(p.name)}"` } : null,
                       isGit ? { label: 'Git sync and deploy', attrs: `data-git-sync="${escapeHtml(p.name)}"` } : null,
                       { label: `${Icons.stop} Down`, attrs: `data-action="down" data-project="${escapeHtml(p.name)}" ${dis}` },
@@ -408,6 +409,7 @@ Router.register('compose', async (content) => {
 
       content.querySelectorAll('[data-history]').forEach(btn => btn.addEventListener('click', () => openDeployHistory(btn.dataset.history)));
       content.querySelectorAll('[data-scaling]').forEach(btn => btn.addEventListener('click', () => window.ComposeScaling.open(btn.dataset.scaling)));
+      content.querySelectorAll('[data-git-connect]').forEach(btn => btn.addEventListener('click', () => window.GitConnect.open({ project: btn.dataset.gitConnect }, { onDone: () => Router.navigate(Store.get('currentPage'), Store.get('currentParams') || {}) })));
       content.querySelectorAll('[data-open-stack]').forEach(btn => btn.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-stacks', stack: btn.dataset.openStack })));
       content.querySelectorAll('[data-move-back]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveBack ? window.SwarmUI.moveBack(btn.dataset.moveBack, () => render()) : Router.navigate('swarm', { tab: 'swarm-stacks' }))));
       content.querySelectorAll('[data-move-swarm]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveProject ? window.SwarmUI.moveProject(btn.dataset.moveSwarm, () => render()) : Router.navigate('swarm', { tab: 'swarm-migrate', project: btn.dataset.moveSwarm }))));

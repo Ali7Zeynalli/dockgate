@@ -55,6 +55,7 @@ When a deploy or **Rebuild…** builds images, you can tick:
 | **Terminal in this folder** | A shell in the project folder on the server |
 | **Rebuild…** | Pick services and build options, then rebuild them |
 | **Update from folder…** | Upload a new version of a folder-deployed stack |
+| **Connect to Git…** | A stack uploaded as files becomes a Git checkout in the same folder, with a compare first and a backup — see [Connect to Git](git-connect.md) |
 | **Git pull (files only)** | Fetch the newest commit without touching the containers |
 | **Git sync and deploy** | Pull, then `docker compose up -d --build` |
 | **Force pull (discard server changes)…** | Reset the checkout on the server to the remote branch, then rebuild |

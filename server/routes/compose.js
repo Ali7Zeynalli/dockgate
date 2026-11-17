@@ -2226,6 +2226,7 @@ async function detectExternalGit(project) {
 // 90s cache keyed by active server + project
 const externalGitCache = new Map();
 function invalidateExternalGit(project) { externalGitCache.delete(dockerService.getActiveServerId() + ':' + project); }
+router._invalidateGit = (project) => { for (const k of externalGitCache.keys()) if (k.endsWith(':' + project)) externalGitCache.delete(k); }; // Connect to Git (routes/git-connect.js)
 
 router.get('/:project/git-detect', async (req, res) => {
   try {
