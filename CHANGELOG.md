@@ -2,6 +2,13 @@
 
 ---
 
+## [2.74.2] - 2026-11-17
+
+### Docs
+- The README demo GIF shows the new system: the new sidebar, the database client (Explorer, a table's rows, the table menu, Design), switching to an SSH server from the top bar, the **Server** sections (Status → Overview, Security → Firewall, Software → Services, Automation → Cron), **Deploy → Tasks** and Monitoring. Loading moments are cut out, so every page is shown full.
+
+---
+
 ## [2.74.1] - 2026-11-17
 
 ### Fixed
