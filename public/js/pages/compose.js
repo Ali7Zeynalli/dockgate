@@ -102,6 +102,7 @@ Router.register('compose', async (content) => {
                       { label: `${Icons.folder || Icons.compose} Files (Dockerfile, .env…)`, attrs: `data-files="${escapeHtml(p.name)}"` },
                       { label: `${Icons.terminal} Terminal in this folder`, attrs: `data-term="${escapeHtml(p.name)}" data-cwd="${escapeHtml(p.workingDir || '')}"` },
                       p.workingDir ? { label: '📁 Open folder in Files', attrs: `data-openfolder="${escapeHtml(p.workingDir)}"` } : null,
+                      p.workingDir && (Store.get('activeServer') || {}).type === 'ssh' ? { label: '▶ Tasks and deploy recipes', attrs: `data-tasks="${escapeHtml(p.workingDir)}"` } : null,
                       '-',
                       { label: `${Icons.play} Up`, attrs: `data-action="up" data-project="${escapeHtml(p.name)}" ${dis}` },
                       { label: `${Icons.restart} Restart`, attrs: `data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}` },
@@ -216,6 +217,7 @@ Router.register('compose', async (content) => {
       document.getElementById('global-git-manage-btn')?.addEventListener('click', () => openGlobalGitManageModal(projects));
       document.getElementById('global-git-pull-custom')?.addEventListener('click', () => openCustomPathGitPullModal());
       content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
+      content.querySelectorAll('[data-tasks]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); Router.navigate('deploy', { tab: 'tasks', dir: btn.dataset.tasks }); }));
       content.querySelectorAll('[data-openfolder]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); QuickFiles.open(btn.dataset.openfolder); }));
       content.querySelectorAll('[data-term]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectTerminal(btn.dataset.term, btn.dataset.cwd); }));
       content.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote, !!btn.dataset.adopted); }));

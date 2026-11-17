@@ -31,7 +31,7 @@ if (trustProxy.setting === true) console.warn('[security] TRUST_PROXY=true — e
 // upload sends files as base64 JSON, so THAT route family gets 600MB. The UI uploads file-by-file, so
 // total project size can reach 1GB (UPLOAD_MAX_BYTES in compose.js); a single file is JSON/V8-capped
 // near ~384MB (base64 ≈ ×1.34 → ~512MB string max). A global 5MB parser would otherwise reject it first.
-const jsonSmall = express.json({ limit: '5mb' });
+const jsonSmall = express.json({ limit: '5mb', verify: (req, _res, buf) => { if (req.url.startsWith('/api/hooks/') || req.url.startsWith('/api/compose/webhook/')) req.rawBody = buf; } }); // webhooks are signed over the raw body
 const jsonLarge = express.json({ limit: '600mb' });
 // covers /deploy-folder (single-shot) and /deploy-folder-file (per-file upload — one big binary file can still be ~67MB as base64)
 const jsonImport = express.json({ limit: '100mb' }); // Databases → Import CSV sends the rows as JSON
@@ -55,6 +55,10 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 const { requireAuth, checkOrigin } = require('./auth/middleware');
 app.use('/api', checkOrigin);                    // CSRF defense-in-depth: cross-origin state change → 403
 app.use('/api/auth', require('./routes/auth'));  // open: login / logout / status / setup
+// Open webhooks, each checked against its own secret (they can not carry a session): deploy recipes, and the
+// Compose Git webhook (?key=), which until now sat behind the session gate and so could not be called.
+app.use('/api/hooks', require('./routes/hooks'));
+app.post('/api/compose/webhook/:project', (req, res, next) => { req.url = `/webhook/${encodeURIComponent(req.params.project)}${req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : ''}`; require('./routes/compose')(req, res, next); });
 app.use('/api', requireAuth);                    // everything else needs a session
 
 // REST Routes
@@ -84,6 +88,7 @@ app.use('/api/meta', require('./routes/settings'));
 app.use('/api/schedules', require('./routes/schedules')); // Tools → Schedules
 app.use('/api/uptime', require('./routes/uptime')); // Observe → Uptime
 app.use('/api/databases', require('./routes/databases')); // Tools → Databases (PostgreSQL)
+app.use('/api/tasks', require('./routes/tasks')); // Deploy → Tasks (Makefile, scripts, recipes)
 
 // Startup-da saxlanmış aktiv server-i bərpa et (yalnız "local" olmadıqda)
 try {
@@ -652,6 +657,7 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   // Server health: reachability, disk, memory and CPU alerts for every server, checked once a minute.
   if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
   if (process.env.NODE_ENV !== 'test') require('./uptime').start(); // Observe → Uptime checks
+  if (process.env.NODE_ENV !== 'test') require('./task-recipes').start(); // Deploy → Tasks: scheduled recipes
   if (process.env.NODE_ENV !== 'test') require('./cron-monitor').start(); // cron jobs failed / did not run
   if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
   if (process.env.NODE_ENV !== 'test') { require('./swarm-monitor').start(); require('./swarm-stacks').startBridgeKeeper(); require('./agent/control').start(); require('./compose-heal').start(); require('./compose-autoscale').start(); require('./swarm-firewall').start(); require('./compose-keep').start(); }

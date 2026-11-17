@@ -37,7 +37,7 @@ const Router = {
     const p = { ...(params || {}) };
     const SECTION_OF = {
       containers: 'resources', images: 'resources', volumes: 'resources', networks: 'resources', builds: 'resources', prune: 'resources', cleanup: 'resources',
-      compose: 'deploy', templates: 'deploy', registries: 'deploy',
+      compose: 'deploy', tasks: 'deploy', templates: 'deploy', registries: 'deploy',
       logs: 'observe', events: 'observe', uptime: 'observe', audit: 'observe', 'notification-log': 'observe',
       terminal: 'tools', files: 'tools', databases: 'tools', schedules: 'tools',
     };

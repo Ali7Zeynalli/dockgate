@@ -2,6 +2,22 @@
 
 ---
 
+## [2.70.0] - 2026-11-17
+
+### Added
+- **Deploy → Tasks** (SSH servers) — the tasks a project folder already has, found by reading its files (nothing runs to find them): `Makefile` targets with their `##` descriptions and variables, `justfile` recipes and parameters, `Taskfile.yml`, `package.json` scripts (npm / pnpm / yarn / bun from the lock file), `*.sh`, Ansible playbooks and Kamal.
+  - **▶ Run** with a live log, **Dry run** (`make -n`, `just --dry-run`, `task --dry`, `bash -n`, `ansible --check --diff`), variables and arguments, run as root (`sudo -n`), a time limit, **■ Cancel** (the whole process group), one run at a time per folder, names like *deploy / migrate / drop* ask first, **Runs** history with logs.
+  - **Env & secrets** per folder — encrypted in DockGate, given to every run through a file deleted before the command starts, secrets shown as `••••` in logs.
+  - **Templates** — a Makefile, deploy.sh (pull, build, up, check, back on failure) and justfile to start from.
+  - Compose projects: **⋯ → Tasks and deploy recipes**.
+- **Deploy recipes** — Git pull → tasks / commands → docker compose up → check a URL / wait for a healthy container; **recovery steps** when a step fails (back to the commit before the pull, your rollback task); on several servers one after another; on a schedule; alerts when a deploy fails or works; Uptime alerts quiet while it runs.
+- **Webhooks for recipes** — a URL and secret per recipe for **GitHub** (and Gitea / Forgejo), **GitLab**, **Bitbucket Cloud** and **Bitbucket Server / Data Center** push webhooks (signatures checked, pings answered, tags and deleted branches skipped, branch filter like `main, release/*`), or a **CI** call with `Authorization: Bearer`; steps and GitHub Actions / GitLab CI / Bitbucket Pipelines snippets in the dialog; with a token the commit is marked **pending → success / failed**.
+
+### Fixed
+- The **Compose Git auto-deploy webhook** answered 401: it was behind DockGate's login. It is checked by its own key again.
+
+---
+
 ## [2.69.0] - 2026-11-17
 
 ### Added
