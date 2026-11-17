@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.74.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.74.1-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.74.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.74.1-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
@@ -45,6 +45,18 @@
 - **Light** — at most 256 MB RAM and 0.5 CPU; plain JavaScript, no build step, works offline.
 
 > DockGate is **single-admin**: one password, full control, no user roles.
+
+### Where things are
+
+| Sidebar | What is in it |
+|---|---|
+| **Overview** | Dashboard · Monitoring (every server) |
+| **Docker** | Resources (Containers, Images, Volumes, Networks, Cleanup) · Deploy (Compose stacks, App templates, Tasks, Builds, Registries) · Swarm · Databases · Logs & events |
+| **Web** | Uptime |
+| **Servers** | Servers · SSH keys · Edge agent |
+| **Server** — the one picked in the top bar | Status (overview, graphs, alerts, logs, system info, connection) · Security (SSH, users, firewall, fail2ban) · System (names, network, time, disks, kernel, config files) · Software (setup, services, Docker engine, auto updates) · Automation (cron, timers, scripts, schedules) |
+| **Tools** | Terminal · Files |
+| **System** — DockGate itself | Settings · Activity (audit log, notifications sent) |
 
 ---
 
@@ -151,7 +163,7 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 </tr>
 <tr>
 <td width="50%"><img src="screenshots/06-volumes.png" alt="Volumes"><br><sub><b>Volumes</b> — backup, restore, files</sub></td>
-<td width="50%"><img src="screenshots/14-audit.png" alt="Audit log"><br><sub><b>Audit log</b></sub></td>
+<td width="50%"><img src="screenshots/14-audit.png" alt="Audit log"><br><sub><b>Activity → Audit log</b></sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="screenshots/18-settings-notifications.png" alt="Notifications"><br><sub><b>Notifications</b> — channels and rules</sub></td>
@@ -167,15 +179,15 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 |---|---|
 | **Dashboard · Monitoring** | The server at a glance with Smart Insights and host metrics; every server's CPU, memory, disk and load, live and for 48 hours. `Ctrl/Cmd+K` jumps anywhere. |
 | **Containers** | Table, cards or topology; run, start, stop, recreate, commit, export. Each container has a page with logs, terminal, stats, environment, ports, volumes, network, **files (edit, upload, download)**, updates and history. |
-| **Images · Volumes · Networks · Builds** | Pull, push, tag, Docker Hub search; volume backup, restore, clone and file editing; networks of every driver; builds from a Dockerfile or Git with live logs; one Prune table. |
+| **Images · Volumes · Networks · Builds · Cleanup** | Pull, push, tag, Docker Hub search; volume backup, restore, clone and file editing; networks of every driver; builds from a Dockerfile or Git with live logs; one Prune table. |
 | **Image updates** | A daily check of every tag against its registry; safe update with a health check, automatic roll back, version names and history. |
 | **Compose** | Discover, create and edit projects; deploy a folder, adopt a project already on a server, or deploy from Git. On a remote server Compose runs on that server over SSH. Deploy history with changes and redeploy. |
 | **[Scaling & health](guide/compose-scaling.md)** (Compose, without Swarm) | **Replicas** with one click — DockGate writes its own override file, your compose files stay as they are; host ports and `container_name` fixed only after you see the fix; proxies reloaded. **Auto-heal** restarts a replica that stays unhealthy. **Keep running** brings a service back when it is stopped or removed (made again from its kept config). **Auto Scaling** — Off / Suggest / Auto (24 h simulation first), measured against your own limits, adds a replica only when the server has room, values suggested from the last 48 hours. **Roll out** — updates replica by replica without downtime, also for *newer image* updates. |
 | **[Tasks](guide/tasks.md)** (SSH servers) | Finds the tasks of a project folder — `Makefile` targets, `justfile`, `Taskfile.yml`, `package.json` scripts (npm / pnpm / yarn / bun), `*.sh`, Ansible playbooks, Kamal — and runs them with a live log: dry run, variables, run as root, cancel, one run per folder, history. **Env & secrets** per folder (encrypted, masked in logs). **Deploy recipes:** Git pull → your tasks → docker compose up → check a URL / a container's health; **recovery steps** (back to the commit before, your rollback) when a step fails; several servers; schedule; alerts. Started by **GitHub, GitLab, Bitbucket Cloud / Server webhooks** (signatures checked, branch filter) or **CI** with a token, and the result marked on the commit. |
 | **App templates · Registries** | 500+ apps as a container, a Compose project or a Swarm stack; private registry logins used everywhere. |
-| **Observe · Tools** | Logs, Docker events, **Uptime** (HTTP / SSL / TCP / DNS checks of your sites from DockGate and other servers: uptime %, response time, incidents, certificate days left, linked containers with their logs and Restart, alerts), audit log, notifications sent; container and host terminal (`` Ctrl+` ``); SFTP file manager (also as **Quick Files** over any page, Ctrl+Shift+F) with two-pane transfers, a safe editor (colours, checks with compose / nginx / sshd / visudo / findmnt / `bash -n`, diff before save, earlier versions, sudo for root-owned files, never half written), Places and bookmarks, log tail, image preview, and permissions / owner; scheduled prune, volume backup and Git sync. |
+| **Logs & events · Uptime · Tools** | Logs, Docker events, **Uptime** (HTTP / SSL / TCP / DNS checks of your sites from DockGate and other servers: uptime %, response time, incidents, certificate days left, linked containers with their logs and Restart, alerts), audit log, notifications sent; container and host terminal (`` Ctrl+` ``); SFTP file manager (also as **Quick Files** over any page, Ctrl+Shift+F) with two-pane transfers, a safe editor (colours, checks with compose / nginx / sshd / visudo / findmnt / `bash -n`, diff before save, earlier versions, sudo for root-owned files, never half written), Places and bookmarks, log tail, image preview, and permissions / owner; scheduled prune, volume backup and Git sync. |
 | **[Databases](guide/tools.md#databases)** | A database client for PostgreSQL in containers (postgres, postgis, timescaledb, pgvector, supabase, bitnami…), reached with `docker exec psql` — no published port. **Explorer** (container → database → schema → tables, views, functions → columns, indexes, keys), **tabs** and **right-click menus** (generated SELECT / INSERT / UPDATE / DELETE, count, export, truncate, drop), database overview with bulk actions, status bar. **Data** edited like a spreadsheet in one transaction with Test, foreign-key links, who wrote a row, CSV import, bulk changes. **SQL workbench** (autocomplete, Ctrl+Enter, transactions across runs, EXPLAIN, saved queries). **Design**: columns, indexes, foreign keys, checks, triggers, new tables, rename / duplicate — Show SQL, 🧪 Test (rolled back), Save in one transaction. **Export** to SQL (pg_dump), CSV zip or Excel; **import** `.sql` files and CSV into new tables; **test data** that fits the columns and foreign keys. Users and grants, sessions, VACUUM, backups with restore and swap. Read-only until you allow changes, every change in the audit log. |
-| **Servers** | Hosts over SSH (password, key, key with passphrase); provisioning presets; deploy user; SSH access; users and keys; firewall (UFW / firewalld, IP lists, Docker port isolation); fail2ban; **cron jobs** (crontabs, cron.d, systemd timers, edit with diff, run now, failed / did not run alerts); **scripts** — 18 templates (updates and reboots, database / volume / folder backups, self-repair, deploy) with a few questions, a block builder (fix steps that run only if an earlier step failed), **your own shell** with blocks to insert, and scripts **already on the server** added where they are — run once or scheduled in Cron, checked with `bash -n`; **system settings** (hostname, hosts, DNS, network with automatic rollback, kernel, limits, journal, fstab); time sync; auto updates; host logs; pinned host keys. |
+| **Servers** (sidebar: Servers, and Server → Status · Security · System · Software · Automation) | Hosts over SSH (password, key, key with passphrase); provisioning presets; deploy user; SSH access; users and keys; firewall (UFW / firewalld, IP lists, Docker port isolation); fail2ban; **cron jobs** (crontabs, cron.d, systemd timers, edit with diff, run now, failed / did not run alerts); **scripts** — 18 templates (updates and reboots, database / volume / folder backups, self-repair, deploy) with a few questions, a block builder (fix steps that run only if an earlier step failed), **your own shell** with blocks to insert, and scripts **already on the server** added where they are — run once or scheduled in Cron, checked with `bash -n`; **system settings** (hostname, hosts, DNS, network with automatic rollback, kernel, limits, journal, fstab); time sync; auto updates; host logs; pinned host keys. |
 
 ---
 
