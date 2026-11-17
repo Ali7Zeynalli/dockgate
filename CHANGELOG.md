@@ -2,6 +2,20 @@
 
 ---
 
+## [2.75.0] - 2026-11-17
+
+### Added
+- **Connect to Git.** A project uploaded as files (Deploy from folder, SFTP…) becomes a Git checkout in the **same folder**, so the folder, the Compose project name, the volumes and the running containers stay. Compose → a project's **⋯ → Connect to Git…**, and Deploy → Tasks → a folder's **⋯ → Connect to Git…**. Local server and SSH servers.
+  - **Check access:** the repository's branches, with an access token or a deploy key from SSH keys.
+  - **Compare** (the folder does not change): same files, different files (with **View change**), files only in the repository, files only on the server (ignored ones such as `.env` and data folders, and untracked ones). Warns when the project's compose file is not in the repository, and about secret-looking files.
+  - **Connect:** every file that will be replaced is backed up first, then `git init`, `origin`, fetch and checkout; the branch follows `origin/<branch>`. A different file can keep the server's version. Then **Redeploy now**, or wait for the next deploy.
+  - **Undo** puts the folder back from the backup: `.git` goes, replaced files come back, added files go.
+  - **First push** when the repository is empty: a suggested `.gitignore` (secrets, `node_modules/`, data folders), the exact file list, then the first commit with your name and e-mail and a push. Stops on secret-looking files and files over 50 MB.
+  - After connecting: Git pull / Git sync on the project, the Git pull step of Tasks recipes, and deploys from GitHub / GitLab / Bitbucket pushes.
+- Guide: **Connect to Git**.
+
+---
+
 ## [2.74.2] - 2026-11-17
 
 ### Docs

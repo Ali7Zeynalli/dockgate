@@ -87,7 +87,7 @@ Router.register('tasks', async (content, params = {}) => {
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="font-size:15px">${esc(p.name || st.dir)}</b><span class="td-mono ui-sub">${esc(st.dir)}</span>
           ${g ? UI.chip(`git · ${esc(g.branch || 'detached')}${g.changed ? ` · ${g.changed} changed` : ''}`, { title: `${g.last || ''}\n${g.remote || ''}` }) : UI.chip('not a Git folder')}
           ${i.compose.length ? UI.chip(`compose: ${esc(i.compose.join(', '))}`) : ''}
-          <span style="flex:1"></span>${p.notAdded ? UI.btn('Add to the list', 'data-keep') : ''} ${UI.menu([{ label: 'Refresh', attrs: 'data-refresh' }, { label: 'Run a command…', attrs: 'data-custom' }, ...(p.added ? [{ label: 'Remove from the list…', attrs: 'data-rm', danger: true }] : [])])}</div>
+          <span style="flex:1"></span>${p.notAdded ? UI.btn('Add to the list', 'data-keep') : ''} ${UI.menu([{ label: 'Refresh', attrs: 'data-refresh' }, { label: 'Run a command…', attrs: 'data-custom' }, ...(g ? [] : [{ label: 'Connect to Git…', attrs: 'data-gitconnect' }]), ...(p.added ? [{ label: 'Remove from the list…', attrs: 'data-rm', danger: true }] : [])])}</div>
         ${g && g.last ? `<div class="ui-sub" style="margin-top:4px">Last commit: ${esc(g.last)}</div>` : ''}
         ${i.running.length ? `<div style="margin-top:6px">${i.running.map(r => `${UI.pill('info', '▶ running')} ${esc(r.name)} ${UI.btn('Open log', `data-log="${r.id}"`)}`).join(' ')}</div>` : ''}
       </div>
@@ -97,6 +97,7 @@ Router.register('tasks', async (content, params = {}) => {
     m.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { st.view = b.dataset.view; save(); drawProject(); });
     m.querySelector('[data-refresh]').onclick = openProject;
     m.querySelector('[data-custom]').onclick = customCommand;
+    const gcb = m.querySelector('[data-gitconnect]'); if (gcb) gcb.onclick = () => window.GitConnect.open({ dir: st.dir }, { onDone: () => openProject() });
     const rm = m.querySelector('[data-rm]'); if (rm) rm.onclick = removeFolder;
     const keep = m.querySelector('[data-keep]'); if (keep) keep.onclick = async () => { await API.post('/tasks/projects', { dir: st.dir }); showToast('Added'); loadProjects(); };
     m.querySelectorAll('[data-log]').forEach(b => b.onclick = () => openLog(Number(b.dataset.log)));
