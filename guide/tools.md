@@ -130,6 +130,16 @@ PostgreSQL running in containers on the server picked in the top bar — browse 
 | **Paste from Excel** | Select a cell and paste: the cells go from there to the right and down, new rows are added when needed |
 | **Leaving** | Another table, tab, database or a reload asks first when changes are not saved |
 
+### Many rows at once
+
+In the Data tab's **Export / import** menu (for tables). Each runs **in one transaction** and has a **🧪 Test** that does it and rolls back.
+
+| | |
+|---|---|
+| **Import CSV…** | Pick a file (up to 80 MB; the separator `,` `;` Tab or `|` is found by itself, quoted values and new lines inside quotes are read). Each CSV column is matched to a table column by its name — change or skip any in the list above it — with the first rows shown. **Add every row**, **Add — skip rows whose key exists**, or **Add — update rows whose key exists** (only the matched columns change). An empty cell is NULL unless you untick it. If one row fails, nothing is imported and the message says which rows |
+| **Change many rows…** | For the rows matching the Data tab's filter: set one or more columns to a value (or NULL), or delete them. Test shows how many rows it changes; Run asks with that number. With no filter it asks you to confirm *every row* |
+| **Find and replace…** | In one column: a part of the value (case-insensitive unless *Match case*) or the whole value only; **Preview** shows how many rows and the first ten before → after |
+
 ### Who wrote it — change tracking
 
 PostgreSQL does not keep who changed a row. DockGate shows what is known and, if you turn it on for a table, records every change from then on.
@@ -228,3 +238,5 @@ The list shows each task's server, schedule, last run (with its result) and next
 | Data: *Change 3: … — nothing was saved* | That change broke a rule (NOT NULL, unique, a foreign key) | Fix the marked row; none of the changes was written |
 | Changes: *Tracking needs a primary key* | Rows are told apart by their key | Add a primary key to the table |
 | Changes: no time for *Last written* | The server does not record commit times | Turn on change tracking for the table (or `track_commit_timestamp = on` in postgresql.conf and a restart) |
+| Import: *… — nothing was imported (in rows 501–1000)* | A row in that part broke a rule (a missing value, a duplicate key, a wrong type) | Fix the file, Test again |
+| Change many: *No filter: this would change every row* | The Data tab has no filter | Filter the rows first, or tick *every row* |

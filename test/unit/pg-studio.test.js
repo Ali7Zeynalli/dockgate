@@ -355,3 +355,40 @@ test('Who wrote it, against PostgreSQL: tracking records the changes of the app 
   assert.equal((await H.disable('shop-db-1', 'dgtest', 'shop', 'acct', { dropLog: true })).count, 0);
   S.saveSettings('shop-db-1', { allowWrite: false });
 });
+
+test('Many rows at once against PostgreSQL: import (insert / upsert / skip), bulk update by filter, find and replace', { skip }, async () => {
+  const S = setup();
+  const BU = require('../../server/pg-bulk');
+  const pq = (...a) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest', '-At', ...a]).toString().trim();
+  pq('-c', 'drop table if exists shop.prod', '-c', 'create table shop.prod (sku text primary key, name text not null, price numeric(10,2), note text)');
+  S.saveSettings('shop-db-1', { allowWrite: false });
+  const rows = Array.from({ length: 1200 }, (_, i) => [`S${i}`, `Item ${i}`, String(i % 50), i % 3 ? '' : "it's"]);
+  const t1 = await BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name', 'price', 'note'], rows, test: true });
+  assert.deepEqual([t1.written, t1.test], [1200, true]); assert.equal(pq('-c', 'select count(*) from shop.prod'), '0');
+  await assert.rejects(BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name'], rows: [['a', 'b']] }), (e) => e.code === 'READ_ONLY');
+  S.saveSettings('shop-db-1', { allowWrite: true });
+  const r1 = await BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name', 'price', 'note'], rows });
+  assert.equal(r1.written, 1200); assert.equal(pq('-c', "select count(*) || '/' || count(note) from shop.prod"), '1200/400', 'empty cells are NULL');
+  // a bad row (NOT NULL) in the middle: nothing is imported
+  await assert.rejects(BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name'], rows: [['X1', 'ok'], ['X2', '']] }), (e) => e.code === 'FAILED' && /null/i.test(e.message));
+  assert.equal(pq('-c', "select count(*) from shop.prod where sku like 'X%'"), '0');
+  // skip existing / update existing by key
+  const r2 = await BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name'], rows: [['S1', 'changed'], ['NEW1', 'new']], mode: 'skip' });
+  assert.deepEqual([r2.written, r2.skipped], [1, 1]); assert.equal(pq('-c', "select name from shop.prod where sku = 'S1'"), 'Item 1');
+  await BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name'], rows: [['S1', 'changed']], mode: 'upsert' });
+  assert.equal(pq('-c', "select name || '/' || price from shop.prod where sku = 'S1'"), 'changed/1.00', 'only mapped columns change');
+  // bulk update by the Data filter
+  await assert.rejects(BU.bulkUpdate('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', set: { note: 'x' } }), (e) => e.code === 'ALL_ROWS');
+  const b1 = await BU.bulkUpdate('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', filters: [{ col: 'price', op: '=', value: '0' }], set: { note: 'free' }, test: true });
+  assert.equal(b1.rows, 24); assert.equal(pq('-c', "select count(*) from shop.prod where note = 'free'"), '0');
+  await BU.bulkUpdate('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', filters: [{ col: 'price', op: '=', value: '0' }], set: { note: 'free' } });
+  assert.equal(pq('-c', "select count(*) from shop.prod where note = 'free'"), '24');
+  assert.equal((await BU.bulkUpdate('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', where: "sku like 'NEW%'", op: 'delete' })).rows, 1);
+  // find and replace: preview, part of the value (case-insensitive), whole value
+  const pv = await BU.findReplace('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', column: 'name', find: 'ITEM 1', replace: 'Thing-1', preview: true });
+  assert.equal(pv.rows, 310, 'Item 1, 10–19, 100–199, 1000–1199 (S1 was renamed)'); assert.equal(pv.samples[0].after.startsWith('Thing-1'), true);
+  assert.equal((await BU.findReplace('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', column: 'name', find: 'item 1', replace: 'Thing-1' })).rows, 310);
+  assert.equal(pq('-c', "select name from shop.prod where sku = 'S15'"), 'Thing-15');
+  assert.equal((await BU.findReplace('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', column: 'note', find: "it's", replace: 'its', wholeValue: true, matchCase: true })).rows, 392, '400 minus the 8 set to free above');
+  S.saveSettings('shop-db-1', { allowWrite: false });
+});

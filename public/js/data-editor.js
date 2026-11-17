@@ -82,7 +82,7 @@ const DataEditor = (() => {
           <b style="font-size:15px">${esc(ctx.schema)}.${esc(ctx.table)}</b> <span class="ui-sub">${esc((ctx.kindName || {})[d.kind] || '')}${d.estimate >= 0 ? ` · ≈ ${d.estimate.toLocaleString()} rows` : ''}</span>
           <span style="flex:1"></span>
           ${UI.btn('🕘 Changes', 'data-history title="Who changed this table, when, and how"')} ${UI.btn('Count rows', 'data-count')} ${UI.btn('↻', 'data-reload title="Reload (drops changes not saved)"')}
-          ${UI.menu([{ label: 'Export CSV', attrs: 'data-export="csv"' }, { label: 'Export JSON lines', attrs: 'data-export="json"' }], { label: 'Export' })}
+          ${UI.menu([{ label: 'Export CSV', attrs: 'data-export="csv"' }, { label: 'Export JSON lines', attrs: 'data-export="json"' }, ...(editable() ? ['-', { label: 'Import CSV…', attrs: 'data-import' }, { label: 'Change many rows…', attrs: 'data-bulk' }, { label: 'Find and replace…', attrs: 'data-replace' }] : [])], { label: 'Export / import' })}
           ${editable() ? `${UI.btn('+ Row', 'data-add')} ${UI.btn('Copy row', 'data-dup title="Copy the ticked row (or the selected one) as a new row"')} ${UI.btn('Delete', 'data-delsel title="Mark the ticked rows for deletion"', 'btn-danger')}` : `<span class="ui-sub" title="Rows are changed by primary key">${d.kind === 'r' || d.kind === 'p' ? 'no primary key — edit with SQL' : 'not editable'}</span>`}
         </div>
         ${n ? `<div class="dbg-pend"><b>${n} change${n === 1 ? '' : 's'} not saved</b><span class="ui-sub">${st.edits.size ? `${st.edits.size} edited` : ''}${st.news.length ? ` · ${st.news.length} new` : ''}${st.dels.size ? ` · ${st.dels.size} to delete` : ''}</span><span style="flex:1"></span>
@@ -127,6 +127,9 @@ const DataEditor = (() => {
       const on = (sel, fn) => { const x = m.querySelector(sel); if (x) x.onclick = fn; };
       on('[data-add]', () => addRow());
       on('[data-history]', () => historyPanel());
+      on('[data-import]', () => guardLeave(importCsv));
+      on('[data-bulk]', () => guardLeave(bulkDialog));
+      on('[data-replace]', () => guardLeave(replaceDialog));
       on('[data-dup]', () => dupRow());
       on('[data-delsel]', () => markDelete());
       on('[data-discard]', () => showConfirm('Discard changes', `Drop the ${dirty()} change(s) not saved?`, () => { st.edits.clear(); st.news = []; st.dels.clear(); st.failed = null; draw(); }));
@@ -372,6 +375,143 @@ const DataEditor = (() => {
       render();
     }
 
+
+
+    // ---- many rows at once ----
+    function parseCsv(text, delim) {
+      const rows = []; let row = [], f = '', q = false, i = 0; const n = text.length;
+      while (i < n) {
+        const ch = text[i];
+        if (q) { if (ch === '"') { if (text[i + 1] === '"') { f += '"'; i += 2; continue; } q = false; i++; continue; } f += ch; i++; continue; }
+        if (ch === '"' && f === '') { q = true; i++; continue; }
+        if (ch === delim) { row.push(f); f = ''; i++; continue; }
+        if (ch === '\n' || ch === '\r') { row.push(f); f = ''; rows.push(row); row = []; if (ch === '\r' && text[i + 1] === '\n') i++; i++; continue; }
+        f += ch; i++;
+      }
+      if (f !== '' || row.length) { row.push(f); rows.push(row); }
+      return rows.filter(r => !(r.length === 1 && r[0] === ''));
+    }
+    const filterText = () => [...g.filters.map(f => `${f.col} ${f.op} ${f.op === 'null' || f.op === 'notnull' ? '' : f.value}`), g.where].filter(Boolean).join(' AND ');
+    const writable = () => st.d.columns.filter(c => !c.generated);
+    async function runWithResult(btn, fn) { btn.disabled = true; try { return await fn(); } finally { btn.disabled = false; } }
+
+    function importCsv() {
+      const d = st.d; let data = null, header = true, delim = ',';
+      UI.dialog({ title: `Import CSV into ${esc(ctx.schema)}.${esc(ctx.table)}`, saveLabel: 'Import', wide: true,
+        body: `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><input type="file" id="im-file" accept=".csv,.tsv,.txt,text/csv">
+            <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="im-head" checked> The first line names the columns</label>
+            <select class="input" id="im-delim" style="width:auto"><option value="auto">Separator: auto</option><option value=",">,</option><option value=";">;</option><option value="\t">Tab</option><option value="|">|</option></select></div>
+          <div data-impre style="margin-top:10px"><div class="ui-sub">Pick a file (up to 80 MB). Each CSV column is matched to a table column by name — change it in the list above it, or skip it.</div></div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:10px">
+            <select class="input" id="im-mode" style="width:auto"><option value="insert">Add every row</option>${d.pk.length ? '<option value="skip">Add — skip rows whose key exists</option><option value="upsert">Add — update rows whose key exists</option>' : ''}</select>
+            <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="im-null" checked> An empty cell is NULL</label>
+            ${UI.btn('🧪 Test', 'data-imtest title="Import inside a transaction and roll it back"')}<span class="ui-sub" data-immsg></span></div>
+          <div class="ui-sub" style="margin-top:6px">All rows go in one transaction: if one fails (a missing value, a duplicate key, a wrong type), nothing is imported.</div>`,
+        onOpen: (ov) => {
+          const box = ov.querySelector('[data-impre]');
+          const draw2 = () => {
+            if (!data) return;
+            const rows = data.slice(header ? 1 : 0);
+            const names = header ? data[0] : data[0].map((_, i) => `column ${i + 1}`);
+            const norm = (x) => String(x).trim().toLowerCase().replace(/[\s-]+/g, '_');
+            const auto = names.map(nm => (writable().find(c => norm(c.name) === norm(nm)) || {}).name || '');
+            box.innerHTML = `<div class="ui-sub" style="margin-bottom:6px">${rows.length.toLocaleString()} rows · ${names.length} columns</div><div class="dbg-grid" style="max-height:300px"><table><thead><tr>${names.map((nm, i) => `<th style="cursor:default"><select class="input" data-map="${i}" style="padding:2px 4px;font-size:12px;min-width:110px"><option value="">— skip —</option>${writable().map(c => `<option ${c.name === auto[i] ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select><small>${esc(nm)}</small></th>`).join('')}</tr></thead><tbody>${rows.slice(0, 8).map(r => `<tr>${names.map((_, i) => `<td>${r[i] == null ? '' : esc(String(r[i]).slice(0, 80))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+          };
+          const read = () => {
+            const f = ov.querySelector('#im-file').files[0]; if (!f) return;
+            if (f.size > 80 * 1024 * 1024) { box.innerHTML = '<div class="text-danger">The file is larger than 80 MB — split it, or load it with psql.</div>'; return; }
+            const fr = new FileReader();
+            fr.onload = () => {
+              let text = String(fr.result).replace(/^﻿/, '');
+              const dsel = ov.querySelector('#im-delim').value;
+              const first = text.split(/\r?\n/, 1)[0] || '';
+              delim = dsel !== 'auto' ? dsel : [',', ';', '\t', '|'].sort((a, b) => first.split(b).length - first.split(a).length)[0];
+              data = parseCsv(text, delim); draw2();
+            };
+            fr.readAsText(f);
+          };
+          ov.querySelector('#im-file').onchange = read; ov.querySelector('#im-delim').onchange = read;
+          ov.querySelector('#im-head').onchange = (e) => { header = e.target.checked; draw2(); };
+          ov.querySelector('[data-imtest]').onclick = (e) => runWithResult(e.target, async () => { const msg = ov.querySelector('[data-immsg]'); try { const r = await send(ov, true); msg.style.color = 'var(--success)'; msg.textContent = `🧪 ${r.written.toLocaleString()} of ${r.rows.toLocaleString()} rows would be written${r.skipped ? `, ${r.skipped.toLocaleString()} skipped` : ''} — rolled back`; } catch (er) { msg.style.color = 'var(--danger)'; msg.textContent = er.message; } });
+        },
+        onSave: async (ov) => {
+          if (!ctx.info().allowWrite) throw new Error('Turn on "Allow changes" to import (🧪 Test works without it)');
+          const r = await send(ov, false);
+          showToast(`Imported: ${r.written.toLocaleString()} rows${r.skipped ? `, ${r.skipped.toLocaleString()} skipped (their key exists)` : ''}`); load();
+        } });
+      async function send(ov, test) {
+        if (!data) throw new Error('Pick a file first');
+        const maps = [...ov.querySelectorAll('[data-map]')].map(sel => sel.value);
+        const idx = maps.map((m, i) => (m ? i : -1)).filter(i => i >= 0);
+        if (!idx.length) throw new Error('Match at least one column');
+        const rows = data.slice(header ? 1 : 0).map(r => idx.map(i => (r[i] == null ? '' : r[i])));
+        return API.post(`${ctx.dbBase()}/import`, { schema: ctx.schema, table: ctx.table, columns: idx.map(i => maps[i]), rows, mode: ov.querySelector('#im-mode').value, emptyNull: ov.querySelector('#im-null').checked, test });
+      }
+    }
+
+    function bulkDialog() {
+      const ft = filterText();
+      const opts = writable().map(c => `<option>${esc(c.name)}</option>`).join('');
+      const setRow = () => `<div data-brow style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><select class="input" data-bcol style="width:auto">${opts}</select><span>=</span><input class="input td-mono" data-bval placeholder="value"><label style="display:flex;gap:4px;align-items:center;font-weight:400"><input type="checkbox" data-bnull> NULL</label></div>`;
+      UI.dialog({ title: `Change many rows of ${esc(ctx.schema)}.${esc(ctx.table)}`, saveLabel: 'Run', danger: true, wide: true,
+        body: `<div class="text-sm" style="margin-bottom:8px">Rows: ${ft ? `those matching <span class="td-mono">${esc(ft)}</span> (the filter of the Data tab)` : '<b style="color:var(--danger)">every row</b> — no filter is set in the Data tab'}</div>
+          ${ft ? '' : '<label style="display:flex;gap:6px;align-items:center;font-weight:400;margin-bottom:8px"><input type="checkbox" id="bk-all"> Yes, every row of the table</label>'}
+          <select class="input" id="bk-op" style="width:auto;margin-bottom:8px"><option value="update">Set columns</option><option value="delete">Delete the rows</option></select>
+          <div data-bset>${setRow()}</div><button type="button" class="btn btn-xs btn-ghost" data-badd>+ another column</button>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">${UI.btn('🧪 Test — how many rows', 'data-btest')}<span class="ui-sub" data-bmsg></span></div>
+          <div class="ui-sub" style="margin-top:6px">One statement in one transaction. Test runs it and rolls back, so you see how many rows it changes.</div>`,
+        onOpen: (ov) => {
+          ov.querySelector('[data-badd]').onclick = () => ov.querySelector('[data-bset]').insertAdjacentHTML('beforeend', setRow());
+          ov.querySelector('#bk-op').onchange = (e) => { const del = e.target.value === 'delete'; ov.querySelector('[data-bset]').style.display = del ? 'none' : ''; ov.querySelector('[data-badd]').style.display = del ? 'none' : ''; };
+          ov.querySelector('[data-btest]').onclick = (e) => runWithResult(e.target, async () => { const msg = ov.querySelector('[data-bmsg]'); try { const r = await send(ov, true); msg.style.color = 'var(--success)'; msg.textContent = `🧪 ${r.rows.toLocaleString()} rows would be ${r.op === 'delete' ? 'deleted' : 'changed'} — rolled back`; } catch (er) { msg.style.color = 'var(--danger)'; msg.textContent = er.message; } });
+        },
+        onSave: async (ov) => {
+          if (!ctx.info().allowWrite) throw new Error('Turn on "Allow changes" first (🧪 Test works without it)');
+          const t = await send(ov, true);
+          const ok = await new Promise(res => showConfirm('Run it', `This ${ov.querySelector('#bk-op').value === 'delete' ? 'deletes' : 'changes'} <b>${t.rows.toLocaleString()}</b> row(s). Go on?`, () => res(true), true));
+          if (!ok) return false;
+          const r = await send(ov, false); showToast(`${r.rows.toLocaleString()} rows ${r.op === 'delete' ? 'deleted' : 'changed'}`); load();
+        } });
+      function send(ov, test) {
+        const op = ov.querySelector('#bk-op').value; const set = {};
+        if (op === 'update') ov.querySelectorAll('[data-brow]').forEach(r => { set[r.querySelector('[data-bcol]').value] = r.querySelector('[data-bnull]').checked ? null : r.querySelector('[data-bval]').value; });
+        const all = ov.querySelector('#bk-all');
+        return API.post(`${ctx.dbBase()}/bulk`, { schema: ctx.schema, table: ctx.table, filters: g.filters, where: g.where, op, set, test, all: !!(all && all.checked) });
+      }
+    }
+
+    function replaceDialog() {
+      const ft = filterText();
+      const cols = st.d.columns.filter(c => !c.generated).sort((a, b) => (a.category === 'S' ? 0 : 1) - (b.category === 'S' ? 0 : 1));
+      UI.dialog({ title: `Find and replace in ${esc(ctx.schema)}.${esc(ctx.table)}`, saveLabel: 'Replace', danger: true, wide: true,
+        body: `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">
+            <label class="ui-field"><span class="ui-label">Column</span><select class="input" id="fr-col">${cols.map(c => `<option>${esc(c.name)}</option>`).join('')}</select></label>
+            <label class="ui-field"><span class="ui-label">Find</span><input class="input td-mono" id="fr-find"></label>
+            <label class="ui-field"><span class="ui-label">Replace with</span><input class="input td-mono" id="fr-rep"></label></div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center"><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="fr-case"> Match case</label><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="fr-whole"> Whole value only</label>
+            ${UI.btn('Preview', 'data-frprev')} ${UI.btn('🧪 Test', 'data-frtest')}</div>
+          <div class="ui-sub" style="margin-top:6px">In ${ft ? `the rows matching <span class="td-mono">${esc(ft)}</span>` : 'every row'}. Everything in one transaction.</div>
+          <div data-frout style="margin-top:10px"></div>`,
+        onOpen: (ov) => {
+          const out = ov.querySelector('[data-frout]');
+          ov.querySelector('[data-frprev]').onclick = (e) => runWithResult(e.target, async () => {
+            try { const r = await send(ov, { preview: true }); out.innerHTML = `<div class="text-sm" style="margin-bottom:6px"><b>${r.rows.toLocaleString()}</b> row(s) contain it${r.rows > 10 ? ' — the first 10:' : ':'}</div>${r.samples.length ? `<table style="width:100%;font-size:12.5px;border-collapse:collapse">${r.samples.map(x => `<tr style="border-top:1px solid var(--border)"><td class="td-mono" style="padding:4px 8px 4px 0;color:var(--danger)">${esc(x.before)}</td><td>→</td><td class="td-mono" style="padding:4px 8px;color:var(--success)">${esc(x.after)}</td></tr>`).join('')}</table>` : ''}`; }
+            catch (er) { out.innerHTML = `<div class="text-danger">${esc(er.message)}</div>`; }
+          });
+          ov.querySelector('[data-frtest]').onclick = (e) => runWithResult(e.target, async () => { try { const r = await send(ov, { test: true }); out.innerHTML = `<div style="color:var(--success)">🧪 ${r.rows.toLocaleString()} row(s) would change — rolled back</div>`; } catch (er) { out.innerHTML = `<div class="text-danger">${esc(er.message)}</div>`; } });
+        },
+        onSave: async (ov) => {
+          if (!ctx.info().allowWrite) throw new Error('Turn on "Allow changes" first (Preview and 🧪 Test work without it)');
+          const pv = await send(ov, { preview: true });
+          if (!pv.rows) throw new Error('No row contains it');
+          const ok = await new Promise(res => showConfirm('Replace', `Change <b>${pv.rows.toLocaleString()}</b> row(s)?`, () => res(true), true));
+          if (!ok) return false;
+          const r = await send(ov, {}); showToast(`${r.rows.toLocaleString()} row(s) changed`); load();
+        } });
+      function send(ov, extra) {
+        return API.post(`${ctx.dbBase()}/replace`, { schema: ctx.schema, table: ctx.table, column: ov.querySelector('#fr-col').value, find: ov.querySelector('#fr-find').value, replace: ov.querySelector('#fr-rep').value, matchCase: ov.querySelector('#fr-case').checked, wholeValue: ov.querySelector('#fr-whole').checked, filters: g.filters, where: g.where, ...extra });
+      }
+    }
 
     // ---- who wrote it ----
     const H = () => `${ctx.dbBase()}/history`;

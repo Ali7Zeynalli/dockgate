@@ -2,6 +2,16 @@
 
 ---
 
+## [2.69.0] - 2026-11-17
+
+### Added
+- **Databases → Data → Export / import:**
+  - **Import CSV…** — separator found by itself, columns matched by name (change or skip any), the first rows shown; add every row, skip rows whose key exists, or update them; an empty cell as NULL; all in one transaction with **🧪 Test** — if one row fails, nothing is imported.
+  - **Change many rows…** — set columns (or delete) on every row matching the filter, with a Test that says how many rows.
+  - **Find and replace…** — in one column, part of the value or the whole value, with a preview of the first ten before → after.
+
+---
+
 ## [2.68.0] - 2026-11-17
 
 ### Added

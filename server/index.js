@@ -34,7 +34,8 @@ if (trustProxy.setting === true) console.warn('[security] TRUST_PROXY=true — e
 const jsonSmall = express.json({ limit: '5mb' });
 const jsonLarge = express.json({ limit: '600mb' });
 // covers /deploy-folder (single-shot) and /deploy-folder-file (per-file upload — one big binary file can still be ~67MB as base64)
-app.use((req, res, next) => (req.path.startsWith('/api/compose/deploy-folder') ? jsonLarge : jsonSmall)(req, res, next));
+const jsonImport = express.json({ limit: '100mb' }); // Databases → Import CSV sends the rows as JSON
+app.use((req, res, next) => (req.path.startsWith('/api/compose/deploy-folder') ? jsonLarge : /^\/api\/databases\/[^/]+\/db\/[^/]+\/import$/.test(req.path) ? jsonImport : jsonSmall)(req, res, next));
 
 // Cache-busting: index.html-dəki hər asset URL-i ?v=<versiya> ilə möhürlənir (__V__ placeholder),
 // beləcə hər relizdən sonra brauzer köhnə JS/CSS-i yox, təzəsini çəkir (hard refresh lazım olmur).
