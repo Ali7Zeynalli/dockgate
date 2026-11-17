@@ -146,7 +146,7 @@ async function renderServicesPanel(serverId, container, sub) {
     if (!x) { page.innerHTML = ''; return; }
     if (tab) {
       page.innerHTML = `${UI.header(escapeHtml(x.label), `Settings for this service are on the <b>${escapeHtml({ access: 'Access & SSH', firewall: 'Firewall', fail2ban: 'Fail2ban' }[tab])}</b> tab.`, UI.btn('Open', 'data-goto', 'btn-primary'))}`;
-      page.querySelector('[data-goto]').onclick = () => document.querySelector(`#con-tabs .tab-btn[data-ctab="${tab}"]`)?.click();
+      page.querySelector('[data-goto]').onclick = () => srvGo(tab);
     } else {
       page.innerHTML = UI.header(escapeHtml(x.label), escapeHtml((SVC_INFO[id] || [''])[0])) + '<div data-detail></div>';
       renderServicePage(serverId, id, page.querySelector('[data-detail]'));

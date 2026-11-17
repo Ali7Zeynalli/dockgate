@@ -1,7 +1,13 @@
 // Server Console → Cron: scheduled jobs of the server — crontabs, /etc/cron.d, cron.daily…, systemd timers.
 // Editable: the SSH user's crontab, root's crontab (sudo) and /etc/cron.d/dockgate. Everything else is shown
 // as it is (system and package files are not rewritten; ⋯ → Open in Files to change one yourself).
+/** Cron jobs and systemd timers — or only one of them (Server → Automation: Cron, Timers). */
 async function renderCronPanel(serverId, container) {
+  await renderCronPanelAll(serverId, container);
+  if (container.dataset.only === 'cron') UI.onlySections(container, ['Cron jobs']);
+  if (container.dataset.only === 'timers') UI.onlySections(container, ['systemd timers']);
+}
+async function renderCronPanelAll(serverId, container) {
   const esc = (s) => escapeHtml(String(s == null ? '' : s));
   container.innerHTML = '<div class="card"><div class="skeleton" style="width:100%;height:160px"></div></div>';
   let d;
@@ -9,7 +15,7 @@ async function renderCronPanel(serverId, container) {
   catch (e) { container.innerHTML = UI.errorState(e, { title: "The server's cron jobs could not be read" }); return; }
   const reload = () => renderCronPanel(serverId, container);
   const st = Store.view('cron-' + serverId);
-  const filter = st.get('filter', 'all');
+  const filter = container.dataset.only === 'timers' ? 'timers' : st.get('filter', 'all');
   const local = (ms) => new Date(ms);
   const fmtServer = (ms) => { const x = new Date(ms + d.offsetMin * 60000); return x.toISOString().slice(0, 16).replace('T', ' '); };
   const fmtWhen = (ms) => {

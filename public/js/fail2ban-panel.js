@@ -39,7 +39,7 @@ async function renderFail2banPanel(serverId, container) {
   const reload = () => renderFail2banPanel(serverId, container);
   if (!f.installed) {
     container.innerHTML = `<div class="card" style="border-left:3px solid var(--warning)"><div style="font-weight:700;font-size:15px">fail2ban is not installed</div><div class="text-sm text-muted" style="margin-top:4px">Install it in <b>Setup → Fail2ban</b>. DockGate writes a working configuration (sshd jail on the real SSH port, ban history, recidive).</div><button class="btn btn-primary btn-sm" data-setup style="margin-top:10px">Open Setup</button></div>`;
-    container.querySelector('[data-setup]').addEventListener('click', () => document.querySelector('#con-tabs .tab-btn[data-ctab="setup"]')?.click());
+    container.querySelector('[data-setup]').addEventListener('click', () => srvGo('setup'));
     return;
   }
   const LV = { crit: 'danger', warn: 'warning', info: 'info' };

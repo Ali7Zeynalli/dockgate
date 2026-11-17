@@ -1,6 +1,6 @@
-# Resources → Builds
+# Deploy → Builds
 
-> **Where:** sidebar **Resources → Builds**
+> **Where:** sidebar **Deploy → Builds**
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**).
 

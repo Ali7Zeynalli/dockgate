@@ -24,7 +24,7 @@ Router.register('settings', async (content, params) => {
       content.innerHTML = `<div id="settings-tab-content"></div>`;
 
       const tabContent = document.getElementById('settings-tab-content');
-      const validTabs = ['general', 'notifications', 'update', 'system', 'security'];
+      const validTabs = ['general', 'notifications', 'update', 'security'];
       let activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'general';
 
       function renderTab(tab) {

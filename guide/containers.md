@@ -92,7 +92,7 @@ Click a container's name, or **⋯ → Open details**.
 - **Update…** is for the same tag (e.g. a new build of `nginx:1.27`). To change the tag, use **Recreate** with the new image.
 - After an update DockGate checks that every replica really runs the new image; when Compose kept the old container (`Running` instead of `Recreated`), it recreates it by force, and if even that keeps the old image, the update is reported as failed and the previous image put back — never *Updated* while the old image runs.
 - For a **Compose service that can run as several replicas**, Update… replaces the replicas one at a time, without downtime; if the first new one is not ready, nothing old is stopped. See [Scaling & health → Updates without downtime](compose-scaling.md#updates-without-downtime-roll-out).
-- Every action is written to **Observe → Audit log** with the server and your IP.
+- Every action is written to **System → Activity → Audit log** with the server and your IP.
 
 ---
 

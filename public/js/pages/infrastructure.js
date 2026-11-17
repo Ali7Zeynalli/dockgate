@@ -47,7 +47,7 @@ Router.register('infra', async (content, params) => {
     });
     tabContent.innerHTML = `<div class="ui-page">${UI.header('', 'Every server DockGate manages. The one marked "In use" is the one the Docker pages show — switch it here or with the server picker in the header.', UI.primary('Add server', 'data-add'))}
       ${UI.table([{ label: 'Name' }, { label: 'Status' }, { label: 'Address' }, { label: 'Login' }, { label: 'Setup' }, { label: 'CPU · RAM · Disk' }, { label: '', align: 'right' }], rows, { minWidth: 860 })}
-      <div class="ui-sub" style="margin-top:8px">Edit, remove and Docker access for a server are in its console → Settings.</div></div>`;
+      <div class="ui-sub" style="margin-top:8px">Edit, remove and Docker access for a server: open it, then Server → Status → Connection.</div></div>`;
     tabContent.querySelector('[data-add]').onclick = () => openAddServerWizard();
     // Swarm → Nodes → Add to DockGate… opens the wizard with the node's address filled in.
     if (params && params.addHost && !renderServers.prefilled) { renderServers.prefilled = true; openAddServerWizard({ host: String(params.addHost) }); }

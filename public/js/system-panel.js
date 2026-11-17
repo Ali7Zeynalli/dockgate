@@ -2,7 +2,12 @@
 // size, disks (/etc/fstab) and a catalog of the server's config files. Every change shows what changes, then runs as a
 // guarded job (backup → write → check with the owning tool → apply; restored when a check fails). Network changes
 // keep the change only when a new SSH login works — otherwise the server restores it by itself after 120 s.
+/** System, or one section of it when the container says which (Server → System tabs). */
 async function renderSystemPanel(serverId, container) {
+  await renderSystemPanelAll(serverId, container);
+  if (container.dataset.only) UI.onlySections(container, [container.dataset.only]);
+}
+async function renderSystemPanelAll(serverId, container) {
   const esc = (s) => escapeHtml(String(s == null ? '' : s));
   container.innerHTML = '<div class="card"><div class="skeleton" style="width:100%;height:160px"></div></div>';
   let d;
@@ -72,7 +77,7 @@ async function renderSystemPanel(serverId, container) {
 
   // ---- handlers ----
   container.querySelector('[data-virtual]').addEventListener('click', (e) => { e.preventDefault(); st.set('showVirtual', !st.get('showVirtual', false)); reload(); });
-  container.querySelector('[data-docker]').addEventListener('click', () => document.querySelector('#con-tabs .tab-btn[data-ctab="manage"]')?.click());
+  container.querySelector('[data-docker]').addEventListener('click', () => srvGo('srv-docker'));
   container.querySelectorAll('[data-open]').forEach(a => a.addEventListener('click', (e) => {
     e.preventDefault(); const p = a.dataset.open;
     if (/\/$|\.d$|\/netplan$|connections$|sites-available$|logrotate\.d$/.test(p)) QuickFiles.open(p); else FileEditor.open({ path: p, name: p.split('/').pop() });

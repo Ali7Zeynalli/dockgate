@@ -26,9 +26,8 @@
     const active = Store.get('activeServer') || {};
     const remote = active.id && active.id !== 'local' && active.type !== 'local';
     for (const [key, item] of Object.entries(typeof navItems !== 'undefined' ? navItems : {})) {
-      if (key === 'server-console') {
-        if (!remote) continue;
-        for (const [tab, label] of item.tabs) out.push({ group: 'Pages', name: label, hint: `Server Console · ${active.name || active.id}`, run: () => Router.navigate('server-console', { id: active.id, tab }) });
+      if (key.startsWith('srv-')) {
+        for (const [tab, label] of item.tabs) out.push({ group: 'Pages', name: label, hint: `Server · ${item.label}${remote ? ' · ' + (active.name || active.id) : ''}`, run: () => Router.navigate(key, { tab }) });
         continue;
       }
       if (item.tabs) for (const [tab, label] of item.tabs) out.push({ group: 'Pages', name: label, hint: item.label, run: () => Router.navigate(key, { tab }) });

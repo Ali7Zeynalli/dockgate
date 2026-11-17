@@ -7,7 +7,7 @@ A self-hosted control panel for Docker, Docker Compose and Docker Swarm, and for
 Yes. It is open source under the MIT license.
 
 **What do my servers need?**
-SSH access and a user with passwordless `sudo` for setup. Docker can be installed by DockGate (**Server Console → Setup**). Nothing else runs on them unless you install the optional Edge agent.
+SSH access and a user with passwordless `sudo` for setup. Docker can be installed by DockGate (**Server → Software → Setup**). Nothing else runs on them unless you install the optional Edge agent.
 
 **Which systems are supported?**
 Ubuntu and Debian are the main targets; RHEL-type systems (Rocky, Alma) work too, with firewalld instead of UFW. DockGate itself runs anywhere Docker runs.

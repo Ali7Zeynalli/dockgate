@@ -33,7 +33,7 @@ Named volumes hold your apps' data. Here you create, browse, edit, back up, rest
 ## Good to know
 
 - **Back up while the app is stopped** for databases. A copy taken while a database writes can be inconsistent. Better: use the database's own dump.
-- To back up volumes on a schedule, use **Tools → Schedules → Volume backup**.
+- To back up volumes on a schedule, use **Server → Automation → Schedules → Volume backup**.
 - **Restore does not empty the volume first.** To get exactly the archive's content, clone or remove the old data first.
 - Volumes of Swarm services stay on the server where the task runs.
 

@@ -147,7 +147,7 @@ The **Auto-deploy webhook** of a Compose project deployed from Git (Compose → 
 | *The folder … is not on the server* | Wrong path, or the SSH user can not open it | Check the path in Files |
 | *Something runs in this folder already* | One run at a time per folder | Wait, or open it and ■ Cancel |
 | *sudo: a password is required* | Run as root needs sudo without a password | Add a sudoers rule for the SSH user, or run as the user |
-| *make: command not found* | The tool is not installed for the SSH user | Install it (Server Console → Setup or the package manager) |
+| *make: command not found* | The tool is not installed for the SSH user | Install it (Server → Software → Setup or the package manager) |
 | *There is no tracking information for the current branch* (Git pull) | The clone has no upstream | Set a branch in the Git pull step, or `git branch -u origin/main` |
 | Webhook: GitHub shows a red ✗ / 401 | Wrong secret, or the content type is form | Copy the secret again; content type **application/json** |
 | Webhook: nothing arrives | DockGate is not reachable from the internet | Use its public HTTPS address |

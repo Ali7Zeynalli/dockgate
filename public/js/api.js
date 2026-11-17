@@ -173,7 +173,7 @@ function showModal(title, bodyHtml, actions = []) {
 // any custom destructive showModal (e.g. Compose "Delete project").
 function serverContextBanner() {
   // In Server Console the action targets the console's server, not the header's active server.
-  const consoleSrv = (typeof Store !== 'undefined' && Store.get('currentPage') === 'server-console') ? window.__consoleServer : null;
+  const consoleSrv = (typeof Store !== 'undefined' && String(Store.get('currentPage') || '').startsWith('srv-')) ? window.__consoleServer : null;
   const active = consoleSrv || ((typeof Store !== 'undefined') ? Store.get('activeServer') : null);
   const isRemote = active && active.id !== 'local' && active.type !== 'local';
   const who = isRemote

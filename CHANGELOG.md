@@ -2,6 +2,19 @@
 
 ---
 
+## [2.74.0] - 2026-11-17
+
+### Changed
+- **A new sidebar.** Groups: **Overview** · **Docker** (Resources, Deploy, Swarm, **Databases**, **Logs & events**) · **Web** (**Uptime**) · **Servers** (all servers) · **Server** (the one in the top bar — its name is in the heading) · **Tools** (Terminal, Files) · **System** (Settings, **Activity**).
+- **Server Console is five sections**, each working on the server in use like the Docker pages: **Status** (Overview, Monitoring, Alerts, Logs, System info, Connection) · **Security** (Access & SSH, Users & keys, Firewall, Fail2ban) · **System** (Name & addresses, Network, Time sync, Disks, Kernel & limits, Config files) · **Software** (Setup, Services, Docker engine, Auto updates) · **Automation** (Cron, Timers, Scripts, Schedules).
+- What was hidden inside pages is a tab of its own: **Alerts** (was under Monitoring), **Time sync**, **Docker engine** and **Auto updates** (were sub-pages of Services), **Timers** (was in Cron), and the six parts of System.
+- Moved: Builds → Deploy · Prune → Resources → **Cleanup** · Databases → its own item · Schedules → Server → Automation · Uptime → Web · Audit log and Notifications sent → System → Activity · Settings → System (the Docker and OS of the server in use) → Server → Status → **System info** · Swarm: Stacks before Services.
+- On the local server, the Server pages offer the SSH servers to switch to. ⌘K search lists the new places.
+- **Old links keep working** (`#/server-console?id=…&tab=…`, `#/activity?tab=…`, `#/tools?tab=databases`, `#/settings?tab=system`, …): they open the new place, switching to that server when the link names one.
+- The guide's "Where:" lines and the Server page describe the new places.
+
+---
+
 ## [2.73.0] - 2026-11-17
 
 ### Added

@@ -1,6 +1,16 @@
-# Server Console
+# Server — Status, Security, System, Software, Automation
 
-> **Where:** sidebar **Server Console**, or click a server in **Servers**
+> **Where:** the sidebar group **SERVER** (its heading names the server in use), or click a server in **Servers**
+>
+> | Sidebar | Tabs |
+> |---|---|
+> | **Status** | Overview · Monitoring · Alerts · Logs · System info · Connection |
+> | **Security** | Access & SSH · Users & keys · Firewall · Fail2ban |
+> | **System** | Name & addresses · Network · Time sync · Disks · Kernel & limits · Config files |
+> | **Software** | Setup · Services · Docker engine · Auto updates |
+> | **Automation** | Cron · Timers · Scripts · Schedules |
+>
+> These pages were one page, *Server Console*, until 2.74.0; old links open the new place.
 >
 > **Works on:** one remote (SSH) server. Opening a server's console also makes it the server in use in the top bar.
 
@@ -10,15 +20,15 @@ The console manages the **server itself**, not Docker: what is installed, who ca
 
 ---
 
-## Overview
+## Status → Overview
 
 The state of the server and what to do next: OS, uptime, CPU, memory and disk, Docker, firewall, fail2ban, SSH settings, pending updates and whether a reboot is needed. Items that need attention link to the tab that fixes them.
 
-## Monitoring
+## Status → Monitoring and Alerts
 
 CPU, memory, disk, network and load: live and the last 48 hours; top processes; disks and mounts. **Alerts** sets this server's own limits (CPU, memory, disk, server down). Empty limits use the shared ones from **Settings → Notifications**.
 
-## Setup
+## Software → Setup
 
 What is installed on the server. Each component is detected first, installed only when missing, and verified after.
 
@@ -39,7 +49,7 @@ What is installed on the server. Each component is detected first, installed onl
 
 **Set up N missing →** runs only what is missing or failed. Risky components ask for a tick first. A run keeps going if you leave the page; you can cancel between components. **Run history** keeps the last 200 runs with their full log.
 
-## Access & SSH
+## Security → Access & SSH
 
 How people log in. Every change tests a new SSH login and rolls back if it fails.
 
@@ -56,11 +66,11 @@ How people log in. Every change tests a new SSH login and rolls back if it fails
 
 DockGate writes its SSH settings into one file (`DockGate sshd drop-in`), so the system's own `sshd_config` stays as it was.
 
-## Users & keys
+## Security → Users & keys
 
 Who can log in: human accounts (UID ≥ 1000) and root, with their last login. **Add user**, **Disable…** / **Re-enable…** a user, and manage the **SSH keys** in each user's `authorized_keys` (**Add SSH key**, remove). The page names the user DockGate connects as.
 
-## Firewall
+## Security → Firewall
 
 UFW (or firewalld on RHEL-type systems).
 
@@ -73,7 +83,7 @@ UFW (or firewalld on RHEL-type systems).
 
 Docker publishes ports past UFW by default. DockGate adds rules so a container's published port obeys the firewall too.
 
-## Fail2ban
+## Security → Fail2ban
 
 Bans addresses that fail to log in over SSH too often.
 
@@ -81,11 +91,11 @@ Bans addresses that fail to log in over SSH too often.
 - **Ban an IP** by hand.
 - **Configuration**: ban time, find time, max retries, addresses never banned, and more. Change cards, then **Review & apply all**, or **Save this card** one at a time. Changes are tested before they apply; current bans are kept.
 
-## Services
+## Software → Services, Docker engine, Auto updates — and System → Time sync
 
 System services DockGate manages on the server (Docker, SSH, the firewall, fail2ban, time sync…). Select one for its state, **Start at boot**, start / stop / restart, its settings and its log.
 
-## Cron
+## Automation → Cron and Timers
 
 The server's scheduled jobs in one table: the SSH user's crontab, root's crontab, `/etc/cron.d/*`, `/etc/crontab`, the scripts in `/etc/cron.hourly | daily | weekly | monthly`, and **systemd timers** (many distributions run apt, logrotate, fstrim and certbot with timers instead of cron).
 
@@ -109,7 +119,7 @@ The wrapper of root's jobs is a root-owned copy (`/usr/local/lib/dockgate/dg-cro
 
 ⋯ → **Run now…** runs the command once as its user and shows the output and exit code (up to 2 minutes).
 
-## Scripts
+## Automation → Scripts
 
 Build a shell script from **blocks** — DockGate writes the script, safely quoted — then save it to the server, run it once, or schedule it.
 
@@ -161,7 +171,7 @@ Run, Schedule…, the log and the alerts work the same for every kind.
 
 Only *Custom command* carries your own shell; every other value is checked and quoted, so a name, path, URL or message can not run a command.
 
-## System
+## System — Name & addresses, Network, Disks, Kernel & limits, Config files
 
 The server's own settings, each through a form. Every change shows what changes in the file, is checked by the tool that owns it, and is restored when a check fails. DockGate writes its own files where the system has a `.d` folder, so the distribution's files stay as they are.
 
@@ -182,11 +192,11 @@ The server's own settings, each through a form. Every change shows what changes 
 
 Docker daemon settings (log size limits, live-restore) stay in **Services → Docker**.
 
-## Logs
+## Status → Logs
 
 The system journal and log files of the server in the [log viewer](observe.md#the-log-viewer). Most sources need passwordless `sudo`.
 
-## Settings
+## Status → Connection
 
 | Row | Meaning |
 |---|---|
