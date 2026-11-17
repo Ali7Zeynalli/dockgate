@@ -11,8 +11,8 @@ Router.register('images', async (content) => {
 
   async function render() {
     try {
-      const [imgList, ctrs, upd] = await Promise.all([API.get('/images'), API.get('/containers').catch(() => []), API.get('/images/updates').catch(() => [])]);
-      const newer = new Set((upd || []).map(u => u.image)); // tags with a newer image in their registry
+      const [imgList, ctrs, upd] = await Promise.all([API.get('/images'), API.get('/containers').catch(() => []), API.get('/images/updates').catch(() => ({ results: [] }))]);
+      const newer = new Set(((upd && upd.results) || []).filter(u => u.status === 'update').map(u => u.image)); // tags with a newer image in their registry
       let images = imgList;
       // Which containers use each image ("Used by"), by image ID.
       const usedBy = {};

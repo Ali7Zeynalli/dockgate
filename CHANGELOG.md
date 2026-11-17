@@ -2,6 +2,18 @@
 
 ---
 
+## [2.74.1] - 2026-11-17
+
+### Fixed
+- **Images** page opened with "Something went wrong" after a newer-image check had run: it read the check results in the wrong shape. The **newer available** tag now shows again on images whose registry has a newer one.
+
+### Docs
+- README: a **Where things are** table for the new sidebar; Servers and Audit log captions name the new places.
+- README screenshots and the demo GIF taken again on the new sidebar, with real data.
+- The guide's full-page pictures (Dashboard, Containers, Images, Volumes, Networks, Cleanup, Compose, Templates, Builds, Registries, Swarm pages, Logs, Events, Audit log, Monitoring, Terminal, Files, Schedules, Servers, SSH keys, Edge agent, Settings) taken again on the new sidebar.
+
+---
+
 ## [2.74.0] - 2026-11-17
 
 ### Changed
