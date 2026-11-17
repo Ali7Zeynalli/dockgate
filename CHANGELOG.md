@@ -2,6 +2,18 @@
 
 ---
 
+## [2.71.0] - 2026-11-17
+
+### Changed
+- **Tools → Databases is a database client.** The **Explorer** on the left: container → database → schema → Tables / Views / Materialized views / Sequences / Functions → table → Columns (🔑 primary key, 🔗 foreign key), Indexes, Foreign keys, Triggers — loaded when opened, with a filter, ↑ ↓ → ← Enter keys and a resizable width.
+- **Tabs** for everything: a table's data, its design, each SQL query, a database overview, admin and backups. A click opens a *preview* tab (in italics, replaced by the next click); a double-click or an edit keeps it; middle-click closes; open tabs come back after a reload.
+- **Right-click menus** on every node and tab: open data, open in a new tab, design, new SELECT / INSERT / UPDATE / DELETE query filled with the table's columns, view definition, count rows, export CSV / JSON, copy name, VACUUM / ANALYZE / REFRESH, empty (TRUNCATE) and drop (asks for the name); on a database: new query, overview, admin, backups; on a function: its definition; on a tab: close, close others, close to the right, reveal in Explorer.
+- **Database overview** tab: every table, view and sequence with rows and size, Data / Design buttons, and ticked tables ANALYZE / VACUUM / empty / drop together.
+- **Status bar**: container › database › table, PostgreSQL version and user, production, the 🔒 Read-only / ✎ Changes allowed switch and Connection settings.
+- Each SQL query is its own tab (the saved queries, snippets, history and schema panel open with ☰).
+
+---
+
 ## [2.70.1] - 2026-11-17
 
 ### Added
