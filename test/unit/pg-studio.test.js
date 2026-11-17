@@ -280,3 +280,38 @@ test('Workbench sessions against PostgreSQL: a transaction lives across runs, te
   WS.close(K); assert.equal(WS.state(K).none, true);
   S.saveSettings('shop-db-1', { allowWrite: false });
 });
+
+test('Data editor against PostgreSQL: many edits in one transaction, conflicts, test, foreign keys', { skip }, async () => {
+  const S = setup();
+  const pq = (...a) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest', '-At', ...a]).toString().trim();
+  pq('-c', 'drop table if exists shop.ord, shop.cust', '-c', 'drop type if exists shop.st', '-c', "create type shop.st as enum ('new','paid')");
+  pq('-c', "create table shop.cust (id int primary key, name text not null, vip boolean default false)", '-c', "create table shop.ord (id serial primary key, cust_id int references shop.cust(id), total numeric(10,2), status shop.st default 'new', meta jsonb)");
+  pq('-c', "insert into shop.cust values (1, 'Ann', false), (2, 'Bob', true)", '-c', "insert into shop.ord (cust_id, total) values (1, 10), (1, 20), (2, 5)");
+  const st = await S.structure('shop-db-1', 'dgtest', 'shop', 'ord');
+  const col = (n) => st.columns.find(c => c.name === n);
+  assert.deepEqual(col('status').enum, ['new', 'paid']); assert.equal(col('cust_id').fk.table, 'cust'); assert.equal(col('meta').base, 'jsonb'); assert.equal(col('total').category, 'N');
+  S.saveSettings('shop-db-1', { allowWrite: false });
+  const changes = [{ op: 'update', pk: { id: '1' }, set: { name: 'Anna' }, orig: { name: 'Ann' } }, { op: 'insert', values: { id: '3', name: 'Cem' } }, { op: 'delete', pk: { id: '2' } }];
+  await assert.rejects(S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes }), (e) => e.code === 'READ_ONLY');
+  // test: works read-only, nothing stays
+  const tr = await S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes: [changes[0], changes[1]], test: true });
+  assert.equal(tr.test, true); assert.equal(pq('-c', 'select string_agg(name, \',\' order by id) from shop.cust'), 'Ann,Bob');
+  S.saveSettings('shop-db-1', { allowWrite: true });
+  // a failing change (Bob has orders) rolls back all of them
+  await assert.rejects(S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes }), (e) => e.code === 'FAILED' && e.at === 2 && /foreign key/.test(e.message));
+  assert.equal(pq('-c', 'select string_agg(name, \',\' order by id) from shop.cust'), 'Ann,Bob', 'nothing saved');
+  // someone else changed the row since it was loaded → conflict, nothing saved
+  pq('-c', "update shop.cust set name = 'Ann B' where id = 1");
+  await assert.rejects(S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes: [changes[0], changes[1]] }), (e) => e.code === 'CONFLICT' && /id=1/.test(e.message));
+  assert.equal(pq('-c', 'select count(*) from shop.cust'), '2');
+  const ok = await S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes: [{ op: 'update', pk: { id: '1' }, set: { name: "O'Hara", vip: 'true' }, orig: { name: 'Ann B', vip: 'false' } }, changes[1]] });
+  assert.deepEqual([ok.update, ok.insert], [1, 1]);
+  assert.equal(pq('-c', "select name || '/' || vip from shop.cust where id = 1"), "O'Hara/true");
+  // foreign keys: picker options and rows pointing here
+  const fk = await S.fkLookup('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', column: 'id', q: 'ha' });
+  assert.equal(fk.label, 'name'); assert.deepEqual(fk.options, [{ key: '1', label: "O'Hara" }]);
+  assert.equal((await S.fkLookup('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', column: 'id', key: '2' })).options[0].label, 'Bob');
+  const refs = await S.referencing('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', pk: { id: '1' } });
+  assert.deepEqual(refs.refs.map(r => [r.table, r.column, r.count]), [['ord', 'cust_id', 2]]);
+  S.saveSettings('shop-db-1', { allowWrite: false });
+});

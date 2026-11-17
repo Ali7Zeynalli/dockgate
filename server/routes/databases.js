@@ -8,7 +8,7 @@ const BK = require('../pg-backup');
 
 const send = (fn) => async (req, res) => {
   try { res.json(await fn(req, res)); }
-  catch (e) { res.status(e.statusCode || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}), ...(e.danger ? { danger: e.danger } : {}), ...(e.names ? { names: e.names } : {}) }); }
+  catch (e) { res.status(e.statusCode || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}), ...(e.danger ? { danger: e.danger } : {}), ...(e.names ? { names: e.names } : {}), ...(e.at != null ? { at: e.at } : {}) }); }
 };
 const audit = (req, action, details) => logAction({ req, resourceType: 'database', resourceName: `${req.params.c}${req.params.db ? '/' + req.params.db : ''}`, action, details });
 
@@ -36,6 +36,15 @@ router.post('/:c/db/:db/sql', send(async (req) => {
 router.post('/:c/db/:db/row/update', send(async (req) => { const r = await S.updateRow(req.params.c, req.params.db, req.body || {}); audit(req, 'db_row_update', { table: `${req.body.schema}.${req.body.table}`, key: req.body.pk, columns: Object.keys(req.body.set || {}) }); return r; }));
 router.post('/:c/db/:db/row/insert', send(async (req) => { const r = await S.insertRow(req.params.c, req.params.db, req.body || {}); audit(req, 'db_row_insert', { table: `${req.body.schema}.${req.body.table}`, key: r.key }); return r; }));
 router.post('/:c/db/:db/row/delete', send(async (req) => { const r = await S.deleteRows(req.params.c, req.params.db, req.body || {}); audit(req, 'db_row_delete', { table: `${req.body.schema}.${req.body.table}`, rows: r.deleted }); return r; }));
+// body { schema, table, changes: [...], test } — many edits in one transaction (see pg-studio.applyChanges)
+router.post('/:c/db/:db/changes', send(async (req) => {
+  const b = req.body || {};
+  const r = await S.applyChanges(req.params.c, req.params.db, b);
+  if (!r.test) audit(req, 'db_changes', { table: `${b.schema}.${b.table}`, update: r.update, insert: r.insert, delete: r.delete, changes: (b.changes || []).slice(0, 50).map(c => ({ op: c.op, key: c.pk, columns: Object.keys(c.set || c.values || {}) })) });
+  return r;
+}));
+router.get('/:c/db/:db/fk-lookup', send(async (req) => S.fkLookup(req.params.c, req.params.db, { schema: req.query.schema, table: req.query.table, column: req.query.column, q: req.query.q || '', key: req.query.key })));
+router.post('/:c/db/:db/referencing', send(async (req) => S.referencing(req.params.c, req.params.db, req.body || {})));
 // ?schema&table&format=csv|json — streamed download
 router.get('/:c/db/:db/export', async (req, res) => {
   const fmt = req.query.format === 'json' ? 'json' : 'csv';

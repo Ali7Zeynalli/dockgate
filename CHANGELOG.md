@@ -2,6 +2,17 @@
 
 ---
 
+## [2.67.0] - 2026-11-17
+
+### Added
+- **Databases → Data is a spreadsheet.** Click a cell and type: it is edited in place (Enter, Tab, arrows, Esc, Ctrl+0 for NULL). Lists for enums and booleans, a date box, a JSON editor that checks the JSON, a bigger editor for long text and arrays, suggestions from the referenced table for foreign keys.
+- **Changes wait until Save** (yellow cells, green new rows, struck-through deletions): **Review**, **🧪 Test** (rolled back), **Discard** or **Save** — all in one transaction; if one fails, none is saved and its row is marked.
+- **Nobody else's change is overwritten:** an edit is saved only if the row still holds what was loaded; otherwise nothing is saved and you choose to keep your edits or reload.
+- **Paste cells from Excel**, **Copy row**, add rows, mark rows for deletion.
+- **The row as a card** with every column, ‹ › to the next row, foreign keys showing what they point to (**Open ↗**), and **Rows pointing here** (`orders via customer_id: 12`) — each opens the other table filtered.
+
+---
+
 ## [2.66.0] - 2026-11-17
 
 ### Added

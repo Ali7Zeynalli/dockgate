@@ -116,7 +116,21 @@ PostgreSQL running in containers on the server picked in the top bar — browse 
 
 **The page:** pick the container and database on the left; tables, views, materialized views, sequences and functions are listed by schema (with a finder). On the right:
 
-- **Data** — the table, 50–500 rows a page; click a column to sort; filters (`=`, `≠`, contains, starts with, `<`, `>`, in, is NULL…) and any `WHERE` condition; **Count rows** for the exact number; **Export** CSV or JSON lines (the whole table, streamed). With **Allow changes**: double-click a cell to edit it (or set it NULL), **+ Row**, tick rows and **Delete selected**. NULL and an empty text are told apart; big numbers stay exact.
+- **Data** — the table as a spreadsheet (see *Editing data* below); 50–500 rows a page; click a column name to sort; filters (`=`, `≠`, contains, starts with, `<`, `>`, in, is NULL…) and any `WHERE` condition; **Count rows** for the exact number; **Export** CSV or JSON lines (the whole table, streamed). NULL and an empty text are told apart; big numbers stay exact.
+
+### Editing data
+
+| | |
+|---|---|
+| **In the cell** | Click a cell, then type, press Enter or double-click: it is edited in place. Enter keeps it and goes down, Tab goes right, Esc leaves it as it was; arrows move between cells; **Ctrl+0** sets NULL; Ctrl+C copies the cell |
+| **By type** | Enums and booleans: a list · dates: a date box · JSON / JSONB: an editor that checks the JSON (and formats it) · long text, XML and arrays: a bigger editor · foreign keys: suggestions from the table they point to (key and name) as you type · generated columns can not be changed |
+| **Not saved yet** | Changed cells turn yellow, new rows green, rows to delete are struck through; the bar says how many changes wait. **Review…** lists them, **🧪 Test** does them all in a transaction and rolls back, **Discard** drops them, **Save** writes them **in one transaction** — if one fails (a constraint, a foreign key) none is saved and that row is marked |
+| **Nobody else's change is lost** | An edit is saved only if the row still holds what you loaded; if someone (or the app) changed it meanwhile, nothing is saved and you choose to keep your edits or reload |
+| **Rows** | **+ Row** adds a row at the top (columns with a default or serial are left to the database); **Copy row** makes a new row from the ticked one; tick rows and **Delete** marks them |
+| **Paste from Excel** | Select a cell and paste: the cells go from there to the right and down, new rows are added when needed |
+| **Leaving** | Another table, tab, database or a reload asks first when changes are not saved |
+
+**The row as a card** (⤢ at the start of a row): every column one under the other, long text and JSON in full, ‹ › for the next row. A foreign key shows what it points to (`customer_id 17 → Ann`) with **Open ↗**; **Rows pointing here** lists the tables whose rows point at this one (`orders via customer_id: 12 rows`) with **Open**. Edits in the card go to the grid as not saved. In the grid, **↗** beside a foreign key value opens the row it points to.
 - **Structure** — columns (type, NULL, default, identity), primary key, indexes with their size, constraints, foreign keys pointing here, triggers, a view's definition, a sequence's settings; VACUUM / ANALYZE of the table.
 - **SQL** — the workbench (see below).
 
@@ -197,3 +211,5 @@ The list shows each task's server, schedule, last run (with its result) and next
 | SQL: *A test run can not hold "…"* | The statement ends a transaction or can not run in one | Use **Run** (with Allow changes) |
 | SQL: *A transaction is open in this tab* | You changed the database or the time limit while a transaction is open | **Commit** or **Roll back** first |
 | SQL: *The text is not complete* | An open quote, `$$` body, comment or parenthesis | Close it — psql would wait for the rest |
+| Data: *was changed or deleted by someone else since you loaded it* | The row changed after the page loaded it | **Reload** to see the new values, then edit again (or keep your edits and fix them first) |
+| Data: *Change 3: … — nothing was saved* | That change broke a rule (NOT NULL, unique, a foreign key) | Fix the marked row; none of the changes was written |

@@ -249,7 +249,14 @@ async function structureOf(t, dbname, schema, table) {
     'size', pg_total_relation_size(c.oid), 'comment', obj_description(c.oid, 'pg_class'),
     'columns', (select coalesce(json_agg(json_build_object('name', a.attname, 'type', format_type(a.atttypid, a.atttypmod), 'notnull', a.attnotnull,
         'default', pg_get_expr(ad.adbin, ad.adrelid), 'identity', nullif(row_to_json(a)->>'attidentity', ''), 'generated', nullif(row_to_json(a)->>'attgenerated', ''),
-        'comment', col_description(c.oid, a.attnum)) order by a.attnum), '[]')
+        'comment', col_description(c.oid, a.attnum),
+        'category', (select coalesce(bt.typcategory, ty.typcategory) from pg_type ty left join pg_type bt on bt.oid = nullif(ty.typbasetype, 0) where ty.oid = a.atttypid),
+        'base', (select coalesce(bt.typname, ty.typname) from pg_type ty left join pg_type bt on bt.oid = nullif(ty.typbasetype, 0) where ty.oid = a.atttypid),
+        'enum', (select json_agg(e.enumlabel order by e.enumsortorder) from pg_enum e where e.enumtypid = a.atttypid),
+        'fk', (select json_build_object('schema', fn.nspname, 'table', fc.relname, 'column', fa.attname, 'name', co.conname)
+          from pg_constraint co join pg_class fc on fc.oid = co.confrelid join pg_namespace fn on fn.oid = fc.relnamespace
+          join pg_attribute fa on fa.attrelid = co.confrelid and fa.attnum = co.confkey[1]
+          where co.conrelid = c.oid and co.contype = 'f' and array_length(co.conkey, 1) = 1 and co.conkey[1] = a.attnum limit 1)) order by a.attnum), '[]')
       from pg_attribute a left join pg_attrdef ad on ad.adrelid = a.attrelid and ad.adnum = a.attnum
       where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped),
     'pk', (select coalesce(json_agg(a.attname order by array_position(i.indkey::int2[], a.attnum)), '[]')
@@ -404,6 +411,91 @@ async function deleteRows(name, dbname, { schema, table, pks }) {
   return { deleted: Number(d.n), asked: pks.length };
 }
 
+/**
+ * Many edits of one table in ONE transaction (a DO block): updates and deletes by primary key, each checked to
+ * touch exactly one row — and, for an update, that the edited columns still hold what the editor loaded (someone
+ * else may have changed them since: CONFLICT). test: the same inside BEGIN … ROLLBACK (also on a read-only connection).
+ * changes: [{ op: 'update', pk, set, orig } | { op: 'insert', values } | { op: 'delete', pk }]
+ */
+async function applyChanges(name, dbname, { schema, table, changes, test = false }) {
+  const t = await resolve(name); const dbn = dbOf(t, dbname);
+  if (!test && !t.allowWrite) throw err('This connection is read-only. Turn on "Allow changes" first, or Test them (rolled back).', 403, { code: 'READ_ONLY' });
+  const st = await structureOf(t, dbn, schema, table);
+  if (!(st.kind === 'r' || st.kind === 'p')) throw err('Only tables can be changed here');
+  if (!Array.isArray(changes) || !changes.length) throw err('Nothing to save');
+  if (changes.length > 5000) throw err('At most 5000 changes at once');
+  const q = P.qname(st.schema, st.name);
+  const cols = new Set(st.columns.map(c => c.name));
+  const label = (pk) => st.pk.map(k => `${k}=${pk[k]}`).join(', ');
+  const known = (k) => { if (!cols.has(k)) throw err(`Unknown column: ${k}`); return true; };
+  const body = [];
+  changes.forEach((ch, i) => {
+    body.push(`RAISE NOTICE 'dg:at:%', ${i};`);
+    if (ch.op === 'insert') {
+      const ks = Object.keys(ch.values || {}).filter(known);
+      body.push(ks.length ? `INSERT INTO ${q} (${ks.map(P.ident).join(', ')}) VALUES (${ks.map(k => P.lit(ch.values[k])).join(', ')});` : `INSERT INTO ${q} DEFAULT VALUES;`);
+      return;
+    }
+    if (!st.pk.length) throw err('This table has no primary key — change it with SQL', 400, { code: 'NO_PK' });
+    const where = keyWhere(st, ch.pk);
+    const check = `GET DIAGNOSTICS n = ROW_COUNT; IF n <> 1 THEN RAISE EXCEPTION 'DG-CONFLICT: %', ${P.lit(label(ch.pk))}; END IF;`;
+    if (ch.op === 'delete') { body.push(`DELETE FROM ${q} WHERE ${where};`, check); return; }
+    if (ch.op !== 'update') throw err(`Unknown change: ${ch.op}`);
+    const ks = Object.keys(ch.set || {}).filter(known);
+    if (!ks.length) return;
+    const guard = Object.keys(ch.orig || {}).filter(k => cols.has(k)).map(k => (ch.orig[k] === null ? ` AND ${P.ident(k)} IS NULL` : ` AND ${P.ident(k)}::text = ${P.lit(ch.orig[k])}`)).join('');
+    body.push(`UPDATE ${q} SET ${ks.map(k => `${P.ident(k)} = ${P.lit(ch.set[k])}`).join(', ')} WHERE ${where}${guard};`, check);
+  });
+  let tag; do { tag = `dg${crypto.randomBytes(5).toString('hex')}`; } while (body.join('').includes(`$${tag}$`));
+  const block = `DO $${tag}$ DECLARE n bigint; BEGIN\n${body.join('\n')}\nEND $${tag}$`;
+  const args = test ? ['-q', '-c', 'BEGIN', '-c', block, '-c', 'ROLLBACK'] : ['-q', '-c', block];
+  const r = await psql(t, args, { db: dbn, readOnly: false, timeoutMs: 120000 });
+  const e = String(r.stderr || '');
+  const ats = [...e.matchAll(/dg:at:(\d+)/g)].map(m => Number(m[1]));
+  if (r.code !== 0) {
+    const at = ats.length ? ats[ats.length - 1] : null;
+    const conflict = /DG-CONFLICT: ([^\n]*)/.exec(e);
+    if (conflict) throw err(`The row ${conflict[1]} was changed or deleted by someone else since you loaded it — nothing was saved. Reload and edit again.`, 409, { code: 'CONFLICT', at });
+    const lines = e.split('\n').filter(l => !/NOTICE:\s+dg:at:/.test(l) && !/^(CONTEXT|PL\/pgSQL|SQL statement)/.test(l.replace(/^psql:[^:]*:\s*/, '')));
+    throw err(`${at != null ? `Change ${at + 1}: ` : ''}${cleanErr(lines.join('\n'))} — nothing was saved.`, 400, { code: 'FAILED', at });
+  }
+  const n = { update: 0, insert: 0, delete: 0 }; changes.forEach(c => { if (n[c.op] != null) n[c.op]++; });
+  return { ok: true, test: !!test, ...n };
+}
+
+/** Rows of the table a foreign key points to, for a picker: [{ key, label }] (label = its first text-like column). */
+async function fkLookup(name, dbname, { schema, table, column, q = '', key }) {
+  const t = await resolve(name); const dbn = dbOf(t, dbname);
+  const st = await structureOf(t, dbn, schema, table);
+  if (!st.columns.some(c => c.name === column)) throw err(`Unknown column: ${column}`);
+  const pref = ['name', 'title', 'label', 'email', 'username', 'code', 'description'];
+  const rank = (c) => { const i = pref.indexOf(c.name); return i < 0 ? 99 : i; };
+  const lab = st.columns.filter(c => c.name !== column && c.category === 'S').sort((a, b) => rank(a) - rank(b))[0];
+  const L = lab ? `${P.ident(lab.name)}::text` : 'NULL::text';
+  const K = `${P.ident(column)}::text`;
+  const like = P.lit('%' + likeEsc(q) + '%');
+  const where = key != null ? `WHERE ${K} = ${P.lit(key)}` : String(q).trim() ? `WHERE ${K} ILIKE ${like}${lab ? ` OR ${L} ILIKE ${like}` : ''}` : '';
+  const d = await json(t, dbn, `select coalesce(json_agg(json_build_object('key', k, 'label', l)), '[]') from (select ${K} as k, ${L} as l from ${P.qname(st.schema, st.name)} ${where} order by 2 nulls last, 1 limit 25) x`);
+  return { label: lab ? lab.name : null, options: d };
+}
+
+/** Tables whose foreign keys point at this row, with how many of their rows point at it. */
+async function referencing(name, dbname, { schema, table, pk }) {
+  const t = await resolve(name); const dbn = dbOf(t, dbname);
+  const st = await structureOf(t, dbn, schema, table);
+  if (!st.pk.length || !pk) return { refs: [] };
+  const fks = await json(t, dbn, `select coalesce(json_agg(json_build_object('schema', cn.nspname, 'table', cc.relname, 'column', ca.attname, 'parent', pa.attname)), '[]')
+    from pg_constraint co join pg_class cc on cc.oid = co.conrelid join pg_namespace cn on cn.oid = cc.relnamespace
+    join pg_attribute ca on ca.attrelid = co.conrelid and ca.attnum = co.conkey[1]
+    join pg_attribute pa on pa.attrelid = co.confrelid and pa.attnum = co.confkey[1]
+    where co.confrelid = ${P.lit(P.qname(st.schema, st.name))}::regclass and co.contype = 'f' and array_length(co.conkey, 1) = 1`);
+  if (!fks.length) return { refs: [] };
+  const rowWhere = st.pk.map(k => { if (!(k in pk)) throw err(`The key ${k} is missing`); return `x.${P.ident(k)} = ${P.lit(pk[k])}`; }).join(' AND ');
+  const val = (col) => `(select x.${P.ident(col)} from ${P.qname(st.schema, st.name)} x where ${rowWhere})`;
+  const parts = fks.slice(0, 30).map(f => `json_build_object('schema', ${P.lit(f.schema)}, 'table', ${P.lit(f.table)}, 'column', ${P.lit(f.column)}, 'parent', ${P.lit(f.parent)}, 'value', ${val(f.parent)}::text, 'count', (select count(*) from ${P.qname(f.schema, f.table)} y where y.${P.ident(f.column)} = ${val(f.parent)}))`);
+  return { refs: await json(t, dbn, `select json_build_array(${parts.join(', ')})`) };
+}
+
 // ---------- export ----------
 async function exportTable(name, dbname, schema, table, format, onChunk) {
   const t = await resolve(name); const dbn = dbOf(t, dbname);
@@ -420,7 +512,7 @@ async function exportTable(name, dbname, schema, table, format, onChunk) {
 module.exports = {
   targets, resolve, saveSettings, info, objects, structure, rows, count, runSql, updateRow, insertRow, deleteRows, exportTable, psql, json, psqlTool, toolArgs, dockerExecLine, maintenanceDb,
   IMAGE_RE, isPg, defaultsFrom, whereOf,
-  openPsql, schemaIndex,
+  openPsql, schemaIndex, applyChanges, fkLookup, referencing,
   _setExec(fn) { execImpl = fn || dockerExec; how.clear(); },
   _setOpen(fn) { openImpl = fn || dockerOpen; },
 };
