@@ -192,3 +192,102 @@ test('Webhook route: a signed GitHub push runs the recipe; a wrong signature, an
     assert.equal(TK.runs('srv-t', PROJ)[0].trigger, 'ci');
   } finally { srv.close(); }
 });
+
+test('Queue: a push during a deploy waits (the newest wins, the older is marked skipped) and starts after; manual: 409, queue, replace', async () => {
+  const R = require('../../server/task-recipes');
+  const rec = R.save('srv-t', PROJ, { name: 'Slow', steps: [{ type: 'command', cmd: 'echo "deploying $(date +%s%N)"; sleep 2' }], settings: { notify: { fail: false } } });
+  const waitDone = async (id) => { for (let i = 0; i < 200; i++) { const r = TK.runLog(id); if (r.status !== 'running') return r; await new Promise(res => setTimeout(res, 100)); } throw new Error('still running'); };
+  const statuses = [];
+  const st = (sha) => async (state, d) => { statuses.push(`${sha}:${state}`); };
+  const first = await R.run(rec.id, { trigger: 'manual' });
+  await assert.rejects(R.run(rec.id, { trigger: 'manual' }), (e) => e.code === 'BUSY' && e.run === first.id);
+  const q1 = await R.run(rec.id, { trigger: 'webhook:github', git: { sha: 'aaa111', branch: 'main', author: 'ann' }, status: st('aaa111') });
+  assert.deepEqual([q1.queued, q1.id, q1.replaced], [true, first.id, false]);
+  const q2 = await R.run(rec.id, { trigger: 'webhook:github', git: { sha: 'bbb222', branch: 'main', author: 'bob' }, status: st('bbb222') });
+  assert.equal(q2.replaced, true);
+  assert.equal(R.list('srv-t', PROJ).find(x => x.id === rec.id).waiting.what, 'main bbb222 (bob)');
+  const r1 = await waitDone(first.id);
+  assert.equal(r1.status, 'ok'); assert.match(r1.text, /⏳ Queued — webhook:github: main aaa111/); assert.match(r1.text, /⏳ Queued \(replaces the one that waited\)/);
+  await new Promise(res => setTimeout(res, 300));
+  const next = TK.runs('srv-t', PROJ)[0];
+  assert.notEqual(next.id, first.id); assert.equal(next.trigger, 'webhook:github');
+  assert.deepEqual(statuses.slice(0, 3), ['aaa111:pending', 'aaa111:skipped', 'bbb222:pending']);
+  const r2 = await waitDone(next.id);
+  assert.match(r2.text, /bob\): main bbb222|— bob: main bbb222/); assert.ok(statuses.includes('bbb222:success'));
+  assert.equal(R.sameCommitRecently(rec.id, 'bbb222'), true); assert.equal(R.sameCommitRecently(rec.id, 'zzz'), false);
+  // manual "replace": the running one is cancelled, then the new one runs
+  const a = await R.run(rec.id, { trigger: 'manual' });
+  await new Promise(res => setTimeout(res, 300));
+  const rep = await R.run(rec.id, { trigger: 'manual', mode: 'replace' });
+  assert.equal(rep.queued, true);
+  assert.match((await waitDone(a.id)).status, /cancelled/);
+  await new Promise(res => setTimeout(res, 300));
+  const b = TK.runs('srv-t', PROJ)[0]; assert.notEqual(b.id, a.id);
+  assert.equal((await waitDone(b.id)).status, 'ok');
+  R.remove(rec.id);
+});
+
+test('Webhook guards: delivery seen before, same commit, CI force, rate limit, wrong signatures block, body size', async () => {
+  const R = require('../../server/task-recipes');
+  const express = require('express');
+  const hooks = require('../../server/routes/hooks');
+  const app = express();
+  app.use(express.json({ limit: '5mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
+  app.use('/api/hooks', hooks);
+  const srv = await new Promise(res => { const s = app.listen(0, () => res(s)); });
+  const base = `http://127.0.0.1:${srv.address().port}/api/hooks/deploy`;
+  try {
+    hooks._reset();
+    const rec = R.save('srv-t', PROJ, { name: 'Guarded', steps: [{ type: 'task', source: 'make', name: 'hello' }], settings: { notify: { fail: false } } });
+    const { hookId, secret } = R.enableHook(rec.id);
+    const sign = (b) => 'sha256=' + require('crypto').createHmac('sha256', secret).update(b).digest('hex');
+    const push = (sha) => JSON.stringify({ ref: 'refs/heads/main', after: sha, head_commit: { message: 'm' }, pusher: { name: 'ann' }, repository: { full_name: 'o/r' } });
+    const gh = (b, delivery) => fetch(`${base}/${hookId}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': sign(b), 'x-github-delivery': delivery }, body: b });
+    const settle = async () => { for (let i = 0; i < 100 && TK.runs('srv-t', PROJ)[0].status === 'running'; i++) await new Promise(res => setTimeout(res, 100)); };
+    let r = await gh(push('c'.repeat(40)), 'd-1'); assert.equal(r.status, 202); assert.ok((await r.json()).run); await settle();
+    r = await gh(push('c'.repeat(40)), 'd-1'); assert.deepEqual(await r.json(), { ok: true, duplicate: true, ignored: 'this delivery was taken already' });
+    r = await gh(push('c'.repeat(40)), 'd-2'); assert.match((await r.json()).ignored, /deployed less than 2 minutes ago/);
+    const ci = (body) => fetch(`${base}/${hookId}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` }, body: JSON.stringify(body) });
+    r = await ci({ branch: 'main', commit: 'c'.repeat(40) }); assert.match((await r.json()).ignored, /force/);
+    r = await ci({ branch: 'main', commit: 'c'.repeat(40), force: true }); assert.equal(r.status, 202); assert.ok((await r.json()).run); await settle();
+    // body over 1 MB
+    const big = JSON.stringify({ ref: 'refs/heads/main', pad: 'x'.repeat(1100000) });
+    assert.equal((await gh(big, 'd-big')).status, 413);
+    // wrong signatures: 20 → the address is blocked, even with a good one
+    hooks._reset();
+    for (let i = 0; i < 20; i++) { const x = await fetch(`${base}/${hookId}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': 'sha256=00' }, body: '{}' }); assert.equal(x.status, 401); }
+    r = await gh(push('d'.repeat(40)), 'd-3'); assert.equal(r.status, 429); assert.ok(Number(r.headers.get('retry-after')) > 800);
+    const refused = require('../../server/db').db.prepare("SELECT count(*) n FROM activity WHERE action = 'hook_refused'").get();
+    assert.ok(refused.n <= 3, `one audit line per window, not per request (got ${refused.n})`);
+    // 30 a minute
+    hooks._reset();
+    let last;
+    for (let i = 0; i < 31; i++) last = await fetch(`${base}/${hookId}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-github-event': 'ping', 'x-hub-signature-256': sign('{"zen":"z"}') }, body: '{"zen":"z"}' });
+    assert.equal(last.status, 429);
+    hooks._reset(); R.remove(rec.id);
+  } finally { srv.close(); }
+});
+
+test('Kamal: rollback needs a version; the versions are read from kamal app containers', async () => {
+  assert.throws(() => P.command({ source: 'kamal', name: 'rollback' }), /needs the version/);
+  assert.equal(P.command({ source: 'kamal', name: 'rollback' }, { args: 'abc1234' }), "kamal rollback 'abc1234'");
+  const bin = path.join(HOME, 'bin'); fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(path.join(bin, 'kamal'), '#!/bin/bash\necho "App Host: 10.0.0.5"\necho "CONTAINER ID   IMAGE   NAMES"\necho "1a2b   reg/app:9f8e7d6c5b4a   app-web-9f8e7d6c5b4a"\necho "3c4d   reg/app:1234567abcde   app-web-1234567abcde"\necho "5e6f   reg/app:9f8e7d6c5b4a   app-workers-9f8e7d6c5b4a"\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(HOME, '.bash_profile'), `export PATH="${bin}:$PATH"\n`);
+  const r = await TK.kamalVersions('srv-t', PROJ);
+  assert.equal(r.ok, true); assert.deepEqual(r.versions, ['9f8e7d6c5b4a', '1234567abcde']); assert.match(r.output, /App Host/);
+  fs.unlinkSync(path.join(HOME, '.bash_profile'));
+});
+
+test('Several servers: the folder env of the recipe server reaches every server; a server value wins', async () => {
+  const R = require('../../server/task-recipes');
+  db.prepare("INSERT OR REPLACE INTO servers (id, type, host, port, username) VALUES ('srv-t2', 'ssh', '127.0.0.2', 22, 'deploy')").run();
+  TK.envSet('srv-t', PROJ, [{ key: 'STAGE', value: 'prod' }, { key: 'REGION', value: 'eu' }]);
+  TK.envSet('srv-t2', PROJ, [{ key: 'REGION', value: 'us' }]);
+  const rec = R.save('srv-t', PROJ, { name: 'Two', steps: [{ type: 'command', cmd: 'echo "stage=$STAGE region=$REGION"' }], settings: { servers: ['srv-t', 'srv-t2'], notify: { fail: false } } });
+  const { id } = await R.run(rec.id);
+  let r; for (let i = 0; i < 100; i++) { r = TK.runLog(id); if (r.status !== 'running') break; await new Promise(res => setTimeout(res, 100)); }
+  assert.equal(r.status, 'ok');
+  assert.match(r.text, /127\.0\.0\.1[\s\S]*stage=prod region=eu[\s\S]*127\.0\.0\.2[\s\S]*stage=prod region=us/);
+  R.remove(rec.id);
+});

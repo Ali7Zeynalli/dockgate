@@ -4,6 +4,8 @@
 // at the first that fails unless told to go on). Triggers: Run, a schedule, a webhook (task-hooks.js), CI.
 //   list / get / save / remove      the recipes of a folder
 //   run(id, { trigger, by, git })   a run in the background → { id }; git = { sha, branch, message, author } from a push
+//     While the recipe runs, a push / CI call (or mode 'queue' | 'replace') waits as THE next run: one place per
+//     recipe, a newer push takes it (the older one is marked skipped on its commit). It starts when the run ends.
 const { db, stmts } = require('./db');
 const T = require('./task-parse');
 const TK = require('./tasks');
@@ -100,7 +102,7 @@ const row = (r) => r && ({
   id: r.id, serverId: r.server_id, dir: r.dir, name: r.name, steps: JSON.parse(r.steps), onFail: JSON.parse(r.on_fail || '[]'), settings: JSON.parse(r.settings || '{}'),
   schedule: r.schedule || null, lastSched: r.last_sched, hook: r.hook_id ? { id: r.hook_id, branch: r.hook_branch || null } : null, hookBranch: r.hook_branch || null, hasStatusToken: !!r.status_token,
 });
-function list(serverId, dir) { const s = TK.server(serverId); return q.list.all(s.id, TK.okDir(dir)).map(row); }
+function list(serverId, dir) { const s = TK.server(serverId); return q.list.all(s.id, TK.okDir(dir)).map(row).map(x => { const p = pending.get(x.id); return { ...x, running: running.has(x.id) ? running.get(x.id) : null, waiting: p ? { trigger: p.trigger, what: short(p.git, p.trigger), since: p.queuedAt } : null }; }); }
 function get(id) { const r = row(q.get.get(Number(id))); if (!r) throw err('Recipe not found', 404); return r; }
 function save(serverId, dir, body, id = null) {
   const s = TK.server(serverId); const d = TK.okDir(dir);
@@ -118,17 +120,47 @@ function save(serverId, dir, body, id = null) {
   if (id) { const cur = get(id); if (cur.serverId !== s.id || cur.dir !== d) throw err('Recipe not found', 404); q.upd.run(name, JSON.stringify(steps), JSON.stringify(onFail), JSON.stringify(settings), schedule, branch, now, cur.id); return get(cur.id); }
   return get(q.ins.run(s.id, d, name, JSON.stringify(steps), JSON.stringify(onFail), JSON.stringify(settings), schedule, branch, now, now).lastInsertRowid);
 }
-function remove(id) { const r = get(id); q.del.run(r.id); return { ok: true }; }
+function remove(id) { const r = get(id); q.del.run(r.id); pending.delete(r.id); return { ok: true }; }
 
 // ---------- running ----------
 const running = new Map(); // recipe id → run id
-async function run(id, { trigger = 'manual', by = null, git = null, status = null, req = null } = {}) {
+const pending = new Map(); // recipe id → the options of the run that waits (one place: the newest push wins)
+const lastSha = new Map(); // recipe id → { sha, at } of the last run started for a commit
+const short = (g, trigger) => (g && g.sha ? `${g.branch || ''} ${String(g.sha).slice(0, 10)}${g.author ? ` (${g.author})` : ''}`.trim() : trigger === 'manual' ? 'a deploy by hand' : trigger || 'a run');
+function enqueue(r, opts, curId) {
+  const old = pending.get(r.id);
+  if (old && old.status) old.status('skipped', `DockGate: ${r.name} — a newer push replaced this one`).catch(() => {});
+  pending.set(r.id, { ...opts, mode: undefined, req: null, queuedAt: Date.now() });
+  if (opts.status) opts.status('pending', `DockGate: ${r.name} waits for the running deploy`).catch(() => {});
+  const cur = TK.jobs.get(curId);
+  if (cur && cur.status === 'running') TK.append(cur, `\n⏳ Queued ${old ? '(replaces the one that waited) ' : ''}— ${opts.trigger}: ${short(opts.git, opts.trigger)} — starts when this run ends\n`);
+  return { queued: true, id: curId, replaced: !!old };
+}
+/** Start the run that waits, when nothing runs in the recipe's folders any more. Called when a run ends and on each tick. */
+function drain(id) {
+  const p = pending.get(id); if (!p) return;
+  pending.delete(id);
+  run(id, p).catch((e) => { if (e.code === 'BUSY') pending.set(id, p); /* still busy: the next tick tries again */ else if (p.status) p.status('failure', `DockGate: ${e.message}`.slice(0, 140)).catch(() => {}); });
+}
+function sameCommitRecently(id, sha, ms = 120000) { const l = lastSha.get(Number(id)); return !!(sha && l && l.sha === sha && Date.now() - l.at < ms); }
+async function run(id, opts = {}) {
+  const { trigger = 'manual', by = null, git = null, status = null, req = null, mode = null } = opts;
   const r = get(id);
-  if (running.has(r.id)) { const j = TK.jobs.get(running.get(r.id)); if (j && j.status === 'running') throw err(`This recipe is running (run ${running.get(r.id)})`, 409, { code: 'BUSY', run: running.get(r.id) }); }
+  const queueable = mode === 'queue' || mode === 'replace' || /^(webhook:|ci$)/.test(trigger);
+  if (running.has(r.id)) {
+    const curId = running.get(r.id); const j = TK.jobs.get(curId);
+    if (j && j.status === 'running') {
+      if (!queueable) throw err(`This recipe is running (run ${curId})`, 409, { code: 'BUSY', run: curId });
+      const out = enqueue(r, { trigger, by, git, status }, curId);
+      if (mode === 'replace') TK.cancel(curId).catch(() => {});
+      return out;
+    }
+  }
   const main = TK.server(r.serverId);
-  for (const sid of r.settings.servers) { const k = `${sid}|${r.dir}`; const j = TK.locks.has(k) && TK.jobs.get(TK.locks.get(k)); if (j && j.status === 'running') throw err(`Something runs in ${r.dir} on ${sid} already`, 409, { code: 'BUSY', run: j.id }); }
+  for (const sid of r.settings.servers) { const k = `${sid}|${r.dir}`; const j = TK.locks.has(k) && TK.jobs.get(TK.locks.get(k)); if (j && j.status === 'running') { if (queueable) { if (status) status('pending', `DockGate: ${r.name} waits for a task in the folder`).catch(() => {}); pending.set(r.id, { trigger, by, git, status, queuedAt: Date.now() }); return { queued: true, id: j.id }; } throw err(`Something runs in ${r.dir} on ${sid} already`, 409, { code: 'BUSY', run: j.id }); } }
   const job = TK.openRun(main, r.dir, { kind: 'recipe', name: r.name, trigger, by, meta: { recipe: r.id, servers: r.settings.servers, git } });
   running.set(r.id, job.id);
+  if (git && git.sha) lastSha.set(r.id, { sha: git.sha, at: Date.now() });
   r.settings.servers.forEach(sid => TK.locks.set(`${sid}|${r.dir}`, job.id));
   if (req) logAction({ req, server: main.id, resourceType: 'task', resourceName: r.dir, action: 'recipe_run', details: { recipe: r.name, trigger } });
   (async () => {
@@ -155,13 +187,16 @@ async function run(id, { trigger = 'manual', by = null, git = null, status = nul
     if (status) await status(ok ? 'success' : 'failure', `DockGate: ${r.name} ${ok ? 'deployed' : 'failed'} in ${secs} s`).catch(() => {});
     logAction({ server: main.id, resourceType: 'task', resourceName: projectName(r.dir), action: 'deploy', details: { recipe: r.name, status: status2 } }); // keeps Uptime quiet a little longer
     notify(r, job, status2, secs).catch(() => {});
+    if (pending.has(r.id)) setImmediate(() => drain(r.id));
   })();
   return { id: job.id };
 }
 const projectName = (dir) => String(dir).split('/').filter(Boolean).pop();
 
 async function runOn(job, r, s) {
-  const env = TK.envValues(s.id, r.dir);
+  // the folder's env as set on the recipe's server, for every server; a server's own values for that folder win
+  const own = s.id === r.serverId ? [] : TK.envValues(s.id, r.dir);
+  const env = [...TK.envValues(r.serverId, r.dir).filter(e => !own.some(o => o.key === e.key)), ...own];
   const ctx = {};
   logAction({ server: s.id, resourceType: 'task', resourceName: projectName(r.dir), action: 'deploy', details: { recipe: r.name } }); // Uptime: busy, no false alarms
   const exec1 = async (st, i, label) => {
@@ -217,6 +252,7 @@ function offsetMin(tz, at = Date.now()) {
 }
 let timer = null;
 function tick(now = Date.now()) {
+  for (const id of [...pending.keys()]) { if (!running.has(id)) drain(id); else if (Date.now() - pending.get(id).queuedAt > 6 * 3600000) pending.delete(id); }
   const C = require('./cron-parse');
   const tz = require('./schedules').timezone();
   for (const x of q.all.all()) {
@@ -231,4 +267,4 @@ function tick(now = Date.now()) {
 function start() { if (!timer) { timer = setInterval(() => { try { tick(); } catch (e) {} }, 30000); if (timer.unref) timer.unref(); } }
 function stop() { if (timer) clearInterval(timer); timer = null; }
 
-module.exports = { KINDS, list, get, save, remove, run, tick, start, stop, stepShell, describe, offsetMin, running, enableHook, disableHook, hookSecret, setStatusToken, hookTarget };
+module.exports = { KINDS, list, get, save, remove, run, tick, pending, sameCommitRecently, start, stop, stepShell, describe, offsetMin, running, enableHook, disableHook, hookSecret, setStatusToken, hookTarget };

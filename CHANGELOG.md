@@ -2,6 +2,22 @@
 
 ---
 
+## [2.70.1] - 2026-11-17
+
+### Added
+- **Deploy recipes: a push during a deploy waits instead of being lost.** It starts when the running deploy ends; one waiting place per recipe, the newest push takes it (the replaced commit is marked *skipped* on GitHub / GitLab / Bitbucket), so the last commit is always deployed once. The recipe card shows **▶ running** and **⏳ waiting**.
+- **▶ Deploy while one runs** asks: open its log, **deploy after it**, or **stop it and deploy now**.
+- **Kamal rollback** asks for the version and lists the versions still on the servers (from `kamal app containers`).
+
+### Changed
+- **Webhook URL guards:** 30 requests a minute per address; 20 wrong signatures in 10 minutes block the address for 15 minutes (one audit entry per window, not one per request); bodies over 1 MB refused.
+- **No double deploys:** a delivery already taken (GitHub, GitLab, Bitbucket delivery id, kept 24 h) or the same commit within 2 minutes does not deploy again; CI can send `"force": true`.
+
+### Fixed
+- **Recipes on several servers** did not give the folder's Env & secrets to the other servers: the values set on the recipe's server now reach every server (a server's own values for the folder win).
+
+---
+
 ## [2.70.0] - 2026-11-17
 
 ### Added

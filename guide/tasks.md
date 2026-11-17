@@ -26,7 +26,7 @@ The files are **read**, not run — finding the tasks never executes anything.
 | `package.json` | `scripts` | the command; run with **npm, pnpm, yarn or bun** — found from the lock file |
 | `*.sh` (the folder and up to 3 levels below; not `node_modules`, `.git`, `vendor`, `.venv`) | each script | its first comment lines |
 | Ansible (`*.yml` in the folder, `playbooks/`, `ansible/` — files with `- hosts:` or `- import_playbook:`) | playbooks | with the inventory (`inventory`, `inventory.ini`, `hosts`, `hosts.ini`, `ansible/inventory`, `inventory/hosts`) when there is one |
-| Kamal (`config/deploy.yml`) | deploy, redeploy, rollback, app details, app logs | — |
+| Kamal (`config/deploy.yml`) | deploy, redeploy, rollback, app details, app logs | — (**rollback** asks for the version: DockGate lists the versions still on the servers from `kamal app containers`) |
 
 A warning shows when the tool (`make`, `just`, `task`, `pnpm`…) is not installed on the server for the SSH user.
 
@@ -71,10 +71,22 @@ A recipe is the steps of a deploy, in order; the first step that fails stops it.
 - **If it fails — recovery steps** run after a failed step: go back to the commit before, then `docker compose up --build` or your own `make rollback`.
 - Each step can run as **root** (sudo -n). Each has the recipe's time limit.
 - **Start from the usual recipe** fills in: Git pull → your `make deploy` / `just deploy` / `deploy.sh` (or docker compose up) → check a URL → if it fails, back to the commit before.
-- **Servers:** tick several SSH servers and the recipe runs on each, one after another, in the same folder; it stops at the first server that fails unless you choose to go on.
+- **Servers:** tick several SSH servers and the recipe runs on each, one after another, in the same folder; it stops at the first server that fails unless you choose to go on. The folder's **Env & secrets** set on the recipe's server are given on every server; values set for that folder on another server win there.
 - **Schedule:** a time of day, days of the week… (server time of DockGate's Settings timezone).
 - **Alerts:** when a deploy fails (on by default) and when it works — through the channels of Settings → Notifications.
 - While a recipe runs, **Uptime alerts of that server stay quiet**, as during Compose deploys.
+
+### When a deploy is already running
+
+A recipe runs once at a time. What comes in meanwhile is not lost:
+
+| From | What happens |
+|---|---|
+| a push (webhook) or CI | it **waits** and starts when the running deploy ends — the card shows **⏳ waiting**, the running log says *Queued*. There is one waiting place per recipe: when more pushes come, the **newest** takes it (the commit it replaces is marked *skipped* on GitHub / GitLab / Bitbucket when a token is set) — so the last commit is always deployed, once |
+| **▶ Deploy** by hand | DockGate asks: **Open its log**, **Deploy after it** (waits like a push) or **Stop it and deploy now** (the running one is cancelled, yours starts right after) |
+| the schedule | skipped for this time |
+
+A push that waits for a *task* running in the same folder starts as soon as that task ends (checked every 30 seconds; a wait older than 6 hours is dropped).
 
 ## Webhooks — GitHub, GitLab, Bitbucket and CI
 
@@ -96,7 +108,9 @@ Every request is checked before anything runs:
 | **Bitbucket Server / Data Center** | `X-Hub-Signature` — HMAC-SHA256 | `repo:refs_changed` |
 | **CI** (GitHub Actions, GitLab CI, Bitbucket Pipelines, Jenkins…) | `Authorization: Bearer <secret>` | any POST, with `{"branch": "...", "commit": "...", "author": "..."}` if you like |
 
-- A wrong signature or token gets **401** and is written to the audit log; tags, deleted branches and other events are answered and skipped.
+- A wrong signature or token gets **401**; tags, deleted branches and other events are answered and skipped.
+- **The same delivery twice** (a retry, or *Redeliver* in GitHub) does not deploy again — the delivery id (`X-GitHub-Delivery`, `X-Gitlab-Event-UUID`, Bitbucket's `X-Request-UUID` / `X-Request-Id`) is kept for 24 hours. **The same commit** within 2 minutes is not deployed again either; from CI, send `"force": true` to deploy it anyway.
+- **Guards of the open URL:** 30 requests a minute per address (then 429); **20 wrong signatures in 10 minutes block the address for 15 minutes** — one audit entry per address and window, so the log does not fill up; bodies over 1 MB are refused (413).
 - **Only these branches:** `main`, or `main, release/*` — a push to another branch is skipped.
 - The run's log starts with who pushed what: *Triggered by webhook:github — ann: main 8b2f743 "Add version file"*.
 - The dialog has the steps for each provider and ready **GitHub Actions / GitLab CI / Bitbucket Pipelines** snippets. Calling from CI means the deploy runs only after your tests pass.
@@ -138,3 +152,6 @@ The **Auto-deploy webhook** of a Compose project deployed from Git (Compose → 
 | Webhook: GitHub shows a red ✗ / 401 | Wrong secret, or the content type is form | Copy the secret again; content type **application/json** |
 | Webhook: nothing arrives | DockGate is not reachable from the internet | Use its public HTTPS address |
 | Webhook: *skipped — branch dev* | Branch filter | Change **Only these branches** |
+| Webhook: *commit … was deployed less than 2 minutes ago* | The same commit came again | Wait, deploy by hand, or from CI send `"force": true` |
+| Webhook: 429 *too many wrong signatures* | 20 wrong signatures from that address in 10 minutes | Fix the secret; the address is let in again after 15 minutes |
+| *Kamal rollback needs the version* | Rollback without a version | Pick one in the Rollback dialog |

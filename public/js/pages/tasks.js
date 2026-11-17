@@ -142,7 +142,27 @@ Router.register('tasks', async (content, params = {}) => {
         await runTask(t, { vars: v, args: ov.querySelector('#ro-a').value, runAs: ov.querySelector('#ro-r').checked ? 'root' : 'user', timeoutMin: Number(ov.querySelector('#ro-t').value), dry: !!(d && d.checked) });
       } });
   }
+  function kamalRollback(t) {
+    UI.dialog({ title: 'Kamal rollback', saveLabel: 'Roll back', danger: true,
+      body: `<div class="text-sm" style="margin-bottom:8px">Kamal goes back to a version that is still on the servers. DockGate asks Kamal for them (<span class="td-mono">kamal app containers</span>)…</div>
+        <div data-kv><div class="skeleton" style="height:40px"></div></div>
+        <label class="ui-field" style="margin-top:8px"><span class="ui-label">Version</span><input class="input td-mono" id="kr-v" placeholder="the version (a git commit)"></label>`,
+      onOpen: async (ov) => {
+        const box = ov.querySelector('[data-kv]');
+        let r; try { r = await API.get(`/tasks/kamal-versions?dir=${encodeURIComponent(st.dir)}`); } catch (e) { box.innerHTML = `<div class="text-danger text-sm">${esc(e.message)}</div>`; return; }
+        box.innerHTML = `${r.versions.length ? `<label class="ui-field" style="margin:0"><span class="ui-label">Versions found</span><select class="input td-mono" id="kr-s">${r.versions.map(v => `<option>${esc(v)}</option>`).join('')}</select></label>` : `<div class="ui-sub">${r.ok ? 'No versions found in the output — type one below.' : 'Kamal did not answer — type the version below.'}</div>`}
+          <details style="margin-top:6px"><summary class="ui-sub" style="cursor:pointer">What Kamal said</summary><pre class="tk-code" style="max-height:200px;overflow:auto">${esc(r.output || '(nothing)')}</pre></details>`;
+        const sel = ov.querySelector('#kr-s'), inp = ov.querySelector('#kr-v');
+        if (sel) { inp.value = sel.value; sel.onchange = () => { inp.value = sel.value; }; }
+      },
+      onSave: async (ov) => {
+        const v = ov.querySelector('#kr-v').value.trim();
+        if (!/^[\w.-]{1,100}$/.test(v)) throw new Error('Pick or type a version (letters, digits, . _ -)');
+        const r = await API.post('/tasks/run', { dir: st.dir, source: 'kamal', name: 'rollback', args: v }); openLog(r.id);
+      } });
+  }
   function runTask(t, opt) {
+    if (t.source === 'kamal' && t.name === 'rollback' && !(opt.args || '').trim()) return kamalRollback(t);
     const go = async () => {
       try { const r = await API.post('/tasks/run', { dir: st.dir, source: t.source, name: t.name, params: t.params, pm: t.pm, inventory: t.inventory, ...opt }); openLog(r.id); }
       catch (e) { if (e.data && e.data.run) { showToast(e.message, 'warning'); openLog(e.data.run); } else showToast(e.message, 'error', 8000); }
@@ -243,7 +263,7 @@ Router.register('tasks', async (content, params = {}) => {
     body().innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><div class="ui-sub" style="flex:1">A recipe is the steps of a deploy: pull the code, run your tasks, start the containers, check that the app answers. When a step fails the <b>recovery</b> steps run (go back to the commit before, your rollback task). Run it by hand, on a schedule, on a Git push or from CI.</div>${UI.primary('+ New recipe', 'data-new')}</div>
       ${r.recipes.length ? r.recipes.map(x => `<div class="card" style="padding:12px 14px;margin-bottom:10px">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(x.name)}</b>
-          ${x.schedule ? UI.chip(`🕑 ${esc(SchedulePicker.describe(x.schedule))}`) : ''}${x.hook ? UI.chip(`⚡ webhook${x.hookBranch ? ' · ' + esc(x.hookBranch) : ''}`) : ''}${x.settings.servers && x.settings.servers.length > 1 ? UI.chip(`${x.settings.servers.length} servers`) : ''}
+          ${x.schedule ? UI.chip(`🕑 ${esc(SchedulePicker.describe(x.schedule))}`) : ''}${x.running ? ' ' + UI.pill('info', '▶ running') + ' ' + UI.btn('Log', `data-log="${x.running}"`) : ''}${x.waiting ? ' ' + UI.chip(`⏳ waiting: ${esc(x.waiting.what)}`, { title: `${x.waiting.trigger} — starts when the running deploy ends` }) : ''}${x.hook ? UI.chip(`⚡ webhook${x.hookBranch ? ' · ' + esc(x.hookBranch) : ''}`) : ''}${x.settings.servers && x.settings.servers.length > 1 ? UI.chip(`${x.settings.servers.length} servers`) : ''}
           <span style="flex:1"></span>${UI.btn('▶ Deploy', `data-rrun="${x.id}"`, 'btn-primary')} ${UI.btn('Edit', `data-redit="${x.id}"`)} ${UI.btn('Webhook / CI…', `data-rhook="${x.id}"`)} ${UI.menu([{ label: 'Delete…', attrs: `data-rdel="${x.id}"`, danger: true }])}</div>
         <div class="ui-sub" style="margin-top:6px">${x.steps.map((s, k) => `${k + 1}. ${esc(stepTxt(s))}`).join(' → ')}${x.onFail.length ? ` <span style="color:var(--warning)">· if it fails: ${x.onFail.map(s => esc(stepTxt(s))).join(' → ')}</span>` : ''}</div></div>`).join('')
         : `<div class="card" style="padding:20px"><b>No recipes yet.</b><div class="ui-sub" style="margin-top:6px">${st.info.git ? 'A typical one: Git pull → your <span class="td-mono">make deploy</span> (or docker compose up) → check the URL → if it fails, back to the commit before.' : 'This folder is not a Git clone: use tasks, docker compose up and checks.'}</div><div style="margin-top:10px">${UI.btn('Start from the usual recipe', 'data-quick', 'btn-primary')}</div></div>`}`;
@@ -252,7 +272,23 @@ Router.register('tasks', async (content, params = {}) => {
     const qk = b.querySelector('[data-quick]'); if (qk) qk.onclick = () => editRecipe(null, quickRecipe());
     b.querySelectorAll('[data-redit]').forEach(x => x.onclick = () => editRecipe(st.recipes.find(y => y.id === Number(x.dataset.redit))));
     b.querySelectorAll('[data-rhook]').forEach(x => x.onclick = () => hookDialog(st.recipes.find(y => y.id === Number(x.dataset.rhook))));
-    b.querySelectorAll('[data-rrun]').forEach(x => x.onclick = () => { const rc = st.recipes.find(y => y.id === Number(x.dataset.rrun)); showConfirm(`Deploy — ${esc(rc.name)}`, `Run the recipe in <span class="td-mono">${esc(st.dir)}</span> on ${rc.settings.servers.length > 1 ? `<b>${rc.settings.servers.length} servers</b>, one after another` : `<b>${esc(srv.name || srv.host)}</b>`}?`, async () => { try { const r2 = await API.post(`/tasks/recipes/${rc.id}/run`, {}); openLog(r2.id); } catch (e) { if (e.data && e.data.run) openLog(e.data.run); showToast(e.message, 'error', 8000); } }); });
+    const deploy = async (rc, mode) => {
+      try {
+        const r2 = await API.post(`/tasks/recipes/${rc.id}/run`, mode ? { mode } : {});
+        if (r2.queued) showToast(mode === 'replace' ? 'The running deploy is being stopped — yours starts right after' : 'Queued — it starts when the running deploy ends', 'info', 7000);
+        openLog(r2.id); drawRecipes();
+      } catch (e) {
+        if (e.code !== 'BUSY') return showToast(e.message, 'error', 8000);
+        const m = showModal('A deploy is running', `<p class="text-sm">${esc(rc.name)} is running now (run #${e.data.run}). What should happen with yours?</p>`, []);
+        const ft = m.overlay.querySelector('.modal-footer'); ft.style.flexWrap = 'wrap'; ft.style.gap = '8px';
+        const add = (label, cls, fn) => { const bt = document.createElement('button'); bt.className = `btn ${cls}`; bt.textContent = label; bt.onclick = () => { m.close(); fn(); }; ft.append(bt); };
+        add('Open its log', 'btn-secondary', () => openLog(e.data.run));
+        add('Deploy after it', 'btn-primary', () => deploy(rc, 'queue'));
+        add('Stop it and deploy now', 'btn-danger', () => deploy(rc, 'replace'));
+      }
+    };
+    b.querySelectorAll('[data-log]').forEach(x => x.onclick = () => openLog(Number(x.dataset.log)));
+    b.querySelectorAll('[data-rrun]').forEach(x => x.onclick = () => { const rc = st.recipes.find(y => y.id === Number(x.dataset.rrun)); showConfirm(`Deploy — ${esc(rc.name)}`, `Run the recipe in <span class="td-mono">${esc(st.dir)}</span> on ${rc.settings.servers.length > 1 ? `<b>${rc.settings.servers.length} servers</b>, one after another` : `<b>${esc(srv.name || srv.host)}</b>`}?`, () => deploy(rc)); });
     b.querySelectorAll('[data-rdel]').forEach(x => x.onclick = () => { const rc = st.recipes.find(y => y.id === Number(x.dataset.rdel)); showDeleteConfirm('Delete recipe', { message: `Delete the recipe <b>${esc(rc.name)}</b>? Its webhook stops working. Past runs stay in Runs.`, phrase: rc.name, onConfirm: async () => { await API.del(`/tasks/recipes/${rc.id}`); showToast('Deleted'); drawRecipes(); } }); });
   }
   function quickRecipe() {

@@ -168,7 +168,7 @@ function command(t, { vars = {}, args = '', dry = false, pm, inventory } = {}) {
     case 'npm': { const m = pm || t.pm || 'npm'; if (dry) return `node -e ${shq(`const s=require('./package.json').scripts||{};console.log(s[${JSON.stringify(t.name)}]||'')`)}`; return `${m} run ${shq(t.name)}${extra ? ' -- ' + extra : ''}`; }
     case 'sh': return dry ? `bash -n ${shq(t.name)} && echo "✓ bash -n: no syntax errors" && echo && head -n 200 ${shq(t.name)}` : `bash ${shq(t.name)}${extra ? ' ' + extra : ''}`;
     case 'ansible': return `ansible-playbook ${shq(t.name)}${(inventory || t.inventory) ? ` -i ${shq(inventory || t.inventory)}` : ''}${dry ? ' --check --diff' : ''}${extra ? ' ' + extra : ''}`;
-    case 'kamal': if (dry) throw new Error('Kamal has no dry run'); return `kamal ${t.name}${extra ? ' ' + extra : ''}`;
+    case 'kamal': if (dry) throw new Error('Kamal has no dry run'); if (t.name === 'rollback' && !extra) throw new Error('Kamal rollback needs the version to go back to'); return `kamal ${t.name}${extra ? ' ' + extra : ''}`;
     default: throw new Error('Unknown task');
   }
 }

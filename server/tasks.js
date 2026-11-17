@@ -253,6 +253,17 @@ down:
     {{compose}} down
 ` },
 };
+/** Kamal: the app versions on the servers (from `kamal app containers`), for Rollback. versions: newest first as Kamal lists them. */
+async function kamalVersions(serverId, dir) {
+  const s = server(serverId); const d = okDir(dir);
+  const r = await remoteExec.execRemote(s, `cd ${shq(d)} && timeout 90 bash -lc 'kamal app containers' 2>&1; echo "@@EXIT $?"`);
+  const out = String(r.stdout || '') + String(r.stderr || '');
+  const code = Number((/@@EXIT (\d+)/.exec(out) || [])[1] || 1);
+  const text = out.replace(/@@EXIT \d+\s*$/, '').trim();
+  const versions = [];
+  for (const m of text.matchAll(/[A-Za-z0-9_.-]+-([0-9a-f]{7,40}(?:_uncommitted_[0-9a-f]+)?)(?=\s|$)/g)) if (!versions.includes(m[1])) versions.push(m[1]);
+  return { ok: code === 0, versions, output: text.slice(-20000) };
+}
 async function addTemplate(serverId, dir, name, { overwrite = false } = {}) {
   const s = server(serverId); const d = okDir(dir); const t = TEMPLATES[name]; if (!t) throw err('Unknown template');
   const path = `${d}/${t.file}`;
@@ -264,5 +275,5 @@ async function addTemplate(serverId, dir, name, { overwrite = false } = {}) {
   return { path };
 }
 
-module.exports = { projects, addProject, removeProject, discover, envList, envSet, envValues, start, cancel, runs, runLog, addTemplate, TEMPLATES,
+module.exports = { projects, addProject, removeProject, discover, envList, envSet, envValues, start, cancel, runs, runLog, addTemplate, kamalVersions, TEMPLATES,
   openRun, closeRun, append, runShell, server, okDir, jobs, locks };

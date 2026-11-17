@@ -92,14 +92,14 @@ function statusPoster(p, git, token, targetUrl, name = 'DockGate deploy') {
     if (p === 'github' || p === 'gitea') {
       endpoint = `${git.api || 'https://api.github.com'}/repos/${git.repo}/statuses/${git.sha}`;
       headers.Authorization = `Bearer ${token}`; if (p === 'github') headers.Accept = 'application/vnd.github+json';
-      body = { state: state === 'failure' ? 'failure' : state, context: name, description: desc, ...(url ? { target_url: url } : {}) };
+      body = { state: state === 'skipped' ? 'error' : state, context: name, description: desc, ...(url ? { target_url: url } : {}) };
     } else if (p === 'gitlab') {
-      const st = { pending: 'running', success: 'success', failure: 'failed' }[state];
+      const st = { pending: 'running', success: 'success', failure: 'failed', skipped: 'canceled' }[state];
       endpoint = `${git.api}/projects/${encodeURIComponent(git.projectId || git.repo)}/statuses/${git.sha}`;
       headers['PRIVATE-TOKEN'] = token;
       body = { state: st, name, description: desc, ...(url ? { target_url: url } : {}) };
     } else if (p === 'bitbucket' || p === 'bitbucket-server') {
-      const st = { pending: 'INPROGRESS', success: 'SUCCESSFUL', failure: 'FAILED' }[state];
+      const st = { pending: 'INPROGRESS', success: 'SUCCESSFUL', failure: 'FAILED', skipped: 'STOPPED' }[state];
       endpoint = p === 'bitbucket' ? `${git.api}/repositories/${git.repo}/commit/${git.sha}/statuses/build` : `${git.api}/rest/build-status/1.0/commits/${git.sha}`;
       headers.Authorization = token.includes(':') ? `Basic ${Buffer.from(token).toString('base64')}` : `Bearer ${token}`;
       body = { key: 'DOCKGATE-DEPLOY', state: st, name, description: desc, url: url || 'https://github.com/Ali7Zeynalli/dockgate' };
@@ -112,4 +112,11 @@ function statusPoster(p, git, token, targetUrl, name = 'DockGate deploy') {
   };
 }
 
-module.exports = { provider, verify, parse, branchMatch, statusPoster, hmac };
+/** The id the sender gives each delivery (a redelivery of the same event keeps it): GitHub, GitLab, Bitbucket, CI. */
+function deliveryId(headers) {
+  const v = h(headers, 'x-github-delivery') || h(headers, 'x-gitea-delivery') || h(headers, 'x-gitlab-event-uuid') || h(headers, 'idempotency-key')
+    || h(headers, 'x-request-uuid') || h(headers, 'x-request-id');
+  return v ? String(v).slice(0, 120) : null;
+}
+
+module.exports = { provider, verify, parse, branchMatch, statusPoster, hmac, deliveryId };
