@@ -8,7 +8,7 @@ const BK = require('../pg-backup');
 
 const send = (fn) => async (req, res) => {
   try { res.json(await fn(req, res)); }
-  catch (e) { res.status(e.statusCode || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}), ...(e.danger ? { danger: e.danger } : {}) }); }
+  catch (e) { res.status(e.statusCode || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}), ...(e.danger ? { danger: e.danger } : {}), ...(e.names ? { names: e.names } : {}) }); }
 };
 const audit = (req, action, details) => logAction({ req, resourceType: 'database', resourceName: `${req.params.c}${req.params.db ? '/' + req.params.db : ''}`, action, details });
 
@@ -50,6 +50,42 @@ router.get('/:c/db/:db/export', async (req, res) => {
     res.end();
   } catch (e) { if (started) res.end(); else res.status(e.statusCode || 500).json({ error: e.message }); }
 });
+
+// ---------- SQL Workbench ----------
+const WS = require('../pg-session');
+const WB = require('../pg-workbench');
+const sessKey = (req) => {
+  const id = String(req.params.sid || '');
+  if (!WB.ID_RE.test(id)) throw Object.assign(new Error('Bad session id'), { statusCode: 400 });
+  return `${require('../docker').getActiveServerId()}|${req.params.c}|${id}`;
+};
+// All tables with their columns (for completion in the editor).
+router.get('/:c/db/:db/schema-index', send(async (req) => S.schemaIndex(req.params.c, req.params.db)));
+// body { sql, mode: run | test, confirm, timeoutMs } — runs in the tab's own session
+router.post('/:c/db/:db/session/:sid/run', send(async (req) => {
+  const b = req.body || {};
+  const t = await S.resolve(req.params.c);
+  const ms = Math.max(5000, Math.min(600000, parseInt(b.timeoutMs, 10) || 30000));
+  let r;
+  try { r = await WS.run(sessKey(req), t, req.params.db, { sql: b.sql, mode: b.mode === 'test' ? 'test' : 'run', confirm: !!b.confirm, timeoutMs: ms, params: b.params && typeof b.params === 'object' ? b.params : null }); }
+  catch (e) { if (!['NEEDS_CONFIRM', 'READ_ONLY', 'BUSY', 'NEEDS_PARAMS'].includes(e.code)) WB.addHistory(req.params.c, { dbname: req.params.db, sql: b.sql, mode: b.mode, ok: false, ms: 0 }); throw e; }
+  WB.addHistory(req.params.c, { dbname: req.params.db, sql: b.sql, mode: r.mode, ok: !r.error, ms: r.ms, rows: r.results.reduce((a, x) => a + (x.total || 0), 0) });
+  if (r.writes && r.mode === 'run') audit(req, 'db_sql', { sql: String(b.sql).slice(0, 1000), error: r.error ? r.error.message.slice(0, 300) : undefined, tx: r.tx });
+  return r;
+}));
+router.post('/:c/session/:sid/commit', send(async (req) => { const r = await WS.tx(sessKey(req), 'commit'); audit(req, 'db_commit', { ok: r.ok }); return r; }));
+router.post('/:c/session/:sid/rollback', send(async (req) => WS.tx(sessKey(req), 'rollback')));
+router.post('/:c/session/:sid/cancel', send(async (req) => WS.cancel(sessKey(req))));
+router.get('/:c/session/:sid', send(async (req) => WS.state(sessKey(req))));
+router.get('/:c/session/:sid/more', send(async (req) => WS.more(sessKey(req), req.query.result, req.query.offset, req.query.limit)));
+router.delete('/:c/session/:sid', send(async (req) => WS.close(sessKey(req))));
+router.get('/:c/tabs', send(async (req) => ({ tabs: WB.tabs(req.params.c) })));
+router.put('/:c/tabs/:sid', send(async (req) => WB.putTab(req.params.c, req.params.sid, req.body || {})));
+router.delete('/:c/tabs/:sid', send(async (req) => { try { WS.close(sessKey(req)); } catch (e) {} return WB.delTab(req.params.c, req.params.sid); }));
+router.get('/:c/history', send(async (req) => ({ history: WB.history(req.params.c, req.query.q) })));
+router.get('/:c/saved', send(async (req) => ({ saved: WB.saved(req.params.c) })));
+router.post('/:c/saved', send(async (req) => WB.saveQuery(req.params.c, req.body || {})));
+router.delete('/:c/saved/:id', send(async (req) => WB.delSaved(req.params.c, req.params.id)));
 
 // ---------- Admin ----------
 router.get('/:c/db/:db/admin', send(async (req) => A.overview(req.params.c, req.params.db)));

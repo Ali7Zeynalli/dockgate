@@ -116,6 +116,31 @@ async function dockerExec(id, cmd, env, { maxBytes = 8 * 1024 * 1024, timeoutMs 
   });
 }
 let execImpl = dockerExec;
+
+/** A long-lived exec with stdin open (the SQL Workbench session): { write(s), close(), onOut(fn), onErr(fn), onExit(fn) }. */
+async function dockerOpen(id, cmd, env, { user } = {}) {
+  const dk = dockerSvc().docker;
+  const ex = await dk.getContainer(id).exec({ Cmd: cmd, Env: env, AttachStdout: true, AttachStderr: true, AttachStdin: true, Tty: false, ...(user ? { User: user } : {}) });
+  const stream = await ex.start({ hijack: true, stdin: true });
+  const outs = [], errs = [], exits = [];
+  dk.modem.demuxStream(stream, new Writable({ write(c, e, cb) { outs.forEach(f => f(c)); cb(); } }), new Writable({ write(c, e, cb) { errs.forEach(f => f(c)); cb(); } }));
+  let ended = false; const end = () => { if (ended) return; ended = true; exits.forEach(f => f()); };
+  stream.on('end', end); stream.on('close', end); stream.on('error', end);
+  return { write: (s) => stream.write(s), close: () => { try { stream.end(); } catch (e) {} setTimeout(() => { try { stream.destroy(); } catch (e) {} }, 2000); }, onOut: (f) => outs.push(f), onErr: (f) => errs.push(f), onExit: (f) => exits.push(f) };
+}
+let openImpl = dockerOpen;
+/** psql with stdin open, logged in like psql() (same host / OS-user fallback learnt there). */
+async function openPsql(t, dbname, { readOnly = true, timeoutMs = TIMEOUT_MS } = {}) {
+  const ms = Math.max(1000, Math.min(3600000, timeoutMs));
+  const env = [
+    `PGOPTIONS=-c statement_timeout=${ms} -c lock_timeout=10000 -c idle_in_transaction_session_timeout=900000 -c standard_conforming_strings=on -c default_transaction_read_only=${readOnly ? 'on' : 'off'}`,
+    'PGAPPNAME=DockGate Workbench', 'PGCONNECT_TIMEOUT=8', 'PSQLRC=/dev/null',
+  ];
+  if (t.password) env.push(`PGPASSWORD=${t.password}`);
+  const m = how.get(t.id) || {};
+  const cmd = ['psql', '-X', '-q', '-w', '-P', 'pager=off', '--csv', '-P', `null=${P.NULL_MARK}`, '-v', 'FETCH_COUNT=1000', '-U', t.user, '-d', dbname || t.dbname, ...(m.host ? ['-h', '127.0.0.1'] : [])];
+  return openImpl(t.id, cmd, env, { user: m.osUser });
+}
 const how = new Map(); // container id → { host: true } / { osUser: 'postgres' } once the socket / peer login failed
 
 /** Another client tool (pg_dump, pg_dumpall, pg_restore, psql for a restore) with the same login as psql. */
@@ -206,6 +231,19 @@ async function objects(name, dbname) {
   )`);
 }
 
+/** Every table / view with its columns, and the functions — for completion in the SQL editor. */
+async function schemaIndex(name, dbname) {
+  const t = await resolve(name);
+  return json(t, dbOf(t, dbname), `select json_build_object(
+    'tables', (select coalesce(json_agg(json_build_object('schema', n.nspname, 'name', c.relname, 'kind', c.relkind,
+        'columns', (select coalesce(json_agg(json_build_object('name', a.attname, 'type', format_type(a.atttypid, a.atttypmod)) order by a.attnum), '[]')
+          from pg_attribute a where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped)) order by n.nspname, c.relname), '[]')
+      from (select * from pg_class where relkind in ('r', 'p', 'v', 'm', 'f') limit 3000) c join pg_namespace n on n.oid = c.relnamespace where ${USER_NS}),
+    'functions', (select coalesce(json_agg(distinct p.proname), '[]') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where ${USER_NS}),
+    'searchPath', current_setting('search_path')
+  )`);
+}
+
 async function structureOf(t, dbname, schema, table) {
   const d = await json(t, dbname, `select json_build_object('schema', n.nspname, 'name', c.relname, 'kind', c.relkind, 'rows', greatest(c.reltuples, -1)::bigint,
     'size', pg_total_relation_size(c.oid), 'comment', obj_description(c.oid, 'pg_class'),
@@ -286,7 +324,7 @@ async function runSql(name, dbname, sql, { confirm = false } = {}) {
   if (!stmts.length) throw err('Nothing to run');
   if (stmts.length > 100) throw err('At most 100 statements at once');
   const kinds = stmts.map(s => P.kind(s.sql));
-  stmts.forEach((s) => { if (s.sql.startsWith('\\')) throw err('psql commands (\\…) are not run here — write SQL'); });
+  stmts.forEach((s) => { if (P.hasMeta(s.sql)) throw err('psql commands (a backslash outside quotes) are not run here — write SQL'); });
   const writes = kinds.some(k => k.write);
   if (writes && !t.allowWrite) throw err('This connection is read-only. Turn on "Allow changes" to run statements that change data.', 403, { code: 'READ_ONLY' });
   const danger = kinds.map((k, i) => k.danger ? { statement: i + 1, sql: stmts[i].sql.slice(0, 200), why: k.danger } : null).filter(Boolean);
@@ -382,5 +420,7 @@ async function exportTable(name, dbname, schema, table, format, onChunk) {
 module.exports = {
   targets, resolve, saveSettings, info, objects, structure, rows, count, runSql, updateRow, insertRow, deleteRows, exportTable, psql, json, psqlTool, toolArgs, dockerExecLine, maintenanceDb,
   IMAGE_RE, isPg, defaultsFrom, whereOf,
+  openPsql, schemaIndex,
   _setExec(fn) { execImpl = fn || dockerExec; how.clear(); },
+  _setOpen(fn) { openImpl = fn || dockerOpen; },
 };

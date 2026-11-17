@@ -95,7 +95,7 @@ The server's scheduled jobs in one table: the SSH user's crontab, root's crontab
 
 **What DockGate writes:** the SSH user's crontab, root's crontab (passwordless `sudo`) and its own file `/etc/cron.d/dockgate`. Files of the system and of packages are shown, not changed — ⋯ → **Open in Files** to edit one yourself.
 
-**+ New job / Edit:** name, runs as (SSH user, root, or a user of your choice in `/etc/cron.d/dockgate`), quick choices (every 5 min, hourly, daily, weekly, monthly, at reboot) or your own expression with the **next 5 runs**, the command. **Review changes…** shows what changes in the crontab before it is written; the crontab before each change is kept (**Earlier versions…**). Turning a job off keeps it as a comment (`#dg-off# …`), so it can be turned on again.
+**+ New job / Edit:** name, runs as (SSH user, root, or a user of your choice in `/etc/cron.d/dockgate`), **When** picked from lists — every few minutes, every few hours, every day, days of the week or once a month, at an hour 00–23 and minute 00–59 (24-hour, server time) — or *At reboot*, or your own expression in the box, with the **next 5 runs**, the command. **Review changes…** shows what changes in the crontab before it is written; the crontab before each change is kept (**Earlier versions…**). Turning a job off keeps it as a comment (`#dg-off# …`), so it can be turned on again.
 
 Options for a named job:
 
@@ -143,7 +143,7 @@ Build a shell script from **blocks** — DockGate writes the script, safely quot
 - Steps that need root are marked; such scripts need passwordless sudo (they are written root-owned). Services → Auto updates still handles daily security updates by itself — the update templates add full updates and Docker on your schedule.
 - **Save** writes `/opt/dockgate/scripts/NAME.sh` (root-owned, when the SSH user has passwordless sudo) or `~/.dockgate/scripts/NAME.sh`. Every write is checked with `bash -n` first — a script with a syntax error is not written.
 - If the file of a blocks script was changed on the server by hand, **Save** asks first: **Keep the server's version** (the script becomes your own code, the file stays as it is) or **Write my steps over it**.
-- **Run** runs it once and shows the output and exit code (up to 5 minutes). **Schedule…** adds it to the **Cron** tab with its log and *failed / did not run* alerts.
+- **Run** runs it once and shows the output and exit code (up to 5 minutes). **Schedule…** (when picked from lists, as in Cron) adds it to the **Cron** tab with its log and *failed / did not run* alerts.
 
 ### Your own code
 

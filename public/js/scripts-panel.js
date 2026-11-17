@@ -252,14 +252,16 @@ echo "Hello from $(hostname)"
   }
 
   function schedule(s, suggest) {
+    let sp = null;
     UI.dialog({ title: `Schedule ${esc(s.name)}`, saveLabel: 'Add to Cron',
-      body: `<label class="ui-field"><span class="ui-label">When (cron schedule, server time)</span><input class="input td-mono" id="sc-when" value="${esc(suggest || '30 3 * * *')}"><span class="ui-sub">e.g. 30 3 * * * (daily 03:30) · 0 4 * * 0 (Sundays 04:00) · */5 * * * * (every 5 min)</span></label>
+      body: `<div class="ui-field"><span class="ui-label">When</span>${SchedulePicker.html(suggest || '30 3 * * *', { minutes: true })}</div>
         <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="sc-log" checked> Keep its output in a log</label>
         <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="sc-fail" checked> Notify when it fails</label>
         <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="sc-missed"> Notify when it does not run</label>
         <div class="ui-sub" style="margin-top:6px">Added as a job named ${esc(s.name)} in ${isRoot(s) ? "root's" : "the SSH user's"} crontab; change or remove it in the Cron tab.</div>`,
+      onOpen: (ov) => { sp = SchedulePicker.bind(ov); },
       onSave: async (ov) => {
-        await API.post(`/servers/${serverId}/scripts/${s.id}/schedule`, { schedule: ov.querySelector('#sc-when').value.trim(), log: ov.querySelector('#sc-log').checked, notify: [ov.querySelector('#sc-fail').checked && 'fail', ov.querySelector('#sc-missed').checked && 'missed'].filter(Boolean) });
+        await API.post(`/servers/${serverId}/scripts/${s.id}/schedule`, { schedule: sp.value(), log: ov.querySelector('#sc-log').checked, notify: [ov.querySelector('#sc-fail').checked && 'fail', ov.querySelector('#sc-missed').checked && 'missed'].filter(Boolean) });
         showToast('Scheduled — see the Cron tab');
       } });
   }

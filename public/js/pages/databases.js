@@ -16,6 +16,7 @@ Router.register('databases', async (content, params = {}) => {
 
   content.innerHTML = `<style>
     .dbg-wrap{display:grid;grid-template-columns:270px minmax(0,1fr);gap:14px;align-items:start}
+    .dbg-wrap.dbg-sqlmode{grid-template-columns:210px minmax(0,1fr)} .dbg-sqlmode [data-tree],.dbg-sqlmode [data-find]{display:none}
     @media (max-width:900px){.dbg-wrap{grid-template-columns:1fr}}
     .dbg-side{position:sticky;top:8px;max-height:calc(100vh - 140px);display:flex;flex-direction:column;padding:10px}
     .dbg-tree{overflow:auto;flex:1;margin-top:8px;font-size:13px}
@@ -35,6 +36,7 @@ Router.register('databases', async (content, params = {}) => {
     .dbg-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
   </style><div data-root><div class="card"><div class="skeleton" style="width:100%;height:200px"></div></div></div>`;
   const root = content.querySelector('[data-root]');
+  let wb = null; // the SQL workbench while the SQL tab is open
 
   // ---------- load ----------
   async function loadContainers() {
@@ -120,6 +122,8 @@ Router.register('databases', async (content, params = {}) => {
   }
 
   function drawMain() {
+    if (wb && st.view !== 'sql') { wb.destroy(); wb = null; }
+    const wrap = root.querySelector('.dbg-wrap'); if (wrap) wrap.classList.toggle('dbg-sqlmode', st.view === 'sql'); // the workbench has its own schema panel
     if (!st.info || !mainEl()) return;
     if (st.view === 'sql') return drawSql();
     if (st.view === 'admin') return drawAdmin();
@@ -255,68 +259,18 @@ Router.register('databases', async (content, params = {}) => {
   }
   const quoteId = (n) => /^[a-z_][a-z0-9_]*$/.test(n) ? n : '"' + n.replace(/"/g, '""') + '"';
 
-  // ---------- SQL ----------
-  const histKey = () => `dg-sql-history:${st.c}`;
-  const history = () => { try { return JSON.parse(localStorage.getItem(histKey()) || '[]'); } catch (e) { return []; } };
-  function drawSql() {
-    if (st.sqlText == null) st.sqlText = st.t ? `SELECT *\nFROM ${quoteId(st.s)}.${quoteId(st.t)}\nLIMIT 100;` : 'SELECT now();';
-    const h = history();
-    mainEl().innerHTML = `
-      <div class="dbg-bar"><b>SQL on ${esc(st.db)}</b><span class="ui-sub">${st.info.allowWrite ? 'changes allowed' : 'read-only session'} · each statement on its own · up to 1000 rows each · 30 s per statement</span><span style="flex:1"></span>
-        ${h.length ? `<select class="input" data-hist style="width:auto;max-width:260px;padding:3px 6px;font-size:12px"><option value="">History…</option>${h.map((x, i) => `<option value="${i}">${esc(x.replace(/\s+/g, ' ').slice(0, 70))}</option>`).join('')}</select>` : ''}
-        ${UI.primary('Run  (Ctrl+Enter)', 'data-run')}</div>
-      <textarea class="input dbg-sql" data-sql spellcheck="false">${esc(st.sqlText)}</textarea>
-      <div class="dbg-res" data-res>${st.lastSql ? '' : '<div class="ui-sub">Results show here. Statements that change data need "Allow changes"; DROP, TRUNCATE and DELETE / UPDATE without WHERE ask first.</div>'}</div>`;
-    const ta = mainEl().querySelector('[data-sql]');
-    ta.oninput = () => { st.sqlText = ta.value; };
-    ta.onkeydown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
-      else if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); const s = ta.selectionStart; ta.setRangeText('  ', s, ta.selectionEnd, 'end'); st.sqlText = ta.value; }
-    };
-    mainEl().querySelector('[data-run]').onclick = () => run();
-    const hs = mainEl().querySelector('[data-hist]'); if (hs) hs.onchange = () => { if (hs.value !== '') { ta.value = st.sqlText = h[Number(hs.value)]; hs.value = ''; } };
-    if (st.lastSql) showResults(st.lastSql);
-    setTimeout(() => ta.focus(), 20);
-  }
-  async function run(confirm = false) {
-    const ta = mainEl().querySelector('[data-sql]');
-    const sel = ta.selectionStart !== ta.selectionEnd ? ta.value.slice(ta.selectionStart, ta.selectionEnd) : ta.value;
-    if (!sel.trim()) return;
-    const box = mainEl().querySelector('[data-res]');
-    box.innerHTML = '<div class="ui-sub">Running…</div>';
-    let r;
-    try { r = await API.post(`${dbBase()}/sql`, { sql: sel, confirm }); }
-    catch (e) {
-      if (e.code === 'NEEDS_CONFIRM') {
-        box.innerHTML = '';
-        const list = (e.data.danger || []).map(x => `<li>${x.statement ? `Statement ${x.statement}: ` : ''}<b>${esc(x.why)}</b>${x.sql ? `<div class="td-mono ui-sub" style="font-size:12px">${esc(x.sql)}</div>` : ''}</li>`).join('');
-        return showConfirm('Run it?', `<ul style="margin:0 0 8px;padding-left:18px">${list}</ul>Run on <b>${esc(st.db)}</b> in <b>${esc(st.c)}</b>?`, () => run(true), true);
-      }
-      box.innerHTML = `<div class="card" style="border-color:var(--danger)"><div class="text-danger" style="white-space:pre-wrap">${esc(e.message)}</div>${e.code === 'READ_ONLY' ? `<div style="margin-top:8px">${UI.btn('Allow changes…', 'data-allow')}</div>` : ''}</div>`;
-      const a = box.querySelector('[data-allow]'); if (a) a.onclick = toggleWrite;
-      return;
-    }
-    const h = history().filter(x => x !== sel); h.unshift(sel); try { localStorage.setItem(histKey(), JSON.stringify(h.slice(0, 30))); } catch (e) {}
-    st.lastSql = r; showResults(r);
-    if (r.writes && !r.error) loadObjectsQuiet();
+  // ---------- SQL (the workbench: sql-workbench.js) ----------
+  async function drawSql() {
+    if (wb) { wb.destroy(); wb = null; }
+    const initialSql = st.sqlText; st.sqlText = null;
+    const w = await SqlWorkbench.mount(mainEl(), {
+      base: base(), dbBase, db: () => st.db, info: () => st.info, initialSql,
+      onSchemaChanged: () => { loadObjectsQuiet(); if (wb && wb.refreshSchema) wb.refreshSchema(); },
+      toggleWrite: () => toggleWrite(),
+    });
+    if (st.view === 'sql' && alive()) wb = w; else w.destroy();
   }
   async function loadObjectsQuiet() { try { st.objects = await API.get(`${dbBase()}/objects`); if (alive()) drawTree(); } catch (e) {} }
-  function showResults(r) {
-    const box = mainEl().querySelector('[data-res]'); if (!box) return;
-    const parts = r.results.map((x, i) => {
-      if (x.kind === 'tag') return `<div class="card"><span class="ui-sub">${x.statement}.</span> <b class="td-mono">${esc(x.tag)}</b></div>`;
-      return `<div class="card"><div class="dbg-bar" style="margin-bottom:6px"><span class="ui-sub">${x.statement}.</span> <b>${x.total || x.rows.length} row${(x.total || x.rows.length) === 1 ? '' : 's'}</b>${x.truncated ? `<span style="color:var(--warning)"> · showing the first ${x.rows.length} — add LIMIT</span>` : ''}${x.tag ? ` · <span class="td-mono">${esc(x.tag)}</span>` : ''}<span style="flex:1"></span>${UI.btn('Copy CSV', `data-copy="${i}"`)}</div>
-        <div class="dbg-grid" style="max-height:420px"><table><thead><tr>${x.columns.map(c => `<th style="cursor:default">${esc(c)}</th>`).join('')}</tr></thead><tbody>${x.rows.map(row => `<tr>${row.map(v => `<td title="${v === null ? 'NULL' : esc(String(v).slice(0, 500))}">${v === null ? NULLV : esc(String(v).length > 200 ? String(v).slice(0, 200) + '…' : v)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${x.columns.length || 1}" class="ui-sub" style="font-family:inherit">No rows</td></tr>`}</tbody></table></div></div>`;
-    });
-    if (r.error) parts.push(`<div class="card" style="border-color:var(--danger)"><b class="text-danger">Statement ${r.error.statement} failed</b> <span class="ui-sub">— the statements after it did not run${r.writes ? '; an open transaction was rolled back' : ''}</span><pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:6px 0 0">${esc(r.error.message)}</pre></div>`);
-    if (r.notices) parts.push(`<div class="card"><div class="ui-label">Notices</div><pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:4px 0 0">${esc(r.notices)}</pre></div>`);
-    box.innerHTML = `<div class="ui-sub" style="margin-bottom:6px">${r.ms} ms</div>${parts.join('') || '<div class="ui-sub">Done.</div>'}`;
-    box.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => {
-      const x = r.results[Number(b.dataset.copy)];
-      const q = (v) => v === null ? '' : /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
-      navigator.clipboard.writeText([x.columns.map(q).join(','), ...x.rows.map(row => row.map(q).join(','))].join('\n')).then(() => showToast('Copied'), () => showToast('Could not copy', 'error'));
-    });
-  }
 
   // ---------- Admin ----------
   async function drawAdmin() {
@@ -422,12 +376,14 @@ Router.register('databases', async (content, params = {}) => {
         const r = await API.post(`${base()}/backups`, w === 'all' ? { kind: 'all' } : { database: w.slice(3), kind: ov.querySelector('#bk-f').value });
         showToast(`Backed up: ${r.file} (${formatBytes(r.size)})`); drawBackups();
       } });
+    let sp = null;
     const sc = m.querySelector('[data-sched]'); if (sc) sc.onclick = () => UI.dialog({ title: 'Scheduled backups', saveLabel: 'Schedule',
       body: `<label class="ui-field"><span class="ui-label">What</span><select class="input" id="sc-d">${st.info.databases.filter(d => d.connect).map(d => `<option value="${esc(d.name)}" ${d.name === st.db ? 'selected' : ''}>Database ${esc(d.name)}</option>`).join('')}<option value="">The whole server (pg_dumpall)</option></select></label>
-        <label class="ui-field"><span class="ui-label">When (cron, server time)</span><input class="input td-mono" id="sc-w" value="15 3 * * *"><span class="ui-sub">15 3 * * * = every night at 03:15 · 0 */6 * * * = every 6 hours</span></label>
+        <div class="ui-field"><span class="ui-label">When</span>${SchedulePicker.html('15 3 * * *')}</div>
         <label class="ui-field"><span class="ui-label">Keep for (days)</span><input class="input" id="sc-k" type="number" value="7" min="1" max="365"></label>
         <div class="ui-sub">Makes the script <span class="td-mono">pg-backup-…</span> in Server Console → Scripts (SQL .sql.gz files in this folder, older ones deleted, disk checked) and its Cron job — with a log and alerts when it fails or does not run.</div>`,
-      onSave: async (ov) => { const r = await API.post(`${base()}/backups/schedule`, { database: ov.querySelector('#sc-d').value, schedule: ov.querySelector('#sc-w').value.trim(), keepDays: Number(ov.querySelector('#sc-k').value) }); showToast(`Scheduled — script ${r.script}`); } });
+      onOpen: (ov) => { sp = SchedulePicker.bind(ov); },
+      onSave: async (ov) => { const r = await API.post(`${base()}/backups/schedule`, { database: ov.querySelector('#sc-d').value, schedule: sp.value(), keepDays: Number(ov.querySelector('#sc-k').value) }); showToast(`Scheduled ${SchedulePicker.describe(sp.value()).toLowerCase()} — script ${r.script}`); } });
     m.querySelectorAll('[data-dl]').forEach(x => x.onclick = () => { window.location.href = `/api${base()}/backups/${enc(x.dataset.dl)}/download`; });
     m.querySelectorAll('[data-delbk]').forEach(x => x.onclick = () => showDeleteConfirm('Delete backup', { message: `Delete <span class="td-mono">${esc(x.dataset.delbk)}</span>?`, phrase: 'delete',
       onConfirm: async () => { try { await API.del(`${base()}/backups/${enc(x.dataset.delbk)}`); showToast('Deleted'); drawBackups(); } catch (e) { showToast(e.message, 'error'); } } }));
