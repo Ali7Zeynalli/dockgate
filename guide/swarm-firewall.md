@@ -12,7 +12,7 @@ The ports Swarm services publish, on **every server of the cluster**, in one tab
 
 A Swarm port is published on every server (**ingress**: every server answers, whichever runs the task) or on the servers that run a task (**host** mode). Docker sends this traffic **past UFW's normal rules**: an `ufw allow 8080` does not open it, and `ufw deny 8080` does not close it.
 
-With DockGate's **Docker port isolation** (Server Console → Firewall → Docker ports) that traffic is dropped unless a `ufw route allow` rule lets it through. This page writes those rules, the same on every server.
+With DockGate's **Docker port isolation** (Server → Security → Firewall → Docker ports) that traffic is dropped unless a `ufw route allow` rule lets it through. This page writes those rules, the same on every server.
 
 | Mode | The rule names |
 |---|---|
@@ -34,7 +34,7 @@ A box above the table lists the servers where every Swarm port is open to everyo
 
 ## Open and Close
 
-- **Open…** — choose who may reach the port: **anyone**, an **IP list** (made in Server Console → Firewall → IP lists), or **addresses** (one or more, ranges allowed). It is written on every server with UFW and Docker port isolation; the others are listed with the reason they were skipped.
+- **Open…** — choose who may reach the port: **anyone**, an **IP list** (made in Server → Security → Firewall → IP lists), or **addresses** (one or more, ranges allowed). It is written on every server with UFW and Docker port isolation; the others are listed with the reason they were skipped.
 - **Close** — removes the rule on every server.
 
 What you asked for is **kept**:
@@ -45,14 +45,14 @@ What you asked for is **kept**:
 
 DockGate checks this every 10 minutes; **Check now** does it at once. Every change is in the audit log (`swarm_fw_open`, `swarm_fw_close`).
 
-The SSH port of a server is never changed from here (Server Console → Firewall handles it, with its safety checks).
+The SSH port of a server is never changed from here (Server → Security → Firewall handles it, with its safety checks).
 
 ## Errors and fixes
 
 | You see | Why | What to do |
 |---|---|---|
-| `Docker port isolation is off — the port is open to everyone` | Docker publishes past UFW on that server | Server Console → Firewall → Docker ports → turn isolation on |
+| `Docker port isolation is off — the port is open to everyone` | Docker publishes past UFW on that server | Server → Security → Firewall → Docker ports → turn isolation on |
 | `firewalld: Docker publishes past it — not managed here` | The server uses firewalld | Filter in front of the server (cloud firewall), or use UFW |
-| `no firewall on this server` | UFW / firewalld is not active | Server Console → Firewall → turn it on |
+| `no firewall on this server` | UFW / firewalld is not active | Server → Security → Firewall → turn it on |
 | `not a DockGate server — add it in Servers` | A node DockGate does not know | Add the server in Servers |
 | `No Swarm service publishes 8080/tcp` | The service changed meanwhile | Refresh |

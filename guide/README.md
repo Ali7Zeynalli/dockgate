@@ -20,8 +20,8 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 - [Resources → Images](images.md) — pull, load, tag, push, save
 - [Resources → Volumes](volumes.md) — browse and edit files, back up, restore, clone
 - [Resources → Networks](networks.md) — create, connect containers, Swarm networks
-- [Resources → Builds](builds.md) — build from Git or an inline Dockerfile, steps and cache
-- [Resources → Prune](prune.md) — free disk space safely
+- [Deploy → Builds](builds.md) — build from Git or an inline Dockerfile, steps and cache
+- [Resources → Cleanup](prune.md) — free disk space safely
 - [Deploy → Compose stacks](compose.md) — deploy from the editor, Git, a folder or the server; history, rebuild, Git sync
 - [Deploy → Compose stacks → Scaling & health](compose-scaling.md) — replicas with one click, auto-heal, Auto Scaling and updates without downtime, without Swarm; your files stay as they are
 - [Deploy → Tasks](tasks.md) — run the Makefile, justfile, Taskfile, npm scripts, *.sh, Ansible and Kamal of a folder; deploy recipes with checks and recovery, on a schedule, from GitHub / GitLab / Bitbucket webhooks or CI
@@ -39,14 +39,14 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 
 ## Observe and tools
 
-- [Observe → Logs, Events, Uptime, Audit log, Notifications sent](observe.md) — the log viewer, Log Doctor, site checks (uptime, response time, certificates), history of changes and alerts
+- [Logs & events, Web → Uptime, System → Activity](observe.md) — the log viewer, Log Doctor, site checks (uptime, response time, certificates), history of changes and alerts
 - [Tools → Terminal, Files, Databases, Schedules](tools.md) — shells, files over SSH, PostgreSQL in containers as a database client (Explorer, tabs, data editing, SQL, table design, export / import, test data, users, backups), prune / backup / Git sync on a schedule
 
 ## Servers
 
 - [Servers → Servers, SSH keys, Edge agent](servers.md) — add a server, host keys, deploy keys, the outbound agent
 - [Edge agent → How DockGate commands it, safely](agent-security.md) — signed rules and commands, no port, what the agent may do
-- [Server Console](server-console.md) — setup, SSH access, users, firewall, fail2ban, services, cron jobs, scripts, system settings (network, DNS, kernel, disks), logs
+- [Server → Status, Security, System, Software, Automation](server-console.md) — the server in use: state, graphs and alerts, SSH access, users, firewall, fail2ban, names and network, time, disks, kernel, setup, services, Docker engine, updates, cron, timers, scripts, schedules
 
 ## Settings
 

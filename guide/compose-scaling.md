@@ -55,7 +55,7 @@ A fix is shown before it is applied, written to the override only, and the servi
 3. **Fewer replicas:** the ones that go are stopped gracefully first (they finish what they are doing; the proxy sends new requests to the others).
 4. **Proxies on the same networks are reloaded** — nginx after `nginx -t` passes (a config that fails its check is left alone), Caddy with `caddy reload`. A plain `proxy_pass http://api:8080;` only looks the name up when nginx starts; the reload makes it see the new replicas.
 5. **If compose fails** (an image that can not be pulled, a port taken), the previous override comes back and the service runs as before.
-6. Each change is in **Deploy history…** (*replicas*) and in **Observe → Audit log** (`compose_scale`).
+6. Each change is in **Deploy history…** (*replicas*) and in **System → Activity → Audit log** (`compose_scale`).
 
 ## Auto-heal, and who keeps the rules
 

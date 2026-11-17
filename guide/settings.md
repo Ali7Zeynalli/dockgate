@@ -1,6 +1,6 @@
 # Settings
 
-> **Where:** sidebar **Settings**
+> **Where:** sidebar **System → Settings** (General, Security, Notifications, Software update). *System* (the Docker and OS of the server in use) moved to **Server → Status → System info**
 >
 > Changes save as soon as you make them. Settings are for the whole DockGate, unless a row says otherwise.
 
@@ -51,9 +51,9 @@ Which events send an alert. Each rule has an on/off switch and a **quiet period*
 | Compose | auto-heal restarted a container (or gave up), Auto Scaling changed a service or the server was full — see [Scaling & health](compose-scaling.md) |
 | Swarm | service short of replicas, node down / back, update rolled back, quorum lost, autoscale changed a service |
 
-Server limits (CPU %, memory %, disk %) are **shared** by every server. A server can have its own in **Server Console → Monitoring → Alerts**; the rule then shows *This server*.
+Server limits (CPU %, memory %, disk %) are **shared** by every server. A server can have its own in **Server → Status → Alerts**; the rule then shows *This server*.
 
-**See what was sent** opens **Observe → Notifications sent**. For alerts that keep coming when DockGate is offline, install the [Edge agent](servers.md#edge-agent).
+**See what was sent** opens **System → Activity → Notifications sent**. For alerts that keep coming when DockGate is offline, install the [Edge agent](servers.md#edge-agent).
 
 ---
 

@@ -36,18 +36,25 @@ const Router = {
   resolve(path, params = {}) {
     const p = { ...(params || {}) };
     const SECTION_OF = {
-      containers: 'resources', images: 'resources', volumes: 'resources', networks: 'resources', builds: 'resources', prune: 'resources', cleanup: 'resources',
-      compose: 'deploy', tasks: 'deploy', templates: 'deploy', registries: 'deploy',
-      logs: 'observe', events: 'observe', uptime: 'observe', audit: 'observe', 'notification-log': 'observe',
-      terminal: 'tools', files: 'tools', databases: 'tools', schedules: 'tools',
+      containers: 'resources', images: 'resources', volumes: 'resources', networks: 'resources', prune: 'resources', cleanup: 'resources',
+      compose: 'deploy', tasks: 'deploy', templates: 'deploy', registries: 'deploy', builds: 'deploy',
+      logs: 'observe', events: 'observe', audit: 'activity', 'notification-log': 'activity',
+      terminal: 'tools', files: 'tools', schedules: 'srv-automation',
     };
     const TAB = { cleanup: 'prune' };
-    if (path === 'activity') { const t = p.tab || 'logs'; return { path: SECTION_OF[t] || 'observe', params: { ...p, tab: TAB[t] || t } }; }
+    const OWN = { databases: 1, uptime: 1 }; // pages of their own (no section)
+    // a tab opened in the section it used to be in → its new section
+    if (p.tab && (OWN[p.tab] || (SECTION_OF[p.tab] && SECTION_OF[p.tab] !== path)) && ['activity', 'observe', 'tools', 'resources', 'deploy'].includes(path)) {
+      if (OWN[p.tab]) { const t = p.tab; delete p.tab; return { path: t, params: p }; }
+      return { path: SECTION_OF[p.tab], params: { ...p, tab: TAB[p.tab] || p.tab } };
+    }
+    if (path === 'activity' && !p.tab) return { path, params: p };
     if (path === 'infra' && p.tab === 'registries') return { path: 'deploy', params: p };
     if ((path === 'resources' || path === 'deploy') && TAB[p.tab]) return { path, params: { ...p, tab: TAB[p.tab] } };
     if (SECTION_OF[path]) { delete p.tab; return { path: SECTION_OF[path], params: { ...p, tab: TAB[path] || path } }; }
     if (path === 'settings' && p.tab === 'agent') return { path: 'infra', params: { tab: 'agent' } };
-    if (path === 'settings' && p.tab === 'log') return { path: 'observe', params: { tab: 'notification-log' } }; // the log moved to Observe
+    if (path === 'settings' && p.tab === 'log') return { path: 'activity', params: { tab: 'notification-log' } };
+    if (path === 'settings' && p.tab === 'system') return { path: 'srv-status', params: { tab: 'srv-sysinfo' } };
     // A section's tab opened by its own name (#swarm-scaling): open it inside its section
     if (typeof navItems !== 'undefined' && !navItems[path]) {
       const sec = Object.keys(navItems).find(k => (navItems[k].tabs || []).some(([t]) => t === path));
@@ -61,7 +68,7 @@ const Router = {
     const el = document.getElementById('header-title');
     if (!el) return;
     const item = typeof navItems !== 'undefined' ? navItems[path] : null;
-    const extra = { 'container-detail': ['Resources', 'Container'], 'swarm-service': ['Swarm', 'Service'], 'swarm-node': ['Swarm', 'Node'], 'server-console': null };
+    const extra = { 'container-detail': ['Resources', 'Container'], 'swarm-service': ['Swarm', 'Service'], 'swarm-node': ['Swarm', 'Node'] };
     const crumb = (parent, page) => `<span class="crumb-parent">${escapeHtml(parent)}</span><span class="crumb-sep">/</span><span class="crumb-page">${escapeHtml(page)}</span>`;
     if (item && item.tabs) {
       const t = item.tabs.find(([k]) => k === (params.tab || item.default));

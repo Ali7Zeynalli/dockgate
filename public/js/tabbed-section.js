@@ -38,11 +38,10 @@ function renderTabbedSection(content, params, config) {
 }
 
 // The sections are defined once, in navItems (app.js): the same list drives the sidebar and these pages.
-['resources', 'deploy', 'swarm', 'observe', 'tools'].forEach(key => Router.register(key, (content, params) => {
+// (app.js loads after this file, so the keys are listed here; navItems is read when a section opens)
+['resources', 'deploy', 'swarm', 'observe', 'tools', 'activity', 'srv-status', 'srv-security', 'srv-system', 'srv-software', 'srv-automation'].forEach(key => Router.register(key, (content, params) => {
   const item = navItems[key];
   const top = key === 'swarm' ? (el) => (window.SwarmUI && window.SwarmUI.jobBar ? window.SwarmUI.jobBar(el) : null) : null;
   return renderTabbedSection(content, params, { tabs: item.tabs, default: item.default, top });
 }));
-// Old #/activity links: Router.resolve sends them to Observe, Tools or Resources → Prune. The route stays
-// registered so a stale link still reaches resolve.
-Router.register('activity', (content, params) => Router.navigate('activity', params, { replace: true }));
+// Old #/activity?tab=logs … links are sent to their new place by Router.resolve; Activity itself is Audit log and Notifications sent.

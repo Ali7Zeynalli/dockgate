@@ -1,6 +1,6 @@
 # Observe → Logs, Events, Uptime, Audit log, Notifications sent
 
-> **Where:** sidebar **Observe**
+> **Where:** sidebar **Logs & events** (Logs, Events) · **Web → Uptime** · **System → Activity** (Audit log, Notifications sent)
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**). Uptime, the audit log and the notification log cover all servers.
 
@@ -8,7 +8,7 @@
 
 ## The log viewer
 
-Every log in DockGate (these pages, the container page, Swarm services, Server Console → Logs) uses the same viewer:
+Every log in DockGate (these pages, the container page, Swarm services, Server → Status → Logs) uses the same viewer:
 
 ![Logs](images/logs.png)
 
@@ -112,7 +112,7 @@ Every alert DockGate sent: when, the event, the subject, the channel and recipie
 |---|---|---|
 | *Choose a container to follow its log.* | Nothing picked yet | Pick a container |
 | *No container log lines.* | The container wrote nothing, or the time range is too short | Choose *Newest lines* |
-| Host logs: `sudo: a password is required` | The SSH user has no passwordless `sudo` | Give the user passwordless `sudo`, or use the deploy user (Server Console → Setup) |
+| Host logs: `sudo: a password is required` | The SSH user has no passwordless `sudo` | Give the user passwordless `sudo`, or use the deploy user (Server → Software → Setup) |
 | Events empty after a Docker restart | Docker keeps events only in memory | They appear again as Docker reports them |
 | Uptime: `Timeout after 10 s` | The site did not answer in time — or a firewall drops DockGate's requests | Open the address from DockGate's server (`curl -v`), check the firewall |
 | Uptime: `TLS: self-signed certificate` | The site uses its own certificate | Tick *Ignore certificate errors* in Advanced |

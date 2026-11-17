@@ -7,7 +7,7 @@ A short tour of the ideas behind every page. Read it once; the rest of the docs 
 DockGate manages one or more **servers**:
 
 - **Local** is the host DockGate runs on. DockGate talks to its Docker through the socket mounted into the DockGate container.
-- **Remote servers** are reached over **SSH**. Nothing has to be installed on them except Docker, and DockGate can install that too (**Server Console → Setup**).
+- **Remote servers** are reached over **SSH**. Nothing has to be installed on them except Docker, and DockGate can install that too (**Server → Software → Setup**).
 
 The **server in use** is picked with **SERVERS ▾** in the top bar. Resources, Deploy, Observe, Tools and Swarm all show that server. Switching is instant; nothing is copied between servers.
 
@@ -30,9 +30,9 @@ Long work runs as a **job** on the server side: deploys, builds, image updates, 
 ## Safety nets
 
 - **Undo on failure**: a failed Swarm setup, move or image update puts things back as they were.
-- **Lockout guard**: SSH and firewall changes in Server Console are tested with a new login and rolled back if it fails.
+- **Lockout guard**: SSH and firewall changes on the Server pages are tested with a new login and rolled back if it fails.
 - **Confirmations**: anything that deletes data asks you to type the name.
-- **Audit log**: every change, with the server and the IP address it came from (**Observe → Audit log**).
+- **Audit log**: every change, with the server and the IP address it came from (**System → Activity → Audit log**).
 
 ## Monitoring and alerts
 

@@ -5,23 +5,47 @@
 const navItems = {
   dashboard: { label: 'Dashboard', icon: Icons.dashboard },
   monitoring: { label: 'Monitoring', icon: Icons.chart },
-  resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['builds', 'Builds'], ['prune', 'Prune']], default: 'containers' },
-  deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose stacks'], ['tasks', 'Tasks'], ['templates', 'App templates'], ['registries', 'Registries']], default: 'compose' },
-  observe: { label: 'Observe', icon: Icons.events, tabs: [['logs', 'Logs'], ['events', 'Events'], ['uptime', 'Uptime'], ['audit', 'Audit log'], ['notification-log', 'Notifications sent']], default: 'logs' },
-  swarm: { label: 'Swarm', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M12 8v4M5 16v-2h14v2"/></svg>', tabs: [['swarm-overview', 'Overview'], ['swarm-nodes', 'Nodes'], ['swarm-services', 'Services'], ['swarm-scaling', 'Auto Scaling'], ['swarm-stacks', 'Stacks'], ['swarm-migrate', 'Migrate'], ['swarm-secrets', 'Secrets & configs'], ['swarm-networks', 'Networks'], ['swarm-firewall', 'Firewall'], ['swarm-settings', 'Cluster settings']], default: 'swarm-overview' },
-  tools: { label: 'Tools', icon: Icons.terminal, tabs: [['terminal', 'Terminal'], ['files', 'Files'], ['databases', 'Databases'], ['schedules', 'Schedules']], default: 'terminal' },
+  // DOCKER — what runs and how it is deployed
+  resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['prune', 'Cleanup']], default: 'containers' },
+  deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose stacks'], ['templates', 'App templates'], ['tasks', 'Tasks'], ['builds', 'Builds'], ['registries', 'Registries']], default: 'compose' },
+  swarm: { label: 'Swarm', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M12 8v4M5 16v-2h14v2"/></svg>', tabs: [['swarm-overview', 'Overview'], ['swarm-nodes', 'Nodes'], ['swarm-stacks', 'Stacks'], ['swarm-services', 'Services'], ['swarm-scaling', 'Auto Scaling'], ['swarm-migrate', 'Migrate'], ['swarm-secrets', 'Secrets & configs'], ['swarm-networks', 'Networks'], ['swarm-firewall', 'Firewall'], ['swarm-settings', 'Cluster settings']], default: 'swarm-overview' },
+  databases: { label: 'Databases', icon: SRV_ICONS.databases },
+  observe: { label: 'Logs & events', icon: Icons.events, tabs: [['logs', 'Logs'], ['events', 'Events']], default: 'logs' },
+  // WEB — how it is reached from outside
+  uptime: { label: 'Uptime', icon: SRV_ICONS.uptime },
+  // SERVERS — every server
   infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH keys'], ['agent', 'Edge agent']], default: 'servers' },
-  'server-console': { label: 'Server Console', icon: Icons.terminal, tabs: [['overview', 'Overview'], ['monitoring', 'Monitoring'], ['setup', 'Setup'], ['access', 'Access & SSH'], ['users', 'Users & keys'], ['firewall', 'Firewall'], ['fail2ban', 'Fail2ban'], ['manage', 'Services'], ['cron', 'Cron'], ['scripts', 'Scripts'], ['system', 'System'], ['logs', 'Logs'], ['settings', 'Settings']], default: 'overview' },
-  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['notifications', 'Notifications'], ['update', 'Software update'], ['system', 'System'], ['security', 'Security']], default: 'general' }
+  // SERVER — the server picked in the top bar (server-sections.js)
+  'srv-status': { label: 'Status', icon: SRV_ICONS.status, tabs: [['srv-overview', 'Overview'], ['srv-monitoring', 'Monitoring'], ['srv-alerts', 'Alerts'], ['srv-logs', 'Logs'], ['srv-sysinfo', 'System info'], ['srv-connection', 'Connection']], default: 'srv-overview' },
+  'srv-security': { label: 'Security', icon: SRV_ICONS.security, tabs: [['srv-access', 'Access & SSH'], ['srv-users', 'Users & keys'], ['srv-firewall', 'Firewall'], ['srv-fail2ban', 'Fail2ban']], default: 'srv-access' },
+  'srv-system': { label: 'System', icon: SRV_ICONS.system, tabs: [['srv-names', 'Name & addresses'], ['srv-network', 'Network'], ['srv-time', 'Time sync'], ['srv-disks', 'Disks'], ['srv-kernel', 'Kernel & limits'], ['srv-configs', 'Config files']], default: 'srv-names' },
+  'srv-software': { label: 'Software', icon: SRV_ICONS.software, tabs: [['srv-setup', 'Setup'], ['srv-services', 'Services'], ['srv-docker', 'Docker engine'], ['srv-updates', 'Auto updates']], default: 'srv-setup' },
+  'srv-automation': { label: 'Automation', icon: SRV_ICONS.automation, tabs: [['srv-cron', 'Cron'], ['srv-timers', 'Timers'], ['srv-scripts', 'Scripts'], ['schedules', 'Schedules']], default: 'srv-cron' },
+  // TOOLS
+  tools: { label: 'Tools', icon: Icons.terminal, tabs: [['terminal', 'Terminal'], ['files', 'Files']], default: 'terminal' },
+  // SYSTEM — DockGate itself
+  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['security', 'Security'], ['notifications', 'Notifications'], ['update', 'Software update']], default: 'general' },
+  activity: { label: 'Activity', icon: SRV_ICONS.activity, tabs: [['audit', 'Audit log'], ['notification-log', 'Notifications sent']], default: 'audit' },
 };
 
-// DOCKER (what runs) · SERVER (the hosts) · SYSTEM (DockGate itself).
+// DOCKER (what runs) · WEB (how it is reached) · SERVERS (all) · SERVER (the one in the top bar) · TOOLS · SYSTEM (DockGate itself)
 const navGroups = [
   { label: 'Overview', items: ['dashboard', 'monitoring'] },
-  { label: 'Docker', items: ['resources', 'deploy', 'swarm', 'observe', 'tools'] },
-  { label: 'Server', items: ['infra', 'server-console'] },
-  { label: 'System', items: ['settings'] }
+  { label: 'Docker', items: ['resources', 'deploy', 'swarm', 'databases', 'observe'] },
+  { label: 'Web', items: ['uptime'] },
+  { label: 'Servers', items: ['infra'] },
+  { label: 'Server', id: 'server', items: ['srv-status', 'srv-security', 'srv-system', 'srv-software', 'srv-automation'] },
+  { label: 'Tools', items: ['tools'] },
+  { label: 'System', items: ['settings', 'activity'] }
 ];
+/** The SERVER group's heading names the server in use, so it is always clear which server those pages change. */
+function syncServerGroupLabel() {
+  const el = document.getElementById('nav-group-server'); if (!el) return;
+  const a = (typeof Store !== 'undefined' && Store.get('activeServer')) || {};
+  const remote = a.id && a.id !== 'local' && a.type !== 'local';
+  el.innerHTML = `Server${a.id ? ` <span style="text-transform:none;letter-spacing:0;font-weight:500;opacity:.85">· ${remote ? escapeHtml(a.name || a.id) : 'Local'}</span>` : ''}`;
+}
+window.syncServerGroupLabel = syncServerGroupLabel;
 
 function initMacSidebar() {
   const sidebarNav = document.getElementById('sidebar-nav');
@@ -68,27 +92,13 @@ function initMacSidebar() {
 
     html += `
       <div class="nav-group">
-        <div class="nav-group-header">${group.label}</div>
+        <div class="nav-group-header"${group.id ? ` id="nav-group-${group.id}"` : ''}>${group.label}</div>
         <div class="nav-group-items">${itemsHtml}</div>
       </div>
     `;
   });
 
   sidebarNav.innerHTML = html;
-
-  // "Server Console" is always shown as a standard nav item. Clicking it opens the active remote
-  // server's console; with none active it sends the user to Servers to add/pick one (handler below).
-
-  // Open the active remote server's console at `tab` (Server Console's tabs need a server id, so its
-  // sidebar items inject the active server here). With no remote server yet, hint + go pick one.
-  const goConsole = (tab) => {
-    const active = Store.get('activeServer');
-    if (active && active.id !== 'local' && active.type !== 'local') Router.navigate('server-console', { id: active.id, tab });
-    else {
-      if (typeof showToast === 'function') showToast('Add a remote server first — a console needs one', 'info', 5000);
-      Router.navigate('infra', { tab: 'servers' });
-    }
-  };
 
   // Phones / narrow windows: the sidebar is a drawer (☰). It closes after a navigation, on Esc and when
   // the dimmed page behind it is tapped.
@@ -107,15 +117,12 @@ function initMacSidebar() {
     // A sidebar sub-item (a section's tab) → navigate straight to that tab.
     const subitem = e.target.closest('.nav-subitem');
     if (subitem) {
-      if (subitem.dataset.page === 'server-console') { goConsole(subitem.dataset.tab); return; }
       Router.navigate(subitem.dataset.page, { tab: subitem.dataset.tab });
       return;
     }
     const item = e.target.closest('.nav-item');
     if (!item) return;
     const page = item.dataset.page;
-    // Server Console header → its default tab on the active server (id injected by goConsole).
-    if (page === 'server-console') { goConsole(item.dataset.default || 'overview'); return; }
     // A section header → open its default tab (syncSidebarTabs then expands it).
     if (item.classList.contains('nav-parent')) { Router.navigate(page, { tab: item.dataset.default }); return; }
     if (page) Router.navigate(page);
@@ -126,6 +133,8 @@ function initMacSidebar() {
   sidebarNav.querySelectorAll('.nav-parent').forEach(p => new MutationObserver(syncSidebarTabs).observe(p, { attributes: true, attributeFilter: ['class'] }));
   window.addEventListener('hashchange', syncSidebarTabs);
   syncSidebarTabs();
+  syncServerGroupLabel();
+  if (typeof Store !== 'undefined' && Store.on) Store.on('activeServer', syncServerGroupLabel); // the server in use arrives after the first draw
 }
 
 // Mirror the active in-page tab into the sidebar: expand the active section, highlight its active
@@ -133,6 +142,7 @@ function initMacSidebar() {
 function syncSidebarTabs() {
   const nav = document.getElementById('sidebar-nav');
   if (!nav) return;
+  syncServerGroupLabel();
   // The entry for the page shown: a detail page (a container, a Swarm service or node) lights up its list.
   const target = (typeof Router !== 'undefined' && Router.currentPage) ? Router.navTarget() : null;
   const tab = target ? (target.tab || '') : (new URLSearchParams((location.hash.split('?')[1] || '')).get('tab') || '');
@@ -533,12 +543,8 @@ async function initServerSwitcher() {
         }
         const currentPage = Store.get('currentPage') || 'dashboard';
         const currentParams = Store.get('currentParams') || {};
-        // On a server console the page follows the picker: the new server's console (same tab), or the
-        // Servers list when switching to the local machine (it has no console).
-        if (currentPage === 'server-console') {
-          const remote = sel && sel.id !== 'local' && sel.type !== 'local';
-          setTimeout(() => remote ? Router.navigate('server-console', { id, tab: currentParams.tab }) : Router.navigate('infra', { tab: 'servers' }), 300);
-        } else setTimeout(() => Router.navigate(currentPage, currentParams), 300);
+        syncServerGroupLabel();
+        setTimeout(() => Router.navigate(currentPage, currentParams), 300); // the server pages follow the picker
       } catch (err) {
         showToast(`Switch failed: ${err.message}`, 'error', 8000);
         revert();

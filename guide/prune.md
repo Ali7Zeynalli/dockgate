@@ -1,6 +1,6 @@
-# Resources → Prune
+# Resources → Cleanup
 
-> **Where:** sidebar **Resources → Prune**
+> **Where:** sidebar **Resources → Cleanup**
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**).
 
@@ -26,7 +26,7 @@ Free disk space by removing what nothing uses. Nothing is deleted until you conf
 ## Good to know
 
 - **A container moved to Swarm is a stopped container.** DockGate keeps it so you can move back. Pruning stopped containers removes it, and **Move back to the container** is then no longer possible.
-- To prune on a schedule, use **Tools → Schedules → Prune**.
+- To prune on a schedule, use **Server → Automation → Schedules → Prune**.
 - **Resources → Images → Remove unused** does the same as the *Unused images* row.
 
 ## Errors and fixes

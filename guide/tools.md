@@ -1,6 +1,6 @@
 # Tools → Terminal, Files, Databases, Schedules
 
-> **Where:** sidebar **Tools**
+> **Where:** sidebar **Tools** (Terminal, Files) · **Databases** · **Server → Automation → Schedules**
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**).
 
@@ -19,7 +19,7 @@
 
 The default shell is set in **Settings → General → Default shell**. When a session ends, press **Reconnect**.
 
-> Opening a container terminal is recorded in **Observe → Audit log** (`terminal_open`). What you type is not recorded.
+> Opening a container terminal is recorded in **System → Activity → Audit log** (`terminal_open`). What you type is not recorded.
 
 ---
 
@@ -90,7 +90,7 @@ The **Files** button in the top bar (or **Ctrl+Shift+F**, or ⌘K → *Open quic
 
 A save is never half written: the new content goes to a temporary file next to it, which gets the file's mode and owner, then replaces the file in one step. If the owner can not be kept (the file belongs to another user), the file is written in place, so its owner stays.
 
-**Files of another user** (for example `/etc/nginx/nginx.conf` owned by root): DockGate offers **Open with sudo** / **Save with sudo**. This needs passwordless sudo for the SSH user — the deploy user made in Server Console → Setup has it. Owner and mode stay the same. Changing the owner (Permissions) always uses sudo on a remote server; on *Local* use numbers (uid and gid).
+**Files of another user** (for example `/etc/nginx/nginx.conf` owned by root): DockGate offers **Open with sudo** / **Save with sudo**. This needs passwordless sudo for the SSH user — the deploy user made in Server → Software → Setup has it. Owner and mode stay the same. Changing the owner (Permissions) always uses sudo on a remote server; on *Local* use numbers (uid and gid).
 
 **Changed on the server:** if someone changed the file after you opened it, Save stops and asks: **Load theirs**, or **Save mine anyway**.
 
@@ -239,7 +239,7 @@ Statements that change data still need **Allow changes** (or Test run), and DROP
 | **Names** | `<container>-<database or all>-<date-time>.dump` / `.sql.gz` — the same as Scripts' *Database backup* block, so scheduled backups show in the same list |
 | **Restore…** | Always into a **new database** first (nothing that exists changes); then **Swap it in place of …** renames the current one to `<name>_before_<date>` and puts the restored one in its place (its sessions are closed for a moment). "Keep owners and grants" can be turned off when the backup's users do not exist here. A failed restore removes the new database |
 | **Whole-server backup** | Restored by hand into an empty PostgreSQL (a new container) — **How to restore** shows the command |
-| **Schedule…** | SSH servers: pick how often (every few hours, every day, days of the week, once a month) and the time from lists — hour 00–23 and minute 00–59, server time — or a custom cron line. Makes the script `pg-backup-<container>-<db>` in Server Console → Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
+| **Schedule…** | SSH servers: pick how often (every few hours, every day, days of the week, once a month) and the time from lists — hour 00–23 and minute 00–59, server time — or a custom cron line. Makes the script `pg-backup-<container>-<db>` in Server → Automation → Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
 | **Download / Delete** | The file itself |
 
 ## Schedules
@@ -264,7 +264,7 @@ The list shows each task's server, schedule, last run (with its result) and next
 |---|---|---|
 | *No folder of this machine is shared with DockGate yet* | Files on *Local* with no folder shared | Add a volume under `/host` as shown above, or pick a remote server |
 | `Permission denied: … belongs to another user — open it with sudo` | The SSH user may not read or write this file | **Open with sudo** / **Save with sudo**, or tick **Use sudo** in Permissions |
-| `sudo asks this user for a password — DockGate needs passwordless sudo` | The SSH user has sudo only with a password | Connect with the deploy user (Server Console → Setup), or allow passwordless sudo for this user |
+| `sudo asks this user for a password — DockGate needs passwordless sudo` | The SSH user has sudo only with a password | Connect with the deploy user (Server → Software → Setup), or allow passwordless sudo for this user |
 | *Changed on the server* | The file changed after you opened it | **Load theirs** to see it, or **Save mine anyway** |
 | *✗ docker compose config* | The compose file has a mistake (the message says where) | Fix it, **Check** again |
 | *nginx -t failed* | nginx would not accept the configuration | Fix it, or **Put the previous content back** |

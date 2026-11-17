@@ -26,9 +26,9 @@ The most common problems, what they mean and what to do. Each page of these docs
 | You see | Why | What to do |
 |---|---|---|
 | `Could not reach the server` / timeout | Wrong address or port, the server is down, or a firewall blocks SSH from DockGate | Check `ssh user@host -p port` from DockGate's host |
-| `All configured authentication methods failed` | Wrong user, key or password | Check the login in **Server Console → Settings** |
-| `Host key mismatch — …` | The server's SSH key changed | After a rebuild: **Server Console → Access & SSH → Re-trust…**. Otherwise do not connect |
-| `SSH OK — Docker not detected` | Docker missing, or the user can not use it | **Server Console → Setup**, or **Settings → Docker access → Grant…** |
+| `All configured authentication methods failed` | Wrong user, key or password | Check the login in **Server → Status → Connection** |
+| `Host key mismatch — …` | The server's SSH key changed | After a rebuild: **Server → Security → Access & SSH → Re-trust…**. Otherwise do not connect |
+| `SSH OK — Docker not detected` | Docker missing, or the user can not use it | **Server → Software → Setup**, or **Settings → Docker access → Grant…** |
 | `sudo: a password is required` | The user has no passwordless `sudo` | Use the deploy user (**Setup**) |
 | Pages are slow on one server | Every reading goes over SSH | Install the [Edge agent](servers.md#edge-agent) |
 
@@ -41,7 +41,7 @@ The most common problems, what they mean and what to do. Each page of these docs
 | `OOMKilled` | Out of memory | Raise the memory limit, or find the leak |
 | `pull access denied` / `unauthorized` | Private image without a login | Add the login in **Deploy → Registries** |
 | `manifest unknown` / `not found` | The tag does not exist | Check the tag on the registry |
-| `no space left on device` | The disk is full | **Resources → Prune**; set log limits (**Server Console → Setup → Docker log limits**) |
+| `no space left on device` | The disk is full | **Resources → Cleanup**; set log limits (**Server → Software → Docker engine**) |
 | Compose: `Invalid compose file: …` | YAML error | Fix the line in the message |
 | Git deploy: `Not a fast-forward …` | Files changed on the server | **Force pull…** |
 

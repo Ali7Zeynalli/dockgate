@@ -6,6 +6,16 @@ const UI = {
   esc: (s) => escapeHtml(String(s == null ? '' : s)),
 
   /** Page section header: title, one line of description, actions on the right. */
+  /** Show only the parts of a page under the headers named (the page's top-level UI.header blocks); hide the rest. */
+  onlySections(root, titles) {
+    const first = root.querySelector('.ui-ph'); if (!first) return;
+    const parent = first.parentElement; let on = false;
+    [...parent.children].forEach(el => {
+      if (el.classList.contains('ui-ph')) { const t = (el.querySelector('.ui-ph-title') || {}).textContent || ''; on = titles.includes(t.trim()); }
+      el.style.display = on ? '' : 'none';
+    });
+  },
+
   header(title, desc, actions = '') {
     return `<div class="ui-ph"><div class="ui-ph-text">${title ? `<div class="ui-ph-title">${title}</div>` : ''}${desc ? `<div class="ui-ph-desc">${desc}</div>` : ''}</div>${actions ? `<div class="ui-ph-actions">${actions}</div>` : ''}</div>`;
   },

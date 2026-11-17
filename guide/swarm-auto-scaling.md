@@ -148,7 +148,7 @@ The box under them says how many replicas fit with the guarantee from step 2. Th
 
 A service with a rule has an **Autoscale** tab on its page (**Swarm → Services →** the name). It shows the rule in short, the last change and the service's history, with **Pause** / **Resume** and **Edit on Auto Scaling**. The rule is edited only on this page.
 
-Each change is also in **Observe → Audit log** (`swarm_autoscale`).
+Each change is also in **System → Activity → Audit log** (`swarm_autoscale`).
 
 ## Good to know
 

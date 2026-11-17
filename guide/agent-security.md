@@ -50,4 +50,4 @@ The port check runs from a tiny helper container that shares the checked contain
 | `The agent did not answer (is the dockgate-agent container running, and up to date?)` | No agent container, or an old one without the control channel | Install or update the agent |
 | `This agent has no key yet — update the agent` | The agent was installed by an older DockGate | Update it once |
 | Agent history: `rejected (signature)` | A message not signed by this DockGate's key | Nothing to do if it was not you; if it keeps coming, someone with root on the server is trying |
-| Agent history: `rejected (replay)` / `(stale)` | An old message sent again, or a clock far off | Check the server's clock (**Server Console → Setup → Time sync**) |
+| Agent history: `rejected (replay)` / `(stale)` | An old message sent again, or a clock far off | Check the server's clock (**Server → System → Time sync**) |

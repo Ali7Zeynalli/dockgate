@@ -109,7 +109,7 @@ tar czf dockgate-backup-$(date +%F).tar.gz data/
 docker compose start
 ```
 
-**Volume data** (your apps' data) is not in `data/`. Back it up from **Resources → Volumes → Backup**, or on a schedule in **Tools → Schedules**.
+**Volume data** (your apps' data) is not in `data/`. Back it up from **Resources → Volumes → Backup**, or on a schedule in **Server → Automation → Schedules**.
 
 **Restore:** put the `data/` folder back next to `docker-compose.yml` and run `docker compose up -d`.
 

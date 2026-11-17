@@ -23,7 +23,7 @@ The first page after login: the state of the server picked in the top bar.
 | **Disk Usage** | Space used by images, containers, volumes and build cache |
 | **Top Images by Size** | The largest images |
 | **Uptime & Restarts** | How long containers run, and which restart often |
-| **Smart Insights** | Space you can free: containers stopped for 7+ days, unused and dangling images, volumes no container uses. Click one to open **Resources → Prune** |
+| **Smart Insights** | Space you can free: containers stopped for 7+ days, unused and dangling images, volumes no container uses. Click one to open **Resources → Cleanup** |
 | **Recent Activity** | The latest entries of the audit log |
 | **System Info** | Docker version, storage driver, CPUs, memory, architecture; registries connected |
 | **Quick Actions** | **Start All Stopped**, **Stop All Running**, **Restart All** (each asks first) |
@@ -36,7 +36,7 @@ Click a container, image or count to open its page.
 
 ![Monitoring](images/monitoring.png)
 
-**The server list** shows every server: its state, CPU and memory over the last 40 minutes, and disk use. Click a server for its full graphs and alert policies (**Server Console → Monitoring**).
+**The server list** shows every server: its state, CPU and memory over the last 40 minutes, and disk use. Click a server for its full graphs and alert policies (**Server → Status → Monitoring**).
 
 **Under it**, the server picked in the top bar:
 
@@ -54,7 +54,7 @@ Click a container, image or count to open its page.
 
 ### Alerts
 
-Alerts for high CPU, memory and disk, and for a server that goes down, are set in **Settings → Notifications → Rules** (for all servers) and per server in **Server Console → Monitoring**. They are sent through the channels in **Settings → Notifications**.
+Alerts for high CPU, memory and disk, and for a server that goes down, are set in **Settings → Notifications → Rules** (for all servers) and per server in **Server → Status → Monitoring**. They are sent through the channels in **Settings → Notifications**.
 
 ## Good to know
 

@@ -10,10 +10,8 @@ async function renderServerMonitoring(serverId, container, range = 'live') {
     ${UI.header('Monitoring', range === '48h' ? 'The last 48 hours, from what DockGate stored once a minute.' : 'Live resource use of this server, refreshed every few seconds.',
       `<div class="ui-seg" data-range>${[['live', 'Live'], ['48h', 'Last 48 hours']].map(([r, l]) => `<button type="button" data-r="${r}" aria-pressed="${r === range}">${l}</button>`).join('')}</div>`)}
     <div data-view></div>
-    <div data-alerts></div>
   </div>`;
   container.querySelectorAll('[data-r]').forEach(b => b.onclick = () => renderServerMonitoring(serverId, container, b.dataset.r));
-  renderServerAlerts(serverId, container.querySelector('[data-alerts]')); // alert-rules-panel.js
   const view = container.querySelector('[data-view]');
   if (range !== '48h') { if (typeof renderHostMonitoring === 'function') renderHostMonitoring(serverId, view, { live: true }); return; }
 
