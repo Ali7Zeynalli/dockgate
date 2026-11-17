@@ -2,6 +2,43 @@
 
 ---
 
+## [2.73.0] - 2026-11-17
+
+### Added
+- **Databases → Export…** (database, overview or a table's menu): tick tables, then **SQL** with `pg_dump` in the container — structure and data, structure or data only, rows as `INSERT` or `COPY`, drop the tables first, `.sql.gz` (streamed, any size) — or **CSV** files in a `.zip`, or one **Excel (.xlsx)** file with a sheet per table (header frozen, numbers as numbers).
+- **Import a .sql file** (`.sql` / `.sql.gz`, a plain pg_dump or any SQL) with progress; psql stops at the first error and tells the line; **in one transaction** nothing of a failed file stays.
+- **New table from a CSV**: the separator is found by itself, column names made SQL-friendly, types guessed (integer, bigint, numeric, boolean, date, timestamptz, uuid, text) and shown in the New table tab to change; the rows are loaded right after **Create table**.
+- **Fill with test data…**: made-up rows that fit the columns — names, e-mails, phones, cities, URLs and statuses by column name, numbers within the column's size, dates, enums, JSON, arrays; foreign keys get keys that exist; unique columns stay unique; **🧪 Preview** makes them and rolls back.
+- README: screenshots of Databases and Tasks; the guide's Databases part describes the new layout, Design, and export / import / test data.
+
+### Fixed
+- Opening a database from a link expands `public` → Tables the first time, as opening it in the Explorer does.
+
+---
+
+## [2.72.0] - 2026-11-17
+
+### Added
+- **Databases → Design: edit a table's structure.** Columns as a sheet — name, type (with a list of the usual ones), not null, default, identity, comment; add, rename, change the type (cast with `USING`), drop. Indexes (columns, unique, method, partial `WHERE`, `CONCURRENTLY`), foreign keys (the referenced table and column, ON DELETE / ON UPDATE, NOT VALID; a warning when the types differ), unique, check and primary keys, enable / disable triggers, and the table's DDL to copy or open in a query.
+- Changes wait (yellow = changed, green = new, struck = dropped) until **Save**: **Show SQL**, **🧪 Test** (runs them and rolls back — a type that does not fit the data or a duplicate for a new unique index is seen before), **Discard**, Save — all in **one transaction**; when one fails, the message says which change and nothing is kept. Read-only connections can still Test.
+- **New table** (database, schema or Tables menu, or the database overview): schema, name, comment, columns with primary key, identity, unique.
+- **Table ▾**: rename, move to another schema, duplicate (structure, with or without the rows), comment — each shows its SQL and can be tested first.
+- Every structure change is in the audit log with its SQL.
+
+---
+
+## [2.71.0] - 2026-11-17
+
+### Changed
+- **Tools → Databases is a database client.** The **Explorer** on the left: container → database → schema → Tables / Views / Materialized views / Sequences / Functions → table → Columns (🔑 primary key, 🔗 foreign key), Indexes, Foreign keys, Triggers — loaded when opened, with a filter, ↑ ↓ → ← Enter keys and a resizable width.
+- **Tabs** for everything: a table's data, its design, each SQL query, a database overview, admin and backups. A click opens a *preview* tab (in italics, replaced by the next click); a double-click or an edit keeps it; middle-click closes; open tabs come back after a reload.
+- **Right-click menus** on every node and tab: open data, open in a new tab, design, new SELECT / INSERT / UPDATE / DELETE query filled with the table's columns, view definition, count rows, export CSV / JSON, copy name, VACUUM / ANALYZE / REFRESH, empty (TRUNCATE) and drop (asks for the name); on a database: new query, overview, admin, backups; on a function: its definition; on a tab: close, close others, close to the right, reveal in Explorer.
+- **Database overview** tab: every table, view and sequence with rows and size, Data / Design buttons, and ticked tables ANALYZE / VACUUM / empty / drop together.
+- **Status bar**: container › database › table, PostgreSQL version and user, production, the 🔒 Read-only / ✎ Changes allowed switch and Connection settings.
+- Each SQL query is its own tab (the saved queries, snippets, history and schema panel open with ☰).
+
+---
+
 ## [2.70.1] - 2026-11-17
 
 ### Added

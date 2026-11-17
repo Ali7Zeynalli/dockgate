@@ -40,7 +40,7 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 ## Observe and tools
 
 - [Observe → Logs, Events, Uptime, Audit log, Notifications sent](observe.md) — the log viewer, Log Doctor, site checks (uptime, response time, certificates), history of changes and alerts
-- [Tools → Terminal, Files, Databases, Schedules](tools.md) — shells, files over SSH, PostgreSQL in containers (tables, SQL, users, backups), prune / backup / Git sync on a schedule
+- [Tools → Terminal, Files, Databases, Schedules](tools.md) — shells, files over SSH, PostgreSQL in containers as a database client (Explorer, tabs, data editing, SQL, table design, export / import, test data, users, backups), prune / backup / Git sync on a schedule
 
 ## Servers
 

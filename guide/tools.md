@@ -108,15 +108,68 @@ PostgreSQL running in containers on the server picked in the top bar — browse 
 
 | | |
 |---|---|
-| **Read-only by default** | Every session runs with `default_transaction_read_only = on` until you turn on **Allow changes** (the button in the header). It is a guard against mistakes, not a permission system — the admin can always turn it on |
+| **Read-only by default** | Every session runs with `default_transaction_read_only = on` until you turn on **Allow changes** (the 🔒 switch in the status bar, or the container's menu). It is a guard against mistakes, not a permission system — the admin can always turn it on |
 | **Asks first** | `DROP`, `TRUNCATE`, `ALTER … DROP`, and `DELETE` / `UPDATE` without `WHERE`. A connection marked **Production** asks before every statement that changes data |
 | **Edits by primary key only** | A cell, a new row or deleted rows touch exactly the rows meant (a table without a primary key is changed with SQL) |
 | **Limits** | 30 s per statement in the editor and the table view, `lock_timeout` 10 s; psql commands (`\…`) are not run |
 | **Audit log** | Every change: SQL that writes, row edits, users, databases, backups, restores |
 
-**The page:** pick the container and database on the left; tables, views, materialized views, sequences and functions are listed by schema (with a finder). On the right:
+### The page — Explorer, tabs, menus
 
-- **Data** — the table as a spreadsheet (see *Editing data* below); 50–500 rows a page; click a column name to sort; filters (`=`, `≠`, contains, starts with, `<`, `>`, in, is NULL…) and any `WHERE` condition; **Count rows** for the exact number; **Export** CSV or JSON lines (the whole table, streamed). NULL and an empty text are told apart; big numbers stay exact.
+![Databases](images/databases.png)
+
+The page works like a database client:
+
+| | |
+|---|---|
+| **Explorer** (left) | container → database → schema → **Tables / Views / Materialized views / Sequences / Functions** → a table's **Columns** (🔑 primary key, 🔗 foreign key, type, not null), **Indexes**, **Foreign keys**, **Triggers**. Each level loads when opened; what was open is kept. The filter finds tables, views and functions; ↑ ↓ move, → ← open and close, Enter opens, Shift+F10 the menu. Drag its edge to make it wider |
+| **Tabs** (right) | a table's **data**, its **design**, each **SQL query**, a **database overview**, **admin** and **backups** open as tabs. A click opens a *preview* tab (name in italics) that the next click replaces; a double-click or an edit keeps it. Middle-click closes. The tabs come back after a reload |
+| **Right-click** | on every node and tab — see the table below |
+| **Status bar** | container › database › table, the PostgreSQL version and user, **production**, the **🔒 Read-only / ✎ Changes allowed** switch and **Connection…** |
+
+| Right-click on | |
+|---|---|
+| a container | New query · Refresh · Users, sessions and databases · Backups · Connection settings · Allow changes / make it read-only |
+| a database | New query · Open (the overview) · **New table** · **Export** · **Import a .sql file** · **New table from a CSV** · Refresh · Admin · Backups |
+| a table or view | Open data · Open in a new tab · **Design** · New query: **SELECT / INSERT / UPDATE / DELETE** (filled with its columns and key) or the view's definition · Count rows · **Export** (SQL, CSV, Excel) · **Fill with test data** · Export CSV / JSON lines · Copy name · VACUUM ANALYZE / ANALYZE / REFRESH · **Empty (TRUNCATE)** · **Drop** — the last two ask for the name |
+| a function | its definition in a new query |
+| a tab | Close · Close others · Close to the right · Close all · Keep open · Rename (queries) · Reveal in Explorer |
+
+**Database overview** (double-click a database, or *Open*): every table, view and sequence with its estimated rows and size, **Data** / **Design** buttons, a filter, and — for the ticked ones — **ANALYZE**, **VACUUM ANALYZE**, **Empty** and **Drop** together. **New table**, **Export…** (the ticked tables) and **Import…** are at the top.
+
+**Data** — the table as a spreadsheet (see *Editing data* below); 50–500 rows a page; click a column name to sort; filters (`=`, `≠`, contains, starts with, `<`, `>`, in, is NULL…) and any `WHERE` condition; **Count rows** for the exact number; **Export** CSV or JSON lines (the whole table, streamed). NULL and an empty text are told apart; big numbers stay exact.
+
+### Design — change the structure
+
+![Design](images/databases-design.png)
+
+A table's **Design** tab has **Columns**, **Indexes**, **Keys & checks**, **Triggers** and **DDL**:
+
+| | |
+|---|---|
+| **Columns** | a sheet: name, type (the usual ones in a list, or any PostgreSQL type such as `numeric(12,2)`, `varchar(80)`, `text[]`, an enum), not null, default (an expression: `now()`, `'new'`, `0`), identity (auto number), comment. **+ Add column**, × drops one (↺ keeps it). A changed type is cast with `USING column::type` |
+| **Indexes** | drop one, or **+ Add index**: columns in order, unique, method (btree, hash, gin, gist, brin), only rows where (a partial index), **CONCURRENTLY** for a busy table (made after the other changes, outside the transaction) |
+| **Keys & checks** | drop a key or check; **+ Foreign key** (the column, the table and column it points to, what happens when that row is deleted or its key changes, NOT VALID; it warns when the two types differ), **+ Unique**, **+ Check**, **+ Primary key** |
+| **Triggers** | enable or disable |
+| **DDL** | a CREATE TABLE made from the catalog, to copy or open in a query |
+
+Changes **wait** — yellow = changed, green = new, struck = dropped — until the bar at the bottom: **Show SQL** (the exact statements), **🧪 Test** (they run and are **rolled back**: a type the data does not fit, a duplicate value for a new unique index or a key that points to nothing is seen now), **Discard**, **Save**. Everything is saved **in one transaction**: if one statement fails, the message says which change and why, and nothing is kept. A read-only connection can Test; Save asks to allow changes. Dropping columns or changing types asks once more.
+
+**New table** (database, schema or *Tables* menu, or the overview): schema, name, comment and the same sheet — with **PK** and **Unique** columns; it starts with `id bigint` identity primary key and `created_at timestamptz default now()`.
+
+**Table ▾** in the Design tab: **Rename**, **Move to another schema**, **Duplicate** (structure, constraints and indexes — `LIKE … INCLUDING ALL` — with or without the rows), **Comment**, plus VACUUM, export, test data, empty and drop. Each shows its SQL and can be tested before it runs. Every structure change is in the audit log with its SQL.
+
+### Export, import, test data
+
+![Export](images/databases-export.png)
+
+| | |
+|---|---|
+| **Export…** (database, overview or table menu) | tick the tables, then: **SQL** — `pg_dump` in the container: structure and data, structure only or data only; rows as `INSERT` (readable, loads anywhere) or `COPY` (fast, psql); *drop the tables first*; compressed `.sql.gz` (streamed, any size). **CSV** — one file per table in a `.zip`. **Excel (.xlsx)** — one sheet per table, header row frozen, numbers as numbers (up to 300 MB of data) |
+| **Import a .sql file** | a `.sql` or `.sql.gz` (a plain pg_dump or any SQL) is run by psql in the database, with progress; it stops at the first error and says the line. **In one transaction** (on by default): if a statement fails, nothing of the file stays. A custom-format `.dump` goes through Backups → Restore |
+| **New table from a CSV** | the separator is found by itself; column names are made SQL-friendly and the types guessed (integer, bigint, numeric, boolean, date, timestamptz, uuid, text) — check them in the New table tab, then **Create table**: the rows are loaded right after |
+| **Import CSV into a table** | in the table's Data tab: Export / import → Import CSV (see *Many rows at once*) |
+| **Fill with test data…** | made-up rows that fit the columns: names, e-mails, phones, cities, URLs, statuses by column name; numbers within the column's size; dates, times, enums, JSON, arrays; **foreign keys get keys that exist** in the other table; unique columns get unique values; columns with a default or identity keep it. **🧪 Preview** makes them and rolls back, showing the first rows |
 
 ### Editing data
 
@@ -240,3 +293,7 @@ The list shows each task's server, schedule, last run (with its result) and next
 | Changes: no time for *Last written* | The server does not record commit times | Turn on change tracking for the table (or `track_commit_timestamp = on` in postgresql.conf and a restart) |
 | Import: *… — nothing was imported (in rows 501–1000)* | A row in that part broke a rule (a missing value, a duplicate key, a wrong type) | Fix the file, Test again |
 | Change many: *No filter: this would change every row* | The Data tab has no filter | Filter the rows first, or tick *every row* |
+| Design: *Change 2 (price: type numeric(10,2)): invalid input syntax…* | A value in the table does not fit the new type | Fix those rows first (SQL), or keep the type — nothing was changed |
+| Design: *foreign key … cannot be implemented … incompatible types* | The column and the key it points to have different types | Change one type first (the dialog warns) |
+| Import .sql: *Line 120: …* | That statement failed | Fix the file; with *one transaction* nothing stayed |
+| Test data: *… has no rows yet — fill it first* | A NOT NULL foreign key points to an empty table | Fill that table first (it can get test data too) |

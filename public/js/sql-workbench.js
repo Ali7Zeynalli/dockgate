@@ -58,6 +58,7 @@ const SqlWorkbench = (() => {
     const { base, dbBase } = ctx;
     el.innerHTML = `<style>
       .wb{display:grid;grid-template-columns:230px minmax(0,1fr);gap:12px;align-items:start}
+      .wb.wb-noside{grid-template-columns:minmax(0,1fr)} .wb.wb-noside .wb-side{display:none} .wb.wb-single .wb-tabs{display:none}
       @media (max-width:1100px){.wb{grid-template-columns:1fr}.wb-side{display:none}}
       .wb-side{border:1px solid var(--border);border-radius:10px;padding:8px;max-height:calc(100vh - 220px);overflow:auto;font-size:12.5px}
       .wb-side .wb-it{display:flex;gap:6px;align-items:center;width:100%;text-align:left;background:none;border:0;color:var(--text-primary);padding:3px 4px;border-radius:5px;cursor:pointer;font:inherit}
@@ -83,7 +84,7 @@ const SqlWorkbench = (() => {
       .wb-node .wb-bar{height:4px;border-radius:2px;background:var(--accent,#3b82f6);margin-top:4px;min-width:2px} .wb-node.hot .wb-bar{background:var(--danger)}
       .wb-node small{color:var(--text-muted)} .wb-kids{margin-left:18px;border-left:1px dashed var(--border);padding-left:8px}
     </style>
-    <div class="wb"><div class="wb-side" data-side></div><div style="min-width:0">
+    <div class="wb${ctx.single ? ' wb-single' : ''}"><div class="wb-side" data-side></div><div style="min-width:0">
       <div class="wb-tabs" data-tabs></div>
       <div class="wb-tool" data-tool></div>
       <div class="wb-ed" data-ed><div class="skeleton" style="height:260px"></div></div>
@@ -96,13 +97,19 @@ const SqlWorkbench = (() => {
 
     // ---- tabs ----
     try { st.tabs = (await API.get(`${base}/tabs`)).tabs; } catch (e) { st.tabs = []; }
-    if (!st.tabs.length) st.tabs = [{ id: rid(), name: 'Query 1', sql: ctx.initialSql || 'SELECT now();', position: 0 }];
+    // single: one query of the page's own tab strip (the IDE layout) — this editor shows only that one
+    if (ctx.single) {
+      let one = st.tabs.find(t => t.id === ctx.single.id);
+      const fresh = !one;
+      if (!one) one = { id: ctx.single.id, name: ctx.single.name || 'Query', sql: ctx.single.sql != null ? ctx.single.sql : 'SELECT now();', position: st.tabs.length };
+      st.tabs = [one]; st.cur = one.id; st.freshSingle = fresh;
+    } else if (!st.tabs.length) st.tabs = [{ id: rid(), name: 'Query 1', sql: ctx.initialSql || 'SELECT now();', position: 0 }];
     else if (ctx.initialSql) st.tabs.push({ id: rid(), name: `Query ${st.tabs.length + 1}`, sql: ctx.initialSql, position: st.tabs.length });
-    st.cur = ctx.initialSql ? st.tabs[st.tabs.length - 1].id : (localStorage.getItem(`dg-wb-cur:${base}`) && st.tabs.some(t => t.id === localStorage.getItem(`dg-wb-cur:${base}`)) ? localStorage.getItem(`dg-wb-cur:${base}`) : st.tabs[0].id);
+    if (!ctx.single) st.cur = ctx.initialSql ? st.tabs[st.tabs.length - 1].id : (localStorage.getItem(`dg-wb-cur:${base}`) && st.tabs.some(t => t.id === localStorage.getItem(`dg-wb-cur:${base}`)) ? localStorage.getItem(`dg-wb-cur:${base}`) : st.tabs[0].id);
     const tab = () => st.tabs.find(t => t.id === st.cur);
     const docOf = (t) => { const k = `${base}|${t.id}`; if (!docs.has(k)) docs.set(k, CodeMirror.Doc(t.sql || '', 'text/x-pgsql')); return docs.get(k); };
     const saveTab = (t) => API.put(`${base}/tabs/${t.id}`, { name: t.name, dbname: ctx.db(), sql: t.sql, position: st.tabs.indexOf(t) }).catch(() => {});
-    if (ctx.initialSql) saveTab(tab());
+    if (ctx.initialSql || st.freshSingle) saveTab(tab());
 
     $('[data-ed]').innerHTML = '';
     const cm = CodeMirror($('[data-ed]'), {
@@ -124,6 +131,7 @@ const SqlWorkbench = (() => {
     const clearErr = () => { if (errMark) { errMark.clear(); errMark = null; } };
 
     function drawTabs() {
+      if (ctx.single) return;
       $('[data-tabs]').innerHTML = st.tabs.map(t => `<div class="wb-tab" role="tab" data-tab="${t.id}" aria-selected="${t.id === st.cur}" title="Double-click to rename">${esc(t.name)}${st.tabs.length > 1 ? `<button type="button" class="wb-x" data-close="${t.id}" aria-label="Close">×</button>` : ''}</div>`).join('')
         + '<button type="button" class="btn btn-xs btn-ghost" data-newtab title="New tab">+</button>';
       el.querySelectorAll('[data-tab]').forEach(x => {
@@ -146,7 +154,7 @@ const SqlWorkbench = (() => {
       st.tabs.push(t); saveTab(t); switchTo(t.id); return t;
     }
     async function switchTo(id) {
-      st.cur = id; try { localStorage.setItem(`dg-wb-cur:${base}`, id); } catch (e) {}
+      st.cur = id; if (!ctx.single) try { localStorage.setItem(`dg-wb-cur:${base}`, id); } catch (e) {}
       cm.swapDoc(docOf(tab())); drawTabs(); cm.focus();
       st.last = null; st.tx = 'idle';
       try { const s = await API.get(`${base}/session/${id}`); st.tx = s.tx || 'idle'; } catch (e) {}
@@ -162,7 +170,7 @@ const SqlWorkbench = (() => {
         ${UI.btn('🧪 Test run', `data-run="test" ${st.running ? 'disabled' : ''} title="Run it inside a transaction and roll it back — see what it would do, nothing stays"`)}
         ${UI.menu([{ label: '📊 Explain — the plan, without running it', attrs: 'data-explain="plan"' }, { label: '📊 Explain analyze — runs it (rolled back) and times every step', attrs: 'data-explain="analyze"' }], { label: 'Explain' }).replace('>⋯<', '>📊 Explain<')}
         ${st.running ? UI.btn('⏹ Cancel', 'data-cancel', 'btn-danger') : ''}
-        ${UI.btn('Format', 'data-format title="Shift+Alt+F"')} ${UI.btn('Save…', 'data-save title="Save as a saved query (Ctrl+S)"')}
+        ${ctx.single ? UI.btn('☰', `data-sidetoggle title="Saved queries, snippets, history, schema"`) : ''} ${UI.btn('Format', 'data-format title="Shift+Alt+F"')} ${UI.btn('Save…', 'data-save title="Save as a saved query (Ctrl+S)"')}
         <select class="input" data-timeout title="Time limit per statement" style="width:auto;padding:3px 6px;font-size:12px">${[[30000, '30 s'], [60000, '1 min'], [300000, '5 min'], [600000, '10 min']].map(([v, l]) => `<option value="${v}" ${v === st.timeoutMs ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <span style="flex:1"></span>
         ${st.tx === 'open' ? `${UI.pill('warn', '● Transaction open')} ${UI.btn('Commit', 'data-commit', 'btn-primary')} ${UI.btn('Roll back', 'data-rollback')}` : st.tx === 'aborted' ? `${UI.pill('bad', 'Transaction failed')} ${UI.btn('Roll back', 'data-rollback', 'btn-danger')}` : `<span class="ui-sub">${w ? 'changes allowed' : 'read-only — Test run still works'} · session on ${esc(ctx.db())}</span>`}`;
@@ -170,6 +178,7 @@ const SqlWorkbench = (() => {
       el.querySelectorAll('[data-explain]').forEach(b => b.onclick = () => run(b.dataset.explain === 'analyze' ? 'explain-analyze' : 'explain'));
       const c = $('[data-cancel]'); if (c) c.onclick = async () => { try { await API.post(`${base}/session/${st.cur}/cancel`, {}); } catch (e) { showToast(e.message, 'error'); } };
       $('[data-format]').onclick = doFormat; $('[data-save]').onclick = saveQuery;
+      const stg = $('[data-sidetoggle]'); if (stg) stg.onclick = () => { const w = el.querySelector('.wb'); w.classList.toggle('wb-noside'); try { localStorage.setItem('dg-wb-sidevis', w.classList.contains('wb-noside') ? '0' : '1'); } catch (e) {} if (!w.classList.contains('wb-noside')) drawSide(); };
       $('[data-timeout]').onchange = (e) => { st.timeoutMs = Number(e.target.value); try { localStorage.setItem('dg-wb-timeout', st.timeoutMs); } catch (er) {} };
       const cmt = $('[data-commit]'); if (cmt) cmt.onclick = () => endTx('commit');
       const rb = $('[data-rollback]'); if (rb) rb.onclick = () => endTx('rollback');
@@ -429,6 +438,7 @@ const SqlWorkbench = (() => {
         onSave: async (ov) => { await API.post(`${base}/saved`, { name: ov.querySelector('#sq-n').value, folder: ov.querySelector('#sq-f').value, description: ov.querySelector('#sq-d').value, sql: cm.getValue(), dbname: ctx.db() }); showToast('Saved'); if (st.side === 'saved') drawSide(); } });
     }
 
+    if (ctx.single && localStorage.getItem('dg-wb-sidevis') !== '1') el.querySelector('.wb').classList.add('wb-noside');
     drawTabs(); drawTool(); drawSide();
     try { const s = await API.get(`${base}/session/${st.cur}`); st.tx = s.tx || 'idle'; drawTool(); } catch (e) {}
     if (!st.schema) API.get(`${dbBase()}/schema-index`).then(s => { st.schema = s; setHints(); }).catch(() => {});
@@ -437,6 +447,16 @@ const SqlWorkbench = (() => {
       destroy() { alive = false; try { cm.swapDoc(CodeMirror.Doc('')); } catch (e) {} }, // let the tab's document go (a new editor takes it)
       refreshSchema() { st.schema = null; API.get(`${dbBase()}/schema-index`).then(s => { st.schema = s; setHints(); if (st.side === 'schema') drawSide(); }).catch(() => {}); },
       redrawTool: drawTool,
+      /** Close the query (single mode): asks when a transaction is open, then forgets it. → false when kept. */
+      async close() {
+        let s = null; try { s = await API.get(`${base}/session/${st.cur}`); } catch (e) {}
+        if (s && s.tx && s.tx !== 'idle' && !confirm('A transaction is open in this query. Closing it rolls the transaction back. Close?')) return false;
+        await API.del(`${base}/tabs/${st.cur}`).catch(() => {});
+        docs.delete(`${base}|${st.cur}`);
+        return true;
+      },
+      busy: () => st.running || st.tx === 'open',
+      focus: () => setTimeout(() => { cm.refresh(); cm.focus(); }, 20),
     };
   }
 

@@ -25,6 +25,53 @@ router.get('/:c/db/:db/objects', send(async (req) => S.objects(req.params.c, req
 router.get('/:c/db/:db/structure', send(async (req) => S.structure(req.params.c, req.params.db, req.query.schema, req.query.table)));
 // body { schema, table, limit, offset, sort: [{ col, dir }], filters: [{ col, op, value }], where }
 router.post('/:c/db/:db/rows', send(async (req) => S.rows(req.params.c, req.params.db, req.body || {})));
+// Export / import / test data for whole databases or ticked tables — pg-io.js
+const IO = require('../pg-io');
+const fileName = (req, ext) => `${req.params.db}${req.query.tables && String(req.query.tables).split(',').length === 1 ? '.' + String(req.query.tables).split('.').pop() : ''}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}.${ext}`.replace(/[^\w.-]+/g, '_');
+router.get('/:c/db/:db/dump', async (req, res) => {
+  const gz = req.query.gz === '1'; let started = false; let out = res;
+  try {
+    await IO.dump(req.params.c, req.params.db, { tables: req.query.tables, what: req.query.what, rows: req.query.rows, clean: req.query.clean === '1' }, (chunk) => {
+      if (!started) { started = true; res.setHeader('Content-Type', gz ? 'application/gzip' : 'application/sql; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${fileName(req, gz ? 'sql.gz' : 'sql')}"`); if (gz) { out = require('zlib').createGzip(); out.pipe(res); } }
+      out.write(chunk);
+    });
+    audit(req, 'db_export', { format: 'sql', what: req.query.what || 'both', tables: req.query.tables ? String(req.query.tables).slice(0, 500) : 'all' });
+    if (!started) { res.setHeader('Content-Type', 'application/sql; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${fileName(req, 'sql')}"`); }
+    out.end();
+  } catch (e) { if (!started) res.status(e.statusCode || 500).json({ error: e.message }); else { try { out.write(`\n-- DockGate: the export stopped: ${e.message}\n`); } catch (x) {} out.end(); } }
+});
+router.get('/:c/db/:db/export-zip', async (req, res) => {
+  try {
+    const fmt = req.query.format === 'xlsx' ? 'xlsx' : 'csv';
+    const buf = await IO.zipTables(req.params.c, req.params.db, { tables: req.query.tables, format: fmt });
+    audit(req, 'db_export', { format: fmt, tables: String(req.query.tables || '').slice(0, 500) });
+    res.setHeader('Content-Type', fmt === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName(req, fmt === 'xlsx' ? 'xlsx' : 'csv.zip')}"`);
+    res.end(buf);
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+// the body is the file itself (application/octet-stream), gunzipped here when ?gz=1
+router.post('/:c/db/:db/import-sql', send(async (req) => {
+  let src = req; if (req.query.gz === '1') { src = req.pipe(require('zlib').createGunzip()); }
+  const r = await IO.importSql(req.params.c, req.params.db, src, { single: req.query.single === '1' });
+  audit(req, 'db_import_sql', { file: String(req.query.name || '').slice(0, 120), single: req.query.single === '1', tags: r.tags });
+  return r;
+}));
+router.post('/:c/db/:db/mock', send(async (req) => {
+  const b = req.body || {};
+  const r = await IO.mock(req.params.c, req.params.db, b);
+  if (!r.test) audit(req, 'db_mock_rows', { table: `${b.schema}.${b.table}`, rows: r.rows });
+  return r;
+}));
+// Design: structure changes as operations → SQL (preview), run in one transaction (test: rolled back) — pg-ddl.js
+const D = require('../pg-ddl');
+router.post('/:c/db/:db/ddl/preview', send(async (req) => D.preview(req.params.c, req.params.db, req.body || {})));
+router.post('/:c/db/:db/ddl/apply', send(async (req) => {
+  const b = req.body || {};
+  const r = await D.apply(req.params.c, req.params.db, b);
+  if (!r.test) audit(req, 'db_ddl', { table: b.table ? `${b.schema}.${b.table}` : ((b.ops || [])[0] || {}).name, statements: r.statements.map(x => x.sql).join(';\n').slice(0, 3000) });
+  return r;
+}));
 router.post('/:c/db/:db/count', send(async (req) => S.count(req.params.c, req.params.db, req.body || {})));
 // body { sql, confirm }
 router.post('/:c/db/:db/sql', send(async (req) => {
