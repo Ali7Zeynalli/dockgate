@@ -2,6 +2,13 @@
 
 ---
 
+## [2.64.2] - 2026-11-17
+
+### Changed
+- **Schedules are picked from lists, not typed as cron.** Databases → Backups → Schedule…, Scripts → Schedule… and Cron → New job / Edit: choose how often (every few minutes, every few hours, every day, days of the week, once a month), then the hour (00–23) and minute (00–59) — 24-hour, server time. The schedule is shown in words with its cron line; *Custom* still takes any cron expression (and Cron keeps *At reboot* and its own box).
+
+---
+
 ## [2.64.1] - 2026-11-16
 
 ### Fixed

@@ -101,7 +101,6 @@ async function renderCronPanel(serverId, container) {
   function openJob(j) {
     const meta = (j && j.meta) || {};
     const srcOpts = editable.map(s => `<option value="${s.id}" ${j ? (j.src.id === s.id ? 'selected' : '') : (s.id === (d.sshUser === 'root' ? 'user' : 'user') ? 'selected' : '')}>${esc(s.id === 'user' ? `${d.sshUser} (SSH user) — crontab` : s.id === 'root' ? 'root — crontab (sudo)' : `${d.dgFile} (choose the user)`)}</option>`).join('');
-    const presets = [['*/5 * * * *', 'Every 5 min'], ['0 * * * *', 'Hourly'], ['30 3 * * *', 'Daily 03:30'], ['0 4 * * 1', 'Weekly (Mon 04:00)'], ['0 3 1 * *', 'Monthly'], ['@reboot', 'At reboot']];
     const dlg = UI.dialog({ title: j ? 'Edit cron job' : 'New cron job', saveLabel: 'Review changes…', wide: true,
       body: `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
@@ -109,7 +108,7 @@ async function renderCronPanel(serverId, container) {
           <label class="ui-field"><span class="ui-label">Runs as</span><select class="input" id="cj-src" ${j ? 'disabled' : ''}>${srcOpts}</select></label>
           <label class="ui-field" id="cj-userf" style="display:none"><span class="ui-label">User</span><input class="input td-mono" id="cj-user" value="${esc((j && j.user) || 'root')}"></label>
         </div>
-        <div class="ui-field"><span class="ui-label">When</span><div style="display:flex;gap:6px;flex-wrap:wrap">${presets.map(([v, l]) => `<button type="button" class="ui-fchip" data-preset="${esc(v)}">${l}</button>`).join('')}</div></div>
+        <div class="ui-field"><span class="ui-label">When</span>${SchedulePicker.html((j && j.schedule) || '30 3 * * *', { minutes: true })}<div style="margin-top:6px"><button type="button" class="ui-fchip" data-preset="@reboot">At reboot</button></div></div>
         <div style="display:grid;grid-template-columns:minmax(200px,1fr) 2fr;gap:10px;align-items:start">
           <label class="ui-field"><span class="ui-label">Schedule (server time)</span><input class="input td-mono" id="cj-sched" value="${esc((j && j.schedule) || '30 3 * * *')}"><span class="ui-sub">minute hour day month weekday · or @daily, @hourly, @reboot</span></label>
           <div class="ui-field"><span class="ui-label" id="cj-human">—</span><div class="ui-sub td-mono" id="cj-next" style="line-height:1.7"></div></div>
@@ -135,6 +134,8 @@ async function renderCronPanel(serverId, container) {
         }, 250); };
         sched.addEventListener('input', next);
         ov.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => { sched.value = b.dataset.preset; next(); }));
+        let first = true;
+        SchedulePicker.bind(ov, { onChange: (v) => { if (first) { first = false; return; } if (v) { sched.value = v; next(); } } });
         src.addEventListener('change', sync); ov.querySelector('#cj-name').addEventListener('input', sync);
         sync(); next();
       },

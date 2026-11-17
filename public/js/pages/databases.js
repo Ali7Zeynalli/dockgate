@@ -422,12 +422,14 @@ Router.register('databases', async (content, params = {}) => {
         const r = await API.post(`${base()}/backups`, w === 'all' ? { kind: 'all' } : { database: w.slice(3), kind: ov.querySelector('#bk-f').value });
         showToast(`Backed up: ${r.file} (${formatBytes(r.size)})`); drawBackups();
       } });
+    let sp = null;
     const sc = m.querySelector('[data-sched]'); if (sc) sc.onclick = () => UI.dialog({ title: 'Scheduled backups', saveLabel: 'Schedule',
       body: `<label class="ui-field"><span class="ui-label">What</span><select class="input" id="sc-d">${st.info.databases.filter(d => d.connect).map(d => `<option value="${esc(d.name)}" ${d.name === st.db ? 'selected' : ''}>Database ${esc(d.name)}</option>`).join('')}<option value="">The whole server (pg_dumpall)</option></select></label>
-        <label class="ui-field"><span class="ui-label">When (cron, server time)</span><input class="input td-mono" id="sc-w" value="15 3 * * *"><span class="ui-sub">15 3 * * * = every night at 03:15 · 0 */6 * * * = every 6 hours</span></label>
+        <div class="ui-field"><span class="ui-label">When</span>${SchedulePicker.html('15 3 * * *')}</div>
         <label class="ui-field"><span class="ui-label">Keep for (days)</span><input class="input" id="sc-k" type="number" value="7" min="1" max="365"></label>
         <div class="ui-sub">Makes the script <span class="td-mono">pg-backup-…</span> in Server Console → Scripts (SQL .sql.gz files in this folder, older ones deleted, disk checked) and its Cron job — with a log and alerts when it fails or does not run.</div>`,
-      onSave: async (ov) => { const r = await API.post(`${base()}/backups/schedule`, { database: ov.querySelector('#sc-d').value, schedule: ov.querySelector('#sc-w').value.trim(), keepDays: Number(ov.querySelector('#sc-k').value) }); showToast(`Scheduled — script ${r.script}`); } });
+      onOpen: (ov) => { sp = SchedulePicker.bind(ov); },
+      onSave: async (ov) => { const r = await API.post(`${base()}/backups/schedule`, { database: ov.querySelector('#sc-d').value, schedule: sp.value(), keepDays: Number(ov.querySelector('#sc-k').value) }); showToast(`Scheduled ${SchedulePicker.describe(sp.value()).toLowerCase()} — script ${r.script}`); } });
     m.querySelectorAll('[data-dl]').forEach(x => x.onclick = () => { window.location.href = `/api${base()}/backups/${enc(x.dataset.dl)}/download`; });
     m.querySelectorAll('[data-delbk]').forEach(x => x.onclick = () => showDeleteConfirm('Delete backup', { message: `Delete <span class="td-mono">${esc(x.dataset.delbk)}</span>?`, phrase: 'delete',
       onConfirm: async () => { try { await API.del(`${base()}/backups/${enc(x.dataset.delbk)}`); showToast('Deleted'); drawBackups(); } catch (e) { showToast(e.message, 'error'); } } }));

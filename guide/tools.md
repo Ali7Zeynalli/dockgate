@@ -129,7 +129,7 @@ PostgreSQL running in containers on the server picked in the top bar — browse 
 | **Names** | `<container>-<database or all>-<date-time>.dump` / `.sql.gz` — the same as Scripts' *Database backup* block, so scheduled backups show in the same list |
 | **Restore…** | Always into a **new database** first (nothing that exists changes); then **Swap it in place of …** renames the current one to `<name>_before_<date>` and puts the restored one in its place (its sessions are closed for a moment). "Keep owners and grants" can be turned off when the backup's users do not exist here. A failed restore removes the new database |
 | **Whole-server backup** | Restored by hand into an empty PostgreSQL (a new container) — **How to restore** shows the command |
-| **Schedule…** | SSH servers: makes the script `pg-backup-<container>-<db>` in Server Console → Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
+| **Schedule…** | SSH servers: pick how often (every few hours, every day, days of the week, once a month) and the time from lists — hour 00–23 and minute 00–59, server time — or a custom cron line. Makes the script `pg-backup-<container>-<db>` in Server Console → Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
 | **Download / Delete** | The file itself |
 
 ## Schedules
