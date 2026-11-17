@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.66.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.70.1-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.66.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.70.1-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
@@ -36,7 +36,7 @@
 ## What is DockGate?
 
 - **Docker** — containers, images, volumes, networks and builds, with logs, a terminal and file editing inside containers.
-- **Compose** — create, edit and deploy projects locally or on a remote server, with deploy history and image updates. Replicas, auto-heal, Auto Scaling and updates without downtime — **without Swarm**, your compose files untouched.
+- **Compose** — create, edit and deploy projects locally or on a remote server, with deploy history and image updates. **Tasks** runs your Makefile, justfile, npm scripts and deploy.sh, and **deploy recipes** deploy on a GitHub / GitLab / Bitbucket push with checks and rollback. Replicas, auto-heal, Auto Scaling and updates without downtime — **without Swarm**, your compose files untouched.
 - **Docker Swarm** — set up a cluster and move Compose projects and containers to it and back, as well protected as before. Each service gets its own page; published ports are firewalled on every server at once.
 - **Servers** — provision, secure (SSH, users, firewall, fail2ban) and monitor any number of hosts over SSH; cron jobs with alerts, **scripts** (templates, blocks or your own shell), system settings (network with automatic rollback, DNS, kernel, disks) and a file manager with a safe editor.
 - **Databases** — PostgreSQL in your containers, on any server: browse and edit tables, run SQL, manage users and sessions, back up, restore into a new database and swap it in — read-only until you allow changes, no port opened.
@@ -167,6 +167,7 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 | **Image updates** | A daily check of every tag against its registry; safe update with a health check, automatic roll back, version names and history. |
 | **Compose** | Discover, create and edit projects; deploy a folder, adopt a project already on a server, or deploy from Git. On a remote server Compose runs on that server over SSH. Deploy history with changes and redeploy. |
 | **[Scaling & health](guide/compose-scaling.md)** (Compose, without Swarm) | **Replicas** with one click — DockGate writes its own override file, your compose files stay as they are; host ports and `container_name` fixed only after you see the fix; proxies reloaded. **Auto-heal** restarts a replica that stays unhealthy. **Keep running** brings a service back when it is stopped or removed (made again from its kept config). **Auto Scaling** — Off / Suggest / Auto (24 h simulation first), measured against your own limits, adds a replica only when the server has room, values suggested from the last 48 hours. **Roll out** — updates replica by replica without downtime, also for *newer image* updates. |
+| **[Tasks](guide/tasks.md)** (SSH servers) | Finds the tasks of a project folder — `Makefile` targets, `justfile`, `Taskfile.yml`, `package.json` scripts (npm / pnpm / yarn / bun), `*.sh`, Ansible playbooks, Kamal — and runs them with a live log: dry run, variables, run as root, cancel, one run per folder, history. **Env & secrets** per folder (encrypted, masked in logs). **Deploy recipes:** Git pull → your tasks → docker compose up → check a URL / a container's health; **recovery steps** (back to the commit before, your rollback) when a step fails; several servers; schedule; alerts. Started by **GitHub, GitLab, Bitbucket Cloud / Server webhooks** (signatures checked, branch filter) or **CI** with a token, and the result marked on the commit. |
 | **App templates · Registries** | 500+ apps as a container, a Compose project or a Swarm stack; private registry logins used everywhere. |
 | **Observe · Tools** | Logs, Docker events, **Uptime** (HTTP / SSL / TCP / DNS checks of your sites from DockGate and other servers: uptime %, response time, incidents, certificate days left, linked containers with their logs and Restart, alerts), audit log, notifications sent; container and host terminal (`` Ctrl+` ``); SFTP file manager (also as **Quick Files** over any page, Ctrl+Shift+F) with two-pane transfers, a safe editor (colours, checks with compose / nginx / sshd / visudo / findmnt / `bash -n`, diff before save, earlier versions, sudo for root-owned files, never half written), Places and bookmarks, log tail, image preview, and permissions / owner; scheduled prune, volume backup and Git sync. |
 | **[Databases](guide/tools.md#databases)** | PostgreSQL in containers (postgres, postgis, timescaledb, pgvector, supabase, bitnami…) reached with `docker exec psql` — no published port. Tables with sort, filters, export; edit cells, add and delete rows by primary key; structure (indexes, constraints, foreign keys, triggers); a SQL editor with several results, history and confirms for DROP / TRUNCATE / DELETE without WHERE; sessions (cancel, terminate), users and grants, databases, VACUUM / ANALYZE, slow queries; backups (`pg_dump`, `pg_dumpall`) next to the database, restore into a new database and swap, scheduled backups through Scripts + Cron. Read-only until you allow changes, every change in the audit log. |

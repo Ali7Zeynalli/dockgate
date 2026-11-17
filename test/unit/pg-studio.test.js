@@ -280,3 +280,115 @@ test('Workbench sessions against PostgreSQL: a transaction lives across runs, te
   WS.close(K); assert.equal(WS.state(K).none, true);
   S.saveSettings('shop-db-1', { allowWrite: false });
 });
+
+test('Data editor against PostgreSQL: many edits in one transaction, conflicts, test, foreign keys', { skip }, async () => {
+  const S = setup();
+  const pq = (...a) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest', '-At', ...a]).toString().trim();
+  pq('-c', 'drop table if exists shop.ord, shop.cust', '-c', 'drop type if exists shop.st', '-c', "create type shop.st as enum ('new','paid')");
+  pq('-c', "create table shop.cust (id int primary key, name text not null, vip boolean default false)", '-c', "create table shop.ord (id serial primary key, cust_id int references shop.cust(id), total numeric(10,2), status shop.st default 'new', meta jsonb)");
+  pq('-c', "insert into shop.cust values (1, 'Ann', false), (2, 'Bob', true)", '-c', "insert into shop.ord (cust_id, total) values (1, 10), (1, 20), (2, 5)");
+  const st = await S.structure('shop-db-1', 'dgtest', 'shop', 'ord');
+  const col = (n) => st.columns.find(c => c.name === n);
+  assert.deepEqual(col('status').enum, ['new', 'paid']); assert.equal(col('cust_id').fk.table, 'cust'); assert.equal(col('meta').base, 'jsonb'); assert.equal(col('total').category, 'N');
+  S.saveSettings('shop-db-1', { allowWrite: false });
+  const changes = [{ op: 'update', pk: { id: '1' }, set: { name: 'Anna' }, orig: { name: 'Ann' } }, { op: 'insert', values: { id: '3', name: 'Cem' } }, { op: 'delete', pk: { id: '2' } }];
+  await assert.rejects(S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes }), (e) => e.code === 'READ_ONLY');
+  // test: works read-only, nothing stays
+  const tr = await S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes: [changes[0], changes[1]], test: true });
+  assert.equal(tr.test, true); assert.equal(pq('-c', 'select string_agg(name, \',\' order by id) from shop.cust'), 'Ann,Bob');
+  S.saveSettings('shop-db-1', { allowWrite: true });
+  // a failing change (Bob has orders) rolls back all of them
+  await assert.rejects(S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes }), (e) => e.code === 'FAILED' && e.at === 2 && /foreign key/.test(e.message));
+  assert.equal(pq('-c', 'select string_agg(name, \',\' order by id) from shop.cust'), 'Ann,Bob', 'nothing saved');
+  // someone else changed the row since it was loaded → conflict, nothing saved
+  pq('-c', "update shop.cust set name = 'Ann B' where id = 1");
+  await assert.rejects(S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes: [changes[0], changes[1]] }), (e) => e.code === 'CONFLICT' && /id=1/.test(e.message));
+  assert.equal(pq('-c', 'select count(*) from shop.cust'), '2');
+  const ok = await S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes: [{ op: 'update', pk: { id: '1' }, set: { name: "O'Hara", vip: 'true' }, orig: { name: 'Ann B', vip: 'false' } }, changes[1]] });
+  assert.deepEqual([ok.update, ok.insert], [1, 1]);
+  assert.equal(pq('-c', "select name || '/' || vip from shop.cust where id = 1"), "O'Hara/true");
+  // foreign keys: picker options and rows pointing here
+  const fk = await S.fkLookup('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', column: 'id', q: 'ha' });
+  assert.equal(fk.label, 'name'); assert.deepEqual(fk.options, [{ key: '1', label: "O'Hara" }]);
+  assert.equal((await S.fkLookup('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', column: 'id', key: '2' })).options[0].label, 'Bob');
+  const refs = await S.referencing('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', pk: { id: '1' } });
+  assert.deepEqual(refs.refs.map(r => [r.table, r.column, r.count]), [['ord', 'cust_id', 2]]);
+  S.saveSettings('shop-db-1', { allowWrite: false });
+});
+
+test('Who wrote it, against PostgreSQL: tracking records the changes of the app itself, row history, restore', { skip }, async () => {
+  const S = setup();
+  const H = require('../../server/pg-history');
+  const pq = (...a) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest', '-At', ...a]).toString().trim();
+  pq('-c', 'drop schema if exists dockgate_audit cascade', '-c', 'drop table if exists shop.acct', '-c', "create table shop.acct (id int primary key, owner text, balance int)", '-c', "insert into shop.acct values (1, 'ann', 100), (2, 'bob', 50)");
+  pq('-c', "drop role if exists app_user", '-c', "create role app_user login", '-c', 'grant usage on schema shop to app_user', '-c', 'grant select, insert, update, delete on shop.acct to app_user');
+  S.saveSettings('shop-db-1', { allowWrite: false });
+  assert.equal((await H.status('shop-db-1', 'dgtest', 'shop', 'acct')).tracked, false);
+  await assert.rejects(H.enable('shop-db-1', 'dgtest', 'shop', 'acct'), (e) => e.code === 'READ_ONLY');
+  S.saveSettings('shop-db-1', { allowWrite: true });
+  const st = await H.enable('shop-db-1', 'dgtest', 'shop', 'acct', { keepDays: 30 });
+  assert.equal(st.tracked, true); assert.equal(st.keepDays, 30);
+  // the app (another role, its own application_name) changes rows — no rights on dockgate_audit needed
+  const asApp = (sql) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'app_user', '-d', 'dgtest', '-At', '-c', sql], { env: { ...process.env, PGAPPNAME: 'billing-api' } }).toString();
+  asApp("update shop.acct set balance = 80 where id = 1");
+  asApp("update shop.acct set balance = 80 where id = 1"); // nothing changed → not logged
+  asApp("insert into shop.acct values (3, 'cem', 10)");
+  asApp('delete from shop.acct where id = 2');
+  const info = await S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'acct', changes: [{ op: 'update', pk: { id: '1' }, set: { owner: 'Ann' }, orig: { owner: 'ann' } }] });
+  assert.equal(info.update, 1);
+  const row = await H.rowInfo('shop-db-1', 'dgtest', 'shop', 'acct', { id: '1' }, 'shop-db-1');
+  assert.ok(row.xmin); assert.equal(row.tracked, true);
+  assert.deepEqual(row.history.map(h => [h.op, h.user, h.app, h.changed.join()]), [['U', 'postgres', 'DockGate', 'owner'], ['U', 'app_user', 'billing-api', 'balance']]);
+  assert.equal(row.history[1].old.balance, 100); assert.equal(row.history[1].new.balance, 80);
+  const log = await H.tableLog('shop-db-1', 'dgtest', 'shop', 'acct', { op: 'D' });
+  assert.equal(log.changes.length, 1); assert.equal(log.changes[0].old.owner, 'bob'); assert.ok(log.users.includes('app_user'));
+  // bring the deleted row back, and put row 1 back as before the app's change
+  await H.restore('shop-db-1', 'dgtest', 'shop', 'acct', log.changes[0].id);
+  assert.equal(pq('-c', 'select owner || balance from shop.acct where id = 2'), 'bob50');
+  await H.restore('shop-db-1', 'dgtest', 'shop', 'acct', row.history[1].id);
+  assert.equal(pq('-c', 'select owner || balance from shop.acct where id = 1'), 'ann100', 'the whole row as it was before that change');
+  assert.equal((await H.tableLog('shop-db-1', 'dgtest', 'shop', 'acct', {})).changes[0].op, 'U', 'the restore is logged too');
+  // turning it off keeps the log unless asked
+  assert.equal((await H.disable('shop-db-1', 'dgtest', 'shop', 'acct')).tracked, false);
+  asApp("update shop.acct set balance = 1 where id = 3");
+  assert.equal((await H.tableLog('shop-db-1', 'dgtest', 'shop', 'acct', {})).changes.some(c => c.key.id === '3' && c.op === 'U'), false);
+  assert.equal((await H.disable('shop-db-1', 'dgtest', 'shop', 'acct', { dropLog: true })).count, 0);
+  S.saveSettings('shop-db-1', { allowWrite: false });
+});
+
+test('Many rows at once against PostgreSQL: import (insert / upsert / skip), bulk update by filter, find and replace', { skip }, async () => {
+  const S = setup();
+  const BU = require('../../server/pg-bulk');
+  const pq = (...a) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest', '-At', ...a]).toString().trim();
+  pq('-c', 'drop table if exists shop.prod', '-c', 'create table shop.prod (sku text primary key, name text not null, price numeric(10,2), note text)');
+  S.saveSettings('shop-db-1', { allowWrite: false });
+  const rows = Array.from({ length: 1200 }, (_, i) => [`S${i}`, `Item ${i}`, String(i % 50), i % 3 ? '' : "it's"]);
+  const t1 = await BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name', 'price', 'note'], rows, test: true });
+  assert.deepEqual([t1.written, t1.test], [1200, true]); assert.equal(pq('-c', 'select count(*) from shop.prod'), '0');
+  await assert.rejects(BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name'], rows: [['a', 'b']] }), (e) => e.code === 'READ_ONLY');
+  S.saveSettings('shop-db-1', { allowWrite: true });
+  const r1 = await BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name', 'price', 'note'], rows });
+  assert.equal(r1.written, 1200); assert.equal(pq('-c', "select count(*) || '/' || count(note) from shop.prod"), '1200/400', 'empty cells are NULL');
+  // a bad row (NOT NULL) in the middle: nothing is imported
+  await assert.rejects(BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name'], rows: [['X1', 'ok'], ['X2', '']] }), (e) => e.code === 'FAILED' && /null/i.test(e.message));
+  assert.equal(pq('-c', "select count(*) from shop.prod where sku like 'X%'"), '0');
+  // skip existing / update existing by key
+  const r2 = await BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name'], rows: [['S1', 'changed'], ['NEW1', 'new']], mode: 'skip' });
+  assert.deepEqual([r2.written, r2.skipped], [1, 1]); assert.equal(pq('-c', "select name from shop.prod where sku = 'S1'"), 'Item 1');
+  await BU.importRows('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', columns: ['sku', 'name'], rows: [['S1', 'changed']], mode: 'upsert' });
+  assert.equal(pq('-c', "select name || '/' || price from shop.prod where sku = 'S1'"), 'changed/1.00', 'only mapped columns change');
+  // bulk update by the Data filter
+  await assert.rejects(BU.bulkUpdate('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', set: { note: 'x' } }), (e) => e.code === 'ALL_ROWS');
+  const b1 = await BU.bulkUpdate('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', filters: [{ col: 'price', op: '=', value: '0' }], set: { note: 'free' }, test: true });
+  assert.equal(b1.rows, 24); assert.equal(pq('-c', "select count(*) from shop.prod where note = 'free'"), '0');
+  await BU.bulkUpdate('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', filters: [{ col: 'price', op: '=', value: '0' }], set: { note: 'free' } });
+  assert.equal(pq('-c', "select count(*) from shop.prod where note = 'free'"), '24');
+  assert.equal((await BU.bulkUpdate('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', where: "sku like 'NEW%'", op: 'delete' })).rows, 1);
+  // find and replace: preview, part of the value (case-insensitive), whole value
+  const pv = await BU.findReplace('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', column: 'name', find: 'ITEM 1', replace: 'Thing-1', preview: true });
+  assert.equal(pv.rows, 310, 'Item 1, 10–19, 100–199, 1000–1199 (S1 was renamed)'); assert.equal(pv.samples[0].after.startsWith('Thing-1'), true);
+  assert.equal((await BU.findReplace('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', column: 'name', find: 'item 1', replace: 'Thing-1' })).rows, 310);
+  assert.equal(pq('-c', "select name from shop.prod where sku = 'S15'"), 'Thing-15');
+  assert.equal((await BU.findReplace('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', column: 'note', find: "it's", replace: 'its', wholeValue: true, matchCase: true })).rows, 392, '400 minus the 8 set to free above');
+  S.saveSettings('shop-db-1', { allowWrite: false });
+});

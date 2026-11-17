@@ -8,7 +8,7 @@ const BK = require('../pg-backup');
 
 const send = (fn) => async (req, res) => {
   try { res.json(await fn(req, res)); }
-  catch (e) { res.status(e.statusCode || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}), ...(e.danger ? { danger: e.danger } : {}), ...(e.names ? { names: e.names } : {}) }); }
+  catch (e) { res.status(e.statusCode || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}), ...(e.danger ? { danger: e.danger } : {}), ...(e.names ? { names: e.names } : {}), ...(e.at != null ? { at: e.at } : {}) }); }
 };
 const audit = (req, action, details) => logAction({ req, resourceType: 'database', resourceName: `${req.params.c}${req.params.db ? '/' + req.params.db : ''}`, action, details });
 
@@ -36,6 +36,31 @@ router.post('/:c/db/:db/sql', send(async (req) => {
 router.post('/:c/db/:db/row/update', send(async (req) => { const r = await S.updateRow(req.params.c, req.params.db, req.body || {}); audit(req, 'db_row_update', { table: `${req.body.schema}.${req.body.table}`, key: req.body.pk, columns: Object.keys(req.body.set || {}) }); return r; }));
 router.post('/:c/db/:db/row/insert', send(async (req) => { const r = await S.insertRow(req.params.c, req.params.db, req.body || {}); audit(req, 'db_row_insert', { table: `${req.body.schema}.${req.body.table}`, key: r.key }); return r; }));
 router.post('/:c/db/:db/row/delete', send(async (req) => { const r = await S.deleteRows(req.params.c, req.params.db, req.body || {}); audit(req, 'db_row_delete', { table: `${req.body.schema}.${req.body.table}`, rows: r.deleted }); return r; }));
+// body { schema, table, changes: [...], test } — many edits in one transaction (see pg-studio.applyChanges)
+router.post('/:c/db/:db/changes', send(async (req) => {
+  const b = req.body || {};
+  const r = await S.applyChanges(req.params.c, req.params.db, b);
+  if (!r.test) audit(req, 'db_changes', { table: `${b.schema}.${b.table}`, update: r.update, insert: r.insert, delete: r.delete, changes: (b.changes || []).slice(0, 50).map(c => ({ op: c.op, key: c.pk, columns: Object.keys(c.set || c.values || {}) })) });
+  return r;
+}));
+router.get('/:c/db/:db/fk-lookup', send(async (req) => S.fkLookup(req.params.c, req.params.db, { schema: req.query.schema, table: req.query.table, column: req.query.column, q: req.query.q || '', key: req.query.key })));
+router.post('/:c/db/:db/referencing', send(async (req) => S.referencing(req.params.c, req.params.db, req.body || {})));
+// ---------- who wrote it: row info, change tracking (pg-history.js) ----------
+const H = require('../pg-history');
+router.get('/:c/db/:db/history/status', send(async (req) => H.status(req.params.c, req.params.db, req.query.schema, req.query.table)));
+router.post('/:c/db/:db/history/enable', send(async (req) => { const b = req.body || {}; const r = await H.enable(req.params.c, req.params.db, b.schema, b.table, b); audit(req, 'db_tracking_on', { table: `${b.schema}.${b.table}`, keepDays: r.keepDays }); return r; }));
+router.post('/:c/db/:db/history/disable', send(async (req) => { const b = req.body || {}; const r = await H.disable(req.params.c, req.params.db, b.schema, b.table, b); audit(req, 'db_tracking_off', { table: `${b.schema}.${b.table}`, dropLog: !!b.dropLog }); return r; }));
+router.post('/:c/db/:db/history/row', send(async (req) => { const b = req.body || {}; return H.rowInfo(req.params.c, req.params.db, b.schema, b.table, b.pk, req.params.c); }));
+router.post('/:c/db/:db/history/log', send(async (req) => { const b = req.body || {}; return H.tableLog(req.params.c, req.params.db, b.schema, b.table, b); }));
+router.post('/:c/db/:db/history/restore', send(async (req) => { const b = req.body || {}; const r = await H.restore(req.params.c, req.params.db, b.schema, b.table, b.id); audit(req, 'db_restore_row', { table: `${b.schema}.${b.table}`, key: r.key, change: b.id }); return r; }));
+// ---------- many rows at once (pg-bulk.js) ----------
+const BU = require('../pg-bulk');
+// body { schema, table, columns, rows, mode: insert | upsert | skip, emptyNull, test } (up to 100 MB — see index.js)
+router.post('/:c/db/:db/import', send(async (req) => { const b = req.body || {}; const r = await BU.importRows(req.params.c, req.params.db, b); if (!r.test) audit(req, 'db_import', { table: `${b.schema}.${b.table}`, rows: r.rows, written: r.written, mode: r.mode }); return r; }));
+// body { schema, table, filters, where, set, op: update | delete, test, all }
+router.post('/:c/db/:db/bulk', send(async (req) => { const b = req.body || {}; const r = await BU.bulkUpdate(req.params.c, req.params.db, b); if (!r.test) audit(req, 'db_bulk_' + r.op, { table: `${b.schema}.${b.table}`, rows: r.rows, set: b.op === 'delete' ? undefined : Object.keys(b.set || {}), filters: b.filters, where: b.where || undefined }); return r; }));
+// body { schema, table, column, find, replace, matchCase, wholeValue, filters, where, preview, test }
+router.post('/:c/db/:db/replace', send(async (req) => { const b = req.body || {}; const r = await BU.findReplace(req.params.c, req.params.db, b); if (!r.test && !r.preview) audit(req, 'db_replace', { table: `${b.schema}.${b.table}`, column: b.column, find: String(b.find).slice(0, 100), replace: String(b.replace || '').slice(0, 100), rows: r.rows }); return r; }));
 // ?schema&table&format=csv|json — streamed download
 router.get('/:c/db/:db/export', async (req, res) => {
   const fmt = req.query.format === 'json' ? 'json' : 'csv';

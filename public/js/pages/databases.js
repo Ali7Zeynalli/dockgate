@@ -94,10 +94,10 @@ Router.register('databases', async (content, params = {}) => {
           <div data-main><div class="card"><div class="skeleton" style="width:100%;height:200px"></div></div></div>
         </div>
       </div>`;
-    root.querySelector('[data-pick-c]').onchange = (e) => { st.c = e.target.value; st.db = null; st.t = null; save(); loadInfo(); };
-    const pdb = root.querySelector('[data-pick-db]'); if (pdb) pdb.onchange = (e) => { st.db = e.target.value; st.t = null; resetGrid(); save(); loadObjects(); };
+    root.querySelector('[data-pick-c]').onchange = (e) => { const v = e.target.value; leave(() => { st.c = v; st.db = null; st.t = null; save(); loadInfo(); }); };
+    const pdb = root.querySelector('[data-pick-db]'); if (pdb) pdb.onchange = (e) => { const v = e.target.value; leave(() => { st.db = v; st.t = null; resetGrid(); save(); loadObjects(); }); };
     const f = root.querySelector('[data-find]'); if (f) f.oninput = () => { st.filterText = f.value; drawTree(); };
-    root.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { st.view = b.dataset.view; root.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('active', x === b)); save(); drawMain(); });
+    root.querySelectorAll('[data-view]').forEach(b => b.onclick = () => leave(() => { st.view = b.dataset.view; root.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('active', x === b)); save(); drawMain(); }));
     const rw = root.querySelector('[data-rw]'); if (rw) rw.onclick = toggleWrite;
     root.querySelectorAll('[data-conn]').forEach(b => b.onclick = connection);
   }
@@ -112,17 +112,18 @@ Router.register('databases', async (content, params = {}) => {
     const ic = { r: 'T', p: 'T', v: 'V', m: 'M', f: 'F', S: '#' };
     treeEl().innerHTML = schemas.length ? schemas.map(s => `<div class="dbg-sch">${esc(s)}</div>${rel.filter(r => r.schema === s).sort((a, b) => (a.kind === 'S') - (b.kind === 'S') || a.name.localeCompare(b.name)).map(r => `<button type="button" class="dbg-obj" data-obj data-s="${esc(r.schema)}" data-t="${esc(r.name)}" aria-current="${r.schema === st.s && r.name === st.t}" title="${esc(kindName[r.kind] || r.kind)}${r.rows >= 0 && r.kind !== 'S' && r.kind !== 'v' ? ' · ≈' + r.rows + ' rows' : ''} · ${formatBytes(r.size)}"><span class="dbg-k">${ic[r.kind] || '?'}</span><span class="dbg-n">${esc(r.name)}</span><span class="ui-sub">${r.kind === 'S' || r.kind === 'v' ? '' : formatBytes(r.size)}</span></button>`).join('')}${fns.filter(f => f.schema === s).map(f => `<div class="dbg-obj" style="cursor:default" title="${esc(f.name)}(${esc(f.args)}) → ${esc(f.result)}"><span class="dbg-k">ƒ</span><span class="dbg-n">${esc(f.name)}(${esc(f.args)})</span></div>`).join('')}`).join('')
       : `<div class="ui-sub" style="padding:6px">${q ? 'Nothing matches.' : 'No tables yet in this database.'}</div>`;
-    treeEl().querySelectorAll('[data-obj]').forEach(b => b.onclick = () => {
+    treeEl().querySelectorAll('[data-obj]').forEach(b => b.onclick = () => leave(() => {
       st.s = b.dataset.s; st.t = b.dataset.t; resetGrid();
       if (st.view !== 'data' && st.view !== 'structure') st.view = 'data';
       root.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('active', x.dataset.view === st.view));
       treeEl().querySelectorAll('[data-obj]').forEach(x => x.setAttribute('aria-current', String(x === b)));
       save(); drawMain();
-    });
+    }));
   }
 
   function drawMain() {
     if (wb && st.view !== 'sql') { wb.destroy(); wb = null; }
+    if (de && st.view !== 'data') { de.destroy(); de = null; }
     const wrap = root.querySelector('.dbg-wrap'); if (wrap) wrap.classList.toggle('dbg-sqlmode', st.view === 'sql'); // the workbench has its own schema panel
     if (!st.info || !mainEl()) return;
     if (st.view === 'sql') return drawSql();
@@ -132,106 +133,21 @@ Router.register('databases', async (content, params = {}) => {
     return st.view === 'structure' ? drawStructure() : drawData();
   }
 
-  // ---------- Data ----------
+  // ---------- Data (the spreadsheet editor: data-editor.js) ----------
+  let de = null;
   async function drawData() {
-    const g = st.grid;
-    mainEl().innerHTML = '<div class="card"><div class="skeleton" style="width:100%;height:240px"></div></div>';
-    let d;
-    try { d = await API.post(`${dbBase()}/rows`, { schema: st.s, table: st.t, limit: g.limit, offset: g.offset, sort: g.sort, filters: g.filters, where: g.where }); }
-    catch (e) { if (alive()) mainEl().innerHTML = `<div class="card" style="padding:16px"><div class="text-danger">${esc(e.message)}</div>${g.filters.length || g.where ? `<div style="margin-top:8px">${UI.btn('Clear the filter', 'data-clear')}</div>` : ''}</div>`; const c = mainEl().querySelector('[data-clear]'); if (c) c.onclick = () => { g.filters = []; g.where = ''; g.offset = 0; drawData(); }; return; }
-    if (!alive() || st.view !== 'data') return;
-    const canEdit = d.editable && st.info.allowWrite;
-    const sortOf = (col) => { const s = g.sort.find(x => x.col === col); return s ? (s.dir === 'desc' ? ' ▼' : ' ▲') : ''; };
-    const pkIdx = d.pk.map(p => d.columns.findIndex(c => c.name === p));
-    const keyOf = (row) => JSON.stringify(pkIdx.map(i => row[i]));
-    const cell = (v) => v === null ? NULLV : esc(v.length > 200 ? v.slice(0, 200) + '…' : v);
-    const ops = [['=', '='], ['!=', '≠'], ['contains', 'contains'], ['starts', 'starts with'], ['<', '<'], ['>', '>'], ['<=', '≤'], ['>=', '≥'], ['in', 'in (a, b)'], ['null', 'is NULL'], ['notnull', 'is not NULL']];
-    mainEl().innerHTML = `
-      <div class="dbg-bar">
-        <b style="font-size:15px">${esc(st.s)}.${esc(st.t)}</b> <span class="ui-sub">${esc(kindName[d.kind] || '')}${d.estimate >= 0 ? ` · ≈ ${d.estimate.toLocaleString()} rows` : ''}</span>
-        <span style="flex:1"></span>
-        ${UI.btn('Count rows', 'data-count')} ${UI.btn('↻', 'data-reload title="Reload"')}
-        ${UI.menu([{ label: 'Export CSV', attrs: 'data-export="csv"' }, { label: 'Export JSON lines', attrs: 'data-export="json"' }], { label: 'Export' })}
-        ${d.editable ? (canEdit ? `${UI.btn('+ Row', 'data-add')} ${UI.btn('Delete selected', 'data-delsel', 'btn-danger')}` : '<span class="ui-sub" title="Turn on Allow changes to edit">read-only</span>') : `<span class="ui-sub" title="Rows are changed by primary key">${d.kind === 'r' || d.kind === 'p' ? 'no primary key — edit with SQL' : 'not editable'}</span>`}
-      </div>
-      <div class="dbg-bar">
-        ${g.filters.map((f, i) => UI.chip(`${esc(f.col)} ${esc((ops.find(o => o[0] === f.op) || [f.op, f.op])[1])} ${f.op === 'null' || f.op === 'notnull' ? '' : esc(f.value)}`, { remove: i })).join('')}
-        <select class="input" data-fcol style="width:auto;max-width:170px;padding:3px 6px;font-size:12px"><option value="">+ Filter…</option>${d.columns.map(c => `<option>${esc(c.name)}</option>`).join('')}</select>
-        <span data-fmore style="display:none;gap:6px;align-items:center"><select class="input" data-fop style="width:auto;padding:3px 6px;font-size:12px">${ops.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><input class="input td-mono" data-fval style="width:160px;padding:3px 8px;font-size:12px" placeholder="value"> ${UI.btn('Add', 'data-fadd')}</span>
-        <input class="input td-mono" data-where style="flex:1;min-width:160px;padding:3px 8px;font-size:12px" placeholder="WHERE … (any condition, Enter)" value="${esc(g.where)}">
-      </div>
-      <div class="dbg-grid"><table><thead><tr>${canEdit ? '<th style="width:28px;cursor:default"><input type="checkbox" data-selall></th>' : ''}${d.columns.map(c => `<th data-sort="${esc(c.name)}" title="${esc(c.type)}${c.notnull ? ' · NOT NULL' : ''}${c.default ? ' · default ' + c.default : ''}">${d.pk.includes(c.name) ? '🔑 ' : ''}${esc(c.name)}${sortOf(c.name)}<small>${esc(c.type)}</small></th>`).join('')}</tr></thead>
-        <tbody>${d.rows.length ? d.rows.map((row, ri) => `<tr>${canEdit ? `<td style="font-family:inherit"><input type="checkbox" data-sel="${ri}" ${g.sel.has(keyOf(row)) ? 'checked' : ''}></td>` : ''}${row.map((v, ci) => `<td class="${canEdit ? 'dbg-ed' : ''}" data-r="${ri}" data-c="${ci}" title="${v === null ? 'NULL' : esc(v.length > 500 ? v.slice(0, 500) + '…' : v)}">${cell(v)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${d.columns.length + 1}" class="ui-sub" style="font-family:inherit;padding:14px">No rows${g.filters.length || g.where ? ' match the filter' : ''}.</td></tr>`}</tbody></table></div>
-      <div class="dbg-bar" style="margin-top:8px">
-        <span class="ui-sub">Rows ${d.rows.length ? `${g.offset + 1}–${g.offset + d.rows.length}` : '0'}${canEdit ? ' · double-click a cell to edit it' : ' · double-click a cell to see it'}</span><span style="flex:1"></span>
-        <select class="input" data-limit style="width:auto;padding:3px 6px;font-size:12px">${[50, 100, 200, 500].map(n => `<option ${n === g.limit ? 'selected' : ''}>${n}</option>`).join('')}</select>
-        ${UI.btn('‹ Prev', `data-prev ${g.offset <= 0 ? 'disabled' : ''}`)} ${UI.btn('Next ›', `data-next ${d.rows.length < g.limit ? 'disabled' : ''}`)}
-      </div>`;
-    const m = mainEl();
-    m.querySelector('[data-reload]').onclick = drawData;
-    m.querySelector('[data-count]').onclick = async (e) => { const b = e.target; b.disabled = true; try { const r = await API.post(`${dbBase()}/count`, { schema: st.s, table: st.t, filters: g.filters, where: g.where }); b.textContent = `${r.count.toLocaleString()} rows`; } catch (er) { showToast(er.message, 'error'); b.disabled = false; } };
-    m.querySelectorAll('[data-export]').forEach(b => b.onclick = () => { window.location.href = `/api${dbBase()}/export?schema=${enc(st.s)}&table=${enc(st.t)}&format=${b.dataset.export}`; });
-    m.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { const col = th.dataset.sort; const cur = g.sort.find(x => x.col === col); g.sort = !cur ? [{ col, dir: 'asc' }] : cur.dir === 'asc' ? [{ col, dir: 'desc' }] : []; g.offset = 0; drawData(); });
-    m.querySelector('[data-limit]').onchange = (e) => { g.limit = Number(e.target.value); g.offset = 0; drawData(); };
-    m.querySelector('[data-prev]').onclick = () => { g.offset = Math.max(0, g.offset - g.limit); drawData(); };
-    m.querySelector('[data-next]').onclick = () => { g.offset += g.limit; drawData(); };
-    const fcol = m.querySelector('[data-fcol]'), fmore = m.querySelector('[data-fmore]');
-    fcol.onchange = () => { fmore.style.display = fcol.value ? 'inline-flex' : 'none'; if (fcol.value) m.querySelector('[data-fval]').focus(); };
-    const addF = () => { const op = m.querySelector('[data-fop]').value; g.filters.push({ col: fcol.value, op, value: m.querySelector('[data-fval]').value }); g.offset = 0; drawData(); };
-    m.querySelector('[data-fadd]').onclick = addF;
-    m.querySelector('[data-fval]').onkeydown = (e) => { if (e.key === 'Enter') addF(); };
-    m.querySelectorAll('[data-chip-remove]').forEach(x => x.onclick = () => { g.filters.splice(Number(x.dataset.chipRemove), 1); g.offset = 0; drawData(); });
-    m.querySelector('[data-where]').onkeydown = (e) => { if (e.key === 'Enter') { g.where = e.target.value.trim(); g.offset = 0; drawData(); } };
-    m.querySelectorAll('td[data-r]').forEach(td => td.ondblclick = () => editCell(d, Number(td.dataset.r), Number(td.dataset.c), canEdit));
-    const sa = m.querySelector('[data-selall]');
-    if (sa) sa.onchange = () => { d.rows.forEach(r => sa.checked ? g.sel.add(keyOf(r)) : g.sel.delete(keyOf(r))); m.querySelectorAll('[data-sel]').forEach(x => { x.checked = sa.checked; }); };
-    m.querySelectorAll('[data-sel]').forEach(x => x.onchange = () => { const k = keyOf(d.rows[Number(x.dataset.sel)]); x.checked ? g.sel.add(k) : g.sel.delete(k); });
-    const add = m.querySelector('[data-add]'); if (add) add.onclick = () => insertRow(d);
-    const ds = m.querySelector('[data-delsel]'); if (ds) ds.onclick = () => deleteSelected(d);
+    if (de) { de.destroy(); de = null; }
+    const want = `${st.s}.${st.t}`;
+    const ed = await DataEditor.mount(mainEl(), {
+      dbBase, schema: st.s, table: st.t, info: () => st.info, grid: st.grid, kindName,
+      toggleWrite: () => toggleWrite(), alive,
+      openTable: (schema, table, filters) => { st.s = schema; st.t = table; resetGrid(); st.grid.filters = filters || []; st.view = 'data'; save(); drawShell(); drawTree(); drawMain(); },
+      onCard: (ov, row) => { if (typeof onRowCard === 'function') onRowCard(ov, row); },
+    });
+    if (alive() && st.view === 'data' && `${st.s}.${st.t}` === want) de = ed; else ed.destroy();
   }
-
-  function editCell(d, ri, ci, canEdit) {
-    const col = d.columns[ci], row = d.rows[ri], v = row[ci];
-    const pk = Object.fromEntries(d.pk.map(p => [p, row[d.columns.findIndex(c => c.name === p)]]));
-    if (!canEdit) {
-      showModal(`${esc(col.name)} <span class="ui-sub">${esc(col.type)}</span>`, v === null ? `<div>${NULLV}</div>` : `<pre class="td-mono" style="white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow:auto;margin:0">${esc(v)}</pre>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
-      return;
-    }
-    const long = v != null && (v.length > 80 || v.includes('\n')) || /json|text|xml/.test(col.type);
-    UI.dialog({ title: `Edit ${esc(col.name)} <span class="ui-sub">${esc(col.type)}</span>`, saveLabel: 'Save the value',
-      body: `<div class="ui-sub" style="margin-bottom:8px">Row ${Object.entries(pk).map(([k, x]) => `${esc(k)} = <span class="td-mono">${esc(x)}</span>`).join(', ')} in ${esc(st.s)}.${esc(st.t)}</div>
-        ${long ? `<textarea class="input td-mono" id="ce-v" rows="8" spellcheck="false">${esc(v == null ? '' : v)}</textarea>` : `<input class="input td-mono" id="ce-v" value="${esc(v == null ? '' : v)}">`}
-        <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:8px"><input type="checkbox" id="ce-null" ${v === null ? 'checked' : ''} ${col.notnull ? 'disabled' : ''}> NULL${col.notnull ? ' <span class="ui-sub">(not allowed — NOT NULL)</span>' : ''}</label>`,
-      onSave: async (ov) => {
-        const isNull = ov.querySelector('#ce-null').checked;
-        await API.post(`${dbBase()}/row/update`, { schema: st.s, table: st.t, pk, set: { [col.name]: isNull ? null : ov.querySelector('#ce-v').value } });
-        showToast('Saved'); drawData();
-      } });
-  }
-
-  function insertRow(d) {
-    const fields = d.columns.map(c => {
-      const auto = c.identity || c.generated || (c.default && /nextval\(|now\(\)|gen_random_uuid|uuid_generate|current_timestamp/i.test(c.default));
-      return `<label class="ui-field"><span class="ui-label">${d.pk.includes(c.name) ? '🔑 ' : ''}${esc(c.name)} <span class="ui-sub">${esc(c.type)}${c.notnull ? ' · required' : ''}${c.default ? ' · default ' + esc(c.default) : ''}</span></span>
-        <span style="display:flex;gap:8px;align-items:center"><input class="input td-mono" data-ins="${esc(c.name)}" ${c.generated ? 'disabled' : ''} placeholder="${auto ? '(default)' : ''}"><label style="display:flex;gap:4px;align-items:center;font-weight:400;white-space:nowrap"><input type="checkbox" data-insdef="${esc(c.name)}" ${auto || c.generated ? 'checked' : ''}> default</label></span></label>`;
-    }).join('');
-    UI.dialog({ title: `New row in ${esc(st.s)}.${esc(st.t)}`, saveLabel: 'Insert', wide: true, body: `<div class="ui-sub" style="margin-bottom:8px">"default" leaves the column to the database (its default, serial or NULL). An empty box is an empty text.</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:4px 14px">${fields}</div>`,
-      onOpen: (ov) => ov.querySelectorAll('[data-ins]').forEach(i => i.addEventListener('input', () => { const cb = ov.querySelector(`[data-insdef="${CSS.escape(i.dataset.ins)}"]`); if (cb && i.value !== '') cb.checked = false; })),
-      onSave: async (ov) => {
-        const values = {};
-        ov.querySelectorAll('[data-ins]').forEach(i => { const cb = ov.querySelector(`[data-insdef="${CSS.escape(i.dataset.ins)}"]`); if (!cb.checked) values[i.dataset.ins] = i.value; });
-        await API.post(`${dbBase()}/row/insert`, { schema: st.s, table: st.t, values });
-        showToast('Row added'); drawData();
-      } });
-  }
-
-  function deleteSelected(d) {
-    const keys = [...st.grid.sel].map(k => JSON.parse(k)).map(vals => Object.fromEntries(d.pk.map((p, i) => [p, vals[i]])));
-    if (!keys.length) return showToast('Tick the rows to delete first', 'warning');
-    showConfirm('Delete rows', `Delete <b>${keys.length}</b> row${keys.length > 1 ? 's' : ''} from <b>${esc(st.s)}.${esc(st.t)}</b>? This can not be undone (rows that other tables point to may refuse).`, async () => {
-      try { const r = await API.post(`${dbBase()}/row/delete`, { schema: st.s, table: st.t, pks: keys }); showToast(`${r.deleted} deleted`); st.grid.sel.clear(); drawData(); } catch (e) { showToast(e.message, 'error', 9000); }
-    }, true);
-  }
+  // Leaving the table (another table, tab, database or container) with edits not saved asks first.
+  const leave = (fn) => (de && de.dirty() ? de.guardLeave(() => { de.destroy(); de = null; fn(); }) : fn());
 
   // ---------- Structure ----------
   async function drawStructure() {
@@ -422,7 +338,15 @@ Router.register('databases', async (content, params = {}) => {
   }
 
   // ---------- connection ----------
-  async function setWrite(on) { const r = await API.put(`${base()}/settings`, { allowWrite: on }); st.info.allowWrite = r.allowWrite; drawShell(); drawTree(); drawMain(); }
+  async function setWrite(on) {
+    const r = await API.put(`${base()}/settings`, { allowWrite: on }); st.info.allowWrite = r.allowWrite;
+    if (de && de.dirty() && st.view === 'data') { // keep the edits not saved: refresh only the header button and the grid's own bar
+      const rw = root.querySelector('[data-rw]'); if (rw) { rw.className = `btn btn-sm ${r.allowWrite ? 'btn-danger' : 'btn-secondary'}`; rw.textContent = r.allowWrite ? '✎ Changes allowed' : '🔒 Read-only'; }
+      de.redraw();
+      return;
+    }
+    drawShell(); drawTree(); drawMain();
+  }
   function toggleWrite() {
     if (!st.info) return;
     if (st.info.allowWrite) return setWrite(false).then(() => showToast('Read-only again'));

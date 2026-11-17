@@ -2,6 +2,70 @@
 
 ---
 
+## [2.70.1] - 2026-11-17
+
+### Added
+- **Deploy recipes: a push during a deploy waits instead of being lost.** It starts when the running deploy ends; one waiting place per recipe, the newest push takes it (the replaced commit is marked *skipped* on GitHub / GitLab / Bitbucket), so the last commit is always deployed once. The recipe card shows **▶ running** and **⏳ waiting**.
+- **▶ Deploy while one runs** asks: open its log, **deploy after it**, or **stop it and deploy now**.
+- **Kamal rollback** asks for the version and lists the versions still on the servers (from `kamal app containers`).
+
+### Changed
+- **Webhook URL guards:** 30 requests a minute per address; 20 wrong signatures in 10 minutes block the address for 15 minutes (one audit entry per window, not one per request); bodies over 1 MB refused.
+- **No double deploys:** a delivery already taken (GitHub, GitLab, Bitbucket delivery id, kept 24 h) or the same commit within 2 minutes does not deploy again; CI can send `"force": true`.
+
+### Fixed
+- **Recipes on several servers** did not give the folder's Env & secrets to the other servers: the values set on the recipe's server now reach every server (a server's own values for the folder win).
+
+---
+
+## [2.70.0] - 2026-11-17
+
+### Added
+- **Deploy → Tasks** (SSH servers) — the tasks a project folder already has, found by reading its files (nothing runs to find them): `Makefile` targets with their `##` descriptions and variables, `justfile` recipes and parameters, `Taskfile.yml`, `package.json` scripts (npm / pnpm / yarn / bun from the lock file), `*.sh`, Ansible playbooks and Kamal.
+  - **▶ Run** with a live log, **Dry run** (`make -n`, `just --dry-run`, `task --dry`, `bash -n`, `ansible --check --diff`), variables and arguments, run as root (`sudo -n`), a time limit, **■ Cancel** (the whole process group), one run at a time per folder, names like *deploy / migrate / drop* ask first, **Runs** history with logs.
+  - **Env & secrets** per folder — encrypted in DockGate, given to every run through a file deleted before the command starts, secrets shown as `••••` in logs.
+  - **Templates** — a Makefile, deploy.sh (pull, build, up, check, back on failure) and justfile to start from.
+  - Compose projects: **⋯ → Tasks and deploy recipes**.
+- **Deploy recipes** — Git pull → tasks / commands → docker compose up → check a URL / wait for a healthy container; **recovery steps** when a step fails (back to the commit before the pull, your rollback task); on several servers one after another; on a schedule; alerts when a deploy fails or works; Uptime alerts quiet while it runs.
+- **Webhooks for recipes** — a URL and secret per recipe for **GitHub** (and Gitea / Forgejo), **GitLab**, **Bitbucket Cloud** and **Bitbucket Server / Data Center** push webhooks (signatures checked, pings answered, tags and deleted branches skipped, branch filter like `main, release/*`), or a **CI** call with `Authorization: Bearer`; steps and GitHub Actions / GitLab CI / Bitbucket Pipelines snippets in the dialog; with a token the commit is marked **pending → success / failed**.
+
+### Fixed
+- The **Compose Git auto-deploy webhook** answered 401: it was behind DockGate's login. It is checked by its own key again.
+
+---
+
+## [2.69.0] - 2026-11-17
+
+### Added
+- **Databases → Data → Export / import:**
+  - **Import CSV…** — separator found by itself, columns matched by name (change or skip any), the first rows shown; add every row, skip rows whose key exists, or update them; an empty cell as NULL; all in one transaction with **🧪 Test** — if one row fails, nothing is imported.
+  - **Change many rows…** — set columns (or delete) on every row matching the filter, with a Test that says how many rows.
+  - **Find and replace…** — in one column, part of the value or the whole value, with a preview of the first ten before → after.
+
+---
+
+## [2.68.0] - 2026-11-17
+
+### Added
+- **Databases: who wrote a row, when, and how.**
+  - Without setup, a row card shows the row's last transaction and its commit time (when the server records commit times) and the edits made from DockGate.
+  - **🕘 Changes → Track changes…** (per table, opt-in) records every INSERT, UPDATE and DELETE from then on — from the app, psql or DockGate: the database user, the application (`application_name`), the client address, the time, old and new values and which columns changed; kept 90 days by default.
+  - The row card's **Who wrote it** lists the row's changes (old → new per column) with **Put the row back as before this**; **🕘 Changes** lists the table's changes (filter by kind, user, value) with **Bring the row back** for deleted rows. Restores are recorded too.
+  - DockGate adds the schema `dockgate_audit` (a `SECURITY DEFINER` trigger function, so the app's users need no rights on it) and one trigger per tracked table; **Turn off…** removes it.
+
+---
+
+## [2.67.0] - 2026-11-17
+
+### Added
+- **Databases → Data is a spreadsheet.** Click a cell and type: it is edited in place (Enter, Tab, arrows, Esc, Ctrl+0 for NULL). Lists for enums and booleans, a date box, a JSON editor that checks the JSON, a bigger editor for long text and arrays, suggestions from the referenced table for foreign keys.
+- **Changes wait until Save** (yellow cells, green new rows, struck-through deletions): **Review**, **🧪 Test** (rolled back), **Discard** or **Save** — all in one transaction; if one fails, none is saved and its row is marked.
+- **Nobody else's change is overwritten:** an edit is saved only if the row still holds what was loaded; otherwise nothing is saved and you choose to keep your edits or reload.
+- **Paste cells from Excel**, **Copy row**, add rows, mark rows for deletion.
+- **The row as a card** with every column, ‹ › to the next row, foreign keys showing what they point to (**Open ↗**), and **Rows pointing here** (`orders via customer_id: 12`) — each opens the other table filtered.
+
+---
+
 ## [2.66.0] - 2026-11-17
 
 ### Added
