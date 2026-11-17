@@ -103,7 +103,13 @@ async function get(key, t, db, opts) {
 }
 
 /** Run statements in the tab's session. mode 'test': inside BEGIN … ROLLBACK (or a savepoint in an open transaction). */
-async function run(key, t, db, { sql, mode = 'run', confirm = false, timeoutMs = 30000 }) {
+async function run(key, t, db, { sql: text, mode = 'run', confirm = false, timeoutMs = 30000, params = null }) {
+  // :name placeholders: ask for their values first, then put them in as quoted literals (numbers as they are)
+  const ph = P.params(text, params || {});
+  const missing = ph.names.filter(n => !params || !Object.prototype.hasOwnProperty.call(params, n));
+  if (missing.length) throw err('Values for the parameters are needed', 409, { code: 'NEEDS_PARAMS', names: missing });
+  const sql = ph.names.length ? ph.sql : text;
+  const shift = ph.names.length && ph.sql !== text; // offsets of errors then refer to the filled-in text
   const stmts = P.split(sql);
   if (!stmts.length) throw err('Nothing to run');
   if (stmts.length > 200) throw err('At most 200 statements at once');
@@ -157,7 +163,7 @@ async function run(key, t, db, { sql, mode = 'run', confirm = false, timeoutMs =
   s.results = results; // kept for more()
   return {
     results: results.map((r, i) => r.kind === 'rows' ? { ...r, index: i, rows: r.rows.slice(0, SHOW_ROWS), more: r.rows.length > SHOW_ROWS } : { ...r, index: i }),
-    error, notices, ms: Date.now() - t0, mode, tx: s.txState, pid: s.pid, writes, rolledBack: test,
+    error: error && shift ? { ...error, offset: undefined, line: undefined, col: undefined } : error, notices, ms: Date.now() - t0, mode, tx: s.txState, pid: s.pid, writes, rolledBack: test,
   };
 }
 

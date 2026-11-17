@@ -196,6 +196,8 @@ test('pg-sql: psql commands, unfinished text, error position', () => {
   assert.equal(P.incomplete("select '(' , $x$ ( $x$"), null);
   assert.deepEqual(P.errorAt('ERROR:  column "x" does not exist\nLINE 2: where x = 1\n              ^', 'select *\nwhere x = 1'), { line: 2, col: 6, offset: 15 });
   assert.deepEqual(P.split('  select 1;\n\n  select 2 ;').map(s => [s.start, s.end]), [[2, 10], [15, 24]]);
+  const ph = P.params("select :a, ':b', x::int, arr[1:2], $$ :c $$ -- :d\n, :a", { a: "x'y" });
+  assert.deepEqual(ph.names, ['a']); assert.equal(ph.sql, "select 'x''y', ':b', x::int, arr[1:2], $$ :c $$ -- :d\n, 'x''y'");
 });
 
 const t0Cleanup = [];
@@ -266,6 +268,15 @@ test('Workbench sessions against PostgreSQL: a transaction lives across runs, te
   await assert.rejects(WS.run(K, t2, 'dgtest', { sql: 'delete from shop.wb' }), (e) => e.code === 'NEEDS_CONFIRM');
   r = await WS.run(K, t2, 'dgtest', { sql: 'delete from shop.wb', mode: 'test' });
   assert.equal(r.results[0].tag, 'DELETE 2'); assert.equal(pq('-c', 'select count(*) from shop.wb'), '2');
+  // :name parameters are asked for, then filled in as quoted values
+  await assert.rejects(WS.run(K, t2, 'dgtest', { sql: 'select v from shop.wb where id = :id and v <> :skip' }), (e) => e.code === 'NEEDS_PARAMS' && e.names.join() === 'id,skip');
+  r = await WS.run(K, t2, 'dgtest', { sql: 'select v, :label as l from shop.wb where id = :id', params: { id: 2, label: "it's" } });
+  assert.deepEqual(r.results[0].rows, [['tx', "it's"]]);
+  // EXPLAIN ANALYZE of a write inside a test run: real timings, nothing stays
+  r = await WS.run(K, t2, 'dgtest', { sql: "EXPLAIN (ANALYZE, FORMAT JSON) update shop.wb set v = 'zz'", mode: 'test' });
+  const plan = JSON.parse(r.results[0].rows[0][0]);
+  assert.equal(plan[0].Plan['Node Type'], 'ModifyTable'); assert.ok(plan[0]['Execution Time'] >= 0);
+  assert.equal(pq('-c', "select count(*) from shop.wb where v = 'zz'"), '0');
   WS.close(K); assert.equal(WS.state(K).none, true);
   S.saveSettings('shop-db-1', { allowWrite: false });
 });

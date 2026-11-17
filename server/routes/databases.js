@@ -8,7 +8,7 @@ const BK = require('../pg-backup');
 
 const send = (fn) => async (req, res) => {
   try { res.json(await fn(req, res)); }
-  catch (e) { res.status(e.statusCode || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}), ...(e.danger ? { danger: e.danger } : {}) }); }
+  catch (e) { res.status(e.statusCode || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}), ...(e.danger ? { danger: e.danger } : {}), ...(e.names ? { names: e.names } : {}) }); }
 };
 const audit = (req, action, details) => logAction({ req, resourceType: 'database', resourceName: `${req.params.c}${req.params.db ? '/' + req.params.db : ''}`, action, details });
 
@@ -67,8 +67,8 @@ router.post('/:c/db/:db/session/:sid/run', send(async (req) => {
   const t = await S.resolve(req.params.c);
   const ms = Math.max(5000, Math.min(600000, parseInt(b.timeoutMs, 10) || 30000));
   let r;
-  try { r = await WS.run(sessKey(req), t, req.params.db, { sql: b.sql, mode: b.mode === 'test' ? 'test' : 'run', confirm: !!b.confirm, timeoutMs: ms }); }
-  catch (e) { if (!['NEEDS_CONFIRM', 'READ_ONLY', 'BUSY'].includes(e.code)) WB.addHistory(req.params.c, { dbname: req.params.db, sql: b.sql, mode: b.mode, ok: false, ms: 0 }); throw e; }
+  try { r = await WS.run(sessKey(req), t, req.params.db, { sql: b.sql, mode: b.mode === 'test' ? 'test' : 'run', confirm: !!b.confirm, timeoutMs: ms, params: b.params && typeof b.params === 'object' ? b.params : null }); }
+  catch (e) { if (!['NEEDS_CONFIRM', 'READ_ONLY', 'BUSY', 'NEEDS_PARAMS'].includes(e.code)) WB.addHistory(req.params.c, { dbname: req.params.db, sql: b.sql, mode: b.mode, ok: false, ms: 0 }); throw e; }
   WB.addHistory(req.params.c, { dbname: req.params.db, sql: b.sql, mode: r.mode, ok: !r.error, ms: r.ms, rows: r.results.reduce((a, x) => a + (x.total || 0), 0) });
   if (r.writes && r.mode === 'run') audit(req, 'db_sql', { sql: String(b.sql).slice(0, 1000), error: r.error ? r.error.message.slice(0, 300) : undefined, tx: r.tx });
   return r;

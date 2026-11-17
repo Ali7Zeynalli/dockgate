@@ -79,6 +79,9 @@ const SqlWorkbench = (() => {
       .wb-rtabs{display:flex;gap:4px;flex-wrap:wrap;margin:10px 0 6px} .wb-rtab{padding:3px 10px;border:1px solid var(--border);border-radius:999px;background:none;color:var(--text-secondary);cursor:pointer;font-size:12px}
       .wb-rtab[aria-selected=true]{color:var(--text-primary);border-color:var(--accent,#3b82f6)} .wb-rtab.err{border-color:var(--danger);color:var(--danger)}
       .wb-banner{padding:6px 10px;border-radius:8px;font-size:12.5px;margin-bottom:6px}
+      .wb-plan{font-size:12.5px} .wb-node{border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin:4px 0;background:var(--bg-secondary)}
+      .wb-node .wb-bar{height:4px;border-radius:2px;background:var(--accent,#3b82f6);margin-top:4px;min-width:2px} .wb-node.hot .wb-bar{background:var(--danger)}
+      .wb-node small{color:var(--text-muted)} .wb-kids{margin-left:18px;border-left:1px dashed var(--border);padding-left:8px}
     </style>
     <div class="wb"><div class="wb-side" data-side></div><div style="min-width:0">
       <div class="wb-tabs" data-tabs></div>
@@ -157,12 +160,14 @@ const SqlWorkbench = (() => {
         ${UI.primary(st.running ? 'Running…' : '▶ Run', `data-run="current" ${st.running ? 'disabled' : ''} title="The statement at the cursor, or the selection (Ctrl+Enter)"`)}
         ${UI.btn('▶▶ Run all', `data-run="all" ${st.running ? 'disabled' : ''} title="Every statement (Ctrl+Shift+Enter)"`)}
         ${UI.btn('🧪 Test run', `data-run="test" ${st.running ? 'disabled' : ''} title="Run it inside a transaction and roll it back — see what it would do, nothing stays"`)}
+        ${UI.menu([{ label: '📊 Explain — the plan, without running it', attrs: 'data-explain="plan"' }, { label: '📊 Explain analyze — runs it (rolled back) and times every step', attrs: 'data-explain="analyze"' }], { label: 'Explain' }).replace('>⋯<', '>📊 Explain<')}
         ${st.running ? UI.btn('⏹ Cancel', 'data-cancel', 'btn-danger') : ''}
         ${UI.btn('Format', 'data-format title="Shift+Alt+F"')} ${UI.btn('Save…', 'data-save title="Save as a saved query (Ctrl+S)"')}
         <select class="input" data-timeout title="Time limit per statement" style="width:auto;padding:3px 6px;font-size:12px">${[[30000, '30 s'], [60000, '1 min'], [300000, '5 min'], [600000, '10 min']].map(([v, l]) => `<option value="${v}" ${v === st.timeoutMs ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <span style="flex:1"></span>
         ${st.tx === 'open' ? `${UI.pill('warn', '● Transaction open')} ${UI.btn('Commit', 'data-commit', 'btn-primary')} ${UI.btn('Roll back', 'data-rollback')}` : st.tx === 'aborted' ? `${UI.pill('bad', 'Transaction failed')} ${UI.btn('Roll back', 'data-rollback', 'btn-danger')}` : `<span class="ui-sub">${w ? 'changes allowed' : 'read-only — Test run still works'} · session on ${esc(ctx.db())}</span>`}`;
       el.querySelectorAll('[data-run]').forEach(b => b.onclick = () => run(b.dataset.run));
+      el.querySelectorAll('[data-explain]').forEach(b => b.onclick = () => run(b.dataset.explain === 'analyze' ? 'explain-analyze' : 'explain'));
       const c = $('[data-cancel]'); if (c) c.onclick = async () => { try { await API.post(`${base}/session/${st.cur}/cancel`, {}); } catch (e) { showToast(e.message, 'error'); } };
       $('[data-format]').onclick = doFormat; $('[data-save]').onclick = saveQuery;
       $('[data-timeout]').onchange = (e) => { st.timeoutMs = Number(e.target.value); try { localStorage.setItem('dg-wb-timeout', st.timeoutMs); } catch (er) {} };
@@ -185,21 +190,28 @@ const SqlWorkbench = (() => {
       const st1 = sts.find(s => at >= s.start && at <= s.end + 1) || [...sts].reverse().find(s => s.start <= at) || sts[0];
       return st1 ? { sql: text.slice(st1.start, st1.end), base: st1.start } : { sql: '', base: 0 };
     }
-    async function run(kind, confirmed = false) {
+    const paramValues = {}; // remembered per editor while the page is open
+    async function run(kind, confirmed = false, params = null) {
       if (st.running) return;
-      const test = kind === 'test';
-      const p = pick(test ? (cm.somethingSelected() ? 'current' : 'all') : kind);
+      const explain = kind === 'explain' || kind === 'explain-analyze';
+      const test = kind === 'test' || kind === 'explain-analyze';
+      const p = pick(kind === 'test' ? (cm.somethingSelected() ? 'current' : 'all') : explain ? 'current' : kind);
       if (!p.sql.trim()) return;
+      if (explain) {
+        if (split(p.sql).length !== 1) return showToast('Explain works on one statement — put the cursor in it', 'warning');
+        p.sql = `EXPLAIN (${kind === 'explain-analyze' ? 'ANALYZE, BUFFERS, ' : ''}FORMAT JSON) ${split(p.sql)[0].sql}`; p.base = -1;
+      }
       st.running = true; drawTool(); clearErr();
       $('[data-res]').innerHTML = '<div class="ui-sub" style="margin-top:8px">Running…</div>';
       let r;
-      try { r = await API.post(`${dbBase()}/session/${st.cur}/run`, { sql: p.sql, mode: test ? 'test' : 'run', confirm: confirmed, timeoutMs: st.timeoutMs }); }
+      try { r = await API.post(`${dbBase()}/session/${st.cur}/run`, { sql: p.sql, mode: test ? 'test' : 'run', confirm: confirmed, timeoutMs: st.timeoutMs, ...(params ? { params } : {}) }); }
       catch (e) {
         st.running = false; drawTool();
+        if (e.code === 'NEEDS_PARAMS') { $('[data-res]').innerHTML = ''; return askParams(e.data.names, (vals) => run(kind, confirmed, vals)); }
         if (e.code === 'NEEDS_CONFIRM') {
           $('[data-res]').innerHTML = '';
           const list = (e.data.danger || []).map(x => `<li>${x.statement ? `Statement ${x.statement}: ` : ''}<b>${esc(x.why)}</b>${x.sql ? `<div class="td-mono ui-sub" style="font-size:12px">${esc(x.sql)}</div>` : ''}</li>`).join('');
-          return showConfirm('Run it?', `<ul style="margin:0 0 8px;padding-left:18px">${list}</ul>Tip: <b>🧪 Test run</b> shows what it would do and rolls it back.`, () => run(kind, true), true);
+          return showConfirm('Run it?', `<ul style="margin:0 0 8px;padding-left:18px">${list}</ul>Tip: <b>🧪 Test run</b> shows what it would do and rolls it back.`, () => run(kind, true, params), true);
         }
         $('[data-res]').innerHTML = `<div class="card" style="margin-top:8px;border-color:var(--danger);padding:10px 12px"><div class="text-danger" style="white-space:pre-wrap">${esc(e.message)}</div>${e.code === 'READ_ONLY' ? `<div style="margin-top:8px">${UI.btn('Allow changes…', 'data-allow')} ${UI.btn('🧪 Test run instead', 'data-testinstead')}</div>` : ''}</div>`;
         const a = $('[data-allow]'); if (a) a.onclick = () => ctx.toggleWrite();
@@ -207,8 +219,9 @@ const SqlWorkbench = (() => {
         return;
       }
       st.running = false; st.tx = r.tx; st.last = { ...r, base: p.base }; st.resTab = r.results.findIndex(x => x.kind === 'rows'); if (st.resTab < 0) st.resTab = -1; st.sort = null; st.filter = '';
+      if (explain && !r.error && r.results[0] && r.results[0].rows[0]) { try { st.last.plan = JSON.parse(r.results[0].rows[0][0]); st.last.analyze = kind === 'explain-analyze'; st.resTab = -2; } catch (e) {} }
       drawTool(); drawResults();
-      if (r.error && r.error.offset != null) {
+      if (r.error && r.error.offset != null && p.base >= 0) {
         const from = cm.posFromIndex(p.base + r.error.offset); const wordEnd = cm.findWordAt(from).head;
         errMark = cm.markText(from, wordEnd.ch > from.ch && wordEnd.line === from.line ? wordEnd : { line: from.line, ch: from.ch + 1 }, { className: 'wb-errmark' });
         cm.setCursor(from); cm.scrollIntoView(from, 60);
@@ -221,11 +234,12 @@ const SqlWorkbench = (() => {
       const r = st.last; if (!r) return;
       const rowsRes = r.results.filter(x => x.kind === 'rows');
       const tags = r.results.filter(x => x.kind === 'tag' || x.tag);
-      const banner = r.rolledBack ? `<div class="wb-banner" style="background:rgba(16,185,129,.1);border:1px solid var(--success)">🧪 <b>Test run</b> — everything above was <b>rolled back</b>; nothing changed in the database.</div>` : '';
-      const tabsH = rowsRes.map(x => `<button type="button" class="wb-rtab" data-rt="${x.index}" aria-selected="${st.resTab === x.index}">${x.statement}. ${(x.total || 0).toLocaleString()} row${x.total === 1 ? '' : 's'}</button>`).join('')
+      const banner = r.plan && r.analyze ? `<div class="wb-banner" style="background:rgba(16,185,129,.1);border:1px solid var(--success)">📊 <b>Explain analyze</b> ran the statement inside a transaction and <b>rolled it back</b>.</div>` : r.rolledBack ? `<div class="wb-banner" style="background:rgba(16,185,129,.1);border:1px solid var(--success)">🧪 <b>Test run</b> — everything above was <b>rolled back</b>; nothing changed in the database.</div>` : '';
+      const tabsH = (r.plan ? `<button type="button" class="wb-rtab" data-rt="-2" aria-selected="${st.resTab === -2}">📊 Plan</button>` : '') + rowsRes.filter(() => !r.plan).map(x => `<button type="button" class="wb-rtab" data-rt="${x.index}" aria-selected="${st.resTab === x.index}">${x.statement}. ${(x.total || 0).toLocaleString()} row${x.total === 1 ? '' : 's'}</button>`).join('')
         + `<button type="button" class="wb-rtab ${r.error ? 'err' : ''}" data-rt="-1" aria-selected="${st.resTab === -1}">Messages${r.error ? ' ⚠' : ''}</button>`;
       let body = '';
-      if (st.resTab === -1) {
+      if (st.resTab === -2 && r.plan) body = planHtml(r.plan, r.analyze);
+      else if (st.resTab === -1) {
         body = `<div class="card" style="padding:10px 12px;font-size:12.5px">
           ${tags.map(x => `<div><span class="ui-sub">${x.statement}.</span> <span class="td-mono">${esc(x.tag || 'OK')}</span></div>`).join('')}
           ${r.error ? `<div style="margin-top:6px"><b class="text-danger">Statement ${r.error.statement} failed</b> <span class="ui-sub">— the statements after it did not run${r.tx === 'aborted' ? '; the transaction failed — Roll back' : ''}</span><pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:4px 0 0">${esc(r.error.message)}</pre></div>` : ''}
@@ -254,7 +268,7 @@ const SqlWorkbench = (() => {
           ${UI.menu([{ label: 'Copy as CSV', attrs: 'data-copy="csv"' }, { label: 'Copy as TSV (for Excel)', attrs: 'data-copy="tsv"' }, { label: 'Copy as JSON', attrs: 'data-copy="json"' }, { label: 'Copy as INSERT statements', attrs: 'data-copy="insert"' }, '-', { label: 'Download CSV', attrs: 'data-dl="csv"' }, { label: 'Download JSON', attrs: 'data-dl="json"' }], { label: 'Copy / export' })}</div>
         <div class="dbg-grid" style="max-height:440px"><table><thead><tr><th style="cursor:default;width:1%;color:var(--text-muted)">#</th>${x.columns.map((c, i) => `<th data-gsort="${i}">${esc(c)}${st.sort && st.sort.col === i ? (st.sort.dir === 'desc' ? ' ▼' : ' ▲') : ''}</th>`).join('')}</tr></thead>
         <tbody>${rows.slice(0, 5000).map(o => `<tr><td style="color:var(--text-muted)">${o.i + 1}</td>${o.row.map((v, ci) => `<td data-gr="${o.i}" data-gc="${ci}" title="${v === null ? 'NULL' : esc(String(v).slice(0, 400))}">${v === null ? NULLV : esc(String(v).length > 200 ? String(v).slice(0, 200) + '…' : v)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${x.columns.length + 1}" class="ui-sub" style="font-family:inherit">No rows</td></tr>`}</tbody></table></div>
-        <div class="ui-sub" style="margin-top:4px">Click a column to sort these rows · double-click a cell to see all of it.</div>`;
+        <div class="ui-sub" style="margin-top:4px">Click a column to sort these rows · double-click a cell to see all of it — or to edit it, when the query reads one table with its primary key.</div>`;
     }
     function bindGrid() {
       const r = st.last; const x = r && r.results.find(y => y.index === st.resTab); if (!x) return;
@@ -265,8 +279,20 @@ const SqlWorkbench = (() => {
         try { const m = await API.get(`${base}/session/${st.cur}/more?result=${x.index}&offset=${x.rows.length}&limit=1000`); x.rows = x.rows.concat(m.rows); x.more = m.more; drawResults(); }
         catch (e) { showToast(e.message, 'error'); gm.disabled = false; }
       };
-      el.querySelectorAll('td[data-gr]').forEach(td => td.ondblclick = () => {
-        const v = x.rows[Number(td.dataset.gr)][Number(td.dataset.gc)];
+      el.querySelectorAll('td[data-gr]').forEach(td => td.ondblclick = async () => {
+        const ri = Number(td.dataset.gr), ci = Number(td.dataset.gc);
+        const v = x.rows[ri][ci];
+        const ed = await editableOf(x);
+        if (ed && ed.cols.has(x.columns[ci]) && !ed.pk.includes(x.columns[ci])) {
+          if (!ctx.info().allowWrite) showToast('This result can be edited — turn on "Allow changes" first', 'info', 5000);
+          else return UI.dialog({ title: `Edit ${esc(x.columns[ci])} <span class="ui-sub">${esc(ed.schema)}.${esc(ed.table)}</span>`, saveLabel: 'Save the value',
+            body: `<div class="ui-sub" style="margin-bottom:8px">Row ${ed.pk.map(k => `${esc(k)} = <span class="td-mono">${esc(x.rows[ri][x.columns.indexOf(k)])}</span>`).join(', ')}</div><textarea class="input td-mono" id="re-v" rows="${v != null && (v.length > 80 || v.includes('\n')) ? 6 : 2}">${esc(v == null ? '' : v)}</textarea><label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:8px"><input type="checkbox" id="re-null" ${v === null ? 'checked' : ''}> NULL</label>`,
+            onSave: async (ov) => {
+              const nv = ov.querySelector('#re-null').checked ? null : ov.querySelector('#re-v').value;
+              await API.post(`${dbBase()}/row/update`, { schema: ed.schema, table: ed.table, pk: Object.fromEntries(ed.pk.map(k => [k, x.rows[ri][x.columns.indexOf(k)]])), set: { [x.columns[ci]]: nv } });
+              x.rows[ri][ci] = nv; showToast('Saved'); drawResults();
+            } });
+        }
         let pretty = v; try { if (v && /^[[{]/.test(v.trim())) pretty = JSON.stringify(JSON.parse(v), null, 2); } catch (e) {}
         showModal(esc(x.columns[Number(td.dataset.gc)]), v === null ? `<div>${NULLV}</div>` : `<pre class="td-mono" style="white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow:auto;margin:0">${esc(pretty)}</pre>`,
           [{ label: 'Copy', className: 'btn btn-secondary', onClick: () => navigator.clipboard.writeText(v == null ? '' : v) }, { label: 'Close', className: 'btn btn-secondary' }]);
@@ -286,10 +312,72 @@ const SqlWorkbench = (() => {
       el.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => { const blob = new Blob([asText(b.dataset.dl)], { type: b.dataset.dl === 'csv' ? 'text/csv' : 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `result.${b.dataset.dl}`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); });
     }
 
+    // ---- the plan of EXPLAIN (FORMAT JSON) as a tree: time of each step, rows expected vs found ----
+    function planHtml(planJson, analyze) {
+      const top = (planJson && planJson[0]) || {}; const root = top.Plan; if (!root) return '<div class="ui-sub">No plan.</div>';
+      const total = (n) => (n['Actual Total Time'] || 0) * (n['Actual Loops'] || 1);
+      const own = (n) => Math.max(0, total(n) - (n.Plans || []).reduce((a, k) => a + total(k), 0));
+      let max = 0; const walk = (n) => { max = Math.max(max, analyze ? own(n) : (n['Total Cost'] || 0)); (n.Plans || []).forEach(walk); }; walk(root);
+      const fmt = (x) => x == null ? '' : Number(x).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      const node = (n) => {
+        const est = n['Plan Rows'], act = n['Actual Rows'] != null ? n['Actual Rows'] * (n['Actual Loops'] || 1) : null;
+        const off = act != null && est > 0 && (act / est > 10 || est / Math.max(act, 1) > 10);
+        const seqBig = n['Node Type'] === 'Seq Scan' && (act != null ? act : est) > 10000;
+        const spill = /external/i.test(n['Sort Method'] || '') || (n['Temp Written Blocks'] || 0) > 0;
+        const weight = analyze ? own(n) : (n['Total Cost'] || 0); const hot = max > 0 && weight / max > 0.5;
+        const what = [n['Join Type'] && `${n['Join Type']} join`, n['Relation Name'] && `on <b>${esc(n.Schema ? n.Schema + '.' : '')}${esc(n['Relation Name'])}</b>${n.Alias && n.Alias !== n['Relation Name'] ? ' ' + esc(n.Alias) : ''}`, n['Index Name'] && `using <b>${esc(n['Index Name'])}</b>`].filter(Boolean).join(' ');
+        const cond = ['Index Cond', 'Hash Cond', 'Merge Cond', 'Recheck Cond', 'Join Filter', 'Filter', 'Sort Key', 'Group Key'].filter(k => n[k]).map(k => `<div><small>${k}:</small> <span class="td-mono">${esc(Array.isArray(n[k]) ? n[k].join(', ') : n[k])}</span></div>`).join('');
+        return `<div class="wb-node ${hot ? 'hot' : ''}"><div><b>${esc(n['Node Type'])}</b> ${what}
+            ${seqBig ? UI.pill('bad', 'whole table read') : ''} ${off ? UI.pill('warn', 'row estimate off') : ''} ${spill ? UI.pill('warn', 'used disk') : ''}</div>
+          <div><small>${analyze ? `${fmt(own(n))} ms here · ${fmt(total(n))} ms with what is under it · ` : ''}rows ${analyze ? `${fmt(act)} found / ` : ''}${fmt(est)} expected${n['Actual Loops'] > 1 ? ` · ${fmt(n['Actual Loops'])} loops` : ''} · cost ${fmt(n['Startup Cost'])}…${fmt(n['Total Cost'])}${n['Rows Removed by Filter'] ? ` · ${fmt(n['Rows Removed by Filter'])} rows removed by the filter` : ''}${n['Shared Hit Blocks'] != null ? ` · buffers hit ${fmt(n['Shared Hit Blocks'])} read ${fmt(n['Shared Read Blocks'])}` : ''}</small></div>
+          ${cond}<div class="wb-bar" style="width:${max > 0 ? Math.max(1, Math.round(weight / max * 100)) : 1}%"></div></div>${(n.Plans || []).length ? `<div class="wb-kids">${n.Plans.map(node).join('')}</div>` : ''}`;
+      };
+      return `<div class="wb-plan">${analyze ? `<div class="ui-sub" style="margin-bottom:4px">Planning ${fmt(top['Planning Time'])} ms · execution ${fmt(top['Execution Time'])} ms — red bars take the most time</div>` : '<div class="ui-sub" style="margin-bottom:4px">The plan PostgreSQL would use (costs are its own units) — Explain analyze runs it and shows real times</div>'}${node(root)}
+        <details style="margin-top:8px"><summary class="ui-sub" style="cursor:pointer">The plan as JSON</summary><pre class="td-mono" style="white-space:pre-wrap;font-size:11.5px;max-height:300px;overflow:auto">${esc(JSON.stringify(planJson, null, 2))}</pre></details></div>`;
+    }
+
+    function askParams(names, done) {
+      UI.dialog({ title: 'Values for the parameters', saveLabel: 'Run', body: `<div class="ui-sub" style="margin-bottom:8px">Each <span class="td-mono">:name</span> is put in as a quoted value (numbers as they are).</div>${names.map(n => `<label class="ui-field"><span class="ui-label td-mono">:${esc(n)}</span><span style="display:flex;gap:8px;align-items:center"><input class="input td-mono" data-pv="${esc(n)}" value="${esc(paramValues[n] == null ? '' : paramValues[n])}"><label style="display:flex;gap:4px;align-items:center;font-weight:400"><input type="checkbox" data-pnull="${esc(n)}" ${paramValues[n] === null ? 'checked' : ''}> NULL</label></span></label>`).join('')}`,
+        onSave: async (ov) => { const vals = {}; names.forEach(n => { vals[n] = ov.querySelector(`[data-pnull="${CSS.escape(n)}"]`).checked ? null : ov.querySelector(`[data-pv="${CSS.escape(n)}"]`).value; paramValues[n] = vals[n]; }); setTimeout(() => done(vals), 0); } });
+    }
+
+    // A result of "SELECT … FROM one_table …" that holds its primary key can be edited in place.
+    const editInfo = new Map();
+    async function editableOf(x) {
+      if (editInfo.has(x)) return editInfo.get(x);
+      let info = null;
+      const m = /^\s*select\b[\s\S]*?\bfrom\s+((?:"[^"]+"|[a-z_][\w$]*)(?:\.(?:"[^"]+"|[a-z_][\w$]*))?)(?:\s+(?:as\s+)?[a-z_]\w*)?\s*(?:where\b|order\b|limit\b|offset\b|for\b|$)/i.exec(x.sql || '');
+      if (m && !/\b(join|group\s+by|union|intersect|except|distinct|having)\b/i.test(x.sql) && !/,/.test(m[0].split(/\bfrom\b/i)[1].split(/\bwhere\b|\border\b|\blimit\b/i)[0])) {
+        const parts = m[1].match(/"[^"]+"|[^.]+/g).map(p2 => p2.startsWith('"') ? p2.slice(1, -1).replace(/""/g, '"') : p2.toLowerCase());
+        const schema = parts.length > 1 ? parts[0] : 'public', table = parts[parts.length - 1];
+        try {
+          const stc = await API.get(`${dbBase()}/structure?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}`);
+          if ((stc.kind === 'r' || stc.kind === 'p') && stc.pk.length && stc.pk.every(k => x.columns.includes(k))) info = { schema, table, pk: stc.pk, cols: new Set(stc.columns.map(c => c.name)) };
+        } catch (e) {}
+      }
+      editInfo.set(x, info); return info;
+    }
+
+    const SNIPPETS = [
+      ['Largest tables', `SELECT schemaname, relname AS table, pg_size_pretty(pg_total_relation_size(relid)) AS size, n_live_tup AS rows\nFROM pg_stat_user_tables\nORDER BY pg_total_relation_size(relid) DESC\nLIMIT 20;`],
+      ['Running queries', `SELECT pid, usename, datname, state, now() - query_start AS running_for, wait_event_type, left(query, 200) AS query\nFROM pg_stat_activity\nWHERE state <> 'idle' AND pid <> pg_backend_pid()\nORDER BY query_start;`],
+      ['Who blocks whom', `SELECT blocked.pid AS blocked_pid, left(blocked.query, 120) AS blocked_query,\n       blocking.pid AS blocking_pid, left(blocking.query, 120) AS blocking_query\nFROM pg_stat_activity blocked\nJOIN pg_stat_activity blocking ON blocking.pid = ANY(pg_blocking_pids(blocked.pid));`],
+      ['Unused indexes', `SELECT schemaname, relname AS table, indexrelname AS index, pg_size_pretty(pg_relation_size(indexrelid)) AS size, idx_scan\nFROM pg_stat_user_indexes\nWHERE idx_scan = 0\nORDER BY pg_relation_size(indexrelid) DESC;`],
+      ['Tables read without an index', `SELECT relname AS table, seq_scan, seq_tup_read, idx_scan, n_live_tup AS rows\nFROM pg_stat_user_tables\nWHERE seq_scan > 0\nORDER BY seq_tup_read DESC\nLIMIT 20;`],
+      ['Cache hit ratio', `SELECT round(100.0 * sum(blks_hit) / nullif(sum(blks_hit) + sum(blks_read), 0), 2) AS cache_hit_percent\nFROM pg_stat_database;`],
+      ['Dead rows (needs VACUUM)', `SELECT relname AS table, n_live_tup, n_dead_tup, round(100.0 * n_dead_tup / nullif(n_live_tup + n_dead_tup, 0), 1) AS dead_percent, last_autovacuum\nFROM pg_stat_user_tables\nORDER BY n_dead_tup DESC\nLIMIT 20;`],
+      ['Connections by state', `SELECT datname, state, count(*)\nFROM pg_stat_activity\nGROUP BY 1, 2\nORDER BY 3 DESC;`],
+      ['Table columns', `SELECT column_name, data_type, is_nullable, column_default\nFROM information_schema.columns\nWHERE table_schema = 'public' AND table_name = :table\nORDER BY ordinal_position;`],
+      ['Find a value in a column', `SELECT *\nFROM :"table"\nWHERE :"column"::text ILIKE '%' || :value || '%'\nLIMIT 100;`.replace(/:"table"/g, 'my_table').replace(/:"column"/g, 'my_column')],
+      ['Create an index (without blocking writes)', `CREATE INDEX CONCURRENTLY IF NOT EXISTS my_table_my_column_idx\n  ON my_table (my_column);`],
+      ['A read-only user', `CREATE ROLE report_user LOGIN PASSWORD 'change-me';\nGRANT CONNECT ON DATABASE current_database_name TO report_user;\nGRANT USAGE ON SCHEMA public TO report_user;\nGRANT SELECT ON ALL TABLES IN SCHEMA public TO report_user;\nALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO report_user;`],
+      ['Rows per day', `SELECT date_trunc('day', created_at) AS day, count(*)\nFROM my_table\nWHERE created_at > now() - interval '30 days'\nGROUP BY 1\nORDER BY 1;`],
+    ];
+
     // ---- side: schema · saved · history ----
     async function drawSide() {
       const side = $('[data-side]');
-      side.innerHTML = `${UI.seg([['schema', 'Schema'], ['saved', 'Saved'], ['history', 'History']], st.side, 'data-sideseg')}<div data-sidebody style="margin-top:8px"><div class="skeleton" style="height:80px"></div></div>`;
+      side.innerHTML = `${UI.seg([['schema', 'Schema'], ['saved', 'Saved'], ['snippets', 'Snippets'], ['history', 'History']], st.side, 'data-sideseg')}<div data-sidebody style="margin-top:8px"><div class="skeleton" style="height:80px"></div></div>`;
       side.querySelectorAll('[data-sideseg]').forEach(b => b.onclick = () => { st.side = b.dataset.sideseg; try { localStorage.setItem('dg-wb-side', st.side); } catch (e) {} drawSide(); });
       const body = side.querySelector('[data-sidebody]');
       const ins = (text) => { cm.replaceSelection(text); cm.focus(); };
@@ -307,6 +395,9 @@ const SqlWorkbench = (() => {
         });
         body.querySelectorAll('[data-colname]').forEach(b => b.onclick = () => ins(/^[a-z_][a-z0-9_]*$/.test(b.dataset.colname) ? b.dataset.colname : `"${b.dataset.colname.replace(/"/g, '""')}"`));
         body.querySelector('[data-sfind]').oninput = (e) => { const q2 = e.target.value.toLowerCase(); body.querySelectorAll('[data-sfrow]').forEach(r2 => { r2.style.display = !q2 || r2.dataset.sfrow.includes(q2) ? '' : 'none'; }); };
+      } else if (st.side === 'snippets') {
+        body.innerHTML = `<div class="ui-sub" style="margin-bottom:6px">Ready queries — a click opens one in a new tab. <span class="td-mono">:name</span> asks for a value when it runs.</div>` + SNIPPETS.map(([n], i) => `<button type="button" class="wb-it" data-snip="${i}">${esc(n)}</button>`).join('');
+        body.querySelectorAll('[data-snip]').forEach(b => b.onclick = () => { const [n, q2] = SNIPPETS[Number(b.dataset.snip)]; newTab(q2, n); });
       } else if (st.side === 'saved') {
         let list; try { list = (await API.get(`${base}/saved`)).saved; } catch (e) { body.innerHTML = `<div class="text-danger">${esc(e.message)}</div>`; return; }
         if (!alive) return;

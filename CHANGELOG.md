@@ -2,6 +2,17 @@
 
 ---
 
+## [2.66.0] - 2026-11-17
+
+### Added
+- **SQL workbench, part 2:**
+  - **📊 Explain / Explain analyze** — the plan as a tree with the time of each step (analyze runs the statement inside a transaction that is rolled back); the slowest steps in red, and warnings for a whole table read, a row estimate far off, a sort that used the disk.
+  - **Parameters** — `:name` in a query asks for its value when it runs, put in as a quoted value (numbers as they are, or NULL).
+  - **Edit in the result** — a query of one table that holds its primary key can be edited cell by cell.
+  - **Snippets** — ready queries (largest tables, running queries, who blocks whom, unused indexes, cache hit ratio, dead rows, …).
+
+---
+
 ## [2.65.0] - 2026-11-17
 
 ### Added

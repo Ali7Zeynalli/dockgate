@@ -103,6 +103,33 @@ function incomplete(text) {
   return depth > 0 ? 'a ( is not closed' : null;
 }
 
+/** :name placeholders outside strings, quoted names, $…$ bodies and comments (not ::casts, not [1:2]). */
+function params(text, values) {
+  const s = String(text || ''); const n = s.length; let i = 0; const names = []; let out = '';
+  const copyTo = (j) => { out += s.slice(i, j); i = j; };
+  while (i < n) {
+    const c = s[i], d = s[i + 1];
+    let j = i;
+    if (c === '-' && d === '-') { const e = s.indexOf('\n', i); j = e < 0 ? n : e + 1; copyTo(j); continue; }
+    if (c === '/' && d === '*') { let dp = 1; j = i + 2; while (j < n && dp) { if (s[j] === '/' && s[j + 1] === '*') { dp++; j += 2; } else if (s[j] === '*' && s[j + 1] === '/') { dp--; j += 2; } else j++; } copyTo(j); continue; }
+    if (c === "'") { const esc = i > 0 && /[eE]/.test(s[i - 1]) && !/[\w$]/.test(s[i - 2] || ''); j = i + 1; while (j < n) { if (esc && s[j] === '\\') { j += 2; continue; } if (s[j] === "'") { if (s[j + 1] === "'") { j += 2; continue; } j++; break; } j++; } copyTo(j); continue; }
+    if (c === '"') { j = i + 1; while (j < n) { if (s[j] === '"') { if (s[j + 1] === '"') { j += 2; continue; } j++; break; } j++; } copyTo(j); continue; }
+    if (c === '$') { const m = /^\$([A-Za-z_][A-Za-z_0-9]*)?\$/.exec(s.slice(i)); if (m && !/[\w]/.test(s[i - 1] || '')) { const e = s.indexOf(m[0], i + m[0].length); copyTo(e < 0 ? n : e + m[0].length); continue; } }
+    if (c === ':' && d !== ':' && s[i - 1] !== ':' && /[A-Za-z_]/.test(d || '') && !/[\w\]]/.test(s[i - 1] || '') ) {
+      const m = /^:([A-Za-z_][A-Za-z_0-9]*)/.exec(s.slice(i));
+      if (!names.includes(m[1])) names.push(m[1]);
+      if (values && Object.prototype.hasOwnProperty.call(values, m[1])) {
+        const v = values[m[1]];
+        out += v === null ? 'NULL' : /^-?\d+(\.\d+)?$/.test(String(v)) ? String(v) : lit(v);
+        i += m[0].length; continue;
+      }
+      out += m[0]; i += m[0].length; continue;
+    }
+    out += c; i++;
+  }
+  return { names, sql: out };
+}
+
 // Anything but blanks and comments?
 function meaningful(sql) { return strip(sql).trim().length > 0; }
 function strip(sql) { return String(sql).replace(/--[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' '); }
@@ -189,4 +216,4 @@ function readResult(out, sql) {
   return { kind: 'rows', columns, rows, ...(tag ? { tag } : {}) };
 }
 
-module.exports = { split, kind, ident, qname, lit, parseCsv, readResult, hasMeta, errorAt, incomplete, NULL_MARK };
+module.exports = { split, kind, ident, qname, lit, parseCsv, readResult, hasMeta, errorAt, incomplete, params, NULL_MARK };
