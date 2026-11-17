@@ -2,6 +2,20 @@
 
 ---
 
+## [2.65.0] - 2026-11-17
+
+### Added
+- **Databases → SQL is a workbench.**
+  - **Editor** (CodeMirror, shipped with DockGate, loaded only for this tab): colours, line numbers, matching brackets, completion of tables and columns from the open database, Format, comment toggle.
+  - **Run** the statement at the cursor, the selection, or all; an error is **marked in the editor** where PostgreSQL points.
+  - **🧪 Test run:** inside a transaction that is always rolled back — see what a statement returns and how many rows it would change, nothing stays (also on a read-only connection).
+  - **A session per tab:** a transaction lives across runs (**● Transaction open** → **Commit** / **Roll back**), as do `SET`, temp tables and cursors; idle tabs close after 10 minutes and roll back.
+  - **Cancel** a running query; a time limit of 30 s to 10 minutes.
+  - **Results:** a tab per result plus Messages, 1000 rows at once with **Load more** (up to 50 000), sort, filter, cell viewer, copy as CSV / TSV / JSON / INSERT, download.
+  - **Tabs, saved queries (with folders) and history** are kept on DockGate's side; a schema panel beside the editor.
+
+---
+
 ## [2.64.2] - 2026-11-17
 
 ### Changed

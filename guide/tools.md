@@ -118,7 +118,23 @@ PostgreSQL running in containers on the server picked in the top bar — browse 
 
 - **Data** — the table, 50–500 rows a page; click a column to sort; filters (`=`, `≠`, contains, starts with, `<`, `>`, in, is NULL…) and any `WHERE` condition; **Count rows** for the exact number; **Export** CSV or JSON lines (the whole table, streamed). With **Allow changes**: double-click a cell to edit it (or set it NULL), **+ Row**, tick rows and **Delete selected**. NULL and an empty text are told apart; big numbers stay exact.
 - **Structure** — columns (type, NULL, default, identity), primary key, indexes with their size, constraints, foreign keys pointing here, triggers, a view's definition, a sequence's settings; VACUUM / ANALYZE of the table.
-- **SQL** — write one or more statements, **Ctrl+Enter** runs them (the selection only, if any). Each statement shows its rows (up to 1000 — add `LIMIT` for more) or its result (`UPDATE 3`); an error names the statement and stops there, and an open transaction is rolled back. History of your last 30 queries; **Copy CSV** of a result.
+- **SQL** — the workbench (see below).
+
+### SQL workbench
+
+| | |
+|---|---|
+| **Editor** | Colours, line numbers, brackets that match and close, **completion** of keywords, tables and columns of the open database (`alias.` offers that table's columns; Ctrl+Space anytime), **Format** (Shift+Alt+F), Ctrl+/ comments a line. The editor loads only when the SQL tab opens |
+| **Run** | **▶ Run** / Ctrl+Enter runs the statement at the cursor (or the selection); **▶▶ Run all** / Ctrl+Shift+Enter runs every statement. An error stops there and is **marked in the editor** where PostgreSQL points |
+| **🧪 Test run** | Runs it inside a transaction and **always rolls back**: you see the rows it returns and how many rows it would change (`UPDATE 433`), and nothing stays. Works on a read-only connection too. It refuses statements that end a transaction or can not run in one (COMMIT, VACUUM, CREATE DATABASE, … CONCURRENTLY). Sequences that moved and effects outside the database (e.g. dblink) are not undone |
+| **A session per tab** | Each tab keeps its own psql connection: `BEGIN` in one Run and the next Run is in the same transaction — the header shows **● Transaction open** with **Commit** / **Roll back** (a failed one: **Roll back**). `SET`, temp tables and cursors stay too. A tab idle for 10 minutes is closed (an open transaction rolls back); closing the tab asks first when a transaction is open |
+| **Cancel** | Stops the running query (from another connection) |
+| **Time limit** | 30 s, 1, 5 or 10 minutes per statement |
+| **Results** | A tab per result plus **Messages** (command tags, notices, the error, timing). The first 1000 rows come back; **Load 1000 more** (up to 50 000 kept). Click a column to sort, filter the rows, double-click a cell to see all of it (JSON shown formatted); **copy** as CSV, TSV (for Excel), JSON or INSERT statements, or download |
+| **Tabs** | Kept on DockGate's side — open, rename (double-click), close; they come back on another browser too |
+| **Beside the editor** | **Schema** (tables and their columns; a click puts the name in), **Saved** queries (Ctrl+S / Save…, with folders and a description) and **History** (the last 500 runs with their time and result, searchable) |
+
+Statements that change data still need **Allow changes** (or Test run), and DROP, TRUNCATE, ALTER … DROP and DELETE / UPDATE without WHERE still ask first. psql commands (a backslash outside quotes) are not run, and an unfinished text (an open quote or parenthesis) is not sent.
 - **Admin** — connections used of `max_connections`, uptime and key settings; **sessions** (user, database, state, how long, the query) with **Cancel** (stop the query) and **Terminate** (close the connection); **users and roles** — **+ New user** (password, read-write or read-only access to a database, also for tables made later), **Set password…**, **Grant on a database…**, **Drop…**; **databases** — open, **+ New database** (with an owner), **Drop…** (type the name; its sessions are closed first); **tables** largest first with dead rows, last VACUUM / ANALYZE, and VACUUM ANALYZE / ANALYZE / REINDEX / VACUUM FULL; the slowest queries when the `pg_stat_statements` extension is installed.
 - **Backups** — next to the database:
 
@@ -174,3 +190,6 @@ The list shows each task's server, schedule, last run (with its result) and next
 | Databases: *This table has no primary key* | Rows can not be told apart for an edit | Change it with SQL, or add a primary key |
 | Databases: *The query took too long and was stopped* | Over 30 s | Add `LIMIT` / an index; long maintenance runs from the Admin tab |
 | Databases: restore fails with `role … does not exist` | The backup's owners are not on this server | Restore again with **Keep owners and grants** off |
+| SQL: *A test run can not hold "…"* | The statement ends a transaction or can not run in one | Use **Run** (with Allow changes) |
+| SQL: *A transaction is open in this tab* | You changed the database or the time limit while a transaction is open | **Commit** or **Roll back** first |
+| SQL: *The text is not complete* | An open quote, `$$` body, comment or parenthesis | Close it — psql would wait for the rest |

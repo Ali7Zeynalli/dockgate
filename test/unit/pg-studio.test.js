@@ -187,3 +187,85 @@ test('Admin and backups against PostgreSQL: roles, sessions, vacuum, backup → 
   assert.match(text, /\/var\/backups\/dockgate\/postgres\/shop-db-1-dgtest-/); assert.match(text, /-mtime \+14/);
   S.saveSettings('shop-db-1', { allowWrite: false });
 });
+
+test('pg-sql: psql commands, unfinished text, error position', () => {
+  assert.equal(P.hasMeta('select 1 \\! id'), true);
+  assert.equal(P.hasMeta("select E'a\\nb', '\\x', $$ \\q $$ -- \\! c"), false);
+  assert.equal(P.incomplete("select 'a"), "a ' string is not closed");
+  assert.equal(P.incomplete('select (1'), 'a ( is not closed');
+  assert.equal(P.incomplete("select '(' , $x$ ( $x$"), null);
+  assert.deepEqual(P.errorAt('ERROR:  column "x" does not exist\nLINE 2: where x = 1\n              ^', 'select *\nwhere x = 1'), { line: 2, col: 6, offset: 15 });
+  assert.deepEqual(P.split('  select 1;\n\n  select 2 ;').map(s => [s.start, s.end]), [[2, 10], [15, 24]]);
+});
+
+const t0Cleanup = [];
+test.after(() => t0Cleanup.forEach(f => f()));
+test('Workbench sessions against PostgreSQL: a transaction lives across runs, test runs roll back, cancel, errors point at the text', { skip }, async () => {
+  const S = setup();
+  const WS = require('../../server/pg-session');
+  S._setOpen(async (id, cmd, env) => {
+    const args = cmd.slice(1); args.splice(0, 0, '-h', PGHOST, '-p', PGPORT);
+    const e = { ...process.env }; for (const kv of env) { const i = kv.indexOf('='); e[kv.slice(0, i)] = kv.slice(i + 1); }
+    const p = spawn(cmd[0], args, { env: e });
+    const outs = [], errs = [], exits = [];
+    p.stdout.on('data', d => outs.forEach(f => f(d))); p.stderr.on('data', d => errs.forEach(f => f(d))); p.on('close', () => exits.forEach(f => f()));
+    return { write: (s) => p.stdin.write(s), close: () => { try { p.stdin.end(); } catch (er) {} setTimeout(() => p.kill(), 500); }, onOut: f => outs.push(f), onErr: f => errs.push(f), onExit: f => exits.push(f) };
+  });
+  const pq = (...a) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest', '-At', ...a]).toString().trim();
+  pq('-c', 'drop table if exists shop.wb', '-c', 'create table shop.wb (id int primary key, v text)', '-c', "insert into shop.wb values (1, 'a'), (2, 'b')");
+  S.saveSettings('shop-db-1', { allowWrite: false });
+  const t = await S.resolve('shop-db-1');
+  const K = 'local|shop-db-1|tab1test';
+  t0Cleanup.push(() => WS._closeAll());
+  // read-only: a write is refused, but a test run may try it and nothing stays
+  await assert.rejects(WS.run(K, t, 'dgtest', { sql: "update shop.wb set v = 'x'" }), (e) => e.code === 'READ_ONLY');
+  let r = await WS.run(K, t, 'dgtest', { sql: "update shop.wb set v = 'x' where id = 1 returning id, v; select count(*) from shop.wb where v = 'x'", mode: 'test' });
+  assert.equal(r.error, null); assert.equal(r.rolledBack, true); assert.equal(r.tx, 'idle');
+  assert.deepEqual(r.results[0].rows, [['1', 'x']]); assert.equal(r.results[0].tag, 'UPDATE 1'); assert.deepEqual(r.results[1].rows, [['1']]);
+  assert.equal(pq('-c', 'select v from shop.wb where id = 1'), 'a', 'rolled back');
+  await assert.rejects(WS.run(K, t, 'dgtest', { sql: 'commit', mode: 'test' }), (e) => e.code === 'NO_TEST');
+  // session state lives on: SET in one run is there in the next (and a temp table once changes are allowed)
+  r = await WS.run(K, t, 'dgtest', { sql: "set application_name = 'mine'" });
+  assert.equal(r.error, null, JSON.stringify(r.error));
+  S.saveSettings('shop-db-1', { allowWrite: true });
+  const t2 = await S.resolve('shop-db-1');
+  r = await WS.run(K, t2, 'dgtest', { sql: 'create temp table tt (x int); insert into tt values (7)' });
+  assert.equal(r.error, null, JSON.stringify(r.error)); assert.equal(r.results[1].tag, 'INSERT 0 1');
+  r = await WS.run(K, t2, 'dgtest', { sql: "select x, current_setting('application_name') from tt" });
+  assert.deepEqual(r.results[0].rows, [['7', 'mine']]);
+  // a transaction across runs, then commit / roll back
+  r = await WS.run(K, t2, 'dgtest', { sql: "begin; update shop.wb set v = 'tx' where id = 2" });
+  assert.equal(r.tx, 'open');
+  assert.equal(pq('-c', 'select v from shop.wb where id = 2'), 'b', 'not visible outside before commit');
+  r = await WS.run(K, t2, 'dgtest', { sql: "select v from shop.wb where id = 2" });
+  assert.deepEqual(r.results[0].rows, [['tx']]); assert.equal(r.tx, 'open');
+  assert.equal((await WS.tx(K, 'commit')).tx, 'idle');
+  assert.equal(pq('-c', 'select v from shop.wb where id = 2'), 'tx');
+  await WS.run(K, t2, 'dgtest', { sql: "begin; delete from shop.wb where id = 1" });
+  assert.equal((await WS.tx(K, 'rollback')).tx, 'idle');
+  assert.equal(pq('-c', 'select count(*) from shop.wb'), '2');
+  // an error points at the text and leaves a failed transaction to roll back
+  const text = "begin;\nselect 1;\nselect *\nfrom shop.wb\nwhere nope = 1;\nselect 2";
+  r = await WS.run(K, t2, 'dgtest', { sql: text });
+  assert.equal(r.error.statement, 3); assert.match(r.error.message, /nope/); assert.equal(text.slice(r.error.offset, r.error.offset + 4), 'nope');
+  assert.equal(r.tx, 'aborted'); assert.equal(r.results.length, 2);
+  await WS.tx(K, 'rollback');
+  // unfinished text and psql commands never reach psql
+  await assert.rejects(WS.run(K, t2, 'dgtest', { sql: "select 'oops" }), (e) => e.code === 'INCOMPLETE');
+  await assert.rejects(WS.run(K, t2, 'dgtest', { sql: 'select 1 \\! id' }), /psql commands/);
+  // many rows: the first 1000 come back, the rest with more()
+  r = await WS.run(K, t2, 'dgtest', { sql: 'select g from generate_series(1, 2500) g' });
+  assert.equal(r.results[0].rows.length, 1000); assert.equal(r.results[0].total, 2500); assert.equal(r.results[0].more, true);
+  const m = WS.more(K, 0, 2000, 1000); assert.equal(m.rows.length, 500); assert.equal(m.rows[0][0], '2001'); assert.equal(m.more, false);
+  // cancel a long query
+  const long = WS.run(K, t2, 'dgtest', { sql: 'select pg_sleep(20)' });
+  await new Promise(res => setTimeout(res, 700));
+  assert.equal((await WS.cancel(K)).cancelled, true);
+  r = await long; assert.match(r.error.message, /cancel/i);
+  // dangerous statements still ask first in Run (not in Test run)
+  await assert.rejects(WS.run(K, t2, 'dgtest', { sql: 'delete from shop.wb' }), (e) => e.code === 'NEEDS_CONFIRM');
+  r = await WS.run(K, t2, 'dgtest', { sql: 'delete from shop.wb', mode: 'test' });
+  assert.equal(r.results[0].tag, 'DELETE 2'); assert.equal(pq('-c', 'select count(*) from shop.wb'), '2');
+  WS.close(K); assert.equal(WS.state(K).none, true);
+  S.saveSettings('shop-db-1', { allowWrite: false });
+});
