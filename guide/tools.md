@@ -130,7 +130,20 @@ PostgreSQL running in containers on the server picked in the top bar — browse 
 | **Paste from Excel** | Select a cell and paste: the cells go from there to the right and down, new rows are added when needed |
 | **Leaving** | Another table, tab, database or a reload asks first when changes are not saved |
 
-**The row as a card** (⤢ at the start of a row): every column one under the other, long text and JSON in full, ‹ › for the next row. A foreign key shows what it points to (`customer_id 17 → Ann`) with **Open ↗**; **Rows pointing here** lists the tables whose rows point at this one (`orders via customer_id: 12 rows`) with **Open**. Edits in the card go to the grid as not saved. In the grid, **↗** beside a foreign key value opens the row it points to.
+### Who wrote it — change tracking
+
+PostgreSQL does not keep who changed a row. DockGate shows what is known and, if you turn it on for a table, records every change from then on.
+
+| | |
+|---|---|
+| **Always (no setup)** | The row's last transaction, and its commit time when the server records commit times (`track_commit_timestamp = on`); and the edits made from DockGate (from its own audit log: when, what, from which address) |
+| **🕘 Changes → Track changes…** (per table, needs Allow changes) | Every INSERT, UPDATE and DELETE of the table — from your app, from psql, from DockGate — is written to `dockgate_audit.changes`: **the database user**, **the application** (`application_name`), **the client address**, **the time**, the **old and new values** and which columns changed. An UPDATE that changes nothing is not written. Kept 90 days by default (you choose) |
+| **In the row card** | *Who wrote it*: last changed when, by whom, through which app; every change of the row with old → new per column, and **Put the row back as before this** |
+| **🕘 Changes** (the table) | All changes newest first, filtered by kind (added / changed / deleted), by user, or by a value in the row; **Bring the row back** for a deleted row |
+| **Restores** | Write the old values back (a deleted row is inserted again); a restore is recorded like any other change |
+| **How** | DockGate adds the schema `dockgate_audit` (the table of changes, a small settings table, one trigger function — `SECURITY DEFINER`, so the app's users need no rights on it) and one trigger `dockgate_audit_trg` per tracked table. Each change costs one extra insert. **Turn off…** removes the trigger, and optionally the changes kept |
+
+**The row as a card** (⤢ at the start of a row): every column one under the other, long text and JSON in full, ‹ › for the next row. A foreign key shows what it points to (`customer_id 17 → Ann`) with **Open ↗**; **Rows pointing here** lists the tables whose rows point at this one (`orders via customer_id: 12 rows`) with **Open**. Edits in the card go to the grid as not saved. The card ends with **Who wrote it** (below). In the grid, **↗** beside a foreign key value opens the row it points to.
 - **Structure** — columns (type, NULL, default, identity), primary key, indexes with their size, constraints, foreign keys pointing here, triggers, a view's definition, a sequence's settings; VACUUM / ANALYZE of the table.
 - **SQL** — the workbench (see below).
 
@@ -213,3 +226,5 @@ The list shows each task's server, schedule, last run (with its result) and next
 | SQL: *The text is not complete* | An open quote, `$$` body, comment or parenthesis | Close it — psql would wait for the rest |
 | Data: *was changed or deleted by someone else since you loaded it* | The row changed after the page loaded it | **Reload** to see the new values, then edit again (or keep your edits and fix them first) |
 | Data: *Change 3: … — nothing was saved* | That change broke a rule (NOT NULL, unique, a foreign key) | Fix the marked row; none of the changes was written |
+| Changes: *Tracking needs a primary key* | Rows are told apart by their key | Add a primary key to the table |
+| Changes: no time for *Last written* | The server does not record commit times | Turn on change tracking for the table (or `track_commit_timestamp = on` in postgresql.conf and a restart) |

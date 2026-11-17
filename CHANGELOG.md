@@ -2,6 +2,17 @@
 
 ---
 
+## [2.68.0] - 2026-11-17
+
+### Added
+- **Databases: who wrote a row, when, and how.**
+  - Without setup, a row card shows the row's last transaction and its commit time (when the server records commit times) and the edits made from DockGate.
+  - **🕘 Changes → Track changes…** (per table, opt-in) records every INSERT, UPDATE and DELETE from then on — from the app, psql or DockGate: the database user, the application (`application_name`), the client address, the time, old and new values and which columns changed; kept 90 days by default.
+  - The row card's **Who wrote it** lists the row's changes (old → new per column) with **Put the row back as before this**; **🕘 Changes** lists the table's changes (filter by kind, user, value) with **Bring the row back** for deleted rows. Restores are recorded too.
+  - DockGate adds the schema `dockgate_audit` (a `SECURITY DEFINER` trigger function, so the app's users need no rights on it) and one trigger per tracked table; **Turn off…** removes it.
+
+---
+
 ## [2.67.0] - 2026-11-17
 
 ### Added

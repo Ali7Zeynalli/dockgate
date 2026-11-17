@@ -81,7 +81,7 @@ const DataEditor = (() => {
         <div class="dbg-bar">
           <b style="font-size:15px">${esc(ctx.schema)}.${esc(ctx.table)}</b> <span class="ui-sub">${esc((ctx.kindName || {})[d.kind] || '')}${d.estimate >= 0 ? ` · ≈ ${d.estimate.toLocaleString()} rows` : ''}</span>
           <span style="flex:1"></span>
-          ${UI.btn('Count rows', 'data-count')} ${UI.btn('↻', 'data-reload title="Reload (drops changes not saved)"')}
+          ${UI.btn('🕘 Changes', 'data-history title="Who changed this table, when, and how"')} ${UI.btn('Count rows', 'data-count')} ${UI.btn('↻', 'data-reload title="Reload (drops changes not saved)"')}
           ${UI.menu([{ label: 'Export CSV', attrs: 'data-export="csv"' }, { label: 'Export JSON lines', attrs: 'data-export="json"' }], { label: 'Export' })}
           ${editable() ? `${UI.btn('+ Row', 'data-add')} ${UI.btn('Copy row', 'data-dup title="Copy the ticked row (or the selected one) as a new row"')} ${UI.btn('Delete', 'data-delsel title="Mark the ticked rows for deletion"', 'btn-danger')}` : `<span class="ui-sub" title="Rows are changed by primary key">${d.kind === 'r' || d.kind === 'p' ? 'no primary key — edit with SQL' : 'not editable'}</span>`}
         </div>
@@ -126,6 +126,7 @@ const DataEditor = (() => {
       const ca = m.querySelector('[data-chkall]'); if (ca) ca.onchange = () => { m.querySelectorAll('[data-chk]').forEach(x => { x.checked = ca.checked; ca.checked ? st.checked.add(x.dataset.chk) : st.checked.delete(x.dataset.chk); }); };
       const on = (sel, fn) => { const x = m.querySelector(sel); if (x) x.onclick = fn; };
       on('[data-add]', () => addRow());
+      on('[data-history]', () => historyPanel());
       on('[data-dup]', () => dupRow());
       on('[data-delsel]', () => markDelete());
       on('[data-discard]', () => showConfirm('Discard changes', `Drop the ${dirty()} change(s) not saved?`, () => { st.edits.clear(); st.news = []; st.dels.clear(); st.failed = null; draw(); }));
@@ -363,10 +364,80 @@ const DataEditor = (() => {
             refsBox.querySelectorAll('[data-ref]').forEach(b => b.onclick = () => { const f = x.refs[Number(b.dataset.ref)]; close(); guardLeave(() => ctx.openTable(f.schema, f.table, [{ col: f.column, op: '=', value: f.value }])); });
           } catch (e) { refsBox.innerHTML = ''; }
         }
+        if (!isNew && d.pk.length) whoWrote(ov.querySelector('[data-refs]'), pkOf(d.rows[Number(r.slice(1))]), () => rows[pos] === r, close);
         if (ctx.onCard) ctx.onCard(ov, { rid: r, row: r[0] === 'e' ? d.rows[Number(r.slice(1))] : null, pk: r[0] === 'e' ? pkOf(d.rows[Number(r.slice(1))]) : null, columns: d.columns });
       };
       ov.querySelector('[data-cprev]').onclick = () => { if (pos > 0) { pos--; render(); } };
       ov.querySelector('[data-cnext]').onclick = () => { if (pos < rows.length - 1) { pos++; render(); } };
+      render();
+    }
+
+
+    // ---- who wrote it ----
+    const H = () => `${ctx.dbBase()}/history`;
+    const when = (t) => t ? new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' }) : '';
+    const OPN = { I: ['ok', 'added'], U: ['warn', 'changed'], D: ['bad', 'deleted'] };
+    const fmtV = (v) => v === null || v === undefined ? NULLV : `<span class="td-mono">${esc(typeof v === 'object' ? JSON.stringify(v) : String(v)).slice(0, 300)}</span>`;
+    function diffHtml(ch) {
+      const cols = ch.op === 'U' ? (ch.changed || []) : Object.keys(ch.op === 'D' ? ch.old || {} : ch.new || {});
+      return `<table style="width:100%;font-size:12.5px;border-collapse:collapse">${cols.map(c => `<tr style="border-top:1px solid var(--border)"><td class="td-mono" style="padding:4px 8px 4px 0;vertical-align:top;white-space:nowrap">${esc(c)}</td>${ch.op === 'U' ? `<td style="padding:4px 8px;vertical-align:top;color:var(--danger)">${fmtV((ch.old || {})[c])}</td><td style="padding:4px 0">→</td><td style="padding:4px 8px;vertical-align:top;color:var(--success)">${fmtV((ch.new || {})[c])}</td>` : `<td style="padding:4px 8px" colspan="3">${fmtV((ch.op === 'D' ? ch.old : ch.new)[c])}</td>`}</tr>`).join('')}</table>`;
+    }
+    const whoLine = (ch) => `<b>${esc(ch.user)}</b>${ch.app ? ` <span class="ui-sub">via</span> ${esc(ch.app)}` : ''}${ch.client ? ` <span class="ui-sub">from</span> <span class="td-mono">${esc(ch.client)}</span>` : ` <span class="ui-sub">(local socket)</span>`}`;
+    async function restoreChange(ch, after) {
+      const what = ch.op === 'D' ? 'bring the deleted row back' : ch.op === 'U' ? 'put the whole row back as it was before this change' : 'remove the row this insert added';
+      if (!ctx.info().allowWrite) return showToast('Turn on "Allow changes" first', 'warning');
+      showConfirm('Restore', `This will <b>${what}</b> (key ${esc(JSON.stringify(ch.key))}). The restore is itself recorded. Go on?`, async () => {
+        try { const r = await API.post(`${H()}/restore`, { schema: ctx.schema, table: ctx.table, id: ch.id }); showToast(`Done — ${r.restored}`); if (after) after(); guardLeave(load); } catch (e) { showToast(e.message, 'error', 10000); }
+      }, true);
+    }
+    async function enableTracking(after) {
+      if (!ctx.info().allowWrite) return showToast('Turn on "Allow changes" first — tracking adds a trigger to the table', 'warning', 6000);
+      UI.dialog({ title: `Track changes of ${esc(ctx.schema)}.${esc(ctx.table)}`, saveLabel: 'Turn on',
+        body: `<div class="text-sm" style="margin-bottom:8px">From now on every INSERT, UPDATE and DELETE of this table — from your app, from psql, from DockGate — is written down: <b>which database user</b>, <b>which application</b> (its application_name), <b>from which address</b>, <b>when</b>, and the <b>old and new values</b>. Changes made before this are not known.</div>
+          <div class="ui-sub" style="margin-bottom:8px">DockGate adds the schema <span class="td-mono">dockgate_audit</span> (a table of changes and one trigger function) and a trigger on this table. Each change costs one extra insert; on a table with very many writes, that adds up. Turning it off removes the trigger.</div>
+          <label class="ui-field"><span class="ui-label">Keep changes for (days)</span><input class="input" type="number" id="tr-days" value="90" min="1" max="3650"></label>`,
+        onSave: async (ov2) => { await API.post(`${H()}/enable`, { schema: ctx.schema, table: ctx.table, keepDays: Number(ov2.querySelector('#tr-days').value) }); showToast('Tracking is on'); if (after) after(); } });
+    }
+    async function whoWrote(box, pk, still, closeCard) {
+      const sec = document.createElement('div'); sec.style.marginTop = '16px'; sec.innerHTML = '<div class="ui-label" style="margin-bottom:6px">Who wrote it</div><div class="ui-sub">Loading…</div>'; box.after(sec);
+      let x; try { x = await API.post(`${H()}/row`, { schema: ctx.schema, table: ctx.table, pk }); } catch (e) { sec.innerHTML = `<div class="ui-label">Who wrote it</div><div class="text-danger text-sm">${esc(e.message)}</div>`; return; }
+      if (!still()) return;
+      const last = x.history[0];
+      const head = `<div class="ui-label" style="margin-bottom:6px">Who wrote it</div>
+        <div class="text-sm" style="margin-bottom:8px">${last ? `Last ${OPN[last.op][1]} <b>${when(last.at)}</b> by ${whoLine(last)}` : x.committed ? `Last written <b>${when(x.committed)}</b> (transaction ${esc(x.xmin)})` : `Last written in transaction <span class="td-mono">${esc(x.xmin)}</span> <span class="ui-sub">— the time is not recorded (track_commit_timestamp is off)</span>`}</div>`;
+      const tracked = x.tracked ? `<div class="ui-sub" style="margin-bottom:6px">Change tracking is on for this table${x.since ? ` since ${when(x.since)}` : ''} · kept ${x.keepDays} days</div>${x.history.length ? x.history.map((h, i) => `<details style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:6px"><summary style="cursor:pointer;font-size:12.5px">${UI.pill(OPN[h.op][0], OPN[h.op][1])} ${when(h.at)} · ${whoLine(h)}${h.op === 'U' ? ` · <span class="td-mono">${esc((h.changed || []).join(', '))}</span>` : ''}</summary><div style="margin-top:6px">${diffHtml(h)}</div>${h.op !== 'I' ? `<div style="margin-top:6px">${UI.btn(h.op === 'U' ? 'Put the row back as before this' : 'Bring it back', `data-hrest="${i}"`)}</div>` : ''}</details>`).join('') : '<div class="ui-sub">No change of this row since tracking began.</div>'}`
+        : `<div class="ui-sub" style="margin-bottom:6px">PostgreSQL does not keep who changed a row. ${UI.btn('Track changes of this table…', 'data-htrack')} records it from now on — the user, the application, the address, old and new values.</div>`;
+      const mine = x.dockgate.length ? `<div class="ui-label" style="margin:10px 0 4px">Edits made from DockGate</div>${x.dockgate.map(m => `<div class="ui-sub" style="font-size:12px">${esc(m.at)} UTC · ${esc(m.action.replace('db_', '').replace(/_/g, ' '))}${m.columns ? ` · <span class="td-mono">${esc(m.columns.join(', '))}</span>` : ''}${m.from ? ` · from ${esc(m.from)}` : ''}</div>`).join('')}` : '';
+      sec.innerHTML = head + tracked + mine;
+      sec.querySelectorAll('[data-hrest]').forEach(b => b.onclick = () => restoreChange(x.history[Number(b.dataset.hrest)], closeCard));
+      const tr = sec.querySelector('[data-htrack]'); if (tr) tr.onclick = () => enableTracking(() => { sec.remove(); whoWrote(box, pk, still, closeCard); });
+    }
+    async function historyPanel() {
+      const f = { op: '', user: '', q: '' };
+      const ov = document.createElement('div'); ov.className = 'modal-overlay';
+      ov.innerHTML = `<div class="modal ui-modal-wide" style="max-width:980px;width:min(980px,96vw)"><div class="modal-header"><div class="modal-title">Changes of ${esc(ctx.schema)}.${esc(ctx.table)}</div><span style="flex:1"></span><button class="btn-icon modal-close" data-hclose>✕</button></div><div class="modal-body" data-hb style="max-height:72vh;overflow:auto"><div class="skeleton" style="height:120px"></div></div></div>`;
+      document.getElementById('modal-root').appendChild(ov);
+      const close = () => ov.remove();
+      ov.querySelector('[data-hclose]').onclick = close; ov.onclick = (e) => { if (e.target === ov) close(); };
+      const body = ov.querySelector('[data-hb]');
+      const render = async () => {
+        let x; try { x = await API.post(`${H()}/log`, { schema: ctx.schema, table: ctx.table, ...f }); } catch (e) { body.innerHTML = `<div class="text-danger">${esc(e.message)}</div>`; return; }
+        const s = x.status;
+        const top = s.tracked ? `<div class="dbg-bar">${UI.pill('ok', '● Tracking on')} <span class="ui-sub">since ${when(s.since)} · kept ${s.keepDays} days · ${Number(s.count).toLocaleString()} changes kept</span><span style="flex:1"></span>${UI.btn('Turn off…', 'data-hoff')}</div>`
+          : `<div class="card" style="padding:12px;margin-bottom:10px"><b>Change tracking is off for this table.</b><div class="ui-sub" style="margin:4px 0 8px">PostgreSQL does not keep who changed a row. Turn it on to record every change from now on: the database user, the application, the address, the time, old and new values — and to bring rows back.${s.count ? ` ${Number(s.count).toLocaleString()} earlier changes are still kept.` : ''}</div>${UI.btn('Track changes…', 'data-hon', 'btn-primary')}${s.commitTimes ? '' : '<div class="ui-sub" style="margin-top:6px">Commit times are not recorded on this server (track_commit_timestamp is off), so without tracking only the transaction of the last change is known.</div>'}</div>`;
+        body.innerHTML = `${top}
+          <div class="dbg-bar"><select class="input" data-hop style="width:auto;padding:3px 6px;font-size:12px"><option value="">All changes</option><option value="I" ${f.op === 'I' ? 'selected' : ''}>Added</option><option value="U" ${f.op === 'U' ? 'selected' : ''}>Changed</option><option value="D" ${f.op === 'D' ? 'selected' : ''}>Deleted</option></select>
+            <select class="input" data-huser style="width:auto;padding:3px 6px;font-size:12px"><option value="">Any user</option>${(x.users || []).map(u => `<option ${u === f.user ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select>
+            <input class="input" data-hq placeholder="A value in the row…" value="${esc(f.q)}" style="max-width:220px;padding:3px 8px;font-size:12px"></div>
+          ${x.changes.length ? x.changes.map((h, i) => `<details style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:6px"><summary style="cursor:pointer;font-size:12.5px">${UI.pill(OPN[h.op][0], OPN[h.op][1])} <span class="td-mono">${esc(Object.entries(h.key || {}).map(([k, v]) => `${k}=${v}`).join(', '))}</span> · ${when(h.at)} · ${whoLine(h)}${h.op === 'U' ? ` · <span class="td-mono">${esc((h.changed || []).join(', '))}</span>` : ''}</summary><div style="margin-top:6px">${diffHtml(h)}</div>${h.op !== 'I' ? `<div style="margin-top:6px">${UI.btn(h.op === 'U' ? 'Put the row back as before this' : 'Bring the row back', `data-lrest="${i}"`)}</div>` : ''}</details>`).join('') : `<div class="ui-sub">${s.schema ? 'No changes match.' : ''}</div>`}`;
+        const on = body.querySelector('[data-hon]'); if (on) on.onclick = () => enableTracking(render);
+        const off = body.querySelector('[data-hoff]'); if (off) off.onclick = () => UI.dialog({ title: 'Turn tracking off', saveLabel: 'Turn off', danger: true, body: `<div class="text-sm">The trigger is removed; new changes are no longer recorded.</div><label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:8px"><input type="checkbox" id="h-drop"> Also delete the ${Number(s.count).toLocaleString()} changes kept</label>`,
+          onSave: async (ov2) => { await API.post(`${H()}/disable`, { schema: ctx.schema, table: ctx.table, dropLog: ov2.querySelector('#h-drop').checked }); showToast('Tracking is off'); render(); } });
+        body.querySelector('[data-hop]').onchange = (e) => { f.op = e.target.value; render(); };
+        body.querySelector('[data-huser]').onchange = (e) => { f.user = e.target.value; render(); };
+        body.querySelector('[data-hq]').onkeydown = (e) => { if (e.key === 'Enter') { f.q = e.target.value; render(); } };
+        body.querySelectorAll('[data-lrest]').forEach(b => b.onclick = () => restoreChange(x.changes[Number(b.dataset.lrest)], render));
+      };
       render();
     }
 

@@ -315,3 +315,43 @@ test('Data editor against PostgreSQL: many edits in one transaction, conflicts, 
   assert.deepEqual(refs.refs.map(r => [r.table, r.column, r.count]), [['ord', 'cust_id', 2]]);
   S.saveSettings('shop-db-1', { allowWrite: false });
 });
+
+test('Who wrote it, against PostgreSQL: tracking records the changes of the app itself, row history, restore', { skip }, async () => {
+  const S = setup();
+  const H = require('../../server/pg-history');
+  const pq = (...a) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-d', 'dgtest', '-At', ...a]).toString().trim();
+  pq('-c', 'drop schema if exists dockgate_audit cascade', '-c', 'drop table if exists shop.acct', '-c', "create table shop.acct (id int primary key, owner text, balance int)", '-c', "insert into shop.acct values (1, 'ann', 100), (2, 'bob', 50)");
+  pq('-c', "drop role if exists app_user", '-c', "create role app_user login", '-c', 'grant usage on schema shop to app_user', '-c', 'grant select, insert, update, delete on shop.acct to app_user');
+  S.saveSettings('shop-db-1', { allowWrite: false });
+  assert.equal((await H.status('shop-db-1', 'dgtest', 'shop', 'acct')).tracked, false);
+  await assert.rejects(H.enable('shop-db-1', 'dgtest', 'shop', 'acct'), (e) => e.code === 'READ_ONLY');
+  S.saveSettings('shop-db-1', { allowWrite: true });
+  const st = await H.enable('shop-db-1', 'dgtest', 'shop', 'acct', { keepDays: 30 });
+  assert.equal(st.tracked, true); assert.equal(st.keepDays, 30);
+  // the app (another role, its own application_name) changes rows — no rights on dockgate_audit needed
+  const asApp = (sql) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'app_user', '-d', 'dgtest', '-At', '-c', sql], { env: { ...process.env, PGAPPNAME: 'billing-api' } }).toString();
+  asApp("update shop.acct set balance = 80 where id = 1");
+  asApp("update shop.acct set balance = 80 where id = 1"); // nothing changed → not logged
+  asApp("insert into shop.acct values (3, 'cem', 10)");
+  asApp('delete from shop.acct where id = 2');
+  const info = await S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'acct', changes: [{ op: 'update', pk: { id: '1' }, set: { owner: 'Ann' }, orig: { owner: 'ann' } }] });
+  assert.equal(info.update, 1);
+  const row = await H.rowInfo('shop-db-1', 'dgtest', 'shop', 'acct', { id: '1' }, 'shop-db-1');
+  assert.ok(row.xmin); assert.equal(row.tracked, true);
+  assert.deepEqual(row.history.map(h => [h.op, h.user, h.app, h.changed.join()]), [['U', 'postgres', 'DockGate', 'owner'], ['U', 'app_user', 'billing-api', 'balance']]);
+  assert.equal(row.history[1].old.balance, 100); assert.equal(row.history[1].new.balance, 80);
+  const log = await H.tableLog('shop-db-1', 'dgtest', 'shop', 'acct', { op: 'D' });
+  assert.equal(log.changes.length, 1); assert.equal(log.changes[0].old.owner, 'bob'); assert.ok(log.users.includes('app_user'));
+  // bring the deleted row back, and put row 1 back as before the app's change
+  await H.restore('shop-db-1', 'dgtest', 'shop', 'acct', log.changes[0].id);
+  assert.equal(pq('-c', 'select owner || balance from shop.acct where id = 2'), 'bob50');
+  await H.restore('shop-db-1', 'dgtest', 'shop', 'acct', row.history[1].id);
+  assert.equal(pq('-c', 'select owner || balance from shop.acct where id = 1'), 'ann100', 'the whole row as it was before that change');
+  assert.equal((await H.tableLog('shop-db-1', 'dgtest', 'shop', 'acct', {})).changes[0].op, 'U', 'the restore is logged too');
+  // turning it off keeps the log unless asked
+  assert.equal((await H.disable('shop-db-1', 'dgtest', 'shop', 'acct')).tracked, false);
+  asApp("update shop.acct set balance = 1 where id = 3");
+  assert.equal((await H.tableLog('shop-db-1', 'dgtest', 'shop', 'acct', {})).changes.some(c => c.key.id === '3' && c.op === 'U'), false);
+  assert.equal((await H.disable('shop-db-1', 'dgtest', 'shop', 'acct', { dropLog: true })).count, 0);
+  S.saveSettings('shop-db-1', { allowWrite: false });
+});

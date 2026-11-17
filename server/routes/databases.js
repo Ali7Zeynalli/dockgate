@@ -45,6 +45,14 @@ router.post('/:c/db/:db/changes', send(async (req) => {
 }));
 router.get('/:c/db/:db/fk-lookup', send(async (req) => S.fkLookup(req.params.c, req.params.db, { schema: req.query.schema, table: req.query.table, column: req.query.column, q: req.query.q || '', key: req.query.key })));
 router.post('/:c/db/:db/referencing', send(async (req) => S.referencing(req.params.c, req.params.db, req.body || {})));
+// ---------- who wrote it: row info, change tracking (pg-history.js) ----------
+const H = require('../pg-history');
+router.get('/:c/db/:db/history/status', send(async (req) => H.status(req.params.c, req.params.db, req.query.schema, req.query.table)));
+router.post('/:c/db/:db/history/enable', send(async (req) => { const b = req.body || {}; const r = await H.enable(req.params.c, req.params.db, b.schema, b.table, b); audit(req, 'db_tracking_on', { table: `${b.schema}.${b.table}`, keepDays: r.keepDays }); return r; }));
+router.post('/:c/db/:db/history/disable', send(async (req) => { const b = req.body || {}; const r = await H.disable(req.params.c, req.params.db, b.schema, b.table, b); audit(req, 'db_tracking_off', { table: `${b.schema}.${b.table}`, dropLog: !!b.dropLog }); return r; }));
+router.post('/:c/db/:db/history/row', send(async (req) => { const b = req.body || {}; return H.rowInfo(req.params.c, req.params.db, b.schema, b.table, b.pk, req.params.c); }));
+router.post('/:c/db/:db/history/log', send(async (req) => { const b = req.body || {}; return H.tableLog(req.params.c, req.params.db, b.schema, b.table, b); }));
+router.post('/:c/db/:db/history/restore', send(async (req) => { const b = req.body || {}; const r = await H.restore(req.params.c, req.params.db, b.schema, b.table, b.id); audit(req, 'db_restore_row', { table: `${b.schema}.${b.table}`, key: r.key, change: b.id }); return r; }));
 // ?schema&table&format=csv|json — streamed download
 router.get('/:c/db/:db/export', async (req, res) => {
   const fmt = req.query.format === 'json' ? 'json' : 'csv';
