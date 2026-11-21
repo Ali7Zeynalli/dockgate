@@ -17,6 +17,23 @@ A Compose **stack** (project) is a group of containers started from one `docker-
 
 The buttons above the list: **↻** reloads it, **Git ▾** (shown when there are Git stacks) pulls or deploys all of them, and **Deploy stack** adds a new one.
 
+Click a stack's **name** (or **⋯ → Open the stack**) to open its page. The row's **⋯** keeps only the everyday actions: Up, Restart, Rebuild, Git sync, Down, Delete.
+
+## A stack's page
+
+![A stack's page](images/compose-project.png)
+
+The top bar of the page: **Up**, **Restart**, **Rebuild…**, **Sync** (Git stacks), **Down** and **↻**. **← Stacks** goes back to the list.
+
+| Tab | What is there |
+|---|---|
+| **Overview** | Where the stack comes from (Git cloned by DockGate, a Git checkout on the server, an uploaded folder, adopted, written in the editor, or started outside DockGate), its state, folder, compose files and server; the **Git** card (repository, branch, commit, **Pull**, **Sync and deploy**) or **Connect to Git…**; the last deploy; the services |
+| **Services** | Each service: container, image, state, published ports, and **Logs**, **Terminal**, **Open** for its container |
+| **Files** | The project's files (Dockerfile, .env, configs) to open, edit, add and delete, plus **Edit YAML**, **Open folder in Files** and **Terminal in this folder** |
+| **Deploys** | The deploy history: what changed, and **Redeploy this…** for an earlier version |
+| **Automation** | Everything that deploys the stack by itself: the **webhook** of a stack cloned by DockGate, the **deploy recipes** of its folder in [Tasks](tasks.md) (SSH servers), the **Git sync schedules** of the server, and **Scaling & health** |
+| **Settings** | Edit YAML, Update from folder (uploaded stacks), Git (Connect to Git… or Force pull…), Scaling & health, Move to Swarm, Terminal, Delete the stack |
+
 ## Deploy a stack
 
 **Deploy stack** asks where the compose file comes from:
@@ -42,12 +59,14 @@ When a deploy or **Rebuild…** builds images, you can tick:
 | **pull** | Pull the newest base images (`FROM …`) before building |
 | **no-deps** | Touch only the chosen services, not their dependencies (a database, for example) |
 
-## Actions (⋯)
+## Actions
+
+On the stack's page (and Up / Restart / Rebuild / Git sync / Down / Delete also in the row's ⋯):
 
 | Action | What it does |
 |---|---|
 | **Up** / **Restart** / **Down** | `docker compose up -d`, restart all services, or stop and remove the containers (volumes stay) |
-| **Services and details** | The services, their state, the folder and the compose files used |
+| **Overview / Services tabs** | The services, their state, the folder and the compose files used |
 | **Scaling & health…** | Replicas with one click, auto-heal, Auto Scaling and updates without downtime (Roll out), without Swarm — see [Scaling & health](compose-scaling.md) |
 | **Deploy history…** | Every deploy of this stack with the compose files it used and what changed. **Redeploy this** puts those files back and runs `docker compose up -d`. Volumes and data stay |
 | **Edit YAML** | Edit the compose file and redeploy |
@@ -64,7 +83,7 @@ When a deploy or **Rebuild…** builds images, you can tick:
 
 A Git stack with new commits on the remote shows a blue badge: click it to sync and deploy.
 
-**Auto-deploy webhook**: a Git stack's details show a webhook URL. Add it to the repository (GitHub, GitLab, Gitea) so a push deploys the stack. It only works when DockGate has a public address the Git host can reach.
+**Auto-deploy webhook**: the page of a Git stack cloned by DockGate shows a webhook URL under **Automation**. Add it to the repository (GitHub, GitLab, Gitea) so a push deploys the stack. It only works when DockGate has a public address the Git host can reach.
 
 ## Good to know
 

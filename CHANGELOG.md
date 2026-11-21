@@ -2,6 +2,24 @@
 
 ---
 
+## [2.76.0] - 2026-11-21
+
+### Added
+- **A page for every Compose stack** (Deploy → Compose stacks → click a stack's name). Tabs:
+  - **Overview:** where the stack comes from, its state, folder, compose files and server; the Git card (Pull, Sync and deploy) or Connect to Git; the last deploy; the services.
+  - **Services:** container, image, state and ports of each service, with Logs, Terminal and Open.
+  - **Files:** the project's files, to edit, add and delete, plus Edit YAML, Open folder in Files and Terminal in this folder.
+  - **Deploys:** the deploy history, with what changed and Redeploy this.
+  - **Automation:** everything that deploys the stack by itself, in one place: the stack webhook, the deploy recipes of its folder in Tasks, the Git sync schedules, and Scaling & health.
+  - **Settings:** Edit YAML, Update from folder, Git, Scaling & health, Move to Swarm, Terminal, Delete.
+  - Up, Restart, Rebuild, Sync and Down at the top.
+
+### Changed
+- The stack's **⋯** menu in the list went from 21 items to the everyday ones: Open the stack, Up, Restart, Rebuild, Git sync, Down, Delete (and Move back to Compose for stacks on Swarm). Everything else is on the stack's page.
+- Guide: the stack's page.
+
+---
+
 ## [2.75.0] - 2026-11-17
 
 ### Added

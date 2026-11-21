@@ -141,7 +141,7 @@ Starting files for a folder that has none: a **Makefile** (help, pull, build, up
 
 ## Compose Git webhook
 
-The **Auto-deploy webhook** of a Compose project deployed from Git (Compose → Services and details) now works: it was behind DockGate's login and answered 401 to GitHub. It is checked by its own key, as before.
+The **Auto-deploy webhook** of a Compose project deployed from Git (the stack's page → Automation) now works: it was behind DockGate's login and answered 401 to GitHub. It is checked by its own key, as before.
 
 ## Troubleshooting
 
