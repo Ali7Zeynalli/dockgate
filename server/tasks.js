@@ -13,6 +13,21 @@ const T = require('./task-parse');
 const secrets = require('./auth/secrets');
 const { logAction } = require('./audit');
 const shq = remoteExec.shq;
+const fs = require('fs');
+const { spawn } = require('child_process');
+const LOCAL_SH = fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
+/** Run a shell line on the server: over SSH, or here for the local server. Resolves { code, stdout, stderr }. */
+function exec(s, cmd, onData) {
+  if (!s || !s.local) return remoteExec.execRemote(s, cmd, onData);
+  return new Promise((resolve) => {
+    const ch = spawn(LOCAL_SH, ['-c', cmd], { env: { ...process.env } });
+    let out = '', er = '';
+    ch.stdout.on('data', (d) => { const t = d.toString(); out += t; if (onData) onData(t); });
+    ch.stderr.on('data', (d) => { const t = d.toString(); er += t; if (onData) onData(t); });
+    ch.on('error', (e) => resolve({ code: 127, stdout: out, stderr: er + e.message }));
+    ch.on('close', (code) => resolve({ code: code == null ? 1 : code, stdout: out, stderr: er }));
+  });
+}
 
 db.exec(`CREATE TABLE IF NOT EXISTS task_projects (id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT NOT NULL, dir TEXT NOT NULL, name TEXT, created_at INTEGER, UNIQUE(server_id, dir))`);
 db.exec(`CREATE TABLE IF NOT EXISTS task_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT NOT NULL, dir TEXT NOT NULL, kind TEXT NOT NULL, name TEXT, cmd TEXT,
@@ -39,8 +54,10 @@ db.prepare("UPDATE task_runs SET status = 'interrupted', finished_at = ? WHERE s
 const err = (msg, statusCode = 400, extra) => Object.assign(new Error(msg), { statusCode }, extra || {});
 const DIR_RE = /^\/(?!.*\/\.\.?(\/|$))[\w./@+ :=-]{0,1000}$/;
 function okDir(d) { const s = String(d || '').trim().replace(/\/+$/, '') || '/'; if (!DIR_RE.test(s) || s === '/') throw err('A full folder path is needed (not /)'); return s; }
+// The local server: tasks run on the machine (or container) DockGate runs on, as DockGate's user.
+const LOCAL = Object.freeze({ id: 'local', name: 'Local', host: 'local', local: true });
 function server(id) {
-  if (!id || id === 'local') throw err('Tasks run on SSH servers. To run tasks on the machine DockGate runs on, add it as an SSH server.', 400, { code: 'LOCAL' });
+  if (!id || id === 'local') return LOCAL;
   const s = stmts.getServer.get(id); if (!s) throw err('Server not found', 404);
   return s;
 }
@@ -63,7 +80,7 @@ function removeProject(serverId, dir) { const s = server(serverId); q.delProject
 
 async function discover(serverId, dir) {
   const s = server(serverId); const d = okDir(dir);
-  const r = await remoteExec.execRemote(s, T.DISCOVER_SH(d));
+  const r = await exec(s, T.DISCOVER_SH(d));
   const res = T.discover(r.stdout);
   if (res.missing) throw err(`The folder ${d} is not on the server`, 404);
   res.tasks.forEach(t => { t.risky = T.RISKY.test(t.name); });
@@ -95,7 +112,7 @@ const jobs = new Map(); // live runs: id → { id, serverId, dir, name, status, 
 const locks = new Map(); // `${serverId}|${dir}` → run id
 const MAX_LIVE = 4 * 1024 * 1024, KEEP_LOG = 400 * 1024;
 const homes = new Map();
-async function homeOf(s) { if (homes.has(s.id)) return homes.get(s.id); const r = await remoteExec.execRemote(s, 'printf %s "$HOME"'); const h = String(r.stdout).trim(); if (!h.startsWith('/')) throw err('Could not find the home folder of the SSH user'); homes.set(s.id, h); return h; }
+async function homeOf(s) { if (homes.has(s.id)) return homes.get(s.id); const r = await exec(s, 'printf %s "$HOME"'); const h = String(r.stdout).trim(); if (!h.startsWith('/')) throw err('Could not find the home folder of the SSH user'); homes.set(s.id, h); return h; }
 function mask(text, secretValues) { let t = String(text); for (const v of secretValues) if (v && v.length >= 4) t = t.split(v).join('••••'); return t; }
 function append(job, text) {
   if (!text) return;
@@ -127,19 +144,21 @@ function closeRun(job, status, code) {
  * The run's process group can be stopped (cancel); env is passed in a 0600 file the run reads and deletes.
  */
 async function runShell(job, cmd, { runAs = 'user', login = true, env = [], timeoutMin = 60 } = {}) {
-  const s = job.server; const home = await homeOf(s);
+  const s = job.server; if (s.local) runAs = 'user'; // locally: DockGate's own user
+  const home = await homeOf(s);
   const tag = `${job.id}-${crypto.randomBytes(3).toString('hex')}`;
   const pidf = `${home}/.dockgate/run/${tag}.pid`; const envf = env.length ? `${home}/.dockgate/run/${tag}.env` : '';
   job.secretValues = [...new Set([...job.secretValues, ...env.filter(e => e.secret).map(e => e.value)])];
-  await remoteExec.execRemote(s, 'mkdir -p "$HOME/.dockgate/run" && chmod 700 "$HOME/.dockgate" "$HOME/.dockgate/run"');
-  if (envf) await require('./ssh-pool').withSftp(s, (sftp) => new Promise((res, rej) => sftp.writeFile(envf, envFileText(env), { mode: 0o600 }, (e) => (e ? rej(e) : res()))));
+  await exec(s, 'mkdir -p "$HOME/.dockgate/run" && chmod 700 "$HOME/.dockgate" "$HOME/.dockgate/run"');
+  if (envf && s.local) fs.writeFileSync(envf, envFileText(env), { mode: 0o600 });
+  else if (envf) await require('./ssh-pool').withSftp(s, (sftp) => new Promise((res, rej) => sftp.writeFile(envf, envFileText(env), { mode: 0o600 }, (e) => (e ? rej(e) : res()))));
   const script = 'echo $$ > "$1"; if [ -n "$4" ]; then set -a; . "$4"; set +a; rm -f "$4"; fi; cd "$2" 2>/dev/null || { echo "The folder $2 is not there"; exit 44; }; exec bash ' + (login ? '-lc' : '-c') + ' "$3"';
   const line = `${runAs === 'root' ? 'sudo -n ' : ''}setsid bash -c ${shq(script)} _ ${shq(pidf)} ${shq(job.dir)} ${shq(cmd)} ${shq(envf)} 2>&1; rc=$?; ${runAs === 'root' ? 'sudo -n ' : ''}rm -f ${shq(pidf)} ${envf ? shq(envf) : ''}; exit $rc`;
-  job.cancel = async () => { job.cancelled = true; await remoteExec.execRemote(s, `p=$(cat ${shq(pidf)} 2>/dev/null) || exit 0; ${runAs === 'root' ? 'sudo -n ' : ''}kill -TERM -- -$p 2>/dev/null; sleep 5; ${runAs === 'root' ? 'sudo -n ' : ''}kill -KILL -- -$p 2>/dev/null; true`).catch(() => {}); };
+  job.cancel = async () => { job.cancelled = true; await exec(s, `p=$(cat ${shq(pidf)} 2>/dev/null) || exit 0; ${runAs === 'root' ? 'sudo -n ' : ''}kill -TERM -- -$p 2>/dev/null; sleep 5; ${runAs === 'root' ? 'sudo -n ' : ''}kill -KILL -- -$p 2>/dev/null; true`).catch(() => {}); };
   let timer = null;
   if (timeoutMin > 0) timer = setTimeout(() => { append(job, `\n⏱ Over ${timeoutMin} minutes — stopping it\n`); job.timedOut = true; job.cancel(); }, timeoutMin * 60000);
   try {
-    const r = await remoteExec.execRemote(s, line, (chunk) => append(job, chunk));
+    const r = await exec(s, line, (chunk) => append(job, chunk));
     if (r.code === 1 && /sudo: a (terminal|password) is required|a password is required/.test(String(r.stdout) + String(r.stderr))) append(job, '\nsudo asks for a password — running as root needs passwordless sudo\n');
     return r.code;
   } finally { if (timer) clearTimeout(timer); job.cancel = null; }
@@ -256,7 +275,7 @@ down:
 /** Kamal: the app versions on the servers (from `kamal app containers`), for Rollback. versions: newest first as Kamal lists them. */
 async function kamalVersions(serverId, dir) {
   const s = server(serverId); const d = okDir(dir);
-  const r = await remoteExec.execRemote(s, `cd ${shq(d)} && timeout 90 bash -lc 'kamal app containers' 2>&1; echo "@@EXIT $?"`);
+  const r = await exec(s, `cd ${shq(d)} && timeout 90 bash -lc 'kamal app containers' 2>&1; echo "@@EXIT $?"`);
   const out = String(r.stdout || '') + String(r.stderr || '');
   const code = Number((/@@EXIT (\d+)/.exec(out) || [])[1] || 1);
   const text = out.replace(/@@EXIT \d+\s*$/, '').trim();
@@ -268,12 +287,12 @@ async function addTemplate(serverId, dir, name, { overwrite = false } = {}) {
   const s = server(serverId); const d = okDir(dir); const t = TEMPLATES[name]; if (!t) throw err('Unknown template');
   const path = `${d}/${t.file}`;
   const b64 = Buffer.from(t.text).toString('base64');
-  const r = await remoteExec.execRemote(s, `cd ${shq(d)} || exit 44; ${overwrite ? '' : `[ -e ${shq(t.file)} ] && exit 17; `}printf %s ${shq(b64)} | base64 -d > ${shq(t.file)}${t.mode ? ` && chmod ${t.mode} ${shq(t.file)}` : ''}`);
+  const r = await exec(s, `cd ${shq(d)} || exit 44; ${overwrite ? '' : `[ -e ${shq(t.file)} ] && exit 17; `}printf %s ${shq(b64)} | base64 -d > ${shq(t.file)}${t.mode ? ` && chmod ${t.mode} ${shq(t.file)}` : ''}`);
   if (r.code === 17) throw err(`${t.file} is there already`, 409, { code: 'EXISTS' });
   if (r.code === 44) throw err(`The folder ${d} is not on the server`, 404);
   if (r.code !== 0) throw err(String(r.stderr || 'Could not write the file').trim(), 500);
   return { path };
 }
 
-module.exports = { projects, addProject, removeProject, discover, envList, envSet, envValues, start, cancel, runs, runLog, addTemplate, kamalVersions, TEMPLATES,
+module.exports = { exec, LOCAL, projects, addProject, removeProject, discover, envList, envSet, envValues, start, cancel, runs, runLog, addTemplate, kamalVersions, TEMPLATES,
   openRun, closeRun, append, runShell, server, okDir, jobs, locks };

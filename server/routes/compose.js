@@ -1677,6 +1677,7 @@ router.get('/:project/git', async (req, res) => {
       hasToken: !!ctx.token,
       hasKey: !!ctx.keyId,
       webhookSecret: ctx.secret || '',
+      deployedCommit: ctx.deployedCommit || '',
       serverId: ctx.serverId || 'local',
       type: ctx.type,
       repoRoot: ctx.repoRoot

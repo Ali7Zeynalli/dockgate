@@ -2,6 +2,41 @@
 
 ---
 
+## [2.77.0] - 2026-11-21
+
+### Added
+- **Tasks and deploy recipes on the local server.** They run where DockGate runs (its container), as its user: tasks, recipes, the folder's env and secrets, webhooks from GitHub / GitLab / Bitbucket and CI, schedules. The image now has `bash` and `curl`, so the usual recipe (Git pull → docker compose up → check a URL → back to the commit before) works locally.
+- **Set up auto-deploy** on a stack's page → **Automation**: one click makes the recipe of the stack's folder (Git pull → `docker compose up --build` → if it fails, back to the commit before) and turns on its webhook; the URL and secret are shown with the steps for GitHub, GitLab, Bitbucket and CI. Works for every Git stack — cloned by DockGate, a checkout on the server, or connected with Connect to Git.
+- The stack's **Deploys** tab also lists the recipe and task runs of its folder, with their logs.
+- **Automation** shows the recipe first (Deploy, webhook, schedule); the older simple webhook of stacks cloned by DockGate still works and is labelled as such.
+
+### Fixed
+- A recipe step that throws no longer stops DockGate: the run is marked failed with the message.
+
+---
+
+## [2.76.0] - 2026-11-21
+
+### Added
+- **A page for every Compose stack** (Deploy → Compose stacks → click a stack's name). Tabs:
+  - **Overview:** where the stack comes from, its state, folder, compose files and server; the Git card (Pull, Sync and deploy) or Connect to Git; the last deploy; the services.
+  - **Services:** container, image, state and ports of each service, with Logs, Terminal and Open.
+  - **Files:** the project's files, to edit, add and delete, plus Edit YAML, Open folder in Files and Terminal in this folder.
+  - **Deploys:** the deploy history, with what changed and Redeploy this.
+  - **Automation:** everything that deploys the stack by itself, in one place: the stack webhook, the deploy recipes of its folder in Tasks, the Git sync schedules, and Scaling & health.
+  - **Settings:** Edit YAML, Update from folder, Git, Scaling & health, Move to Swarm, Terminal, Delete.
+  - Up, Restart, Rebuild, Sync and Down at the top.
+
+### Changed
+- The stack's **⋯** menu in the list went from 21 items to the everyday ones: Open the stack, Up, Restart, Rebuild, Git sync, Down, Delete (and Move back to Compose for stacks on Swarm). Everything else is on the stack's page.
+- A stack that is not deployed shows only **Up** at the top (no Restart / Down).
+- **Files** of a stack DockGate did not deploy: its folder on the server, in the file browser.
+- Folder and compose file paths stay on one line (the full path on hover); the Git card shows the commit of a checkout.
+- The old "Services and details" dialog is gone (its content is on the stack's page).
+- Guide: the stack's page.
+
+---
+
 ## [2.75.0] - 2026-11-17
 
 ### Added

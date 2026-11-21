@@ -52,7 +52,7 @@ Containers keep running. Press **Redeploy now** to rebuild from the new files (G
 From then on:
 - the project's **Git pull** and **Git sync and deploy**;
 - the **Git pull** step and **Back to the commit before** in [Deploy → Tasks](tasks.md) recipes;
-- deploys on every push from **GitHub, GitLab or Bitbucket**, through a recipe's **Webhook / CI…** (Tasks run on SSH servers).
+- deploys on every push from **GitHub, GitLab or Bitbucket**, through a recipe's **Webhook / CI…**. On the stack's page: **Automation → Set up auto-deploy**.
 
 The access token is kept in the folder's `.git/config` (in the `origin` URL), as with any clone made with a token, so pulls keep working. A deploy key is saved as `core.sshCommand`.
 

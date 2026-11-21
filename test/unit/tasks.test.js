@@ -59,7 +59,7 @@ const TK = require('../../server/tasks');
 const wait = async (id, ms = 15000) => { const t0 = Date.now(); for (;;) { const r = TK.runLog(id); if (r.status !== 'running') return r; if (Date.now() - t0 > ms) throw new Error('still running'); await new Promise(res => setTimeout(res, 100)); } };
 
 test('Tasks: find them, run with variables and env (secrets masked), dry run, lock, cancel, history', async () => {
-  assert.throws(() => TK.server('local'), /SSH servers/);
+  assert.equal(TK.server('local').local, true); // the local server runs tasks too (here, as DockGate's user)
   const d = await TK.discover('srv-t', PROJ);
   assert.equal(d.pm, 'pnpm');
   assert.deepEqual(d.tasks.map(t => `${t.source}:${t.name}`).sort(), ['make:fail', 'make:hello', 'make:slow', 'npm:build', 'sh:scripts/deploy.sh']);
@@ -290,4 +290,21 @@ test('Several servers: the folder env of the recipe server reaches every server;
   assert.equal(r.status, 'ok');
   assert.match(r.text, /127\.0\.0\.1[\s\S]*stage=prod region=eu[\s\S]*127\.0\.0\.2[\s\S]*stage=prod region=us/);
   R.remove(rec.id);
+});
+
+test('Local server: a task and a recipe run where DockGate runs, with the folder env', async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dg-local-task-'));
+  fs.writeFileSync(path.join(d, 'Makefile'), 'hello: ## say hello\n\t@echo hello $$WHO\n');
+  TK.envSet('local', d, [{ key: 'WHO', value: 'local-world', secret: false }]);
+  const info = await TK.discover('local', d);
+  assert.ok(info.tasks.some(t => t.source === 'make' && t.name === 'hello'));
+  const { id } = await TK.start('local', d, { source: 'custom', cmd: 'echo "hi $WHO from $(pwd)"' });
+  const r = await wait(id);
+  assert.equal(r.status, 'ok'); assert.match(r.text, new RegExp(`hi local-world from ${d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  const R = require('../../server/task-recipes');
+  const rc = R.save('local', d, { name: 'Local deploy', steps: [{ type: 'command', cmd: 'echo step-one' }, { type: 'command', cmd: 'test -f Makefile' }] });
+  const run = await R.run(rc.id, { trigger: 'manual' });
+  const rr = await wait(run.id);
+  assert.equal(rr.status, 'ok'); assert.match(rr.text, /step-one/);
+  fs.rmSync(d, { recursive: true, force: true });
 });

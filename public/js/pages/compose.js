@@ -1,5 +1,5 @@
 // Compose Page
-Router.register('compose', async (content) => {
+Router.register('compose', async (content, params = {}) => {
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
   let refreshTimer = null;
@@ -39,97 +39,8 @@ Router.register('compose', async (content) => {
     return d;
   }
 
-  async function render() {
-    try {
-      const [projects, swSt] = await Promise.all([API.get('/compose'), API.get('/swarm/status').catch(() => null)]);
-      window.__swarmActive = !!(swSt && swSt.state === 'active' && swSt.manager); // offers "Move to Swarm…" in the row menu
-
-      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
-      if (!Router.isActiveNav(pageNavId)) return;
-      // Compose runs the host `docker compose` CLI. On a remote SSH host it targets that daemon via
-      // DOCKER_HOST=ssh (DockGate-managed projects only; key-auth, no passphrase). The backend returns a
-      // clear 400 if unsupported, so we no longer pre-disable — just show an informational note.
-      const remote = isRemoteActive();
-      const dis = '';
-      const gitProjects = (projects || []).filter(p => p.isGit || p.deploySource === 'git');
-      content.innerHTML = `
-        ${UI.header('Compose stacks', `${projects.length} stack${projects.length === 1 ? '' : 's'} on this server${gitProjects.length ? ` · ${gitProjects.length} from Git` : ''}. Open a stack's ⋯ menu for its files, YAML, terminal and Git actions.`,
-          `<button class="btn btn-secondary btn-sm" id="compose-refresh" title="Refresh">${Icons.refresh}</button>
-           <button class="btn btn-secondary btn-sm" id="compose-bulk-delete" style="display:none;color:var(--danger)">${Icons.trash} Delete <span id="bulk-count">0</span>…</button>
-           <div class="row-menu" style="position:relative;display:inline-block">
-             <button class="btn btn-secondary btn-sm row-menu-toggle" id="global-git-btn" title="Git actions for every Git stack on this server">
-               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
-               Git${gitProjects.length ? ` (${gitProjects.length})` : ''} ▾
-             </button>
-             <div class="row-menu-pop" style="min-width:260px">
-               <button class="rmi" id="global-git-sync-all">Sync and deploy all Git stacks</button>
-               <button class="rmi" id="global-git-pull-all">Pull all (files only, no restart)</button>
-               <div style="border-top:1px solid var(--border);margin:4px 0"></div>
-               <button class="rmi" id="global-git-manage-btn">Manage Git repositories…</button>
-               <button class="rmi" id="global-git-pull-custom">Pull and deploy a server path…</button>
-             </div>
-           </div>
-           <button class="btn btn-primary btn-sm" id="compose-deploy-wizard">${Icons.compose} Deploy stack</button>`)}
-        <div id="deploy-banner"></div>
-        ${remote ? '<div class="card mb-3" style="border-left:3px solid var(--accent);padding:10px 14px;font-size:13px;color:var(--text-secondary)">Remote host active — only <strong>DockGate-managed</strong> projects can be deployed (the compose file lives on DockGate). Needs a key-based SSH server without a passphrase; bind-mount paths resolve on the remote host.</div>' : ''}
-        ${projects.length === 0 ? `<div class="empty-state"><h3>No stacks yet</h3><p>Deploy one from a compose file, a Git repository, a folder or a template.</p></div>` : `
-          <div class="table-wrapper">
-            <table>
-              <thead><tr><th style="width:36px;text-align:center"><input type="checkbox" class="bulk-all" aria-label="Select all"></th><th>Stack</th><th>Source</th><th>State</th><th>Services</th><th style="text-align:right">Actions</th></tr></thead>
-              <tbody>
-                ${projects.map(p => {
-                  const isGit = !!(p.isGit || p.deploySource === 'git');
-                  const gitBranch = p.gitInfo?.branch || '';
-                  return `<tr${isGit ? ` data-gitproj="${escapeHtml(p.name)}"` : ''}>
-                  <td style="text-align:center"><input type="checkbox" class="bulk-item" data-proj="${escapeHtml(p.name)}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"></td>
-                  <td class="td-name">${escapeHtml(p.name)}${p.workingDir ? `<div class="td-mono text-xs text-muted" title="${escapeHtml(p.workingDir)}" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.workingDir)}</div>` : ''}</td>
-                  <td>${isGit ? UI.chip(`git${gitBranch ? ' · ' + escapeHtml(gitBranch) : ''}`, { title: p.gitInfo?.repoUrl || 'Git' }) : p.deploySource === 'adopt' ? UI.chip('adopted', { title: 'Adopted in place: the compose file lives on the server. Deleting stops and untracks it but never removes your folder.' }) : p.deploySource ? UI.chip(escapeHtml(p.deploySource)) : UI.chip('external', { title: 'Started outside DockGate (docker compose up on the server)' })}</td>
-                  <td>${p.swarmPart ? `${UI.pill('info', 'Part on Swarm')}<div class="ui-sub">${escapeHtml(p.swarmPart.services.join(', '))} in stack ${escapeHtml(p.swarmPart.stack)} · ${p.running}/${p.total} here</div>` : p.onSwarm ? `${UI.pill('info', 'Runs on Swarm')}<div class="ui-sub">Swarm → Stacks</div>` : p.total === 0 ? UI.pill('off', 'not deployed') : p.running === p.total ? UI.pill('ok', `${p.running}/${p.total} running`) : p.running > 0 ? UI.pill('warn', `${p.running}/${p.total} running`) : UI.pill('off', 'stopped')}${stackImageNote(p)}</td>
-                  <td class="text-sm">${(p.services || []).map(x => escapeHtml(x)).join(', ') || '—'}</td>
-                  <td><div class="td-actions" style="justify-content:flex-end">
-                    ${p.onSwarm ? `<button class="btn btn-xs btn-secondary" data-open-stack="${escapeHtml(p.swarmPart ? p.swarmPart.stack : p.name)}" title="Open its stack in Swarm → Stacks">Open stack</button>`
-                      : p.running > 0 && p.running === p.total
-                      ? (isGit ? `<button class="btn btn-xs btn-secondary" data-git-sync="${escapeHtml(p.name)}" title="Pull the latest code and rebuild / restart">Sync</button>` : `<button class="btn btn-xs btn-secondary" data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.restart} Restart</button>`)
-                      : `<button class="btn btn-xs btn-secondary" data-action="up" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.play} Up</button>`}
-                    ${!p.onSwarm && p.total > 0 && window.__swarmActive ? `<button class="btn btn-xs btn-secondary" data-move-swarm="${escapeHtml(p.name)}" title="Run this project as a Swarm stack">${Icons.layers} Move to Swarm…</button>` : ''}
-                    ${UI.menu([
-                      { label: `${Icons.eye} Services and details`, attrs: `data-detail="${escapeHtml(p.name)}"` },
-                      !p.onSwarm && p.total > 0 && window.__swarmActive ? { label: `${Icons.layers} Move to Swarm…`, attrs: `data-move-swarm="${escapeHtml(p.name)}"` } : null,
-                      p.onSwarm && window.__swarmActive ? { label: `${Icons.layers} Move back to Compose…`, attrs: `data-move-back="${escapeHtml(p.swarmPart ? p.swarmPart.stack : p.name)}"` } : null,
-                      !p.onSwarm && p.total > 0 ? { label: `${Icons.layers} Scaling & health…`, attrs: `data-scaling="${escapeHtml(p.name)}"` } : null,
-                      { label: `${Icons.refresh} Deploy history…`, attrs: `data-history="${escapeHtml(p.name)}"` },
-                      { label: `${Icons.settings} Edit YAML`, attrs: `data-edit="${escapeHtml(p.name)}" ${dis}` },
-                      { label: `${Icons.folder || Icons.compose} Files (Dockerfile, .env…)`, attrs: `data-files="${escapeHtml(p.name)}"` },
-                      { label: `${Icons.terminal} Terminal in this folder`, attrs: `data-term="${escapeHtml(p.name)}" data-cwd="${escapeHtml(p.workingDir || '')}"` },
-                      p.workingDir ? { label: '📁 Open folder in Files', attrs: `data-openfolder="${escapeHtml(p.workingDir)}"` } : null,
-                      p.workingDir && (Store.get('activeServer') || {}).type === 'ssh' ? { label: '▶ Tasks and deploy recipes', attrs: `data-tasks="${escapeHtml(p.workingDir)}"` } : null,
-                      '-',
-                      { label: `${Icons.play} Up`, attrs: `data-action="up" data-project="${escapeHtml(p.name)}" ${dis}` },
-                      { label: `${Icons.restart} Restart`, attrs: `data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}` },
-                      { label: `${Icons.layers} Rebuild…`, attrs: `data-action="rebuild" data-project="${escapeHtml(p.name)}" data-services="${escapeHtml((p.services || []).join(','))}" ${dis}` },
-                      p.deploySource === 'folder' ? { label: `${Icons.refresh} Update from folder…`, attrs: `data-update="${escapeHtml(p.name)}" data-rpath="${escapeHtml(p.workingDir || '')}" data-services="${escapeHtml((p.services || []).join(','))}"` } : null,
-                      !isGit && !p.onSwarm && (p.workingDir || p.deploySource === 'folder') ? { label: 'Connect to Git…', attrs: `data-git-connect="${escapeHtml(p.name)}"` } : null,
-                      isGit ? { label: 'Git pull (files only)', attrs: `data-git-pull="${escapeHtml(p.name)}"` } : null,
-                      isGit ? { label: 'Git sync and deploy', attrs: `data-git-sync="${escapeHtml(p.name)}"` } : null,
-                      { label: `${Icons.stop} Down`, attrs: `data-action="down" data-project="${escapeHtml(p.name)}" ${dis}` },
-                      '-',
-                      isGit ? { label: 'Force pull (discard server changes)…', attrs: `data-git-force="${escapeHtml(p.name)}"`, danger: true } : null,
-                      { label: `${Icons.trash} Delete stack…`, attrs: `data-delproj="${escapeHtml(p.name)}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"`, danger: true },
-                    ])}
-                  </div></td>
-                </tr>`;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        `}
-        <div id="deploy-console" style="margin-top:18px"></div>
-      `;
-
-      renderDeploys();
-      document.getElementById('compose-refresh')?.addEventListener('click', render);
-      document.getElementById('compose-deploy-wizard')?.addEventListener('click', () => openDeployWizard(remote));
-
+  // The handlers of the stack buttons (data-* attributes) — used by the list and by a project's page.
+  function wireActions(projects, root = content) {
       // Global Git header action handlers
       document.getElementById('global-git-sync-all')?.addEventListener('click', async () => {
         try {
@@ -217,19 +128,19 @@ Router.register('compose', async (content) => {
       });
       document.getElementById('global-git-manage-btn')?.addEventListener('click', () => openGlobalGitManageModal(projects));
       document.getElementById('global-git-pull-custom')?.addEventListener('click', () => openCustomPathGitPullModal());
-      content.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
-      content.querySelectorAll('[data-tasks]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); Router.navigate('deploy', { tab: 'tasks', dir: btn.dataset.tasks }); }));
-      content.querySelectorAll('[data-openfolder]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); QuickFiles.open(btn.dataset.openfolder); }));
-      content.querySelectorAll('[data-term]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectTerminal(btn.dataset.term, btn.dataset.cwd); }));
-      content.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote, !!btn.dataset.adopted); }));
-      content.querySelectorAll('[data-update]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openFolderDeploy({ update: btn.dataset.update, remotePath: btn.dataset.rpath, services: (btn.dataset.services || '').split(',').filter(Boolean) }); }));
-      content.querySelectorAll('[data-edit]').forEach(btn => {
+      root.querySelectorAll('[data-files]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectFiles(btn.dataset.files); }));
+      root.querySelectorAll('[data-tasks]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); Router.navigate('deploy', { tab: 'tasks', dir: btn.dataset.tasks }); }));
+      root.querySelectorAll('[data-openfolder]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); QuickFiles.open(btn.dataset.openfolder); }));
+      root.querySelectorAll('[data-term]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openProjectTerminal(btn.dataset.term, btn.dataset.cwd); }));
+      root.querySelectorAll('[data-delproj]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteProject(btn.dataset.delproj, !!btn.dataset.remote, !!btn.dataset.adopted); }));
+      root.querySelectorAll('[data-update]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openFolderDeploy({ update: btn.dataset.update, remotePath: btn.dataset.rpath, services: (btn.dataset.services || '').split(',').filter(Boolean) }); }));
+      root.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', (e) => { e.stopPropagation(); openComposeEditor(btn.dataset.edit); });
       });
 
       // Bulk Delete UI logic
-      const bulkAll = content.querySelector('.bulk-all');
-      const bulkItems = content.querySelectorAll('.bulk-item');
+      const bulkAll = root.querySelector('.bulk-all');
+      const bulkItems = root.querySelectorAll('.bulk-item');
       const bulkBtn = document.getElementById('compose-bulk-delete');
       const bulkCount = document.getElementById('bulk-count');
       const updateBulkBtn = () => {
@@ -257,7 +168,7 @@ Router.register('compose', async (content) => {
 
 
       // Direct Git Pull action handler
-      content.querySelectorAll('[data-git-pull]').forEach(btn => btn.addEventListener('click', async (e) => {
+      root.querySelectorAll('[data-git-pull]').forEach(btn => btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const proj = btn.dataset.gitPull;
         btn.disabled = true;
@@ -300,7 +211,7 @@ Router.register('compose', async (content) => {
       }));
 
       // Direct Git Sync & Deploy action handler
-      content.querySelectorAll('[data-git-sync]').forEach(btn => btn.addEventListener('click', async (e) => {
+      root.querySelectorAll('[data-git-sync]').forEach(btn => btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const proj = btn.dataset.gitSync;
         try {
@@ -312,7 +223,7 @@ Router.register('compose', async (content) => {
       }));
 
       // Direct Force Pull & Rebuild action handler
-      content.querySelectorAll('[data-git-force]').forEach(btn => btn.addEventListener('click', (e) => {
+      root.querySelectorAll('[data-git-force]').forEach(btn => btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const proj = btn.dataset.gitForce;
         showConfirm('⚠️ Force Pull &amp; Deploy', `Force pull and redeploy <strong>"${escapeHtml(proj)}"</strong>?<br><br><span class="text-xs text-muted">This will run <code>git reset --hard origin/&lt;branch&gt;</code> (discarding any local uncommitted changes on the server) and rebuild &amp; restart the containers.</span>`, async () => {
@@ -328,11 +239,11 @@ Router.register('compose', async (content) => {
       // "⋯ More" row menus — position:fixed so the table's overflow can't clip them. Items keep their
       // data-* attrs, so every action handler (wired above + the data-action block below) still fires;
       // here we only open/close the menu and place it under its toggle.
-      content.querySelectorAll('.row-menu-toggle').forEach(t => t.addEventListener('click', (e) => {
+      root.querySelectorAll('.row-menu-toggle').forEach(t => t.addEventListener('click', (e) => {
         e.stopPropagation();
         const pop = t.parentElement.querySelector('.row-menu-pop');
         const isOpen = pop.style.display === 'flex';
-        content.querySelectorAll('.row-menu-pop').forEach(p => p.style.display = 'none');
+        root.querySelectorAll('.row-menu-pop').forEach(p => p.style.display = 'none');
         if (!isOpen) {
           pop.style.display = 'flex';
           const r = t.getBoundingClientRect();
@@ -341,7 +252,7 @@ Router.register('compose', async (content) => {
           pop.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
         }
       }));
-      content.querySelectorAll('.row-menu-pop .rmi').forEach(b => b.addEventListener('click', () => { const p = b.closest('.row-menu-pop'); if (p) p.style.display = 'none'; }));
+      root.querySelectorAll('.row-menu-pop .rmi').forEach(b => b.addEventListener('click', () => { const p = b.closest('.row-menu-pop'); if (p) p.style.display = 'none'; }));
       if (!window._cmRowMenu) {
         window._cmRowMenu = true;
         document.addEventListener('click', (e) => { if (!e.target.closest('.row-menu')) document.querySelectorAll('.row-menu-pop').forEach(p => p.style.display = 'none'); });
@@ -349,7 +260,7 @@ Router.register('compose', async (content) => {
       }
 
       // For git projects, check (server-cached) whether the repo has newer commits → show an interactive "update" badge.
-      content.querySelectorAll('tr[data-gitproj]').forEach(async (tr) => {
+      root.querySelectorAll('tr[data-gitproj]').forEach(async (tr) => {
         const proj = tr.dataset.gitproj;
         try {
           const st = await API.get(`/compose/${proj}/git-status`);
@@ -375,7 +286,7 @@ Router.register('compose', async (content) => {
         } catch (e) { /* unreachable repo / not git — no badge */ }
       });
 
-      content.querySelectorAll('[data-action]').forEach(btn => {
+      root.querySelectorAll('[data-action]').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           e.stopPropagation();
           const action = btn.dataset.action;
@@ -407,156 +318,265 @@ Router.register('compose', async (content) => {
         });
       });
 
-      content.querySelectorAll('[data-history]').forEach(btn => btn.addEventListener('click', () => openDeployHistory(btn.dataset.history)));
-      content.querySelectorAll('[data-scaling]').forEach(btn => btn.addEventListener('click', () => window.ComposeScaling.open(btn.dataset.scaling)));
-      content.querySelectorAll('[data-git-connect]').forEach(btn => btn.addEventListener('click', () => window.GitConnect.open({ project: btn.dataset.gitConnect }, { onDone: () => Router.navigate(Store.get('currentPage'), Store.get('currentParams') || {}) })));
-      content.querySelectorAll('[data-open-stack]').forEach(btn => btn.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-stacks', stack: btn.dataset.openStack })));
-      content.querySelectorAll('[data-move-back]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveBack ? window.SwarmUI.moveBack(btn.dataset.moveBack, () => render()) : Router.navigate('swarm', { tab: 'swarm-stacks' }))));
-      content.querySelectorAll('[data-move-swarm]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveProject ? window.SwarmUI.moveProject(btn.dataset.moveSwarm, () => render()) : Router.navigate('swarm', { tab: 'swarm-migrate', project: btn.dataset.moveSwarm }))));
+      root.querySelectorAll('[data-open-proj]').forEach(el => el.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); Router.navigate('deploy', { tab: 'compose', project: el.dataset.openProj }); }));
+      root.querySelectorAll('[data-history]').forEach(btn => btn.addEventListener('click', () => openDeployHistory(btn.dataset.history)));
+      root.querySelectorAll('[data-scaling]').forEach(btn => btn.addEventListener('click', () => window.ComposeScaling.open(btn.dataset.scaling)));
+      root.querySelectorAll('[data-git-connect]').forEach(btn => btn.addEventListener('click', () => window.GitConnect.open({ project: btn.dataset.gitConnect }, { onDone: () => Router.navigate(Store.get('currentPage'), Store.get('currentParams') || {}) })));
+      root.querySelectorAll('[data-open-stack]').forEach(btn => btn.addEventListener('click', () => Router.navigate('swarm', { tab: 'swarm-stacks', stack: btn.dataset.openStack })));
+      root.querySelectorAll('[data-move-back]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveBack ? window.SwarmUI.moveBack(btn.dataset.moveBack, () => render()) : Router.navigate('swarm', { tab: 'swarm-stacks' }))));
+      root.querySelectorAll('[data-move-swarm]').forEach(btn => btn.addEventListener('click', () => (window.SwarmUI && window.SwarmUI.moveProject ? window.SwarmUI.moveProject(btn.dataset.moveSwarm, () => render()) : Router.navigate('swarm', { tab: 'swarm-migrate', project: btn.dataset.moveSwarm }))));
+  }
 
-      content.querySelectorAll('[data-detail]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          try {
-            const name = btn.dataset.detail;
-            const [data, git] = await Promise.all([
-              API.get(`/compose/${name}`),
-              API.get(`/compose/${name}/git`).catch(() => ({ gitManaged: false })),
-            ]);
-            const webhookUrl = git.gitManaged ? `${location.origin}/api/compose/webhook/${encodeURIComponent(name)}?key=${git.webhookSecret}` : '';
-            const isLocalUrl = /^(localhost|127\.|0\.0\.0\.0|::1|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
-            const gitSection = git.gitManaged ? `
-              <div class="card mb-2" style="padding:12px;background:var(--accent-dim)">
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-                  <div class="text-sm" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:.85"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><strong>Git</strong> — <code>${escapeHtml(git.repoUrl)}</code> @ <code>${escapeHtml(git.branch)}</code>${git.subdir ? ' /' + escapeHtml(git.subdir) : ''}</div>
-                  <div style="display:flex;gap:6px;flex:none">
-                    <button class="btn btn-sm btn-secondary" id="cd-pull" title="Pull the latest from git and see what changed — without deploying anything">⤓ Pull</button>
-                    <button class="btn btn-sm btn-primary" id="cd-redeploy" title="Pull, then choose which changed stacks/services to deploy">↻ Redeploy…</button>
-                  </div>
-                </div>
-                <details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;font-weight:600">Auto-deploy webhook — optional</summary>
-                  <div class="text-xs text-muted" style="margin:6px 0">Optional. For <strong>automatic</strong> redeploy on every push. Prefer to control it yourself? Just use <strong>Redeploy</strong> above when you want — and ignore this.</div>
-                  ${isLocalUrl ? `<div class="text-xs" style="color:var(--warning);margin-bottom:6px">⚠ This URL points to <code>${escapeHtml(location.host)}</code> — <strong>GitHub can't reach it.</strong> The webhook only fires if DockGate has a <strong>public</strong> URL (a domain/VPS reachable from the internet). On localhost/LAN it will never trigger.</div>` : ''}
-                  <pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:11px;padding:8px;margin:0">${escapeHtml(webhookUrl)}</pre>
-                  <button class="btn btn-xs btn-secondary" id="cd-copy-hook" style="margin-top:6px">📋 Copy webhook URL</button>
-                  <div class="text-xs text-muted" style="margin-top:4px">Add it in the repo (GitHub: Settings → Webhooks, content-type <code>application/json</code>). On push it re-clones + re-applies your deploy plan.</div>
-                </details>
-              </div>` : '';
-            const dm = showModal(`Compose: ${escapeHtml(data.name)}`, `
-              ${gitSection}
-              <div class="detail-grid mb-2">
-                <div class="detail-item"><div class="detail-label">Working Directory</div><div class="detail-value mono">${data.workingDir ? `<a href="#" data-dm-open="${escapeHtml(data.workingDir)}" title="Open in Quick Files">📁 ${escapeHtml(data.workingDir)}</a>` : '—'}</div></div>
-                <div class="detail-item"><div class="detail-label">Config Files</div><div class="detail-value mono">${escapeHtml(data.configFiles)}</div></div>
-              </div>
-              <div class="table-wrapper">
-                <table>
-                  <thead><tr><th>Service</th><th>Container</th><th>State</th></tr></thead>
-                  <tbody>${data.services.map(s => `<tr>
-                    <td class="td-name">${escapeHtml(s.name)}</td>
-                    <td class="td-mono text-sm">${escapeHtml(s.containerName)}</td>
-                    <td><span class="badge badge-${s.state}">${s.status}</span></td>
-                  </tr>`).join('')}</tbody>
-                </table>
-              </div>
-            `, [{ label: 'Close', className: 'btn btn-secondary' }]);
-            dm.overlay.querySelector('[data-dm-open]')?.addEventListener('click', (e) => { e.preventDefault(); dm.close(); QuickFiles.open(e.currentTarget.dataset.dmOpen); });
-            dm.overlay.querySelector('#cd-copy-hook')?.addEventListener('click', () => navigator.clipboard?.writeText(webhookUrl).then(() => showToast('Copied', 'success', 2000)));
 
-            dm.overlay.querySelector('#cd-pull')?.addEventListener('click', async (e) => {
-              const b = e.target; b.disabled = true; b.textContent = 'Pulling…';
-              try {
-                const r = await API.post(`/compose/${encodeURIComponent(name)}/git-pull`, {});
-                dm.close();
-                const sh = s => (s || '').slice(0, 7);
-                const commits = r.commits || [];
-                const changed = r.changedFiles || r.changed || [];
-                const body = changed.length || commits.length
-                  ? `<div class="text-sm" style="margin-bottom:6px">⤓ Pulled <span class="td-mono">${sh(r.fromSHA)}</span> → <span class="td-mono">${sh(r.toSHA)}</span></div>
-                     ${commits.length ? `<div class="text-sm" style="margin:8px 0 4px">⬇ <strong>${commits.length}</strong> commit(s) pulled:</div><pre class="logs-viewer" style="max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:0">${commits.map(c => `${escapeHtml(c.hash || '')}  ${escapeHtml(c.date || '')}  ${escapeHtml(c.subject || '')}`).join('\n')}</pre>` : ''}
-                     ${changed.length ? `<div class="text-sm" style="margin:8px 0 4px">📦 <strong>${changed.length}</strong> file(s) changed:</div><pre class="logs-viewer" style="max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:0">${changed.map(escapeHtml).join('\n')}</pre>` : ''}
-                     <div class="text-xs text-muted" style="margin-top:8px">Code pulled successfully to server folder. Containers are untouched. Click <strong>⚡ Deploy now</strong> to build &amp; restart containers.</div>`
-                  : `<div class="text-sm">✓ Already at the latest commit (<span class="td-mono">${sh(r.toSHA || r.fromSHA)}</span>) — repository is up to date on server.</div>`;
-                
-                const pm = showModal(`Git Pull — ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
-                if (changed.length || commits.length || !r.upToDate) {
-                  const go = document.createElement('button');
-                  go.className = 'btn btn-primary';
-                  go.innerHTML = '⚡ Deploy now';
-                  pm.overlay.querySelector('#modal-footer').appendChild(go);
-                  go.onclick = async () => {
-                    pm.close();
-                    try {
-                      const res = await API.post(`/compose/${encodeURIComponent(name)}/git-sync`, {});
-                      if (res && res.jobId) openDeployLog(res.jobId, name);
-                      showToast('Deploying latest changes…', 'info', 4000);
-                      render();
-                    } catch (err) { showToast(err.message, 'error', 9000); }
-                  };
-                }
-                render();
-              } catch (err) {
-                b.disabled = false; b.textContent = '⤓ Pull';
-                showModal(`Git Pull Failed — ${escapeHtml(name)}`, `<div class="text-sm" style="color:var(--danger);white-space:pre-wrap;word-break:break-all">${escapeHtml(err.message)}</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
-              }
-            });
+  // A project's own page (Deploy → Compose stacks → a stack): Overview · Services · Files · Deploys · Automation · Settings.
+  // The buttons carry the same data-* attributes as the list, so wireActions() handles them.
+  async function renderProject(name) {
+    const tab = params.ptab || 'overview';
+    const enc = encodeURIComponent(name);
+    let list = [], data = { services: [] }, git = { gitManaged: false };
+    try {
+      [list, data, git] = await Promise.all([API.get('/compose'), API.get(`/compose/${enc}`).catch(() => ({ services: [] })), API.get(`/compose/${enc}/git`).catch(() => ({ gitManaged: false }))]);
+    } catch (e) { content.innerHTML = UI.errorState(e); return; }
+    if (!Router.isActiveNav(pageNavId)) return;
+    const p = (list || []).find(x => x.name === name);
+    if (!p) { content.innerHTML = `<div class="card" style="padding:20px"><b>No stack called ${escapeHtml(name)} on this server.</b><div style="margin-top:10px">${UI.btn('Back to the stacks', 'data-cp-back')}</div></div>`; content.querySelector('[data-cp-back]').onclick = () => Router.navigate('deploy', { tab: 'compose' }); return; }
+    const isGit = !!(git.gitManaged || p.isGit || p.deploySource === 'git');
+    const managed = git.gitManaged && git.type === 'managed';
+    const n = escapeHtml(name);
+    const wd = p.workingDir || data.workingDir || '';
+    const srv = Store.get('activeServer') || {};
+    const ssh = srv.type === 'ssh';
+    const srcLabel = isGit ? (managed ? 'Git — cloned by DockGate' : 'Git — checkout on the server') : p.deploySource === 'folder' ? 'Uploaded folder' : p.deploySource === 'adopt' ? 'Adopted in place' : p.deploySource === 'editor' ? 'Written in the editor' : 'Started outside DockGate';
+    const state = p.onSwarm ? UI.pill('info', 'on Swarm') : p.total === 0 ? UI.pill('muted', 'not deployed') : p.running === p.total ? UI.pill('ok', `${p.running}/${p.total} running`) : UI.pill(p.running ? 'warn' : 'bad', `${p.running}/${p.total} running`);
+    const T = [['overview', 'Overview'], ['services', 'Services'], ['files', 'Files'], ['deploys', 'Deploys'], ['automation', 'Automation'], ['settings', 'Settings']];
+    content.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn btn-secondary btn-sm" data-cp-back>← Stacks</button>
+        <h2 style="margin:0;font-size:20px">${n}</h2>
+        ${UI.chip(isGit ? `git${git.branch ? ' · ' + escapeHtml(git.branch) : ''}` : srcLabel)} ${state}
+        <span style="flex:1"></span>
+        ${p.onSwarm ? `<button class="btn btn-secondary btn-sm" data-open-stack="${escapeHtml(p.swarmPart ? p.swarmPart.stack : name)}">Open stack</button>` : `
+          <button class="btn btn-secondary btn-sm" data-action="up" data-project="${n}">${Icons.play} Up</button>
+          ${p.total ? `<button class="btn btn-secondary btn-sm" data-action="restart" data-project="${n}">${Icons.restart} Restart</button>` : ''}
+          <button class="btn btn-secondary btn-sm" data-action="rebuild" data-project="${n}" data-services="${escapeHtml((p.services || []).join(','))}">${Icons.layers} Rebuild…</button>
+          ${isGit ? `<button class="btn btn-primary btn-sm" data-git-sync="${n}" title="Pull the latest code, then rebuild and restart">Sync</button>` : ''}
+          ${p.total ? `<button class="btn btn-secondary btn-sm" data-action="down" data-project="${n}">${Icons.stop} Down</button>` : ''}`}
+        <button class="btn btn-secondary btn-sm" data-cp-refresh title="Refresh">${Icons.refresh}</button>
+      </div>
+      <div class="tabs" id="cp-tabs">${T.map(([k, l]) => `<button class="tab ${tab === k ? 'active' : ''}" data-cp-tab="${k}">${l}</button>`).join('')}</div>
+      <div id="cp-body" style="margin-top:14px"></div>
+      <div id="deploy-console" style="margin-top:18px"></div>`;
+    content.querySelector('[data-cp-back]').onclick = () => Router.navigate('deploy', { tab: 'compose' });
+    content.querySelector('[data-cp-refresh]').onclick = () => render();
+    content.querySelectorAll('[data-cp-tab]').forEach(b => b.onclick = () => Router.navigate('deploy', { tab: 'compose', project: name, ptab: b.dataset.cpTab }, { replace: true }));
+    wireActions([], content.firstElementChild);
+    renderDeploys();
+    const body = content.querySelector('#cp-body');
+    const card = (title, inner, extra = '') => `<div class="card" style="padding:14px 16px${extra}"><div style="font-weight:600;margin-bottom:8px">${title}</div>${inner}</div>`;
+    const pathv = (v) => `<span class="td-mono" title="${escapeHtml(v || '')}" style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left">${escapeHtml(v || '—')}</span>`;
+    const row = (k, v) => `<div style="display:flex;gap:10px;padding:3px 0"><span class="ui-sub" style="width:130px;flex:none">${k}</span><span style="min-width:0;flex:1;word-break:break-all">${v}</span></div>`;
 
-            dm.overlay.querySelector('#cd-redeploy')?.addEventListener('click', async (e) => {
-              dm.close();
-              try {
-                const r = await API.post(`/compose/${encodeURIComponent(name)}/git-sync`, {});
-                if (r && r.jobId) openDeployLog(r.jobId, name);
-                showToast(`Syncing & deploying "${name}"…`, 'info', 4000);
-                render();
-              } catch (err) { showToast(err.message, 'error', 10000); }
-            });
-
-            // External git checkout? (DockGate didn't deploy this, but its folder is a git repo on the host.)
-            if (!git.gitManaged) {
-              API.get(`/compose/${encodeURIComponent(name)}/git-detect`).then(d => {
-                if (!d || !d.isGit) return;
-                const grid = dm.overlay.querySelector('.detail-grid');
-                if (!grid) return;
-                const where = d.remote ? 'on remote server' : 'on local host';
-                const card = document.createElement('div');
-                card.className = 'card mb-2';
-                card.style.cssText = 'padding:12px;background:var(--accent-dim)';
-                card.innerHTML = `
-                  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-                    <div class="text-sm" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:.85"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><strong>Git (detected)</strong> — ${d.remoteUrl ? `<code>${escapeHtml(d.remoteUrl)}</code> @ ` : ''}<code>${escapeHtml(d.branch || 'HEAD')}</code></div>
-                    <div style="display:flex;gap:6px;flex:none">
-                      <button class="btn btn-sm btn-secondary" id="xg-pull" title="Fast-forward this checkout — does not deploy">⤓ Pull</button>
-                      <button class="btn btn-sm btn-primary" id="xg-redeploy" title="Pull and docker compose up -d --build">⚡ Sync</button>
-                    </div>
-                  </div>
-                  <div class="text-xs text-muted" style="margin-top:6px">External git repository ${where} (<code>${escapeHtml(d.repoRoot)}</code>). Pull updates files only without touching containers.</div>`;
-                grid.parentNode.insertBefore(card, grid);
-                const pullBtn = card.querySelector('#xg-pull');
-                const redBtn = card.querySelector('#xg-redeploy');
-                pullBtn.addEventListener('click', async () => {
-                  pullBtn.disabled = true; pullBtn.textContent = 'Pulling…';
-                  try {
-                    const r = await API.post(`/compose/${encodeURIComponent(name)}/git-pull`, {});
-                    dm.close();
-                    showToast(r.upToDate ? `✓ "${name}" is up to date.` : `✓ Pulled updates for "${name}". Containers untouched.`, 'success', 5000);
-                    render();
-                  } catch (err) {
-                    pullBtn.disabled = false; pullBtn.textContent = '⤓ Pull';
-                    showToast(err.message, 'error', 9000);
-                  }
-                });
-                redBtn.addEventListener('click', async () => {
-                  dm.close();
-                  try {
-                    const r = await API.post(`/compose/${encodeURIComponent(name)}/git-sync`, {});
-                    if (r && r.jobId) openDeployLog(r.jobId, name);
-                    showToast(`Syncing "${name}"…`, 'info', 4000);
-                    render();
-                  } catch (err) { showToast(err.message, 'error', 10000); }
-                });
-              }).catch(() => {});
-            }
-          } catch (e) { showToast(e.message, 'error'); }
-        });
+    if (tab === 'overview') {
+      let last = null;
+      try { last = ((await API.get(`/compose/${enc}/deploys`)).deploys || [])[0] || null; } catch (e) { /* none */ }
+      const gitCard = isGit
+        ? card('Git', `${row('Repository', `<span class="td-mono">${escapeHtml(git.repoUrl || (p.gitInfo && p.gitInfo.repoUrl) || '—')}</span>`)}${row('Branch', escapeHtml(git.branch || '—'))}${row('Commit', `<span class="td-mono">${escapeHtml((git.deployedCommit || '').slice(0, 7) || '—')}</span>`)}
+            <div style="display:flex;gap:6px;margin-top:8px">${UI.btn('Pull (files only)', `data-git-pull="${n}"`)} ${UI.btn('Sync and deploy', `data-git-sync="${n}"`, 'btn-primary')}</div>`)
+        : card('Git', `<div class="ui-sub">This stack's files are not a Git checkout. Connect it to a repository to pull new code, deploy on every push and keep a history of commits.</div><div style="margin-top:8px">${UI.btn('Connect to Git…', `data-git-connect="${n}"`, 'btn-primary')}</div>`);
+      body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">
+        ${card('Stack', `${row('Source', escapeHtml(srcLabel))}${row('State', state)}${row('Folder', pathv(wd))}${row('Compose files', pathv(p.configFiles || data.configFiles))}${row('Server', escapeHtml(srv.name || srv.id || 'Local'))}`)}
+        ${gitCard}
+        ${card('Last deploy', last ? `${row('When', formatTime(new Date(last.finished_at || last.started_at).toISOString()))}${row('How', escapeHtml(last.kind || 'deploy') + (last.git_commit ? ` · <span class="td-mono">${escapeHtml(last.git_commit.slice(0, 7))}</span>` : ''))}${row('Result', last.status === 'done' ? UI.pill('ok', 'deployed') : UI.pill('bad', 'failed'))}<div style="margin-top:8px">${UI.btn('All deploys', 'data-cp-go="deploys"')}</div>` : '<div class="ui-sub">No deploys recorded yet.</div>')}
+        ${card('Services', (data.services || []).length ? (data.services || []).map(s => `<div style="display:flex;gap:8px;align-items:center;padding:3px 0"><b style="flex:1">${escapeHtml(s.name)}</b><span class="badge badge-${escapeHtml(s.state)}">${escapeHtml(s.status || s.state)}</span></div>`).join('') : '<div class="ui-sub">No containers yet — press Up.</div>')}
+      </div>${stackImageNote(p) ? `<div style="margin-top:12px">${stackImageNote(p)}</div>` : ''}`;
+    } else if (tab === 'services') {
+      body.innerHTML = (data.services || []).length ? UI.table([{ label: 'Service' }, { label: 'Container' }, { label: 'Image' }, { label: 'State' }, { label: 'Ports' }, { label: '', align: 'right' }], data.services.map(s => ({ cells: [
+        `<b>${escapeHtml(s.name)}</b>`, `<span class="td-mono text-sm">${escapeHtml(s.containerName)}</span>`, `<span class="td-mono text-xs">${escapeHtml(s.image || '')}</span>`,
+        `<span class="badge badge-${escapeHtml(s.state)}">${escapeHtml(s.status || s.state)}</span>`,
+        `<span class="td-mono text-xs">${escapeHtml([...new Set((s.ports || []).filter(x => x.PublicPort).map(x => `${x.PublicPort}→${x.PrivatePort}`))].join(', ') || '—')}</span>`,
+        `${UI.btn('Logs', `data-cp-ctr="${escapeHtml(s.containerId)}" data-cp-ctab="logs"`, 'btn-xs')} ${UI.btn('Terminal', `data-cp-ctr="${escapeHtml(s.containerId)}" data-cp-ctab="terminal"`, 'btn-xs')} ${UI.btn('Open', `data-cp-ctr="${escapeHtml(s.containerId)}" data-cp-ctab="overview"`, 'btn-xs')}`,
+      ] })), { minWidth: 0 }) : '<div class="card" style="padding:20px"><b>No containers.</b><div class="ui-sub">Press Up to start the stack.</div></div>';
+      body.querySelectorAll('[data-cp-ctr]').forEach(b => b.onclick = () => Router.navigate('container-detail', { id: b.dataset.cpCtr, tab: b.dataset.cpCtab }));
+    } else if (tab === 'files') {
+      let own = true;
+      try { await API.get(`/compose/${enc}/dir?sub=`); } catch (e) { own = false; }
+      if (!Router.isActiveNav(pageNavId)) return;
+      if (!own && wd) {
+        body.innerHTML = `<div class="ui-sub" style="margin-bottom:8px">This stack was not deployed by DockGate — its folder on the server, <span class="td-mono">${escapeHtml(wd)}</span>:</div><div class="card" style="padding:0;overflow:hidden"><div id="cp-fb" style="min-height:420px"></div></div><div style="margin-top:10px;display:flex;gap:6px">${UI.btn('Terminal in this folder', `data-term="${n}" data-cwd="${escapeHtml(wd)}"`)}</div>`;
+        FileBrowser.mount(body.querySelector('#cp-fb'), { compact: true, startPath: wd });
+        wireActions([], body);
+        return;
+      }
+      body.innerHTML = `<div class="card" style="padding:14px 16px"><div id="cp-files"></div><div style="margin-top:10px;display:flex;gap:6px">${UI.btn('Edit YAML', `data-edit="${n}"`)} ${wd ? UI.btn('Open folder in Files', `data-openfolder="${escapeHtml(wd)}"`) : ''} ${UI.btn('Terminal in this folder', `data-term="${n}" data-cwd="${escapeHtml(wd)}"`)}</div></div>`;
+      openProjectFiles(name, body.querySelector('#cp-files'));
+    } else if (tab === 'deploys') {
+      body.innerHTML = '<div class="card" style="padding:14px 16px"><div style="font-weight:600;margin-bottom:8px">Compose deploys</div><div id="cp-hist"></div></div><div class="card" style="padding:14px 16px;margin-top:12px"><div style="font-weight:600;margin-bottom:8px">Recipe and task runs</div><div id="cp-runs" class="ui-sub">Loading…</div></div>';
+      await openDeployHistory(name, body.querySelector('#cp-hist'));
+      const runsEl = body.querySelector('#cp-runs');
+      if (!wd) runsEl.textContent = 'The folder of this stack is not known.';
+      else {
+        try {
+          const runs = ((await API.get(`/tasks/runs?dir=${encodeURIComponent(wd)}&limit=20`)).runs || []);
+          const st = { ok: ['ok', 'ok'], failed: ['bad', 'failed'], running: ['info', 'running'], cancelled: ['warn', 'cancelled'], timeout: ['warn', 'time limit'] };
+          runsEl.className = '';
+          runsEl.innerHTML = runs.length ? UI.table([{ label: 'When' }, { label: 'What' }, { label: 'Started by' }, { label: 'Result' }, { label: '', align: 'right' }], runs.map(r => ({ cells: [
+            formatTime(new Date(r.started_at || r.startedAt).toISOString()), `${escapeHtml(r.name || '')}<div class="ui-sub">${r.kind === 'recipe' ? 'recipe' : 'task'}</div>`, escapeHtml(r.trigger || 'manual'),
+            UI.pill(...(st[r.status] || ['', r.status])), UI.btn('Log', `data-cp-runlog="${r.id}"`, 'btn-xs'),
+          ] })), { minWidth: 0 }) : '<div class="ui-sub">No recipe or task runs for this folder yet. Set up a deploy recipe under <b>Automation</b>.</div>';
+          runsEl.querySelectorAll('[data-cp-runlog]').forEach(b => b.onclick = () => Router.navigate('deploy', { tab: 'tasks', dir: wd, view: 'runs', run: b.dataset.cpRunlog }));
+        } catch (e) { runsEl.textContent = e.message; }
+      }
+    } else if (tab === 'automation') {
+      body.innerHTML = '<div class="ui-sub">Loading…</div>';
+      const [sch, rec] = await Promise.all([
+        API.get('/schedules').then(r => (r.schedules || []).filter(x => x.kind === 'git_sync' && (x.server_id || 'local') === (srv.id || 'local'))).catch(() => []),
+        wd ? API.get(`/tasks/recipes?dir=${encodeURIComponent(wd)}`).then(r => r.recipes || []).catch(() => []) : Promise.resolve(null),
+      ]);
+      if (!Router.isActiveNav(pageNavId)) return;
+      const hook = managed && git.webhookSecret ? `${location.origin}/api/compose/webhook/${enc}?key=${git.webhookSecret}` : '';
+      const hooked = (rec || []).find(r => r.hook);
+      body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px">
+        ${card('Deploy recipe', rec == null ? '<div class="ui-sub">The folder of this stack is not known.</div>'
+          : rec.length ? `${rec.map(r => `<div style="display:flex;gap:8px;align-items:center;padding:4px 0"><b style="flex:1">${escapeHtml(r.name)}</b><span class="ui-sub">${(r.steps || []).length} step(s)${r.hook ? ' · webhook' : ''}${r.schedule ? ' · scheduled' : ''}</span>${UI.btn('Deploy', `data-cp-rrun="${r.id}"`, 'btn-xs btn-primary')}</div>`).join('')}<div class="ui-sub" style="margin-top:6px">Steps, checks, going back when a deploy fails, a webhook for GitHub / GitLab / Bitbucket, a schedule.</div><div style="margin-top:8px">${UI.btn('Edit in Tasks', 'data-cp-tasks')}</div>`
+          : `<div class="ui-sub">One way to deploy this stack, by hand, on every push or on a schedule: ${isGit ? 'Git pull → ' : ''}docker compose up --build${isGit ? ' → if it fails, back to the commit before' : ''}. Add a URL check and more steps in Tasks.</div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${UI.btn(isGit ? 'Set up auto-deploy' : 'Set up a deploy recipe', 'data-cp-quick', 'btn-primary')} ${UI.btn('Open Tasks', 'data-cp-tasks')}</div>`)}
+        ${card('Deploy on every push', hooked ? `<div class="ui-sub">The recipe <b>${escapeHtml(hooked.name)}</b> deploys on every push${hooked.hookBranch ? ` to <b>${escapeHtml(hooked.hookBranch)}</b>` : ''} — with its checks and going back on failure.</div><div style="margin-top:8px">${UI.btn('Webhook URL and secret…', `data-cp-hookinfo="${hooked.id}"`)}</div>${hook ? '<div class="ui-sub" style="margin-top:8px">The older stack webhook below still works; use one of them in the repository, not both.</div>' : ''}`
+          : hook ? `<div class="ui-sub"><b>Simple webhook</b> of a stack cloned by DockGate: a push to <b>${escapeHtml(git.branch || 'the branch')}</b> pulls and redeploys, with no checks. For checks and going back on failure, set up a recipe (left) and use its webhook instead.</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:11px;padding:8px;margin:8px 0 6px">${escapeHtml(hook)}</pre>${UI.btn('Copy URL', 'data-cp-copy', 'btn-xs')}`
+          : isGit ? `<div class="ui-sub">Set up a deploy recipe (left), then turn on its webhook — it works with GitHub, GitLab, Bitbucket and CI.</div>`
+          : `<div class="ui-sub">Connect the stack to Git first.</div><div style="margin-top:8px">${UI.btn('Connect to Git…', `data-git-connect="${n}"`, 'btn-primary')}</div>`)}
+        ${card('On a schedule', `${(rec || []).filter(r => r.schedule).map(r => `<div style="display:flex;gap:8px;padding:3px 0"><b style="flex:1">${escapeHtml(r.name)}</b><span class="ui-sub td-mono">${escapeHtml(r.schedule)}</span></div>`).join('')}${sch.length ? sch.map(x => `<div style="display:flex;gap:8px;padding:3px 0"><b style="flex:1">${escapeHtml(x.name || 'Git sync')}</b><span class="ui-sub">${x.enabled ? 'on' : 'off'}</span></div>`).join('') : ''}${!sch.length && !(rec || []).some(r => r.schedule) ? '<div class="ui-sub">Nothing scheduled.</div>' : ''}<div class="ui-sub" style="margin-top:6px">A recipe can run on a schedule (Tasks); a <b>Git sync schedule</b> redeploys Git stacks cloned by DockGate when their branch has a new commit.</div><div style="margin-top:8px">${UI.btn('Open Schedules', 'data-cp-sched')}</div>`)}
+        ${card('Scaling & health', `<div class="ui-sub">Replicas with one click, auto-heal, Auto Scaling and updates without downtime — without Swarm.</div><div style="margin-top:8px">${UI.btn('Scaling & health…', `data-scaling="${n}"`)}</div>`)}
+      </div>`;
+      body.querySelector('[data-cp-quick]')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Setting up…';
+        try {
+          let gitRemote = isGit;
+          try { const i = await API.get(`/tasks/discover?dir=${encodeURIComponent(wd)}`); gitRemote = !!(i.git && i.git.remote); } catch (er) { throw new Error(`DockGate can not read the folder ${wd}: ${er.message}`); }
+          const steps = [...(gitRemote ? [{ type: 'git_pull' }] : []), { type: 'compose_up', build: true }];
+          const onFail = gitRemote ? [{ type: 'git_back' }, { type: 'compose_up', build: true }] : [];
+          const r = await API.post('/tasks/recipes', { dir: wd, name: 'Deploy', steps, onFail, settings: { notify: { fail: true } } });
+          if (gitRemote) await API.post(`/tasks/recipes/${r.id}/hook`, {});
+          showToast(gitRemote ? 'Auto-deploy set up — add the webhook to the repository' : 'Deploy recipe set up', 'success');
+          await render();
+          if (gitRemote) hookInfo(r.id);
+        } catch (er) { showToast(er.message, 'error', 9000); btn.disabled = false; btn.textContent = isGit ? 'Set up auto-deploy' : 'Set up a deploy recipe'; }
       });
+      const hookInfo = async (id) => {
+        try {
+          const h = await API.get(`/tasks/recipes/${id}/hook`);
+          const url = `${location.origin}/api/hooks/deploy/${h.hookId}`;
+          const local = /^(localhost|127\.|0\.0\.0\.0|::1|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
+          const hm = showModal('Webhook for this stack', `<div class="ui-sub">Add it to the repository. <b>GitHub:</b> Settings → Webhooks → Add webhook, content type <span class="td-mono">application/json</span>, the secret below, event <i>push</i>. <b>GitLab:</b> Settings → Webhooks, the secret as token. <b>Bitbucket:</b> Repository settings → Webhooks, the secret. From CI: <span class="td-mono">Authorization: Bearer &lt;secret&gt;</span>.</div>
+            ${local ? `<div class="insight-card" style="margin-top:8px"><div>DockGate is open at <span class="td-mono">${escapeHtml(location.host)}</span>, which GitHub can not reach. Use DockGate's public HTTPS address in the URL.</div></div>` : ''}
+            <label class="ui-field" style="margin-top:8px"><span class="ui-label">URL</span><input class="input td-mono" readonly value="${escapeHtml(url)}"></label>
+            <label class="ui-field"><span class="ui-label">Secret</span><input class="input td-mono" readonly value="${escapeHtml(h.secret)}"></label>
+            <div class="ui-sub">More (branches, the result on the commit, CI snippets): the recipe's <b>Webhook / CI…</b> in Tasks.</div>`, [{ label: 'Close' }]);
+          hm.overlay.querySelectorAll('input[readonly]').forEach(i => i.onclick = () => { i.select(); navigator.clipboard?.writeText(i.value).then(() => showToast('Copied')); });
+        } catch (er) { showToast(er.message, 'error'); }
+      };
+      body.querySelectorAll('[data-cp-hookinfo]').forEach(b => b.onclick = () => hookInfo(b.dataset.cpHookinfo));
+      body.querySelectorAll('[data-cp-rrun]').forEach(b => b.onclick = async () => {
+        try { const r = await API.post(`/tasks/recipes/${b.dataset.cpRrun}/run`, {}); showToast('Deploy started', 'success'); Router.navigate('deploy', { tab: 'tasks', dir: wd, view: 'runs', run: r.run || r.id }); }
+        catch (er) { if (er.status === 409 || /runs already|running/i.test(er.message)) showToast('A deploy of this recipe runs already — see Tasks', 'warning', 8000); else showToast(er.message, 'error', 9000); }
+      });
+      body.querySelector('[data-cp-copy]')?.addEventListener('click', () => navigator.clipboard?.writeText(hook).then(() => showToast('Copied')));
+      body.querySelector('[data-cp-tasks]')?.addEventListener('click', () => Router.navigate('deploy', { tab: 'tasks', dir: wd, view: 'recipes' }));
+      body.querySelector('[data-cp-sched]')?.addEventListener('click', () => Router.navigate('srv-automation', { tab: 'schedules' }));
+    } else if (tab === 'settings') {
+      body.innerHTML = UI.settings([
+        { label: 'Compose file', desc: 'Edit docker-compose.yml and redeploy.', action: UI.btn('Edit YAML', `data-edit="${n}"`) },
+        ...(p.deploySource === 'folder' ? [{ label: 'New version from a folder', desc: 'Upload the folder again and rebuild.', action: UI.btn('Update from folder…', `data-update="${n}" data-rpath="${escapeHtml(wd)}" data-services="${escapeHtml((p.services || []).join(','))}"`) }] : []),
+        { label: 'Git', desc: isGit ? `${escapeHtml(git.repoUrl || '')} · ${escapeHtml(git.branch || '')}` : 'Not connected.', action: isGit ? UI.btn('Force pull…', `data-git-force="${n}"`, 'btn-danger') : UI.btn('Connect to Git…', `data-git-connect="${n}"`) },
+        { label: 'Scaling & health', desc: 'Replicas, auto-heal, Auto Scaling, Roll out.', action: UI.btn('Open…', `data-scaling="${n}"`) },
+        ...(window.__swarmActive && !p.onSwarm && p.total > 0 ? [{ label: 'Swarm', desc: 'Run this stack on the Swarm cluster.', action: UI.btn('Move to Swarm…', `data-move-swarm="${n}"`) }] : []),
+        { label: 'Terminal', desc: 'A shell in the project folder on the server.', action: UI.btn('Open', `data-term="${n}" data-cwd="${escapeHtml(wd)}"`) },
+        { label: 'Delete the stack', desc: 'Stops and removes the containers; optionally the files. Volumes stay unless you remove them.', action: UI.btn('Delete…', `data-delproj="${n}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"`, 'btn-danger') },
+      ]);
+    }
+    body.querySelectorAll('[data-cp-go]').forEach(b => b.onclick = () => Router.navigate('deploy', { tab: 'compose', project: name, ptab: b.dataset.cpGo }, { replace: true }));
+    wireActions([], body);
+  }
+
+  async function render() {
+    if (params.project) return renderProject(params.project);
+    try {
+      const [projects, swSt] = await Promise.all([API.get('/compose'), API.get('/swarm/status').catch(() => null)]);
+      window.__swarmActive = !!(swSt && swSt.state === 'active' && swSt.manager); // offers "Move to Swarm…" in the row menu
+
+      // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
+      if (!Router.isActiveNav(pageNavId)) return;
+      // Compose runs the host `docker compose` CLI. On a remote SSH host it targets that daemon via
+      // DOCKER_HOST=ssh (DockGate-managed projects only; key-auth, no passphrase). The backend returns a
+      // clear 400 if unsupported, so we no longer pre-disable — just show an informational note.
+      const remote = isRemoteActive();
+      const dis = '';
+      const gitProjects = (projects || []).filter(p => p.isGit || p.deploySource === 'git');
+      content.innerHTML = `
+        ${UI.header('Compose stacks', `${projects.length} stack${projects.length === 1 ? '' : 's'} on this server${gitProjects.length ? ` · ${gitProjects.length} from Git` : ''}. Open a stack's ⋯ menu for its files, YAML, terminal and Git actions.`,
+          `<button class="btn btn-secondary btn-sm" id="compose-refresh" title="Refresh">${Icons.refresh}</button>
+           <button class="btn btn-secondary btn-sm" id="compose-bulk-delete" style="display:none;color:var(--danger)">${Icons.trash} Delete <span id="bulk-count">0</span>…</button>
+           <div class="row-menu" style="position:relative;display:inline-block">
+             <button class="btn btn-secondary btn-sm row-menu-toggle" id="global-git-btn" title="Git actions for every Git stack on this server">
+               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+               Git${gitProjects.length ? ` (${gitProjects.length})` : ''} ▾
+             </button>
+             <div class="row-menu-pop" style="min-width:260px">
+               <button class="rmi" id="global-git-sync-all">Sync and deploy all Git stacks</button>
+               <button class="rmi" id="global-git-pull-all">Pull all (files only, no restart)</button>
+               <div style="border-top:1px solid var(--border);margin:4px 0"></div>
+               <button class="rmi" id="global-git-manage-btn">Manage Git repositories…</button>
+               <button class="rmi" id="global-git-pull-custom">Pull and deploy a server path…</button>
+             </div>
+           </div>
+           <button class="btn btn-primary btn-sm" id="compose-deploy-wizard">${Icons.compose} Deploy stack</button>`)}
+        <div id="deploy-banner"></div>
+        ${remote ? '<div class="card mb-3" style="border-left:3px solid var(--accent);padding:10px 14px;font-size:13px;color:var(--text-secondary)">Remote host active — only <strong>DockGate-managed</strong> projects can be deployed (the compose file lives on DockGate). Needs a key-based SSH server without a passphrase; bind-mount paths resolve on the remote host.</div>' : ''}
+        ${projects.length === 0 ? `<div class="empty-state"><h3>No stacks yet</h3><p>Deploy one from a compose file, a Git repository, a folder or a template.</p></div>` : `
+          <div class="table-wrapper">
+            <table>
+              <thead><tr><th style="width:36px;text-align:center"><input type="checkbox" class="bulk-all" aria-label="Select all"></th><th>Stack</th><th>Source</th><th>State</th><th>Services</th><th style="text-align:right">Actions</th></tr></thead>
+              <tbody>
+                ${projects.map(p => {
+                  const isGit = !!(p.isGit || p.deploySource === 'git');
+                  const gitBranch = p.gitInfo?.branch || '';
+                  return `<tr${isGit ? ` data-gitproj="${escapeHtml(p.name)}"` : ''}>
+                  <td style="text-align:center"><input type="checkbox" class="bulk-item" data-proj="${escapeHtml(p.name)}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"></td>
+                  <td class="td-name"><a href="#" data-open-proj="${escapeHtml(p.name)}" style="color:inherit;font-weight:600">${escapeHtml(p.name)}</a>${p.workingDir ? `<div class="td-mono text-xs text-muted" title="${escapeHtml(p.workingDir)}" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.workingDir)}</div>` : ''}</td>
+                  <td>${isGit ? UI.chip(`git${gitBranch ? ' · ' + escapeHtml(gitBranch) : ''}`, { title: p.gitInfo?.repoUrl || 'Git' }) : p.deploySource === 'adopt' ? UI.chip('adopted', { title: 'Adopted in place: the compose file lives on the server. Deleting stops and untracks it but never removes your folder.' }) : p.deploySource ? UI.chip(escapeHtml(p.deploySource)) : UI.chip('external', { title: 'Started outside DockGate (docker compose up on the server)' })}</td>
+                  <td>${p.swarmPart ? `${UI.pill('info', 'Part on Swarm')}<div class="ui-sub">${escapeHtml(p.swarmPart.services.join(', '))} in stack ${escapeHtml(p.swarmPart.stack)} · ${p.running}/${p.total} here</div>` : p.onSwarm ? `${UI.pill('info', 'Runs on Swarm')}<div class="ui-sub">Swarm → Stacks</div>` : p.total === 0 ? UI.pill('off', 'not deployed') : p.running === p.total ? UI.pill('ok', `${p.running}/${p.total} running`) : p.running > 0 ? UI.pill('warn', `${p.running}/${p.total} running`) : UI.pill('off', 'stopped')}${stackImageNote(p)}</td>
+                  <td class="text-sm">${(p.services || []).map(x => escapeHtml(x)).join(', ') || '—'}</td>
+                  <td><div class="td-actions" style="justify-content:flex-end">
+                    ${p.onSwarm ? `<button class="btn btn-xs btn-secondary" data-open-stack="${escapeHtml(p.swarmPart ? p.swarmPart.stack : p.name)}" title="Open its stack in Swarm → Stacks">Open stack</button>`
+                      : p.running > 0 && p.running === p.total
+                      ? (isGit ? `<button class="btn btn-xs btn-secondary" data-git-sync="${escapeHtml(p.name)}" title="Pull the latest code and rebuild / restart">Sync</button>` : `<button class="btn btn-xs btn-secondary" data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.restart} Restart</button>`)
+                      : `<button class="btn btn-xs btn-secondary" data-action="up" data-project="${escapeHtml(p.name)}" ${dis}>${Icons.play} Up</button>`}
+                    ${!p.onSwarm && p.total > 0 && window.__swarmActive ? `<button class="btn btn-xs btn-secondary" data-move-swarm="${escapeHtml(p.name)}" title="Run this project as a Swarm stack">${Icons.layers} Move to Swarm…</button>` : ''}
+                    ${UI.menu([
+                      { label: `${Icons.eye} Open the stack`, attrs: `data-open-proj="${escapeHtml(p.name)}"` },
+                      p.onSwarm && window.__swarmActive ? { label: `${Icons.layers} Move back to Compose…`, attrs: `data-move-back="${escapeHtml(p.swarmPart ? p.swarmPart.stack : p.name)}"` } : null,
+                      '-',
+                      { label: `${Icons.play} Up`, attrs: `data-action="up" data-project="${escapeHtml(p.name)}" ${dis}` },
+                      { label: `${Icons.restart} Restart`, attrs: `data-action="restart" data-project="${escapeHtml(p.name)}" ${dis}` },
+                      { label: `${Icons.layers} Rebuild…`, attrs: `data-action="rebuild" data-project="${escapeHtml(p.name)}" data-services="${escapeHtml((p.services || []).join(','))}" ${dis}` },
+                      isGit ? { label: 'Git sync and deploy', attrs: `data-git-sync="${escapeHtml(p.name)}"` } : null,
+                      { label: `${Icons.stop} Down`, attrs: `data-action="down" data-project="${escapeHtml(p.name)}" ${dis}` },
+                      '-',
+                      { label: `${Icons.trash} Delete stack…`, attrs: `data-delproj="${escapeHtml(p.name)}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"`, danger: true },
+                    ])}
+                  </div></td>
+                </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+        <div id="deploy-console" style="margin-top:18px"></div>
+      `;
+
+      renderDeploys();
+      document.getElementById('compose-refresh')?.addEventListener('click', render);
+      document.getElementById('compose-deploy-wizard')?.addEventListener('click', () => openDeployWizard(remote));
+
+      wireActions(projects);
     } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
@@ -1096,22 +1116,23 @@ Router.register('compose', async (content) => {
       openFileEditor(project, filePath, d.content, onSave);
     } catch (e) { showToast(e.message, 'error'); }
   }
-  async function openProjectFiles(project) {
+  async function openProjectFiles(project, target) {
     // Lazy, ONE-folder-at-a-time browser (like the File Manager page) — fast even for projects with
     // node_modules / data-volume dirs, because it never recursively walks the whole tree over SFTP.
     let cwd = '';          // project-relative folder we're viewing
     let composeFile = null;
-    const m = showModal(`Files — ${escapeHtml(project)}`, `
+    const filesBody = `
       <div class="text-xs text-muted mb-2">Project files (Dockerfile, .env, configs…). Click a folder to open it. The compose file is editable here.</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <button class="btn btn-xs btn-secondary" id="pf-up" title="Up one level">⬆</button>
         <div id="pf-crumb" style="flex:1;font-family:var(--font-mono,monospace);font-size:12px;overflow-x:auto;white-space:nowrap">/</div>
         <button class="btn btn-xs btn-secondary" id="pf-refresh" title="Refresh">${Icons.refresh}</button>
       </div>
-      <div id="pf-list" style="max-height:54vh;overflow-y:auto"><div class="text-muted text-sm" style="padding:14px">Loading…</div></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
-    const root = m.overlay;
+      <div id="pf-list" style="max-height:${target ? 'none' : '54vh'};overflow-y:auto"><div class="text-muted text-sm" style="padding:14px">Loading…</div></div>`;
+    let root;
     const newBtn = document.createElement('button'); newBtn.className = 'btn btn-secondary btn-sm'; newBtn.textContent = '+ New file';
-    root.querySelector('#modal-footer').prepend(newBtn);
+    if (target) { target.innerHTML = filesBody; root = target; root.querySelector('#pf-refresh').after(newBtn); }
+    else { root = showModal(`Files — ${escapeHtml(project)}`, filesBody, [{ label: 'Close', className: 'btn btn-secondary' }]).overlay; root.querySelector('#modal-footer').prepend(newBtn); }
     newBtn.addEventListener('click', () => {
       const name = prompt('New file name (in the current folder), e.g. Dockerfile or app.conf');
       if (!name || !name.trim()) return;
@@ -1672,7 +1693,7 @@ Router.register('compose', async (content) => {
 
   // Deploy history: every deploy of the stack with the compose files it used. "Changes" compares a deploy with
   // the one before it; "Redeploy this" puts its files back and runs `up -d` (volumes untouched).
-  async function openDeployHistory(project) {
+  async function openDeployHistory(project, target) {
     let rows = [];
     try { rows = (await API.get(`/compose/${encodeURIComponent(project)}/deploys`)).deploys || []; }
     catch (e) { showToast(e.message, 'error'); return; }
@@ -1692,8 +1713,9 @@ Router.register('compose', async (content) => {
         `${d.has_files && prev ? UI.btn('Changes', `data-hdiff="${d.id}" data-hprev="${prev.id}"`) : ''} ${d.has_files && !same ? UI.btn('Redeploy this…', `data-hredeploy="${d.id}"`) : ''}`,
       ] };
     }), { minWidth: 0 }) : '<p class="text-sm text-muted">No deploys recorded yet. From now on every deploy of this stack is listed here with the compose files it used.</p>';
-    const m = showModal(`Deploys of ${project}`, `<p class="text-sm text-muted" style="margin:0 0 10px">The last 20 deploys on this server. Redeploying an older one restores its compose files and runs <span class="td-mono">up -d</span>; volumes are not touched.</p>${body}`, [{ label: 'Close', className: 'btn btn-secondary' }]);
-    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    const histBody = `<p class="text-sm text-muted" style="margin:0 0 10px">The last 20 deploys on this server. Redeploying an older one restores its compose files and runs <span class="td-mono">up -d</span>; volumes are not touched.</p>${body}`;
+    const m = target ? (target.innerHTML = histBody, { overlay: target, close() {} }) : showModal(`Deploys of ${project}`, histBody, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    if (!target) m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     m.overlay.querySelectorAll('[data-hdiff]').forEach(b => b.addEventListener('click', async () => {
       try {
         const [a, c] = await Promise.all([API.get(`/compose/${encodeURIComponent(project)}/deploys/${b.dataset.hprev}`), API.get(`/compose/${encodeURIComponent(project)}/deploys/${b.dataset.hdiff}`)]);
@@ -1876,7 +1898,7 @@ Router.register('compose', async (content) => {
 
   await render();
   // Auto-refresh project running counts; skip while a modal/input is active
-  refreshTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) render(); }, 15000);
+  refreshTimer = setInterval(() => { if (!params.project && !shouldSkipAutoRefresh()) render(); }, 15000); // a project's page refreshes itself (Refresh button)
   // Refresh the Deploys console more often while something is running (cheap; in-memory job list)
   deployTimer = setInterval(() => { if (!shouldSkipAutoRefresh()) renderDeploys(); }, 3000);
   return () => { if (refreshTimer) clearInterval(refreshTimer); if (deployTimer) clearInterval(deployTimer); };
