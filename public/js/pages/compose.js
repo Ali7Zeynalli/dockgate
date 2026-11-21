@@ -410,25 +410,74 @@ Router.register('compose', async (content, params = {}) => {
       body.innerHTML = `<div class="card" style="padding:14px 16px"><div id="cp-files"></div><div style="margin-top:10px;display:flex;gap:6px">${UI.btn('Edit YAML', `data-edit="${n}"`)} ${wd ? UI.btn('Open folder in Files', `data-openfolder="${escapeHtml(wd)}"`) : ''} ${UI.btn('Terminal in this folder', `data-term="${n}" data-cwd="${escapeHtml(wd)}"`)}</div></div>`;
       openProjectFiles(name, body.querySelector('#cp-files'));
     } else if (tab === 'deploys') {
-      body.innerHTML = '<div class="card" style="padding:14px 16px"><div id="cp-hist"></div></div>';
+      body.innerHTML = '<div class="card" style="padding:14px 16px"><div style="font-weight:600;margin-bottom:8px">Compose deploys</div><div id="cp-hist"></div></div><div class="card" style="padding:14px 16px;margin-top:12px"><div style="font-weight:600;margin-bottom:8px">Recipe and task runs</div><div id="cp-runs" class="ui-sub">Loading…</div></div>';
       await openDeployHistory(name, body.querySelector('#cp-hist'));
+      const runsEl = body.querySelector('#cp-runs');
+      if (!wd) runsEl.textContent = 'The folder of this stack is not known.';
+      else {
+        try {
+          const runs = ((await API.get(`/tasks/runs?dir=${encodeURIComponent(wd)}&limit=20`)).runs || []);
+          const st = { ok: ['ok', 'ok'], failed: ['bad', 'failed'], running: ['info', 'running'], cancelled: ['warn', 'cancelled'], timeout: ['warn', 'time limit'] };
+          runsEl.className = '';
+          runsEl.innerHTML = runs.length ? UI.table([{ label: 'When' }, { label: 'What' }, { label: 'Started by' }, { label: 'Result' }, { label: '', align: 'right' }], runs.map(r => ({ cells: [
+            formatTime(new Date(r.started_at || r.startedAt).toISOString()), `${escapeHtml(r.name || '')}<div class="ui-sub">${r.kind === 'recipe' ? 'recipe' : 'task'}</div>`, escapeHtml(r.trigger || 'manual'),
+            UI.pill(...(st[r.status] || ['', r.status])), UI.btn('Log', `data-cp-runlog="${r.id}"`, 'btn-xs'),
+          ] })), { minWidth: 0 }) : '<div class="ui-sub">No recipe or task runs for this folder yet. Set up a deploy recipe under <b>Automation</b>.</div>';
+          runsEl.querySelectorAll('[data-cp-runlog]').forEach(b => b.onclick = () => Router.navigate('deploy', { tab: 'tasks', dir: wd, view: 'runs', run: b.dataset.cpRunlog }));
+        } catch (e) { runsEl.textContent = e.message; }
+      }
     } else if (tab === 'automation') {
       body.innerHTML = '<div class="ui-sub">Loading…</div>';
       const [sch, rec] = await Promise.all([
         API.get('/schedules').then(r => (r.schedules || []).filter(x => x.kind === 'git_sync' && (x.server_id || 'local') === (srv.id || 'local'))).catch(() => []),
-        ssh && wd ? API.get(`/tasks/recipes?dir=${encodeURIComponent(wd)}`).then(r => r.recipes || []).catch(() => []) : Promise.resolve(null),
+        wd ? API.get(`/tasks/recipes?dir=${encodeURIComponent(wd)}`).then(r => r.recipes || []).catch(() => []) : Promise.resolve(null),
       ]);
       if (!Router.isActiveNav(pageNavId)) return;
       const hook = managed && git.webhookSecret ? `${location.origin}/api/compose/webhook/${enc}?key=${git.webhookSecret}` : '';
+      const hooked = (rec || []).find(r => r.hook);
       body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px">
-        ${card('Deploy on every push', hook ? `<div class="ui-sub">Add this URL as a webhook in the repository (content type application/json). A push to <b>${escapeHtml(git.branch || 'the branch')}</b> pulls and redeploys.</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:11px;padding:8px;margin:8px 0 6px">${escapeHtml(hook)}</pre>${UI.btn('Copy URL', 'data-cp-copy', 'btn-xs')}`
-          : isGit ? `<div class="ui-sub">This checkout was not cloned by DockGate, so it has no stack webhook. ${ssh ? 'Use a <b>deploy recipe</b> (right) — its <b>Webhook / CI…</b> works with GitHub, GitLab and Bitbucket.' : 'Deploy recipes with webhooks run on SSH servers.'}</div>`
+        ${card('Deploy recipe', rec == null ? '<div class="ui-sub">The folder of this stack is not known.</div>'
+          : rec.length ? `${rec.map(r => `<div style="display:flex;gap:8px;align-items:center;padding:4px 0"><b style="flex:1">${escapeHtml(r.name)}</b><span class="ui-sub">${(r.steps || []).length} step(s)${r.hook ? ' · webhook' : ''}${r.schedule ? ' · scheduled' : ''}</span>${UI.btn('Deploy', `data-cp-rrun="${r.id}"`, 'btn-xs btn-primary')}</div>`).join('')}<div class="ui-sub" style="margin-top:6px">Steps, checks, going back when a deploy fails, a webhook for GitHub / GitLab / Bitbucket, a schedule.</div><div style="margin-top:8px">${UI.btn('Edit in Tasks', 'data-cp-tasks')}</div>`
+          : `<div class="ui-sub">One way to deploy this stack, by hand, on every push or on a schedule: ${isGit ? 'Git pull → ' : ''}docker compose up --build${isGit ? ' → if it fails, back to the commit before' : ''}. Add a URL check and more steps in Tasks.</div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${UI.btn(isGit ? 'Set up auto-deploy' : 'Set up a deploy recipe', 'data-cp-quick', 'btn-primary')} ${UI.btn('Open Tasks', 'data-cp-tasks')}</div>`)}
+        ${card('Deploy on every push', hooked ? `<div class="ui-sub">The recipe <b>${escapeHtml(hooked.name)}</b> deploys on every push${hooked.hookBranch ? ` to <b>${escapeHtml(hooked.hookBranch)}</b>` : ''} — with its checks and going back on failure.</div><div style="margin-top:8px">${UI.btn('Webhook URL and secret…', `data-cp-hookinfo="${hooked.id}"`)}</div>${hook ? '<div class="ui-sub" style="margin-top:8px">The older stack webhook below still works; use one of them in the repository, not both.</div>' : ''}`
+          : hook ? `<div class="ui-sub"><b>Simple webhook</b> of a stack cloned by DockGate: a push to <b>${escapeHtml(git.branch || 'the branch')}</b> pulls and redeploys, with no checks. For checks and going back on failure, set up a recipe (left) and use its webhook instead.</div><pre class="logs-viewer" style="white-space:pre-wrap;word-break:break-all;font-size:11px;padding:8px;margin:8px 0 6px">${escapeHtml(hook)}</pre>${UI.btn('Copy URL', 'data-cp-copy', 'btn-xs')}`
+          : isGit ? `<div class="ui-sub">Set up a deploy recipe (left), then turn on its webhook — it works with GitHub, GitLab, Bitbucket and CI.</div>`
           : `<div class="ui-sub">Connect the stack to Git first.</div><div style="margin-top:8px">${UI.btn('Connect to Git…', `data-git-connect="${n}"`, 'btn-primary')}</div>`)}
-        ${card('Deploy recipes (Tasks)', rec == null ? '<div class="ui-sub">Recipes run on SSH servers: steps, checks, going back when a deploy fails, webhooks from GitHub / GitLab / Bitbucket.</div>'
-          : `${rec.length ? rec.map(r => `<div style="display:flex;gap:8px;padding:3px 0"><b style="flex:1">${escapeHtml(r.name)}</b><span class="ui-sub">${(r.steps || []).length} step(s)${r.hook_enabled || r.hookEnabled ? ' · webhook' : ''}${r.schedule ? ' · scheduled' : ''}</span></div>`).join('') : '<div class="ui-sub">No recipe for this folder yet.</div>'}<div style="margin-top:8px">${UI.btn(rec.length ? 'Open in Tasks' : 'Make a recipe in Tasks', 'data-cp-tasks')}</div>`)}
-        ${card('On a schedule', `${sch.length ? sch.map(x => `<div style="display:flex;gap:8px;padding:3px 0"><b style="flex:1">${escapeHtml(x.name || 'Git sync')}</b><span class="ui-sub">${x.enabled ? 'on' : 'off'}</span></div>`).join('') : '<div class="ui-sub">No Git sync schedule on this server.</div>'}<div class="ui-sub" style="margin-top:6px">A Git sync schedule redeploys the Git stacks it covers when their branch has a new commit.</div><div style="margin-top:8px">${UI.btn('Open Schedules', 'data-cp-sched')}</div>`)}
+        ${card('On a schedule', `${(rec || []).filter(r => r.schedule).map(r => `<div style="display:flex;gap:8px;padding:3px 0"><b style="flex:1">${escapeHtml(r.name)}</b><span class="ui-sub td-mono">${escapeHtml(r.schedule)}</span></div>`).join('')}${sch.length ? sch.map(x => `<div style="display:flex;gap:8px;padding:3px 0"><b style="flex:1">${escapeHtml(x.name || 'Git sync')}</b><span class="ui-sub">${x.enabled ? 'on' : 'off'}</span></div>`).join('') : ''}${!sch.length && !(rec || []).some(r => r.schedule) ? '<div class="ui-sub">Nothing scheduled.</div>' : ''}<div class="ui-sub" style="margin-top:6px">A recipe can run on a schedule (Tasks); a <b>Git sync schedule</b> redeploys Git stacks cloned by DockGate when their branch has a new commit.</div><div style="margin-top:8px">${UI.btn('Open Schedules', 'data-cp-sched')}</div>`)}
         ${card('Scaling & health', `<div class="ui-sub">Replicas with one click, auto-heal, Auto Scaling and updates without downtime — without Swarm.</div><div style="margin-top:8px">${UI.btn('Scaling & health…', `data-scaling="${n}"`)}</div>`)}
       </div>`;
+      body.querySelector('[data-cp-quick]')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Setting up…';
+        try {
+          let gitRemote = isGit;
+          try { const i = await API.get(`/tasks/discover?dir=${encodeURIComponent(wd)}`); gitRemote = !!(i.git && i.git.remote); } catch (er) { throw new Error(`DockGate can not read the folder ${wd}: ${er.message}`); }
+          const steps = [...(gitRemote ? [{ type: 'git_pull' }] : []), { type: 'compose_up', build: true }];
+          const onFail = gitRemote ? [{ type: 'git_back' }, { type: 'compose_up', build: true }] : [];
+          const r = await API.post('/tasks/recipes', { dir: wd, name: 'Deploy', steps, onFail, settings: { notify: { fail: true } } });
+          if (gitRemote) await API.post(`/tasks/recipes/${r.id}/hook`, {});
+          showToast(gitRemote ? 'Auto-deploy set up — add the webhook to the repository' : 'Deploy recipe set up', 'success');
+          await render();
+          if (gitRemote) hookInfo(r.id);
+        } catch (er) { showToast(er.message, 'error', 9000); btn.disabled = false; btn.textContent = isGit ? 'Set up auto-deploy' : 'Set up a deploy recipe'; }
+      });
+      const hookInfo = async (id) => {
+        try {
+          const h = await API.get(`/tasks/recipes/${id}/hook`);
+          const url = `${location.origin}/api/hooks/deploy/${h.hookId}`;
+          const local = /^(localhost|127\.|0\.0\.0\.0|::1|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
+          const hm = showModal('Webhook for this stack', `<div class="ui-sub">Add it to the repository. <b>GitHub:</b> Settings → Webhooks → Add webhook, content type <span class="td-mono">application/json</span>, the secret below, event <i>push</i>. <b>GitLab:</b> Settings → Webhooks, the secret as token. <b>Bitbucket:</b> Repository settings → Webhooks, the secret. From CI: <span class="td-mono">Authorization: Bearer &lt;secret&gt;</span>.</div>
+            ${local ? `<div class="insight-card" style="margin-top:8px"><div>DockGate is open at <span class="td-mono">${escapeHtml(location.host)}</span>, which GitHub can not reach. Use DockGate's public HTTPS address in the URL.</div></div>` : ''}
+            <label class="ui-field" style="margin-top:8px"><span class="ui-label">URL</span><input class="input td-mono" readonly value="${escapeHtml(url)}"></label>
+            <label class="ui-field"><span class="ui-label">Secret</span><input class="input td-mono" readonly value="${escapeHtml(h.secret)}"></label>
+            <div class="ui-sub">More (branches, the result on the commit, CI snippets): the recipe's <b>Webhook / CI…</b> in Tasks.</div>`, [{ label: 'Close' }]);
+          hm.overlay.querySelectorAll('input[readonly]').forEach(i => i.onclick = () => { i.select(); navigator.clipboard?.writeText(i.value).then(() => showToast('Copied')); });
+        } catch (er) { showToast(er.message, 'error'); }
+      };
+      body.querySelectorAll('[data-cp-hookinfo]').forEach(b => b.onclick = () => hookInfo(b.dataset.cpHookinfo));
+      body.querySelectorAll('[data-cp-rrun]').forEach(b => b.onclick = async () => {
+        try { const r = await API.post(`/tasks/recipes/${b.dataset.cpRrun}/run`, {}); showToast('Deploy started', 'success'); Router.navigate('deploy', { tab: 'tasks', dir: wd, view: 'runs', run: r.run || r.id }); }
+        catch (er) { if (er.status === 409 || /runs already|running/i.test(er.message)) showToast('A deploy of this recipe runs already — see Tasks', 'warning', 8000); else showToast(er.message, 'error', 9000); }
+      });
       body.querySelector('[data-cp-copy]')?.addEventListener('click', () => navigator.clipboard?.writeText(hook).then(() => showToast('Copied')));
       body.querySelector('[data-cp-tasks]')?.addEventListener('click', () => Router.navigate('deploy', { tab: 'tasks', dir: wd, view: 'recipes' }));
       body.querySelector('[data-cp-sched]')?.addEventListener('click', () => Router.navigate('srv-automation', { tab: 'schedules' }));

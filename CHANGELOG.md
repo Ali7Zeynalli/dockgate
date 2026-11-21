@@ -2,6 +2,19 @@
 
 ---
 
+## [2.77.0] - 2026-11-21
+
+### Added
+- **Tasks and deploy recipes on the local server.** They run where DockGate runs (its container), as its user: tasks, recipes, the folder's env and secrets, webhooks from GitHub / GitLab / Bitbucket and CI, schedules. The image now has `bash` and `curl`, so the usual recipe (Git pull → docker compose up → check a URL → back to the commit before) works locally.
+- **Set up auto-deploy** on a stack's page → **Automation**: one click makes the recipe of the stack's folder (Git pull → `docker compose up --build` → if it fails, back to the commit before) and turns on its webhook; the URL and secret are shown with the steps for GitHub, GitLab, Bitbucket and CI. Works for every Git stack — cloned by DockGate, a checkout on the server, or connected with Connect to Git.
+- The stack's **Deploys** tab also lists the recipe and task runs of its folder, with their logs.
+- **Automation** shows the recipe first (Deploy, webhook, schedule); the older simple webhook of stacks cloned by DockGate still works and is labelled as such.
+
+### Fixed
+- A recipe step that throws no longer stops DockGate: the run is marked failed with the message.
+
+---
+
 ## [2.76.0] - 2026-11-21
 
 ### Added

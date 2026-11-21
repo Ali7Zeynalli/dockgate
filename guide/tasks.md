@@ -1,12 +1,21 @@
 # Deploy → Tasks
 
-> **Where:** sidebar **Deploy → Tasks** (or a Compose project's **⋯ → Tasks and deploy recipes**)
+> **Where:** sidebar **Deploy → Tasks** (or a Compose stack's page → **Automation**)
 >
-> **Works on:** the **SSH server** picked in the top bar (**SERVERS ▾**). Tasks run on that server, in the project folder, as the SSH user — or as root with `sudo -n`.
+> **Works on:** the server picked in the top bar (**SERVERS ▾**). On an **SSH server** tasks run there, in the project folder, as the SSH user — or as root with `sudo -n`. On the **local server** they run where DockGate runs — see [On the local server](#on-the-local-server).
 
 Most projects already say how they are built and deployed: a `Makefile`, a `deploy.sh`, a `justfile`, npm scripts. **Tasks** reads those files, lists what is in them, and runs them with a live log — and **deploy recipes** put them together into a deploy that pulls the code, runs your tasks, checks the app and goes back when something fails. A recipe can run by hand, on a schedule, on a push to **GitHub, GitLab or Bitbucket**, or from your CI.
 
 ![Tasks](images/tasks.png)
+
+## On the local server
+
+On the local server, tasks and recipes run where DockGate runs (its container), as DockGate's user — there is no *run as root*.
+
+- `git`, `docker compose`, `curl` and `bash` are there, so the usual deploy works: **Git pull → docker compose up → Check a URL → back to the commit before**.
+- `make`, `npm`, `just` and the others only if you installed them in DockGate's image; DockGate warns when a tool is missing.
+- The folders are DockGate's: the stacks it deployed (its data folder) and the host folders you shared with it under `/host`. A stack started outside DockGate whose folder is not shared can not run tasks here.
+- **Check a URL** asks from the container: `127.0.0.1` is DockGate itself. Use the app's container name (on a shared network) or the host's address.
 
 ## Project folders
 
@@ -147,7 +156,7 @@ The **Auto-deploy webhook** of a Compose project deployed from Git (the stack's 
 
 | Message | Why | What to do |
 |---|---|---|
-| *Tasks run on SSH servers* | The top bar shows the local server | Pick an SSH server |
+| *The folder … is not on the server* (local server) | The folder is on the host but not shared with DockGate | Share it under `/host`, or add the machine as an SSH server |
 | *The folder … is not on the server* | Wrong path, or the SSH user can not open it | Check the path in Files |
 | *Something runs in this folder already* | One run at a time per folder | Wait, or open it and ■ Cancel |
 | *sudo: a password is required* | Run as root needs sudo without a password | Add a sudoers rule for the SSH user, or run as the user |

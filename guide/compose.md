@@ -23,6 +23,8 @@ Click a stack's **name** (or **⋯ → Open the stack**) to open its page. The r
 
 ![A stack's page](images/compose-project.png)
 
+![Automation](images/compose-project-automation.png)
+
 The top bar of the page: **Up**, **Restart**, **Rebuild…**, **Sync** (Git stacks), **Down** and **↻**. **← Stacks** goes back to the list.
 
 | Tab | What is there |
@@ -30,8 +32,8 @@ The top bar of the page: **Up**, **Restart**, **Rebuild…**, **Sync** (Git stac
 | **Overview** | Where the stack comes from (Git cloned by DockGate, a Git checkout on the server, an uploaded folder, adopted, written in the editor, or started outside DockGate), its state, folder, compose files and server; the **Git** card (repository, branch, commit, **Pull**, **Sync and deploy**) or **Connect to Git…**; the last deploy; the services |
 | **Services** | Each service: container, image, state, published ports, and **Logs**, **Terminal**, **Open** for its container |
 | **Files** | The project's files (Dockerfile, .env, configs) to open, edit, add and delete, plus **Edit YAML**, **Open folder in Files** and **Terminal in this folder** |
-| **Deploys** | The deploy history: what changed, and **Redeploy this…** for an earlier version |
-| **Automation** | Everything that deploys the stack by itself: the **webhook** of a stack cloned by DockGate, the **deploy recipes** of its folder in [Tasks](tasks.md) (SSH servers), the **Git sync schedules** of the server, and **Scaling & health** |
+| **Deploys** | The Compose deploy history (what changed, **Redeploy this…**) and, below it, the **recipe and task runs** of the stack's folder with their logs — one place for everything that deployed the stack |
+| **Automation** | **Deploy recipe:** the recipe of the stack's folder, with **Deploy**; when there is none, **Set up auto-deploy** makes one in a click (Git pull → `docker compose up --build` → if it fails, back to the commit before) and turns on its webhook. **Deploy on every push:** the recipe's webhook URL and secret for GitHub / GitLab / Bitbucket / CI (or the older simple webhook of a stack cloned by DockGate). **On a schedule:** recipe schedules and Git sync schedules. **Scaling & health**. Works on the local server and on SSH servers |
 | **Settings** | Edit YAML, Update from folder (uploaded stacks), Git (Connect to Git… or Force pull…), Scaling & health, Move to Swarm, Terminal, Delete the stack |
 
 ## Deploy a stack
