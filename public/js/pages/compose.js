@@ -1698,8 +1698,8 @@ Router.register('compose', async (content, params = {}) => {
     try { rows = (await API.get(`/compose/${encodeURIComponent(project)}/deploys`)).deploys || []; }
     catch (e) { showToast(e.message, 'error'); return; }
     const when = (ms) => (ms ? formatTime(new Date(ms).toISOString()) : '—'); // stored in milliseconds
-    const kindLabel = { scale: 'replicas', 'scale-reset': 'back to the files', editor: 'editor', redeploy: 'earlier version', up: 'Up', rebuild: 'rebuild', deploy: 'deploy', 'image update': 'image update', 'image rollback': 'image roll back' };
-    const detailText = (d) => { try { const x = JSON.parse(d.details || 'null'); return x && x.service ? `<div class="ui-sub">${escapeHtml(x.service)}: ${escapeHtml(x.from || '?')} → ${escapeHtml(x.to || '?')}</div>` : ''; } catch (e) { return ''; } };
+    const kindLabel = { recipe: 'deploy recipe', scale: 'replicas', 'scale-reset': 'back to the files', editor: 'editor', redeploy: 'earlier version', up: 'Up', rebuild: 'rebuild', deploy: 'deploy', 'image update': 'image update', 'image rollback': 'image roll back' };
+    const detailText = (d) => { try { const x = JSON.parse(d.details || 'null'); return x && x.recipe ? `<div class="ui-sub">${escapeHtml(x.recipe)} · ${escapeHtml(x.trigger || 'manual')}${x.run ? ` · run ${escapeHtml(String(x.run))}` : ''}</div>` : x && x.service ? `<div class="ui-sub">${escapeHtml(x.service)}: ${escapeHtml(x.from || '?')} → ${escapeHtml(x.to || '?')}</div>` : ''; } catch (e) { return ''; } };
     const srcText = (d) => d.source === 'git' ? `git${d.git_commit ? ` <span class="td-mono">${escapeHtml(d.git_commit.slice(0, 7))}</span>` : ''}` : escapeHtml(d.source || '');
     const withFiles = rows.filter(d => d.has_files);
     const current = withFiles[0];

@@ -10,8 +10,16 @@
 - The stack's **Deploys** tab also lists the recipe and task runs of its folder, with their logs.
 - **Automation** shows the recipe first (Deploy, webhook, schedule); the older simple webhook of stacks cloned by DockGate still works and is labelled as such.
 
+- **One way to deploy a stack.** A deploy recipe that runs `docker compose up` in a stack's folder is written into the stack's **Compose deploy history** too (as *deploy recipe*, with its name, how it started, its run and the compose files — so **Redeploy this** works for it), and a Git stack's deployed commit moves on.
+- When a stack's folder has a deploy recipe, the **older stack webhook** and the **Git sync schedules** run that recipe (with its checks and going back on failure) instead of the simple redeploy.
+
 ### Fixed
 - A recipe step that throws no longer stops DockGate: the run is marked failed with the message.
+- On the local server, **Start from the usual recipe** in Tasks no longer adds a URL check on 127.0.0.1 (that is DockGate's own container).
+
+### Docs
+- Tasks guide: on the local server, tasks run as DockGate's user — root inside its container, with the Docker socket.
+- README: a stack's own page, Connect to Git, Set up auto-deploy, Tasks on the local server.
 
 ---
 

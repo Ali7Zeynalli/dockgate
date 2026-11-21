@@ -296,7 +296,7 @@ Router.register('tasks', async (content, params = {}) => {
     if (i.git && i.git.remote) steps.push({ type: 'git_pull' });
     const dep = i.tasks.find(t => t.source === 'make' && /^deploy$/.test(t.name)) || i.tasks.find(t => t.source === 'just' && t.name === 'deploy') || i.tasks.find(t => t.source === 'sh' && /deploy\.sh$/.test(t.name));
     if (dep) steps.push({ type: 'task', source: dep.source, name: dep.name }); else if (i.compose.length) steps.push({ type: 'compose_up', build: true });
-    steps.push({ type: 'check_url', url: 'http://127.0.0.1:8080/', tries: 10, every: 3 });
+    if (!isLocal) steps.push({ type: 'check_url', url: 'http://127.0.0.1:8080/', tries: 10, every: 3 }); // locally 127.0.0.1 is DockGate's container — add a check with the app's address yourself
     return { name: 'Deploy', steps, onFail: i.git && i.git.remote ? [{ type: 'git_back' }, ...(i.compose.length && !dep ? [{ type: 'compose_up', build: true }] : [])] : [], settings: { notify: { fail: true } } };
   }
 

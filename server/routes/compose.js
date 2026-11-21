@@ -884,16 +884,17 @@ async function captureComposeFiles(project) {
   }
   return Object.keys(out).length ? out : null;
 }
-async function recordDeploy({ project, kind, status, error, sourceIp, startedAt, finishedAt, details = null }) {
+async function recordDeploy({ project, kind, status, error, sourceIp, startedAt, finishedAt, details = null, serverId: sid = null, noFiles = false, gitCommit = null }) {
   try {
     if (!validateProjectName(project)) return;
-    const files = status === 'done' ? await captureComposeFiles(project) : null;
+    const files = status === 'done' && !noFiles ? await captureComposeFiles(project) : null;
     const git = readGitMeta(project), dm = readDeployMeta(project);
     const source = git ? 'git' : (dm && dm.source) || kind || 'deploy';
     const json = files ? JSON.stringify(files) : null;
     const { stmts } = require('../db');
-    const serverId = dockerService.getActiveServerId() || 'local';
-    stmts.insertComposeDeploy.run({ project, server_id: serverId, kind: kind || 'deploy', source, git_commit: git && git.deployedCommit ? String(git.deployedCommit).slice(0, 40) : null,
+    const serverId = sid || dockerService.getActiveServerId() || 'local';
+    const commit = gitCommit || (git && git.deployedCommit) || null;
+    stmts.insertComposeDeploy.run({ project, server_id: serverId, kind: kind || 'deploy', source, git_commit: commit ? String(commit).slice(0, 40) : null,
       status, error: error ? String(error).slice(0, 500) : null, files: json, files_hash: json ? crypto.createHash('sha256').update(json).digest('hex').slice(0, 16) : null,
       source_ip: sourceIp || null, started_at: startedAt || null, finished_at: finishedAt || Date.now(), details: details ? JSON.stringify(details).slice(0, 2000) : null });
     stmts.trimComposeDeploys.run(project, serverId, project, serverId);
@@ -1996,11 +1997,56 @@ router.post('/:project/redeploy', (req, res) => {
 
 // Webhook: push-triggered re-deploy. Secured by the per-project secret in ?key= (no session needed).
 // Automatically targets the server recorded in the project's metadata.
-router.post('/webhook/:project', (req, res) => {
+// ---- deploy recipes (task-recipes.js) and Compose stacks: one way to deploy ----
+/** The folder of a stack and its server: from the deploy / Git records. */
+function projectFolder(project) {
+  const dm = readDeployMeta(project);
+  if (dm) return { serverId: dm.serverId || 'local', dir: dm.mode === 'remote' ? dm.remotePath : (dm.workingDir || managedDir(project)) };
+  const gm = readGitMeta(project);
+  if (gm) return { serverId: gm.serverId || 'local', dir: gm.deployMode === 'remote' ? gm.remotePath : (gm.subdir ? path.join(managedDir(project), gm.subdir) : managedDir(project)) };
+  return null;
+}
+/** The deploy recipe of a stack's folder (the first one), or null. */
+function folderRecipe(project) {
+  const f = projectFolder(project);
+  if (!f || !f.dir) return null;
+  try { return require('../task-recipes').list(f.serverId, f.dir)[0] || null; } catch (e) { return null; }
+}
+/** Which stack lives in a folder of a server (deploy / Git records, then the running containers). */
+async function projectForDir(serverId, dir) {
+  if (fs.existsSync(COMPOSE_DIR)) for (const name of fs.readdirSync(COMPOSE_DIR)) {
+    if (!validateProjectName(name)) continue;
+    const f = projectFolder(name);
+    if (f && f.serverId === serverId && String(f.dir).replace(/\/+$/, '') === dir) return name;
+  }
+  if ((dockerService.getActiveServerId() || 'local') === serverId) {
+    try { const p = (await dockerService.listComposeProjects()).find(x => x.workingDir === dir); if (p) return p.name; } catch (e) { /* not reachable */ }
+  }
+  return null;
+}
+// A recipe that ran docker compose up in a stack's folder → the stack's deploy history (task-recipes.js calls this).
+router._recipeDeployed = async ({ serverId, dir, ok, error, recipe, trigger, runId, startedAt, commit }) => {
+  try {
+    const project = await projectForDir(serverId, dir);
+    if (!project) return;
+    const active = (dockerService.getActiveServerId() || 'local') === serverId;
+    await recordDeploy({ project, kind: 'recipe', status: ok ? 'done' : 'error', error, startedAt, finishedAt: Date.now(), details: { recipe, trigger, run: runId }, serverId, noFiles: !active, gitCommit: commit || null });
+    if (ok && commit) { const gm = readGitMeta(project); if (gm) fs.writeFileSync(gitMetaPath(project), JSON.stringify({ ...gm, deployedCommit: commit }, null, 2), { mode: 0o600 }); }
+  } catch (e) { console.warn('[recipe-deploy]', e.message); }
+};
+
+router.post('/webhook/:project', async (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(404).json({ error: 'not found' });
     const meta = readGitMeta(req.params.project);
     if (!meta || !meta.secret || req.query.key !== meta.secret) return res.status(403).json({ error: 'invalid webhook key' });
+    // The stack's folder has a deploy recipe → the recipe deploys (its checks and recovery), not the simple redeploy.
+    const rec = folderRecipe(req.params.project);
+    if (rec) {
+      const r = await require('../task-recipes').run(rec.id, { trigger: 'webhook:compose', mode: 'queue' });
+      logAction({ req, server: meta.serverId || 'local', resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'webhook-recipe', details: { recipe: rec.name } });
+      return res.json({ success: true, recipe: rec.name, run: r.id || null, queued: !!r.queued });
+    }
     const job = gitRedeployJob(req.params.project, req.ip);
     logAction({ req, server: meta.serverId || 'local', resourceId: req.params.project, resourceType: 'compose', resourceName: req.params.project, action: 'webhook-redeploy' });
     res.json({ success: true, jobId: job.id });
@@ -2795,6 +2841,16 @@ async function scheduledGitSync(serverId, projects = []) {
       const head = String(stdout || '').trim().split(/\s+/)[0] || '';
       if (!head) { out.push({ project, status: 'error', message: `branch ${meta.branch || 'HEAD'} not found` }); continue; }
       if (meta.deployedCommit && meta.deployedCommit.length >= 7 && head.startsWith(meta.deployedCommit)) { out.push({ project, status: 'unchanged', commit: head.slice(0, 7) }); continue; }
+      const rec = folderRecipe(project);
+      if (rec) { // the folder's recipe deploys (checks, recovery) and records the commit
+        const R = require('../task-recipes'), TK = require('../tasks');
+        const r = await R.run(rec.id, { trigger: 'schedule:git-sync', mode: 'queue' });
+        let st = 'running';
+        for (let i = 0; i < 1800 && r.id && st === 'running'; i++) { await new Promise(x => setTimeout(x, 1000)); try { st = TK.runLog(r.id).status; } catch (e) { st = 'failed'; } }
+        out.push({ project, status: st === 'ok' ? 'deployed' : 'error', commit: head.slice(0, 7), message: st === 'ok' ? `recipe ${rec.name}` : `recipe ${rec.name}: ${st}` });
+        if (st === 'ok') { const gm = readGitMeta(project); if (gm) fs.writeFileSync(gitMetaPath(project), JSON.stringify({ ...gm, deployedCommit: head }, null, 2), { mode: 0o600 }); }
+        continue;
+      }
       const job = gitRedeployJob(project, null);
       job.kind = 'scheduled sync';
       for (let i = 0; i < 1800 && !job.finishedAt; i++) await new Promise(r => setTimeout(r, 1000)); // up to 30 min

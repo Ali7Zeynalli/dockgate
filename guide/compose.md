@@ -32,7 +32,7 @@ The top bar of the page: **Up**, **Restart**, **Rebuild…**, **Sync** (Git stac
 | **Overview** | Where the stack comes from (Git cloned by DockGate, a Git checkout on the server, an uploaded folder, adopted, written in the editor, or started outside DockGate), its state, folder, compose files and server; the **Git** card (repository, branch, commit, **Pull**, **Sync and deploy**) or **Connect to Git…**; the last deploy; the services |
 | **Services** | Each service: container, image, state, published ports, and **Logs**, **Terminal**, **Open** for its container |
 | **Files** | The project's files (Dockerfile, .env, configs) to open, edit, add and delete, plus **Edit YAML**, **Open folder in Files** and **Terminal in this folder** |
-| **Deploys** | The Compose deploy history (what changed, **Redeploy this…**) and, below it, the **recipe and task runs** of the stack's folder with their logs — one place for everything that deployed the stack |
+| **Deploys** | The Compose deploy history (what changed, **Redeploy this…**) — a deploy recipe that ran `docker compose up` here is in it too, as *deploy recipe* with its name, how it started and its run — and, below it, the **recipe and task runs** of the stack's folder with their logs |
 | **Automation** | **Deploy recipe:** the recipe of the stack's folder, with **Deploy**; when there is none, **Set up auto-deploy** makes one in a click (Git pull → `docker compose up --build` → if it fails, back to the commit before) and turns on its webhook. **Deploy on every push:** the recipe's webhook URL and secret for GitHub / GitLab / Bitbucket / CI (or the older simple webhook of a stack cloned by DockGate). **On a schedule:** recipe schedules and Git sync schedules. **Scaling & health**. Works on the local server and on SSH servers |
 | **Settings** | Edit YAML, Update from folder (uploaded stacks), Git (Connect to Git… or Force pull…), Scaling & health, Move to Swarm, Terminal, Delete the stack |
 
@@ -85,7 +85,7 @@ On the stack's page (and Up / Restart / Rebuild / Git sync / Down / Delete also 
 
 A Git stack with new commits on the remote shows a blue badge: click it to sync and deploy.
 
-**Auto-deploy webhook**: the page of a Git stack cloned by DockGate shows a webhook URL under **Automation**. Add it to the repository (GitHub, GitLab, Gitea) so a push deploys the stack. It only works when DockGate has a public address the Git host can reach.
+**Auto-deploy webhook**: the page of a Git stack cloned by DockGate shows a webhook URL under **Automation**. When the stack's folder has a **deploy recipe**, this webhook and the **Git sync schedules** run the recipe (with its checks and going back on failure) instead of the simple redeploy. Add it to the repository (GitHub, GitLab, Gitea) so a push deploys the stack. It only works when DockGate has a public address the Git host can reach.
 
 ## Good to know
 

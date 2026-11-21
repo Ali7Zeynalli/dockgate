@@ -10,12 +10,12 @@ Most projects already say how they are built and deployed: a `Makefile`, a `depl
 
 ## On the local server
 
-On the local server, tasks and recipes run where DockGate runs (its container), as DockGate's user — there is no *run as root*.
+On the local server, tasks and recipes run where DockGate runs (its container), as DockGate's user — there is no *run as root*. In the usual setup that user **is root inside the container**, with the Docker socket: a task can do anything DockGate can (start, stop and remove containers, change the folders shared with it). Only people who may administer the server should have a DockGate login.
 
 - `git`, `docker compose`, `curl` and `bash` are there, so the usual deploy works: **Git pull → docker compose up → Check a URL → back to the commit before**.
 - `make`, `npm`, `just` and the others only if you installed them in DockGate's image; DockGate warns when a tool is missing.
 - The folders are DockGate's: the stacks it deployed (its data folder) and the host folders you shared with it under `/host`. A stack started outside DockGate whose folder is not shared can not run tasks here.
-- **Check a URL** asks from the container: `127.0.0.1` is DockGate itself. Use the app's container name (on a shared network) or the host's address.
+- **Check a URL** asks from the container: `127.0.0.1` is DockGate itself. Use the app's container name (on a shared network) or the host's address. **Start from the usual recipe** leaves the URL check out on the local server — add one with the right address.
 
 ## Project folders
 
