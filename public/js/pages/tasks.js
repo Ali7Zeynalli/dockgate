@@ -223,8 +223,9 @@ Router.register('tasks', async (content, params = {}) => {
     const row = (e = {}) => `<div class="tk-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center" data-env><input class="input td-mono" data-k value="${esc(e.key || '')}" placeholder="NAME" style="max-width:220px" ${e.key ? 'readonly' : ''}>
       <input class="input td-mono" data-v type="${e.secret ? 'password' : 'text'}" value="${esc(e.value || '')}" placeholder="${e.secret ? '•••• (saved — type to change)' : 'value'}" autocomplete="new-password">
       <label style="display:flex;gap:4px;align-items:center;font-weight:400;white-space:nowrap"><input type="checkbox" data-s ${e.secret ? 'checked' : ''}> secret</label>${UI.btn('✕', 'data-del title="Remove"')}</div>`;
-    body().innerHTML = `<div class="card" style="padding:14px"><div class="ui-sub" style="margin-bottom:10px">Given to every task and recipe of this folder as environment variables (stored encrypted in DockGate, written to a file only the SSH user can read for the run, then deleted). <b>Secret</b> values are never shown again and are hidden as •••• in the logs.</div>
+    body().innerHTML = `<div data-envfiles style="margin-bottom:14px"><div class="card" style="padding:14px"><div class="ui-sub">Looking for env files…</div></div></div><div class="card" style="padding:14px"><div style="font-weight:600;margin-bottom:4px">DockGate's values for this folder</div><div class="ui-sub" style="margin-bottom:10px">Given to every task and recipe of this folder as environment variables (stored encrypted in DockGate, written to a file only the SSH user can read for the run, then deleted). <b>Secret</b> values are never shown again and are hidden as •••• in the logs.</div>
       <div data-list>${r.env.map(row).join('')}</div>${UI.btn('+ Add', 'data-add')} <span style="float:right">${UI.primary('Save', 'data-save')}</span></div>`;
+    drawEnvFiles(body().querySelector('[data-envfiles]'));
     const list = body().querySelector('[data-list]');
     const bindDel = () => list.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const e = b.closest('[data-env]'); if (e.querySelector('[data-k]').readOnly) { e.dataset.removed = '1'; e.style.display = 'none'; } else e.remove(); });
     bindDel();
@@ -240,6 +241,58 @@ Router.register('tasks', async (content, params = {}) => {
       });
       try { await API.put('/tasks/env', { dir: st.dir, items }); showToast('Saved'); drawEnv(); } catch (e) { showToast(e.message, 'error'); }
     };
+  }
+
+  // The env files of the folder: .env and every file starting with .env (or ending in .env), each on its own.
+  async function drawEnvFiles(box) {
+    let r; try { r = await API.get(`/tasks/env-files?dir=${encodeURIComponent(st.dir)}`); } catch (e) { box.innerHTML = `<div class="card" style="padding:14px"><div class="ui-sub">${esc(e.message)}</div></div>`; return; }
+    if (!alive() || st.view !== 'env') return;
+    const loaded = new Set(r.loaded || []); const mine = new Set(r.dockgate || []);
+    const fileCard = (f, i) => `<div class="card" style="padding:12px 14px;margin-bottom:10px" data-ef="${i}">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span class="td-mono" style="font-weight:600">${f.folder ? `<span class="ui-sub">${esc(f.folder)}/</span>` : ''}${esc(f.name)}</span>
+        ${UI.chip(`${f.vars.length} variable${f.vars.length === 1 ? '' : 's'}`)}
+        ${f.example ? UI.chip('example — not loaded by apps') : ''}
+        ${f.usedBy.map(u => UI.chip(u)).join(' ')}
+        ${f.inGit && !f.example && f.vars.some(v => v.secret && !v.empty) ? UI.pill('bad', 'in Git — secrets are committed') : f.inGit ? UI.chip('in Git') : ''}
+        ${f.bad ? UI.pill('warn', `${f.bad} line(s) not understood`) : ''}${f.tooBig ? UI.pill('warn', 'over 256 KB — not read') : ''}
+        <span style="flex:1"></span>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400;white-space:nowrap" title="Load this file into every task and recipe run of the folder; DockGate's own values below win"><input type="checkbox" data-load ${loaded.has(f.path) ? 'checked' : ''} ${f.example || f.tooBig ? 'disabled' : ''}> Load in every run</label>
+      </div>
+      ${f.vars.length ? `<details style="margin-top:8px"${i === 0 ? ' open' : ''}><summary class="ui-sub" style="cursor:pointer">Variables</summary>
+        <div style="overflow:auto"><table class="tk-ef" style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12.5px">
+          <tr class="ui-sub"><th style="text-align:left;width:26px"><input type="checkbox" data-all></th><th style="text-align:left">Name</th><th style="text-align:left">Value</th><th style="text-align:left;white-space:nowrap">Line</th><th></th></tr>
+          ${f.vars.map(v => `<tr style="border-top:1px solid var(--border)"><td><input type="checkbox" data-key="${esc(v.key)}"></td><td class="td-mono" style="white-space:nowrap">${esc(v.key)}${v.secret ? ' ' + UI.chip('secret') : ''}</td>
+            <td class="td-mono" data-val="${esc(v.key)}" style="max-width:520px;white-space:pre-wrap;word-break:break-all">${v.empty ? '<span class="ui-sub">empty</span>' : esc(v.preview)}</td><td class="ui-sub">${v.line}</td>
+            <td>${mine.has(v.key) ? UI.chip('also in DockGate — DockGate wins') : ''}</td></tr>`).join('')}
+        </table></div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${f.vars.some(v => v.secret && !v.empty) ? UI.btn('Show the values', 'data-show') : ''} ${UI.btn('Import the ticked into DockGate', 'data-import', 'btn-primary')} ${UI.btn('Import all', 'data-import-all')}</div>
+      </details>` : '<div class="ui-sub" style="margin-top:6px">No variables.</div>'}
+    </div>`;
+    box.innerHTML = `<div style="font-weight:600;margin-bottom:4px">Env files in this folder</div>
+      <div class="ui-sub" style="margin-bottom:10px">.env and every file whose name starts with .env (.env.local, .env.production, .env-dev…) or ends in .env, in the folder and its subfolders (not node_modules, .git, vendor…). Values that look secret stay hidden until you ask. Tick <b>Load in every run</b> to give a file to the folder's tasks and recipes — <span class="td-mono">docker compose</span> reads its own files anyway.</div>
+      ${r.files.length ? r.files.map(fileCard).join('') : '<div class="card" style="padding:14px"><div class="ui-sub">No env files in this folder.</div></div>'}
+      ${(r.missing || []).length ? `<div class="insight-card" style="margin-top:6px"><div>Named in Compose but not in the folder: ${r.missing.map(m => `<span class="td-mono">${esc(m.path)}</span> (${esc(m.compose)})`).join(', ')}</div></div>` : ''}`;
+    const saveLoad = async () => {
+      const list = [...box.querySelectorAll('[data-ef]')].filter(c => c.querySelector('[data-load]')?.checked).map(c => r.files[Number(c.dataset.ef)].path);
+      try { await API.put('/tasks/env-files', { dir: st.dir, load: list }); showToast(list.length ? `Loaded in every run: ${list.join(', ')}` : 'No env file is loaded in runs'); } catch (e) { showToast(e.message, 'error'); }
+    };
+    box.querySelectorAll('[data-ef]').forEach(c => {
+      const f = r.files[Number(c.dataset.ef)];
+      c.querySelector('[data-load]')?.addEventListener('change', saveLoad);
+      c.querySelector('[data-all]')?.addEventListener('change', (e) => c.querySelectorAll('[data-key]').forEach(x => { x.checked = e.target.checked; }));
+      c.querySelector('[data-show]')?.addEventListener('click', async (e) => {
+        try { const v = await API.get(`/tasks/env-files/values?dir=${encodeURIComponent(st.dir)}&file=${encodeURIComponent(f.path)}`); v.vars.forEach(x => { const td = c.querySelector(`[data-val="${CSS.escape(x.key)}"]`); if (td) td.textContent = x.value; }); e.target.remove(); }
+        catch (er) { showToast(er.message, 'error'); }
+      });
+      const imp = async (keys) => {
+        if (keys && !keys.length) return showToast('Tick the variables to import', 'warning');
+        try { const x = await API.post('/tasks/env-files/import', { dir: st.dir, file: f.path, keys }); showToast(`Imported ${x.imported} into DockGate${x.skipped ? ` (${x.skipped} skipped: not a shell name)` : ''}`, 'success'); drawEnv(); }
+        catch (er) { showToast(er.message, 'error'); }
+      };
+      c.querySelector('[data-import]')?.addEventListener('click', () => imp([...c.querySelectorAll('[data-key]:checked')].map(x => x.dataset.key)));
+      c.querySelector('[data-import-all]')?.addEventListener('click', () => imp(null));
+    });
   }
 
   // ---------- templates ----------

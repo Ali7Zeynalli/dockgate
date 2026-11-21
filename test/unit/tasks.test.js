@@ -364,3 +364,35 @@ test('One way to deploy: a Git sync schedule runs the folder recipe when the bra
     assert.equal(again[0].status, 'unchanged');
   } finally { R.remove(rec.id); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('Env files: .env and every .env* / *.env of the folder and its subfolders, read like dotenv, shown one by one, loaded into runs', async () => {
+  const EF = require('../../server/task-envfiles');
+  const p = EF.parseDotenv('A=1\nexport B="two words" # c\nC=\'lit $X\'\nD="x\\ny"\nE="multi\nline"\nF=plain # comment\nG=\n# skip\nnot a var\n');
+  assert.deepEqual(p.vars.map(v => [v.key, v.value]), [['A', '1'], ['B', 'two words'], ['C', 'lit $X'], ['D', 'x\ny'], ['E', 'multi\nline'], ['F', 'plain'], ['G', '']]);
+  assert.equal(p.bad, 1);
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dg-envf-'));
+  const w = (f, s) => { fs.mkdirSync(path.dirname(path.join(d, f)), { recursive: true }); fs.writeFileSync(path.join(d, f), s); };
+  w('.env', 'APP=shop\nDB_PASSWORD=s3cret\n'); w('.env.local', 'LOCAL=1\n'); w('.env.production', 'NODE_ENV=production\n'); w('.env-dev', 'DEV=1\n');
+  w('.env.example', 'APP=\n'); w('.envrc', 'export X=1\n'); w('api/.env', 'API_TOKEN=tok-123\n'); w('web/app.env', 'WEB=1\n'); w('node_modules/x/.env', 'NO=1\n');
+  w('docker-compose.yml', 'services:\n  api:\n    image: x\n    env_file:\n      - ./api/.env\n      - gone.env\n');
+  const r = await EF.discover(TK, TK.LOCAL, d);
+  assert.deepEqual(r.files.map(f => f.path), ['.env', '.env-dev', '.env.example', '.env.local', '.env.production', 'api/.env', 'web/app.env']);
+  const env = r.files.find(f => f.path === '.env');
+  assert.equal(env.vars.find(v => v.key === 'DB_PASSWORD').preview, '••••••', 'secret-looking values stay hidden');
+  assert.equal(env.vars.find(v => v.key === 'APP').preview, 'shop');
+  assert.ok(env.usedBy.some(u => /docker compose/.test(u)));
+  assert.ok(r.files.find(f => f.path === 'api/.env').usedBy.some(u => /env_file/.test(u)));
+  assert.ok(r.files.find(f => f.path === '.env.example').example);
+  assert.deepEqual(r.missing.map(m => m.path), ['gone.env']);
+  assert.equal((await EF.values(TK, TK.LOCAL, d, '.env')).vars.find(v => v.key === 'DB_PASSWORD').value, 's3cret');
+  await assert.rejects(EF.values(TK, TK.LOCAL, d, '../etc/passwd'), /Not a file of this folder/);
+  // loaded into a run: file values first, DockGate's own values win
+  EF.setLoaded('local', d, ['.env', 'api/.env']);
+  TK.envSet('local', d, [{ key: 'APP', value: 'from-dockgate', secret: false }]);
+  const { id } = await TK.start('local', d, { source: 'custom', cmd: 'echo "app=$APP token=$API_TOKEN pass=$DB_PASSWORD"' });
+  const run = await wait(id);
+  assert.equal(run.status, 'ok');
+  assert.match(run.text, /env files: \.env, api\/\.env/);
+  assert.match(run.text, /app=from-dockgate token=•••• pass=••••/, 'files loaded, DockGate wins, secrets masked');
+  fs.rmSync(d, { recursive: true, force: true });
+});

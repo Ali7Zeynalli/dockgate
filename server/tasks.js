@@ -106,6 +106,18 @@ function envSet(serverId, dir, items) {
 }
 function envValues(serverId, dir) { return q.env.all(serverId, dir).map(r => ({ key: r.key, value: dec(r.value), secret: !!r.secret })); }
 const envFileText = (vars) => vars.map(v => `${v.key}=${shq(v.value)}`).join('\n') + '\n';
+const SHELL_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** The variables of the env files chosen for the folder (task-envfiles.js), for a run on server s; logs which. */
+async function envFileVars(s, dir, configServerId, job) {
+  let fv = [];
+  try { fv = await require('./task-envfiles').varsForRun({ exec }, s, dir, configServerId || s.id); } catch (e) { return []; }
+  const missing = fv.filter(x => x.missing).map(x => x.missing);
+  const got = fv.filter(x => !x.missing && SHELL_KEY.test(x.key));
+  if (job && (got.length || missing.length)) append(job, `env files: ${[...new Set(got.map(x => x.from))].join(', ') || '—'}${missing.length ? ` (not found: ${missing.join(', ')})` : ''}\n`);
+  return got.map(x => ({ key: x.key, value: x.value, secret: x.secret }));
+}
+/** File variables first, DockGate's own values on top (they win). */
+function mergeEnv(fileVars, own) { const m = new Map(fileVars.map(v => [v.key, v])); for (const o of own) m.set(o.key, o); return [...m.values()]; }
 
 // ---------- runs ----------
 const jobs = new Map(); // live runs: id → { id, serverId, dir, name, status, chunks, size, secretValues, … }
@@ -178,7 +190,7 @@ async function start(serverId, dir, spec, { trigger = 'manual', by = null, req =
   (async () => {
     append(job, `$ ${cmd}\n`);
     let code = null;
-    try { code = await runShell(job, cmd, { runAs: spec.runAs === 'root' ? 'root' : 'user', login: spec.login !== false, env: envValues(s.id, d), timeoutMin: Math.max(1, Math.min(720, Number(spec.timeoutMin) || 60)) }); }
+    try { code = await runShell(job, cmd, { runAs: spec.runAs === 'root' ? 'root' : 'user', login: spec.login !== false, env: mergeEnv(await envFileVars(s, d, s.id, job), envValues(s.id, d)), timeoutMin: Math.max(1, Math.min(720, Number(spec.timeoutMin) || 60)) }); }
     catch (e) { append(job, `\n✗ ${e.message}\n`); }
     if (locks.get(key) === job.id) locks.delete(key);
     const status = job.cancelled ? (job.timedOut ? 'timeout' : 'cancelled') : code === 0 ? 'ok' : 'failed';
@@ -294,5 +306,5 @@ async function addTemplate(serverId, dir, name, { overwrite = false } = {}) {
   return { path };
 }
 
-module.exports = { exec, LOCAL, projects, addProject, removeProject, discover, envList, envSet, envValues, start, cancel, runs, runLog, addTemplate, kamalVersions, TEMPLATES,
+module.exports = { exec, LOCAL, envFileVars, mergeEnv, projects, addProject, removeProject, discover, envList, envSet, envValues, start, cancel, runs, runLog, addTemplate, kamalVersions, TEMPLATES,
   openRun, closeRun, append, runShell, server, okDir, jobs, locks };

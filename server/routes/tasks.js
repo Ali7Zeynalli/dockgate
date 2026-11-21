@@ -20,6 +20,20 @@ router.get('/runs', send(async (req) => ({ runs: T.runs(sid(), req.query.dir, re
 router.get('/runs/:id', send(async (req) => T.runLog(req.params.id, req.query.from)));
 router.get('/env', send(async (req) => ({ env: T.envList(sid(), req.query.dir) })));
 router.put('/env', send(async (req) => { const r = T.envSet(sid(), req.body.dir, req.body.items); require('../audit').logAction({ req, resourceType: 'task', resourceName: req.body.dir, action: 'task_env', details: { keys: (req.body.items || []).map(i => i.key + (i.remove ? ' (removed)' : '')) } }); return { env: r }; }));
+// ---------- env files of the folder (task-envfiles.js) ----------
+const EF = require('../task-envfiles');
+router.get('/env-files', send(async (req) => { const s = T.server(sid()); const d = T.okDir(req.query.dir); const r = await EF.discover(T, s, d); return { ...r, loaded: EF.loaded(s.id, d), dockgate: T.envList(sid(), d).map(e => e.key) }; }));
+router.get('/env-files/values', send(async (req) => { const s = T.server(sid()); const d = T.okDir(req.query.dir); const r = await EF.values(T, s, d, req.query.file); logAction({ req, resourceType: 'task', resourceName: d, action: 'env_file_view', details: { file: r.file } }); return r; }));
+router.put('/env-files', send(async (req) => { const s = T.server(sid()); const d = T.okDir(req.body.dir); const list = EF.setLoaded(s.id, d, req.body.load); logAction({ req, resourceType: 'task', resourceName: d, action: 'env_files_load', details: { files: list } }); return { loaded: list }; }));
+router.post('/env-files/import', send(async (req) => {
+  const s = T.server(sid()); const d = T.okDir(req.body.dir);
+  const r = await EF.values(T, s, d, req.body.file);
+  const want = new Set(Array.isArray(req.body.keys) ? req.body.keys : r.vars.map(v => v.key));
+  const items = r.vars.filter(v => want.has(v.key) && /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(v.key)).map(v => ({ key: v.key, value: v.value, secret: v.secret }));
+  const env = T.envSet(sid(), d, items);
+  logAction({ req, resourceType: 'task', resourceName: d, action: 'env_import', details: { file: r.file, keys: items.map(i => i.key) } });
+  return { imported: items.length, skipped: want.size - items.length, env };
+}));
 router.get('/kamal-versions', send(async (req) => T.kamalVersions(sid(), req.query.dir)));
 router.get('/templates', send(async () => ({ templates: Object.entries(T.TEMPLATES).map(([name, t]) => ({ name, file: t.file, text: t.text })) })));
 router.post('/templates', send(async (req) => T.addTemplate(sid(), req.body.dir, req.body.name, { overwrite: !!req.body.overwrite })));
