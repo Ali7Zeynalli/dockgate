@@ -28,8 +28,8 @@ const LABEL = { nginx: 'nginx', npm: 'Nginx Proxy Manager', 'nginx-proxy': 'ngin
 const NGINXISH = new Set(['nginx', 'npm', 'nginx-proxy']);
 
 /** docker exec with stdout / stderr kept apart (demuxed). */
-async function execIn(c, id, cmd, { timeout = 15000 } = {}) {
-  const ex = await c.getContainer(id).exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true });
+async function execIn(c, id, cmd, { timeout = 15000, user } = {}) {
+  const ex = await c.getContainer(id).exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true, ...(user ? { User: user } : {}) });
   const stream = await ex.start({ hijack: true, stdin: false });
   let out = '', er = '';
   const w = (fn) => ({ write: (b) => { fn(b.toString('utf8')); return true; }, end() {}, on() {}, once() {}, emit() {} });
@@ -127,8 +127,12 @@ async function scan({ fresh = false } = {}) {
         if (m) { p.config = m[1]; raw.files[p.id] = [{ path: m[1], text: m[2] }]; for (const s of P.parseHaproxy(m[2])) addSite({ ...s, file: m[1] }, p); } else p.problem = 'haproxy.cfg not found';
       } else if (kind === 'apache') {
         const r = await execIn(c, ct.Id, ['sh', '-c', 'httpd -S 2>&1 || apachectl -S 2>&1']);
-        for (const s of P.parseApacheS(r.out)) addSite({ domain: s.domain, https: s.port === 443, file: s.file, line: s.line, targets: [] }, p);
+        const vh = P.parseApacheS(r.out);
+        for (const s of vh) addSite({ domain: s.domain, https: s.port === 443, file: s.file, line: s.line, targets: [] }, p);
         p.config = '/usr/local/apache2/conf';
+        const list = [...new Set(['/usr/local/apache2/conf/httpd.conf', ...vh.map(x => x.file)])].slice(0, 30);
+        const fr = await execIn(c, ct.Id, ['sh', '-c', list.map(f => `[ -f ${shq(f)} ] && { echo "# configuration file ${f}:"; cat ${shq(f)}; echo; }`).join('; ') + '; true']);
+        raw.files[p.id] = P.parseNginxT(fr.out).files;
       } else if (kind === 'traefik' || kind === 'caddy-docker-proxy') {
         p.config = kind === 'traefik' ? 'labels of the containers and services' : 'caddy labels of the containers';
       }
@@ -191,7 +195,10 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnH 2>/dev/null) | awk '{
         } else if (kind === 'apache') {
           const t = await hostExec(server, sudoTry('apachectl -S'));
           p.config = '/etc/apache2 or /etc/httpd';
-          for (const s of P.parseApacheS(t.out)) addSite({ domain: s.domain, https: s.port === 443, file: s.file, line: s.line, targets: [] }, p);
+          const vh = P.parseApacheS(t.out);
+          for (const s of vh) addSite({ domain: s.domain, https: s.port === 443, file: s.file, line: s.line, targets: [] }, p);
+          const list = [...new Set(vh.map(x => x.file))].slice(0, 30);
+          if (list.length) { const fr = await hostExec(server, `sudo -n sh -c ${shq(list.map(f => `[ -f '${f}' ] && { echo "# configuration file ${f}:"; cat '${f}'; echo; }`).join('; ') + '; true')} 2>/dev/null`); raw.files[p.id] = P.parseNginxT(fr.out).files; }
         }
       } catch (e) { p.problem = e.message; }
     }
@@ -321,4 +328,4 @@ async function testConfig(id) {
   return { ok: r.code === 0, command: cmd, output: (r.out + r.err).trim().slice(-4000) };
 }
 
-module.exports = { scan, certificates, files, logs, testConfig, kindOf, _cache: cache };
+module.exports = { scan, certificates, files, logs, testConfig, kindOf, execIn, hostExec, rawFor, proxyById, LABEL, NGINXISH, invalidate: () => cache.clear(), _cache: cache };

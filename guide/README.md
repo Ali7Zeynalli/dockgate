@@ -41,7 +41,7 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 ## Observe and tools
 
 - [Logs & events, Web → Uptime, System → Activity](observe.md) — the log viewer, Log Doctor, site checks (uptime, response time, certificates), history of changes and alerts
-- [Web → Proxies & SSL](proxies.md) — nginx, Caddy, Traefik, HAProxy, Apache: which domain goes where, certificates and their renewal, config files, access logs
+- [Web → Proxies & SSL](proxies.md) — nginx, Caddy, Traefik, HAProxy, Apache: put a container on a domain, Let's Encrypt (renewed by DockGate), safe config editing with automatic undo, load balancing, logs, stats, Traefik live
 - [Tools → Terminal, Files, Databases, Schedules](tools.md) — shells, files over SSH, PostgreSQL in containers as a database client (Explorer, tabs, data editing, SQL, table design, export / import, test data, users, backups), prune / backup / Git sync on a schedule
 
 ## Servers

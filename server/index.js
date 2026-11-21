@@ -660,6 +660,7 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
   if (process.env.NODE_ENV !== 'test') require('./uptime').start(); // Observe → Uptime checks
   if (process.env.NODE_ENV !== 'test') require('./task-recipes').start(); // Deploy → Tasks: scheduled recipes
+  if (process.env.NODE_ENV !== 'test') require('./proxy-edit').start(); // Proxies & SSL: renew DockGate's Let's Encrypt certificates
   if (process.env.NODE_ENV !== 'test') require('./cron-monitor').start(); // cron jobs failed / did not run
   if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
   if (process.env.NODE_ENV !== 'test') { require('./swarm-monitor').start(); require('./swarm-stacks').startBridgeKeeper(); require('./agent/control').start(); require('./compose-heal').start(); require('./compose-autoscale').start(); require('./swarm-firewall').start(); require('./compose-keep').start(); }

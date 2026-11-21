@@ -1,43 +1,241 @@
-// Web → Proxies & SSL (server/proxies.js): the web servers in front of the apps on the server in use — which
-// domain goes where, certificates, config files, logs. Read-only for now: "Test config" runs the proxy's own check.
+// Web → Proxies & SSL (server/proxies.js reads, server/proxy-edit.js changes): the web servers in front of the
+// apps on the server in use — which domain goes where, putting a container on a domain, certificates (Let's
+// Encrypt through DockGate), config files with a safe editor (check → reload → sites still answer, else undo),
+// load balancing, logs, stats and Traefik's live routers.
 Router.register('proxies', async (content, params = {}) => {
   const navId = Router._navId; const alive = () => Router.isActiveNav(navId);
   const tab = params.tab || 'overview';
   const e = (s) => escapeHtml(String(s == null ? '' : s));
+  const enc = encodeURIComponent;
   const srv = Store.get('activeServer') || {};
-  const T = [['overview', 'Overview'], ['sites', 'Sites'], ['certs', 'Certificates'], ['files', 'Config files'], ['logs', 'Logs']];
   const go = (t, extra = {}) => Router.navigate('proxies', { tab: t, ...extra }, { replace: true });
   const sslPill = (d) => d == null ? '' : d < 0 ? UI.pill('bad', `expired ${-d} d ago`) : d <= 14 ? UI.pill('warn', `${d} days`) : UI.pill('ok', `${d} days`);
-  const card = (t, inner) => `<div class="card" style="padding:14px 16px"><div style="font-weight:600;margin-bottom:8px">${t}</div>${inner}</div>`;
-  content.innerHTML = `${UI.header('Proxies & SSL', `The web servers in front of your apps on <b>${e(srv.name || (!srv.id || srv.id === 'local' ? 'Local' : srv.id))}</b>: which domain goes where, certificates, config files and logs.`, `${UI.btn('↻ Refresh', 'data-px-refresh')}`)}
+  const card = (t, inner, extra = '') => `<div class="card" style="padding:14px 16px">${t ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b>${t}</b><span style="flex:1"></span>${extra}</div>` : ''}${inner}</div>`;
+  const FILE_KINDS = ['nginx', 'caddy', 'haproxy', 'apache'];
+  let d;
+  const load = async (fresh) => { d = await API.get(`/proxies${fresh ? '?fresh=1' : ''}`); };
+  try { await load(false); } catch (er) { content.innerHTML = UI.errorState(er, { title: 'Proxies could not be read' }); return; }
+  if (!alive()) return;
+  const T = [['overview', 'Overview'], ['sites', 'Sites'], ['certs', 'Certificates'], ['files', 'Config files'], ['logs', 'Logs'], ['stats', 'Stats'], ...(d.proxies.some(p => p.kind === 'traefik' && p.running) ? [['traefik', 'Traefik live']] : [])];
+  content.innerHTML = `${UI.header('Proxies & SSL', `The web servers in front of your apps on <b>${e(srv.name || (!srv.id || srv.id === 'local' ? 'Local' : srv.id))}</b>: which domain goes where, certificates, config files, load balancing and logs.`, `${UI.btn('↻ Refresh', 'data-px-refresh')} ${d.proxies.some(p => p.running && p.kind !== 'npm' && p.kind !== 'nginx-proxy') ? UI.primary('+ Put a container on a domain', 'data-expose') : ''}`)}
     <div class="tabs" style="margin-bottom:14px">${T.map(([k, l]) => `<button class="tab ${tab === k ? 'active' : ''}" data-ptab="${k}">${l}</button>`).join('')}</div>
     <div id="px-body"><div class="card" style="padding:20px"><div class="skeleton" style="height:120px"></div></div></div>`;
   content.querySelectorAll('[data-ptab]').forEach(b => b.onclick = () => go(b.dataset.ptab));
   const body = content.querySelector('#px-body');
-  let d;
-  const load = async (fresh) => { d = await API.get(`/proxies${fresh ? '?fresh=1' : ''}`); };
   content.querySelector('[data-px-refresh]').onclick = async () => { try { await load(true); draw(); } catch (er) { showToast(er.message, 'error'); } };
-  try { await load(false); } catch (er) { body.innerHTML = UI.errorState(er, { title: 'Proxies could not be read' }); return; }
-  if (!alive()) return;
+  const exposeBtn = content.querySelector('[data-expose]'); if (exposeBtn) exposeBtn.onclick = () => exposeWizard();
 
+  // ---------- shared pieces ----------
   const siteTarget = (s) => {
     const t = s.target; if (!t) return '<span class="ui-sub">—</span>';
     const sub = t.container ? `${t.container.project ? 'project ' + e(t.container.project) : 'container'}` : e(t.note || '');
-    return `<span class="td-mono">${e(t.label)}</span>${sub ? `<div class="ui-sub">${sub}</div>` : ''}${(s.targetsAll || []).length > 1 ? `<div class="ui-sub">+${s.targetsAll.length - 1} more</div>` : ''}`;
+    return `<span class="td-mono">${e(t.label)}</span>${sub ? `<div class="ui-sub">${sub}</div>` : ''}${(s.targetsAll || []).length > 1 ? `<div class="ui-sub">+${s.targetsAll.length - 1} more (balanced)</div>` : ''}`;
   };
   const targetState = (s) => { const t = s.target; if (!t) return ''; if (t.container) return t.container.running ? UI.pill('ok', 'running') : UI.pill('bad', `container ${e(t.container.state)}`); if (t.kind === 'files') return UI.chip('static files'); return UI.pill('warn', t.kind === 'self' ? 'the proxy itself' : t.kind === 'host' ? 'a program on the server' : 'not a container'); };
+  const proxyOf = (id) => d.proxies.find(p => p.id === id) || {};
+  /** The result of a change: each step, the check's output, and what happened to the sites. */
+  function showResult(title, r, after) {
+    const steps = (r.steps || []).map(s => `<div style="display:flex;gap:8px;padding:3px 0"><span style="color:${s.ok ? 'var(--success)' : 'var(--danger)'}">${s.ok ? '✓' : '✗'}</span><span>${e(s.t)}</span></div>`).join('');
+    const out = r.output ? `<pre class="td-mono text-xs" style="white-space:pre-wrap;background:var(--bg-tertiary);padding:8px;border-radius:6px;max-height:240px;overflow:auto;color:${r.ok ? 'inherit' : 'var(--danger)'}">${e(r.output)}</pre>` : '';
+    const np = (r.notPersistent || []).length ? `<div class="insight-card warning" style="margin-top:8px"><div>${r.notPersistent.map(e).join(', ')} ${r.notPersistent.length === 1 ? 'is' : 'are'} inside the container, not on a mount: ${r.notPersistent.length === 1 ? 'it is' : 'they are'} lost when the container is re-created. Mount the config folder to keep changes.</div></div>` : '';
+    const labels = r.text ? `<div style="margin-top:10px"><b>Compose</b> (the service of the container):<pre class="td-mono text-xs" style="white-space:pre-wrap;background:var(--bg-tertiary);padding:8px;border-radius:6px">${e(r.text.compose)}</pre><b>docker run</b>:<pre class="td-mono text-xs" style="white-space:pre-wrap;background:var(--bg-tertiary);padding:8px;border-radius:6px">${e(r.text.run)}</pre><div class="ui-sub">Labels apply when the container is re-created (docker compose up -d).</div></div>` : '';
+    showModal(`${r.ok ? '✓' : '✗'} ${e(title)}`, `${r.ok ? '' : `<div class="insight-card danger" style="margin-bottom:8px"><div>${r.stage === 'test' ? 'The config check failed — nothing was reloaded and the earlier files are back.' : r.stage === 'reload' ? 'The reload failed — the earlier files are back.' : r.stage === 'check' ? 'A site stopped answering after the reload — the earlier files are back.' : r.stage === 'certificate' ? 'The certificate could not be obtained.' : 'The change did not go through.'}</div></div>`}${steps}${out}${np}${labels}`, [{ label: 'Close' }]);
+    if (after) after();
+  }
+  const busy = (b, t) => { const old = b.textContent; b.disabled = true; b.textContent = t; return () => { b.disabled = false; b.textContent = old; }; };
+  const reloadAll = async () => { try { await load(true); } catch (er) { /* keep */ } draw(); };
 
+  // ---------- put a container on a domain ----------
+  async function exposeWizard(preset = {}) {
+    let tg = [];
+    try { tg = await API.get('/proxies/targets'); } catch (er) { showToast(er.message, 'error'); return; }
+    let certs = null; API.get('/proxies/certs').then(r => { certs = r; }).catch(() => {});
+    const usable = d.proxies.filter(p => p.running && !['npm', 'nginx-proxy'].includes(p.kind)).sort((a, b) => (b.ports.some(x => x === 80 || x === 443) ? 1 : 0) - (a.ports.some(x => x === 80 || x === 443) ? 1 : 0) || b.sites - a.sites);
+    const portOpts = (name) => ((tg.find(t => t.name === name) || {}).ports || []);
+    const rowHtml = (i, c = '', port = '') => `<div style="display:flex;gap:6px;margin-bottom:6px" data-trow="${i}"><select class="select" data-tc style="flex:2"><option value="">— container —</option>${tg.map(t => `<option value="${e(t.name)}" ${t.name === c ? 'selected' : ''}>${e(t.name)}${t.project ? ` (${e(t.project)})` : ''}</option>`).join('')}</select><input class="input" data-tp placeholder="port" list="px-ports-${i}" value="${e(port)}" style="width:110px"><datalist id="px-ports-${i}"></datalist>${i ? '<button type="button" class="btn btn-xs btn-ghost" data-trm>✕</button>' : ''}</div>`;
+    let dlg; dlg = UI.dialog({ title: 'Put a container on a domain', wide: true, saveLabel: 'Preview →', body: `
+      <div class="ui-sub" style="margin-bottom:10px">DockGate writes the site into the proxy's config, runs its check and reloads it. If the check fails or the sites stop answering, the earlier config goes back.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="ui-field"><span>Domain</span><input class="input" data-dom placeholder="app.example.com" value="${e(preset.domain || '')}"></label>
+        <label class="ui-field"><span>Also answer on <span class="ui-sub">(optional)</span></span><input class="input" data-al placeholder="www.app.example.com"></label>
+      </div>
+      <label class="ui-field" style="margin-top:8px"><span>Proxy</span><select class="select" data-px>${usable.map(p => `<option value="${e(p.id)}" ${p.id === preset.proxy ? 'selected' : ''}>${e(p.name)} — ${e(p.label)}${p.ports.length ? ` · ${e(p.ports.join(', '))}` : ''}</option>`).join('')}</select></label>
+      <div style="margin-top:8px"><div class="ui-field"><span>Goes to (container and its port) — add more to balance the load</span></div><div data-trows>${rowHtml(0, preset.container || '', preset.port || '')}</div><button type="button" class="btn btn-xs btn-secondary" data-tadd>+ Another container</button></div>
+      <div data-lbrow style="display:none;margin-top:8px"><label class="ui-field"><span>Balancing</span><select class="select" data-lb><option value="round_robin">Round robin — in turn</option><option value="least_conn">Least connections</option><option value="ip_hash">Same visitor → same container (IP hash)</option></select></label></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+        <label class="ui-field"><span>HTTPS</span><select class="select" data-https></select></label>
+        <label class="ui-field" data-certrow style="display:none"><span>Certificate</span><select class="select" data-cert></select></label>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+        <label><input type="checkbox" data-redir checked> Send http to https</label>
+        <label><input type="checkbox" data-ws> WebSockets</label>
+        <label style="display:flex;gap:6px;align-items:center">Upload limit <input class="input" data-mb placeholder="e.g. 50m" style="width:90px"></label>
+      </div>
+      <div class="ui-sub" data-hint style="margin-top:8px"></div>`,
+      onOpen: (ov) => {
+        const $ = (s) => ov.querySelector(s);
+        const fillPorts = (row) => { const n = row.querySelector('[data-tc]').value; const dl = row.querySelector('datalist'); const ps = portOpts(n); dl.innerHTML = ps.map(p => `<option value="${p}">`).join(''); const inp = row.querySelector('[data-tp]'); if (!inp.value && ps.length) inp.value = ps[0]; };
+        const wire = () => ov.querySelectorAll('[data-trow]').forEach(row => { row.querySelector('[data-tc]').onchange = () => { row.querySelector('[data-tp]').value = ''; fillPorts(row); }; const rm = row.querySelector('[data-trm]'); if (rm) rm.onclick = () => { row.remove(); lbVis(); }; fillPorts(row); });
+        const lbVis = () => { $('[data-lbrow]').style.display = ov.querySelectorAll('[data-trow]').length > 1 ? '' : 'none'; };
+        let n = 1; $('[data-tadd]').onclick = () => { $('[data-trows]').insertAdjacentHTML('beforeend', rowHtml(n++)); wire(); lbVis(); };
+        const httpsFor = () => {
+          const p = proxyOf($('[data-px]').value);
+          const opts = p.kind === 'caddy' ? [['auto', 'Automatic (Caddy gets the certificate)'], ['none', 'No — HTTP only']]
+            : p.kind === 'traefik' ? [['auto', 'Yes — Traefik serves it (certificate resolver)'], ['none', 'No — HTTP only']]
+            : p.kind === 'caddy-docker-proxy' ? [['auto', 'Automatic (Caddy)'], ['none', 'No']]
+            : p.kind === 'haproxy' ? [['none', 'Routing only (HTTPS if the frontend already has a certificate)']]
+            : [['letsencrypt', "Let's Encrypt — DockGate gets and renews it"], ['existing', 'A certificate already on the proxy'], ['none', 'No — HTTP only']];
+          $('[data-https]').innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+          $('[data-hint]').innerHTML = p.kind === 'traefik' || p.kind === 'caddy-docker-proxy' ? `${e(p.label)} reads labels: DockGate gives you the labels to add to the container.` : p.kind === 'nginx' || p.kind === 'apache' ? "Let's Encrypt needs the domain's DNS to point to this server and port 80 to reach the proxy." : '';
+          certVis();
+        };
+        const certVis = () => {
+          const ex = $('[data-https]').value === 'existing'; $('[data-certrow]').style.display = ex ? '' : 'none';
+          if (ex) { const list = certs ? certs.certs.filter(c => c.paths.some(x => x.endsWith('.crt') || x.endsWith('.pem'))) : []; $('[data-cert]').innerHTML = list.length ? list.map(c => `<option value="${e(c.paths[0])}">${e(c.names[0])} · ${e(c.paths[0])} · ${c.daysLeft} days</option>`).join('') : '<option value="">No certificate file found — type the paths in the config later</option>'; }
+          $('[data-redir]').closest('label').style.display = $('[data-https]').value === 'none' ? 'none' : '';
+        };
+        $('[data-px]').onchange = httpsFor; $('[data-https]').onchange = certVis;
+        wire(); httpsFor();
+      },
+      onSave: async (ov) => {
+        const $ = (s) => ov.querySelector(s);
+        const targets = [...ov.querySelectorAll('[data-trow]')].map(r => ({ container: r.querySelector('[data-tc]').value, port: r.querySelector('[data-tp]').value })).filter(t => t.container);
+        const cert = $('[data-cert]') ? $('[data-cert]').value : '';
+        const req = { domain: $('[data-dom]').value.trim(), aliases: $('[data-al]').value, proxy: $('[data-px]').value, targets, lb: $('[data-lb]').value, https: $('[data-https]').value,
+          redirect: $('[data-redir]').checked, websocket: $('[data-ws]').checked, maxBody: $('[data-mb]').value.trim() || null,
+          certPath: cert || null, keyPath: cert ? cert.replace(/fullchain\.pem$/, 'privkey.pem').replace(/\.crt$/, '.key').replace(/cert\.pem$/, 'privkey.pem') : null };
+        const plan = await API.post('/proxies/expose/plan', req);
+        previewExpose(req, plan, () => dlg.close());
+        return false; // keep the form for "Back"
+      },
+    });
+    return dlg;
+  }
+  function previewExpose(req, plan, closeWizard = () => {}) {
+    const diffs = plan.mode === 'labels' ? `<pre class="td-mono text-xs" style="white-space:pre-wrap;background:var(--bg-tertiary);padding:8px;border-radius:6px">${e(plan.text.compose)}</pre>`
+      : plan.changes.map(c => `<div style="margin-bottom:8px"><div class="td-mono text-sm" style="margin-bottom:4px">${e(c.path)}${c.before ? '' : ' <span class="ui-sub">(new file)</span>'}</div>${lineDiffHtml(c.before || '', c.text)}</div>`).join('');
+    const steps = [
+      ...plan.join.map(n => `Join ${e(plan.proxy.name)} to the network <b>${e(n)}</b> (no restart)`),
+      ...(plan.mode === 'labels' ? ['Show the labels to add to the container'] : [`Write ${plan.changes.length} file${plan.changes.length === 1 ? '' : 's'} (earlier versions are kept)`, 'Run the config check', 'Reload the proxy']),
+      ...(plan.flow === 'letsencrypt' ? ["Ask Let's Encrypt for the certificate (checked over http://" + e(req.domain) + '/.well-known/…)', 'Write the certificate and switch the site to HTTPS', 'DockGate renews it 30 days before it expires'] : []),
+    ];
+    showModal(`Preview — ${e(req.domain)}`, `${plan.notes.map(n => `<div class="insight-card warning" style="margin-bottom:8px"><div>${e(n)}</div></div>`).join('')}
+      <ol style="margin:0 0 10px 18px;padding:0">${steps.map(s => `<li>${s}</li>`).join('')}</ol>${diffs}`, [
+      { label: 'Back' },
+      { label: plan.mode === 'labels' ? 'Show the labels' : 'Apply', className: 'btn btn-primary', onClick: async () => {
+        showToast(plan.flow === 'letsencrypt' ? "Applying — Let's Encrypt can take a minute…" : 'Applying…', 'info');
+        try { const r = await API.post('/proxies/expose', req); if (r.ok) closeWizard(); showResult(r.ok ? `${req.domain} is set up` : `${req.domain} — not done`, r, reloadAll); }
+        catch (er) { showToast(er.message, 'error'); }
+      } }]);
+  }
+
+  // ---------- one site's actions ----------
+  function siteMenu(s) {
+    const p = proxyOf(s.proxy);
+    const fileKind = FILE_KINDS.includes(p.kind) || p.kind === 'npm';
+    const canCert = p.kind === 'nginx';
+    const canLb = ['nginx', 'caddy', 'haproxy'].includes(p.kind) && (s.targetsAll || []).length;
+    const items = [
+      [`<a class="btn btn-secondary" href="${s.https ? 'https' : 'http'}://${e(s.domain)}" target="_blank" rel="noopener">Open ↗</a>`, 'Open the site in a new tab.'],
+      [UI.btn('+ Uptime check', 'data-a="up"'), 'Watch it on Web → Uptime (status, response time, certificate days).'],
+      ...(fileKind && s.file && s.file.startsWith('/') ? [[UI.btn('Edit the config', 'data-a="edit"'), `${e(s.file)}${s.line ? ':' + s.line : ''}`]] : []),
+      ...(canLb ? [[UI.btn('Load balancing…', 'data-a="lb"'), 'The containers behind the site, the method, backup servers.']] : []),
+      ...(canCert ? [[UI.btn(s.https ? "Use a Let's Encrypt certificate" : 'Add HTTPS (Let\'s Encrypt)', 'data-a="cert"'), s.https ? 'DockGate gets the certificate and renews it; the site\'s certificate lines are switched to it.' : 'DockGate gets a certificate, adds the HTTPS server and sends http to https.']] : []),
+      ...(fileKind ? [[UI.btn('Remove the site', 'data-a="rm" class="btn btn-danger"'), 'Only sites DockGate added; the earlier config is kept as a version.']] : []),
+    ];
+    const m = showModal(e(s.domain), `<div class="ui-sub" style="margin-bottom:10px">${e(s.proxyName)} → ${e(s.target ? s.target.label : '—')}</div>${items.map(([b, t]) => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)"><div style="min-width:230px">${b}</div><div class="ui-sub">${t}</div></div>`).join('')}`, [{ label: 'Close' }]);
+    const ov = m.overlay;
+    const on = (a, fn) => { const b = ov.querySelector(`[data-a="${a}"]`); if (b) b.onclick = fn; };
+    on('up', async () => { try { await API.post('/uptime', { name: s.domain, type: 'http', target: `${s.https ? 'https' : 'http'}://${s.domain}` }); showToast('Uptime check added', 'success'); m.close(); } catch (er) { showToast(er.message, 'error'); } });
+    on('edit', () => { m.close(); go('files', { p: s.proxy, path: s.file }); });
+    on('lb', () => { m.close(); lbDialog(s); });
+    on('cert', () => { m.close(); showConfirm(`Let's Encrypt for ${e(s.domain)}`, `DockGate adds the challenge location to the HTTP server of ${e(s.domain)} (if missing), asks Let's Encrypt for a certificate, ${s.https ? 'switches the site\'s certificate lines to it' : 'adds an HTTPS server and sends http to https'}, checks and reloads. The domain's DNS must point to this server and port 80 must reach ${e(s.proxyName)}.`, async () => {
+      showToast('Asking Let\'s Encrypt…', 'info');
+      try { const r = await API.post(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}/cert`, { redirect: true }); showResult(r.ok ? `HTTPS for ${s.domain}` : `HTTPS for ${s.domain} — not done`, r, reloadAll); } catch (er) { showToast(er.message, 'error'); }
+    }); });
+    on('rm', () => { m.close(); showConfirm(`Remove ${e(s.domain)}?`, `DockGate removes the site it added from ${e(s.proxyName)}, checks and reloads. The file is kept as a version you can restore.`, async () => {
+      try { const r = await API.delete(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}`); showResult(r.ok ? `${s.domain} removed` : `${s.domain} — not removed`, r, reloadAll); } catch (er) { showToast(er.message, 'error'); }
+    }, true); });
+  }
+
+  // ---------- load balancing ----------
+  async function lbDialog(s) {
+    let lb; try { lb = await API.get(`/proxies/${enc(s.proxy)}/lb?domain=${enc(s.domain)}`); } catch (er) { showToast(er.message, 'error'); return; }
+    let tg = []; try { tg = await API.get('/proxies/targets'); } catch (er) { /* type addresses */ }
+    const names = { round_robin: 'Round robin — in turn', least_conn: 'Least connections', ip_hash: 'Same visitor → same server (IP hash)', random: 'Random', first: 'First available (failover)' };
+    const row = (x) => `<tr data-srow><td><input class="input td-mono" data-addr value="${e(x.addr)}" list="px-lb-addrs" style="min-width:200px"></td><td><input class="input" data-w type="number" min="1" max="100" value="${x.weight || 1}" style="width:70px" ${lb.kind === 'caddy' ? 'disabled' : ''}></td><td style="text-align:center"><input type="checkbox" data-bk ${x.backup ? 'checked' : ''} ${lb.kind === 'caddy' ? 'disabled' : ''}></td><td style="text-align:center"><input type="checkbox" data-dn ${x.down ? 'checked' : ''}></td><td><button type="button" class="btn btn-xs btn-ghost" data-rm>✕</button></td></tr>`;
+    UI.dialog({ title: `Load balancing — ${e(s.domain)}`, wide: true, saveLabel: 'Save, check and reload', body: `
+      <div class="ui-sub" style="margin-bottom:8px">${e(s.proxyName)} · <span class="td-mono">${e(lb.file)}</span>${lb.upstream ? ` · upstream <span class="td-mono">${e(lb.upstream)}</span>` : lb.single ? ' · one server now: DockGate makes an upstream for it' : ''}</div>
+      <label class="ui-field"><span>Method</span><select class="select" data-m>${lb.methods.map(m => `<option value="${m}" ${m === lb.method ? 'selected' : ''}>${names[m] || m}</option>`).join('')}</select></label>
+      <datalist id="px-lb-addrs">${tg.flatMap(t => t.ports.map(p => `<option value="${e(t.name)}:${p}">`)).join('')}</datalist>
+      <table class="table" style="margin-top:8px;width:100%"><thead><tr><th>Server (host:port)</th><th>Weight</th><th>Backup</th><th>Off</th><th></th></tr></thead><tbody data-srows>${lb.servers.map(row).join('')}</tbody></table>
+      <button type="button" class="btn btn-xs btn-secondary" data-add style="margin-top:6px">+ Server</button>
+      <div class="ui-sub" style="margin-top:8px">Backup servers only get traffic when the others are down. "Off" keeps a server in the list without traffic (nginx <span class="td-mono">down</span>, HAProxy <span class="td-mono">disabled</span>). Containers must be on a network the proxy shares.</div>`,
+      onOpen: (ov) => { const wire = () => ov.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => b.closest('tr').remove()); ov.querySelector('[data-add]').onclick = () => { ov.querySelector('[data-srows]').insertAdjacentHTML('beforeend', row({ addr: '', weight: 1 })); wire(); }; wire(); },
+      onSave: async (ov) => {
+        const servers = [...ov.querySelectorAll('[data-srow]')].map(r => ({ addr: r.querySelector('[data-addr]').value.trim(), weight: Number(r.querySelector('[data-w]').value) || 1, backup: r.querySelector('[data-bk]').checked, down: r.querySelector('[data-dn]').checked })).filter(x => x.addr);
+        const r = await API.put(`/proxies/${enc(s.proxy)}/lb?domain=${enc(s.domain)}`, { method: ov.querySelector('[data-m]').value, servers });
+        showResult(r.ok ? `Load balancing of ${s.domain} saved` : 'Load balancing — not saved', r, reloadAll);
+      },
+    });
+  }
+
+  // ---------- the safe editor ----------
+  async function editor(pid, path, fileList) {
+    const box = body.querySelector('[data-editor]');
+    box.innerHTML = '<div style="padding:16px" class="ui-sub">Opening…</div>';
+    let f; try { f = await API.get(`/proxies/${enc(pid)}/file?path=${enc(path)}`); } catch (er) { box.innerHTML = `<div style="padding:16px">${UI.errorState(er, { compact: true })}</div>`; return; }
+    if (!alive()) return;
+    const ro = !!f.locked;
+    box.innerHTML = `<div style="display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap"><b class="td-mono">${e(f.path)}</b>${f.dockgate ? UI.chip('made by DockGate') : ''}${ro ? UI.chip('🔒 ' + e(f.locked)) : ''}${!f.persistent ? `<span title="Not on a mount: lost when the container is re-created">${UI.pill('warn', 'inside the container')}</span>` : ''}${/helper/.test(f.via) ? UI.chip('read-only mount — saved through a helper') : ''}<span style="flex:1"></span>
+      ${UI.btn('History', 'data-hist')} ${ro ? '' : `${UI.btn('Undo changes', 'data-revert')} ${UI.primary('Save…', 'data-save')}`}</div>
+      <textarea class="td-mono" data-ta spellcheck="false" ${ro ? 'readonly' : ''} style="width:100%;min-height:520px;border:0;outline:0;resize:vertical;padding:12px 14px;font-size:12.5px;line-height:1.55;background:var(--bg-primary);color:var(--text-primary);tab-size:4;white-space:pre">${e(f.text)}</textarea>
+      <div class="ui-sub" style="padding:6px 12px;border-top:1px solid var(--border)">Save shows the changed lines, then: earlier version kept → write → <span class="td-mono">${e(proxyOf(pid).kind === 'caddy' ? 'caddy validate' : proxyOf(pid).kind === 'haproxy' ? 'haproxy -c' : proxyOf(pid).kind === 'apache' ? 'configtest' : 'nginx -t')}</span> → reload → the sites must answer as before. Anything fails: the earlier file goes back.</div>`;
+    const ta = box.querySelector('[data-ta]');
+    ta.addEventListener('keydown', (ev) => { if (ev.key === 'Tab' && !ro) { ev.preventDefault(); const s0 = ta.selectionStart; ta.setRangeText('  ', s0, ta.selectionEnd, 'end'); } if ((ev.ctrlKey || ev.metaKey) && ev.key === 's') { ev.preventDefault(); const b = box.querySelector('[data-save]'); if (b) b.click(); } });
+    box.querySelector('[data-hist]').onclick = () => history(pid, path, ta.value, () => editor(pid, path, fileList));
+    if (ro) return;
+    box.querySelector('[data-revert]').onclick = () => { ta.value = f.text; };
+    box.querySelector('[data-save]').onclick = () => {
+      if (ta.value === f.text) { showToast('No change', 'info'); return; }
+      showModal(`Save ${e(path.split('/').pop())}?`, `${lineDiffHtml(f.text, ta.value)}<label class="ui-field" style="margin-top:8px"><span>Note <span class="ui-sub">(optional, shown in History)</span></span><input class="input" data-note></label>`, [
+        { label: 'Cancel' },
+        { label: 'Save, check and reload', className: 'btn btn-primary', onClick: async () => {
+          const note = (document.querySelector('.modal-overlay [data-note]') || {}).value || '';
+          try {
+            const r = await API.put(`/proxies/${enc(pid)}/file`, { path, text: ta.value, base: f.base, note });
+            showResult(r.ok ? `${path.split('/').pop()} saved and reloaded` : `${path.split('/').pop()} — not saved`, r, () => { if (r.ok) { f.text = ta.value; load(true).then(() => editor(pid, path, fileList)).catch(() => {}); } });
+          } catch (er) {
+            if (er.data && er.data.conflict || /changed on the server/.test(er.message)) showModal('The file changed on the server', 'Someone (or a tool) changed it after you opened it. Reopen it to see the current file — your text is still in the editor until you do.', [{ label: 'Keep editing' }, { label: 'Reopen', className: 'btn btn-primary', onClick: () => editor(pid, path, fileList) }]);
+            else showToast(er.message, 'error');
+          }
+        } }]);
+    };
+  }
+  async function history(pid, path, current, reopen) {
+    let v; try { v = await API.get(`/proxies/${enc(pid)}/versions?path=${enc(path)}`); } catch (er) { showToast(er.message, 'error'); return; }
+    const m = showModal(`History — ${e(path.split('/').pop())}`, v.length ? `<div class="ui-sub" style="margin-bottom:8px">The file as it was before each change DockGate made (last 30).</div>${UI.table([{ label: 'Before the change of' }, { label: 'By' }, { label: 'Change' }, { label: '', align: 'right' }], v.map(x => ({ cells: [
+      `<span class="td-mono">${e(new Date(x.at).toLocaleString())}</span>`, e(x.user || ''), `${e(x.note || '')}${x.existed ? '' : ' <span class="ui-sub">(file did not exist)</span>'}`,
+      `${UI.btn('Compare', `data-cmp="${x.id}"`)} ${UI.btn('Restore', `data-rst="${x.id}"`)}`] })), { minWidth: 0 })}` : '<div class="ui-sub">No earlier versions yet — DockGate keeps one before each change it makes.</div>', [{ label: 'Close' }]);
+    m.overlay.querySelectorAll('[data-cmp]').forEach(b => b.onclick = async () => { try { const x = await API.get(`/proxies/${enc(pid)}/versions/${b.dataset.cmp}`); showModal('That version → now', lineDiffHtml(x.text, current), [{ label: 'Close' }]); } catch (er) { showToast(er.message, 'error'); } });
+    m.overlay.querySelectorAll('[data-rst]').forEach(b => b.onclick = () => showConfirm('Restore this version?', 'It is written back with the same check, reload and site test (and the current file is kept as a version).', async () => {
+      try { const r = await API.post(`/proxies/${enc(pid)}/versions/${b.dataset.rst}/restore`, {}); m.close(); showResult(r.ok ? 'Version restored' : 'Not restored', r, () => { if (r.ok) reopen(); }); } catch (er) { showToast(er.message, 'error'); }
+    }));
+  }
+
+  // ---------- tabs ----------
   async function draw() {
     if (!alive()) return;
     const proxies = d.proxies, sites = d.sites;
     if (!proxies.length) {
-      body.innerHTML = `<div class="card" style="padding:24px"><b>No proxy found on ${e(srv.name || 'this server')}.</b><div class="ui-sub" style="margin-top:6px">DockGate looks for nginx, OpenResty, Nginx Proxy Manager, nginx-proxy, Caddy, Traefik, HAProxy and Apache — in containers${d.remote ? ' and as services of the server (systemd)' : ''}. ${d.remote ? '' : 'On the local server, proxies installed on the host (not in containers) are not seen — add the machine as an SSH server for those.'}</div></div>`;
+      body.innerHTML = `<div class="card" style="padding:24px"><b>No proxy found on ${e(srv.name || 'this server')}.</b><div class="ui-sub" style="margin-top:6px">DockGate looks for nginx, OpenResty, Nginx Proxy Manager, nginx-proxy, Caddy, Traefik, HAProxy and Apache — in containers${d.remote ? ' and as services of the server (systemd)' : ''}. ${d.remote ? '' : 'On the local server, proxies installed on the host (not in containers) are not seen — add the machine as an SSH server for those.'} Start one (for example from Deploy → Templates) and press Refresh.</div></div>`;
       return;
     }
     if (tab === 'overview') {
-      let certSum = null; API.get('/proxies/certs').then(r => { certSum = r; const el = body.querySelector('[data-certsum]'); if (el) el.innerHTML = certTile(r); }).catch(() => {});
+      let certSum = null;
+      const certTile = (r) => { if (!r) return '<div class="ui-sub">reading…</div>'; const exp = r.certs.filter(c => c.daysLeft < 0).length, soon = r.certs.filter(c => c.daysLeft >= 0 && c.daysLeft <= 14).length; return `<div style="font-size:22px;font-weight:700;color:${exp ? 'var(--danger)' : soon ? 'var(--warning)' : 'var(--text-primary)'}">${r.certs.length}</div><div style="font-weight:600">certificates</div><div class="ui-sub">${exp ? `${exp} expired · ` : ''}${soon ? `${soon} expire in 14 days` : exp ? '' : 'none expires soon'}${r.managed && r.managed.length ? ` · ${r.managed.length} renewed by DockGate` : ''}</div>`; };
+      API.get('/proxies/certs').then(r => { certSum = r; const el = body.querySelector('[data-certsum]'); if (el) el.innerHTML = certTile(r); }).catch(() => {});
       const bad = d.warnings.filter(w => w.level === 'bad').length;
-      const certTile = (r) => { if (!r) return '<div class="ui-sub">reading…</div>'; const exp = r.certs.filter(c => c.daysLeft < 0).length, soon = r.certs.filter(c => c.daysLeft >= 0 && c.daysLeft <= 14).length; return `<div style="font-size:22px;font-weight:700;color:${exp ? 'var(--danger)' : soon ? 'var(--warning)' : 'var(--text-primary)'}">${r.certs.length}</div><div style="font-weight:600">certificates</div><div class="ui-sub">${exp ? `${exp} expired · ` : ''}${soon ? `${soon} expire in 14 days` : exp ? '' : 'none expires soon'}</div>`; };
       const web = d.ports.filter(p => p.port === 80 || p.port === 443);
       body.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px">
@@ -57,61 +255,86 @@ Router.register('proxies', async (content, params = {}) => {
           `${p.running && !['traefik', 'caddy-docker-proxy'].includes(p.kind) ? UI.btn('Test config', `data-test="${e(p.id)}"`) : ''} ${UI.btn('Files', `data-files="${e(p.id)}"`)} ${p.running ? UI.btn('Logs', `data-logs="${e(p.id)}"`) : ''}`] })), { minWidth: 0 })}
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px;margin-top:12px">
           ${card('Web ports', d.ports.length ? UI.table([{ label: 'Port' }, { label: 'Address' }, { label: 'Process' }], d.ports.map(x => ({ cells: [`<span class="td-mono">${x.port}</span>`, `<span class="td-mono">${e(x.addr)}</span>`, e(x.process)] })), { minWidth: 0 }) : '<div class="ui-sub">Nothing listens on 80, 443, 8080 or 8443.</div>')}
-          ${card('How DockGate reads them', `<div class="ui-sub">nginx: <span class="td-mono">nginx -T</span> · Caddy: the Caddyfile · Traefik and caddy-docker-proxy: the labels of containers and Swarm services · HAProxy: haproxy.cfg · Apache: <span class="td-mono">apachectl -S</span> · nginx-proxy: VIRTUAL_HOST of the containers.${d.remote ? ' Services of the server need passwordless sudo to read their configs.' : ' On the local server only proxies in containers are seen.'} Nothing is changed.</div>`)}
+          ${card('How changes are made', `<div class="ui-sub">Every change keeps the earlier file, runs the proxy's own check (<span class="td-mono">nginx -t</span>, <span class="td-mono">caddy validate</span>, <span class="td-mono">haproxy -c</span>, <span class="td-mono">configtest</span>), reloads, and asks each site through the proxy: a site that answered before and does not after puts the earlier file back. Traefik and caddy-docker-proxy are set by labels; Nginx Proxy Manager and nginx-proxy keep their own configs (read-only here).</div>`)}
         </div>`;
     } else if (tab === 'sites') {
       const q = params.q || '';
-      body.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><input class="input" data-q placeholder="Search domain or target" value="${e(q)}" style="max-width:320px"><span class="ui-sub">${sites.length} site(s)</span></div><div data-st></div>
-        <div class="ui-sub" style="margin-top:8px">A site points to a container when its upstream is a container's name, Compose service or IP on this server.</div>`;
-      const drawRows = (q) => {
-        const rows = sites.filter(s => !q || (s.domain + ' ' + (s.target ? s.target.label : '')).toLowerCase().includes(q.toLowerCase()));
+      body.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><input class="input" data-q placeholder="Search domain or target" value="${e(q)}" style="max-width:320px"><span class="ui-sub">${sites.length} site(s)</span><span style="flex:1"></span>${content.querySelector('[data-expose]') ? UI.btn('+ Put a container on a domain', 'data-expose2') : ''}</div><div data-st></div>
+        <div class="ui-sub" style="margin-top:8px">A site points to a container when its upstream is a container's name, Compose service or IP on this server. ⋯ opens what you can do with a site.</div>`;
+      const drawRows = (qq) => {
+        const rows = sites.filter(s => !qq || (s.domain + ' ' + (s.target ? s.target.label : '') + ' ' + s.proxyName).toLowerCase().includes(qq.toLowerCase()));
         body.querySelector('[data-st]').innerHTML = UI.table([{ label: 'Domain' }, { label: 'Goes to' }, { label: 'Proxy' }, { label: 'HTTPS' }, { label: 'Target' }, { label: '', align: 'right' }], rows.map(s => ({ cells: [
           `<b>${e(s.domain)}</b>${s.managed ? `<div class="ui-sub">🔒 ${e(s.managed)}</div>` : ''}`, siteTarget(s), `${e(s.proxyName)}<div class="ui-sub td-mono" title="${e(s.file || '')}">${e(String(s.file || '').split('/').pop())}${s.line ? ':' + s.line : ''}</div>`,
           s.https ? `${UI.pill('ok', 'HTTPS')}${s.redirect ? '<div class="ui-sub">http → https</div>' : ''}` : UI.pill('warn', 'HTTP only'), targetState(s),
-          `<a class="btn btn-xs btn-secondary" href="${s.https ? 'https' : 'http'}://${e(s.domain)}" target="_blank" rel="noopener">Open ↗</a> ${UI.btn('+ Uptime check', `data-up="${e(s.domain)}" data-https="${s.https ? 1 : ''}"`)}`] })), { minWidth: 0, empty: 'No site found in the configs.' });
-        body.querySelectorAll('[data-up]').forEach(b => b.onclick = async () => {
-          try { await API.post('/uptime', { name: b.dataset.up, type: 'http', target: `${b.dataset.https ? 'https' : 'http'}://${b.dataset.up}` }); showToast('Uptime check added', 'success'); b.remove(); } catch (er) { showToast(er.message, 'error'); }
-        });
+          `<a class="btn btn-xs btn-secondary" href="${s.https ? 'https' : 'http'}://${e(s.domain)}" target="_blank" rel="noopener">Open ↗</a> ${UI.btn('⋯', `data-menu="${e(s.proxy)}|${e(s.domain)}" title="What you can do with this site"`)}`] })), { minWidth: 0, empty: 'No site found in the configs.' });
+        body.querySelectorAll('[data-menu]').forEach(b => b.onclick = () => { const [pid, dom] = b.dataset.menu.split('|'); siteMenu(sites.find(s => s.proxy === pid && s.domain === dom)); });
       };
       drawRows(q);
       body.querySelector('[data-q]').oninput = (ev) => drawRows(ev.target.value);
+      const x2 = body.querySelector('[data-expose2]'); if (x2) x2.onclick = () => exposeWizard();
     } else if (tab === 'certs') {
       body.innerHTML = '<div class="card" style="padding:20px"><div class="ui-sub">Reading certificates…</div></div>';
       let r; try { r = await API.get('/proxies/certs'); } catch (er) { body.innerHTML = UI.errorState(er); return; }
       if (!alive()) return;
-      body.innerHTML = `${UI.table([{ label: 'Names' }, { label: 'Issuer' }, { label: 'Kept by' }, { label: 'Expires' }, { label: '' }, { label: 'Renewal' }], r.certs.map(c => ({ cells: [
-        `<b>${e(c.names.slice(0, 3).join(', '))}</b>${c.names.length > 3 ? `<div class="ui-sub">+${c.names.length - 3} more</div>` : ''}${c.selfSigned ? '<div class="ui-sub">self-signed</div>' : ''}`,
-        e(c.issuer), `${e(c.source)}<div class="ui-sub td-mono" title="${e(c.paths.join('\n'))}">${e(c.paths[0].split('/').slice(-2).join('/'))}</div>`, `<span class="td-mono">${e(c.validTo.slice(0, 10))}</span>`, sslPill(c.daysLeft),
-        /none|no renewal/.test(c.renewal) ? UI.pill('bad', e(c.renewal)) : e(c.renewal)] })), { minWidth: 0, empty: 'No certificate found.' })}
-        ${r.uncovered.length ? `<div class="insight-card warning" style="margin-top:10px"><div>HTTPS sites whose certificate DockGate could not read: ${r.uncovered.map(e).join(', ')}</div></div>` : ''}
+      const nginxSite = (dom) => sites.find(s => s.domain === dom && proxyOf(s.proxy).kind === 'nginx');
+      const managedPaths = new Set(r.managed.map(m => m.certPath));
+      const a = r.acme;
+      body.innerHTML = `${UI.table([{ label: 'Names' }, { label: 'Issuer' }, { label: 'Kept by' }, { label: 'Expires' }, { label: '' }, { label: 'Renewal' }], r.certs.map(c => {
+        const mine = c.paths.some(x => managedPaths.has(x)); const ns = nginxSite(c.names[0]);
+        return { cells: [
+          `<b style="display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom" title="${e(c.names.join(', '))}">${e(c.names.slice(0, 3).join(', '))}</b>${c.names.length > 3 ? `<div class="ui-sub">+${c.names.length - 3} more</div>` : ''}${c.selfSigned ? '<div class="ui-sub">self-signed</div>' : ''}`,
+          `<div style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(c.issuer)}">${e(c.issuer)}</div>`, `${mine ? 'DockGate' : e(c.source)}<div class="ui-sub td-mono" style="max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(c.paths.join('\n'))}">${e(c.paths[0].split('/').slice(-2).join('/'))}</div>`, `<span class="td-mono">${e(c.validTo.slice(0, 10))}</span>`, sslPill(c.daysLeft),
+          (mine ? UI.pill('ok', 'DockGate — auto') : /none|no renewal/.test(c.renewal) ? UI.pill('bad', e(c.renewal)) : e(c.renewal)) +
+          (!mine && ns && /none|no renewal/.test(c.renewal) ? `<div style="margin-top:4px">${UI.btn("Use Let's Encrypt", `data-le="${e(ns.proxy)}|${e(ns.domain)}"`)}</div>` : '')] };
+      }), { minWidth: 0, empty: 'No certificate found.' })}
+        ${r.uncovered.length ? `<div class="insight-card warning" style="margin-top:10px"><div>HTTPS sites whose certificate DockGate could not read: ${r.uncovered.map(dom => `${e(dom)}${nginxSite(dom) ? ` ${UI.btn("Use Let's Encrypt", `data-le="${e(nginxSite(dom).proxy)}|${e(dom)}"`)}` : ''}`).join(', ')}</div></div>` : ''}
         ${r.notes.length ? `<details style="margin-top:8px"><summary class="ui-sub">Notes (${r.notes.length})</summary><div class="ui-sub">${r.notes.map(e).join('<br>')}</div></details>` : ''}
-        <div class="ui-sub" style="margin-top:8px">Read from the files nginx names (<span class="td-mono">ssl_certificate</span>), certbot's <span class="td-mono">/etc/letsencrypt/live</span>${d.remote ? '' : ' (SSH servers)'}, Caddy's data folder and Traefik's acme.json. Uptime's HTTPS checks warn 14 days before a certificate expires.</div>`;
+        <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:14px">
+          ${card("Let's Encrypt certificates DockGate renews", r.managed.length ? UI.table([{ label: 'Names' }, { label: 'Proxy' }, { label: 'Expires' }, { label: 'Auto renew' }, { label: 'Last try' }, { label: '', align: 'right' }], r.managed.map(m => ({ cells: [
+            `<b style="display:inline-block;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom" title="${e(m.names.join(', '))}">${e(m.names.join(', '))}</b><div class="ui-sub td-mono" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(m.certPath)}">${e(m.certPath)}</div>`, e(m.proxy), `${m.notAfter ? `<span class="td-mono">${e(m.notAfter.slice(0, 10))}</span> ` : ''}${sslPill(m.daysLeft)}`,
+            `<label><input type="checkbox" data-auto="${m.id}" ${m.auto ? 'checked' : ''}> on</label>`,
+            m.lastError ? `<span style="color:var(--danger)" title="${e(m.lastError)}">failed: ${e(m.lastError.slice(0, 60))}</span>` : m.lastTry ? `<span class="ui-sub" title="${e(new Date(m.lastTry).toLocaleString())}">${e(new Date(m.lastTry).toLocaleDateString())}</span>` : '',
+            `${UI.btn('Renew now', `data-renew="${m.id}"`)} ${UI.btn('Put back', `data-redeploy="${m.id}" title="Write the certificate files to the proxy again (after the container was re-created)"`)} ${UI.btn('Forget', `data-forget="${m.id}"`)}`] })), { minWidth: 0 }) : `<div class="ui-sub">None yet. Put a container on a domain with "Let's Encrypt", or use "Use Let's Encrypt" on an nginx site. DockGate answers the check through the proxy itself (port 80), keeps the certificate and renews it ${a.renewDays} days before it expires; a failed renewal is sent to your notification channels.</div>`)}
+          ${card("Let's Encrypt account", `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;align-items:end"><label class="ui-field"><span>Email <span class="ui-sub">(Let's Encrypt writes before a certificate expires)</span></span><input class="input" data-ae value="${e(a.email)}" placeholder="you@example.com"></label>
+            <label class="ui-field"><span>Certificate authority</span><select class="select" data-ad><option value="letsencrypt" ${a.directory === 'letsencrypt' ? 'selected' : ''}>Let's Encrypt</option><option value="letsencrypt-staging" ${a.directory === 'letsencrypt-staging' ? 'selected' : ''}>Let's Encrypt staging (tests — not trusted)</option>${!['letsencrypt', 'letsencrypt-staging'].includes(a.directory) ? `<option value="${e(a.directory)}" selected>${e(a.directory)}</option>` : ''}<option value="__custom">Another ACME URL…</option></select></label>
+            <label class="ui-field"><span>Renew this many days before expiry</span><input class="input" data-ar type="number" min="7" max="60" value="${a.renewDays}"></label>
+            <div>${UI.primary('Save', 'data-asave')}</div></div>`)}
+        </div>
+        <div class="ui-sub" style="margin-top:8px">Read from the files nginx names (<span class="td-mono">ssl_certificate</span>), certbot's <span class="td-mono">/etc/letsencrypt/live</span>${d.remote ? '' : ' (SSH servers)'}, Caddy's data folder and Traefik's acme.json. Caddy and Traefik renew their own certificates.</div>`;
+      body.querySelectorAll('[data-le]').forEach(b => b.onclick = () => { const [pid, dom] = b.dataset.le.split('|'); siteMenu(sites.find(s => s.proxy === pid && s.domain === dom)); });
+      body.querySelectorAll('[data-auto]').forEach(c => c.onchange = async () => { try { await API.put(`/proxies/managed-certs/${c.dataset.auto}/auto`, { auto: c.checked }); showToast(c.checked ? 'Auto renew on' : 'Auto renew off', 'success'); } catch (er) { showToast(er.message, 'error'); } });
+      body.querySelectorAll('[data-renew]').forEach(b => b.onclick = async () => { const done = busy(b, 'Renewing…'); try { await API.post(`/proxies/managed-certs/${b.dataset.renew}/renew`, {}); showToast('Renewed and reloaded', 'success'); draw(); } catch (er) { showToast(er.message, 'error'); } finally { done(); } });
+      body.querySelectorAll('[data-redeploy]').forEach(b => b.onclick = async () => { const done = busy(b, 'Writing…'); try { const x = await API.post(`/proxies/managed-certs/${b.dataset.redeploy}/redeploy`, {}); showToast(x.ok ? 'Certificate written and reloaded' : 'Written, but the config check failed', x.ok ? 'success' : 'error'); } catch (er) { showToast(er.message, 'error'); } finally { done(); } });
+      body.querySelectorAll('[data-forget]').forEach(b => b.onclick = () => showConfirm('Forget this certificate?', 'DockGate stops renewing it. The files on the proxy stay.', async () => { try { await API.delete(`/proxies/managed-certs/${b.dataset.forget}`); draw(); } catch (er) { showToast(er.message, 'error'); } }, true));
+      body.querySelector('[data-ad]').onchange = (ev) => { if (ev.target.value === '__custom') { const u = prompt('ACME directory URL (https://…)'); if (u) { ev.target.insertAdjacentHTML('afterbegin', `<option value="${e(u)}" selected>${e(u)}</option>`); } else ev.target.value = a.directory; } };
+      body.querySelector('[data-asave]').onclick = async () => { try { await API.put('/proxies/acme', { email: body.querySelector('[data-ae]').value, directory: body.querySelector('[data-ad]').value, renewDays: body.querySelector('[data-ar]').value }); showToast('Saved', 'success'); } catch (er) { showToast(er.message, 'error'); } };
     } else if (tab === 'files') {
       const withFiles = proxies.filter(p => p.running);
       const pid = params.p && withFiles.some(p => p.id === params.p) ? params.p : (withFiles[0] || {}).id;
       if (!pid) { body.innerHTML = '<div class="card" style="padding:20px"><div class="ui-sub">No running proxy.</div></div>'; return; }
       body.innerHTML = '<div class="card" style="padding:20px"><div class="ui-sub">Reading…</div></div>';
-      let r; try { r = await API.get(`/proxies/${encodeURIComponent(pid)}/files`); } catch (er) { body.innerHTML = UI.errorState(er); return; }
+      let r; try { r = await API.get(`/proxies/${enc(pid)}/files`); } catch (er) { body.innerHTML = UI.errorState(er); return; }
       if (!alive()) return;
-      const fi = Math.min(Number(params.f) || 0, Math.max(0, r.files.length - 1)); const f = r.files[fi];
-      const hl = (s) => e(s).replace(/(#[^\n]*)/g, '<span style="color:var(--text-muted)">$1</span>').replace(/\b(server|listen|server_name|location|proxy_pass|proxy_set_header|ssl_certificate_key|ssl_certificate|client_max_body_size|upstream|include|return|root|reverse_proxy|tls|encode|frontend|backend|bind|use_backend|default_backend|acl)\b/g, '<span style="color:var(--accent)">$1</span>').replace(/(\$\w+)/g, '<span style="color:var(--warning)">$1</span>');
-      body.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><select class="select" data-pp style="max-width:320px">${withFiles.map(p => `<option value="${e(p.id)}" ${p.id === pid ? 'selected' : ''}>${e(p.name)} — ${e(p.label)}</option>`).join('')}</select><span class="ui-sub">${r.files.length} file(s)</span></div>
+      const labels = ['traefik', 'caddy-docker-proxy'].includes(proxyOf(pid).kind);
+      const fi = params.path ? Math.max(0, r.files.findIndex(x => x.path === params.path)) : Math.min(Number(params.f) || 0, Math.max(0, r.files.length - 1)); const f = r.files[fi];
+      body.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><select class="select" data-pp style="max-width:320px">${withFiles.map(p => `<option value="${e(p.id)}" ${p.id === pid ? 'selected' : ''}>${e(p.name)} — ${e(p.label)}</option>`).join('')}</select><span class="ui-sub">${r.files.length} file(s)</span><span style="flex:1"></span>${!labels ? UI.btn('History of all files', 'data-allhist') : ''}</div>
         ${r.files.length ? `<div style="display:grid;grid-template-columns:280px minmax(0,1fr);gap:12px;align-items:start">
-          <div class="card" style="padding:8px;max-height:560px;overflow:auto">${r.files.map((x, i) => `<button type="button" class="btn btn-xs ${i === fi ? 'btn-primary' : 'btn-ghost'}" data-fi="${i}" style="display:block;width:100%;text-align:left;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e(x.path)}">${x.managed ? '🔒 ' : '📄 '}${e(x.path)}</button>`).join('')}</div>
-          <div class="card" style="padding:0;overflow:hidden">
-            <div style="display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border)"><b class="td-mono">${e(f.path)}</b>${f.managed ? UI.chip('managed by ' + e(f.managed)) : ''}<span style="flex:1"></span>${UI.chip('read-only')}</div>
-            <pre class="td-mono" style="margin:0;padding:12px 14px;font-size:12.5px;line-height:1.55;background:var(--bg-primary);max-height:560px;overflow:auto">${hl(f.text)}</pre>
-          </div></div>` : `<div class="card" style="padding:20px"><div class="ui-sub">${e(r.note || 'No files.')}</div></div>`}
-        <div class="ui-sub" style="margin-top:8px">Editing with a check, reload and automatic undo comes in the next step.</div>`;
+          <div class="card" style="padding:8px;max-height:620px;overflow:auto">${r.files.map((x, i) => `<button type="button" class="btn btn-xs ${i === fi ? 'btn-primary' : 'btn-ghost'}" data-fi="${e(x.path)}" style="display:block;width:100%;text-align:left;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e(x.path)}">${x.managed ? '🔒 ' : '📄 '}${e(x.path)}</button>`).join('')}</div>
+          <div class="card" style="padding:0;overflow:hidden" data-editor>${labels ? `<div style="display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border)"><b class="td-mono">${e(f.path)}</b><span style="flex:1"></span>${UI.chip('labels — read-only')}</div><pre class="td-mono" style="margin:0;padding:12px 14px;font-size:12.5px;line-height:1.55;background:var(--bg-primary);max-height:560px;overflow:auto">${e(f.text)}</pre>` : ''}</div></div>` : `<div class="card" style="padding:20px"><div class="ui-sub">${e(r.note || 'No files.')}</div></div>`}`;
       body.querySelector('[data-pp]').onchange = (ev) => go('files', { p: ev.target.value });
-      body.querySelectorAll('[data-fi]').forEach(b => b.onclick = () => go('files', { p: pid, f: b.dataset.fi }));
+      body.querySelectorAll('[data-fi]').forEach(b => b.onclick = () => go('files', { p: pid, path: b.dataset.fi }));
+      const ah = body.querySelector('[data-allhist]');
+      if (ah) ah.onclick = async () => {
+        try { const v = await API.get(`/proxies/${enc(pid)}/versions`); showModal(`History — ${e(proxyOf(pid).name)}`, v.length ? UI.table([{ label: 'When' }, { label: 'File' }, { label: 'By' }, { label: 'Change' }], v.map(x => ({ cells: [`<span class="td-mono">${e(new Date(x.at).toLocaleString())}</span>`, `<span class="td-mono text-xs">${e(x.path)}</span>`, e(x.user || ''), e(x.note || '')] })), { minWidth: 0 }) : '<div class="ui-sub">No changes made through DockGate yet.</div>', [{ label: 'Close' }]); } catch (er) { showToast(er.message, 'error'); }
+      };
+      if (f && !labels) editor(pid, f.path, r.files);
     } else if (tab === 'logs') {
       const running = proxies.filter(p => p.running && p.kind !== 'certbot');
       const pid = params.p && running.some(p => p.id === params.p) ? params.p : (running[0] || {}).id;
       const which = params.which || 'access';
       if (!pid) { body.innerHTML = '<div class="card" style="padding:20px"><div class="ui-sub">No running proxy.</div></div>'; return; }
       body.innerHTML = '<div class="card" style="padding:20px"><div class="ui-sub">Reading…</div></div>';
-      let r; try { r = await API.get(`/proxies/${encodeURIComponent(pid)}/logs?which=${which}&tail=500`); } catch (er) { body.innerHTML = UI.errorState(er); return; }
+      let r; try { r = await API.get(`/proxies/${enc(pid)}/logs?which=${which}&tail=500`); } catch (er) { body.innerHTML = UI.errorState(er); return; }
       if (!alive()) return;
       const col = (s) => s >= 500 ? 'var(--danger)' : s >= 400 ? 'var(--warning)' : s >= 300 ? 'var(--accent)' : 'var(--success)';
       const render = (filter, cls) => r.entries.filter(x => (!filter || x.line.toLowerCase().includes(filter.toLowerCase())) && (!cls || (x.status && String(x.status)[0] === cls))).slice(-500).map(x => x.status
@@ -119,22 +342,69 @@ Router.register('proxies', async (content, params = {}) => {
         : `<span class="ui-sub">${e(x.line)}</span>`).join('\n');
       body.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center"><select class="select" data-pp style="max-width:260px">${running.map(p => `<option value="${e(p.id)}" ${p.id === pid ? 'selected' : ''}>${e(p.name)}</option>`).join('')}</select>
         <select class="select" data-wh style="max-width:140px"><option value="access" ${which === 'access' ? 'selected' : ''}>access</option><option value="error" ${which === 'error' ? 'selected' : ''}>error</option><option value="all" ${which === 'all' ? 'selected' : ''}>all</option></select>
-        ${['2', '3', '4', '5'].map(c => `<button type="button" class="btn btn-xs btn-secondary" data-cls="${c}">${c}xx</button>`).join('')}<input class="input" data-flt placeholder="IP, path or domain" style="max-width:240px"></div>
+        ${['2', '3', '4', '5'].map(c => `<button type="button" class="btn btn-xs btn-secondary" data-cls="${c}">${c}xx</button>`).join('')}<input class="input" data-flt placeholder="IP, path or domain" style="max-width:240px"><span style="flex:1"></span>${UI.btn('Stats', 'data-gostats')}</div>
         <div class="card" style="padding:0;overflow:hidden"><pre class="td-mono" data-log style="margin:0;padding:12px 14px;font-size:12.5px;line-height:1.7;background:var(--bg-primary);max-height:560px;overflow:auto">${render('', '') || '<span class="ui-sub">No lines.</span>'}</pre></div>
         ${r.stats ? `<div class="ui-sub" style="margin-top:8px">Last ${r.stats.requests} requests: ${r.stats.s4xx} with 4xx, ${r.stats.s5xx} with 5xx (${(100 * r.stats.s5xx / r.stats.requests).toFixed(1)} %).</div>` : ''}`;
       let cls = '';
       const re = () => { const el = body.querySelector('[data-log]'); el.innerHTML = render(body.querySelector('[data-flt]').value, cls) || '<span class="ui-sub">No lines.</span>'; el.scrollTop = el.scrollHeight; };
       body.querySelector('[data-pp]').onchange = (ev) => go('logs', { p: ev.target.value, which });
       body.querySelector('[data-wh]').onchange = (ev) => go('logs', { p: pid, which: ev.target.value });
+      body.querySelector('[data-gostats]').onclick = () => go('stats', { p: pid });
       body.querySelector('[data-flt]').oninput = re;
       body.querySelectorAll('[data-cls]').forEach(b => b.onclick = () => { cls = cls === b.dataset.cls ? '' : b.dataset.cls; body.querySelectorAll('[data-cls]').forEach(x => x.classList.toggle('btn-primary', x.dataset.cls === cls)); re(); });
       const el = body.querySelector('[data-log]'); el.scrollTop = el.scrollHeight;
+    } else if (tab === 'stats') {
+      const running = proxies.filter(p => p.running && p.kind !== 'certbot');
+      const pid = params.p && running.some(p => p.id === params.p) ? params.p : (running.find(p => p.sites) || running[0] || {}).id;
+      if (!pid) { body.innerHTML = '<div class="card" style="padding:20px"><div class="ui-sub">No running proxy.</div></div>'; return; }
+      body.innerHTML = '<div class="card" style="padding:20px"><div class="ui-sub">Reading the access log…</div></div>';
+      let s; try { s = await API.get(`/proxies/${enc(pid)}/stats?tail=3000`); } catch (er) { body.innerHTML = UI.errorState(er); return; }
+      if (!alive()) return;
+      const head = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><select class="select" data-pp style="max-width:260px">${running.map(p => `<option value="${e(p.id)}" ${p.id === pid ? 'selected' : ''}>${e(p.name)}</option>`).join('')}</select><span class="ui-sub">from the last 3000 lines of the access log</span><span style="flex:1"></span>${UI.btn('↻', 'data-again')}</div>`;
+      if (!s.requests) { body.innerHTML = `${head}<div class="card" style="padding:20px"><div class="ui-sub">No access log lines DockGate can read (nginx / Apache combined format or Caddy JSON). Traefik writes access logs only with --accesslog.</div></div>`; }
+      else {
+        const tile = (v, l, sub, color) => `<div class="card" style="padding:14px 16px"><div style="font-size:22px;font-weight:700;${color ? `color:${color}` : ''}">${v}</div><div style="font-weight:600">${l}</div><div class="ui-sub">${sub || ''}</div></div>`;
+        const c = Object.fromEntries(s.classes.map(x => [x.cls, x.count]));
+        const pct = (n) => (100 * n / s.requests).toFixed(1) + ' %';
+        const max = Math.max(1, ...s.timeline.map(t => t.n));
+        const W = Math.max(1, s.timeline.length);
+        const bars = s.timeline.map((t, i) => { const h = 100 * t.n / max, h5 = 100 * t.s5 / max, h4 = 100 * t.s4 / max; const x = (i / W) * 100, w = Math.max(0.6, 100 / W - 0.3); return `<g><title>${new Date(t.t).toLocaleTimeString()} — ${t.n} requests, ${t.s4} 4xx, ${t.s5} 5xx</title><rect x="${x}%" y="${100 - h}%" width="${w}%" height="${h - h4 - h5}%" fill="var(--accent)" opacity=".75"></rect><rect x="${x}%" y="${100 - h4 - h5}%" width="${w}%" height="${h4}%" fill="var(--warning)"></rect><rect x="${x}%" y="${100 - h5}%" width="${w}%" height="${h5}%" fill="var(--danger)"></rect></g>`; }).join('');
+        const top = (title, rows) => card(title, rows.length ? UI.table([{ label: '' }, { label: 'Requests', align: 'right' }], rows.map(r => ({ cells: [`<div class="td-mono text-xs" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(r.key)}">${e(r.key)}</div>`, `${r.count} <span class="ui-sub">${pct(r.count)}</span>`] })), { minWidth: 0 }) : '<div class="ui-sub">—</div>');
+        body.innerHTML = `${head}
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:12px">
+            ${tile(s.requests, 'requests', s.from ? `${new Date(s.from).toLocaleString()} – ${new Date(s.to).toLocaleTimeString()}` : '')}
+            ${tile(s.perMinute != null ? s.perMinute : '—', 'per minute', 'average over the span')}
+            ${tile(c['4xx'] || 0, '4xx', pct(c['4xx'] || 0), (c['4xx'] || 0) / s.requests > 0.2 ? 'var(--warning)' : '')}
+            ${tile(c['5xx'] || 0, '5xx', pct(c['5xx'] || 0), (c['5xx'] || 0) ? 'var(--danger)' : '')}
+            ${tile(s.ms ? `${s.ms.p50} / ${s.ms.p95} ms` : '—', 'response p50 / p95', s.ms ? `average ${s.ms.avg} ms, slowest ${s.ms.max} ms` : 'add $request_time to the log format to see it')}
+          </div>
+          ${card('Requests per minute', `<svg width="100%" height="140" preserveAspectRatio="none" style="display:block;background:var(--bg-primary);border-radius:6px">${bars}</svg><div class="ui-sub" style="margin-top:4px">Blue: answered · orange: 4xx · red: 5xx. Hover a bar for numbers.</div>`)}
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:12px">
+            ${top('Paths', s.paths)}${top('Visitors (IP)', s.ips)}${s.hosts.length ? top('Domains', s.hosts) : ''}${top('5xx — where', s.errors)}${top('Status codes', s.statuses)}
+          </div>`;
+      }
+      body.querySelector('[data-pp]').onchange = (ev) => go('stats', { p: ev.target.value });
+      body.querySelector('[data-again]').onclick = () => draw();
+    } else if (tab === 'traefik') {
+      const tr = proxies.filter(p => p.kind === 'traefik' && p.running);
+      const pid = params.p && tr.some(p => p.id === params.p) ? params.p : (tr[0] || {}).id;
+      body.innerHTML = '<div class="card" style="padding:20px"><div class="ui-sub">Asking Traefik…</div></div>';
+      let t; try { t = await API.get(`/proxies/${enc(pid)}/traefik`); } catch (er) { body.innerHTML = UI.errorState(er); return; }
+      if (!alive()) return;
+      const st = (x) => x === 'enabled' || x === 'UP' ? UI.pill('ok', x === 'UP' ? 'up' : 'on') : x === 'warning' ? UI.pill('warn', 'warning') : x === 'unknown' ? UI.chip('unknown') : UI.pill('bad', e(x === 'DOWN' ? 'down' : x));
+      const eps = `<div class="ui-sub" style="margin-bottom:10px">Entry points: ${t.entrypoints.length ? t.entrypoints.map(x => `<span class="td-mono">${e(x.name)}${x.port ? ':' + x.port : ''}</span>`).join(', ') : '—'} · Certificate resolvers: ${t.resolvers.length ? t.resolvers.map(x => `<span class="td-mono">${e(x)}</span>`).join(', ') : 'none'}</div>`;
+      if (!t.available) { body.innerHTML = `${eps}<div class="insight-card warning"><div>${e(t.note)}</div></div>`; return; }
+      body.innerHTML = `${eps}
+        ${t.overview && t.overview.http ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:12px">${['routers', 'services', 'middlewares'].map(k => { const o = t.overview.http[k] || {}; return `<div class="card" style="padding:14px 16px"><div style="font-size:22px;font-weight:700">${o.total || 0}</div><div style="font-weight:600">${k}</div><div class="ui-sub">${o.warnings ? `${o.warnings} warnings · ` : ''}${o.errors ? `<span style="color:var(--danger)">${o.errors} errors</span>` : 'no errors'}</div></div>`; }).join('')}</div>` : ''}
+        ${card('Routers', UI.table([{ label: 'Router' }, { label: 'Rule' }, { label: 'Entry points' }, { label: 'Service' }, { label: 'TLS' }, { label: 'State' }], t.routers.map(r => ({ cells: [`<b>${e(r.name)}</b><div class="ui-sub">${e(r.provider || '')}</div>`, `<span class="td-mono text-xs">${e(r.rule)}</span>`, e((r.entryPoints || []).join(', ')), `<span class="td-mono text-xs">${e(r.service)}</span>`, r.tls ? `${UI.pill('ok', 'TLS')}${r.resolver ? `<div class="ui-sub">${e(r.resolver)}</div>` : ''}` : '—', `${st(r.status)}${r.error ? `<div class="ui-sub" style="color:var(--danger)">${e(r.error)}</div>` : ''}`] })), { minWidth: 0 }))}
+        <div style="margin-top:12px">${card('Services and their servers', UI.table([{ label: 'Service' }, { label: 'Servers' }, { label: 'Used by' }, { label: 'State' }], t.services.map(s => ({ cells: [`<b class="td-mono text-xs">${e(s.name)}</b><div class="ui-sub">${e(s.type || '')}</div>`, s.servers.length ? s.servers.map(x => `<div><span class="td-mono text-xs">${e(x.url)}</span> ${st(x.status)}</div>`).join('') : '<span class="ui-sub">—</span>', e((s.usedBy || []).join(', ')), `${st(s.status)}${s.error ? `<div class="ui-sub" style="color:var(--danger)">${e(s.error)}</div>` : ''}`] })), { minWidth: 0 }))}</div>
+        <div class="ui-sub" style="margin-top:8px">Live from Traefik's API (port ${t.port} inside the container). Server state shows when a health check is set on the service.</div>`;
     }
     body.querySelectorAll('[data-test]').forEach(b => b.onclick = async () => {
-      b.disabled = true; b.textContent = 'Testing…';
-      try { const r = await API.post(`/proxies/${encodeURIComponent(b.dataset.test)}/test`, {}); showModal(r.ok ? 'Config is valid' : 'Config has errors', `<div class="ui-sub" style="margin-bottom:6px"><span class="td-mono">${e(r.command)}</span></div><pre class="td-mono text-xs" style="white-space:pre-wrap;background:var(--bg-tertiary);padding:8px;border-radius:6px;color:${r.ok ? 'inherit' : 'var(--danger)'}">${e(r.output || '(no output)')}</pre>`, [{ label: 'Close' }]); }
+      const done = busy(b, 'Testing…');
+      try { const r = await API.post(`/proxies/${enc(b.dataset.test)}/test`, {}); showModal(r.ok ? 'Config is valid' : 'Config has errors', `<div class="ui-sub" style="margin-bottom:6px"><span class="td-mono">${e(r.command)}</span></div><pre class="td-mono text-xs" style="white-space:pre-wrap;background:var(--bg-tertiary);padding:8px;border-radius:6px;color:${r.ok ? 'inherit' : 'var(--danger)'}">${e(r.output || '(no output)')}</pre>`, [{ label: 'Close' }]); }
       catch (er) { showToast(er.message, 'error'); }
-      finally { b.disabled = false; b.textContent = 'Test config'; }
+      finally { done(); }
     });
     body.querySelectorAll('[data-files]').forEach(b => b.onclick = () => go('files', { p: b.dataset.files }));
     body.querySelectorAll('[data-logs]').forEach(b => b.onclick = () => go('logs', { p: b.dataset.logs }));

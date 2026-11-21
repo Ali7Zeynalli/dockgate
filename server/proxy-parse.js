@@ -162,7 +162,7 @@ function parseHaproxy(text) {
     let m;
     if ((m = t.match(/^server\s+\S+\s+(\S+)/)) && backends[sec.name]) backends[sec.name].push(m[1]);
     if ((m = t.match(/^bind\s+(\S+)(.*)$/))) sec.binds.push({ addr: m[1], ssl: /\bssl\b/.test(m[2]) });
-    if ((m = t.match(/^acl\s+(\S+)\s+hdr(?:_dom|_beg|_end)?\(host\)\s+(?:-i\s+)?(.+)$/))) sec.acls[m[1]] = m[2].split(/\s+/).filter(x => x !== '-i');
+    if ((m = t.match(/^acl\s+(\S+)\s+(?:req\.)?hdr(?:_dom|_beg|_end)?\(host\)(?:,[\w.]+(?:\([^)]*\))?)*\s+(?:-[im]\s+)*(.+)$/))) sec.acls[m[1]] = m[2].split(/\s+/).filter(x => x !== '-i');
     if ((m = t.match(/^use_backend\s+(\S+)\s+if\s+(\S+)/))) sec.uses.push({ backend: m[1], acl: m[2] });
     if ((m = t.match(/^default_backend\s+(\S+)/))) sec.def = m[1];
   }

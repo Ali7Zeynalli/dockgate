@@ -2,6 +2,37 @@
 
 ---
 
+## [2.81.0] - 2026-11-21
+
+### Added
+- **Proxies & SSL can now change proxies.** Every change keeps the earlier file as a version, runs the proxy's own check (`nginx -t`, `caddy validate`, `haproxy -c`, `configtest`), reloads, and asks each site through the proxy. If the check fails, the reload fails, or a site that answered before does not, the earlier files go back.
+  - Configs on a read-only mount are written through a short-lived helper container.
+  - Host proxies on SSH servers need passwordless sudo.
+- **Put a container on a domain.** A wizard for nginx, Caddy, HAProxy and Apache.
+  - **Containers:** one or several, with balancing (round robin, least connections, IP hash).
+  - **Options:** HTTPS, http → https, WebSockets, upload limit.
+  - **Preview** shows the exact lines before anything is written.
+  - **Networks:** if the proxy and the container share no network, the proxy joins the container's network (no restart).
+  - **Traefik and caddy-docker-proxy:** the labels, as Compose and `docker run`.
+- **Let's Encrypt by DockGate.** DockGate is the ACME client and answers the check through the proxy itself; nothing else is installed.
+  - Works for new nginx and Apache sites, and existing nginx sites: "Add HTTPS" adds the HTTPS server and the redirect; "Use a Let's Encrypt certificate" swaps the certificate.
+  - Certificates are stored next to the site config and renewed 30 days before they expire (checked every 6 hours). A failed renewal puts the old files back and sends an alert.
+  - Certificates tab: renew now, put back after the container was re-created, auto renew on / off, account email and certificate authority (Let's Encrypt or staging).
+- **Config editor.** Edit the proxy's files; Save shows the changed lines first. A file changed on the server meanwhile is not overwritten. **History** keeps the last 30 versions of each file, with compare and restore.
+- **Load balancing** for a site: the method, servers, weights, backup and off.
+  - nginx: the `upstream`; a single `proxy_pass` gets one made.
+  - Caddy: `reverse_proxy` and `lb_policy`.
+  - HAProxy: the backend.
+- **Stats** from the access log: requests per minute, 4xx / 5xx, p50 / p95 response time, a timeline, and the top paths, visitors, domains and 5xx paths.
+- **Traefik live**: routers and services with the state of each server, from Traefik's API.
+- **Remove a site** DockGate added; it is kept as a version.
+
+### Fixed
+- Apache: the config files named by `apachectl -S` are now listed under Config files.
+- HAProxy: host rules with converters (`hdr(host),field(1,:)`) are read.
+
+---
+
 ## [2.80.0] - 2026-11-21
 
 ### Added
