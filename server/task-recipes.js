@@ -173,7 +173,7 @@ async function run(id, opts = {}) {
       let s; try { s = TK.server(sid); } catch (e) { TK.append(job, `\n✗ server ${sid}: ${e.message}\n`); ok = false; results.push({ server: sid, ok: false }); if (!r.settings.continueServers) break; continue; }
       job.server = s; // the steps run on this server
       if (r.settings.servers.length > 1) TK.append(job, `\n━━━━ ${s.host || s.id} ━━━━\n`);
-      const res = await runOn(job, r, s);
+      const res = await runOn(job, r, s).catch((e) => { TK.append(job, `\n✗ ${e.message}\n`); return { ok: false }; }); // never let a run take the server down
       results.push({ server: sid, ok: res.ok, failedAt: res.failedAt });
       if (!res.ok) { ok = false; if (!r.settings.continueServers) { const rest = r.settings.servers.slice(r.settings.servers.indexOf(sid) + 1); if (rest.length) TK.append(job, `\nStopped: not deployed to ${rest.join(', ')}\n`); break; } }
     }
@@ -184,6 +184,9 @@ async function run(id, opts = {}) {
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     TK.append(job, `\n${status2 === 'ok' ? '✓ Deployed' : status2 === 'cancelled' ? '■ Cancelled' : status2 === 'timeout' ? '⏱ Stopped (time limit)' : '✗ Deploy failed'} · ${secs} s\n`);
     TK.closeRun(job, status2, ok ? 0 : 1);
+    if ([...r.steps, ...r.onFail].some(x => x.type === 'compose_up')) { // → the stack's deploy history (Compose)
+      try { require('./routes/compose')._recipeDeployed({ serverId: main.id, dir: r.dir, ok, error: ok ? null : `recipe ${r.name}: ${status2}`, recipe: r.name, trigger, runId: job.id, startedAt: t0, commit: (git && git.sha) || job.meta.headAfter || null }); } catch (e) { /* history is optional */ }
+    }
     if (status) await status(ok ? 'success' : 'failure', `DockGate: ${r.name} ${ok ? 'deployed' : 'failed'} in ${secs} s`).catch(() => {});
     logAction({ server: main.id, resourceType: 'task', resourceName: projectName(r.dir), action: 'deploy', details: { recipe: r.name, status: status2 } }); // keeps Uptime quiet a little longer
     notify(r, job, status2, secs).catch(() => {});
@@ -202,9 +205,9 @@ async function runOn(job, r, s) {
   const exec1 = async (st, i, label) => {
     TK.append(job, `\n▶ ${label} ${i + 1}. ${describe(st)}\n`);
     let cmd; try { cmd = stepShell(st, ctx); } catch (e) { TK.append(job, `✗ ${e.message}\n`); return 1; }
-    if (st.type === 'git_pull') { const b = await remoteExec.execRemote(s, `cd ${shq(r.dir)} && git rev-parse HEAD`); ctx.before = String(b.stdout).trim().split('\n').pop() || null; }
+    if (st.type === 'git_pull') { const b = await TK.exec(s, `cd ${shq(r.dir)} && git rev-parse HEAD`); ctx.before = String(b.stdout).trim().split('\n').pop() || null; }
     const code = await TK.runShell(job, cmd, { runAs: st.runAs === 'root' || r.settings.runAs === 'root' ? 'root' : 'user', env, timeoutMin: r.settings.timeoutMin });
-    if (st.type === 'git_pull' && code === 0) { const a = await remoteExec.execRemote(s, `cd ${shq(r.dir)} && git log -1 --format='%h %s'`); TK.append(job, `   now at ${String(a.stdout).trim()}${ctx.before ? ` (was ${ctx.before.slice(0, 7)})` : ''}\n`); }
+    if (st.type === 'git_pull' && code === 0) { const a = await TK.exec(s, `cd ${shq(r.dir)} && git log -1 --format='%h %s'`); TK.append(job, `   now at ${String(a.stdout).trim()}${ctx.before ? ` (was ${ctx.before.slice(0, 7)})` : ''}\n`); try { const h = await TK.exec(s, `cd ${shq(r.dir)} && git rev-parse HEAD`); job.meta.headAfter = String(h.stdout).trim().split('\n').pop() || null; } catch (e) { /* only for the history */ } }
     if (code !== 0) TK.append(job, `✗ step ${i + 1} failed (exit ${code})\n`);
     return code;
   };

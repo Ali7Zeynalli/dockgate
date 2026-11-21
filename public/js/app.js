@@ -6,8 +6,8 @@ const navItems = {
   dashboard: { label: 'Dashboard', icon: Icons.dashboard },
   monitoring: { label: 'Monitoring', icon: Icons.chart },
   // DOCKER — what runs and how it is deployed
-  resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['prune', 'Cleanup']], default: 'containers' },
-  deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Compose stacks'], ['templates', 'App templates'], ['tasks', 'Tasks'], ['builds', 'Builds'], ['registries', 'Registries']], default: 'compose' },
+  resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['builds', 'Builds'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['prune', 'Cleanup']], default: 'containers' },
+  deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Projects'], ['templates', 'App templates'], ['tasks', 'Tasks']], default: 'compose' },
   swarm: { label: 'Swarm', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M12 8v4M5 16v-2h14v2"/></svg>', tabs: [['swarm-overview', 'Overview'], ['swarm-nodes', 'Nodes'], ['swarm-stacks', 'Stacks'], ['swarm-services', 'Services'], ['swarm-scaling', 'Auto Scaling'], ['swarm-migrate', 'Migrate'], ['swarm-secrets', 'Secrets & configs'], ['swarm-networks', 'Networks'], ['swarm-firewall', 'Firewall'], ['swarm-settings', 'Cluster settings']], default: 'swarm-overview' },
   databases: { label: 'Databases', icon: SRV_ICONS.databases },
   observe: { label: 'Logs & events', icon: Icons.events, tabs: [['logs', 'Logs'], ['events', 'Events']], default: 'logs' },
@@ -24,7 +24,7 @@ const navItems = {
   // TOOLS
   tools: { label: 'Tools', icon: Icons.terminal, tabs: [['terminal', 'Terminal'], ['files', 'Files']], default: 'terminal' },
   // SYSTEM — DockGate itself
-  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['security', 'Security'], ['notifications', 'Notifications'], ['update', 'Software update']], default: 'general' },
+  settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['security', 'Security'], ['notifications', 'Notifications'], ['registries', 'Registry logins'], ['update', 'Software update']], default: 'general' },
   activity: { label: 'Activity', icon: SRV_ICONS.activity, tabs: [['audit', 'Audit log'], ['notification-log', 'Notifications sent']], default: 'audit' },
 };
 

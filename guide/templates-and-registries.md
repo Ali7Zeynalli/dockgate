@@ -1,6 +1,6 @@
-# Deploy → App templates and Registries
+# Deploy → App templates · Settings → Registry logins
 
-> **Where:** sidebar **Deploy → App templates** and **Deploy → Registries**
+> **Where:** sidebar **Deploy → App templates** and **Settings → Registry logins**
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**).
 
@@ -35,6 +35,8 @@ If the source can not be read, DockGate shows the bundled list and says so. **�
 ---
 
 ## Registries
+
+> **Where:** sidebar **Settings → Registry logins**
 
 Logins for private image registries: Docker Hub, GitHub (`ghcr.io`), GitLab, a self-hosted registry and so on. DockGate uses the matching login whenever it pulls or pushes an image, for containers, Compose, builds and Swarm.
 

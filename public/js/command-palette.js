@@ -35,7 +35,7 @@
     }
     out.push(
       { group: 'Actions', name: 'Run container', hint: 'Resources', run: () => typeof openRunContainerModal === 'function' ? openRunContainerModal() : navigateThenClick('resources', { tab: 'containers' }, '#run-container-btn') },
-      { group: 'Actions', name: 'Deploy stack', hint: 'Deploy', run: () => navigateThenClick('deploy', { tab: 'compose' }, '#compose-deploy-wizard') },
+      { group: 'Actions', name: 'New project', hint: 'Deploy', run: () => navigateThenClick('deploy', { tab: 'compose' }, '#compose-deploy-wizard') },
       { group: 'Actions', name: 'Pull image', hint: 'Images', run: () => navigateThenClick('resources', { tab: 'images' }, '#pull-image-btn') },
       { group: 'Actions', name: 'Prune unused data', hint: 'Resources', run: () => Router.navigate('resources', { tab: 'prune' }) },
       { group: 'Actions', name: 'Add server', hint: 'Servers', run: () => navigateThenClick('infra', { tab: 'servers' }, '[data-add]') },

@@ -109,4 +109,4 @@ When a new task fails and the service's *When it fails* is *pause*, Swarm stops 
 | `This service has no previous version` | Roll back on a new service | Nothing to roll back to |
 | `The update of this service is not paused` | Resume when nothing is paused | No action needed |
 | Task: `no suitable node (insufficient resources on N node)` | No server has the reservation free | Lower the reservation or replicas, or add a server |
-| Task: `No such image` | The image or tag does not exist, or the registry needs a login | Check the tag; add the login in **Deploy → Registries** |
+| Task: `No such image` | The image or tag does not exist, or the registry needs a login | Check the tag; add the login in **Settings → Registry logins** |

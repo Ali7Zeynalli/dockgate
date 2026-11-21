@@ -39,7 +39,7 @@ The most common problems, what they mean and what to do. Each page of these docs
 | `port is already allocated` / `address already in use` | Another container or program uses the host port | Change the host port, or stop the other one (**Dashboard → Port Map** shows who has it) |
 | A container restarts again and again | The app exits on start | Open its **Logs**; check environment variables and volumes |
 | `OOMKilled` | Out of memory | Raise the memory limit, or find the leak |
-| `pull access denied` / `unauthorized` | Private image without a login | Add the login in **Deploy → Registries** |
+| `pull access denied` / `unauthorized` | Private image without a login | Add the login in **Settings → Registry logins** |
 | `manifest unknown` / `not found` | The tag does not exist | Check the tag on the registry |
 | `no space left on device` | The disk is full | **Resources → Cleanup**; set log limits (**Server → Software → Docker engine**) |
 | Compose: `Invalid compose file: …` | YAML error | Fix the line in the message |

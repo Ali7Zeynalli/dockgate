@@ -37,19 +37,19 @@ const Router = {
     const p = { ...(params || {}) };
     const SECTION_OF = {
       containers: 'resources', images: 'resources', volumes: 'resources', networks: 'resources', prune: 'resources', cleanup: 'resources',
-      compose: 'deploy', tasks: 'deploy', templates: 'deploy', registries: 'deploy', builds: 'deploy',
+      compose: 'deploy', tasks: 'deploy', templates: 'deploy', registries: 'settings', builds: 'resources',
       logs: 'observe', events: 'observe', audit: 'activity', 'notification-log': 'activity',
       terminal: 'tools', files: 'tools', schedules: 'srv-automation',
     };
     const TAB = { cleanup: 'prune' };
     const OWN = { databases: 1, uptime: 1 }; // pages of their own (no section)
     // a tab opened in the section it used to be in → its new section
-    if (p.tab && (OWN[p.tab] || (SECTION_OF[p.tab] && SECTION_OF[p.tab] !== path)) && ['activity', 'observe', 'tools', 'resources', 'deploy'].includes(path)) {
+    if (p.tab && (OWN[p.tab] || (SECTION_OF[p.tab] && SECTION_OF[p.tab] !== path)) && ['activity', 'observe', 'tools', 'resources', 'deploy', 'settings'].includes(path)) {
       if (OWN[p.tab]) { const t = p.tab; delete p.tab; return { path: t, params: p }; }
       return { path: SECTION_OF[p.tab], params: { ...p, tab: TAB[p.tab] || p.tab } };
     }
     if (path === 'activity' && !p.tab) return { path, params: p };
-    if (path === 'infra' && p.tab === 'registries') return { path: 'deploy', params: p };
+    if (path === 'infra' && p.tab === 'registries') return { path: 'settings', params: p };
     if ((path === 'resources' || path === 'deploy') && TAB[p.tab]) return { path, params: { ...p, tab: TAB[p.tab] } };
     if (SECTION_OF[path]) { delete p.tab; return { path: SECTION_OF[path], params: { ...p, tab: TAB[path] || path } }; }
     if (path === 'settings' && p.tab === 'agent') return { path: 'infra', params: { tab: 'agent' } };

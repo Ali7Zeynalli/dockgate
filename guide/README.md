@@ -20,13 +20,13 @@ The pages follow the sidebar, so the name you see on screen is the name of the p
 - [Resources → Images](images.md) — pull, load, tag, push, save
 - [Resources → Volumes](volumes.md) — browse and edit files, back up, restore, clone
 - [Resources → Networks](networks.md) — create, connect containers, Swarm networks
-- [Deploy → Builds](builds.md) — build from Git or an inline Dockerfile, steps and cache
+- [Resources → Builds](builds.md) — build from Git or an inline Dockerfile, steps and cache
 - [Resources → Cleanup](prune.md) — free disk space safely
-- [Deploy → Compose stacks](compose.md) — deploy from the editor, Git, a folder or the server; history, rebuild, Git sync
+- [Deploy → Projects](compose.md) — deploy from the editor, Git, a folder or the server; history, rebuild, Git sync
 - [Connect to Git](git-connect.md) — a project uploaded as files becomes a Git checkout in the same folder: compare, backup, connect, undo; or the first push to an empty repository
-- [Deploy → Compose stacks → Scaling & health](compose-scaling.md) — replicas with one click, auto-heal, Auto Scaling and updates without downtime, without Swarm; your files stay as they are
+- [Deploy → Projects → Scaling & health](compose-scaling.md) — replicas with one click, auto-heal, Auto Scaling and updates without downtime, without Swarm; your files stay as they are
 - [Deploy → Tasks](tasks.md) — run the Makefile, justfile, Taskfile, npm scripts, *.sh, Ansible and Kamal of a folder; deploy recipes with checks and recovery, on a schedule, from GitHub / GitLab / Bitbucket webhooks or CI
-- [Deploy → App templates and Registries](templates-and-registries.md) — 500+ ready-made apps; private registry logins
+- [Deploy → App templates · Settings → Registry logins](templates-and-registries.md) — 500+ ready-made apps; private registry logins
 
 ## Docker Swarm
 

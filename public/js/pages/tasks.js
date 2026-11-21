@@ -1,5 +1,5 @@
 // Deploy → Tasks: the Makefile targets, just recipes, Taskfile tasks, package.json scripts, *.sh, Ansible
-// playbooks and Kamal of a folder on the SSH server picked in the top bar (server/tasks.js) — run them with a live
+// playbooks and Kamal of a folder on the server picked in the top bar (SSH, or the local one) (server/tasks.js) — run them with a live
 // log; deploy recipes of steps with checks and recovery, run by hand, on a schedule, by a GitHub / GitLab /
 // Bitbucket push or from CI (server/task-recipes.js, task-hooks.js); the folder's env and secrets.
 Router.register('tasks', async (content, params = {}) => {
@@ -28,11 +28,7 @@ Router.register('tasks', async (content, params = {}) => {
   </style><div data-root><div class="card"><div class="skeleton" style="height:200px"></div></div></div>`;
   const root = content.querySelector('[data-root]');
 
-  if (srv.type !== 'ssh') {
-    root.innerHTML = `${UI.header('Tasks', 'Run the Makefile, just, Taskfile, npm scripts and shell scripts of your projects, and deploy them with recipes.')}
-      <div class="card" style="padding:24px"><b>Tasks run on SSH servers.</b><div class="ui-sub" style="margin-top:6px">Pick a server reached over SSH in the top bar (Servers → Add server). The tasks run there, in the project folder, as the SSH user (or root with sudo).</div></div>`;
-    return;
-  }
+  const isLocal = srv.type !== 'ssh'; // local: tasks run where DockGate runs (its container), as its user
 
   async function loadProjects() {
     try { const r = await API.get('/tasks/projects'); st.projects = r.projects; } catch (e) { if (alive()) root.innerHTML = UI.errorState(e, { title: 'Tasks could not be loaded' }); return; }
@@ -44,7 +40,8 @@ Router.register('tasks', async (content, params = {}) => {
   }
 
   function drawShell() {
-    root.innerHTML = `${UI.header('Tasks', `Tasks and deploy recipes of project folders on <b>${esc(srv.name || srv.host)}</b> — found in the Makefile, justfile, Taskfile, package.json, *.sh, Ansible and Kamal files. Nothing runs until you press Run.`, UI.primary('+ Add folder', 'data-add'))}
+    root.innerHTML = `${UI.header('Tasks', `Tasks and deploy recipes of project folders on <b>${esc(srv.name || srv.host || 'Local')}</b> — found in the Makefile, justfile, Taskfile, package.json, *.sh, Ansible and Kamal files. Nothing runs until you press Run.`, UI.primary('+ Add folder', 'data-add'))}
+      ${isLocal ? '<div class="insight-card" style="margin-bottom:12px"><div><b>Local server:</b> tasks run where DockGate runs (its container), as its user. <span class="td-mono">git</span>, <span class="td-mono">docker compose</span>, <span class="td-mono">curl</span> and <span class="td-mono">bash</span> are there; <span class="td-mono">make</span>, <span class="td-mono">npm</span> and others only if you installed them. A URL check asks from the container — use the app\'s container name or the host\'s address, not 127.0.0.1. Folders of the host are under <span class="td-mono">/host</span>.</div></div>' : ''}
       <div class="tk-wrap">
         <div class="card" style="padding:8px">
           ${st.projects.length ? st.projects.map(p => `<button type="button" class="tk-proj" data-proj="${esc(p.dir)}" aria-current="${p.dir === st.dir}"><b>${esc(p.name)}</b> ${p.compose ? UI.chip('compose') : ''} ${p.last ? pill(p.last.status) : ''}<small class="td-mono">${esc(p.dir)}</small></button>`).join('')
@@ -133,7 +130,7 @@ Router.register('tasks', async (content, params = {}) => {
       body: `${vars.length ? `<div class="ui-label" style="margin-bottom:4px">${t.source === 'just' ? 'Parameters' : 'Variables'} <span class="ui-sub">— empty = the file's own value</span></div>${vars.map(v => `<label class="ui-field" style="margin-bottom:6px"><span class="ui-label td-mono">${esc(v.name)}</span><input class="input td-mono" data-var="${esc(v.name)}" placeholder="${esc(v.value || '')}"></label>`).join('')}` : ''}
         ${t.source === 'make' || t.source === 'task' ? '<label class="ui-field"><span class="ui-label">Other variables</span><input class="input td-mono" id="ro-x" placeholder="TAG=v1.2 ENV=staging"></label>' : ''}
         ${t.source !== 'kamal' || true ? '<label class="ui-field"><span class="ui-label">Extra arguments</span><input class="input td-mono" id="ro-a" placeholder="(optional)"></label>' : ''}
-        <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="ro-r"> Run as root (sudo -n — the SSH user needs sudo without a password)</label>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="ro-r"${isLocal ? ' disabled' : ''}> Run as root (sudo -n — the SSH user needs sudo without a password)${isLocal ? ' — not on the local server' : ''}</label>
         <label class="ui-field" style="margin-top:8px"><span class="ui-label">Time limit (minutes)</span><input class="input" id="ro-t" type="number" value="60" min="1" max="720"></label>
         ${t.source !== 'kamal' ? '<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="ro-d"> Dry run — show what it would do</label>' : ''}`,
       onSave: async (ov) => {
@@ -204,7 +201,9 @@ Router.register('tasks', async (content, params = {}) => {
   }
 
   // ---------- runs ----------
+  let runToOpen = params.run ? Number(params.run) : null; // from a stack's page → open that run's log once
   async function drawRuns() {
+    if (runToOpen) { const id = runToOpen; runToOpen = null; setTimeout(() => openLog(id), 0); }
     body().innerHTML = '<div class="card"><div class="skeleton" style="height:120px"></div></div>';
     let r; try { r = await API.get(`/tasks/runs?dir=${encodeURIComponent(st.dir)}&limit=100`); } catch (e) { body().innerHTML = UI.errorState(e, { compact: true }); return; }
     if (!alive() || st.view !== 'runs') return;
@@ -297,7 +296,7 @@ Router.register('tasks', async (content, params = {}) => {
     if (i.git && i.git.remote) steps.push({ type: 'git_pull' });
     const dep = i.tasks.find(t => t.source === 'make' && /^deploy$/.test(t.name)) || i.tasks.find(t => t.source === 'just' && t.name === 'deploy') || i.tasks.find(t => t.source === 'sh' && /deploy\.sh$/.test(t.name));
     if (dep) steps.push({ type: 'task', source: dep.source, name: dep.name }); else if (i.compose.length) steps.push({ type: 'compose_up', build: true });
-    steps.push({ type: 'check_url', url: 'http://127.0.0.1:8080/', tries: 10, every: 3 });
+    if (!isLocal) steps.push({ type: 'check_url', url: 'http://127.0.0.1:8080/', tries: 10, every: 3 }); // locally 127.0.0.1 is DockGate's container — add a check with the app's address yourself
     return { name: 'Deploy', steps, onFail: i.git && i.git.remote ? [{ type: 'git_back' }, ...(i.compose.length && !dep ? [{ type: 'compose_up', build: true }] : [])] : [], settings: { notify: { fail: true } } };
   }
 
