@@ -8,21 +8,23 @@ Router.register('compose', async (content, params = {}) => {
   // The Compose editor (New Project / Edit YAML) now lives in the shared global openComposeEditor()
   // (public/js/compose-editor.js) so the Templates page can reuse it to deploy stack templates.
 
-  // "Deploy stack": pick where the stack comes from, then the existing flow for that source opens.
+  // "New project": pick where the project comes from, then the existing flow for that source opens.
   function openDeployWizard(remote) {
+    // [key, title, "when to pick it", available here]
     const opts = [
-      ['editor', 'Write a compose file', 'Paste or write docker-compose.yml in the editor.'],
-      ['git', 'Git repository', 'Clone a repository and keep it in sync.'],
-      ['folder', 'Upload a folder', 'A folder with a compose file and its build context.'],
-      ...(remote ? [['adopt', 'Existing on the server', 'Take over a compose folder already on this server.']] : []),
-      ['template', 'App template', 'Pick one of the ready-made stacks.'],
+      ['git', 'From a Git repository', 'The code is on GitHub, GitLab, Bitbucket or your own Git server. DockGate clones it; later a push can deploy it.', true],
+      ['folder', 'Upload a folder', 'The project is on your computer: a folder with a compose file (and its Dockerfile). You can connect it to Git later.', true],
+      ['adopt', 'Already on the server', remote ? 'The compose folder is on this server already (copied with scp, cloned by hand, running). DockGate takes it over where it is — nothing is copied.' : 'On the local server, stacks started with docker compose show in the list by themselves; open one to manage it.', remote],
+      ['editor', 'Write a compose file', 'A small stack you write or paste here: an image or two, ports, volumes.', true],
+      ['template', 'App template', '500+ ready-made apps — databases, CMS, monitoring, tools — with their settings filled in.', true],
+      ['connect', 'Connect a stack to Git', 'A stack you uploaded as files should now come from a repository. Its folder becomes a Git checkout in place.', true],
     ];
     let choice = 'git';
     const d = UI.dialog({
-      title: 'Deploy stack', saveLabel: 'Continue', wide: true,
-      body: `<p class="text-sm text-muted" style="margin:0 0 10px">Where does the stack come from?</p>
-        <div class="ui-choice">${opts.map(([k, t, desc]) => `<button type="button" class="ui-choice-opt" data-src="${k}" aria-pressed="${k === choice}"><b>${t}</b><span>${desc}</span></button>`).join('')}</div>`,
-      onOpen: (ov) => ov.querySelectorAll('[data-src]').forEach(b => b.addEventListener('click', () => {
+      title: 'New project', saveLabel: 'Continue', wide: true,
+      body: `<p class="text-sm text-muted" style="margin:0 0 10px">Where does the project come from?</p>
+        <div class="ui-choice">${opts.map(([k, t, desc, ok]) => `<button type="button" class="ui-choice-opt" data-src="${k}" aria-pressed="${k === choice}"${ok ? '' : ' disabled style="opacity:.55"'}><b>${t}</b><span>${desc}</span></button>`).join('')}</div>`,
+      onOpen: (ov) => ov.querySelectorAll('[data-src]:not([disabled])').forEach(b => b.addEventListener('click', () => {
         choice = b.dataset.src;
         ov.querySelectorAll('[data-src]').forEach(x => x.setAttribute('aria-pressed', x === b));
       })),
@@ -32,11 +34,20 @@ Router.register('compose', async (content, params = {}) => {
           else if (choice === 'git') openGitDeploy();
           else if (choice === 'folder') openFolderDeploy();
           else if (choice === 'adopt') openAdoptFromServer();
+          else if (choice === 'connect') pickStackToConnect();
           else Router.navigate('deploy', { tab: 'templates' });
         }, 0);
       },
     });
     return d;
+  }
+  // "Connect a stack to Git": pick one of the stacks that are not a Git checkout, then Connect to Git.
+  async function pickStackToConnect() {
+    let list = [];
+    try { list = (await API.get('/compose')).filter(p => !(p.isGit || p.deploySource === 'git') && !p.onSwarm && (p.workingDir || p.deploySource === 'folder')); } catch (e) { showToast(e.message, 'error'); return; }
+    if (!list.length) { showModal('Connect a stack to Git', '<p class="text-sm">Every stack on this server is a Git checkout already, or there is none yet. Deploy one first (Upload a folder, Write a compose file…).</p>', [{ label: 'Close' }]); return; }
+    const m = showModal('Connect a stack to Git', `<p class="text-sm text-muted" style="margin:0 0 8px">Which stack?</p>${list.map(p => `<button type="button" class="ui-choice-opt" data-pick="${escapeHtml(p.name)}" style="width:100%;margin-bottom:6px;text-align:left"><b>${escapeHtml(p.name)}</b><span class="td-mono">${escapeHtml(p.workingDir || '')}</span></button>`).join('')}`, [{ label: 'Cancel' }]);
+    m.overlay.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { m.close(); window.GitConnect.open({ project: b.dataset.pick }, { onDone: () => Router.navigate('deploy', { tab: 'compose', project: b.dataset.pick }) }); });
   }
 
   // The handlers of the stack buttons (data-* attributes) — used by the list and by a project's page.
@@ -351,7 +362,7 @@ Router.register('compose', async (content, params = {}) => {
     const T = [['overview', 'Overview'], ['services', 'Services'], ['files', 'Files'], ['deploys', 'Deploys'], ['automation', 'Automation'], ['settings', 'Settings']];
     content.innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-        <button class="btn btn-secondary btn-sm" data-cp-back>← Stacks</button>
+        <button class="btn btn-secondary btn-sm" data-cp-back>← Projects</button>
         <h2 style="margin:0;font-size:20px">${n}</h2>
         ${UI.chip(isGit ? `git${git.branch ? ' · ' + escapeHtml(git.branch) : ''}` : srcLabel)} ${state}
         <span style="flex:1"></span>
@@ -511,7 +522,7 @@ Router.register('compose', async (content, params = {}) => {
       const dis = '';
       const gitProjects = (projects || []).filter(p => p.isGit || p.deploySource === 'git');
       content.innerHTML = `
-        ${UI.header('Compose stacks', `${projects.length} stack${projects.length === 1 ? '' : 's'} on this server${gitProjects.length ? ` · ${gitProjects.length} from Git` : ''}. Open a stack's ⋯ menu for its files, YAML, terminal and Git actions.`,
+        ${UI.header('Projects', `${projects.length} Compose project${projects.length === 1 ? '' : 's'} on this server${gitProjects.length ? ` · ${gitProjects.length} from Git` : ''}. Open a stack's ⋯ menu for its files, YAML, terminal and Git actions.`,
           `<button class="btn btn-secondary btn-sm" id="compose-refresh" title="Refresh">${Icons.refresh}</button>
            <button class="btn btn-secondary btn-sm" id="compose-bulk-delete" style="display:none;color:var(--danger)">${Icons.trash} Delete <span id="bulk-count">0</span>…</button>
            <div class="row-menu" style="position:relative;display:inline-block">
@@ -527,7 +538,7 @@ Router.register('compose', async (content, params = {}) => {
                <button class="rmi" id="global-git-pull-custom">Pull and deploy a server path…</button>
              </div>
            </div>
-           <button class="btn btn-primary btn-sm" id="compose-deploy-wizard">${Icons.compose} Deploy stack</button>`)}
+           <button class="btn btn-primary btn-sm" id="compose-deploy-wizard">${Icons.compose} New project</button>`)}
         <div id="deploy-banner"></div>
         ${remote ? '<div class="card mb-3" style="border-left:3px solid var(--accent);padding:10px 14px;font-size:13px;color:var(--text-secondary)">Remote host active — only <strong>DockGate-managed</strong> projects can be deployed (the compose file lives on DockGate). Needs a key-based SSH server without a passphrase; bind-mount paths resolve on the remote host.</div>' : ''}
         ${projects.length === 0 ? `<div class="empty-state"><h3>No stacks yet</h3><p>Deploy one from a compose file, a Git repository, a folder or a template.</p></div>` : `
@@ -1813,7 +1824,15 @@ Router.register('compose', async (content, params = {}) => {
         const log = job.log || ''; fullLog = log;
         if (term) { if (log.length > written) { term.write(log.slice(written)); written = log.length; } }
         else if (pre) { pre.textContent = log; pre.scrollTop = pre.scrollHeight; }
-        if (job.status !== 'running') { renderDeploys(); break; }
+        if (job.status !== 'running') {
+          renderDeploys();
+          if (job.status === 'done' && /^[\w.-]+$/.test(project || '') && !params.project && !root.querySelector('[data-dl-open]')) { // a finished deploy → its page
+            const b = document.createElement('button'); b.className = 'btn btn-primary'; b.dataset.dlOpen = '1'; b.textContent = 'Open the project';
+            b.onclick = () => { m.close(); Router.navigate('deploy', { tab: 'compose', project }); };
+            root.querySelector('#modal-footer')?.prepend(b);
+          }
+          break;
+        }
         await new Promise(r => setTimeout(r, 1000));
       }
     })();

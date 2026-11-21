@@ -9,12 +9,12 @@ DockGate can make a stack in four ways:
 
 | From | Where | What happens to the original |
 |---|---|---|
-| A Compose project | **Migrate** (or **Deploy → Compose stacks → Move to Swarm…**) | `docker compose down`, volumes stay; the compose files are never changed |
+| A Compose project | **Migrate** (or **Deploy → Projects → Move to Swarm…**) | `docker compose down`, volumes stay; the compose files are never changed |
 | Part of a Compose project | **Migrate**, project marked *Part can move* | only the moving services stop; the rest keep running in Compose |
 | A `docker run` container | **Migrate → Containers started with docker run** | the container is stopped and **kept** (restart policy set to `no`) |
 | A stack file you write | **Stacks → New stack…** | — |
 
-Every move can be undone: **Stacks → ⋯ → Move back to Compose…** (also in the project's ⋯ menu on **Deploy → Compose stacks**) or **Move back to the container…**.
+Every move can be undone: **Stacks → ⋯ → Move back to Compose…** (also in the project's ⋯ menu on **Deploy → Projects**) or **Move back to the container…**.
 
 ---
 
@@ -119,7 +119,7 @@ Containers that belong to a Compose project are not listed here — move the pro
 
 ## Build & push (services built from source)
 
-A service with `build:` runs on Swarm only from an image: Swarm does not build, and on **several servers** every server must pull it from a registry. When the project has such services, the plan shows **Build & push** with the registry logins from **Deploy → Registries**:
+A service with `build:` runs on Swarm only from an image: Swarm does not build, and on **several servers** every server must pull it from a registry. When the project has such services, the plan shows **Build & push** with the registry logins from **Settings → Registry logins**:
 
 - **Do not push** — the image Compose built on this server is used (fine with one server).
 - **A registry** — on the move DockGate runs `docker compose build <service>` (your Dockerfile, context and build args), tags the image `<registry>/<project>-<service>:<time>` (for Docker Hub `<user>/<project>-<service>:<time>`), pushes it with the stored login, and the stack uses that tag. The build runs **before** anything stops, so it does not add to the downtime.
@@ -243,9 +243,9 @@ Before a service moves, DockGate compares how it is protected in Compose with ho
 | `security_opt: this Docker is older than 25 (API 1.44) …` | DockGate can not put no-new-privileges / seccomp back on the service | Update Docker on the managers, or *Move anyway* |
 | `nothing moves — every service would be less protected on Swarm` | Every service is weaker and none was ticked | Tick *Move anyway* for the ones that may move |
 | `less protected on Swarm than planned — …` (the project is put back) | A Swarm task came up weaker than the plan said | Read the field named; nothing changed in Compose |
-| `build: without image — on several servers the image must be in a registry: choose one under "Build & push"` | A built service on a cluster of several servers | Choose a registry under Build & push (add the login in Deploy → Registries first) |
-| `That registry login is no longer in Deploy → Registries` | The login chosen for the stack was removed | Add it again, then Redeploy with Build & push set |
-| Push fails: `denied` / `unauthorized` | The login can not push to that repository | Check the login in Deploy → Registries → Test |
+| `build: without image — on several servers the image must be in a registry: choose one under "Build & push"` | A built service on a cluster of several servers | Choose a registry under Build & push (add the login in Settings → Registry logins first) |
+| `That registry login is no longer in Settings → Registry logins` | The login chosen for the stack was removed | Add it again, then Redeploy with Build & push set |
+| Push fails: `denied` / `unauthorized` | The login can not push to that repository | Check the login in Settings → Registry logins → Test |
 | `network lan (macvlan) has no subnet in ipam …` | Swarm needs the subnet to make the network on every server | Add `ipam: config: [{ subnet: … }]` to the network |
 | `network lan: server … is not in DockGate, so its config-only network can not be made` | A node DockGate does not manage | Add the server in Servers |
 | `can not read … on the server` | The secret/config file is not readable over SSH | Check the file and the SSH user's rights |

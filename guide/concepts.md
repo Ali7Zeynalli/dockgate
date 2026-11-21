@@ -18,7 +18,7 @@ DockGate pins each server's **SSH host key** on first connection and refuses to 
 | | What it is | Where in DockGate |
 |---|---|---|
 | **Container** | One running app, from an image | Resources → Containers |
-| **Compose stack** | Several containers from one `docker-compose.yml`, on **one** server | Deploy → Compose stacks |
+| **Compose stack** | Several containers from one `docker-compose.yml`, on **one** server | Deploy → Projects |
 | **Swarm service / stack** | An app run by Docker Swarm as several tasks, over **one or more** servers, with rolling updates and roll back | Swarm |
 
 You can start with Compose and move a project to Swarm later (**Move to Swarm…**), and back.

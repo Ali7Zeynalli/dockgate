@@ -23,7 +23,7 @@ When some images are unused, **Remove unused (size)…** appears at the top. It 
 
 ![Pull image](images/images-pull.png)
 
-Type a reference such as `nginx:1.27`, or click **Search Docker Hub** to find one (official images are marked). For a private registry use the full reference, for example `ghcr.io/you/app:tag`, and add a login under **Deploy → Registries** first — it is used automatically.
+Type a reference such as `nginx:1.27`, or click **Search Docker Hub** to find one (official images are marked). For a private registry use the full reference, for example `ghcr.io/you/app:tag`, and add a login under **Settings → Registry logins** first — it is used automatically.
 
 ## Actions (⋯)
 
@@ -33,7 +33,7 @@ Type a reference such as `nginx:1.27`, or click **Search Docker Hub** to find on
 | **Layers and history** | Each layer with its size and the Dockerfile command that made it |
 | **Tags…** | Add a tag (`repo:tag`) or **Untag** one |
 | **Pull newer version** | Pulls the tag again from its registry. A container keeps the image it was made from until it is recreated, so DockGate then lists the containers still on the previous image, each with **Update** (recreate with the new image, check it, put the previous one back if it does not start). A tag the daily check found newer shows **newer available** |
-| **Push to registry…** | Push to a target reference such as `ghcr.io/owner/app:tag`, with a live log. The login is picked by the registry host from **Deploy → Registries** |
+| **Push to registry…** | Push to a target reference such as `ghcr.io/owner/app:tag`, with a live log. The login is picked by the registry host from **Settings → Registry logins** |
 | **Build from this (FROM)…** | Opens **Builds** with an inline Dockerfile starting `FROM` this image |
 | **Save as .tar** | Downloads the image as a `.tar` (load it elsewhere with **Load .tar** or `docker load`) |
 | **Remove…** | Removes the image. You type its name to confirm |
@@ -47,8 +47,8 @@ Type a reference such as `nginx:1.27`, or click **Search Docker Hub** to find on
 
 | You see | Why | What to do |
 |---|---|---|
-| `pull access denied for <name>, repository does not exist or may require 'docker login'` | Wrong name, or a private image without a login | Check the name; add the registry under **Deploy → Registries** |
-| `not authorized — add a login in Deploy → Registries` | Push or pull to a private registry without a login | Add the login |
+| `pull access denied for <name>, repository does not exist or may require 'docker login'` | Wrong name, or a private image without a login | Check the name; add the registry under **Settings → Registry logins** |
+| `not authorized — add a login in Settings → Registry logins` | Push or pull to a private registry without a login | Add the login |
 | `Docker Hub HTTP 429` | Docker Hub rate limit for searches | Wait a minute, or type the name yourself |
 | `conflict: unable to delete <id> (cannot be forced) - image is being used by running container <id>` | A **running** container uses the image; not even Force remove can delete it | Stop and remove that container first |
 | `conflict: unable to delete <id> (must be forced) - image is being used by stopped container <id>` | A stopped container uses it | Remove the container, or use **Force remove…** |

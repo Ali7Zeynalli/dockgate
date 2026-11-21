@@ -100,8 +100,8 @@ Click a container's name, or **⋯ → Open details**.
 
 | You see | Why | What to do |
 |---|---|---|
-| `Pull failed: …` | The registry refused the pull, or the image name is wrong | Check the name and tag. For a private registry add a login in **Deploy → Registries** |
-| `not authorized — add a login in Deploy → Registries` | The image is private | Add the registry login |
+| `Pull failed: …` | The registry refused the pull, or the image name is wrong | Check the name and tag. For a private registry add a login in **Settings → Registry logins** |
+| `not authorized — add a login in Settings → Registry logins` | The image is private | Add the registry login |
 | `Image is required` | Run container without an image | Fill in **Image** |
 | `The container must be running` | Files tab or edit on a stopped container | Start it first |
 | `The container has no shell (sh) — files can only be downloaded and uploaded` | The image has no `sh` | Use Export, or Upload .tar |

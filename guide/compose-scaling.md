@@ -1,6 +1,6 @@
-# Deploy → Compose stacks → Scaling & health
+# Deploy → Projects → Scaling & health
 
-> **Where:** **Deploy → Compose stacks →** a stack's **⋯ → Scaling & health…**
+> **Where:** **Deploy → Projects →** a stack's **⋯ → Scaling & health…**
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**). No Swarm needed.
 

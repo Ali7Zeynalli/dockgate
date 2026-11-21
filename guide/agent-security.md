@@ -1,6 +1,6 @@
 # Edge agent → How DockGate commands it, safely
 
-> **Where:** **Servers → Edge agent** (install or update), and **Deploy → Compose stacks → ⋯ → Scaling & health…** (the rules it runs).
+> **Where:** **Servers → Edge agent** (install or update), and **Deploy → Projects → ⋯ → Scaling & health…** (the rules it runs).
 
 Besides watching, the Edge agent keeps the **Scaling & health** rules of a server: it brings back replicas that are gone and restarts containers that stay unhealthy — also while DockGate is offline. This page is how it is told what to do, and why nobody else can tell it.
 

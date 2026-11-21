@@ -61,7 +61,7 @@ The panel on the left jumps to:
 - **Compose projects** of this server (their folders);
 - your **Bookmarks** — ☆ bookmarks the folder you are in (kept in this browser, per server).
 
-Deploy → Compose stacks → ⋯ → **Open folder in Files** (or the project's *Working Directory*) opens that folder in Quick Files.
+Deploy → Projects → ⋯ → **Open folder in Files** (or the project's *Working Directory*) opens that folder in Quick Files.
 
 ### Quick Files
 

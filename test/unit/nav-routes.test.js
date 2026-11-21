@@ -42,14 +42,18 @@ test('old links lead to the new places', () => {
   assert.equal(r('tools', { tab: 'databases', c: 'db' }), 'databases');
   assert.equal(Router.resolve('tools', { tab: 'databases', c: 'db' }).params.c, 'db');
   assert.equal(r('tools', { tab: 'schedules' }), 'srv-automation:schedules');
-  assert.equal(r('resources', { tab: 'builds' }), 'deploy:builds');
+  assert.equal(r('resources', { tab: 'builds' }), 'resources:builds');
+  assert.equal(r('deploy', { tab: 'builds' }), 'resources:builds'); // Builds moved back to Resources (2.78)
+  assert.equal(r('deploy', { tab: 'registries' }), 'settings:registries'); // Registries → Settings → Registry logins
   assert.equal(r('resources', { tab: 'cleanup' }), 'resources:prune');
-  assert.equal(r('builds', {}), 'deploy:builds');
+  assert.equal(r('builds', {}), 'resources:builds');
+  assert.equal(r('registries', {}), 'settings:registries');
+  assert.equal(r('settings', { tab: 'general' }), 'settings:general');
   assert.equal(r('audit', {}), 'activity:audit');
   assert.equal(r('settings', { tab: 'system' }), 'srv-status:srv-sysinfo');
   assert.equal(r('settings', { tab: 'log' }), 'activity:notification-log');
   assert.equal(r('srv-firewall', {}), 'srv-security:srv-firewall');
-  assert.equal(r('infra', { tab: 'registries' }), 'deploy:registries');
+  assert.equal(r('infra', { tab: 'registries' }), 'settings:registries');
 });
 
 test('every old Server Console tab has a new place in the sidebar', () => {

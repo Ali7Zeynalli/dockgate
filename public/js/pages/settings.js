@@ -24,7 +24,7 @@ Router.register('settings', async (content, params) => {
       content.innerHTML = `<div id="settings-tab-content"></div>`;
 
       const tabContent = document.getElementById('settings-tab-content');
-      const validTabs = ['general', 'notifications', 'update', 'security'];
+      const validTabs = ['general', 'notifications', 'update', 'security', 'registries'];
       let activeTab = (params && validTabs.includes(params.tab)) ? params.tab : 'general';
 
       function renderTab(tab) {
@@ -33,6 +33,7 @@ Router.register('settings', async (content, params) => {
         else if (tab === 'update') renderUpdate();
         else if (tab === 'system') renderSystemInfo(tabContent); // Docker / OS info (system.js)
         else if (tab === 'security') renderSecurity();
+        else if (tab === 'registries') Router.routes.registries(tabContent, params || {}); // Registry logins (registries.js)
       }
 
       // ==================== SECURITY TAB ====================

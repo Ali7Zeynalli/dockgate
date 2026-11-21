@@ -1,6 +1,6 @@
 # Connect to Git
 
-> **Where:** Deploy → Compose stacks → a project's **⋯ → Connect to Git…**, or Deploy → Tasks → a folder's **⋯ → Connect to Git…**
+> **Where:** Deploy → Projects → a project's **⋯ → Connect to Git…**, or Deploy → Tasks → a folder's **⋯ → Connect to Git…**
 >
 > **Works on:** the local server and SSH servers. The server needs `git` installed.
 

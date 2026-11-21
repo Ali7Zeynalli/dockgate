@@ -2,6 +2,16 @@
 
 ---
 
+## [2.78.0] - 2026-11-21
+
+### Changed
+- **New project** (was Deploy stack): each choice says when to pick it — From a Git repository, Upload a folder, Already on the server, Write a compose file, App template, and the new **Connect a stack to Git** (pick a stack uploaded as files, then Connect to Git). When a deploy finishes, **Open the project** opens its page.
+- **Deploy** holds what deploys: **Projects** (was Compose stacks), App templates, Tasks.
+- **Builds** moved to **Resources** (next to Images); **Registries** moved to **Settings → Registry logins**. Old links (`#/deploy?tab=builds`, `#/deploy?tab=registries`, `#/infra?tab=registries`, `#/builds`, `#/registries`) open the new places.
+- Guide and README: the new names and places.
+
+---
+
 ## [2.77.0] - 2026-11-21
 
 ### Added
