@@ -127,6 +127,10 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 <td width="50%"><img src="screenshots/34-databases.png" alt="Databases"><br><sub><b>Databases</b> — Explorer, tabs, right-click menus, data, design, SQL</sub></td>
 <td width="50%"><img src="screenshots/35-tasks.png" alt="Tasks"><br><sub><b>Tasks</b> — Makefile, npm, scripts, deploy recipes</sub></td>
 </tr>
+<tr>
+<td width="50%"><img src="screenshots/37-project.png" alt="A project's page"><br><sub><b>A project's page</b> — Overview, Services, Files, Deploys, Automation (auto-deploy in one click), Settings</sub></td>
+<td width="50%"><img src="screenshots/38-new-project.png" alt="New project"><br><sub><b>New project</b> — Git, a folder, already on the server, YAML, template, or connect a stack to Git</sub></td>
+</tr>
 </table>
 
 **Docker Swarm**

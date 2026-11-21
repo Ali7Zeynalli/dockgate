@@ -9,6 +9,13 @@
 - **Deploy** holds what deploys: **Projects** (was Compose stacks), App templates, Tasks.
 - **Builds** moved to **Resources** (next to Images); **Registries** moved to **Settings → Registry logins**. Old links (`#/deploy?tab=builds`, `#/deploy?tab=registries`, `#/infra?tab=registries`, `#/builds`, `#/registries`) open the new places.
 - Guide and README: the new names and places.
+- README: new screenshots (Projects, App templates, Tasks, a project's page, New project) and a new demo GIF with New project and a project's page; guide pictures of the Deploy pages, Builds and Registry logins taken again.
+
+### Fixed
+- The deploy history keeps an entry even when Docker can not be asked for the compose files at that moment.
+
+### Tests
+- The stack webhook runs the folder's recipe and the run lands in the stack's deploy history; a Git sync schedule runs the recipe when the branch moved, records the commit, and does nothing the next time.
 
 ---
 

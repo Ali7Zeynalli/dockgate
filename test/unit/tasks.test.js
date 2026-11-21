@@ -308,3 +308,59 @@ test('Local server: a task and a recipe run where DockGate runs, with the folder
   assert.equal(rr.status, 'ok'); assert.match(rr.text, /step-one/);
   fs.rmSync(d, { recursive: true, force: true });
 });
+
+test('One way to deploy: the stack webhook runs the folder recipe, and the recipe lands in the stack deploy history', async () => {
+  const R = require('../../server/task-recipes');
+  const { COMPOSE_DIR } = require('../../server/routes/compose-shared');
+  const express = require('express');
+  const project = 'rcdemo-' + Date.now().toString(36);
+  const dir = path.join(COMPOSE_DIR, project);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docker-compose.yml'), 'services: {}\n');
+  fs.writeFileSync(path.join(dir, '.dockgate-git.json'), JSON.stringify({ repoUrl: 'https://example.invalid/r.git', branch: 'main', secret: 'k3y', serverId: 'local', deployMode: 'local' }));
+  fs.writeFileSync(path.join(dir, '.dockgate-deploy.json'), JSON.stringify({ mode: 'local', serverId: 'local', workingDir: dir, composeFile: 'docker-compose.yml', source: 'git' }));
+  // compose_up only in the recovery steps: the run does not need Docker, but it counts as a compose deploy
+  const rec = R.save('local', dir, { name: 'Stack recipe', steps: [{ type: 'command', cmd: 'echo deployed-by-recipe' }], onFail: [{ type: 'compose_up', build: false }], settings: { notify: { fail: false } } });
+  const app = express(); app.use(express.json()); app.use('/api/compose', require('../../server/routes/compose'));
+  const srv = await new Promise(res => { const s = app.listen(0, () => res(s)); });
+  try {
+    const base = `http://127.0.0.1:${srv.address().port}/api/compose/webhook/${project}`;
+    assert.equal((await fetch(`${base}?key=wrong`, { method: 'POST' })).status, 403);
+    const r = await (await fetch(`${base}?key=k3y`, { method: 'POST' })).json();
+    assert.equal(r.recipe, 'Stack recipe'); assert.ok(r.run);
+    const done = await wait(r.run);
+    assert.equal(done.status, 'ok'); assert.match(done.text, /deployed-by-recipe/);
+    let row = null;
+    for (let i = 0; i < 50 && !row; i++) { row = db.prepare("SELECT * FROM compose_deploys WHERE project = ? AND kind = 'recipe'").get(project); if (!row) await new Promise(x => setTimeout(x, 100)); }
+    assert.ok(row, 'the recipe run is in the stack deploy history');
+    assert.equal(row.status, 'done'); assert.equal(row.server_id, 'local');
+    assert.equal(JSON.parse(row.details).recipe, 'Stack recipe');
+    R.remove(rec.id);
+  } finally { srv.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('One way to deploy: a Git sync schedule runs the folder recipe when the branch moved, then not again', async () => {
+  const R = require('../../server/task-recipes');
+  const { COMPOSE_DIR } = require('../../server/routes/compose-shared');
+  const compose = require('../../server/routes/compose');
+  const sh = (cwd, cmd) => require('child_process').execSync(cmd, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'dg-sync-')) + '/r.git';
+  sh(os.tmpdir(), `git init -q --bare ${bare}`);
+  const src = fs.mkdtempSync(path.join(os.tmpdir(), 'dg-sync-src-'));
+  sh(src, 'git init -q && echo a > a && git add a && git -c user.name=t -c user.email=t@t commit -qm one && git branch -M main');
+  sh(src, `git push -q ${bare} main`);
+  const head = sh(src, 'git rev-parse HEAD');
+  const project = 'rcsync-' + Date.now().toString(36);
+  const dir = path.join(COMPOSE_DIR, project);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '.dockgate-git.json'), JSON.stringify({ repoUrl: 'file://' + bare, branch: 'main', serverId: 'local', deployMode: 'local', deployedCommit: '' }));
+  fs.writeFileSync(path.join(dir, '.dockgate-deploy.json'), JSON.stringify({ mode: 'local', serverId: 'local', workingDir: dir, composeFile: 'docker-compose.yml', source: 'git' }));
+  const rec = R.save('local', dir, { name: 'Sync recipe', steps: [{ type: 'command', cmd: 'echo synced' }], settings: { notify: { fail: false } } });
+  try {
+    const out = await compose.scheduledGitSync('local', [project]);
+    assert.equal(out.length, 1); assert.equal(out[0].status, 'deployed'); assert.match(out[0].message, /recipe Sync recipe/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, '.dockgate-git.json'), 'utf8')).deployedCommit, head, 'the deployed commit moves on');
+    const again = await compose.scheduledGitSync('local', [project]);
+    assert.equal(again[0].status, 'unchanged');
+  } finally { R.remove(rec.id); fs.rmSync(dir, { recursive: true, force: true }); }
+});

@@ -887,7 +887,7 @@ async function captureComposeFiles(project) {
 async function recordDeploy({ project, kind, status, error, sourceIp, startedAt, finishedAt, details = null, serverId: sid = null, noFiles = false, gitCommit = null }) {
   try {
     if (!validateProjectName(project)) return;
-    const files = status === 'done' && !noFiles ? await captureComposeFiles(project) : null;
+    const files = status === 'done' && !noFiles ? await captureComposeFiles(project).catch(() => null) : null; // no files when Docker can not be asked — the entry is kept
     const git = readGitMeta(project), dm = readDeployMeta(project);
     const source = git ? 'git' : (dm && dm.source) || kind || 'deploy';
     const json = files ? JSON.stringify(files) : null;
