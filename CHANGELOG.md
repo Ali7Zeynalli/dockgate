@@ -16,6 +16,10 @@
 
 ### Changed
 - The stack's **⋯** menu in the list went from 21 items to the everyday ones: Open the stack, Up, Restart, Rebuild, Git sync, Down, Delete (and Move back to Compose for stacks on Swarm). Everything else is on the stack's page.
+- A stack that is not deployed shows only **Up** at the top (no Restart / Down).
+- **Files** of a stack DockGate did not deploy: its folder on the server, in the file browser.
+- Folder and compose file paths stay on one line (the full path on hover); the Git card shows the commit of a checkout.
+- The old "Services and details" dialog is gone (its content is on the stack's page).
 - Guide: the stack's page.
 
 ---
