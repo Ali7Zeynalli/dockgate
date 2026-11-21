@@ -2,6 +2,20 @@
 
 ---
 
+## [2.79.0] - 2026-11-21
+
+### Added
+- **The folder's env files**, on Deploy → Tasks → **Env & secrets** (and a project's page → Settings → **Environment**). DockGate finds `.env` and every file whose name starts with `.env` (`.env.local`, `.env.production`, `.env-dev`…) or ends in `.env` (`app.env`), in the folder and its subfolders (not `node_modules`, `.git`, `vendor`…; not `.envrc`), and shows each file on its own:
+  - its path, variables, values and line numbers, read the way dotenv reads them (`export`, quotes, multi-line values, comments); lines it can not read are counted;
+  - secret-looking values (PASSWORD, TOKEN, KEY, DSN, `DATABASE_URL`…) hidden until **Show the values** (audited);
+  - which files Compose uses (the `.env` for `${VARIABLES}`, `env_file:`), and files named in `env_file:` that are missing;
+  - files tracked by Git — red when secrets are committed; example files (`.env.example`…) marked;
+  - names that are also in DockGate's values.
+- **Import** ticked variables (or all) into DockGate's encrypted values — server to DockGate, not through the browser.
+- **Load in every run**: chosen files are given to every task and recipe of the folder (in order; DockGate's own values win). The run's log names the files, and secret-looking values are masked.
+
+---
+
 ## [2.78.0] - 2026-11-21
 
 ### Changed

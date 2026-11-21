@@ -497,12 +497,14 @@ Router.register('compose', async (content, params = {}) => {
         { label: 'Compose file', desc: 'Edit docker-compose.yml and redeploy.', action: UI.btn('Edit YAML', `data-edit="${n}"`) },
         ...(p.deploySource === 'folder' ? [{ label: 'New version from a folder', desc: 'Upload the folder again and rebuild.', action: UI.btn('Update from folder…', `data-update="${n}" data-rpath="${escapeHtml(wd)}" data-services="${escapeHtml((p.services || []).join(','))}"`) }] : []),
         { label: 'Git', desc: isGit ? `${escapeHtml(git.repoUrl || '')} · ${escapeHtml(git.branch || '')}` : 'Not connected.', action: isGit ? UI.btn('Force pull…', `data-git-force="${n}"`, 'btn-danger') : UI.btn('Connect to Git…', `data-git-connect="${n}"`) },
+        { label: 'Environment', desc: 'The env files of the folder (.env, .env.local, .env.production…, also in subfolders) and the values DockGate gives to its tasks and recipes.', action: wd ? UI.btn('Open…', `data-cp-env="${escapeHtml(wd)}"`) : '' },
         { label: 'Scaling & health', desc: 'Replicas, auto-heal, Auto Scaling, Roll out.', action: UI.btn('Open…', `data-scaling="${n}"`) },
         ...(window.__swarmActive && !p.onSwarm && p.total > 0 ? [{ label: 'Swarm', desc: 'Run this stack on the Swarm cluster.', action: UI.btn('Move to Swarm…', `data-move-swarm="${n}"`) }] : []),
         { label: 'Terminal', desc: 'A shell in the project folder on the server.', action: UI.btn('Open', `data-term="${n}" data-cwd="${escapeHtml(wd)}"`) },
         { label: 'Delete the stack', desc: 'Stops and removes the containers; optionally the files. Volumes stay unless you remove them.', action: UI.btn('Delete…', `data-delproj="${n}" data-remote="${p.remote ? 1 : ''}" data-adopted="${p.deploySource === 'adopt' ? 1 : ''}"`, 'btn-danger') },
       ]);
     }
+    body.querySelectorAll('[data-cp-env]').forEach(b => b.onclick = () => Router.navigate('deploy', { tab: 'tasks', dir: b.dataset.cpEnv, view: 'env' }));
     body.querySelectorAll('[data-cp-go]').forEach(b => b.onclick = () => Router.navigate('deploy', { tab: 'compose', project: name, ptab: b.dataset.cpGo }, { replace: true }));
     wireActions([], body);
   }

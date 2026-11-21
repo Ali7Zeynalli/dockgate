@@ -199,7 +199,7 @@ const projectName = (dir) => String(dir).split('/').filter(Boolean).pop();
 async function runOn(job, r, s) {
   // the folder's env as set on the recipe's server, for every server; a server's own values for that folder win
   const own = s.id === r.serverId ? [] : TK.envValues(s.id, r.dir);
-  const env = [...TK.envValues(r.serverId, r.dir).filter(e => !own.some(o => o.key === e.key)), ...own];
+  const env = TK.mergeEnv(await TK.envFileVars(s, r.dir, r.serverId, job), [...TK.envValues(r.serverId, r.dir).filter(e => !own.some(o => o.key === e.key)), ...own]); // env files of the folder, then DockGate's values
   const ctx = {};
   logAction({ server: s.id, resourceType: 'task', resourceName: projectName(r.dir), action: 'deploy', details: { recipe: r.name } }); // Uptime: busy, no false alarms
   const exec1 = async (st, i, label) => {

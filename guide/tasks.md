@@ -60,6 +60,27 @@ A warning shows when the tool (`make`, `just`, `task`, `pnpm`…) is not install
 
 Variables given to every task and recipe step of the folder. They are stored **encrypted** in DockGate; for a run they are written to a file only the SSH user can read, loaded, and the file is deleted before your command starts. Values marked **secret** are never shown again and are replaced by `••••` in the logs.
 
+### The folder's env files
+
+Above DockGate's values, the tab lists **every env file of the folder**, each on its own: `.env` and every file whose name starts with `.env` (`.env.local`, `.env.production`, `.env.staging`, `.env-dev`, `.env_test`…) or ends in `.env` (`app.env`), in the folder and its subfolders up to 4 levels (not `node_modules`, `.git`, `vendor`, `.venv`, `dist`, `build`…). `.envrc` (direnv) is not an env file and is left out.
+
+![Env files](images/tasks-env-files.png)
+
+| On each file | |
+|---|---|
+| **Path and name** | `api/.env`, `web/app.env` — the folder is shown in grey |
+| **Variables** | name, value, line. The file is read the way dotenv reads it: `export`, `'single'` (literal) and `"double"` quotes (with `\n`, and values over several lines), `# comments` after unquoted values. Lines it can not read are counted |
+| **secret** | names with PASSWORD, SECRET, TOKEN, KEY, PRIVATE, AUTH, DSN, `DATABASE_URL`, `REDIS_URL`… — their values stay hidden until **Show the values** (written to the audit log) |
+| **Used by** | *read by docker compose for ${VARIABLES}* (the `.env` next to a compose file) and *env_file in docker-compose.yml*. A file named in `env_file:` but missing from the folder is listed under the files |
+| **in Git** | the file is tracked by Git — red when a real (not example) file with secret values is committed |
+| **example** | `.env.example`, `.env.sample`, `.env.template`, `.env.dist` — shown, not loaded |
+| **also in DockGate** | the same name is in DockGate's values below; in a run DockGate's value wins |
+
+- **Import the ticked into DockGate** / **Import all** copies variables into DockGate's values (encrypted; secret-looking names marked secret). The values go from the server to DockGate directly, not through the browser.
+- **Load in every run** gives the file to every task and recipe of the folder: the files in order (a later file wins), then DockGate's values on top. The run's log names the files it loaded, and secret-looking values are masked there. A file that is gone is skipped and named in the log.
+- `docker compose` reads its own `.env` and `env_file:` files anyway — loading them here is for `make`, scripts, npm and the other tasks.
+- A project's page → **Settings → Environment** opens this tab for the project's folder.
+
 ## Deploy recipes
 
 A recipe is the steps of a deploy, in order; the first step that fails stops it.
