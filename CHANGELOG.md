@@ -2,6 +2,31 @@
 
 ---
 
+## [2.80.0] - 2026-11-21
+
+### Added
+- **Web → Proxies & SSL**: shows the web servers in front of your apps on the server in use. It only reads and changes nothing.
+  - **Proxies** — nginx and Nginx Proxy Manager (`nginx -T`), nginx-proxy (`VIRTUAL_HOST`), Caddy (Caddyfile), caddy-docker-proxy and Traefik (labels of containers and Swarm services), HAProxy, Apache. Container proxies are found on every server; host proxies on SSH servers. An nginx container that only serves its own app is not counted. Also shows who holds ports 80, 443, 8080 and 8443.
+  - **Sites** — one row per domain:
+    - where the domain goes, and the file and line that set it up;
+    - HTTPS, and whether HTTP is redirected to HTTPS;
+    - the target container and its state;
+    - **Open** and **+ Uptime check** buttons.
+  - **Certificates** — read from:
+    - nginx `ssl_certificate` files;
+    - Caddy's data folder;
+    - Traefik's `acme.json`;
+    - certbot (on SSH servers).
+
+    For each certificate: its names, issuer, days left, whether it is self-signed, and what renews it. HTTPS sites whose certificate was not found are listed.
+  - **Config files** — read-only, with line numbers.
+  - **Logs** — access and error logs. Access lines show status, method, path and response time; filter by status or text; the share of 4xx and 5xx is shown.
+  - **Warnings** — a config that fails its check (a reload would fail), a domain going to a stopped container, a domain in two proxies, certificates expiring soon.
+  - **Test config** — runs the proxy's own check (`nginx -t`, `caddy validate`, `haproxy -c`, `apachectl configtest`).
+- Guide: [Proxies & SSL](guide/proxies.md).
+
+---
+
 ## [2.79.0] - 2026-11-21
 
 ### Added
