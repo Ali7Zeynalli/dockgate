@@ -102,7 +102,32 @@ async function place(ctx, p, path) {
   }
   return { exec: (s) => run(ctx, p, s), path, persistent: !!m, via: 'container' };
 }
+// ---- a stopped proxy container: `exec` can not run; files go through the archive API (docker cp) or a helper on the mount ----
+const isStopped = (p) => p.where === 'container' && p.running === false;
+async function onMount(ctx, p, path) {
+  return (await mountsOf(ctx, p)).filter(x => path === x.Destination || path.startsWith(x.Destination.replace(/\/$/, '') + '/')).sort((a, b) => b.Destination.length - a.Destination.length)[0] || null;
+}
+async function stoppedRead(ctx, p, path) {
+  const T = require('./tar-lite');
+  let stream; try { stream = await ctx.c.getContainer(p.cid).getArchive({ path }); } catch (e) { if (/404|no such|not found/i.test(e.message)) return { exists: false, text: '' }; throw err(`${path} could not be read: ${e.message}`, 502); }
+  const f = T.parseTar(await T.collect(stream)).find(x => x.type === 'file');
+  return f ? { exists: true, text: f.data.toString('utf8') } : { exists: false, text: '' };
+}
+async function stoppedWrite(ctx, p, path, text, mode) {
+  const m = await onMount(ctx, p, path);
+  if (m) { // on a mount: a helper writes it on the source (the same as a running container with a read-only mount)
+    const pl = { exec: (sc) => helper(ctx, m.Type === 'volume' ? m.Name : m.Source, sc), path: '/w' + path.slice(m.Destination.length) || '/w', via: 'helper' };
+    const b64 = Buffer.from(String(text), 'utf8').toString('base64'); const dir = pl.path.replace(/\/[^/]*$/, '') || '/';
+    const r = await pl.exec(`mkdir -p ${shq(dir)} && printf %s ${shq(b64)} | base64 -d > ${shq(pl.path)}.dgtmp && cat ${shq(pl.path)}.dgtmp > ${shq(pl.path)} && rm -f ${shq(pl.path)}.dgtmp${mode ? ` && chmod ${mode} ${shq(pl.path)}` : ''}`);
+    if (r.code !== 0) throw err(`${path} could not be written: ${(r.out || '').trim().slice(0, 300)}`, 502);
+    return { persistent: true, via: 'helper (the proxy is stopped)' };
+  }
+  const T = require('./tar-lite'); const dir = path.replace(/\/[^/]*$/, '') || '/'; const name = path.split('/').pop();
+  await ctx.c.getContainer(p.cid).putArchive(T.makeTar(name, text, mode ? parseInt(mode, 8) : 0o644), { path: dir });
+  return { persistent: false, via: 'container archive (the proxy is stopped)' };
+}
 async function readFile(ctx, p, path) {
+  if (isStopped(p)) { checkPath(path); return stoppedRead(ctx, p, path); }
   const pl = await place(ctx, p, path);
   const r = await pl.exec(`if [ -f ${shq(pl.path)} ]; then echo @@DGY; cat ${shq(pl.path)}; else echo @@DGN; fi`);
   const out = r.out || '';
@@ -111,6 +136,7 @@ async function readFile(ctx, p, path) {
   throw err(`${path} could not be read: ${(r.err || out).trim().slice(0, 200)}`, 502);
 }
 async function writeFile(ctx, p, path, text, { mode = null } = {}) {
+  if (isStopped(p)) { checkPath(path); return stoppedWrite(ctx, p, path, text, mode); }
   const pl = await place(ctx, p, path);
   const b64 = Buffer.from(String(text), 'utf8').toString('base64');
   const CH = 60000; const dir = pl.path.replace(/\/[^/]*$/, '') || '/';
@@ -127,7 +153,28 @@ async function writeFile(ctx, p, path, text, { mode = null } = {}) {
   }
   return { persistent: pl.persistent, via: pl.via };
 }
-async function removeFile(ctx, p, path) { const pl = await place(ctx, p, path); await pl.exec(`rm -f ${shq(pl.path)}`); }
+async function removeFile(ctx, p, path) {
+  if (isStopped(p)) { const m = await onMount(ctx, p, path); if (!m) throw err('A file inside a stopped container can not be removed — start it first'); await helper(ctx, m.Type === 'volume' ? m.Name : m.Source, `rm -f ${shq('/w' + path.slice(m.Destination.length))}`); return; }
+  const pl = await place(ctx, p, path); await pl.exec(`rm -f ${shq(pl.path)}`);
+}
+
+/** Start a stopped proxy container and watch it for a few seconds: { ok, state, reason } */
+async function startAndWatch(ctx, p, seconds = 4) {
+  try { await ctx.c.getContainer(p.cid).start(); } catch (e) { if (!/already started|304/i.test(e.message)) return { ok: false, state: 'error', reason: [e.message] }; }
+  await sleep(seconds * 1000);
+  const info = await ctx.c.getContainer(p.cid).inspect().catch(() => null);
+  const st = info && info.State ? info.State : {};
+  if (st.Running && !st.Restarting) return { ok: true, state: 'running' };
+  return { ok: false, state: st.Restarting ? 'restarting' : (st.Status || 'exited'), reason: await PX.stopReason(ctx.c, p.cid) };
+}
+async function startProxy(id, user) {
+  const p = await PX.proxyById(id); const ctx = activeCtx();
+  if (p.where !== 'container') throw err('Start a host service from Server → Software → Services');
+  if (p.running) return { ok: true, state: 'running', steps: [{ t: `${p.name} is already running`, ok: true }] };
+  const r = await startAndWatch(ctx, p);
+  PX.invalidate();
+  return { ok: r.ok, ...(r.ok ? {} : { stage: 'run' }), steps: [{ t: r.ok ? `${p.name} started and keeps running` : `${p.name} stopped again (${r.state})`, ok: r.ok }], output: (r.reason || []).join('\n') };
+}
 
 // ---------- the proxy's own commands ----------
 function cmds(p) {
@@ -160,7 +207,33 @@ const locks = new Set();
  * Apply file changes to proxy p: [{ path, text }] (text null = remove). Earlier versions are kept, then the check,
  * reload and site probe run; on any failure the earlier files go back. → { ok, stage, steps, output, probe }
  */
-async function apply(ctx, p, changes, { domains = [], user = null, note = '', versions = true, probeSites = true } = {}) {
+async function apply(ctx, p, changes, opts = {}) {
+  if (isStopped(p)) return applyStopped(ctx, p, changes, opts);
+  return applyRunning(ctx, p, changes, opts);
+}
+/** A stopped proxy: write the files (earlier versions kept), start it, watch it; if it stops again, the earlier files go back. */
+async function applyStopped(ctx, p, changes, { user = null, note = '', versions = true } = {}) {
+  const key = ctx.serverId + p.name; if (locks.has(key)) throw err(`A change to ${p.name} is running — wait for it`, 409);
+  locks.add(key);
+  const steps = []; const step = (t, ok = true) => steps.push({ t, ok }); const old = [];
+  try {
+    for (const ch of changes) { const cur = await readFile(ctx, p, ch.path); old.push({ path: ch.path, existed: cur.exists, text: cur.text }); }
+    for (const ch of changes) { if (ch.text == null) { await removeFile(ctx, p, ch.path); step(`Removed ${ch.path}`); } else { const w = await writeFile(ctx, p, ch.path, ch.text, { mode: ch.mode }); step(`Wrote ${ch.path} (${w.via})`); } }
+    const r = await startAndWatch(ctx, p);
+    if (!r.ok) {
+      step(`${p.name} does not start with it — ${r.state}`, false);
+      const failed = [];
+      for (const o of [...old].reverse()) { try { if (o.existed) await writeFile(ctx, p, o.path, o.text); else await removeFile(ctx, p, o.path); } catch (e) { failed.push(o.path); } }
+      step(failed.length ? `COULD NOT put back ${failed.join(', ')}` : 'Put the earlier files back (the proxy stays stopped, as before)', !failed.length);
+      return { ok: false, stage: 'start', steps, output: (r.reason || []).join('\n') };
+    }
+    step(`${p.name} started and keeps running`);
+    if (versions) for (const o of old) { q.addVer.run(ctx.serverId, p.name, o.path, o.text, o.existed ? 1 : 0, Date.now(), user, note || null); q.prune.run(ctx.serverId, p.name, o.path, ctx.serverId, p.name, o.path); }
+    PX.invalidate();
+    return { ok: true, steps, output: '' };
+  } catch (e) { step(e.message, false); return { ok: false, stage: 'error', steps, output: e.message }; } finally { locks.delete(key); }
+}
+async function applyRunning(ctx, p, changes, { domains = [], user = null, note = '', versions = true, probeSites = true } = {}) {
   const C = cmds(p); if (!C) throw err(`${PX.LABEL[p.kind] || p.kind} is configured by labels, not files`);
   const key = ctx.serverId + p.name; if (locks.has(key)) throw err(`A change to ${p.name} is running — wait for it`, 409);
   locks.add(key);
@@ -223,7 +296,7 @@ async function openFile(id, path) {
   if (!(await knownFiles(p)).includes(path)) throw err('Not a config file of this proxy', 404);
   const f = await readFile(ctx, p, path);
   const pl = await place(ctx, p, path);
-  return { path, text: f.text, base: sha(f.text), locked: lockReason(p, path), persistent: pl.persistent, via: pl.via, dockgate: G.isDockgateFile(f.text) };
+  return { path, text: f.text, base: sha(f.text), locked: lockReason(p, path), persistent: pl.persistent, via: isStopped(p) ? 'stopped' : pl.via, stopped: isStopped(p), dockgate: G.isDockgateFile(f.text) };
 }
 function domainsFor(d, p, path) {
   const mine = d.sites.filter(s => s.proxy === p.id);
@@ -260,6 +333,24 @@ async function containerInfo(ctx, name) {
     published: Object.entries((info.NetworkSettings || {}).Ports || {}).flatMap(([k, v]) => (v || []).map(b => ({ port: Number(k.split('/')[0]), host: Number(b.HostPort), ip: b.HostIp }))),
     project: (info.Config.Labels || {})['com.docker.compose.project'] || null, service: (info.Config.Labels || {})['com.docker.compose.service'] || null, labels: info.Config.Labels || {} };
 }
+/** nginx's real version (the image tag says little: nginx:1.27-alpine): NGINX_VERSION of the official image, else `nginx -v`. */
+const versionCache = new Map();
+async function nginxVersion(ctx, p) {
+  const key = ctx.serverId + (p.cid || p.id); if (versionCache.has(key)) return versionCache.get(key);
+  let v = null;
+  if (p.where === 'container') { const info = await ctx.c.getContainer(p.cid).inspect().catch(() => null); const env = ((info && info.Config && info.Config.Env) || []).find(x => x.startsWith('NGINX_VERSION=')); if (env) v = env.split('=')[1]; }
+  if (!v && p.running !== false) { const r = await run(ctx, p, 'nginx -v 2>&1').catch(() => null); v = r && ((r.out || '').match(/nginx\/(\d+\.\d+\.\d+)/) || [])[1] || null; }
+  if (v) versionCache.set(key, v);
+  return v;
+}
+/** Can this proxy resolve upstream names while it runs (nginx ≥ 1.27.3 in a container, with Docker's DNS)? */
+async function resolveInfo(ctx, p) {
+  if (p.kind !== 'nginx' || p.where !== 'container') return { resolves: false, version: null, why: p.where !== 'container' ? null : `${PX.LABEL[p.kind] || p.kind}: names in an upstream are read once, when it starts` };
+  const version = await nginxVersion(ctx, p);
+  const resolves = G.nginxResolves(version);
+  return { resolves, version, why: resolves ? null : `nginx ${version || '(version unknown)'} reads the names in an upstream once, when it starts: if a container behind it is missing, nginx does not start, and a re-created container's new IP is not seen until a reload. nginx 1.27.3 or newer resolves them while it runs.` };
+}
+
 /** The containers a site can go to (running, not proxies), with their ports. */
 async function targets() {
   const ctx = activeCtx(); const list = await ctx.c.listContainers({ all: false });
@@ -330,6 +421,11 @@ async function exposePlan(body) {
   if (p.kind === 'apache' && !d.sites.some(s => s.proxy === p.id)) notes.push('This is the first site on this Apache: Apache answers every unknown domain with its first site, so it replaces the default page.');
   if (p.ports.length && !p.ports.some(x => [80, 443].includes(x)) && p.where === 'container') notes.push(`${p.name} publishes ${p.ports.join(', ')}, not 80 / 443: the site will be at those ports, and Let's Encrypt needs port 80.`);
   const join = [...new Set(routes.filter(r => r.join).map(r => r.join))];
+  if (join.length && p.where === 'container') {
+    const me = await containerInfo(ctx, p.cid).catch(() => null);
+    notes.push(me && me.project && me.service ? `${join.join(', ')} ${join.length === 1 ? 'is' : 'are'} written into DockGate's override of ${me.project}/${me.service} (your compose files are not changed), so ${p.name} keeps ${join.length === 1 ? 'it' : 'them'} when it is re-created.`
+      : `${p.name} is not part of a Compose project: it leaves ${join.join(', ')} when the container is re-created. Add ${join.length === 1 ? 'it' : 'them'} to how you start it.`);
+  }
   const base = { ...body, domain, targets: routes.map(r => r.addr), dockerDns: p.where === 'container' && routes.every(r => r.dns) };
   if (p.kind === 'traefik' || p.kind === 'caddy-docker-proxy') {
     const ti = p.kind === 'traefik' ? await traefikInfo(ctx, p) : { entrypoints: [], resolvers: [] };
@@ -352,6 +448,10 @@ async function exposePlan(body) {
     if (https === 'letsencrypt') { flow = 'letsencrypt'; ({ certPath, keyPath } = await certPlace(ctx, p, domain)); }
     const gen = p.kind === 'apache' ? G.apacheSite : G.nginxSite;
     const opt = { loadModules: p.kind === 'apache' && p.where === 'container' };
+    if (PX.NGINXISH.has(p.kind) && base.dockerDns && (base.targets.length > 1 || (body.lb && body.lb !== 'round_robin'))) { // an upstream block
+      const ri = await resolveInfo(ctx, p); opt.resolve = ri.resolves;
+      if (!ri.resolves && ri.why) notes.push(ri.why);
+    }
     changes.push({ path: sf.path, text: gen({ ...input, certPath, keyPath }, { ...opt, certReady: https !== 'letsencrypt' }), final: https === 'letsencrypt' ? gen({ ...input, certPath, keyPath }, { ...opt, certReady: true }) : null });
     if (p.kind === 'apache' && p.where === 'host') notes.push('Apache on the server: DockGate turns on the proxy modules it needs (a2enmod proxy proxy_http headers rewrite ssl proxy_balancer) before the check.');
     if (sf.include) { const inc = await readFile(ctx, p, sf.include.file); if (!inc.text.includes(sf.include.line)) changes.push({ path: sf.include.file, text: inc.text.replace(/\s*$/, `\n${sf.include.line}\n`) }); }
@@ -378,6 +478,17 @@ async function expose(body, user, log = () => {}) {
     for (const net of joined) { try { await ctx.c.getNetwork(net).disconnect({ Container: p.cid }); res.steps.push({ t: `${p.name} left the network ${net} again`, ok: true }); } catch (e) { res.steps.push({ t: `${p.name} is still on ${net}: ${e.message}`, ok: false }); } }
     mountCache.delete(ctx.serverId + p.cid); return res;
   };
+  // a `docker network connect` is lost when the proxy is re-created: kept in its Compose project's override, or a warning
+  const keep = async (res) => {
+    if (!res.ok || !joined.length) return res;
+    try {
+      const me = await containerInfo(ctx, p.cid);
+      if (!me.project || !me.service) { res.steps.push({ t: `${p.name} joined ${joined.join(', ')} with docker network connect — it leaves them when the container is re-created. Add them to how you start it.`, ok: true, warn: true }); return res; }
+      await require('./compose-scale').addNetworks(me.project, me.service, joined);
+      res.steps.push({ t: `${joined.join(', ')} kept in DockGate's override of ${me.project}/${me.service}, so ${p.name} stays on them when it is re-created`, ok: true });
+    } catch (e) { res.steps.push({ t: `${p.name} is on ${joined.join(', ')} now, but they could not be kept for a re-create: ${e.message}`, ok: true, warn: true }); }
+    return res;
+  };
   if (plan.mode === 'labels') {
     if (!body.applyLabels) return { ok: true, labels: plan.labels, text: plan.text, steps: [{ t: 'Labels ready — add them to the container (they apply when it is re-created)', ok: true }] };
     // into the Compose project's override (the compose files are not changed), then the service is re-created
@@ -390,13 +501,14 @@ async function expose(body, user, log = () => {}) {
       await CS.setLabels(t0.project, t0.service, { ...kept, ...plan.labels }, { log: (l) => steps.push({ t: l.trim(), ok: true }) });
       steps.push({ t: `${t0.project}/${t0.service} re-created with the labels (kept in DockGate's override — your compose files are not changed)`, ok: true });
       PX.invalidate();
-      return { ok: true, steps, labels: plan.labels };
+      return keep({ ok: true, steps, labels: plan.labels });
     } catch (e) { steps.push({ t: e.message, ok: false }); return leave({ ok: false, stage: 'labels', steps, text: plan.text }); }
   }
   const domain = String(body.domain).toLowerCase();
   if (p.kind === 'apache' && p.where === 'host') await run(ctx, p, 'command -v a2enmod >/dev/null 2>&1 && a2enmod -q proxy proxy_http headers rewrite ssl proxy_balancer lbmethod_byrequests lbmethod_bybusyness proxy_wstunnel slotmem_shm socache_shmcb >/dev/null 2>&1; true');
   const res = await apply(ctx, p, plan.changes.map(c => ({ path: c.path, text: c.text })), { domains: [], user, note: `site ${domain}`, probeSites: false });
   if (!res.ok) return leave({ ...res, site: domain });
+  await keep(res);
   if (plan.flow !== 'letsencrypt') return { ...res, site: domain };
   log('The HTTP site is live; asking Let\'s Encrypt for a certificate…');
   try {
@@ -629,8 +741,10 @@ async function lbGet(id, domain) {
     const block = G.nginxBlocks(text, 'server').find(b => (b.text.match(/server_name\s+([^;]+);/) || [, ''])[1].split(/\s+/).includes(domain) && /proxy_pass/.test(b.text));
     const pp = block && ((block.text.match(/proxy_pass\s+https?:\/\/([^/;$\s]+)/) || [])[1] || (block.text.match(/set\s+\$\w+\s+https?:\/\/([^/;\s]+)/) || [])[1]);
     const up = G.nginxUpstreams(text).find(u => u.name === pp);
-    if (up) return { kind: 'nginx', file, upstream: up.name, method: up.method, servers: up.servers, methods: methods.nginx };
-    if (pp) return { kind: 'nginx', file, upstream: null, method: 'round_robin', servers: [{ addr: pp, weight: 1, backup: false, down: false }], methods: methods.nginx, single: true };
+    const ri = await resolveInfo(ctx, p);
+    const resolve = { resolves: ri.resolves, version: ri.version, why: ri.why };
+    if (up) return { kind: 'nginx', file, upstream: up.name, method: up.method, servers: up.servers, methods: methods.nginx, resolve };
+    if (pp) return { kind: 'nginx', file, upstream: null, method: 'round_robin', servers: [{ addr: pp, weight: 1, backup: false, down: false }], methods: methods.nginx, single: true, resolve };
     throw err(`${domain} has no proxy_pass to a host:port`);
   }
   if (p.kind === 'caddy') { const lb = G.caddyLb(text, domain); if (!lb) throw err(`${domain} has no reverse_proxy`); return { kind: 'caddy', file, method: lb.method, servers: lb.targets.map(a => ({ addr: a, weight: 1, backup: false, down: false })), methods: methods.caddy }; }
@@ -640,7 +754,11 @@ async function lbGet(id, domain) {
 async function lbSet(id, domain, body, user) {
   const cur = await lbGet(id, domain); const p = await PX.proxyById(id); const ctx = activeCtx();
   let text = (await readFile(ctx, p, cur.file)).text;
-  if (cur.kind === 'nginx') { let name = cur.upstream; if (!name) { const r = G.nginxMakeUpstream(text, domain); text = r.text; name = r.name; } text = G.nginxSetUpstream(text, name, body); }
+  if (cur.kind === 'nginx') {
+    let name = cur.upstream; if (!name) { const r = G.nginxMakeUpstream(text, domain); text = r.text; name = r.name; }
+    const ri = await resolveInfo(ctx, p);
+    text = G.nginxSetUpstream(text, name, { ...body, resolve: ri.resolves ? true : undefined }); // an older nginx keeps what the upstream had
+  }
   else if (cur.kind === 'caddy') text = G.caddySetLb(text, domain, body);
   else if (cur.kind === 'haproxy') text = G.haproxySetBackend(text, cur.backend, body);
   return apply(ctx, p, [{ path: cur.file, text }], { domains: domainsFor(await PX.scan(), p, cur.file), user, note: `load balancing of ${domain}` });
@@ -792,5 +910,5 @@ function startCertCheck() {
   certTimer = setInterval(() => checkAllCerts().catch(e => console.warn('[proxies] certificate check:', e.message)), 24 * 3600000);
 }
 
-module.exports = { siteSettings, siteSettingsPlan, saveSiteSettings, certOverview, reloadProxy, certbotRenew, certbotHook, checkAllCerts, certAlerts, fleet, activeCtx, ctxFor, openFile, saveFile, versions, versionText, restoreVersion, targets, exposePlan, expose, removeSite, acmeSettings, setAcmeSettings, certForSite, certList, renew, redeploy, setAuto, forget,
+module.exports = { startProxy, startAndWatch, siteSettings, siteSettingsPlan, saveSiteSettings, certOverview, reloadProxy, certbotRenew, certbotHook, checkAllCerts, certAlerts, fleet, activeCtx, ctxFor, openFile, saveFile, versions, versionText, restoreVersion, targets, exposePlan, expose, removeSite, acmeSettings, setAcmeSettings, certForSite, certList, renew, redeploy, setAuto, forget,
   renewDue, start, lbGet, lbSet, traefikLive, stats, accessStats, logTime, apply, cmds, probe, sha, _q: q };

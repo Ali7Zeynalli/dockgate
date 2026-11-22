@@ -31,6 +31,18 @@ Notes:
 - **Files inside the container.** A file that is not on a mount is marked **inside the container**: it is lost when the container is re-created.
 - **SSH servers.** Host proxies on SSH servers need passwordless `sudo` for files in `/etc`.
 
+### A stopped proxy
+
+A proxy container that stopped (or keeps restarting) is not hidden:
+
+- **Overview** shows it in red with **why it stopped**: the last error lines of its log, for example `host not found in upstream "app-1:80"`. The warning at the top has **Edit the config** and **Start**.
+- **Sites** still lists its sites, marked **proxy stopped**. The configs are read with Docker's archive API (`docker cp`), which works on a stopped container.
+- **Config files** opens its files. **Save** goes another way, because a stopped proxy can not run its check or reload:
+  1. DockGate keeps the current file as a version and writes the new one.
+  2. It starts the proxy and watches it for a few seconds.
+  3. If it stops again, the earlier file goes back and the result shows the log lines that say why. The proxy stays stopped, as before.
+- **Start** starts it and watches it the same way. If it stops again, you see why.
+
 ## Overview
 
 ![Proxies & SSL — Overview](images/proxies-overview.png)
@@ -94,11 +106,18 @@ Each domain is one row. It shows where the domain goes, which proxy serves it an
 
 ![Preview](images/proxies-expose-preview.png)
 
-**Networks.** The proxy must reach the container. If they share no network, DockGate joins the proxy to the container's network (`docker network connect`, no restart) and uses the container's name. If both are only on Docker's default network, where names do not work, the container's IP is used and you are warned that it changes when the container is re-created. A proxy on the host uses the container's published port (`127.0.0.1:port`).
+**Networks.** The proxy must reach the container. If they share no network, DockGate joins the proxy to the container's network (`docker network connect`, no restart) and uses the container's name.
+
+A `docker network connect` is lost when the proxy container is re-created (for example by `docker compose up` after a change). So:
+
+- **The proxy is part of a Compose project:** DockGate also writes the network into its override for that project (your compose files are not changed). The proxy is on it again after a re-create.
+- **It is not:** the preview and the result warn you. Add the network to how you start the proxy.
+
+ If both are only on Docker's default network, where names do not work, the container's IP is used and you are warned that it changes when the container is re-created. A proxy on the host uses the container's published port (`127.0.0.1:port`).
 
 **What gets written:**
 
-- **nginx:** a new file `conf.d/<domain>.conf`, made by DockGate. A single container is reached through Docker's DNS, so nginx still starts while the container is down.
+- **nginx:** a new file `conf.d/<domain>.conf`, made by DockGate. A single container is reached through Docker's DNS, so nginx still starts while the container is down. Several containers go into an `upstream` block; see [Load balancing](#load-balancing) for what nginx needs so it still starts when one of them is missing.
 - **Caddy, HAProxy:** a block between `# dockgate:begin` and `# dockgate:end` in the Caddyfile or `haproxy.cfg`.
 - **Apache:** a file in `conf/dockgate/` (container) or `sites-enabled/` (Debian). The proxy modules it needs are loaded.
 - **Traefik and caddy-docker-proxy:** the labels. Traefik's entry points and certificate resolvers are read from its command line.
@@ -198,6 +217,8 @@ From a site's **⋯ → Load balancing…**:
 - **Servers:** host:port, weight, **Backup** (used only when the others are down) and **Off** (kept in the list without traffic).
 - **What DockGate edits:**
   - **nginx:** the `upstream` block. A site with one `proxy_pass` gets an upstream made for it.
+
+    nginx reads the names in an `upstream` when it starts. If one container is missing, nginx does not start, and every site on it stops answering. **nginx 1.27.3 or newer** (in a container) can look the names up while it runs. DockGate then adds `zone`, Docker's `resolver` and `resolve` to the upstream, and a missing container does not stop nginx. For an older nginx, the dialog and the preview warn you.
   - **Caddy:** the site's `reverse_proxy` and `lb_policy`.
   - **HAProxy:** the backend's `server` lines and `balance`.
 

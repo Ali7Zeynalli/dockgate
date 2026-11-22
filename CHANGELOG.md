@@ -2,6 +2,22 @@
 
 ---
 
+## [2.84.0] - 2026-11-22
+
+### Added
+- **A stopped proxy is shown, with why it stopped** (Proxies & SSL).
+  - Overview shows the last error lines of its log, for example `host not found in upstream "app-1:80"`, and a red warning with **Edit the config** and **Start**.
+  - Its sites stay listed, marked **proxy stopped**: the configs are read with Docker's archive API, which works on a stopped container.
+  - Its config files can be opened and saved. Saving writes the file, starts the proxy and watches it for a few seconds. If it stops again, the earlier file goes back and the result shows why.
+  - **Start** starts it and watches it the same way.
+- **Networks a proxy joins are kept.** When "Put a container on a domain" joins the proxy to the container's network, a proxy in a Compose project gets that network in DockGate's override (your compose files are not changed), so it stays on it after a re-create. Otherwise the preview and the result warn that the join is lost on a re-create.
+- **nginx keeps running when a container behind it is missing.** With nginx 1.27.3 or newer in a container, upstreams DockGate writes (new sites with several containers, Load balancing) look names up while nginx runs (`zone`, Docker's `resolver`, `resolve`). Before, one missing container stopped nginx and every site on it. An older nginx gets a warning in the dialog and the preview.
+
+### Fixed
+- The reason a proxy stopped showed the same log line twice (nginx writes it to the console and to its error log).
+
+---
+
 ## [2.83.0] - 2026-11-22
 
 ### Added

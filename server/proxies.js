@@ -107,7 +107,10 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
     const p = { id: 'c:' + ct.Id.slice(0, 12), cid: ct.Id, name, kind, label: LABEL[kind], image: ct.Image, where: 'container', project: L['com.docker.compose.project'] || L['com.docker.stack.namespace'] || null, state: ct.State, running: ct.State === 'running',
       ports: [...new Set((ct.Ports || []).filter(x => x.PublicPort).map(x => x.PublicPort))].sort((a, b) => a - b), version: (ct.Image.split(':')[1] || 'latest'), config: null, sites: 0, managedBy: kind === 'npm' ? 'Nginx Proxy Manager' : kind === 'nginx-proxy' ? 'nginx-proxy (from container env)' : null, problem: null };
     proxies.push(p);
-    if (!p.running) continue;
+    if (!p.running) { // a stopped proxy: why (its last log lines), and its config read through the archive API, so its sites stay listed
+      try { await stoppedProxy(c, ct, p, kind, raw, addSite, warnings); } catch (e) { p.problem = p.problem || `stopped (${e.message})`; }
+      continue;
+    }
     try {
       if (NGINXISH.has(kind)) {
         const r = await execIn(c, ct.Id, ['nginx', '-T']);
@@ -245,6 +248,56 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnH 2>/dev/null) | awk '{
   const data = { server: serverId, remote: !!server, appServers, helpers, proxies, sites: sites.sort((a, b) => a.domain.localeCompare(b.domain)), ports: [...new Map([...ports.map(x => [x.port + x.process, x])]).values()], warnings: [...new Map(warnings.map(w => [w.text, w])).values()], at: Date.now() };
   cache.set(serverId, { at: Date.now(), data, raw });
   return data;
+}
+/** Why a container stopped: the last error lines of its log. */
+async function stopReason(c, cid) {
+  try {
+    const buf = await c.getContainer(cid).logs({ stdout: true, stderr: true, tail: 60, timestamps: false });
+    const b = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf)); const parts = []; let i = 0;
+    if (b.length > 8 && (b[0] === 1 || b[0] === 2) && b[1] === 0) { while (i + 8 <= b.length) { const n = b.readUInt32BE(i + 4); parts.push(b.slice(i + 8, i + 8 + n).toString('utf8')); i += 8 + n; } } else parts.push(b.toString('utf8'));
+    const lines = parts.join('').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+    const bad = lines.filter(l => /\[emerg\]|\[alert\]|\[crit\]|"level":"(error|fatal)"|level=(error|fatal)|\bERR\b|\[ALERT\]|AH0\d{4}.*(error|unable)|fatal|error/i.test(l));
+    // the same error is often logged twice (stderr, and the error log with a time in front): kept once, the last ones
+    const seen = new Set(); const out = [];
+    for (const l of (bad.length ? bad : lines).reverse()) { const k = l.replace(/^\S+ \S+ \[(\w+)\] \d+#\d+: /, 'nginx: [$1] '); if (!seen.has(k)) { seen.add(k); out.unshift(l.slice(0, 300)); } if (out.length === 3) break; }
+    return out;
+  } catch (e) { return []; }
+}
+/** Config files of a stopped container, read with the archive API (docker cp): [{ path, text }]. */
+async function archiveFiles(c, cid, dir, filter = () => true, limit = 80) {
+  const T = require('./tar-lite');
+  let stream; try { stream = await c.getContainer(cid).getArchive({ path: dir }); } catch (e) { return []; }
+  const entries = T.parseTar(await T.collect(stream));
+  const base = dir.replace(/\/[^/]*$/, ''); // the archive holds the last part of dir as its root
+  return entries.filter(x => x.type === 'file' && x.data.length < 512 * 1024).map(x => ({ path: `${base}/${x.name}`.replace(/\/+/g, '/'), text: x.data.toString('utf8') })).filter(f => filter(f.path)).slice(0, limit);
+}
+async function stoppedProxy(c, ct, p, kind, raw, addSite, warnings) {
+  const reason = await stopReason(c, ct.Id);
+  p.stopReason = reason;
+  const info = await c.getContainer(ct.Id).inspect().catch(() => null);
+  p.restarting = !!(info && info.State && info.State.Restarting);
+  let files = [];
+  if (NGINXISH.has(kind)) {
+    files = await archiveFiles(c, ct.Id, '/etc/nginx', f => /\.conf$/.test(f) && !/\/(mime\.types|fastcgi|scgi|uwsgi)/.test(f));
+    const main = files.find(f => /\/nginx\.conf$/.test(f.path)); if (main) files = [main, ...files.filter(f => f !== main)];
+    const parsed = P.parseNginxT(files.map(f => `# configuration file ${f.path}:\n${f.text}`).join('\n'));
+    raw.files[p.id] = parsed.files; raw.nginx[p.id] = parsed; raw.certPaths[p.id] = [...new Set(parsed.servers.map(x => x.cert).filter(Boolean))];
+    p.config = '/etc/nginx/conf.d';
+    for (const st of P.nginxSites(parsed).filter(x => x.domain !== 'localhost')) addSite({ ...st, proxyStopped: true }, p);
+  } else if (kind === 'caddy') {
+    const cfg = ((ct.Command || '').match(/--config\s+(\S+)/) || [])[1] || '/etc/caddy/Caddyfile';
+    files = await archiveFiles(c, ct.Id, cfg); p.config = cfg; raw.files[p.id] = files;
+    for (const st of P.parseCaddyfile((files[0] || {}).text || '')) addSite({ ...st, file: cfg, proxyStopped: true }, p);
+  } else if (kind === 'haproxy') {
+    for (const d of ['/usr/local/etc/haproxy/haproxy.cfg', '/etc/haproxy/haproxy.cfg']) { files = await archiveFiles(c, ct.Id, d); if (files.length) { p.config = d; break; } }
+    raw.files[p.id] = files;
+    for (const st of P.parseHaproxy((files[0] || {}).text || '')) addSite({ ...st, file: p.config, proxyStopped: true }, p);
+  } else if (kind === 'apache') {
+    files = await archiveFiles(c, ct.Id, '/usr/local/apache2/conf', f => /\.conf$/.test(f)); raw.files[p.id] = files; p.config = '/usr/local/apache2/conf';
+  }
+  const n = files.length ? '' : ' (its config could not be read)';
+  p.problem = `stopped${reason.length ? ': ' + reason[reason.length - 1] : ''}`;
+  warnings.push({ level: 'bad', proxy: p.id, stopped: true, text: `${p.name} is ${p.restarting ? 'restarting again and again' : 'stopped'} — its sites do not answer${reason.length ? `. It says: ${reason[reason.length - 1]}` : ''}${n}.` });
 }
 async function rawFor(ctx = activeCtx()) { await scan({ ctx }); const hit = cache.get(ctx.serverId); return hit ? hit.raw : { files: {}, nginx: {}, certPaths: {} }; }
 async function proxyById(id) { const d = await scan(); const p = d.proxies.find(x => x.id === id); if (!p) throw err('Proxy not found — refresh', 404); return p; }
@@ -423,4 +476,4 @@ async function testConfig(id) {
   return { ok: r.code === 0, command: cmd, output: (r.out + r.err).trim().slice(-4000) };
 }
 
-module.exports = { activeCtx, servedCerts, acmeErrors, isInternalIssuer, isStagingIssuer, scan, certificates, files, logs, testConfig, kindOf, execIn, hostExec, rawFor, proxyById, LABEL, NGINXISH, invalidate: () => cache.clear(), _cache: cache };
+module.exports = { stopReason, activeCtx, servedCerts, acmeErrors, isInternalIssuer, isStagingIssuer, scan, certificates, files, logs, testConfig, kindOf, execIn, hostExec, rawFor, proxyById, LABEL, NGINXISH, invalidate: () => cache.clear(), _cache: cache };
