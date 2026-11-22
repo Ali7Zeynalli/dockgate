@@ -9,7 +9,12 @@ const who = (req) => (req.user && (req.user.username || req.user.name)) || (req.
 const audit = (req, action, name, details) => logAction({ req, resourceType: 'proxy', resourceName: name, action, details });
 
 router.get('/', send((req) => PX.scan({ fresh: req.query.fresh === '1' })));
-router.get('/certs', send(async () => ({ ...(await PX.certificates()), managed: PE.certList(), acme: PE.acmeSettings() })));
+router.get('/certs', send((req) => PE.certOverview({ fresh: req.query.fresh === '1' })));
+router.get('/certs/fleet', send(() => PE.fleet()));
+router.post('/certs/check', send(async (req) => { const r = await PE.checkAllCerts({ notify: true }); audit(req, 'proxy_cert_check', 'all servers', { servers: r.length }); return PE.fleet(); }));
+router.post('/certbot/renew', send(async (req) => { const r = await PE.certbotRenew((req.body || {}).name); audit(req, 'proxy_certbot_renew', (req.body || {}).name, { ok: r.ok }); return r; }));
+router.get('/certbot/hook', send(() => PE.certbotHook(true)));
+router.post('/certbot/hook', send(async (req) => { const r = await PE.certbotHook(false); audit(req, 'proxy_certbot_hook', r.path, {}); return r; }));
 router.get('/targets', send(() => PE.targets()));
 router.get('/acme', send(() => PE.acmeSettings()));
 router.put('/acme', send((req) => { const r = PE.setAcmeSettings(req.body || {}); audit(req, 'proxy_acme_settings', 'acme', { directory: r.directory }); return r; }));
@@ -30,8 +35,12 @@ router.get('/:id/stats', send((req) => PE.stats(req.params.id, req.query.tail)))
 router.get('/:id/traefik', send((req) => PE.traefikLive(req.params.id)));
 router.get('/:id/lb', send((req) => PE.lbGet(req.params.id, String(req.query.domain || ''))));
 router.put('/:id/lb', send(async (req) => { const r = await PE.lbSet(req.params.id, String(req.query.domain || ''), req.body || {}, who(req)); audit(req, 'proxy_lb', `${req.params.id}:${req.query.domain}`, { ok: r.ok }); return r; }));
+router.get('/:id/sites/:domain/settings', send((req) => PE.siteSettings(req.params.id, req.params.domain)));
+router.post('/:id/sites/:domain/settings/plan', send((req) => PE.siteSettingsPlan(req.params.id, req.params.domain, req.body || {})));
+router.put('/:id/sites/:domain/settings', send(async (req) => { const r = await PE.saveSiteSettings(req.params.id, req.params.domain, req.body || {}, who(req)); audit(req, 'proxy_site_settings', req.params.domain, { ok: r.ok, stage: r.stage }); return r; }));
 router.post('/:id/sites/:domain/cert', send(async (req) => { const r = await PE.certForSite(req.params.id, req.params.domain, req.body || {}, who(req)); audit(req, 'proxy_cert_issue', req.params.domain, { ok: r.ok, stage: r.stage }); return r; }));
 router.delete('/:id/sites/:domain', send(async (req) => { const r = await PE.removeSite(req.params.id, req.params.domain, who(req)); audit(req, 'proxy_site_remove', req.params.domain, { ok: r.ok }); return r; }));
+router.post('/:id/reload', send(async (req) => { const r = await PE.reloadProxy(req.params.id); audit(req, 'proxy_reload', req.params.id, { ok: r.ok }); return r; }));
 router.post('/:id/test', send(async (req) => { const r = await PX.testConfig(req.params.id); audit(req, 'proxy_test', req.params.id, { ok: r.ok, command: r.command }); return r; }));
 
 module.exports = router;

@@ -1658,3 +1658,41 @@ tr.pv-open .pv-chev { transform: rotate(90deg); }
 .fe-hl .hl-b { color: #c084fc; }
 .fe-hl .hl-c { color: var(--text-muted); font-style: italic; }
 .fb-main .td-actions { flex-wrap: nowrap; }
+
+/* ---- System → Help: the guide inside DockGate ---- */
+.help-q { padding: 0 7px; min-width: 22px; height: 22px; border-radius: 50%; font-weight: 700; vertical-align: middle; margin-left: 4px; }
+.help-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 14px; align-items: start; }
+.help-index { padding: 12px; position: sticky; top: 12px; max-height: calc(100vh - 140px); overflow: auto; }
+.help-group { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin: 12px 0 4px; }
+.help-link { display: block; padding: 4px 8px; border-radius: 6px; color: var(--text-secondary, var(--text-primary)); text-decoration: none; font-size: 13px; }
+.help-link:hover { background: var(--bg-tertiary); }
+.help-link.active { background: rgba(59,130,246,.15); color: var(--accent); }
+.help-main { padding: 18px 26px; min-width: 0; }
+.help-hit { display: block; padding: 10px 0; border-bottom: 1px solid var(--border); text-decoration: none; color: inherit; }
+.help-doc { line-height: 1.6; font-size: 14px; }
+.help-doc .help-h { scroll-margin-top: 16px; }
+.help-doc h1.help-h { font-size: 24px; margin: 4px 0 12px; }
+.help-doc h2.help-h { font-size: 19px; margin: 26px 0 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.help-doc h3.help-h { font-size: 16px; margin: 20px 0 8px; }
+.help-doc h4.help-h { font-size: 14px; margin: 16px 0 6px; }
+.help-doc p { margin: 8px 0; }
+.help-doc ul, .help-doc ol { margin: 6px 0 10px; padding-left: 22px; }
+.help-doc li { margin: 3px 0; }
+.help-doc code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; background: var(--bg-tertiary); padding: 1px 5px; border-radius: 4px; }
+.help-doc .help-code { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow: auto; }
+.help-doc .help-code code { background: none; padding: 0; }
+.help-doc .help-quote { margin: 10px 0; padding: 8px 14px; border-left: 3px solid var(--accent); background: var(--bg-tertiary); border-radius: 0 8px 8px 0; }
+.help-doc .help-quote p { margin: 4px 0; }
+.help-doc .help-table { overflow-x: auto; margin: 10px 0; }
+.help-doc table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.help-doc th, .help-doc td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
+.help-doc th { background: var(--bg-tertiary); }
+.help-doc .help-img img { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; margin: 8px 0; display: block; }
+.help-doc hr { border: 0; border-top: 1px solid var(--border); margin: 18px 0; }
+.help-doc a { color: var(--accent); }
+.help-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100vw); background: var(--bg-secondary, var(--bg-primary)); border-left: 1px solid var(--border); box-shadow: -12px 0 32px rgba(0,0,0,.35); z-index: 1200; transform: translateX(100%); transition: transform .18s ease; display: flex; flex-direction: column; }
+.help-panel.open { transform: none; }
+.help-panel-head { display: flex; gap: 8px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.help-panel-body { padding: 14px 20px 40px; overflow: auto; flex: 1; }
+@media (max-width: 900px) { .help-layout { grid-template-columns: 1fr; } .help-index { position: static; max-height: none; } }
+.help-doc th, .help-doc td { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; max-width: none !important; }

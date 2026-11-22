@@ -190,3 +190,11 @@ test('kindOf: which images are proxies', () => {
   assert.equal(kindOf('httpd:2.4'), 'apache');
   assert.equal(kindOf('postgres:16'), null);
 });
+
+test('who renews a certificate, and which issuers are internal or for tests', () => {
+  const PXm = require('../../server/proxies');
+  assert.equal(PXm.isInternalIssuer('Caddy Local Authority - ECC Intermediate'), true);
+  assert.equal(PXm.isInternalIssuer("Let's Encrypt R11"), false);
+  assert.equal(PXm.isStagingIssuer('(STAGING) Ersatz Edamame E1'), true);
+  assert.equal(PXm.isStagingIssuer("Let's Encrypt E6"), false);
+});

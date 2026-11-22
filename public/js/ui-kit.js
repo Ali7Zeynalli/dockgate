@@ -17,7 +17,8 @@ const UI = {
   },
 
   header(title, desc, actions = '') {
-    return `<div class="ui-ph"><div class="ui-ph-text">${title ? `<div class="ui-ph-title">${title}</div>` : ''}${desc ? `<div class="ui-ph-desc">${desc}</div>` : ''}</div>${actions ? `<div class="ui-ph-actions">${actions}</div>` : ''}</div>`;
+    const q = typeof Help !== 'undefined' ? Help.button() : ''; // the page's guide in a side panel
+    return `<div class="ui-ph"><div class="ui-ph-text">${title ? `<div class="ui-ph-title">${title}${q ? ` ${q}` : ''}</div>` : ''}${desc ? `<div class="ui-ph-desc">${desc}</div>` : ''}</div>${actions ? `<div class="ui-ph-actions">${actions}</div>` : ''}</div>`;
   },
 
   /** One-line summary bar: [html, html, …] with optional actions on the right. */

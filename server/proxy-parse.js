@@ -24,9 +24,11 @@ function parseNginxT(out) {
       const names = d('server_name').flatMap(x => x.args).filter(n => n && n !== '_' && n !== '""');
       const ssl = listen.some(l => /\bssl\b|(^|:)443(\s|$)/.test(l));
       const ret = d('return').map(x => x.args.join(' '))[0] || '';
+      // proxy_pass $var: the value of `set $var …` in the location or the server (DockGate's own sites use this)
+      const viaSet = (pp, ...scopes) => { if (!pp || !pp.startsWith('$')) return pp; for (const sc of scopes) { const st = sc.find(x => x.name === 'set' && x.args[0] === pp); if (st && st.args[1]) return st.args[1]; } return pp; };
       const locs = block.children.filter(c => c.name === 'location').map(c => ({
         path: c.args.join(' '),
-        proxyPass: (c.directives.find(x => x.name === 'proxy_pass') || {}).args?.[0] || null,
+        proxyPass: viaSet((c.directives.find(x => x.name === 'proxy_pass') || {}).args?.[0] || null, c.directives, block.directives),
         root: (c.directives.find(x => x.name === 'root') || {}).args?.[0] || null,
         ret: (c.directives.find(x => x.name === 'return') || {}).args?.join(' ') || null,
       }));
@@ -35,7 +37,7 @@ function parseNginxT(out) {
         cert: (d('ssl_certificate')[0] || {}).args?.[0] || null,
         redirectHttps: /^30[18]\s+https:\/\//.test(ret) || locs.some(l => /^30[18]\s+https:\/\//.test(l.ret || '')),
         root: (d('root')[0] || {}).args?.[0] || null,
-        proxyPass: (d('proxy_pass')[0] || {}).args?.[0] || null,
+        proxyPass: viaSet((d('proxy_pass')[0] || {}).args?.[0] || null, block.directives),
         locations: locs,
       });
     });

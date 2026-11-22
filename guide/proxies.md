@@ -42,8 +42,8 @@ Notes:
 | nginx, OpenResty | `nginx -T`. If the config fails its check, the `.conf` files are read directly and the error is shown. | everything |
 | Caddy | the Caddyfile | everything |
 | HAProxy | `haproxy.cfg` | everything (HTTPS routing only when the frontend already has a certificate) |
-| Apache | `apachectl -S` and the files it names | everything; Let's Encrypt for sites DockGate made |
-| Traefik, caddy-docker-proxy | the labels of containers and Swarm services | labels to copy (they apply when the container is re-created) |
+| Apache | `apachectl -S` and the files it names | everything, Let's Encrypt included |
+| Traefik, caddy-docker-proxy | the labels of containers and Swarm services | labels: added to a Compose project (override) or copied |
 | Nginx Proxy Manager, nginx-proxy | their own configs | read-only: use their own UI or `VIRTUAL_HOST` |
 
 An nginx container that only serves its own app is not counted as a proxy. That means it has no `proxy_pass`, no domain and no port 80 or 443.
@@ -65,8 +65,14 @@ Each domain is one row. It shows where the domain goes, which proxy serves it an
 
 - **Open ↗** and **+ Uptime check**.
 - **Edit the config** opens the file at the site's lines.
+- **Site settings…** (nginx, Caddy) — the site as a form:
+  - names;
+  - where it goes (one container);
+  - WebSockets, upload limit, and **Send http to https** (nginx).
+
+  Save shows the changed lines, then goes the safe way. Only the names that change are touched, so an HTTP server shared with other sites keeps their names. The redirect of a shared HTTP server is changed in the editor.
 - **Load balancing…** (see [Load balancing](#load-balancing)).
-- **Add HTTPS** or **Use a Let's Encrypt certificate** (nginx sites).
+- **Add HTTPS** or **Use a Let's Encrypt certificate** (nginx and Apache sites).
 - **Remove the site.** Only sites DockGate added can be removed. Others are removed in the editor.
 
 ## Put a container on a domain
@@ -95,29 +101,76 @@ Each domain is one row. It shows where the domain goes, which proxy serves it an
 - **nginx:** a new file `conf.d/<domain>.conf`, made by DockGate. A single container is reached through Docker's DNS, so nginx still starts while the container is down.
 - **Caddy, HAProxy:** a block between `# dockgate:begin` and `# dockgate:end` in the Caddyfile or `haproxy.cfg`.
 - **Apache:** a file in `conf/dockgate/` (container) or `sites-enabled/` (Debian). The proxy modules it needs are loaded.
-- **Traefik and caddy-docker-proxy:** labels as a Compose snippet and as `docker run` flags. Traefik's entry points and certificate resolvers are read from its command line.
+- **Traefik and caddy-docker-proxy:** the labels. Traefik's entry points and certificate resolvers are read from its command line.
+  - **Add to** *(the project)* (when the container is part of a Compose project): the labels go into DockGate's override for the project — your compose files are not changed — and the service is re-created so they apply. If the re-create fails, the earlier override is put back.
+  - **Show the labels**: as a Compose snippet and as `docker run` flags, to add yourself.
+  - **Remove the site** takes DockGate's labels for that domain out again and re-creates the service.
 
-## Let's Encrypt certificates
+## Certificates
 
-DockGate is the ACME client. It answers the certificate check through the proxy itself, so nothing else is installed:
-
-1. The HTTP server of the site gets a `/.well-known/acme-challenge/` location. For a new site it is part of the file; for an existing site DockGate adds it.
-2. DockGate asks Let's Encrypt and writes the answer where that location reads it.
-3. The certificate and key are written next to the site config (`dockgate-certs/<domain>/`). When the config folder is a mount, they outlive the container.
-4. The site switches to HTTPS, with the usual check, reload and site test.
-
-You need two things: **the domain's DNS must point to this server**, and **port 80 must reach the proxy**. Wildcards (`*.example.com`) need a DNS check and are not supported.
-
-**Certificates tab:**
+Every certificate the proxies use is listed, with **who renews it**. DockGate renews its own Let's Encrypt certificates and **watches all the others**, so a renewal that stopped working is noticed before the certificate expires.
 
 ![Certificates](images/proxies-certs.png)
 
-- **All certificates the proxies use.** Each shows days left and what renews it. A file nothing renews gets **Use Let's Encrypt**.
-- **Let's Encrypt certificates DockGate renews.** DockGate renews them 30 days before expiry (you can change this), checks every 6 hours, and reloads the proxy. If a renewal fails, the earlier files go back and an alert goes to your notification channels.
-  - **Renew now** renews at once.
-  - **Put back** writes the files again, for when the container was re-created and they were lost.
-  - **Forget** stops renewing; the files stay.
-- **Let's Encrypt account.** Your email, and the certificate authority: Let's Encrypt, Let's Encrypt staging for tests, or another ACME URL. The account key is kept encrypted.
+### Who renews what
+
+| Certificate | Renewed by | What DockGate does |
+|---|---|---|
+| Let's Encrypt from DockGate (nginx, Apache) | DockGate | gets it, renews it, alerts when a renewal fails |
+| certbot (`/etc/letsencrypt`) | certbot | shows its timer or cron, whether a deploy hook reloads the web server, **Renew now** (SSH servers), **Add a reload hook** |
+| Caddy, Traefik | Caddy / Traefik | reads their certificates and shows the certificate errors in their logs |
+| Caddy `tls internal`, Traefik's default | Caddy / Traefik | marked internal; not counted as expiring |
+| Nginx Proxy Manager | Nginx Proxy Manager | its Let's Encrypt certificates are automatic; uploaded ones are not renewed |
+| nginx-proxy | acme-companion | automatic when an acme-companion container runs; a stopped one is shown |
+| A file (nginx `ssl_certificate`, Apache `SSLCertificateFile`, HAProxy `bind … crt`) | nobody | red **none (a file)**; nginx and Apache sites get **Use Let's Encrypt** |
+
+**Is the new certificate served?** For nginx, Apache and HAProxy, DockGate asks the proxy (from inside it, on 127.0.0.1:443) which certificate it really serves. "✓ served" means it answers with the certificate on disk. **Old one still served** means the file was renewed but the proxy was not reloaded. **Reload** fixes it (after a config check).
+
+### Let's Encrypt from DockGate
+
+DockGate is the ACME client. It answers the certificate check through the proxy itself, so nothing else is installed:
+
+1. The HTTP server of the site gets a `/.well-known/acme-challenge/` location.
+   - A new site has it in its file.
+   - An existing nginx or Apache site gets it added.
+   - An HTTPS-only nginx site gets an HTTP server added; it answers the check and sends the rest to https.
+2. DockGate asks Let's Encrypt for a certificate holding the names of that HTTP server (`server_name`, `ServerName` / `ServerAlias`), and writes the answer where that location reads it.
+3. The certificate and key are written next to the site config (`dockgate-certs/<domain>/`). When the config folder is a mount, they outlive the container.
+4. The site switches to HTTPS, with the usual check, reload and site test. DockGate starts renewing the certificate only once the site uses it.
+
+**Before the first certificate:**
+
+- The domain's DNS must point to this server.
+- Port 80 must reach the proxy.
+- You must accept the certificate authority's terms (a box in the wizard, or under Let's Encrypt account).
+
+**Limits:**
+
+- Wildcards (`*.example.com`) need a DNS check and are not supported.
+- HAProxy serves no files, so it can not answer the check. Use certbot with a reload hook for HAProxy.
+
+**Let's Encrypt certificates DockGate renews:**
+
+- Renewed 30 days before expiry (you can change this); DockGate looks every 6 hours.
+- Each renewal is written, checked and reloaded. If it fails, the earlier files go back, the old date is kept (so DockGate tries again), and an alert goes to your notification channels.
+- **Renew now**, **Put back** (writes the files again after the container was re-created), **Auto renew** on / off, **Forget**.
+- Removing a site DockGate made also stops renewing its certificate.
+
+**Let's Encrypt account:** your email, the certificate authority (Let's Encrypt, Let's Encrypt staging for tests, or another ACME URL) and the terms. The account key is kept encrypted.
+
+### All servers and alerts
+
+**All servers** shows every certificate on every server, the one that expires first at the top. The list comes from a check DockGate runs once a day; **Check all servers now** runs it at once.
+
+![All servers](images/proxies-certs-all.png)
+
+The daily check sends an alert to your notification channels:
+
+- **14, 7, 3 and 1 days** before a certificate expires, and when it has expired — whoever should renew it. The alert says who that is ("certbot should have renewed it by now — check it", or "nothing renews it").
+- When a **renewed certificate is not loaded** (the proxy still serves the old one).
+- When **Caddy or Traefik log certificate errors** (once a day per proxy).
+
+Each alert is sent once per threshold. Internal (Caddy `tls internal`) and test (staging) certificates are left out.
 
 ## Config files
 

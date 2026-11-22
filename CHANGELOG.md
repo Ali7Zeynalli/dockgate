@@ -2,6 +2,69 @@
 
 ---
 
+## [2.83.0] - 2026-11-22
+
+### Added
+- **System → Help: the guide inside DockGate.**
+  - Every page of the guide, the index from `guide/README.md`, and a search over all pages section by section.
+  - The guide shipped is the one for the installed version, and it works without internet: the guide is now in the image, with its screenshots compressed from 21 MB to 9 MB.
+  - **?** next to a page's title opens the part of the guide about that page in a side panel, without leaving the page.
+  - Links between guide pages stay inside DockGate.
+- **Site settings** (Proxies & SSL → a site's ⋯), a form instead of the config file.
+  - nginx: names, where the site goes, WebSockets, upload limit, http → https.
+  - Caddy: names and where the site goes.
+  - The changed lines are shown, then saved the safe way (check → reload → the sites must answer as before).
+  - Only the names that change are touched, so an HTTP server shared with other sites keeps theirs.
+- **Traefik / caddy-docker-proxy labels into a Compose project.** "Put a container on a domain" can add the labels to the container's Compose project: they go into DockGate's override (your compose files are not changed) and the service is re-created. If that fails, the earlier override goes back. **Remove the site** takes them out again.
+
+### Fixed
+- **A write that failed half way could empty a config file.** This was fixed for most cases in 2.81 and is now guarded everywhere:
+  - each write checks the new text is complete before it replaces the file;
+  - large files on a read-only folder mount are staged inside the mount;
+  - a test makes sure a broken write never empties the file.
+
+---
+
+## [2.82.0] - 2026-11-22
+
+### Added
+- **Certificates: every certificate shows who renews it, and DockGate watches them all.**
+  - **Who renews it:** DockGate, certbot (timer or cron), Caddy, Traefik, Nginx Proxy Manager or acme-companion. A file nothing renews is shown in red.
+  - **Internal and test certificates:** Caddy `tls internal` and staging certificates are marked, not counted as expiring.
+  - **More certificates read:** HAProxy (`bind … crt`) and Apache (`SSLCertificateFile`) certificates.
+- **Is the new certificate served?** DockGate asks nginx, Apache and HAProxy which certificate they really serve. A certificate renewed on disk but not loaded shows **old one still served**, with **Reload** (after a config check).
+- **certbot** (SSH servers):
+  - **Renew now**: `certbot renew`, then the web servers that use the certificate are reloaded.
+  - A warning when no deploy hook reloads the web server after a renewal, and **Add a reload hook**: it writes one for the nginx / Apache / HAProxy services and containers that use certbot's certificates.
+- **Caddy and Traefik certificate errors** from their logs are shown, since they renew by themselves.
+- **All servers:** every certificate on every server in one list, from a check DockGate runs once a day (**Check all servers now**).
+- **Alerts** to your notification channels:
+  - 14, 7, 3 and 1 days before any certificate expires, and when it has expired — whoever should renew it;
+  - when a renewed certificate is not loaded;
+  - when Caddy or Traefik log certificate errors.
+  
+  Each alert is sent once per threshold.
+- **Let's Encrypt for existing Apache sites**: certificate check lines, certificate, HTTPS vhost.
+- An HTTPS-only nginx site can now get a Let's Encrypt certificate: DockGate adds the HTTP server that answers the check.
+- **Terms:** the certificate authority's terms are accepted with a box (in the wizard or the account settings) before the first certificate.
+- **Key file:** "A certificate already on the proxy" asks for its key file instead of guessing it.
+
+### Fixed
+- Sites DockGate made for one container showed no target, and their load balancing did not open.
+- A renewal whose config check failed was still recorded with the new date, so DockGate stopped trying. The old date now stays, and the old files go back.
+- When an earlier file could not be put back, the result still said it was. It now says so plainly.
+- **Site check:** a site was asked over HTTPS even when it has none, so another site's answer could undo a good change. Each site is now asked only the way it is served, up to 20 sites at once.
+- **Certificate names:** a certificate for an existing site took the names of other sites in the same file. It now holds the names of the site's own server.
+- Removing a site DockGate made now also stops renewing its certificate.
+- Changes that did not go through no longer appear in History.
+- A renewal and an edit of the same proxy can no longer run at the same time.
+- When adding a site fails, the proxy leaves the networks it joined for it.
+- The preview warns when the new site file would be inside the container (lost when it is re-created).
+- Traefik sites no longer show twice (the router and its http → https router).
+- certbot containers were never seen (they were dropped from the list); now they and acme-companion are.
+
+---
+
 ## [2.81.0] - 2026-11-21
 
 ### Added

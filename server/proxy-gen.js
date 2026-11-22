@@ -100,7 +100,13 @@ const isSslServer = (block) => /\blisten\s+[^;]*\bssl\b/.test(block) || /\bssl_c
 /** The HTTP (port 80) server of `domain` answers the ACME challenge from ACME_ROOT. A server-level `return` moves into `location /` (it would run first). */
 function nginxEnsureAcme(text, domain) {
   const blocks = nginxBlocks(text, 'server').filter(b => serverNames(b.text).includes(domain) && !isSslServer(b.text));
-  if (!blocks.length) throw err(`No HTTP (port 80) server for ${domain} in this file — the certificate check comes over HTTP`);
+  if (!blocks.length) { // HTTPS only: add an HTTP server that answers the check and sends the rest to https
+    const tls = nginxBlocks(text, 'server').find(b => serverNames(b.text).includes(domain));
+    if (!tls) throw err(`${domain} is not in this file`);
+    const names = serverNames(tls.text).filter(n => /^[a-z0-9.*-]+$/i.test(n));
+    const add = `\n${tls.indent}server {\n${tls.indent}  listen 80;\n${tls.indent}  server_name ${names.join(' ')};\n${nginxAcme(tls.indent + '  ')}\n${tls.indent}  location / {\n${tls.indent}    return 301 https://$host$request_uri;\n${tls.indent}  }\n${tls.indent}}`;
+    return { text: text.slice(0, tls.end) + add + text.slice(tls.end), changed: true, added: true };
+  }
   const b = blocks[0];
   if (b.text.includes(ACME_ROOT)) return { text, changed: false };
   let body = fmtBlock(b.text, b.indent).replace(/^\s+/, '');
@@ -117,6 +123,12 @@ function nginxEnsureAcme(text, domain) {
   return { text: text.slice(0, b.start) + body + text.slice(b.end), changed: true };
 }
 
+/** The names a certificate for `domain` should hold: the server_name of its HTTP server (where the check is answered). */
+function nginxCertNames(text, domain) {
+  const b = nginxBlocks(text, 'server').find(x => serverNames(x.text).includes(domain) && !isSslServer(x.text)) || nginxBlocks(text, 'server').find(x => serverNames(x.text).includes(domain));
+  const names = b ? serverNames(b.text).filter(n => DOMAIN_RE.test(n) && !n.startsWith('*.')) : [];
+  return [domain, ...names.filter(n => n !== domain)].slice(0, 50);
+}
 /** Swap the certificate of every TLS server of `domain` to certPath / keyPath. */
 function nginxSetCert(text, domain, certPath, keyPath) {
   let n = 0; let out = text;
@@ -185,10 +197,21 @@ function nginxSetUpstream(text, name, { method = 'round_robin', servers }) {
     ...list.map(s => `${ind}server ${s.addr}${s.weight > 1 ? ` weight=${s.weight}` : ''}${s.maxFails ? ` max_fails=${s.maxFails}` : ''}${s.failTimeout ? ` fail_timeout=${s.failTimeout}` : ''}${s.backup ? ' backup' : ''}${s.down ? ' down' : ''};`), `${b.indent}}`];
   return text.slice(0, b.start) + lines.join('\n') + text.slice(b.end);
 }
+/** `set $v http://host:port; proxy_pass $v;` (DockGate's single-container form) → `proxy_pass http://host:port;` in the servers of `domain`. */
+function unsetUpstream(text, domain) {
+  let out = text;
+  for (const b of nginxBlocks(text, 'server').reverse()) {
+    if (!serverNames(b.text).includes(domain)) continue;
+    const t = b.text.replace(/set\s+(\$\w+)\s+(https?:\/\/[^;\s]+);(\s*)proxy_pass\s+\1;/g, 'proxy_pass $2;');
+    out = out.slice(0, b.start) + t + out.slice(b.end);
+  }
+  return out;
+}
 /** Make a single-target nginx site balanced: an upstream with the current target, proxy_pass pointed at it. */
 function nginxMakeUpstream(text, domain) {
   const name = `dg_${slug(domain)}`;
   if (nginxBlocks(text, 'upstream').some(b => b.args === name)) return { text, name };
+  text = unsetUpstream(text, domain);
   const b = nginxBlocks(text, 'server').find(x => serverNames(x.text).includes(domain) && /proxy_pass\s+https?:\/\/[^$;]+;/.test(x.text));
   if (!b) throw err(`${domain} has no proxy_pass to a host:port in this file`);
   const target = b.text.match(/proxy_pass\s+(https?):\/\/([^/;$]+)[^;]*;/);
@@ -197,6 +220,95 @@ function nginxMakeUpstream(text, domain) {
   const at = nginxBlocks(out, 'server').find(x => serverNames(x.text).includes(domain)).start;
   out = out.slice(0, at) + `upstream ${name} {\n  server ${target[2]};\n}\n` + out.slice(at);
   return { text: out, name };
+}
+
+// ---------- a site's settings as a form (nginx) ----------
+const UPGRADE = ['proxy_set_header Upgrade $http_upgrade;', 'proxy_set_header Connection "upgrade";', 'proxy_read_timeout 3600s;'];
+/** What the form shows for an existing nginx site. */
+function nginxSiteSettings(text, domain) {
+  const blocks = nginxBlocks(text, 'server').filter(b => serverNames(b.text).includes(domain));
+  if (!blocks.length) throw err(`${domain} is not in this file`);
+  const tls = blocks.find(b => isSslServer(b.text)); const http = blocks.find(b => !isSslServer(b.text));
+  const main = tls || http;
+  const loc = nginxBlocks(fmtBlock(main.text), 'location').find(l => l.args === '/') || nginxBlocks(fmtBlock(main.text), 'location').find(l => /proxy_pass/.test(l.text));
+  let pp = loc ? (loc.text.match(/proxy_pass\s+([^;]+);/) || [])[1] : null;
+  if (pp && pp.startsWith('$')) pp = (loc.text.match(new RegExp(`set\\s+\\${pp}\\s+([^;]+);`)) || main.text.match(new RegExp(`set\\s+\\${pp}\\s+([^;]+);`)) || [])[1] || pp;
+  const host = pp ? (pp.match(/^https?:\/\/([^/;\s]+)/) || [])[1] : null;
+  const upstreams = nginxUpstreams(text).map(u => u.name);
+  return {
+    names: serverNames(main.text), target: host && !upstreams.includes(host) ? host : null, upstream: host && upstreams.includes(host) ? host : null,
+    websocket: blocks.some(b => /proxy_set_header\s+Upgrade\b/.test(b.text)),
+    maxBody: ((blocks.map(b => b.text.match(/client_max_body_size\s+([^;]+);/)).find(Boolean)) || [])[1] || '',
+    https: !!tls, http: !!http, redirect: !!http && /return\s+30[18]\s+https:\/\//.test(http.text),
+  };
+}
+/** Write the form back: names, the single target, WebSockets, upload limit, http → https (when the site has both servers). */
+function nginxApplySettings(text, domain, o = {}) {
+  const cur = nginxSiteSettings(text, domain);
+  const names = o.names ? [...new Set((Array.isArray(o.names) ? o.names : String(o.names).split(/[\s,]+/)).map(x => x.trim().toLowerCase()).filter(Boolean))] : cur.names;
+  if (!names.length) throw err('Keep at least one name');
+  for (const n of names) if (!DOMAIN_RE.test(n) && n !== 'localhost' && n !== '_') throw err(`Not a domain name: ${n}`);
+  if (o.target && !TARGET_RE.test(o.target)) throw err(`Not host:port — ${o.target}`);
+  const maxBody = o.maxBody == null ? cur.maxBody : String(o.maxBody).trim();
+  if (maxBody && !/^\d{1,5}[kmg]?$/i.test(maxBody)) throw err('Upload limit: a number with k, m or g (e.g. 50m)');
+  let out = text;
+  const blocks = nginxBlocks(text, 'server').filter(b => serverNames(b.text).includes(domain));
+  const tlsLoc = (() => { const t = blocks.find(b => isSslServer(b.text)); if (!t) return null; return nginxBlocks(fmtBlock(t.text, t.indent), 'location').find(l => l.args === '/') || null; })();
+  for (const b of blocks.reverse()) {
+    let t = fmtBlock(b.text, b.indent).replace(/^\s+/, '');
+    const ind = b.indent + '  ';
+    { // only the names that changed: a server block shared with other sites keeps theirs
+      const removed = cur.names.filter(n => !names.includes(n)); const added = names.filter(n => !cur.names.includes(n));
+      const mine = serverNames(t); const nn = [...mine.filter(n => !removed.includes(n)), ...added.filter(n => !mine.includes(n))];
+      t = t.replace(/(\bserver_name\s+)[^;]+;/, `$1${nn.join(' ')};`);
+    }
+    t = t.replace(new RegExp(`\\n[ \\t]*client_max_body_size\\s+[^;]+;`, 'g'), '');
+    if (maxBody) t = t.replace(/(\bserver_name\s+[^;]+;[^\n]*\n)/, `$1${ind}client_max_body_size ${maxBody};\n`);
+    if (o.target && cur.target && o.target !== cur.target) {
+      const esc = cur.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      t = t.replace(new RegExp(`(proxy_pass\\s+https?://)${esc}`, 'g'), `$1${o.target}`).replace(new RegExp(`(set\\s+\\$\\w+\\s+https?://)${esc}`, 'g'), `$1${o.target}`);
+    }
+    if (o.websocket != null) {
+      t = t.split('\n').filter(l => !UPGRADE.includes(l.trim())).join('\n');
+      if (o.websocket) t = t.replace(/^([ \t]*)(proxy_pass\s+[^;]+;)$/gm, (m0, sp, d) => `${sp}${d}\n${UPGRADE.map(u => sp + u).join('\n')}`);
+    }
+    if (o.redirect != null && cur.https && cur.http && !isSslServer(b.text)) {
+      const others = serverNames(t).filter(n => !cur.names.includes(n) && !names.includes(n));
+      if (others.length && o.redirect !== cur.redirect) throw err(`The HTTP server of ${domain} is shared with ${others.join(', ')} — change the redirect in the editor`);
+      const loc = nginxBlocks(t, 'location').find(l => l.args === '/');
+      const lind = loc ? loc.indent : ind; // replacements start at the location's indent
+      const redirect = `${lind}location / {\n${lind}  return 301 https://$host$request_uri;\n${lind}}`;
+      if (o.redirect && !cur.redirect) t = loc ? t.slice(0, loc.start) + redirect + t.slice(loc.end) : t.replace(/\n([ \t]*)\}\s*$/, `\n${redirect}\n$1}`);
+      if (!o.redirect && cur.redirect) {
+        if (!tlsLoc) throw err('The HTTPS server has no "location /" to copy for plain http');
+        const body = tlsLoc.text.trim().split('\n').map((l, i) => (i ? lind + l.trim().replace(/^/, /^\}/.test(l.trim()) ? '' : '  ') : lind + l.trim())).join('\n');
+        t = t.replace(/\n[ \t]*return\s+30[18]\s+https:\/\/[^;]+;/, ''); // a server-level return
+        const l2 = nginxBlocks(t, 'location').find(l => l.args === '/' && /return\s+30[18]/.test(l.text));
+        t = l2 ? t.slice(0, l2.start) + body + t.slice(l2.end) : t.replace(/\n([ \t]*)\}\s*$/, `\n${body}\n$1}`);
+      }
+    }
+    out = out.slice(0, b.start) + t + out.slice(b.end);
+  }
+  return out;
+}
+/** Caddy site as a form: its names and single target. */
+function caddySiteSettings(text, domain) {
+  const r = caddySiteRange(text, domain); if (!r) throw err(`${domain} is not in the Caddyfile`);
+  const head = r.lines[r.start].replace(/\s*\{\s*$/, '').trim();
+  const lb = caddyLb(text, domain);
+  return { names: head.split(/[\s,]+/).filter(Boolean).map(a => a.replace(/^https?:\/\//, '').replace(/:\d+$/, '')), plainHttp: /^http:\/\//.test(head), target: lb && lb.targets.length === 1 ? lb.targets[0] : null, upstream: lb && lb.targets.length > 1 ? `${lb.targets.length} servers` : null };
+}
+function caddyApplySettings(text, domain, o = {}) {
+  const cur = caddySiteSettings(text, domain);
+  const names = o.names ? [...new Set((Array.isArray(o.names) ? o.names : String(o.names).split(/[\s,]+/)).map(x => x.trim().toLowerCase()).filter(Boolean))] : cur.names;
+  if (!names.length) throw err('Keep at least one name');
+  for (const n of names) if (!DOMAIN_RE.test(n) && n !== 'localhost') throw err(`Not a domain name: ${n}`);
+  if (o.target && !TARGET_RE.test(o.target)) throw err(`Not host:port — ${o.target}`);
+  const r = caddySiteRange(text, domain); const L = [...r.lines];
+  L[r.start] = L[r.start].replace(/^(\s*).*?\{\s*$/, `$1${names.map(n => (cur.plainHttp ? `http://${n}` : n)).join(', ')} {`);
+  let t = L.join('\n');
+  if (o.target && cur.target && o.target !== cur.target) { const esc = cur.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); t = t.replace(new RegExp(`^(\\s*reverse_proxy\\s+(?:[/@]\\S*\\s+)?)(?:https?://)?${esc}(?=\\s|$)`, 'm'), `$1${o.target}`); }
+  return t;
 }
 
 // ---------- Caddy ----------
@@ -319,6 +431,43 @@ function apacheSite(input, { certReady = true, loadModules = false } = {}) {
   return out.join('\n') + '\n';
 }
 
+// ---------- Apache: existing sites ----------
+/** <VirtualHost …> blocks: [{ start, end, text, addr, names, ssl }] */
+function apacheVhosts(text) {
+  const out = []; const re = /^([ \t]*)<VirtualHost\s+([^>]*)>[\s\S]*?^[ \t]*<\/VirtualHost>[ \t]*$/gim; let m;
+  while ((m = re.exec(text))) {
+    const t = m[0];
+    const names = [...t.matchAll(/^\s*Server(?:Name|Alias)\s+(.+)$/gim)].flatMap(x => x[1].trim().split(/\s+/)).map(n => n.replace(/:\d+$/, '').toLowerCase());
+    out.push({ start: m.index, end: m.index + t.length, text: t, indent: m[1], addr: m[2].trim(), names, ssl: /^\s*SSLEngine\s+on/im.test(t) || /:443\b/.test(m[2]) });
+  }
+  return out;
+}
+const apacheAcmeLines = (ind) => [`${ind}ProxyPass /.well-known/acme-challenge/ !`, `${ind}Alias /.well-known/acme-challenge/ ${ACME_ROOT}/.well-known/acme-challenge/`, `${ind}<Directory ${ACME_ROOT}>`, `${ind}  Require all granted`, `${ind}</Directory>`];
+/** The HTTP vhost of `domain` answers the certificate check (lines added after ServerName; ProxyPass ! must come first). */
+function apacheEnsureAcme(text, domain) {
+  const v = apacheVhosts(text).find(x => x.names.includes(domain) && !x.ssl);
+  if (!v) throw err(`No HTTP (*:80) VirtualHost for ${domain} — the certificate check comes over HTTP`);
+  if (v.text.includes(ACME_ROOT)) return { text, changed: false };
+  const ind = v.indent + '  ';
+  const t = v.text.replace(/^(\s*ServerName\s+[^\n]+\n)/im, `$1${apacheAcmeLines(ind).join('\n')}\n`);
+  return { text: text.slice(0, v.start) + t + text.slice(v.end), changed: t !== v.text };
+}
+/** HTTPS for an Apache site: the certificate lines of its *:443 vhost swapped, or a *:443 copy of its HTTP vhost made. */
+function apacheSetHttps(text, domain, certPath, keyPath) {
+  const vs = apacheVhosts(text); const tls = vs.find(x => x.names.includes(domain) && x.ssl);
+  if (tls) {
+    let t = tls.text.replace(/^(\s*SSLCertificateFile\s+).+$/im, `$1${certPath}`).replace(/^(\s*SSLCertificateKeyFile\s+).+$/im, `$1${keyPath}`).replace(/^\s*SSLCertificateChainFile\s+.+\n/im, '');
+    if (!/SSLCertificateFile/i.test(t)) t = t.replace(/^(\s*ServerName\s+[^\n]+\n)/im, `$1${tls.indent}  SSLEngine on\n${tls.indent}  SSLCertificateFile ${certPath}\n${tls.indent}  SSLCertificateKeyFile ${keyPath}\n`);
+    return { text: text.slice(0, tls.start) + t + text.slice(tls.end), changed: true };
+  }
+  const http = vs.find(x => x.names.includes(domain)); if (!http) throw err(`${domain} is not in this file`);
+  let copy = http.text.replace(/<VirtualHost\s+([^>]*?):80>/i, '<VirtualHost $1:443>').replace(/<VirtualHost\s+\*>/i, '<VirtualHost *:443>');
+  copy = copy.replace(/\n[ \t]*<Directory\s+\/var\/lib\/dockgate-acme>[\s\S]*?<\/Directory>/i, '').split('\n').filter(l => !/acme-challenge/.test(l)).join('\n');
+  copy = copy.replace(/^(\s*ServerName\s+[^\n]+\n)/im, `$1${http.indent}  SSLEngine on\n${http.indent}  SSLCertificateFile ${certPath}\n${http.indent}  SSLCertificateKeyFile ${keyPath}\n`);
+  return { text: text.slice(0, http.end) + '\n' + copy + text.slice(http.end), changed: true };
+}
+const apacheCertNames = (text, domain) => { const v = apacheVhosts(text).find(x => x.names.includes(domain) && !x.ssl) || apacheVhosts(text).find(x => x.names.includes(domain)); return [domain, ...(v ? v.names.filter(n => n !== domain && DOMAIN_RE.test(n) && !n.startsWith('*.')) : [])].slice(0, 50); };
+
 // ---------- labels ----------
 function traefikLabels(input, { entrypoints = [], resolver = null } = {}) {
   const s = siteInput(input); const id = `dg-${slug(s.domain).replace(/_/g, '-')}`;
@@ -353,5 +502,5 @@ function removeMarked(text, domain) {
 }
 const isDockgateFile = (text) => String(text || '').startsWith(MARK);
 
-module.exports = { APACHE_MODS, fmtBlock, MARK, ACME_ROOT, slug, siteInput, nginxSite, nginxBlocks, nginxEnsureAcme, nginxSetCert, nginxAddHttps, nginxUpstreams, nginxSetUpstream, nginxMakeUpstream,
+module.exports = { nginxSiteSettings, nginxApplySettings, caddySiteSettings, caddyApplySettings, nginxCertNames, apacheVhosts, apacheEnsureAcme, apacheSetHttps, apacheCertNames, APACHE_MODS, fmtBlock, MARK, ACME_ROOT, slug, siteInput, nginxSite, nginxBlocks, nginxEnsureAcme, nginxSetCert, nginxAddHttps, nginxUpstreams, nginxSetUpstream, nginxMakeUpstream,
   caddySite, caddyAdd, caddySiteRange, caddyLb, caddySetLb, haproxyAdd, haproxyBackends, haproxySetBackend, apacheSite, traefikLabels, caddyLabels, labelsText, removeMarked, isDockgateFile, lbServers };

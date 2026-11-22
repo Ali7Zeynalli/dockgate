@@ -86,3 +86,12 @@ test('Compose Auto Scaling suggestions: replicas from the real load, limits left
   const idle = Array.from({ length: 40 }, (_, i) => ({ t: t0 + i * 120000, replicas: 1, cpu: 5, mem: 10 }));
   assert.match(CA.suggestFrom(idle, { cpu: 2 }).notes.join(' '), /much higher than it needs/);
 });
+
+test('labels in the override: quoted, $ doubled for compose, keys checked', () => {
+  const CS = require('../../server/compose-scale');
+  const y = CS.buildOverride({ web: { labels: { 'traefik.enable': 'true', 'traefik.http.routers.dg-x.rule': 'Host(`x.example.test`)', 'note': 'cost $5 "q"' } } });
+  assert.match(y, /    labels:\n      traefik\.enable: "true"\n      traefik\.http\.routers\.dg-x\.rule: "Host\(`x\.example\.test`\)"\n      note: "cost \$\$5 \\"q\\""/);
+  assert.equal(CS.buildOverride({ web: { labels: {} } }), '');
+  assert.throws(() => CS.checkLabels({ 'bad key': 'x' }), /Label/);
+  assert.throws(() => CS.checkLabels({ ok: 'two\nlines' }), /one line/);
+});

@@ -66,6 +66,8 @@ Router.register('proxies', async (content, params = {}) => {
         <label class="ui-field"><span>HTTPS</span><select class="select" data-https></select></label>
         <label class="ui-field" data-certrow style="display:none"><span>Certificate</span><select class="select" data-cert></select></label>
       </div>
+      <label class="ui-field" data-keyrow style="display:none;margin-top:8px"><span>Its key file</span><input class="input td-mono" data-key placeholder="/etc/nginx/certs/site.key"></label>
+      <label data-tosrow style="display:none;margin-top:8px"><input type="checkbox" data-tos> I accept the <a href="https://letsencrypt.org/repository/" target="_blank" rel="noopener">Let's Encrypt Subscriber Agreement</a></label>
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
         <label><input type="checkbox" data-redir checked> Send http to https</label>
         <label><input type="checkbox" data-ws> WebSockets</label>
@@ -90,8 +92,10 @@ Router.register('proxies', async (content, params = {}) => {
           certVis();
         };
         const certVis = () => {
-          const ex = $('[data-https]').value === 'existing'; $('[data-certrow]').style.display = ex ? '' : 'none';
-          if (ex) { const list = certs ? certs.certs.filter(c => c.paths.some(x => x.endsWith('.crt') || x.endsWith('.pem'))) : []; $('[data-cert]').innerHTML = list.length ? list.map(c => `<option value="${e(c.paths[0])}">${e(c.names[0])} · ${e(c.paths[0])} · ${c.daysLeft} days</option>`).join('') : '<option value="">No certificate file found — type the paths in the config later</option>'; }
+          const ex = $('[data-https]').value === 'existing'; $('[data-certrow]').style.display = ex ? '' : 'none'; $('[data-keyrow]').style.display = ex ? '' : 'none';
+          $('[data-tosrow]').style.display = $('[data-https]').value === 'letsencrypt' && !(certs && certs.acme && certs.acme.tos) ? 'block' : 'none';
+          const guessKey = (c) => c ? c.replace(/fullchain\.pem$/, 'privkey.pem').replace(/cert\.pem$/, 'privkey.pem').replace(/\.crt$/, '.key').replace(/\.pem$/, '.key') : '';
+          if (ex) { const list = certs ? certs.certs.filter(c => !c.internal && c.paths.some(x => x.endsWith('.crt') || x.endsWith('.pem'))) : []; $('[data-cert]').innerHTML = list.length ? list.map(c => `<option value="${e(c.paths[0])}">${e(c.names[0])} · ${e(c.paths[0])} · ${c.daysLeft} days</option>`).join('') : '<option value="">No certificate file found</option>'; $('[data-key]').value = guessKey($('[data-cert]').value); $('[data-cert]').onchange = () => { $('[data-key]').value = guessKey($('[data-cert]').value); }; }
           $('[data-redir]').closest('label').style.display = $('[data-https]').value === 'none' ? 'none' : '';
         };
         $('[data-px]').onchange = httpsFor; $('[data-https]').onchange = certVis;
@@ -100,10 +104,14 @@ Router.register('proxies', async (content, params = {}) => {
       onSave: async (ov) => {
         const $ = (s) => ov.querySelector(s);
         const targets = [...ov.querySelectorAll('[data-trow]')].map(r => ({ container: r.querySelector('[data-tc]').value, port: r.querySelector('[data-tp]').value })).filter(t => t.container);
-        const cert = $('[data-cert]') ? $('[data-cert]').value : '';
+        const cert = $('[data-https]').value === 'existing' ? $('[data-cert]').value : '';
+        if ($('[data-https]').value === 'letsencrypt' && !(certs && certs.acme && certs.acme.tos)) {
+          if (!$('[data-tos]').checked) throw new Error("Tick the Let's Encrypt Subscriber Agreement first");
+          await API.put('/proxies/acme', { tos: true }); if (certs && certs.acme) certs.acme.tos = true;
+        }
         const req = { domain: $('[data-dom]').value.trim(), aliases: $('[data-al]').value, proxy: $('[data-px]').value, targets, lb: $('[data-lb]').value, https: $('[data-https]').value,
           redirect: $('[data-redir]').checked, websocket: $('[data-ws]').checked, maxBody: $('[data-mb]').value.trim() || null,
-          certPath: cert || null, keyPath: cert ? cert.replace(/fullchain\.pem$/, 'privkey.pem').replace(/\.crt$/, '.key').replace(/cert\.pem$/, 'privkey.pem') : null };
+          certPath: cert || null, keyPath: cert ? ($('[data-key]').value.trim() || null) : null };
         const plan = await API.post('/proxies/expose/plan', req);
         previewExpose(req, plan, () => dlg.close());
         return false; // keep the form for "Back"
@@ -116,32 +124,34 @@ Router.register('proxies', async (content, params = {}) => {
       : plan.changes.map(c => `<div style="margin-bottom:8px"><div class="td-mono text-sm" style="margin-bottom:4px">${e(c.path)}${c.before ? '' : ' <span class="ui-sub">(new file)</span>'}</div>${lineDiffHtml(c.before || '', c.text)}</div>`).join('');
     const steps = [
       ...plan.join.map(n => `Join ${e(plan.proxy.name)} to the network <b>${e(n)}</b> (no restart)`),
-      ...(plan.mode === 'labels' ? ['Show the labels to add to the container'] : [`Write ${plan.changes.length} file${plan.changes.length === 1 ? '' : 's'} (earlier versions are kept)`, 'Run the config check', 'Reload the proxy']),
+      ...(plan.mode === 'labels' ? [plan.project ? `Add the labels to <b>${e(plan.project)}</b> (DockGate's override — your compose files are not changed) and re-create the service, or copy them yourself` : 'Show the labels to add to the container'] : [`Write ${plan.changes.length} file${plan.changes.length === 1 ? '' : 's'} (earlier versions are kept)`, 'Run the config check', 'Reload the proxy']),
       ...(plan.flow === 'letsencrypt' ? ["Ask Let's Encrypt for the certificate (checked over http://" + e(req.domain) + '/.well-known/…)', 'Write the certificate and switch the site to HTTPS', 'DockGate renews it 30 days before it expires'] : []),
     ];
     showModal(`Preview — ${e(req.domain)}`, `${plan.notes.map(n => `<div class="insight-card warning" style="margin-bottom:8px"><div>${e(n)}</div></div>`).join('')}
       <ol style="margin:0 0 10px 18px;padding:0">${steps.map(s => `<li>${s}</li>`).join('')}</ol>${diffs}`, [
       { label: 'Back' },
-      { label: plan.mode === 'labels' ? 'Show the labels' : 'Apply', className: 'btn btn-primary', onClick: async () => {
-        showToast(plan.flow === 'letsencrypt' ? "Applying — Let's Encrypt can take a minute…" : 'Applying…', 'info');
-        try { const r = await API.post('/proxies/expose', req); if (r.ok) closeWizard(); showResult(r.ok ? `${req.domain} is set up` : `${req.domain} — not done`, r, reloadAll); }
+      ...(plan.mode === 'labels' ? [{ label: 'Show the labels', onClick: async () => { try { const r = await API.post('/proxies/expose', req); showResult(`Labels for ${req.domain}`, r); } catch (er) { showToast(er.message, 'error'); } } }] : []),
+      ...(plan.mode !== 'labels' || plan.project ? [{ label: plan.mode === 'labels' ? `Add to ${plan.project}` : 'Apply', className: 'btn btn-primary', onClick: async () => {
+        showToast(plan.flow === 'letsencrypt' ? "Applying — Let's Encrypt can take a minute…" : plan.mode === 'labels' ? 'Re-creating the service with the labels…' : 'Applying…', 'info');
+        try { const r = await API.post('/proxies/expose', { ...req, applyLabels: plan.mode === 'labels' }); if (r.ok) closeWizard(); showResult(r.ok ? `${req.domain} is set up` : `${req.domain} — not done`, r, reloadAll); }
         catch (er) { showToast(er.message, 'error'); }
-      } }]);
+      } }] : [])]);
   }
 
   // ---------- one site's actions ----------
   function siteMenu(s) {
     const p = proxyOf(s.proxy);
     const fileKind = FILE_KINDS.includes(p.kind) || p.kind === 'npm';
-    const canCert = p.kind === 'nginx';
+    const canCert = p.kind === 'nginx' || p.kind === 'apache';
     const canLb = ['nginx', 'caddy', 'haproxy'].includes(p.kind) && (s.targetsAll || []).length;
     const items = [
       [`<a class="btn btn-secondary" href="${s.https ? 'https' : 'http'}://${e(s.domain)}" target="_blank" rel="noopener">Open ↗</a>`, 'Open the site in a new tab.'],
       [UI.btn('+ Uptime check', 'data-a="up"'), 'Watch it on Web → Uptime (status, response time, certificate days).'],
+      ...(['nginx', 'caddy'].includes(p.kind) ? [[UI.btn('Site settings…', 'data-a="settings"'), 'Names, where it goes, WebSockets, upload limit, http → https — as a form.']] : []),
       ...(fileKind && s.file && s.file.startsWith('/') ? [[UI.btn('Edit the config', 'data-a="edit"'), `${e(s.file)}${s.line ? ':' + s.line : ''}`]] : []),
       ...(canLb ? [[UI.btn('Load balancing…', 'data-a="lb"'), 'The containers behind the site, the method, backup servers.']] : []),
       ...(canCert ? [[UI.btn(s.https ? "Use a Let's Encrypt certificate" : 'Add HTTPS (Let\'s Encrypt)', 'data-a="cert"'), s.https ? 'DockGate gets the certificate and renews it; the site\'s certificate lines are switched to it.' : 'DockGate gets a certificate, adds the HTTPS server and sends http to https.']] : []),
-      ...(fileKind ? [[UI.btn('Remove the site', 'data-a="rm" class="btn btn-danger"'), 'Only sites DockGate added; the earlier config is kept as a version.']] : []),
+      ...(fileKind || ['traefik', 'caddy-docker-proxy'].includes(p.kind) ? [[UI.btn('Remove the site', 'data-a="rm" class="btn btn-danger"'), fileKind ? 'Only sites DockGate added; the earlier config is kept as a version.' : 'Only labels DockGate added to a Compose project; the service is re-created without them.']] : []),
     ];
     const m = showModal(e(s.domain), `<div class="ui-sub" style="margin-bottom:10px">${e(s.proxyName)} → ${e(s.target ? s.target.label : '—')}</div>${items.map(([b, t]) => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)"><div style="min-width:230px">${b}</div><div class="ui-sub">${t}</div></div>`).join('')}`, [{ label: 'Close' }]);
     const ov = m.overlay;
@@ -149,13 +159,47 @@ Router.register('proxies', async (content, params = {}) => {
     on('up', async () => { try { await API.post('/uptime', { name: s.domain, type: 'http', target: `${s.https ? 'https' : 'http'}://${s.domain}` }); showToast('Uptime check added', 'success'); m.close(); } catch (er) { showToast(er.message, 'error'); } });
     on('edit', () => { m.close(); go('files', { p: s.proxy, path: s.file }); });
     on('lb', () => { m.close(); lbDialog(s); });
+    on('settings', () => { m.close(); settingsDialog(s); });
     on('cert', () => { m.close(); showConfirm(`Let's Encrypt for ${e(s.domain)}`, `DockGate adds the challenge location to the HTTP server of ${e(s.domain)} (if missing), asks Let's Encrypt for a certificate, ${s.https ? 'switches the site\'s certificate lines to it' : 'adds an HTTPS server and sends http to https'}, checks and reloads. The domain's DNS must point to this server and port 80 must reach ${e(s.proxyName)}.`, async () => {
-      showToast('Asking Let\'s Encrypt…', 'info');
-      try { const r = await API.post(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}/cert`, { redirect: true }); showResult(r.ok ? `HTTPS for ${s.domain}` : `HTTPS for ${s.domain} — not done`, r, reloadAll); } catch (er) { showToast(er.message, 'error'); }
+      const ask = async () => {
+        showToast('Asking Let\'s Encrypt…', 'info');
+        try { const r = await API.post(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}/cert`, { redirect: true }); showResult(r.ok ? `HTTPS for ${s.domain}` : `HTTPS for ${s.domain} — not done`, r, reloadAll); }
+        catch (er) {
+          if (/terms/i.test(er.message)) showConfirm("Let's Encrypt's terms", 'Before DockGate asks for a certificate, accept the <a href="https://letsencrypt.org/repository/" target="_blank" rel="noopener">Let\'s Encrypt Subscriber Agreement</a>.', async () => { try { await API.put('/proxies/acme', { tos: true }); ask(); } catch (e2) { showToast(e2.message, 'error'); } });
+          else showToast(er.message, 'error');
+        }
+      };
+      ask();
     }); });
     on('rm', () => { m.close(); showConfirm(`Remove ${e(s.domain)}?`, `DockGate removes the site it added from ${e(s.proxyName)}, checks and reloads. The file is kept as a version you can restore.`, async () => {
       try { const r = await API.delete(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}`); showResult(r.ok ? `${s.domain} removed` : `${s.domain} — not removed`, r, reloadAll); } catch (er) { showToast(er.message, 'error'); }
     }, true); });
+  }
+
+  // ---------- a site's settings as a form ----------
+  async function settingsDialog(s) {
+    let r; try { r = await API.get(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}/settings`); } catch (er) { showToast(er.message, 'error'); return; }
+    const st = r.settings; const nginx = r.kind === 'nginx';
+    let tg = []; try { tg = await API.get('/proxies/targets'); } catch (er) { /* type it */ }
+    UI.dialog({ title: `Site settings — ${e(s.domain)}`, wide: true, saveLabel: 'Preview →', body: `
+      <div class="ui-sub" style="margin-bottom:8px">${e(s.proxyName)} · <span class="td-mono">${e(r.file)}</span>. Saving goes the safe way: the changed lines first, then check → reload → the sites must answer as before.</div>
+      <label class="ui-field"><span>Names</span><input class="input" data-sn value="${e(st.names.join(' '))}"></label>
+      <label class="ui-field" style="margin-top:8px"><span>Goes to</span>${st.target ? `<input class="input td-mono" data-st value="${e(st.target)}" list="px-set-addrs"><datalist id="px-set-addrs">${tg.flatMap(t => t.ports.map(pt => `<option value="${e(t.name)}:${pt}">`)).join('')}</datalist>` : `<div class="ui-sub">${st.upstream ? `Several servers (${e(st.upstream)}) — change them under Load balancing.` : 'Not a single host:port — change it in the editor.'}</div>`}</label>
+      ${nginx ? `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;align-items:center">
+        <label><input type="checkbox" data-sw ${st.websocket ? 'checked' : ''}> WebSockets</label>
+        ${st.https && st.http ? `<label><input type="checkbox" data-sr ${st.redirect ? 'checked' : ''}> Send http to https</label>` : ''}
+        <label style="display:flex;gap:6px;align-items:center">Upload limit <input class="input" data-sm value="${e(st.maxBody)}" placeholder="nginx default 1m" style="width:120px"></label></div>` : ''}`,
+      onSave: async (ov) => {
+        const q = (x) => ov.querySelector(x);
+        const body = { names: q('[data-sn]').value, ...(q('[data-st]') ? { target: q('[data-st]').value.trim() } : {}), ...(nginx ? { websocket: q('[data-sw]').checked, maxBody: q('[data-sm]').value.trim(), ...(q('[data-sr]') ? { redirect: q('[data-sr]').checked } : {}) } : {}) };
+        const plan = await API.post(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}/settings/plan`, body);
+        if (plan.same) { showToast('No change', 'info'); return false; }
+        showModal(`Save the settings of ${e(s.domain)}?`, `<div class="td-mono text-sm" style="margin-bottom:4px">${e(plan.file)}</div>${lineDiffHtml(plan.before, plan.after)}`, [{ label: 'Back' }, { label: 'Save, check and reload', className: 'btn btn-primary', onClick: async () => {
+          try { const x = await API.put(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}/settings`, body); showResult(x.ok ? `${s.domain} saved and reloaded` : `${s.domain} — not saved`, x, () => { if (x.ok) { ov.remove(); reloadAll(); } }); } catch (er) { showToast(er.message, 'error'); }
+        } }]);
+        return false;
+      },
+    });
   }
 
   // ---------- load balancing ----------
@@ -165,7 +209,7 @@ Router.register('proxies', async (content, params = {}) => {
     const names = { round_robin: 'Round robin — in turn', least_conn: 'Least connections', ip_hash: 'Same visitor → same server (IP hash)', random: 'Random', first: 'First available (failover)' };
     const row = (x) => `<tr data-srow><td><input class="input td-mono" data-addr value="${e(x.addr)}" list="px-lb-addrs" style="min-width:200px"></td><td><input class="input" data-w type="number" min="1" max="100" value="${x.weight || 1}" style="width:70px" ${lb.kind === 'caddy' ? 'disabled' : ''}></td><td style="text-align:center"><input type="checkbox" data-bk ${x.backup ? 'checked' : ''} ${lb.kind === 'caddy' ? 'disabled' : ''}></td><td style="text-align:center"><input type="checkbox" data-dn ${x.down ? 'checked' : ''}></td><td><button type="button" class="btn btn-xs btn-ghost" data-rm>✕</button></td></tr>`;
     UI.dialog({ title: `Load balancing — ${e(s.domain)}`, wide: true, saveLabel: 'Save, check and reload', body: `
-      <div class="ui-sub" style="margin-bottom:8px">${e(s.proxyName)} · <span class="td-mono">${e(lb.file)}</span>${lb.upstream ? ` · upstream <span class="td-mono">${e(lb.upstream)}</span>` : lb.single ? ' · one server now: DockGate makes an upstream for it' : ''}</div>
+      <div class="ui-sub" style="margin-bottom:8px">${e(s.proxyName)} · <span class="td-mono">${e(lb.file)}</span>${lb.upstream ? ` · upstream <span class="td-mono">${e(lb.upstream)}</span>` : lb.single ? ' · one server now: DockGate makes an upstream for it (nginx then needs each server\'s name to resolve when it reloads)' : ''}</div>
       <label class="ui-field"><span>Method</span><select class="select" data-m>${lb.methods.map(m => `<option value="${m}" ${m === lb.method ? 'selected' : ''}>${names[m] || m}</option>`).join('')}</select></label>
       <datalist id="px-lb-addrs">${tg.flatMap(t => t.ports.map(p => `<option value="${e(t.name)}:${p}">`)).join('')}</datalist>
       <table class="table" style="margin-top:8px;width:100%"><thead><tr><th>Server (host:port)</th><th>Weight</th><th>Backup</th><th>Off</th><th></th></tr></thead><tbody data-srows>${lb.servers.map(row).join('')}</tbody></table>
@@ -233,7 +277,7 @@ Router.register('proxies', async (content, params = {}) => {
     }
     if (tab === 'overview') {
       let certSum = null;
-      const certTile = (r) => { if (!r) return '<div class="ui-sub">reading…</div>'; const exp = r.certs.filter(c => c.daysLeft < 0).length, soon = r.certs.filter(c => c.daysLeft >= 0 && c.daysLeft <= 14).length; return `<div style="font-size:22px;font-weight:700;color:${exp ? 'var(--danger)' : soon ? 'var(--warning)' : 'var(--text-primary)'}">${r.certs.length}</div><div style="font-weight:600">certificates</div><div class="ui-sub">${exp ? `${exp} expired · ` : ''}${soon ? `${soon} expire in 14 days` : exp ? '' : 'none expires soon'}${r.managed && r.managed.length ? ` · ${r.managed.length} renewed by DockGate` : ''}</div>`; };
+      const certTile = (r) => { if (!r) return '<div class="ui-sub">reading…</div>'; const w = r.certs.filter(c => !c.internal && !c.staging); const exp = w.filter(c => c.daysLeft < 0).length, soon = w.filter(c => c.daysLeft >= 0 && c.daysLeft <= 14).length; const stale = r.certs.filter(c => c.served && c.served.stale).length; return `<div style="font-size:22px;font-weight:700;color:${exp ? 'var(--danger)' : soon ? 'var(--warning)' : 'var(--text-primary)'}">${r.certs.length}</div><div style="font-weight:600">certificates</div><div class="ui-sub">${exp ? `${exp} expired · ` : ''}${soon ? `${soon} expire in 14 days` : exp ? '' : 'none expires soon'}${r.managed && r.managed.length ? ` · ${r.managed.length} renewed by DockGate` : ''}${stale ? ` · <span style="color:var(--warning)">${stale} renewed but not loaded</span>` : ''}</div>`; };
       API.get('/proxies/certs').then(r => { certSum = r; const el = body.querySelector('[data-certsum]'); if (el) el.innerHTML = certTile(r); }).catch(() => {});
       const bad = d.warnings.filter(w => w.level === 'bad').length;
       const web = d.ports.filter(p => p.port === 80 || p.port === 443);
@@ -273,40 +317,79 @@ Router.register('proxies', async (content, params = {}) => {
       body.querySelector('[data-q]').oninput = (ev) => drawRows(ev.target.value);
       const x2 = body.querySelector('[data-expose2]'); if (x2) x2.onclick = () => exposeWizard();
     } else if (tab === 'certs') {
-      body.innerHTML = '<div class="card" style="padding:20px"><div class="ui-sub">Reading certificates…</div></div>';
-      let r; try { r = await API.get('/proxies/certs'); } catch (er) { body.innerHTML = UI.errorState(er); return; }
+      const view = params.view === 'all' ? 'all' : 'here';
+      const head = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><div class="tabs" style="margin:0"><button class="tab ${view === 'here' ? 'active' : ''}" data-cv="here">This server</button><button class="tab ${view === 'all' ? 'active' : ''}" data-cv="all">All servers</button></div><span style="flex:1"></span>${view === 'all' ? UI.btn('Check all servers now', 'data-checkall') : UI.btn('↻ Read again', 'data-reread')}</div>`;
+      const wireHead = () => { body.querySelectorAll('[data-cv]').forEach(b => b.onclick = () => go('certs', { view: b.dataset.cv })); const rr = body.querySelector('[data-reread]'); if (rr) rr.onclick = () => go('certs', { view, t: Date.now() }); };
+      const renewalCell = (c) => {
+        const bad = c.renewer === 'none' || /no timer|not checked|stopped|forgotten|off$/.test(c.renewal);
+        return `${c.internal ? UI.chip(e(c.renewal)) : bad ? UI.pill('bad', e(c.renewal)) : c.renewer === 'dockgate' ? UI.pill('ok', e(c.renewal)) : e(c.renewal)}${c.staging ? `<div>${UI.chip('test certificate (not trusted)')}</div>` : ''}${c.renewError ? `<div class="ui-sub" style="color:var(--danger)" title="${e(c.renewError)}">last renewal failed</div>` : ''}`;
+      };
+      const daysCell = (c) => c.internal ? UI.chip(c.daysLeft <= 1 ? 'short-lived' : `${c.daysLeft} days`) : sslPill(c.daysLeft);
+      const servedCell = (c) => !c.served ? '' : c.served.stale ? `<div style="margin-top:4px">${UI.pill('warn', 'old one still served')} ${UI.btn('Reload', `data-reload="${e(c.served.proxyId || '')}" title="The renewed file is on disk, but ${e(c.served.proxy)} still serves the certificate that ends ${e(c.served.notAfter.slice(0, 10))}"`)}</div>` : '<div class="ui-sub">✓ served</div>';
+      if (view === 'all') {
+        body.innerHTML = `${head}<div class="card" style="padding:20px"><div class="ui-sub">Reading the last check…</div></div>`; wireHead();
+        let f; try { f = await API.get('/proxies/certs/fleet'); } catch (er) { body.innerHTML = head + UI.errorState(er); wireHead(); return; }
+        if (!alive()) return;
+        const rows = f.flatMap(sv => (sv.certs || []).map(c => ({ ...c, server: sv.name })));
+        rows.sort((x, y) => (x.internal ? 1 : 0) - (y.internal ? 1 : 0) || x.daysLeft - y.daysLeft);
+        body.innerHTML = `${head}
+          ${f.some(x => x.error) ? f.filter(x => x.error).map(x => `<div class="insight-card warning" style="margin-bottom:8px"><div>${e(x.name)}: ${e(x.error)}</div></div>`).join('') : ''}
+          ${f.flatMap(sv => (sv.errors || []).map(er => `<div class="insight-card warning" style="margin-bottom:8px"><div><b>${e(sv.name)} · ${e(er.proxy)}</b> logged certificate errors:<pre class="td-mono text-xs" style="white-space:pre-wrap;margin:6px 0 0">${e(er.lines.slice(-2).join('\n'))}</pre></div></div>`)).join('')}
+          ${UI.table([{ label: 'Server' }, { label: 'Names' }, { label: 'Proxy' }, { label: 'Expires' }, { label: '' }, { label: 'Renewal' }], rows.map(c => ({ cells: [
+            e(c.server), `<b style="display:inline-block;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom" title="${e(c.names.join(', '))}">${e(c.names[0])}</b>${c.names.length > 1 ? `<div class="ui-sub">+${c.names.length - 1} more</div>` : ''}`,
+            e((c.proxies || []).join(', ')), `<span class="td-mono">${e(String(c.validTo).slice(0, 10))}</span>`, `${daysCell(c)}${c.served && c.served.stale ? `<div>${UI.pill('warn', 'old one still served')}</div>` : ''}`, renewalCell(c)] })), { minWidth: 0, empty: 'No check yet — press "Check all servers now".' })}
+          <div class="ui-sub" style="margin-top:8px">DockGate checks every certificate on every server once a day${f.length ? ` (last: ${e(new Date(Math.max(...f.map(x => x.at || 0))).toLocaleString())})` : ''} and alerts 14, 7, 3 and 1 days before one expires — whoever should renew it — and when a renewed certificate is not loaded or Caddy / Traefik log certificate errors.</div>`;
+        wireHead();
+        body.querySelector('[data-checkall]').onclick = async (ev) => { const done = busy(ev.target, 'Checking every server…'); try { await API.post('/proxies/certs/check', {}); go('certs', { view: 'all', t: Date.now() }); } catch (er) { showToast(er.message, 'error'); } finally { done(); } };
+        return;
+      }
+      body.innerHTML = `${head}<div class="card" style="padding:20px"><div class="ui-sub">Reading certificates (and what each proxy really serves)…</div></div>`; wireHead();
+      let r; try { r = await API.get(`/proxies/certs${params.t ? '?fresh=1' : ''}`); } catch (er) { body.innerHTML = head + UI.errorState(er); wireHead(); return; }
       if (!alive()) return;
-      const nginxSite = (dom) => sites.find(s => s.domain === dom && proxyOf(s.proxy).kind === 'nginx');
-      const managedPaths = new Set(r.managed.map(m => m.certPath));
+      const certSite = (dom) => sites.find(s => s.domain === dom && ['nginx', 'apache'].includes(proxyOf(s.proxy).kind));
       const a = r.acme;
-      body.innerHTML = `${UI.table([{ label: 'Names' }, { label: 'Issuer' }, { label: 'Kept by' }, { label: 'Expires' }, { label: '' }, { label: 'Renewal' }], r.certs.map(c => {
-        const mine = c.paths.some(x => managedPaths.has(x)); const ns = nginxSite(c.names[0]);
-        return { cells: [
-          `<b style="display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom" title="${e(c.names.join(', '))}">${e(c.names.slice(0, 3).join(', '))}</b>${c.names.length > 3 ? `<div class="ui-sub">+${c.names.length - 3} more</div>` : ''}${c.selfSigned ? '<div class="ui-sub">self-signed</div>' : ''}`,
-          `<div style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(c.issuer)}">${e(c.issuer)}</div>`, `${mine ? 'DockGate' : e(c.source)}<div class="ui-sub td-mono" style="max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(c.paths.join('\n'))}">${e(c.paths[0].split('/').slice(-2).join('/'))}</div>`, `<span class="td-mono">${e(c.validTo.slice(0, 10))}</span>`, sslPill(c.daysLeft),
-          (mine ? UI.pill('ok', 'DockGate — auto') : /none|no renewal/.test(c.renewal) ? UI.pill('bad', e(c.renewal)) : e(c.renewal)) +
-          (!mine && ns && /none|no renewal/.test(c.renewal) ? `<div style="margin-top:4px">${UI.btn("Use Let's Encrypt", `data-le="${e(ns.proxy)}|${e(ns.domain)}"`)}</div>` : '')] };
-      }), { minWidth: 0, empty: 'No certificate found.' })}
-        ${r.uncovered.length ? `<div class="insight-card warning" style="margin-top:10px"><div>HTTPS sites whose certificate DockGate could not read: ${r.uncovered.map(dom => `${e(dom)}${nginxSite(dom) ? ` ${UI.btn("Use Let's Encrypt", `data-le="${e(nginxSite(dom).proxy)}|${e(dom)}"`)}` : ''}`).join(', ')}</div></div>` : ''}
-        ${r.notes.length ? `<details style="margin-top:8px"><summary class="ui-sub">Notes (${r.notes.length})</summary><div class="ui-sub">${r.notes.map(e).join('<br>')}</div></details>` : ''}
+      const cb = r.certbot;
+      body.innerHTML = `${head}
+        ${(r.errors || []).map(er => `<div class="insight-card warning" style="margin-bottom:8px"><div><b>${e(er.proxy)}</b> logged certificate errors (it renews by itself — this is why it may not):<pre class="td-mono text-xs" style="white-space:pre-wrap;margin:6px 0 0">${e(er.lines.join('\n'))}</pre></div></div>`).join('')}
+        ${UI.table([{ label: 'Names' }, { label: 'Issuer' }, { label: 'Kept by' }, { label: 'Expires' }, { label: '' }, { label: 'Renewal' }], r.certs.map(c => {
+          const cs = certSite(c.names[0]); const certbotName = c.renewer === 'certbot' && cb ? (c.paths[0].match(/\/letsencrypt\/live\/([^/]+)\//) || [])[1] : null;
+          return { cells: [
+            `<b style="display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom" title="${e(c.names.join(', '))}">${e(c.names.slice(0, 3).join(', '))}</b>${c.names.length > 3 ? `<div class="ui-sub">+${c.names.length - 3} more</div>` : ''}${c.selfSigned ? '<div class="ui-sub">self-signed</div>' : ''}`,
+            `<div style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(c.issuer)}">${e(c.issuer)}</div>`, `${e(c.source)} <span class="ui-sub">· ${e(c.proxies.join(', '))}</span><div class="ui-sub td-mono" style="max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(c.paths.join('\n'))}">${e(c.paths[0].split('/').slice(-2).join('/'))}</div>`,
+            `<span class="td-mono">${e(c.validTo.slice(0, 10))}</span>`, `${daysCell(c)}${servedCell(c)}`,
+            renewalCell(c) + (c.renewer === 'none' && cs ? `<div style="margin-top:4px">${UI.btn("Use Let's Encrypt", `data-le="${e(cs.proxy)}|${e(cs.domain)}"`)}</div>` : '') + (certbotName ? `<div style="margin-top:4px">${UI.btn('Renew now (certbot)', `data-cbrenew="${e(certbotName)}"`)}</div>` : '')] };
+        }), { minWidth: 0, empty: 'No certificate found.' })}
+        ${r.uncovered.length ? `<div class="insight-card warning" style="margin-top:10px"><div>HTTPS sites whose certificate DockGate could not read: ${r.uncovered.map(dom => `${e(dom)}${certSite(dom) ? ` ${UI.btn("Use Let's Encrypt", `data-le="${e(certSite(dom).proxy)}|${e(dom)}"`)}` : ''}`).join(', ')}</div></div>` : ''}
+        ${r.notes.length ? `<details style="margin-top:8px" ${r.notes.some(n => /certbot renews/.test(n)) ? 'open' : ''}><summary class="ui-sub">Notes (${r.notes.length})</summary><div class="ui-sub">${r.notes.map(e).join('<br>')}</div></details>` : ''}
         <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:14px">
+          ${cb && cb.installed ? card('certbot on this server', `<div class="ui-sub" style="margin-bottom:8px">Renewal: ${cb.timer ? UI.pill('ok', `${e(cb.timer)} on`) : UI.pill('bad', 'no timer or cron')} · After a renewal: ${cb.reloads ? UI.pill('ok', `reload hook (${e(cb.hooks.slice(0, 2).join(', '))})`) : UI.pill('bad', 'nothing reloads the web server')}</div>${cb.reloads ? '' : UI.primary('Add a reload hook…', 'data-cbhook')}`) : ''}
           ${card("Let's Encrypt certificates DockGate renews", r.managed.length ? UI.table([{ label: 'Names' }, { label: 'Proxy' }, { label: 'Expires' }, { label: 'Auto renew' }, { label: 'Last try' }, { label: '', align: 'right' }], r.managed.map(m => ({ cells: [
             `<b style="display:inline-block;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom" title="${e(m.names.join(', '))}">${e(m.names.join(', '))}</b><div class="ui-sub td-mono" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(m.certPath)}">${e(m.certPath)}</div>`, e(m.proxy), `${m.notAfter ? `<span class="td-mono">${e(m.notAfter.slice(0, 10))}</span> ` : ''}${sslPill(m.daysLeft)}`,
             `<label><input type="checkbox" data-auto="${m.id}" ${m.auto ? 'checked' : ''}> on</label>`,
             m.lastError ? `<span style="color:var(--danger)" title="${e(m.lastError)}">failed: ${e(m.lastError.slice(0, 60))}</span>` : m.lastTry ? `<span class="ui-sub" title="${e(new Date(m.lastTry).toLocaleString())}">${e(new Date(m.lastTry).toLocaleDateString())}</span>` : '',
-            `${UI.btn('Renew now', `data-renew="${m.id}"`)} ${UI.btn('Put back', `data-redeploy="${m.id}" title="Write the certificate files to the proxy again (after the container was re-created)"`)} ${UI.btn('Forget', `data-forget="${m.id}"`)}`] })), { minWidth: 0 }) : `<div class="ui-sub">None yet. Put a container on a domain with "Let's Encrypt", or use "Use Let's Encrypt" on an nginx site. DockGate answers the check through the proxy itself (port 80), keeps the certificate and renews it ${a.renewDays} days before it expires; a failed renewal is sent to your notification channels.</div>`)}
+            `${UI.btn('Renew now', `data-renew="${m.id}"`)} ${UI.btn('Put back', `data-redeploy="${m.id}" title="Write the certificate files to the proxy again (after the container was re-created)"`)} ${UI.btn('Forget', `data-forget="${m.id}"`)}`] })), { minWidth: 0 }) : `<div class="ui-sub">None yet. Put a container on a domain with "Let's Encrypt", or use "Use Let's Encrypt" on an nginx or Apache site. DockGate answers the check through the proxy itself (port 80), keeps the certificate and renews it ${a.renewDays} days before it expires; a failed renewal is sent to your notification channels.</div>`)}
           ${card("Let's Encrypt account", `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;align-items:end"><label class="ui-field"><span>Email <span class="ui-sub">(Let's Encrypt writes before a certificate expires)</span></span><input class="input" data-ae value="${e(a.email)}" placeholder="you@example.com"></label>
             <label class="ui-field"><span>Certificate authority</span><select class="select" data-ad><option value="letsencrypt" ${a.directory === 'letsencrypt' ? 'selected' : ''}>Let's Encrypt</option><option value="letsencrypt-staging" ${a.directory === 'letsencrypt-staging' ? 'selected' : ''}>Let's Encrypt staging (tests — not trusted)</option>${!['letsencrypt', 'letsencrypt-staging'].includes(a.directory) ? `<option value="${e(a.directory)}" selected>${e(a.directory)}</option>` : ''}<option value="__custom">Another ACME URL…</option></select></label>
             <label class="ui-field"><span>Renew this many days before expiry</span><input class="input" data-ar type="number" min="7" max="60" value="${a.renewDays}"></label>
-            <div>${UI.primary('Save', 'data-asave')}</div></div>`)}
+            <div>${UI.primary('Save', 'data-asave')}</div></div>
+            <label style="display:block;margin-top:10px"><input type="checkbox" data-atos ${a.tos ? 'checked' : ''}> I accept the certificate authority's terms (<a href="${e(a.terms)}" target="_blank" rel="noopener">Let's Encrypt Subscriber Agreement</a>) — needed before DockGate asks for a certificate.</label>`)}
         </div>
-        <div class="ui-sub" style="margin-top:8px">Read from the files nginx names (<span class="td-mono">ssl_certificate</span>), certbot's <span class="td-mono">/etc/letsencrypt/live</span>${d.remote ? '' : ' (SSH servers)'}, Caddy's data folder and Traefik's acme.json. Caddy and Traefik renew their own certificates.</div>`;
+        <div class="ui-sub" style="margin-top:8px">Read from the certificate files in the configs (nginx <span class="td-mono">ssl_certificate</span>, Apache <span class="td-mono">SSLCertificateFile</span>, HAProxy <span class="td-mono">bind … crt</span>), certbot's <span class="td-mono">/etc/letsencrypt/live</span>${d.remote ? '' : ' (SSH servers)'}, Caddy's data folder and Traefik's acme.json. "✓ served" means the proxy answers with this certificate (asked from inside it).</div>`;
+      wireHead();
       body.querySelectorAll('[data-le]').forEach(b => b.onclick = () => { const [pid, dom] = b.dataset.le.split('|'); siteMenu(sites.find(s => s.proxy === pid && s.domain === dom)); });
+      body.querySelectorAll('[data-reload]').forEach(b => b.onclick = async () => { const done = busy(b, 'Reloading…'); try { const x = await API.post(`/proxies/${enc(b.dataset.reload)}/reload`, {}); showResult(x.ok ? 'Reloaded — the renewed certificate is served' : 'Not reloaded', { ...x, steps: [{ t: x.ok ? 'Check ok, reloaded' : `Stopped at: ${x.stage}`, ok: x.ok }] }, () => go('certs', { t: Date.now() })); } catch (er) { showToast(er.message, 'error'); } finally { done(); } });
+      body.querySelectorAll('[data-cbrenew]').forEach(b => b.onclick = () => showConfirm(`certbot renew ${e(b.dataset.cbrenew)}?`, 'certbot asks for a new certificate now (also before its usual 30 days), then the web servers that use it are checked and reloaded.', async () => {
+        showToast('certbot is running…', 'info');
+        try { const x = await API.post('/proxies/certbot/renew', { name: b.dataset.cbrenew }); showResult(x.ok ? 'certbot renewed' : 'certbot failed', { ...x, steps: [{ t: x.ok ? 'certbot renew — ok, web servers reloaded' : 'certbot renew — failed', ok: x.ok }] }, () => go('certs', { t: Date.now() })); } catch (er) { showToast(er.message, 'error'); }
+      }));
+      const hk = body.querySelector('[data-cbhook]');
+      if (hk) hk.onclick = async () => { try { const pv = await API.get('/proxies/certbot/hook'); showModal('Add a certbot reload hook', `<div class="ui-sub" style="margin-bottom:6px">certbot runs this after every renewal, so the web servers serve the new certificate:</div><div class="td-mono text-sm">${e(pv.path)}</div><pre class="td-mono text-xs" style="white-space:pre-wrap;background:var(--bg-tertiary);padding:8px;border-radius:6px">${e(pv.text)}</pre>`, [{ label: 'Cancel' }, { label: 'Write it', className: 'btn btn-primary', onClick: async () => { try { await API.post('/proxies/certbot/hook', {}); showToast('Reload hook written', 'success'); go('certs', { t: Date.now() }); } catch (er) { showToast(er.message, 'error'); } } }]); } catch (er) { showToast(er.message, 'error'); } };
       body.querySelectorAll('[data-auto]').forEach(c => c.onchange = async () => { try { await API.put(`/proxies/managed-certs/${c.dataset.auto}/auto`, { auto: c.checked }); showToast(c.checked ? 'Auto renew on' : 'Auto renew off', 'success'); } catch (er) { showToast(er.message, 'error'); } });
-      body.querySelectorAll('[data-renew]').forEach(b => b.onclick = async () => { const done = busy(b, 'Renewing…'); try { await API.post(`/proxies/managed-certs/${b.dataset.renew}/renew`, {}); showToast('Renewed and reloaded', 'success'); draw(); } catch (er) { showToast(er.message, 'error'); } finally { done(); } });
+      body.querySelectorAll('[data-renew]').forEach(b => b.onclick = async () => { const done = busy(b, 'Renewing…'); try { await API.post(`/proxies/managed-certs/${b.dataset.renew}/renew`, {}); showToast('Renewed and reloaded', 'success'); go('certs', { t: Date.now() }); } catch (er) { showToast(er.message, 'error'); } finally { done(); } });
       body.querySelectorAll('[data-redeploy]').forEach(b => b.onclick = async () => { const done = busy(b, 'Writing…'); try { const x = await API.post(`/proxies/managed-certs/${b.dataset.redeploy}/redeploy`, {}); showToast(x.ok ? 'Certificate written and reloaded' : 'Written, but the config check failed', x.ok ? 'success' : 'error'); } catch (er) { showToast(er.message, 'error'); } finally { done(); } });
-      body.querySelectorAll('[data-forget]').forEach(b => b.onclick = () => showConfirm('Forget this certificate?', 'DockGate stops renewing it. The files on the proxy stay.', async () => { try { await API.delete(`/proxies/managed-certs/${b.dataset.forget}`); draw(); } catch (er) { showToast(er.message, 'error'); } }, true));
+      body.querySelectorAll('[data-forget]').forEach(b => b.onclick = () => showConfirm('Forget this certificate?', 'DockGate stops renewing it. The files on the proxy stay.', async () => { try { await API.delete(`/proxies/managed-certs/${b.dataset.forget}`); go('certs', { t: Date.now() }); } catch (er) { showToast(er.message, 'error'); } }, true));
       body.querySelector('[data-ad]').onchange = (ev) => { if (ev.target.value === '__custom') { const u = prompt('ACME directory URL (https://…)'); if (u) { ev.target.insertAdjacentHTML('afterbegin', `<option value="${e(u)}" selected>${e(u)}</option>`); } else ev.target.value = a.directory; } };
+      body.querySelector('[data-atos]').onchange = async (ev) => { try { await API.put('/proxies/acme', { tos: ev.target.checked }); showToast(ev.target.checked ? 'Terms accepted' : 'Terms not accepted — DockGate will not ask for certificates', ev.target.checked ? 'success' : 'info'); } catch (er) { showToast(er.message, 'error'); } };
       body.querySelector('[data-asave]').onclick = async () => { try { await API.put('/proxies/acme', { email: body.querySelector('[data-ae]').value, directory: body.querySelector('[data-ad]').value, renewDays: body.querySelector('[data-ar]').value }); showToast('Saved', 'success'); } catch (er) { showToast(er.message, 'error'); } };
     } else if (tab === 'files') {
       const withFiles = proxies.filter(p => p.running);
