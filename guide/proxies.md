@@ -155,7 +155,10 @@ Every certificate the proxies use is listed, with **who renews it**. DockGate re
 | Caddy `tls internal`, Traefik's default | Caddy / Traefik | marked internal; not counted as expiring |
 | Nginx Proxy Manager | Nginx Proxy Manager | its Let's Encrypt certificates are automatic; uploaded ones are not renewed |
 | nginx-proxy | acme-companion | automatic when an acme-companion container runs; a stopped one is shown |
+| acme.sh (`~/.acme.sh`) | acme.sh's own cron | reads them and watches their expiry |
 | A file (nginx `ssl_certificate`, Apache `SSLCertificateFile`, HAProxy `bind … crt`) | nobody | red **none (a file)**; nginx and Apache sites get **Use Let's Encrypt** |
+
+**Where certificates are read from.** nginx's `ssl_certificate` wherever it is written: in the server block, at `http` level, or in an included snippet (`include snippets/ssl.conf;`). Paths with variables (`$ssl_server_name`) can not be read. Also Apache's `SSLCertificateFile`, HAProxy's `bind … crt`, Traefik's file provider `certFile`, `acme.json`, Caddy's data folder, and on the server itself `/etc/letsencrypt/live` and `~/.acme.sh`. These are read as root when DockGate can (`sudo` is not needed when DockGate logs in as root).
 
 **Is the new certificate served?** For nginx, Apache and HAProxy, DockGate asks the proxy (from inside it, on 127.0.0.1:443) which certificate it really serves. "✓ served" means it answers with the certificate on disk. **Old one still served** means the file was renewed but the proxy was not reloaded. **Reload** fixes it (after a config check).
 

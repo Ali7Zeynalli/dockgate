@@ -2,6 +2,16 @@
 
 ---
 
+## [2.85.1] - 2026-11-23
+
+### Fixed
+- **Certificates were missing in Proxies & SSL → Certificates.**
+  - nginx: only an `ssl_certificate` written in the server block itself was read. One in an included snippet (`include snippets/ssl.conf;`) or at `http` level was missed, with its expiry and alerts. Every `ssl_certificate` in the config is now read.
+  - On the server itself, `/etc/letsencrypt` and the other host files were read only through `sudo`. A server without `sudo` (logged in as root) showed no certbot certificates. They are now read as root when DockGate already is root, and through `sudo` otherwise.
+  - Certificates from acme.sh (`~/.acme.sh`) and from Traefik's file provider (`certFile`) are read too.
+
+---
+
 ## [2.85.0] - 2026-11-23
 
 ### Fixed

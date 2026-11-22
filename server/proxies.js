@@ -73,6 +73,8 @@ async function hostExec(server, cmd) {
 /** A shell loop that prints each file of the globs as "@@F path" + its text (paths with odd characters are left out). */
 const catGlobs = (globs) => `for f in ${globs.filter(g => /^[\w./*@+-]+$/.test(g)).join(' ')}; do [ -f "$f" ] && { echo "@@F $f"; cat "$f"; echo; }; done; true`;
 const splitCat = (out) => String(out || '').split(/^@@F /m).slice(1).map(ch => { const nl = ch.indexOf('\n'); return { path: ch.slice(0, nl).trim(), text: ch.slice(nl + 1).replace(/\n$/, '') }; });
+/** A script run as root on a host: root already (the local helper, a root SSH login), sudo when it works, else as is. */
+const rootSh = (script) => `if [ "$(id -u)" = 0 ]; then sh -c ${shq(script)}; elif sudo -n true 2>/dev/null; then sudo -n sh -c ${shq(script)}; else sh -c ${shq(script)}; fi`;
 const sudoTry = (cmd) => `sudo -n ${cmd} 2>&1 || ${cmd} 2>&1`;
 
 // ---------- the scan ----------
@@ -167,7 +169,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
         if (kind === 'nginx' && !realNames && !parsed.servers.some(sv => sv.proxyPass || sv.locations.some(l => l.proxyPass)) && !p.ports.some(x => [80, 443].includes(x))) { p.appServer = true; return; }
         const v = await execIn(c, ct.Id, ['nginx', '-v']).catch(() => null); const vm = v && (v.err + v.out).match(/nginx\/(\S+)|openresty\/(\S+)/); if (vm) p.version = vm[1] || vm[2];
         for (const s of P.nginxSites(parsed).filter(x => x.domain !== 'localhost')) addSite({ ...s, managed: kind === 'npm' && /^\/data\//.test(s.file) ? 'Nginx Proxy Manager' : kind === 'nginx-proxy' ? 'nginx-proxy' : null }, p);
-        raw.certPaths[p.id] = [...new Set(parsed.servers.map(s => s.cert).filter(Boolean))];
+        raw.certPaths[p.id] = P.nginxAllCerts(parsed);
       } else if (kind === 'caddy') {
         const path = (() => { const cmd = (ct.Command || '') + ''; const m = cmd.match(/--config\s+(\S+)/); return m ? m[1] : '/etc/caddy/Caddyfile'; })();
         const r = await execIn(c, ct.Id, ['cat', path]);
@@ -266,7 +268,7 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnpH 2>/dev/null || ss -l
           p.config = '/etc/nginx'; if (!parsed.files.length) p.problem = 'nginx -T needs root: give the SSH user passwordless sudo';
           const v = await hostExec(server, 'nginx -v 2>&1'); const vm = v && v.out.match(/nginx\/(\S+)/); if (vm) p.version = vm[1];
           for (const s of P.nginxSites(parsed).filter(x => x.domain !== 'localhost')) addSite(s, p);
-          raw.certPaths[p.id] = [...new Set(parsed.servers.map(s => s.cert).filter(Boolean))];
+          raw.certPaths[p.id] = P.nginxAllCerts(parsed);
         } else if (kind === 'caddy') {
           const t = await hostExec(server, sudoTry('cat /etc/caddy/Caddyfile'));
           p.config = '/etc/caddy/Caddyfile'; raw.files[p.id] = [{ path: p.config, text: t.out }];
@@ -284,7 +286,7 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnpH 2>/dev/null || ss -l
           const vh = P.parseApacheS(t.out);
           for (const s of vh) addSite({ domain: s.domain, https: s.port === 443, file: s.file, line: s.line, targets: [] }, p);
           const list = [...new Set(vh.map(x => x.file))].slice(0, 30);
-          if (list.length) { const fr = await hostExec(server, `sudo -n sh -c ${shq(list.map(f => `[ -f '${f}' ] && { echo "# configuration file ${f}:"; cat '${f}'; echo; }`).join('; ') + '; true')} 2>/dev/null`); raw.files[p.id] = P.parseNginxT(fr.out).files; }
+          if (list.length) { const fr = await hostExec(server, rootSh(list.map(f => `[ -f '${f}' ] && { echo "# configuration file ${f}:"; cat '${f}'; echo; }`).join('; ') + '; true')); raw.files[p.id] = P.parseNginxT(fr.out).files; }
         }
       } catch (e) { p.problem = e.message; }
     }
@@ -421,7 +423,7 @@ async function certificates({ ctx = activeCtx(), fresh = false, served = true } 
   const found = []; // { pem, source, path, proxy, auto, renewer }
   const notes = []; const errors = []; // errors: { proxy, lines }
   const helper = (k) => (d.helpers || []).find(h => h.kind === k);
-  const readIn = async (p, paths) => p.where === 'container' ? execIn(c, p.cid, ['sh', '-c', catCerts(paths)], { user: 'root' }) : hostExec(server, `sudo -n sh -c ${shq(catCerts(paths))} 2>/dev/null || sh -c ${shq(catCerts(paths))}`);
+  const readIn = async (p, paths) => p.where === 'container' ? execIn(c, p.cid, ['sh', '-c', catCerts(paths)], { user: 'root' }) : hostExec(server, rootSh(catCerts(paths)));
   for (const p of d.proxies.filter(x => x.running)) {
     try {
       const texts = (raw.files[p.id] || []).map(f => f.text).join('\n');
@@ -433,7 +435,7 @@ async function certificates({ ctx = activeCtx(), fresh = false, served = true } 
         for (const m of missing(r && r.out)) notes.push(`${p.name}: ${m} could not be read`);
       }
       if (p.kind === 'caddy' || p.kind === 'caddy-docker-proxy') {
-        const r = p.where === 'container' ? await execIn(c, p.cid, ['sh', '-c', CERT_DIRS], { user: 'root' }) : await hostExec(server, `sudo -n sh -c ${shq(CERT_DIRS)} 2>/dev/null || sh -c ${shq(CERT_DIRS)}`);
+        const r = p.where === 'container' ? await execIn(c, p.cid, ['sh', '-c', CERT_DIRS], { user: 'root' }) : await hostExec(server, rootSh(CERT_DIRS));
         for (const ch of chunks(r && r.out)) found.push({ pem: ch.pem, path: ch.path, proxy: p.name, proxyId: p.id, kind: p.kind, source: 'Caddy', renewer: 'caddy', auto: true });
       } else if (p.kind === 'traefik' && p.where === 'container') {
         const r = await execIn(c, p.cid, ['sh', '-c', 'for f in /letsencrypt/acme.json /acme.json /data/acme.json /etc/traefik/acme.json /etc/traefik/acme/acme.json /certs/acme.json $(find / -maxdepth 4 -name acme.json -not -path "/proc/*" 2>/dev/null | head -3); do [ -f "$f" ] && { echo "@@F $f"; cat "$f"; break; }; done'], { user: 'root' });
@@ -447,11 +449,15 @@ async function certificates({ ctx = activeCtx(), fresh = false, served = true } 
   // certbot on the host (SSH servers and the local host): its certificates, its timer, and whether anything reloads the proxy after a renewal
   let certbot = null;
   if (server) {
-    const cmd = 'for d in /etc/letsencrypt/live/*/; do [ -f "$d/cert.pem" ] && { echo "@@F ${d}fullchain.pem"; cat "$d/cert.pem"; }; done; echo "@@HOOKS"; ls /etc/letsencrypt/renewal-hooks/deploy/ 2>/dev/null; grep -lE "^(renew_hook|deploy_hook|post_hook)" /etc/letsencrypt/renewal/*.conf 2>/dev/null; echo "@@END"';
-    const r = await hostExec(server, `sudo -n sh -c ${shq(cmd)} 2>/dev/null`).catch(() => null);
+    const cmd = 'for d in /etc/letsencrypt/live/*/; do [ -f "$d/cert.pem" ] && { echo "@@F ${d}fullchain.pem"; cat "$d/cert.pem"; }; done; for f in /root/.acme.sh/*/fullchain.cer /home/*/.acme.sh/*/fullchain.cer; do [ -f "$f" ] && { echo "@@F $f"; cat "$f"; }; done; echo "@@HOOKS"; ls /etc/letsencrypt/renewal-hooks/deploy/ 2>/dev/null; grep -lE "^(renew_hook|deploy_hook|post_hook)" /etc/letsencrypt/renewal/*.conf 2>/dev/null; echo "@@END"';
+    const r = await hostExec(server, rootSh(cmd)).catch(() => null); // not sudo only: a server without sudo, logged in as root, has certbot too
     const out = r ? r.out : '';
     const head = out.split('@@HOOKS')[0];
-    for (const ch of chunks(head)) if (!found.some(f => f.path === ch.path)) found.push({ pem: ch.pem, path: ch.path, proxy: 'host', source: 'certbot', renewer: 'certbot', auto: true });
+    for (const ch of chunks(head)) {
+      if (found.some(f => f.path === ch.path)) continue;
+      if (/\/\.acme\.sh\//.test(ch.path)) found.push({ pem: ch.pem, path: ch.path, proxy: 'host', source: 'acme.sh', renewer: 'acme.sh', auto: true, label: 'acme.sh — its own cron' });
+      else found.push({ pem: ch.pem, path: ch.path, proxy: 'host', source: 'certbot', renewer: 'certbot', auto: true });
+    }
     const hooks = ((out.split('@@HOOKS')[1] || '').split('@@END')[0] || '').split('\n').map(x => x.trim()).filter(Boolean);
     const t = await hostExec(server, 'systemctl is-active certbot.timer snap.certbot.renew.timer 2>/dev/null | head -2; ls /etc/cron.d/certbot 2>/dev/null; crontab -l 2>/dev/null | grep -c certbot; sudo -n crontab -l 2>/dev/null | grep -c certbot').catch(() => null);
     const tout = t ? t.out : '';
@@ -496,6 +502,7 @@ const PX_FILE_CERTS = {
   npm: (raw, p) => raw.certPaths[p.id] || [],
   'nginx-proxy': (raw, p) => raw.certPaths[p.id] || [],
   apache: (raw, p, t) => [...new Set([...t.matchAll(/^\s*SSLCertificateFile\s+"?([^"\s]+)"?/gim)].map(m => m[1]))].slice(0, 60),
+  traefik: (raw, p, t) => [...new Set([...t.matchAll(/certFile\s*[:=]\s*["']?([^"'\s]+)/g)].map(m => m[1]))].slice(0, 40), // file provider tls.certificates
   haproxy: (raw, p, t) => [...new Set([...t.matchAll(/^\s*bind\s[^#\n]*?\bcrt\s+(\S+)/gim)].map(m => m[1].replace(/\/+$/, '')))].slice(0, 20),
 };
 /** Who renews a certificate file found in a proxy's config. */
@@ -562,7 +569,7 @@ async function logs(id, which = 'access', tail = 400) {
       if (fl.some(l => l.trim())) { lines = lines.concat(fl); sources.push(paths.join(', ')); }
     }
   } else if (server) {
-    const cmd = paths.length ? `sudo -n sh -c ${shq(tailFiles(paths, n))} 2>/dev/null || sh -c ${shq(tailFiles(paths, n))}` : `sudo -n journalctl -u ${shq(p.unit)} -n ${n} --no-pager -o cat 2>/dev/null || journalctl -u ${shq(p.unit)} -n ${n} --no-pager -o cat`;
+    const cmd = paths.length ? rootSh(tailFiles(paths, n)) : `sudo -n journalctl -u ${shq(p.unit)} -n ${n} --no-pager -o cat 2>/dev/null || journalctl -u ${shq(p.unit)} -n ${n} --no-pager -o cat`;
     lines = (await hostExec(server, cmd)).out.split('\n'); sources.push(paths.length ? paths.join(', ') : `journal of ${p.unit}`);
   }
   lines = lines.map(l => l.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')).filter(l => l.trim()); // no terminal colour codes
