@@ -39,7 +39,10 @@ process.env.PATH = `${bin}:${process.env.PATH}`;
 
 // a host proxy whose commands run in a local shell
 let failWrites = false;
+// the stand-ins must answer, not a real nginx: on CI (not root, passwordless sudo) `sudo` would reset PATH to the system's
+const noSudo = (cmd) => cmd.replace(/elif sudo -n true 2>\/dev\/null; then/g, 'elif false; then');
 PX.hostExec = (server, cmd) => new Promise((resolve) => {
+  cmd = noSudo(cmd);
   if (failWrites && /base64 -d/.test(cmd)) return resolve({ code: 1, out: '', err: 'No space left on device' });
   execFile('sh', ['-c', cmd], { env: process.env }, (e, out, er) => resolve({ code: e ? (e.code || 1) : 0, out: String(out), err: String(er) }));
 });
