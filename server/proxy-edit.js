@@ -56,16 +56,16 @@ const PATH_RE = /^\/[\w.@+\-/ ]{1,400}$/;
 const checkPath = (p) => { if (!PATH_RE.test(String(p || '')) || /(^|\/)\.\.(\/|$)/.test(p)) throw err(`Not a file path: ${p}`); return p; };
 
 // ---------- where commands run ----------
-function activeCtx() { return { serverId: dockerService.getActiveServerId() || 'local', c: dockerService.docker, server: RC.getActiveRemoteServer() }; }
+const activeCtx = () => PX.activeCtx();
 function ctxFor(serverId) {
-  if (!serverId || serverId === 'local') return { serverId: 'local', c: dockerService.createLocalClient(), server: null };
+  if (!serverId || serverId === 'local') { const c = dockerService.createLocalClient(); return { serverId: 'local', c, server: require('./local-host').forLocal(c) }; }
   const s = stmts.getServer.get(serverId); if (!s) throw err(`Server ${serverId} is gone`, 404);
   return { serverId, c: dockerService.createSshClient(s), server: s };
 }
 const asRoot = (script) => `if [ "$(id -u)" = 0 ]; then sh -c ${shq(script)}; elif sudo -n true 2>/dev/null; then sudo -n sh -c ${shq(script)}; else sh -c ${shq(script)}; fi`;
 async function run(ctx, p, script) {
   if (p.where === 'container') return PX.execIn(ctx.c, p.cid, ['sh', '-c', script], { timeout: 60000, user: 'root' }); // images like haproxy run as a user that may not write its own config
-  if (!ctx.server) throw err('Host proxies are only reached on SSH servers');
+  if (!ctx.server) throw err('This proxy runs on the host, and DockGate has no access to the host here (DG_HOST_ACCESS is off)');
   return PX.hostExec(ctx.server, asRoot(script));
 }
 /** A helper container with `source` (a host path or a volume) at /w, read-write. */
@@ -182,7 +182,8 @@ function cmds(p) {
   if (PX.NGINXISH.has(p.kind)) return { test: 'nginx -t', reload: cont ? 'nginx -s reload' : 'systemctl reload nginx 2>/dev/null || nginx -s reload' };
   if (p.kind === 'caddy') { const cfg = p.config || '/etc/caddy/Caddyfile'; return { test: `caddy validate --config ${shq(cfg)} --adapter caddyfile`, reload: `caddy reload --config ${shq(cfg)} --adapter caddyfile${cont ? '' : ' 2>/dev/null || systemctl reload caddy'}` }; }
   if (p.kind === 'haproxy') return { test: `haproxy -c -f ${shq(p.config)}`, reload: cont ? 'kill -USR2 1' : 'systemctl reload haproxy' };
-  if (p.kind === 'apache') return { test: cont ? 'httpd -t' : 'apachectl configtest', reload: cont ? 'httpd -k graceful' : 'apachectl graceful 2>/dev/null || systemctl reload apache2 2>/dev/null || systemctl reload httpd' };
+  const ab = p.apacheBin && p.apacheBin !== 'none' ? p.apacheBin : 'httpd';
+  if (p.kind === 'apache') return { test: cont ? `${ab} -t` : 'apachectl configtest', reload: cont ? `${ab} -k graceful` : 'apachectl graceful 2>/dev/null || systemctl reload apache2 2>/dev/null || systemctl reload httpd' };
   return null;
 }
 /**
@@ -284,7 +285,8 @@ async function applyRunning(ctx, p, changes, { domains = [], user = null, note =
 
 // ---------- editing files ----------
 function lockReason(p, path) {
-  if (p.kind === 'traefik' || p.kind === 'caddy-docker-proxy') return `${PX.LABEL[p.kind]} is configured by container labels`;
+  if (p.kind === 'traefik') return 'Traefik reads these files by itself (no reload needed): edit them where they are mounted from — DockGate shows them read-only';
+  if (p.kind === 'caddy-docker-proxy') return `${PX.LABEL[p.kind]} is configured by container labels`;
   if (p.kind === 'nginx-proxy') return 'nginx-proxy writes its config from the containers\' VIRTUAL_HOST — change those instead';
   if (p.kind === 'npm') return 'Nginx Proxy Manager keeps this config — change it in its own web UI';
   if (/\/letsencrypt\//.test(path)) return 'certbot keeps this file';
@@ -360,7 +362,9 @@ async function targets() {
 /** How proxy p reaches container `name` on `port`: { addr, network?, join?, note? } */
 async function route(ctx, p, name, port) {
   const t = await containerInfo(ctx, name);
-  if (p.where === 'container') {
+  // a proxy container on the host's network (network_mode: host) can not join Docker networks and has no Docker DNS:
+  // it reaches containers like a proxy installed on the host, at their published ports
+  if (p.where === 'container' && !p.hostNet) {
     await mountsOf(ctx, p); const pn = (mountCache.get(ctx.serverId + p.cid) || {}).networks || [];
     const shared = t.networks.filter(n => pn.includes(n) && n !== 'host' && n !== 'none');
     const named = shared.find(n => n !== 'bridge');
@@ -388,7 +392,8 @@ async function siteFileFor(p, domain) {
     return { path: `${dir.startsWith('/') ? dir : '/etc/nginx/' + dir}/${domain}.conf` };
   }
   if (p.kind === 'apache') {
-    if (p.where === 'container') return { path: `/usr/local/apache2/conf/dockgate/${domain}.conf`, include: { file: '/usr/local/apache2/conf/httpd.conf', line: 'IncludeOptional conf/dockgate/*.conf' } };
+    if (p.where === 'container' && p.apacheRoot && /\/etc\/apache2/.test(p.apacheRoot)) return { path: `${p.apacheRoot}/sites-enabled/dg-${domain}.conf` }; // Debian layout: sites-enabled is loaded already
+    if (p.where === 'container') { const root = p.apacheRoot || '/usr/local/apache2'; return { path: `${root}/conf/dockgate/${domain}.conf`, include: { file: p.apacheMain || `${root}/conf/httpd.conf`, line: 'IncludeOptional conf/dockgate/*.conf' } }; }
     if (files.some(f => f.startsWith('/etc/apache2/'))) return { path: `/etc/apache2/sites-enabled/dg-${domain}.conf` };
     return { path: `/etc/httpd/conf.d/dg-${domain}.conf` };
   }
@@ -447,7 +452,8 @@ async function exposePlan(body) {
     if (https === 'existing' && (!certPath || !keyPath)) throw err('Choose the certificate and key files');
     if (https === 'letsencrypt') { flow = 'letsencrypt'; ({ certPath, keyPath } = await certPlace(ctx, p, domain)); }
     const gen = p.kind === 'apache' ? G.apacheSite : G.nginxSite;
-    const opt = { loadModules: p.kind === 'apache' && p.where === 'container' };
+    const debianApache = p.kind === 'apache' && (p.where === 'host' || /\/etc\/apache2/.test(p.apacheRoot || ''));
+    const opt = { loadModules: p.kind === 'apache' && p.where === 'container' && !debianApache }; // Debian layouts turn modules on with a2enmod
     if (PX.NGINXISH.has(p.kind) && base.dockerDns && (base.targets.length > 1 || (body.lb && body.lb !== 'round_robin'))) { // an upstream block
       const ri = await resolveInfo(ctx, p); opt.resolve = ri.resolves;
       if (!ri.resolves && ri.why) notes.push(ri.why);
@@ -505,7 +511,7 @@ async function expose(body, user, log = () => {}) {
     } catch (e) { steps.push({ t: e.message, ok: false }); return leave({ ok: false, stage: 'labels', steps, text: plan.text }); }
   }
   const domain = String(body.domain).toLowerCase();
-  if (p.kind === 'apache' && p.where === 'host') await run(ctx, p, 'command -v a2enmod >/dev/null 2>&1 && a2enmod -q proxy proxy_http headers rewrite ssl proxy_balancer lbmethod_byrequests lbmethod_bybusyness proxy_wstunnel slotmem_shm socache_shmcb >/dev/null 2>&1; true');
+  if (p.kind === 'apache' && (p.where === 'host' || /\/etc\/apache2/.test(p.apacheRoot || ''))) await run(ctx, p, 'command -v a2enmod >/dev/null 2>&1 && a2enmod -q proxy proxy_http headers rewrite ssl proxy_balancer lbmethod_byrequests lbmethod_bybusyness proxy_wstunnel slotmem_shm socache_shmcb >/dev/null 2>&1; true');
   const res = await apply(ctx, p, plan.changes.map(c => ({ path: c.path, text: c.text })), { domains: [], user, note: `site ${domain}`, probeSites: false });
   if (!res.ok) return leave({ ...res, site: domain });
   await keep(res);
@@ -604,7 +610,7 @@ async function certPlace(ctx, p, domain) {
     const sf = (await siteFileFor(p, domain)) || { path: '/etc/nginx/conf.d/x' };
     const base = sf.path.replace(/\/[^/]+$/, '');
     const pl = await place(ctx, p, base + '/x');
-    dir = pl.persistent ? `${base}/dockgate-certs/${domain}` : `${PX.NGINXISH.has(p.kind) ? '/etc/nginx' : '/usr/local/apache2/conf'}/dockgate-certs/${domain}`;
+    dir = pl.persistent ? `${base}/dockgate-certs/${domain}` : `${PX.NGINXISH.has(p.kind) ? '/etc/nginx' : (p.config || '/usr/local/apache2/conf')}/dockgate-certs/${domain}`;
   }
   return { certPath: `${dir}/fullchain.pem`, keyPath: `${dir}/privkey.pem` };
 }
@@ -838,7 +844,7 @@ async function certbotReloads(ctx) {
 }
 /** certbot renew for one certificate now, then the web servers that use it are reloaded. */
 async function certbotRenew(name) {
-  const ctx = activeCtx(); if (!ctx.server) throw err('certbot on the host is reached on SSH servers');
+  const ctx = activeCtx(); if (!ctx.server) throw err('DockGate has no access to the host here (DG_HOST_ACCESS is off)');
   if (!/^[\w.-]{1,200}$/.test(String(name || ''))) throw err('Not a certificate name');
   const r = await PX.hostExec(ctx.server, asRoot(`certbot renew --cert-name ${shq(name)} --no-random-sleep-on-renew 2>&1`));
   const reloads = r.code === 0 ? await certbotReloads(ctx) : [];
@@ -849,7 +855,7 @@ async function certbotRenew(name) {
 }
 /** A certbot deploy hook that reloads the web servers using its certificates (certbot runs it after each renewal). */
 async function certbotHook(preview = false) {
-  const ctx = activeCtx(); if (!ctx.server) throw err('certbot on the host is reached on SSH servers');
+  const ctx = activeCtx(); if (!ctx.server) throw err('DockGate has no access to the host here (DG_HOST_ACCESS is off)');
   const reloads = await certbotReloads(ctx);
   if (!reloads.length) throw err('No running web server here uses certbot\'s certificates');
   const path = '/etc/letsencrypt/renewal-hooks/deploy/dockgate-reload.sh';

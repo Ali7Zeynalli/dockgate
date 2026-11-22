@@ -1,11 +1,12 @@
 // Web → Proxies & SSL (PX1, read-only): the web servers in front of the apps of the server in use — nginx,
 // OpenResty, Nginx Proxy Manager, nginx-proxy, Caddy (also caddy-docker-proxy), Traefik, HAProxy, Apache — in
-// containers and (on SSH servers) as host services; which domain goes where, the certificates, config files and
+// containers and as host services (SSH servers, and the local host through local-host.js); which domain goes where, the certificates, config files and
 // logs. Nothing is changed here: configs are read (nginx -T, the Caddyfile, labels…), "Test config" runs the
 // proxy's own check (nginx -t, caddy validate…).
 const P = require('./proxy-parse');
 const dockerService = require('./docker');
 const RC = require('./remote-compose');
+const LH = require('./local-host');
 
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const err = (m, code = 400) => Object.assign(new Error(m), { statusCode: code });
@@ -25,6 +26,29 @@ function kindOf(image) {
   if (/acme-companion|letsencrypt-nginx-proxy-companion/.test(i)) return 'acme-companion';
   return null;
 }
+/**
+ * The kind of an image that is not named after its proxy (built with `build:` → "shop-proxy", or a private
+ * registry): from what the official images leave in their config, which images built FROM them inherit —
+ * NGINX_VERSION, CADDY_VERSION, HAPROXY_VERSION, HTTPD_VERSION — or the program they start.
+ */
+function kindOfConfig(cfg = {}) {
+  const env = (cfg.Env || []).map(e => String(e).split('=')[0]);
+  const cmd = [...(cfg.Entrypoint || []), ...(cfg.Cmd || [])].map(String).join(' ');
+  if (env.includes('NGINX_VERSION') || /(^|[\s/])(nginx|openresty)(\s|$)/.test(cmd)) return 'nginx';
+  if (env.includes('CADDY_VERSION') || /(^|[\s/])caddy(\s|$)/.test(cmd)) return 'caddy';
+  if (env.includes('HAPROXY_VERSION') || /(^|[\s/])haproxy(\s|$)/.test(cmd)) return 'haproxy';
+  if (/(^|[\s/])traefik(\s|$)/.test(cmd)) return 'traefik';
+  if (env.includes('HTTPD_VERSION') || /httpd-foreground|apache2ctl|apachectl|apache2-foreground/.test(cmd)) return 'apache';
+  return null;
+}
+const imageKinds = new Map(); // image id → kind (or null): an image does not change under its id
+async function kindOfContainer(c, ct) {
+  const byName = kindOf(ct.Image); if (byName) return { kind: byName, derived: false };
+  const id = ct.ImageID || ct.Image;
+  if (!imageKinds.has(id)) { const info = await c.getImage(id).inspect().catch(() => null); imageKinds.set(id, info ? kindOfConfig(info.Config || {}) : null); }
+  const kind = imageKinds.get(id);
+  return { kind, derived: !!kind };
+}
 const LABEL = { nginx: 'nginx', npm: 'Nginx Proxy Manager', 'nginx-proxy': 'nginx-proxy', caddy: 'Caddy', 'caddy-docker-proxy': 'Caddy (docker-proxy)', traefik: 'Traefik', haproxy: 'HAProxy', apache: 'Apache' };
 const NGINXISH = new Set(['nginx', 'npm', 'nginx-proxy']);
 
@@ -43,15 +67,21 @@ async function execIn(c, id, cmd, { timeout = 15000, user } = {}) {
 }
 async function hostExec(server, cmd) {
   if (!server) return null;
-  const r = await RC.execRemote(server, cmd);
+  const r = server.local ? await server.exec(cmd) : await RC.execRemote(server, cmd); // the local host (local-host.js) or an SSH server
   return { code: r.code, out: String(r.stdout || ''), err: String(r.stderr || '') };
 }
+/** A shell loop that prints each file of the globs as "@@F path" + its text (paths with odd characters are left out). */
+const catGlobs = (globs) => `for f in ${globs.filter(g => /^[\w./*@+-]+$/.test(g)).join(' ')}; do [ -f "$f" ] && { echo "@@F $f"; cat "$f"; echo; }; done; true`;
+const splitCat = (out) => String(out || '').split(/^@@F /m).slice(1).map(ch => { const nl = ch.indexOf('\n'); return { path: ch.slice(0, nl).trim(), text: ch.slice(nl + 1).replace(/\n$/, '') }; });
 const sudoTry = (cmd) => `sudo -n ${cmd} 2>&1 || ${cmd} 2>&1`;
 
 // ---------- the scan ----------
 const cache = new Map(); // serverId → { at, data, raw }
 /** Where to look: the server in use, or (for the daily certificate check) any server: { serverId, c, server }. */
-function activeCtx() { return { serverId: dockerService.getActiveServerId() || 'local', c: dockerService.docker, server: RC.getActiveRemoteServer() }; }
+function activeCtx() {
+  const c = dockerService.docker; const remote = RC.getActiveRemoteServer();
+  return { serverId: dockerService.getActiveServerId() || 'local', c, server: remote || LH.forLocal(c) };
+}
 async function scan({ fresh = false, ctx = activeCtx() } = {}) {
   const serverId = ctx.serverId;
   const hit = cache.get(serverId);
@@ -63,7 +93,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
   const proxies = []; const sites = []; const warnings = [];
 
   // index of containers for resolving targets
-  const byName = new Map(); const byIp = new Map();
+  const byName = new Map(); const byIp = new Map(); const byHostPort = new Map(); // host port → the container that publishes it
   for (const ct of containers) {
     const name = (ct.Names || [''])[0].replace(/^\//, '');
     const L = ct.Labels || {};
@@ -72,6 +102,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
     if (info.service && !byName.has(info.service)) byName.set(info.service, info);
     if (L['com.docker.swarm.service.name']) byName.set(L['com.docker.swarm.service.name'], info);
     for (const n of Object.values((ct.NetworkSettings || {}).Networks || {})) if (n.IPAddress) byIp.set(n.IPAddress, info);
+    for (const pt of ct.Ports || []) if (pt.PublicPort) byHostPort.set(String(pt.PublicPort), info);
   }
   const resolve = (target, proxy) => {
     if (!target) return null;
@@ -80,6 +111,8 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
     const [host, port] = t.split(':');
     const ct = byName.get(host) || byIp.get(host) || byName.get(host.replace(/\.\d+\..*$/, ''));
     if (ct) return { label: `${ct.name}${port ? ':' + port : ''}`, kind: 'container', container: { name: ct.name, running: ct.running, state: ct.state, project: ct.project, id: ct.id } };
+    const pub = (/^(127\.0\.0\.1|localhost|::1|host\.docker\.internal|172\.17\.0\.1)$/.test(host) && (proxy.where === 'host' || proxy.hostNet || host === 'host.docker.internal' || host === '172.17.0.1')) ? byHostPort.get(String(port || '')) : null;
+    if (pub) return { label: `${pub.name} (port ${port} on the host)`, kind: 'container', container: { name: pub.name, running: pub.running, state: pub.state, project: pub.project, id: pub.id }, via: 'published' };
     if (/^(127\.0\.0\.1|localhost|::1)$/.test(host)) return { label: t, kind: proxy.where === 'host' ? 'host' : 'self', note: proxy.where === 'host' ? 'a program on the server' : 'the proxy container itself' };
     if (host === 'host.docker.internal' || /^172\.17\.0\.1$/.test(host)) return { label: t, kind: 'host', note: 'a program on the server' };
     return { label: t, kind: 'other', note: 'not a container of this server' };
@@ -97,19 +130,24 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
 
   // ---- proxies in containers ----
   const labelled = []; // containers with Traefik / caddy labels
+  const jobs = [];
   for (const ct of containers) {
     const L = ct.Labels || {};
     if (Object.keys(L).some(k => k.startsWith('traefik.http.routers.')) || Object.keys(L).some(k => /^caddy(_\d+)?$/.test(k))) labelled.push(ct);
-    const kind = kindOf(ct.Image);
+    const { kind, derived } = await kindOfContainer(c, ct);
     if (kind === 'certbot' || kind === 'acme-companion') { helpers.push({ kind, name: (ct.Names || [''])[0].replace(/^\//, ''), cid: ct.Id, running: ct.State === 'running', state: ct.State }); continue; }
     if (!kind) continue;
     const name = (ct.Names || [''])[0].replace(/^\//, '');
     const p = { id: 'c:' + ct.Id.slice(0, 12), cid: ct.Id, name, kind, label: LABEL[kind], image: ct.Image, where: 'container', project: L['com.docker.compose.project'] || L['com.docker.stack.namespace'] || null, state: ct.State, running: ct.State === 'running',
-      ports: [...new Set((ct.Ports || []).filter(x => x.PublicPort).map(x => x.PublicPort))].sort((a, b) => a - b), version: (ct.Image.split(':')[1] || 'latest'), config: null, sites: 0, managedBy: kind === 'npm' ? 'Nginx Proxy Manager' : kind === 'nginx-proxy' ? 'nginx-proxy (from container env)' : null, problem: null };
-    proxies.push(p);
+      ports: [...new Set((ct.Ports || []).filter(x => x.PublicPort).map(x => x.PublicPort))].sort((a, b) => a - b), version: derived ? null : (ct.Image.split(':')[1] || 'latest'), derived,
+      hostNet: ((ct.HostConfig || {}).NetworkMode || '') === 'host', config: null, sites: 0, managedBy: kind === 'npm' ? 'Nginx Proxy Manager' : kind === 'nginx-proxy' ? 'nginx-proxy (from container env)' : null, problem: null };
+    proxies.push(p); jobs.push({ ct, p, kind, derived, name });
+  }
+  // each proxy is read with a few `docker exec`s: four at a time, so a server with many containers is not read one by one
+  const readOne = async ({ ct, p, kind, derived, name }) => {
     if (!p.running) { // a stopped proxy: why (its last log lines), and its config read through the archive API, so its sites stay listed
       try { await stoppedProxy(c, ct, p, kind, raw, addSite, warnings); } catch (e) { p.problem = p.problem || `stopped (${e.message})`; }
-      continue;
+      return;
     }
     try {
       if (NGINXISH.has(kind)) {
@@ -126,7 +164,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
         p.config = parsed.files[0] ? parsed.files[0].path.replace(/\/[^/]+$/, '') : '/etc/nginx';
         // nginx that only serves its own app (no proxy_pass, no domain, no published web port) is a web server, not a proxy
         const realNames = parsed.servers.some(sv => sv.names.some(nm => P.isDomain(nm)));
-        if (kind === 'nginx' && !realNames && !parsed.servers.some(sv => sv.proxyPass || sv.locations.some(l => l.proxyPass)) && !p.ports.some(x => [80, 443].includes(x))) { p.appServer = true; continue; }
+        if (kind === 'nginx' && !realNames && !parsed.servers.some(sv => sv.proxyPass || sv.locations.some(l => l.proxyPass)) && !p.ports.some(x => [80, 443].includes(x))) { p.appServer = true; return; }
         const v = await execIn(c, ct.Id, ['nginx', '-v']).catch(() => null); const vm = v && (v.err + v.out).match(/nginx\/(\S+)|openresty\/(\S+)/); if (vm) p.version = vm[1] || vm[2];
         for (const s of P.nginxSites(parsed).filter(x => x.domain !== 'localhost')) addSite({ ...s, managed: kind === 'npm' && /^\/data\//.test(s.file) ? 'Nginx Proxy Manager' : kind === 'nginx-proxy' ? 'nginx-proxy' : null }, p);
         raw.certPaths[p.id] = [...new Set(parsed.servers.map(s => s.cert).filter(Boolean))];
@@ -137,23 +175,49 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
         if (r.code !== 0) p.problem = `${path} could not be read`;
         const v = await execIn(c, ct.Id, ['caddy', 'version']).catch(() => null); if (v && v.code === 0) p.version = v.out.trim().split(/\s+/)[0];
         for (const s of P.parseCaddyfile(r.out)) addSite({ ...s, file: path }, p);
+        const imp = P.caddyImports(r.out, path.replace(/\/[^/]+$/, '')); // files the Caddyfile imports: their sites too
+        if (imp.length) { const ir = await execIn(c, ct.Id, ['sh', '-c', catGlobs(imp)]); for (const f of splitCat(ir.out)) { raw.files[p.id].push(f); for (const s of P.parseCaddyfile(f.text)) addSite({ ...s, file: f.path }, p); } }
       } else if (kind === 'haproxy') {
         const r = await execIn(c, ct.Id, ['sh', '-c', 'for f in /usr/local/etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg; do [ -f "$f" ] && { echo "@@F $f"; cat "$f"; break; }; done']);
         const m = r.out.match(/^@@F (\S+)\n([\s\S]*)$/);
         if (m) { p.config = m[1]; raw.files[p.id] = [{ path: m[1], text: m[2] }]; for (const s of P.parseHaproxy(m[2])) addSite({ ...s, file: m[1] }, p); } else p.problem = 'haproxy.cfg not found';
       } else if (kind === 'apache') {
-        const r = await execIn(c, ct.Id, ['sh', '-c', 'httpd -S 2>&1 || apachectl -S 2>&1']);
+        // the official image has httpd in /usr/local/apache2; Debian / Ubuntu based ones (ubuntu/apache2, php:apache,
+        // bitnami) have apache2ctl and /etc/apache2: the program and the folder are found, not assumed
+        const r = await execIn(c, ct.Id, ['sh', '-c', 'for b in httpd apache2ctl apachectl; do if command -v $b >/dev/null 2>&1; then echo "@@B $b"; $b -S 2>&1; exit 0; fi; done; echo "@@B none"']);
+        const bin = (r.out.match(/@@B (\S+)/) || [])[1] || 'none';
+        if (bin === 'none') throw new Error('no httpd or apache2ctl in the container');
+        const root = (r.out.match(/ServerRoot: "([^"]+)"/) || [])[1] || (bin === 'httpd' ? '/usr/local/apache2' : '/etc/apache2');
+        const main = root === '/etc/apache2' || /\/etc\/apache2/.test(root) ? `${root}/apache2.conf` : `${root}/conf/httpd.conf`;
+        p.apacheBin = bin; p.apacheRoot = root; p.apacheMain = main;
         const vh = P.parseApacheS(r.out);
         for (const s of vh) addSite({ domain: s.domain, https: s.port === 443, file: s.file, line: s.line, targets: [] }, p);
-        p.config = '/usr/local/apache2/conf';
-        const list = [...new Set(['/usr/local/apache2/conf/httpd.conf', ...vh.map(x => x.file)])].slice(0, 30);
+        p.config = main.replace(/\/[^/]+$/, '');
+        const list = [...new Set([main, ...vh.map(x => x.file)])].slice(0, 30);
         const fr = await execIn(c, ct.Id, ['sh', '-c', list.map(f => `[ -f ${shq(f)} ] && { echo "# configuration file ${f}:"; cat ${shq(f)}; echo; }`).join('; ') + '; true']);
         raw.files[p.id] = P.parseNginxT(fr.out).files;
+        // an image built FROM httpd / php:apache that only serves its own app is a web server, not a proxy
+        if (derived && !raw.files[p.id].some(f => /^\s*(ProxyPass|ProxyPassMatch|RewriteRule\s.*\[[^\]]*\bP\b)/m.test(f.text)) && !p.ports.some(x => [80, 443].includes(x))) { p.appServer = true; return; }
       } else if (kind === 'traefik' || kind === 'caddy-docker-proxy') {
         p.config = kind === 'traefik' ? 'labels of the containers and services' : 'caddy labels of the containers';
+        if (kind === 'traefik') { // the file provider: dynamic config files named on the command line or in traefik.yml / .toml
+          const info = await c.getContainer(ct.Id).inspect().catch(() => null);
+          const args = info ? [...(info.Config.Cmd || []), ...(info.Args || [])].join(' ') : '';
+          const st = await execIn(c, ct.Id, ['sh', '-c', catGlobs(['/etc/traefik/traefik.yml', '/etc/traefik/traefik.yaml', '/etc/traefik/traefik.toml'])]).catch(() => ({ out: '' }));
+          const statics = splitCat(st.out);
+          const stText = statics.map(f => f.text).join('\n');
+          const fname = (args.match(/--providers\.file\.filename[= ](\S+)/) || stText.match(/^\s*filename\s*[:=]\s*["']?([^"'\s]+)/m) || [])[1];
+          const fdir = (args.match(/--providers\.file\.directory[= ](\S+)/) || stText.match(/^\s*directory\s*[:=]\s*["']?([^"'\s]+)/m) || [])[1];
+          const globs = [...(fname ? [fname] : []), ...(fdir ? ['yml', 'yaml', 'toml'].map(x => `${fdir.replace(/\/$/, '')}/*.${x}`) : [])];
+          const dyn = globs.length ? splitCat((await execIn(c, ct.Id, ['sh', '-c', catGlobs(globs)]).catch(() => ({ out: '' }))).out) : [];
+          raw.files[p.id] = [...statics, ...dyn];
+          for (const f of dyn) for (const s of P.traefikFileSites(f.text)) addSite({ domain: s.domain, https: s.tls, targets: s.targets, file: f.path, router: s.router, fileProvider: true }, p);
+          if (dyn.length) p.config = `labels and ${fname || fdir}`;
+        }
       }
     } catch (e) { p.problem = e.message; }
-  }
+  };
+  for (let i = 0; i < jobs.length; i += 4) await Promise.all(jobs.slice(i, i + 4).map(readOne));
 
   // ---- Traefik / caddy-docker-proxy labels: containers and Swarm services ----
   const traefik = proxies.find(p => p.kind === 'traefik'); const cdp = proxies.find(p => p.kind === 'caddy-docker-proxy');
@@ -165,7 +229,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
     if (traefik) for (const s of P.traefikSites(src.labels)) addSite({ domain: s.domain, https: s.tls, resolver: s.resolver, targets: [src.name + (s.port ? ':' + s.port : '')], file: `labels of ${src.name}`, router: s.router }, traefik);
     if (cdp) for (const s of P.caddyLabelSites(src.labels)) addSite({ domain: s.domain, https: true, targets: [src.name + (s.port ? ':' + s.port : '')], file: `labels of ${src.name}` }, cdp);
   }
-  if (traefik && !labelSources.some(s => Object.keys(s.labels).some(k => k.startsWith('traefik.http.routers.')))) traefik.problem = traefik.problem || 'no router labels found (file provider configs are not read yet)';
+  if (traefik && !labelSources.some(s => Object.keys(s.labels).some(k => k.startsWith('traefik.http.routers.'))) && !sites.some(s => s.proxy === traefik.id)) traefik.problem = traefik.problem || 'no routers found in labels or in its file provider';
 
   // ---- nginx-proxy: VIRTUAL_HOST of the containers ----
   const np = proxies.find(p => p.kind === 'nginx-proxy');
@@ -178,12 +242,16 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
     }
   }
 
-  // ---- host services (SSH servers) ----
+  // ---- host services: SSH servers, and the local host (local-host.js) ----
   let ports = [];
   if (server) {
     const tag = '@@PX';
-    const script = `for s in nginx caddy apache2 httpd haproxy traefik; do if systemctl cat "$s.service" >/dev/null 2>&1; then echo "${tag}S $s $(systemctl is-active $s 2>/dev/null) $(systemctl is-enabled $s 2>/dev/null)"; fi; done
-echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnH 2>/dev/null) | awk '{print $4" "$6}' | grep -E ':(80|443|8080|8443) ' ; echo "${tag}E"`;
+    // a systemd unit, or (no systemd) the program installed and its processes — not the ones of containers, which
+    // share the host's process list
+    const script = `hostproc() { for pid in $(pgrep -x "$1" 2>/dev/null); do grep -qE 'docker|containerd|kubepods|libpod|lxc' /proc/$pid/cgroup 2>/dev/null || { echo y; return; }; done; }
+for s in nginx caddy apache2 httpd haproxy traefik; do if command -v systemctl >/dev/null 2>&1 && systemctl cat "$s.service" >/dev/null 2>&1; then echo "${tag}S $s $(systemctl is-active $s 2>/dev/null) $(systemctl is-enabled $s 2>/dev/null)";
+elif command -v "$s" >/dev/null 2>&1 || [ -x "/usr/sbin/$s" ]; then if [ -n "$(hostproc $s)" ]; then echo "${tag}S $s active manual"; else echo "${tag}S $s inactive manual"; fi; fi; done
+echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnpH 2>/dev/null || ss -ltnH 2>/dev/null) | awk '{print $4" "$6}' | grep -E ':(80|443|8080|8443) |"(nginx|caddy|apache2|httpd|haproxy|traefik)"' | while read a pr; do pid=$(echo "$pr" | sed -n 's/.*pid=\\([0-9]*\\).*/\\1/p'); if [ -n "$pid" ] && grep -qE 'docker|containerd|kubepods|libpod' /proc/$pid/cgroup 2>/dev/null; then echo "$a $pr C"; else echo "$a $pr"; fi; done; echo "${tag}E"`; // C: the process is in a container (host network)
     const r = await hostExec(server, script).catch(() => null);
     const out = r ? r.out : '';
     for (const m of out.matchAll(/@@PXS (\S+) (\S+) (\S+)/g)) {
@@ -204,6 +272,8 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnH 2>/dev/null) | awk '{
           p.config = '/etc/caddy/Caddyfile'; raw.files[p.id] = [{ path: p.config, text: t.out }];
           const v = await hostExec(server, 'caddy version 2>/dev/null'); if (v && v.code === 0) p.version = v.out.trim().split(/\s+/)[0];
           for (const s of P.parseCaddyfile(t.out)) addSite({ ...s, file: p.config }, p);
+          const imp = P.caddyImports(t.out, '/etc/caddy');
+          if (imp.length) { const ir = await hostExec(server, sudoTry(`sh -c ${shq(catGlobs(imp))}`)); for (const f of splitCat(ir.out)) { raw.files[p.id].push(f); for (const s of P.parseCaddyfile(f.text)) addSite({ ...s, file: f.path }, p); } }
         } else if (kind === 'haproxy') {
           const t = await hostExec(server, sudoTry('cat /etc/haproxy/haproxy.cfg'));
           p.config = '/etc/haproxy/haproxy.cfg'; raw.files[p.id] = [{ path: p.config, text: t.out }];
@@ -220,13 +290,17 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnH 2>/dev/null) | awk '{
     }
     const psec = (out.match(/@@PXP\n([\s\S]*?)@@PXE/) || [])[1] || '';
     for (const line of psec.split('\n').filter(Boolean)) {
-      const [addr, proc] = line.split(' ');
+      const [addr, proc, inCt] = line.split(' ');
       const port = Number(addr.split(':').pop());
       const who = (String(proc || '').match(/\("([^"]+)"/) || [])[1] || (proc ? '' : 'unknown (needs sudo to see)');
-      if (!ports.some(x => x.port === port && x.process === who)) ports.push({ port, addr, process: who || 'unknown' });
+      if (!ports.some(x => x.port === port && x.process === who)) ports.push({ port, addr, process: who || 'unknown', container: inCt === 'C' });
     }
-    for (const p of proxies.filter(x => x.where === 'host')) p.ports = [...new Set(ports.filter(x => x.process === p.unit || (p.unit === 'apache2' && x.process === 'apache2')).map(x => x.port))];
+    for (const p of proxies.filter(x => x.where === 'host')) p.ports = [...new Set(ports.filter(x => !x.container && (x.process === p.unit || (p.unit === 'apache2' && x.process === 'apache2'))).map(x => x.port))];
+    const BIN = { nginx: ['nginx'], caddy: ['caddy'], haproxy: ['haproxy'], apache: ['httpd', 'apache2'], traefik: ['traefik'] };
+    for (const p of proxies.filter(x => x.where === 'container' && x.hostNet && x.running)) p.ports = [...new Set(ports.filter(x => x.container && (BIN[p.kind] || []).includes(x.process)).map(x => x.port))];
   }
+  for (const x of ports.filter(y => y.container)) { const own = proxies.find(p => p.hostNet && (p.ports || []).includes(x.port)); x.process = `${x.process} (${own ? `container ${own.name}` : 'a container'}, host network)`; }
+  for (const x of ports) if (x.process === 'docker-proxy') { const ct = byHostPort.get(String(x.port)); if (ct) x.process = `docker → ${ct.name}`; } // the container that publishes it, not Docker's forwarder
   // published ports of the proxy containers (local server, or when ss could not tell)
   for (const p of proxies.filter(x => x.where === 'container' && x.running)) for (const port of p.ports) if ([80, 443, 8080, 8443].includes(port) && !ports.some(x => x.port === port && /docker/.test(x.process))) ports.push({ port, addr: `*:${port}`, process: `docker → ${p.name}` });
   ports.sort((a, b) => a.port - b.port);
@@ -245,7 +319,7 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnH 2>/dev/null) | awk '{
   for (const [d, set] of dup) if (set.size > 1) warnings.push({ level: 'warn', text: `${d} is configured in ${[...set].join(' and ')}.` });
   for (const s of sites) if (s.target && s.target.container && !s.target.container.running) warnings.push({ level: 'bad', text: `${s.domain} goes to ${s.target.container.name}, which is ${s.target.container.state}.`, site: s.domain });
 
-  const data = { server: serverId, remote: !!server, appServers, helpers, proxies, sites: sites.sort((a, b) => a.domain.localeCompare(b.domain)), ports: [...new Map([...ports.map(x => [x.port + x.process, x])]).values()], warnings: [...new Map(warnings.map(w => [w.text, w])).values()], at: Date.now() };
+  const data = { server: serverId, remote: !!server && !server.local, hostAccess: !!server, appServers, helpers, proxies, sites: sites.sort((a, b) => a.domain.localeCompare(b.domain)), ports: [...new Map([...ports.map(x => [x.port + x.process, x])]).values()], warnings: [...new Map(warnings.map(w => [w.text, w])).values()], at: Date.now() };
   cache.set(serverId, { at: Date.now(), data, raw });
   return data;
 }
@@ -370,7 +444,7 @@ async function certificates({ ctx = activeCtx(), fresh = false, served = true } 
       if (['caddy', 'caddy-docker-proxy', 'traefik'].includes(p.kind)) { const lines = await acmeErrors(ctx, p); if (lines.length) errors.push({ proxy: p.name, proxyId: p.id, lines }); }
     } catch (e) { notes.push(`${p.name}: ${e.message}`); }
   }
-  // certbot on the host (SSH servers): its certificates, its timer, and whether anything reloads the proxy after a renewal
+  // certbot on the host (SSH servers and the local host): its certificates, its timer, and whether anything reloads the proxy after a renewal
   let certbot = null;
   if (server) {
     const cmd = 'for d in /etc/letsencrypt/live/*/; do [ -f "$d/cert.pem" ] && { echo "@@F ${d}fullchain.pem"; cat "$d/cert.pem"; }; done; echo "@@HOOKS"; ls /etc/letsencrypt/renewal-hooks/deploy/ 2>/dev/null; grep -lE "^(renew_hook|deploy_hook|post_hook)" /etc/letsencrypt/renewal/*.conf 2>/dev/null; echo "@@END"';
@@ -436,44 +510,79 @@ function renewerOf(p, path, helper) {
 // ---------- config files ----------
 async function files(id) {
   const p = await proxyById(id); const raw = await rawFor();
-  if (raw.files[id] && raw.files[id].length) return { proxy: p.name, kind: p.kind, files: raw.files[id].map(f => ({ ...f, managed: p.kind === 'npm' && /^\/data\//.test(f.path) ? 'Nginx Proxy Manager' : /letsencrypt/.test(f.path) ? 'certbot' : null })) };
+  if (raw.files[id] && raw.files[id].length && p.kind !== 'traefik') return { proxy: p.name, kind: p.kind, files: raw.files[id].map(f => ({ ...f, managed: p.kind === 'npm' && /^\/data\//.test(f.path) ? 'Nginx Proxy Manager' : /letsencrypt/.test(f.path) ? 'certbot' : null })) };
   if (p.kind === 'traefik' || p.kind === 'caddy-docker-proxy') {
     const d = await scan();
     const text = d.sites.filter(s => s.proxy === id).map(s => `# ${s.domain}  (${s.file})\n${s.router ? `traefik.http.routers.${s.router}.rule=Host(\`${s.domain}\`)\n` : ''}→ ${s.target ? s.target.label : '?'}${s.https ? '   (HTTPS' + (s.resolver ? ', ' + s.resolver : '') + ')' : ''}\n`).join('\n');
-    return { proxy: p.name, kind: p.kind, files: [{ path: `${p.kind === 'traefik' ? 'Traefik' : 'Caddy'} labels (read-only summary)`, text: text || '# no labels found' }] };
+    return { proxy: p.name, kind: p.kind, files: [...(raw.files[id] || []), { path: `${p.kind === 'traefik' ? 'Traefik' : 'Caddy'} labels (read-only summary)`, text: text || '# no labels found' }] };
   }
   return { proxy: p.name, kind: p.kind, files: [], note: p.problem || 'No config files read for this proxy.' };
 }
 
 // ---------- logs ----------
+/**
+ * The log files a proxy's config names (nginx access_log / error_log, Apache CustomLog / ErrorLog), so a proxy that
+ * logs to files and not to the console is read too. /dev/stdout, syslog and "off" are left out (docker logs has them).
+ */
+function logPaths(raw, p, which) {
+  const files = (raw.files[p.id] || []).map(f => f.text).join('\n');
+  const re = NGINXISH.has(p.kind) ? (which === 'error' ? /(?:^|[;{\s])error_log\s+([^\s;]+)/gm : /(?:^|[;{\s])access_log\s+([^\s;]+)/gm) // also in one-line blocks
+    : p.kind === 'apache' ? (which === 'error' ? /^\s*ErrorLog\s+"?([^\s"]+)/gm : /^\s*CustomLog\s+"?([^\s"]+)/gm) : null;
+  if (!re) return [];
+  const root = p.apacheRoot || (p.where === 'host' ? '/etc/apache2' : '/usr/local/apache2');
+  const out = new Set();
+  for (const m of files.matchAll(re)) {
+    let f = m[1];
+    if (/^(off|stderr|syslog:|\||\/dev\/|\/proc\/)/.test(f) || /\$(?!\{APACHE_LOG_DIR\})/.test(f)) continue; // nginx variables in a path: one file per value, not read
+    f = f.replace('${APACHE_LOG_DIR}', '/var/log/apache2');
+    if (!f.startsWith('/')) f = p.kind === 'apache' ? `${root}/${f}` : `/etc/nginx/${f}`;
+    out.add(f);
+  }
+  if (!out.size && p.where === 'host') { // the distribution's defaults
+    const d = { nginx: { access: ['/var/log/nginx/access.log'], error: ['/var/log/nginx/error.log'] }, apache: { access: ['/var/log/apache2/access.log', '/var/log/httpd/access_log'], error: ['/var/log/apache2/error.log', '/var/log/httpd/error_log'] } }[p.kind];
+    if (d) (d[which] || d.access).forEach(x => out.add(x));
+  }
+  return [...out].slice(0, 12);
+}
+const tailFiles = (paths, n) => paths.map(f => `[ -f ${shq(f)} ] && tail -n ${n} ${shq(f)}`).join('; ') + '; true'; // -f: not a link to /dev/stdout (that would never end)
+
 async function logs(id, which = 'access', tail = 400) {
-  const p = await proxyById(id); const c = dockerService.docker; const server = RC.getActiveRemoteServer();
+  const p = await proxyById(id); const c = dockerService.docker; const server = activeCtx().server; const raw = await rawFor();
   const n = Math.max(50, Math.min(2000, Number(tail) || 400));
-  let lines = [];
+  const paths = which === 'all' ? [...new Set([...logPaths(raw, p, 'access'), ...logPaths(raw, p, 'error')])] : logPaths(raw, p, which);
+  let lines = []; const sources = [];
   if (p.where === 'container') {
     const buf = await c.getContainer(p.cid).logs({ stdout: which !== 'error', stderr: which !== 'access', tail: n, timestamps: false });
     const out = []; let i = 0; const b = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf));
     if (b.length > 8 && (b[0] === 1 || b[0] === 2) && b[1] === 0) { while (i + 8 <= b.length) { const len = b.readUInt32BE(i + 4); out.push(b.slice(i + 8, i + 8 + len).toString('utf8')); i += 8 + len; } } else out.push(b.toString('utf8'));
-    lines = out.join('').split('\n');
+    lines = out.join('').split('\n'); if (lines.some(l => l.trim())) sources.push('the container\'s output');
+    if (paths.length && p.running) {
+      const r = await execIn(c, p.cid, ['sh', '-c', tailFiles(paths, n)], { user: 'root' }).catch(() => null);
+      const fl = r ? r.out.split('\n') : [];
+      if (fl.some(l => l.trim())) { lines = lines.concat(fl); sources.push(paths.join(', ')); }
+    }
   } else if (server) {
-    const files = { nginx: { access: '/var/log/nginx/access.log', error: '/var/log/nginx/error.log' }, apache: { access: '/var/log/apache2/access.log /var/log/httpd/access_log', error: '/var/log/apache2/error.log /var/log/httpd/error_log' } }[p.kind];
-    const cmd = files ? `for f in ${files[which] || files.access}; do [ -f "$f" ] && { sudo -n tail -n ${n} "$f" 2>/dev/null || tail -n ${n} "$f"; break; }; done` : `sudo -n journalctl -u ${shq(p.unit)} -n ${n} --no-pager -o cat 2>/dev/null || journalctl -u ${shq(p.unit)} -n ${n} --no-pager -o cat`;
-    lines = (await hostExec(server, cmd)).out.split('\n');
+    const cmd = paths.length ? `sudo -n sh -c ${shq(tailFiles(paths, n))} 2>/dev/null || sh -c ${shq(tailFiles(paths, n))}` : `sudo -n journalctl -u ${shq(p.unit)} -n ${n} --no-pager -o cat 2>/dev/null || journalctl -u ${shq(p.unit)} -n ${n} --no-pager -o cat`;
+    lines = (await hostExec(server, cmd)).out.split('\n'); sources.push(paths.length ? paths.join(', ') : `journal of ${p.unit}`);
   }
   lines = lines.map(l => l.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')).filter(l => l.trim()); // no terminal colour codes
-  const entries = lines.map(l => ({ line: l.slice(0, 2000), ...(P.parseAccessLine(l) || P.parseCaddyJsonLine(l) || {}) }));
+  let entries = lines.map(l => ({ line: l.slice(0, 2000), ...(P.parseAccessLine(l) || P.parseCaddyJsonLine(l) || {}) }));
+  if (sources.length > 1) { // two sources: in time order where the time is known, then the last n
+    const t = (e) => { if (!e.time) return 0; const d = Date.parse(String(e.time).replace(/^(\d+)\/(\w+)\/(\d+):(\d+:\d+:\d+)\s*/, '$2 $1 $3 $4 ')); return Number.isNaN(d) ? 0 : d; };
+    entries = entries.map((e, i) => ({ e, i, t: t(e) })).sort((a, b) => (a.t && b.t ? a.t - b.t : a.i - b.i)).map(x => x.e).slice(-n);
+  }
   const parsed = entries.filter(e => e.status);
   const stats = parsed.length ? { requests: parsed.length, s5xx: parsed.filter(e => e.status >= 500).length, s4xx: parsed.filter(e => e.status >= 400 && e.status < 500).length } : null;
-  return { proxy: p.name, which, entries, stats };
+  return { proxy: p.name, which, entries, stats, sources };
 }
 
 // ---------- check (read-only) ----------
 async function testConfig(id) {
-  const p = await proxyById(id); const c = dockerService.docker; const server = RC.getActiveRemoteServer();
+  const p = await proxyById(id); const c = dockerService.docker; const server = activeCtx().server;
   const cmd = NGINXISH.has(p.kind) ? 'nginx -t' : p.kind === 'caddy' ? `caddy validate --config ${p.config || '/etc/caddy/Caddyfile'} --adapter caddyfile` : p.kind === 'haproxy' ? `haproxy -c -f ${p.config}` : p.kind === 'apache' ? (p.where === 'container' ? 'httpd -t' : 'apachectl configtest') : null;
   if (!cmd) throw err(`${LABEL[p.kind] || p.kind} has no config check here (its config is in labels)`);
   const r = p.where === 'container' ? await execIn(c, p.cid, ['sh', '-c', cmd + ' 2>&1']) : await hostExec(server, sudoTry(cmd));
   return { ok: r.code === 0, command: cmd, output: (r.out + r.err).trim().slice(-4000) };
 }
 
-module.exports = { stopReason, activeCtx, servedCerts, acmeErrors, isInternalIssuer, isStagingIssuer, scan, certificates, files, logs, testConfig, kindOf, execIn, hostExec, rawFor, proxyById, LABEL, NGINXISH, invalidate: () => cache.clear(), _cache: cache };
+module.exports = { logPaths, kindOfConfig, stopReason, activeCtx, servedCerts, acmeErrors, isInternalIssuer, isStagingIssuer, scan, certificates, files, logs, testConfig, kindOf, execIn, hostExec, rawFor, proxyById, LABEL, NGINXISH, invalidate: () => cache.clear(), _cache: cache };

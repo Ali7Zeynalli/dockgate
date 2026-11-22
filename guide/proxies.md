@@ -2,7 +2,7 @@
 
 > **Where:** Web → **Proxies & SSL**
 >
-> **Works on:** the local server and SSH servers. On the local server DockGate sees proxies that run in containers. On an SSH server it also sees nginx, Caddy, HAProxy and Apache installed on the host.
+> **Works on:** the local server and SSH servers — proxies in containers and proxies installed on the server itself (nginx, Caddy, HAProxy, Apache).
 
 This page is for the web servers in front of your apps on the server in use. With it you can:
 
@@ -47,18 +47,32 @@ A proxy container that stopped (or keeps restarting) is not hidden:
 
 ![Proxies & SSL — Overview](images/proxies-overview.png)
 
-**Proxies.** DockGate finds them by image and by what is installed:
+**Proxies.** DockGate finds them in three places:
+
+- **Containers.** By the image name (`nginx`, `caddy`, `traefik`…), and also images built from a proxy image — a Compose `build:` gives names like `shop-proxy`, so DockGate looks at what the image inherits (`NGINX_VERSION`, `CADDY_VERSION`, `HAPROXY_VERSION`, `HTTPD_VERSION`, or the program it starts).
+- **The server itself.** nginx, Caddy, HAProxy and Apache installed with the package manager: a systemd service, or (without systemd) the program and its running processes. Processes of containers are left out.
+- **Containers on the host network** (`network_mode: host`). They are marked **host network**. They can not join Docker networks, so they reach containers at their published ports, like a proxy installed on the server.
+
+**Reaching the server itself.** On SSH servers DockGate uses the SSH connection. On the local server:
+
+- DockGate runs in a container (the usual install): a short-lived helper container shares the server's processes and network and runs the command in the server's root folder (`chroot`). DockGate can already do this through the Docker socket it is given; the helper only makes it visible. Set `DG_HOST_ACCESS=off` in DockGate's environment to turn it off; proxies installed on the server are then not seen.
+- DockGate runs straight on the server: the command runs there.
+
+What DockGate reads from each proxy:
 
 | Proxy | How DockGate reads it | What you can change |
 |---|---|---|
 | nginx, OpenResty | `nginx -T`. If the config fails its check, the `.conf` files are read directly and the error is shown. | everything |
-| Caddy | the Caddyfile | everything |
+| Caddy | the Caddyfile and the files it `import`s | everything |
 | HAProxy | `haproxy.cfg` | everything (HTTPS routing only when the frontend already has a certificate) |
-| Apache | `apachectl -S` and the files it names | everything, Let's Encrypt included |
-| Traefik, caddy-docker-proxy | the labels of containers and Swarm services | labels: added to a Compose project (override) or copied |
+| Apache | `httpd -S` / `apache2ctl -S` and the files it names. The official image (`/usr/local/apache2`) and Debian / Ubuntu based ones (`/etc/apache2`) are both read. | everything, Let's Encrypt included |
+| Traefik | the labels of containers and Swarm services, and the files of its file provider (`--providers.file.filename` / `directory`, or in `traefik.yml`) | labels: added to a Compose project (override) or copied; file provider files are shown read-only |
+| caddy-docker-proxy | the labels of containers and Swarm services | labels: added to a Compose project (override) or copied |
 | Nginx Proxy Manager, nginx-proxy | their own configs | read-only: use their own UI or `VIRTUAL_HOST` |
 
-An nginx container that only serves its own app is not counted as a proxy. That means it has no `proxy_pass`, no domain and no port 80 or 443.
+An nginx container that only serves its own app is not counted as a proxy. That means it has no `proxy_pass`, no domain and no port 80 or 443. The same goes for an Apache image built for an app (for example `php:apache`) without `ProxyPass`.
+
+**Web ports** shows who holds 80, 443, 8080, 8443 and the proxies' own ports: a container (`docker → edge-nginx`), a proxy on the server, or a container on the host network.
 
 **Warnings** are shown at the top, for example:
 
@@ -228,7 +242,7 @@ Several replicas of one Compose service behind one name are balanced by Docker's
 
 ![Logs](images/proxies-logs.png)
 
-Shows the access log and error log of a proxy. Access lines are read into time, status, method, path and response time; two formats are read: nginx / Apache combined and Caddy JSON. You can filter by `2xx` to `5xx`, or by IP, path or domain.
+Shows the access log and error log of a proxy. DockGate reads the container's output and also the log files the config names (nginx `access_log` / `error_log`, Apache `CustomLog` / `ErrorLog`), so a proxy that logs to files is read too. The tab says where the lines came from. Paths with variables (`$host.log`) are not read. Access lines are read into time, status, method, path and response time; two formats are read: nginx / Apache combined and Caddy JSON. You can filter by `2xx` to `5xx`, or by IP, path or domain.
 
 ## Stats
 
