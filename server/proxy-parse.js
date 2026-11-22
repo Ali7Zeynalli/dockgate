@@ -232,4 +232,54 @@ function traefikAcme(json) {
   return out;
 }
 
-module.exports = { isDomain, parseNginxT, nginxSites, upstreamOf, parseCaddyfile, traefikSites, caddyLabelSites, parseHaproxy, parseApacheS, parseAccessLine, parseCaddyJsonLine, parseCertPem, traefikAcme };
+
+/** File paths a Caddyfile imports (`import sites/*.caddy`), relative to its folder; snippet names are left out. */
+function caddyImports(text, dir) {
+  const out = [];
+  for (const m of String(text || '').matchAll(/^\s*import\s+(\S+)/gm)) {
+    const f = m[1];
+    if (!/[/*.]/.test(f)) continue; // `import common`: a snippet
+    out.push(f.startsWith('/') ? f : `${dir.replace(/\/$/, '')}/${f}`);
+  }
+  return [...new Set(out)].slice(0, 20);
+}
+
+/**
+ * Routers of Traefik's file provider (YAML or TOML, read only): [{ domain, router, service, tls, targets }].
+ * Not a full YAML / TOML reader: a router's name is the key above its rule, its service and TLS are in the lines
+ * after the rule, and a service's servers are the url lines after its name.
+ */
+function traefikFileSites(text) {
+  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  const services = {};
+  for (let i = 0; i < lines.length; i++) {
+    const head = lines[i].match(/^\s*\[http\.services\.([\w@.-]+?)(?:\.loadBalancer)?\]\s*$/) || lines[i].match(/^(\s*)([\w@.-]+):\s*$/);
+    if (!head) continue;
+    const name = head.length === 2 ? head[1] : head[2];
+    const urls = [];
+    for (let j = i + 1; j < Math.min(lines.length, i + 25); j++) {
+      if (/^\s*\[http\.(routers|services)\.[^\]]+\]\s*$/.test(lines[j]) && !lines[j].includes(`.${name}.`)) break;
+      const u = lines[j].match(/url\s*[:=]\s*["']?(https?:\/\/[^"'\s]+)/); if (u) urls.push(u[1].replace(/^https?:\/\//, '').replace(/\/.*$/, ''));
+      if (/^\s*rule\s*[:=]/.test(lines[j])) break;
+    }
+    if (urls.length && !services[name]) services[name] = urls;
+  }
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const r = lines[i].match(/^\s*rule\s*[:=]\s*["']?(.*?)["']?\s*$/); if (!r) continue;
+    let router = null;
+    for (let j = i - 1; j >= Math.max(0, i - 10) && !router; j--) { const k = lines[j].match(/^\s*\[http\.routers\.([\w@.-]+)\]\s*$/) || lines[j].match(/^\s*([\w@.-]+):\s*$/); if (k) router = k[1]; }
+    let service = null; let tls = false;
+    for (let j = i + 1; j < Math.min(lines.length, i + 12); j++) {
+      if (/^\s*(\[http\.routers\.[^\]]+\.tls\]|tls\s*[:=]?)/.test(lines[j])) { tls = true; continue; }
+      if (/^\s*rule\s*[:=]/.test(lines[j]) || /^\s*\[http\.(routers|services)\./.test(lines[j])) break;
+      const sv = lines[j].match(/^\s*service\s*[:=]\s*["']?([\w@.-]+)/); if (sv) service = sv[1];
+    }
+    for (const h of r[1].matchAll(/Host\(([^)]*)\)/g)) for (const d of h[1].matchAll(/[`"']([^`"']+)[`"']/g)) {
+      out.push({ domain: d[1].toLowerCase(), router, service, tls, targets: (service && services[service.replace(/@.*$/, '')]) || [] });
+    }
+  }
+  return out;
+}
+
+module.exports = { caddyImports, traefikFileSites, isDomain, parseNginxT, nginxSites, upstreamOf, parseCaddyfile, traefikSites, caddyLabelSites, parseHaproxy, parseApacheS, parseAccessLine, parseCaddyJsonLine, parseCertPem, traefikAcme };

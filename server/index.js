@@ -273,8 +273,9 @@ app.get('/api/dashboard', async (req, res) => {
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api')) {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-  }
+  } else res.status(404).json({ error: `No API at ${req.path}` }); // was left unanswered: the request hung until it timed out
 });
+app.all('/api/*', (req, res) => res.status(404).json({ error: `No API at ${req.method} ${req.path}` }));
 
 // Error handler — turn an oversized body (and other thrown errors) into a clean JSON response
 // instead of Express's default HTML stack. Must come after the routes.

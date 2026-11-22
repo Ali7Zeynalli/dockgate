@@ -142,6 +142,9 @@ class EventMonitor {
     if (!event.Type || !event.Action) return;
 
     const attrs = event.Actor?.Attributes || {};
+    // DockGate's own short-lived helpers (config writes, commands on the host for Proxies & SSL) start and stop by
+    // design: no "Stopped" / "Started" alert for them (Docker puts container labels in the event attributes)
+    if (event.Type === 'container' && attrs['dockgate.helper']) return;
     const name = attrs.name || event.Actor?.ID?.substring(0, 12) || 'unknown';
     const id = event.Actor?.ID?.substring(0, 12) || '';
     const image = attrs.image || '';

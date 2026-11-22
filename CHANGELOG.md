@@ -2,6 +2,23 @@
 
 ---
 
+## [2.85.0] - 2026-11-23
+
+### Fixed
+- **Proxies & SSL did not see many real setups.** Proxies were found only by their image name and, on the local server, only in containers.
+  - **Images built from a proxy image are found.** A Compose `build:` names the image after the project (`shop-proxy`), so such an nginx was missing with all its sites. DockGate now looks at what the image inherits (`NGINX_VERSION`, `CADDY_VERSION`, `HAPROXY_VERSION`, `HTTPD_VERSION`, or the program it starts).
+  - **Proxies installed on the local server are found.** nginx, Caddy, HAProxy and Apache installed with the package manager were seen on SSH servers only. On the local server a short-lived helper container now reads and changes them, with the same safe steps (check, reload, the sites must answer as before). Their certbot certificates are read too. Without systemd, the program and its processes are used; processes of containers are left out. `DG_HOST_ACCESS=off` turns this off.
+  - **Proxy containers on the host network** (`network_mode: host`) are marked as such, get their real ports, and reach containers at their published ports. Before, "Put a container on a domain" tried to join them to a Docker network, which can not work.
+  - **Logs and Stats read log files.** Only the container's output was read, so a proxy that logs to a file (`access_log /var/log/nginx/site.log`) showed nothing. The files the config names are now read too, and the tab says where the lines came from.
+  - **Apache images other than the official one** (`ubuntu/apache2`, `php:apache`, Bitnami) work: the program (`httpd` or `apache2ctl`) and the config folder are found, not assumed. New sites go to `sites-enabled`, and modules are turned on with `a2enmod`.
+  - **Caddy files brought in with `import`** and **Traefik's file provider** are read, with their sites. File provider files are shown read-only.
+- **Web ports** names the container behind Docker's forwarder (`docker → edge-nginx`) instead of `docker-proxy`.
+- A site that goes to `127.0.0.1:<port>` on a proxy on the server shows the container that publishes that port.
+- Proxies are read four at a time, so a server with many containers opens faster.
+- **An unknown API address got no answer** and the request hung until it timed out. It now answers 404.
+
+---
+
 ## [2.84.0] - 2026-11-22
 
 ### Added
