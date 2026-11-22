@@ -100,7 +100,13 @@ const isSslServer = (block) => /\blisten\s+[^;]*\bssl\b/.test(block) || /\bssl_c
 /** The HTTP (port 80) server of `domain` answers the ACME challenge from ACME_ROOT. A server-level `return` moves into `location /` (it would run first). */
 function nginxEnsureAcme(text, domain) {
   const blocks = nginxBlocks(text, 'server').filter(b => serverNames(b.text).includes(domain) && !isSslServer(b.text));
-  if (!blocks.length) throw err(`No HTTP (port 80) server for ${domain} in this file — the certificate check comes over HTTP`);
+  if (!blocks.length) { // HTTPS only: add an HTTP server that answers the check and sends the rest to https
+    const tls = nginxBlocks(text, 'server').find(b => serverNames(b.text).includes(domain));
+    if (!tls) throw err(`${domain} is not in this file`);
+    const names = serverNames(tls.text).filter(n => /^[a-z0-9.*-]+$/i.test(n));
+    const add = `\n${tls.indent}server {\n${tls.indent}  listen 80;\n${tls.indent}  server_name ${names.join(' ')};\n${nginxAcme(tls.indent + '  ')}\n${tls.indent}  location / {\n${tls.indent}    return 301 https://$host$request_uri;\n${tls.indent}  }\n${tls.indent}}`;
+    return { text: text.slice(0, tls.end) + add + text.slice(tls.end), changed: true, added: true };
+  }
   const b = blocks[0];
   if (b.text.includes(ACME_ROOT)) return { text, changed: false };
   let body = fmtBlock(b.text, b.indent).replace(/^\s+/, '');
@@ -117,6 +123,12 @@ function nginxEnsureAcme(text, domain) {
   return { text: text.slice(0, b.start) + body + text.slice(b.end), changed: true };
 }
 
+/** The names a certificate for `domain` should hold: the server_name of its HTTP server (where the check is answered). */
+function nginxCertNames(text, domain) {
+  const b = nginxBlocks(text, 'server').find(x => serverNames(x.text).includes(domain) && !isSslServer(x.text)) || nginxBlocks(text, 'server').find(x => serverNames(x.text).includes(domain));
+  const names = b ? serverNames(b.text).filter(n => DOMAIN_RE.test(n) && !n.startsWith('*.')) : [];
+  return [domain, ...names.filter(n => n !== domain)].slice(0, 50);
+}
 /** Swap the certificate of every TLS server of `domain` to certPath / keyPath. */
 function nginxSetCert(text, domain, certPath, keyPath) {
   let n = 0; let out = text;
@@ -185,10 +197,21 @@ function nginxSetUpstream(text, name, { method = 'round_robin', servers }) {
     ...list.map(s => `${ind}server ${s.addr}${s.weight > 1 ? ` weight=${s.weight}` : ''}${s.maxFails ? ` max_fails=${s.maxFails}` : ''}${s.failTimeout ? ` fail_timeout=${s.failTimeout}` : ''}${s.backup ? ' backup' : ''}${s.down ? ' down' : ''};`), `${b.indent}}`];
   return text.slice(0, b.start) + lines.join('\n') + text.slice(b.end);
 }
+/** `set $v http://host:port; proxy_pass $v;` (DockGate's single-container form) → `proxy_pass http://host:port;` in the servers of `domain`. */
+function unsetUpstream(text, domain) {
+  let out = text;
+  for (const b of nginxBlocks(text, 'server').reverse()) {
+    if (!serverNames(b.text).includes(domain)) continue;
+    const t = b.text.replace(/set\s+(\$\w+)\s+(https?:\/\/[^;\s]+);(\s*)proxy_pass\s+\1;/g, 'proxy_pass $2;');
+    out = out.slice(0, b.start) + t + out.slice(b.end);
+  }
+  return out;
+}
 /** Make a single-target nginx site balanced: an upstream with the current target, proxy_pass pointed at it. */
 function nginxMakeUpstream(text, domain) {
   const name = `dg_${slug(domain)}`;
   if (nginxBlocks(text, 'upstream').some(b => b.args === name)) return { text, name };
+  text = unsetUpstream(text, domain);
   const b = nginxBlocks(text, 'server').find(x => serverNames(x.text).includes(domain) && /proxy_pass\s+https?:\/\/[^$;]+;/.test(x.text));
   if (!b) throw err(`${domain} has no proxy_pass to a host:port in this file`);
   const target = b.text.match(/proxy_pass\s+(https?):\/\/([^/;$]+)[^;]*;/);
@@ -319,6 +342,43 @@ function apacheSite(input, { certReady = true, loadModules = false } = {}) {
   return out.join('\n') + '\n';
 }
 
+// ---------- Apache: existing sites ----------
+/** <VirtualHost …> blocks: [{ start, end, text, addr, names, ssl }] */
+function apacheVhosts(text) {
+  const out = []; const re = /^([ \t]*)<VirtualHost\s+([^>]*)>[\s\S]*?^[ \t]*<\/VirtualHost>[ \t]*$/gim; let m;
+  while ((m = re.exec(text))) {
+    const t = m[0];
+    const names = [...t.matchAll(/^\s*Server(?:Name|Alias)\s+(.+)$/gim)].flatMap(x => x[1].trim().split(/\s+/)).map(n => n.replace(/:\d+$/, '').toLowerCase());
+    out.push({ start: m.index, end: m.index + t.length, text: t, indent: m[1], addr: m[2].trim(), names, ssl: /^\s*SSLEngine\s+on/im.test(t) || /:443\b/.test(m[2]) });
+  }
+  return out;
+}
+const apacheAcmeLines = (ind) => [`${ind}ProxyPass /.well-known/acme-challenge/ !`, `${ind}Alias /.well-known/acme-challenge/ ${ACME_ROOT}/.well-known/acme-challenge/`, `${ind}<Directory ${ACME_ROOT}>`, `${ind}  Require all granted`, `${ind}</Directory>`];
+/** The HTTP vhost of `domain` answers the certificate check (lines added after ServerName; ProxyPass ! must come first). */
+function apacheEnsureAcme(text, domain) {
+  const v = apacheVhosts(text).find(x => x.names.includes(domain) && !x.ssl);
+  if (!v) throw err(`No HTTP (*:80) VirtualHost for ${domain} — the certificate check comes over HTTP`);
+  if (v.text.includes(ACME_ROOT)) return { text, changed: false };
+  const ind = v.indent + '  ';
+  const t = v.text.replace(/^(\s*ServerName\s+[^\n]+\n)/im, `$1${apacheAcmeLines(ind).join('\n')}\n`);
+  return { text: text.slice(0, v.start) + t + text.slice(v.end), changed: t !== v.text };
+}
+/** HTTPS for an Apache site: the certificate lines of its *:443 vhost swapped, or a *:443 copy of its HTTP vhost made. */
+function apacheSetHttps(text, domain, certPath, keyPath) {
+  const vs = apacheVhosts(text); const tls = vs.find(x => x.names.includes(domain) && x.ssl);
+  if (tls) {
+    let t = tls.text.replace(/^(\s*SSLCertificateFile\s+).+$/im, `$1${certPath}`).replace(/^(\s*SSLCertificateKeyFile\s+).+$/im, `$1${keyPath}`).replace(/^\s*SSLCertificateChainFile\s+.+\n/im, '');
+    if (!/SSLCertificateFile/i.test(t)) t = t.replace(/^(\s*ServerName\s+[^\n]+\n)/im, `$1${tls.indent}  SSLEngine on\n${tls.indent}  SSLCertificateFile ${certPath}\n${tls.indent}  SSLCertificateKeyFile ${keyPath}\n`);
+    return { text: text.slice(0, tls.start) + t + text.slice(tls.end), changed: true };
+  }
+  const http = vs.find(x => x.names.includes(domain)); if (!http) throw err(`${domain} is not in this file`);
+  let copy = http.text.replace(/<VirtualHost\s+([^>]*?):80>/i, '<VirtualHost $1:443>').replace(/<VirtualHost\s+\*>/i, '<VirtualHost *:443>');
+  copy = copy.replace(/\n[ \t]*<Directory\s+\/var\/lib\/dockgate-acme>[\s\S]*?<\/Directory>/i, '').split('\n').filter(l => !/acme-challenge/.test(l)).join('\n');
+  copy = copy.replace(/^(\s*ServerName\s+[^\n]+\n)/im, `$1${http.indent}  SSLEngine on\n${http.indent}  SSLCertificateFile ${certPath}\n${http.indent}  SSLCertificateKeyFile ${keyPath}\n`);
+  return { text: text.slice(0, http.end) + '\n' + copy + text.slice(http.end), changed: true };
+}
+const apacheCertNames = (text, domain) => { const v = apacheVhosts(text).find(x => x.names.includes(domain) && !x.ssl) || apacheVhosts(text).find(x => x.names.includes(domain)); return [domain, ...(v ? v.names.filter(n => n !== domain && DOMAIN_RE.test(n) && !n.startsWith('*.')) : [])].slice(0, 50); };
+
 // ---------- labels ----------
 function traefikLabels(input, { entrypoints = [], resolver = null } = {}) {
   const s = siteInput(input); const id = `dg-${slug(s.domain).replace(/_/g, '-')}`;
@@ -353,5 +413,5 @@ function removeMarked(text, domain) {
 }
 const isDockgateFile = (text) => String(text || '').startsWith(MARK);
 
-module.exports = { APACHE_MODS, fmtBlock, MARK, ACME_ROOT, slug, siteInput, nginxSite, nginxBlocks, nginxEnsureAcme, nginxSetCert, nginxAddHttps, nginxUpstreams, nginxSetUpstream, nginxMakeUpstream,
+module.exports = { nginxCertNames, apacheVhosts, apacheEnsureAcme, apacheSetHttps, apacheCertNames, APACHE_MODS, fmtBlock, MARK, ACME_ROOT, slug, siteInput, nginxSite, nginxBlocks, nginxEnsureAcme, nginxSetCert, nginxAddHttps, nginxUpstreams, nginxSetUpstream, nginxMakeUpstream,
   caddySite, caddyAdd, caddySiteRange, caddyLb, caddySetLb, haproxyAdd, haproxyBackends, haproxySetBackend, apacheSite, traefikLabels, caddyLabels, labelsText, removeMarked, isDockgateFile, lbServers };

@@ -67,7 +67,13 @@ test('ACME challenge: added to the HTTP server, a server-level return moves into
   assert.doesNotMatch(http.replace(/location \/ \{[\s\S]*?\}/, ''), /^\s*return 301/m);
   assert.equal(G.nginxEnsureAcme(a.text, 'shop.example.test').changed, false); // once
   assert.ok(a.text.includes('upstream api_pool')); // the rest of the file stays
-  assert.throws(() => G.nginxEnsureAcme('server { listen 443 ssl; server_name x.example.com; }', 'x.example.com'), /No HTTP/);
+  // an HTTPS-only site gets an HTTP server that answers the check and sends the rest to https
+  const only = G.nginxEnsureAcme('server { listen 443 ssl; server_name x.example.com www.x.example.com; }', 'x.example.com');
+  assert.equal(only.added, true);
+  const http2 = G.nginxBlocks(only.text, 'server')[1].text;
+  assert.match(http2, /listen 80;/); assert.match(http2, /server_name x\.example\.com www\.x\.example\.com;/); assert.match(http2, /acme-challenge/); assert.match(http2, /return 301 https/);
+  assert.deepEqual(G.nginxCertNames(only.text, 'x.example.com'), ['x.example.com', 'www.x.example.com']);
+  assert.throws(() => G.nginxEnsureAcme('server { listen 80; server_name y.example.com; }', 'x.example.com'), /not in this file/);
 });
 
 test('HTTPS for an HTTP-only site; certificate paths swapped on a TLS site', () => {
@@ -170,4 +176,27 @@ test('nothing a user types can add nginx directives', () => {
   assert.throws(() => G.siteInput({ domain: 'a.example.com;', targets: ['a:1'] }), /Not a domain/);
   assert.throws(() => G.siteInput({ domain: 'a.example.com', targets: ['a:1;'] }), /host:port/);
   assert.throws(() => G.nginxSetUpstream(ONE_LINE, 'api_pool', { servers: [{ addr: 'x:1; return 200' }] }), /host:port/);
+});
+
+test('a DockGate single-container site is read back with its target, and can be balanced', () => {
+  const t = G.nginxSite({ domain: 'one.example.test', targets: ['app:80'], dockerDns: true });
+  assert.deepEqual(sitesOf(t).find(x => x.domain === 'one.example.test').targets, ['app:80']);
+  const r = G.nginxMakeUpstream(t, 'one.example.test');
+  assert.match(r.text, /proxy_pass http:\/\/dg_one_example_test;/); assert.doesNotMatch(r.text, /\$dg_upstream/);
+  assert.deepEqual(sitesOf(r.text).find(x => x.domain === 'one.example.test').targets, ['app:80']);
+});
+
+test('Apache existing site: challenge lines, HTTPS copy without them, certificate names', () => {
+  const a = '<VirtualHost *:80>\n  ServerName ap.example.test\n  ServerAlias www.ap.example.test *.wild.example.test\n  ProxyPass / http://app:80/\n</VirtualHost>\n';
+  const e1 = G.apacheEnsureAcme(a, 'ap.example.test');
+  assert.equal(e1.changed, true);
+  assert.ok(e1.text.indexOf('ProxyPass /.well-known/acme-challenge/ !') < e1.text.indexOf('ProxyPass / http://app:80/'), 'the exclusion comes before ProxyPass /');
+  assert.equal(G.apacheEnsureAcme(e1.text, 'ap.example.test').changed, false);
+  const h = G.apacheSetHttps(e1.text, 'ap.example.test', '/c/f.pem', '/c/k.pem').text;
+  const tls = G.apacheVhosts(h).find(v => v.ssl);
+  assert.match(tls.text, /<VirtualHost \*:443>/); assert.match(tls.text, /SSLCertificateFile \/c\/f\.pem/); assert.doesNotMatch(tls.text, /acme|Directory/);
+  const h2 = G.apacheSetHttps(h, 'ap.example.test', '/n/f.pem', '/n/k.pem').text; // the existing *:443 is changed, not copied again
+  assert.equal(G.apacheVhosts(h2).filter(v => v.ssl).length, 1); assert.match(h2, /SSLCertificateFile \/n\/f\.pem/);
+  assert.deepEqual(G.apacheCertNames(a, 'ap.example.test'), ['ap.example.test', 'www.ap.example.test']);
+  assert.throws(() => G.apacheEnsureAcme('<VirtualHost *:443>\n  ServerName x.example.test\n  SSLEngine on\n</VirtualHost>', 'x.example.test'), /No HTTP/);
 });
