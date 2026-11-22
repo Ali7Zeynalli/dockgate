@@ -282,4 +282,18 @@ function traefikFileSites(text) {
   return out;
 }
 
-module.exports = { caddyImports, traefikFileSites, isDomain, parseNginxT, nginxSites, upstreamOf, parseCaddyfile, traefikSites, caddyLabelSites, parseHaproxy, parseApacheS, parseAccessLine, parseCaddyJsonLine, parseCertPem, traefikAcme };
+/**
+ * Every certificate file an nginx config names: in server blocks, at http level (inherited by every server) and in
+ * included snippets (`include snippets/ssl.conf;`) — not only `ssl_certificate` written in the server block itself.
+ * Paths with variables ($ssl_server_name) and `data:` certificates can not be read and are left out.
+ */
+function nginxAllCerts(parsed) {
+  const out = new Set((parsed.servers || []).map(s => s.cert).filter(Boolean));
+  for (const f of parsed.files || []) {
+    const src = f.text.replace(/#[^\n]*/g, '');
+    for (const m of src.matchAll(/(?:^|[;{\s])ssl_certificate\s+["']?([^"';\s]+)/g)) out.add(m[1]);
+  }
+  return [...out].filter(x => !x.includes('$') && !/^data:/.test(x)).map(x => (x.startsWith('/') ? x : `/etc/nginx/${x}`)).slice(0, 80);
+}
+
+module.exports = { nginxAllCerts, caddyImports, traefikFileSites, isDomain, parseNginxT, nginxSites, upstreamOf, parseCaddyfile, traefikSites, caddyLabelSites, parseHaproxy, parseApacheS, parseAccessLine, parseCaddyJsonLine, parseCertPem, traefikAcme };

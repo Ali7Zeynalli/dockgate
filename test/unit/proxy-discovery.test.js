@@ -63,3 +63,21 @@ test('local host in a container: a helper that shares the host\'s processes and 
     assert.equal(spec.HostConfig.PidMode, 'host'); assert.equal(spec.HostConfig.NetworkMode, 'host'); assert.deepEqual(spec.HostConfig.Binds, ['/:/host']);
   } finally { if (old == null) delete process.env.DG_IN_CONTAINER; else process.env.DG_IN_CONTAINER = old; }
 });
+
+test('nginxAllCerts: certificates in included snippets and at http level, not only in the server block', () => {
+  const parsed = P.parseNginxT(`# configuration file /etc/nginx/nginx.conf:
+http {
+  ssl_certificate /etc/ssl/default.crt;
+  include /etc/nginx/sites-enabled/*;
+}
+# configuration file /etc/nginx/sites-enabled/app.conf:
+server { listen 443 ssl; server_name app.test; include snippets/app-ssl.conf; }
+server { listen 443 ssl; server_name b.test; ssl_certificate /etc/letsencrypt/live/b.test/fullchain.pem; }
+server { listen 443 ssl; server_name *.c.test; ssl_certificate /etc/ssl/$ssl_server_name.crt; }
+# configuration file /etc/nginx/snippets/app-ssl.conf:
+ssl_certificate snippets/../ssl/app.crt; # relative to /etc/nginx
+ssl_certificate_key /etc/nginx/ssl/app.key;
+# ssl_certificate /old/commented.crt;
+`);
+  assert.deepEqual(P.nginxAllCerts(parsed).sort(), ['/etc/letsencrypt/live/b.test/fullchain.pem', '/etc/nginx/snippets/../ssl/app.crt', '/etc/ssl/default.crt'].sort());
+});

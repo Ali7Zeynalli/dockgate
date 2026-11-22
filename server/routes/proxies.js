@@ -12,6 +12,7 @@ router.get('/', send((req) => PX.scan({ fresh: req.query.fresh === '1' })));
 router.get('/certs', send((req) => PE.certOverview({ fresh: req.query.fresh === '1' })));
 router.get('/certs/fleet', send(() => PE.fleet()));
 router.post('/certs/check', send(async (req) => { const r = await PE.checkAllCerts({ notify: true }); audit(req, 'proxy_cert_check', 'all servers', { servers: r.length }); return PE.fleet(); }));
+router.post('/certs/renew', send(async (req) => { const fp = String((req.body || {}).fingerprint || ''); const r = await PE.renewNow(fp, who(req)); audit(req, 'proxy_cert_renew_now', fp, { ok: r.ok }); return r; }));
 router.post('/certbot/renew', send(async (req) => { const r = await PE.certbotRenew((req.body || {}).name); audit(req, 'proxy_certbot_renew', (req.body || {}).name, { ok: r.ok }); return r; }));
 router.get('/certbot/hook', send(() => PE.certbotHook(true)));
 router.post('/certbot/hook', send(async (req) => { const r = await PE.certbotHook(false); audit(req, 'proxy_certbot_hook', r.path, {}); return r; }));
