@@ -162,6 +162,21 @@ Every certificate the proxies use is listed, with **who renews it**. DockGate re
 
 **Is the new certificate served?** For nginx, Apache and HAProxy, DockGate asks the proxy (from inside it, on 127.0.0.1:443) which certificate it really serves. "✓ served" means it answers with the certificate on disk. **Old one still served** means the file was renewed but the proxy was not reloaded. **Reload** fixes it (after a config check).
 
+### Renewing by hand
+
+Each certificate in the list has **Renew now** when someone can be asked to renew it. It asks for a new certificate at once, even when the current one is not due yet, then checks and reloads the proxies that use it:
+
+| Kept by | Renew now does |
+|---|---|
+| DockGate (Let's Encrypt) | gets a new certificate, writes it, checks, reloads |
+| certbot on the server | `certbot renew --cert-name <name> --force-renewal`, then the web servers using it are reloaded |
+| certbot in a container next to the proxy | the same, inside that container (it must be running) |
+| acme.sh | `acme.sh --renew -d <name> --force` (its own `reloadcmd` runs), then the proxies are reloaded |
+| Caddy, Traefik, Nginx Proxy Manager | nothing to ask: they renew by themselves. Their errors are shown above the list. |
+| A file nobody renews | **Use Let's Encrypt** on its site gets a new certificate from DockGate |
+
+To renew only by hand, turn **Auto renew** off for a DockGate certificate: DockGate then keeps it, warns before it expires, and renews it only when you press **Renew now**. Let's Encrypt allows 5 new certificates for the same names a week.
+
 ### Let's Encrypt from DockGate
 
 DockGate is the ACME client. It answers the certificate check through the proxy itself, so nothing else is installed:

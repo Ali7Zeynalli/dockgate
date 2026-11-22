@@ -475,7 +475,7 @@ async function certificates({ ctx = activeCtx(), fresh = false, served = true } 
     const internal = isInternalIssuer(cert.issuer); const staging = isStagingIssuer(cert.issuer) && !internal;
     let renewal = f.label || (f.renewer === 'caddy' ? 'Caddy — automatic' : f.renewer === 'traefik' ? 'Traefik — automatic' : f.renewer === 'certbot' ? (certbotLabel || 'certbot — not checked') : 'none (a file)');
     if (internal) renewal = `${f.renewer === 'traefik' ? 'Traefik' : 'Caddy'} — internal (automatic)`;
-    byFp.set(cert.fingerprint, { ...cert, source: f.source || (f.renewer === 'certbot' ? 'certbot' : 'file'), paths: [f.path], proxies: [f.proxy], proxyIds: f.proxyId ? [f.proxyId] : [], kind: f.kind || null, renewer: internal ? 'internal' : f.renewer || 'none', auto: !!f.auto || internal, renewal, internal, staging, watch: !internal });
+    byFp.set(cert.fingerprint, { ...cert, source: f.source || (f.renewer === 'certbot' ? 'certbot' : 'file'), paths: [f.path], proxies: [f.proxy], proxyIds: f.proxyId ? [f.proxyId] : [], kind: f.kind || null, renewer: internal ? 'internal' : f.renewer || 'none', auto: !!f.auto || internal, renewal, internal, staging, watch: !internal, certbotContainer: f.certbotContainer || null });
   }
   const certs = [...byFp.values()].sort((a, b) => a.daysLeft - b.daysLeft);
   // what each proxy really serves: a certificate renewed on disk but not loaded is still the old one
@@ -509,7 +509,7 @@ const PX_FILE_CERTS = {
 function renewerOf(p, path, helper) {
   if (p.kind === 'npm') return /letsencrypt/.test(path) ? { source: 'Nginx Proxy Manager', renewer: 'npm', auto: true, label: 'Nginx Proxy Manager — automatic' } : { source: 'Nginx Proxy Manager', renewer: 'none', label: 'uploaded in Nginx Proxy Manager (not renewed)' };
   if (p.kind === 'nginx-proxy') { const h = helper('acme-companion'); return h ? { source: 'acme-companion', renewer: 'acme-companion', auto: true, label: `acme-companion — automatic${h.running ? '' : ' (container stopped!)'}` } : { source: 'file', renewer: 'none' }; }
-  if (/\/letsencrypt\//.test(path)) { const h = helper('certbot'); return h ? { source: 'certbot', renewer: 'certbot', auto: true, label: `certbot container ${h.name}${h.running ? '' : ' (stopped!)'}` } : { source: 'certbot', renewer: 'certbot', auto: true }; }
+  if (/\/letsencrypt\//.test(path)) { const h = helper('certbot'); return h ? { source: 'certbot', renewer: 'certbot', auto: true, label: `certbot container ${h.name}${h.running ? '' : ' (stopped!)'}`, certbotContainer: h.name } : { source: 'certbot', renewer: 'certbot', auto: true }; }
   if (/\/dockgate-certs\/|\/etc\/dockgate\/certs\//.test(path)) return { source: 'DockGate', renewer: 'dockgate', auto: true, label: 'DockGate — automatic' };
   return { source: 'file', renewer: 'none' };
 }

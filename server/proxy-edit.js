@@ -843,15 +843,67 @@ async function certbotReloads(ctx) {
   return cmdsOut;
 }
 /** certbot renew for one certificate now, then the web servers that use it are reloaded. */
+/**
+ * certbot renew for one certificate, now. --force-renewal: a renewal asked by hand is done even when the certificate
+ * is not due yet (without it certbot says "not yet due for renewal", changes nothing, and exits 0).
+ */
 async function certbotRenew(name) {
   const ctx = activeCtx(); if (!ctx.server) throw err('DockGate has no access to the host here (DG_HOST_ACCESS is off)');
   if (!/^[\w.-]{1,200}$/.test(String(name || ''))) throw err('Not a certificate name');
-  const r = await PX.hostExec(ctx.server, asRoot(`certbot renew --cert-name ${shq(name)} --no-random-sleep-on-renew 2>&1`));
-  const reloads = r.code === 0 ? await certbotReloads(ctx) : [];
+  const r = await PX.hostExec(ctx.server, asRoot(`certbot renew --cert-name ${shq(name)} --force-renewal --no-random-sleep-on-renew 2>&1`));
+  const out = (r.out + r.err).trim();
+  const ok = r.code === 0 && !/No renewals were attempted|not yet due/i.test(out);
+  const reloads = ok ? await certbotReloads(ctx) : [];
   const outs = [];
   for (const c of reloads) { const x = await PX.hostExec(ctx.server, asRoot(`${c} 2>&1`)); outs.push(`$ ${c}\n${(x.out + x.err).trim()}`); }
   PX.invalidate();
-  return { ok: r.code === 0, output: [(r.out + r.err).trim(), ...outs].join('\n\n').slice(-6000) };
+  return { ok, output: [out, ...outs].join('\n\n').slice(-6000), steps: [{ t: ok ? `certbot renewed ${name}` : `certbot did not renew ${name}`, ok }, ...reloads.map(c => ({ t: `Reloaded: ${c}`, ok: true }))] };
+}
+
+/**
+ * "Renew now" for any certificate of the Certificates list, by hand: whoever keeps it does it now.
+ * DockGate's own → a new one from Let's Encrypt; certbot on the server or in a certbot container → certbot renew
+ * --force-renewal; acme.sh → acme.sh --renew --force. Then the proxies that use it are checked and reloaded.
+ * Caddy, Traefik and Nginx Proxy Manager renew by themselves (nothing to ask them); a plain file has nobody to ask.
+ */
+async function renewNow(fingerprint, user) {
+  const ctx = activeCtx();
+  const ov = await certOverview({ ctx });
+  const c = ov.certs.find(x => x.fingerprint === fingerprint); if (!c) throw err('Certificate not found — refresh the list', 404);
+  const reloadUsers = async (steps) => {
+    for (const id of c.proxyIds || []) {
+      try { const r = await reloadProxy(id); steps.push({ t: `${(await PX.proxyById(id)).name}: ${r.ok ? 'config checked and reloaded' : `reload failed — ${r.output.split('\n').pop()}`}`, ok: r.ok }); }
+      catch (e) { steps.push({ t: `${id}: ${e.message}`, ok: false }); }
+    }
+  };
+  if (c.managedId) { await renew(c.managedId); return { ok: true, steps: [{ t: `DockGate got a new certificate for ${c.names[0]} and reloaded the proxy`, ok: true }] }; }
+  if (c.renewer === 'certbot') {
+    const name = (c.paths.map(x => (x.match(/\/letsencrypt\/live\/([^/]+)\//) || [])[1]).find(Boolean)) || null;
+    if (!name) throw err('certbot keeps this certificate, but its name is not in its path (/etc/letsencrypt/live/<name>/)');
+    if (c.certbotContainer && !c.proxies.includes('host')) { // certbot in a container next to the proxy
+      const d = await PX.scan(); const h = (d.helpers || []).find(x => x.name === c.certbotContainer);
+      if (!h || !h.running) throw err(`The certbot container ${c.certbotContainer} is not running: start it, or renew from where certbot runs`);
+      const r = await PX.execIn(ctx.c, h.cid, ['sh', '-c', `certbot renew --cert-name ${shq(name)} --force-renewal --no-random-sleep-on-renew 2>&1`], { timeout: 180000, user: 'root' });
+      const out = (r.out + r.err).trim(); const ok = r.code === 0 && !/No renewals were attempted|not yet due/i.test(out);
+      const steps = [{ t: ok ? `certbot (${h.name}) renewed ${name}` : `certbot (${h.name}) did not renew ${name}`, ok }];
+      if (ok) await reloadUsers(steps);
+      PX.invalidate();
+      return { ok: ok && steps.every(x => x.ok), steps, output: out.slice(-6000) };
+    }
+    return certbotRenew(name);
+  }
+  if (c.renewer === 'acme.sh') {
+    if (!ctx.server) throw err('DockGate has no access to the host here (DG_HOST_ACCESS is off)');
+    const m = c.paths[0].match(/^(.*\/\.acme\.sh)\/([^/]+?)(_ecc)?\/fullchain\.cer$/); if (!m) throw err('Not an acme.sh certificate folder');
+    const r = await PX.hostExec(ctx.server, asRoot(`${shq(m[1] + '/acme.sh')} --home ${shq(m[1])} --renew -d ${shq(m[2])}${m[3] ? ' --ecc' : ''} --force 2>&1`));
+    const out = (r.out + r.err).trim(); const ok = r.code === 0 && !/Skipping|error/i.test(out.split('\n').slice(-3).join('\n'));
+    const steps = [{ t: ok ? `acme.sh renewed ${m[2]} (its reloadcmd, if set, has run)` : `acme.sh did not renew ${m[2]}`, ok }];
+    if (ok) await reloadUsers(steps);
+    PX.invalidate();
+    return { ok, steps, output: out.slice(-6000) };
+  }
+  if (['caddy', 'traefik', 'npm', 'acme-companion'].includes(c.renewer) || c.internal) throw err(`${c.renewal}: it renews by itself, there is nothing to ask it. If it does not, the errors are shown above the list.`);
+  throw err('Nobody renews this file. Use "Use Let\'s Encrypt" on its site: DockGate gets a new certificate (you can turn its automatic renewal off and renew by hand).');
 }
 /** A certbot deploy hook that reloads the web servers using its certificates (certbot runs it after each renewal). */
 async function certbotHook(preview = false) {
@@ -916,5 +968,5 @@ function startCertCheck() {
   certTimer = setInterval(() => checkAllCerts().catch(e => console.warn('[proxies] certificate check:', e.message)), 24 * 3600000);
 }
 
-module.exports = { startProxy, startAndWatch, siteSettings, siteSettingsPlan, saveSiteSettings, certOverview, reloadProxy, certbotRenew, certbotHook, checkAllCerts, certAlerts, fleet, activeCtx, ctxFor, openFile, saveFile, versions, versionText, restoreVersion, targets, exposePlan, expose, removeSite, acmeSettings, setAcmeSettings, certForSite, certList, renew, redeploy, setAuto, forget,
+module.exports = { renewNow, startProxy, startAndWatch, siteSettings, siteSettingsPlan, saveSiteSettings, certOverview, reloadProxy, certbotRenew, certbotHook, checkAllCerts, certAlerts, fleet, activeCtx, ctxFor, openFile, saveFile, versions, versionText, restoreVersion, targets, exposePlan, expose, removeSite, acmeSettings, setAcmeSettings, certForSite, certList, renew, redeploy, setAuto, forget,
   renewDue, start, lbGet, lbSet, traefikLive, stats, accessStats, logTime, apply, cmds, probe, sha, _q: q };

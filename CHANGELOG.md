@@ -4,7 +4,11 @@
 
 ## [2.85.1] - 2026-11-23
 
+### Added
+- **Renew now for every certificate that has someone to ask** (Proxies & SSL → Certificates). It renews at once, even before the certificate is due, then checks and reloads the proxies that use it: DockGate's own, certbot on the server, certbot in a container next to the proxy, and acme.sh. For Caddy, Traefik and Nginx Proxy Manager, and for files nobody renews, it says why there is nothing to ask. Turn a DockGate certificate's Auto renew off to renew it only by hand.
+
 ### Fixed
+- **certbot's Renew now did nothing for a certificate that was not due.** certbot answered "not yet due for renewal" and exited normally, so DockGate reported success. It now asks with `--force-renewal`, and a renewal that did not happen is reported as such.
 - **Certificates were missing in Proxies & SSL → Certificates.**
   - nginx: only an `ssl_certificate` written in the server block itself was read. One in an included snippet (`include snippets/ssl.conf;`) or at `http` level was missed, with its expiry and alerts. Every `ssl_certificate` in the config is now read.
   - On the server itself, `/etc/letsencrypt` and the other host files were read only through `sudo`. A server without `sudo` (logged in as root) showed no certbot certificates. They are now read as root when DockGate already is root, and through `sudo` otherwise.
