@@ -13,6 +13,7 @@ const navItems = {
   observe: { label: 'Logs & events', icon: Icons.events, tabs: [['logs', 'Logs'], ['events', 'Events']], default: 'logs' },
   // WEB — how it is reached from outside
   uptime: { label: 'Uptime', icon: SRV_ICONS.uptime },
+  proxies: { label: 'Proxies & SSL', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' },
   // SERVERS — every server
   infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH keys'], ['agent', 'Edge agent']], default: 'servers' },
   // SERVER — the server picked in the top bar (server-sections.js)
@@ -32,7 +33,7 @@ const navItems = {
 const navGroups = [
   { label: 'Overview', items: ['dashboard', 'monitoring'] },
   { label: 'Docker', items: ['resources', 'deploy', 'swarm', 'databases', 'observe'] },
-  { label: 'Web', items: ['uptime'] },
+  { label: 'Web', items: ['uptime', 'proxies'] },
   { label: 'Servers', items: ['infra'] },
   { label: 'Server', id: 'server', items: ['srv-status', 'srv-security', 'srv-system', 'srv-software', 'srv-automation'] },
   { label: 'Tools', items: ['tools'] },

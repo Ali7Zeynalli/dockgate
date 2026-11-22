@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.79.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.81.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.79.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.81.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
@@ -41,6 +41,7 @@
 - **Servers** — provision, secure (SSH, users, firewall, fail2ban) and monitor any number of hosts over SSH; cron jobs with alerts, **scripts** (templates, blocks or your own shell), system settings (network with automatic rollback, DNS, kernel, disks) and a file manager with a safe editor.
 - **Databases** — a database client for PostgreSQL in your containers, on any server: an Explorer tree, tabs and right-click menus; tables edited like a spreadsheet, a SQL editor with autocomplete and plans, table design (columns, indexes, keys) with a rolled-back Test, export to SQL / CSV / Excel, `.sql` and CSV import, test data, users, backups — read-only until you allow changes, no port opened.
 - **Uptime** — checks your sites (HTTP, SSL, TCP, DNS) from DockGate and from your other servers, linked to the containers behind them.
+- **Proxies & SSL** — nginx, Caddy, Traefik, HAProxy and Apache: which domain goes to which container, putting a container on a domain, Let's Encrypt certificates that DockGate gets and renews, a config editor that checks, reloads and puts the old file back if a site breaks, load balancing, logs, stats and Traefik's live routers.
 - **Alerts** — Telegram, email and webhook, plus an optional Edge agent that keeps alerting — and keeps replicas, healing and Auto Scaling running — when DockGate is offline.
 - **Light** — at most 256 MB RAM and 0.5 CPU; plain JavaScript, no build step, works offline.
 
@@ -52,7 +53,7 @@
 |---|---|
 | **Overview** | Dashboard · Monitoring (every server) |
 | **Docker** | Resources (Containers, Images, Builds, Volumes, Networks, Cleanup) · Deploy (Projects, App templates, Tasks) · Swarm · Databases · Logs & events |
-| **Web** | Uptime |
+| **Web** | Uptime, Proxies & SSL |
 | **Servers** | Servers · SSH keys · Edge agent |
 | **Server** — the one picked in the top bar | Status (overview, graphs, alerts, logs, system info, connection) · Security (SSH, users, firewall, fail2ban) · System (names, network, time, disks, kernel, config files) · Software (setup, services, Docker engine, auto updates) · Automation (cron, timers, scripts, schedules) |
 | **Tools** | Terminal · Files |

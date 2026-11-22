@@ -1,0 +1,37 @@
+// Web → Proxies & SSL (server/proxies.js reads, server/proxy-edit.js changes) — the server in use. Mounted at /api/proxies.
+const express = require('express');
+const router = express.Router();
+const PX = require('../proxies');
+const PE = require('../proxy-edit');
+const { logAction } = require('../audit');
+const send = (fn) => async (req, res) => { try { res.json(await fn(req)); } catch (e) { res.status(e.statusCode || 500).json({ error: e.message, ...(e.conflict ? { conflict: e.conflict } : {}) }); } };
+const who = (req) => (req.user && (req.user.username || req.user.name)) || (req.session && req.session.user) || 'admin';
+const audit = (req, action, name, details) => logAction({ req, resourceType: 'proxy', resourceName: name, action, details });
+
+router.get('/', send((req) => PX.scan({ fresh: req.query.fresh === '1' })));
+router.get('/certs', send(async () => ({ ...(await PX.certificates()), managed: PE.certList(), acme: PE.acmeSettings() })));
+router.get('/targets', send(() => PE.targets()));
+router.get('/acme', send(() => PE.acmeSettings()));
+router.put('/acme', send((req) => { const r = PE.setAcmeSettings(req.body || {}); audit(req, 'proxy_acme_settings', 'acme', { directory: r.directory }); return r; }));
+router.post('/expose/plan', send((req) => PE.exposePlan(req.body || {})));
+router.post('/expose', send(async (req) => { const r = await PE.expose(req.body || {}, who(req)); audit(req, 'proxy_expose', req.body && req.body.domain, { proxy: req.body && req.body.proxy, ok: r.ok, stage: r.stage }); return r; }));
+router.post('/managed-certs/:cid/renew', send(async (req) => { try { const r = await PE.renew(req.params.cid); audit(req, 'proxy_cert_renew', req.params.cid, { ok: true }); return r; } catch (e) { audit(req, 'proxy_cert_renew', req.params.cid, { ok: false, error: e.message }); throw e; } }));
+router.post('/managed-certs/:cid/redeploy', send(async (req) => { const r = await PE.redeploy(req.params.cid); audit(req, 'proxy_cert_redeploy', req.params.cid, { ok: r.ok }); return r; }));
+router.put('/managed-certs/:cid/auto', send((req) => PE.setAuto(req.params.cid, !!(req.body || {}).auto)));
+router.delete('/managed-certs/:cid', send((req) => { audit(req, 'proxy_cert_forget', req.params.cid, {}); return PE.forget(req.params.cid); }));
+router.get('/:id/files', send((req) => PX.files(req.params.id)));
+router.get('/:id/file', send((req) => PE.openFile(req.params.id, String(req.query.path || ''))));
+router.put('/:id/file', send(async (req) => { const r = await PE.saveFile(req.params.id, req.body || {}, who(req)); audit(req, 'proxy_file_save', `${req.params.id}:${(req.body || {}).path}`, { ok: r.ok, stage: r.stage }); return r; }));
+router.get('/:id/versions', send((req) => PE.versions(req.params.id, req.query.path ? String(req.query.path) : null)));
+router.get('/:id/versions/:vid', send((req) => PE.versionText(req.params.id, req.params.vid)));
+router.post('/:id/versions/:vid/restore', send(async (req) => { const r = await PE.restoreVersion(req.params.id, req.params.vid, who(req)); audit(req, 'proxy_file_restore', `${req.params.id}:${req.params.vid}`, { ok: r.ok }); return r; }));
+router.get('/:id/logs', send((req) => PX.logs(req.params.id, req.query.which, req.query.tail)));
+router.get('/:id/stats', send((req) => PE.stats(req.params.id, req.query.tail)));
+router.get('/:id/traefik', send((req) => PE.traefikLive(req.params.id)));
+router.get('/:id/lb', send((req) => PE.lbGet(req.params.id, String(req.query.domain || ''))));
+router.put('/:id/lb', send(async (req) => { const r = await PE.lbSet(req.params.id, String(req.query.domain || ''), req.body || {}, who(req)); audit(req, 'proxy_lb', `${req.params.id}:${req.query.domain}`, { ok: r.ok }); return r; }));
+router.post('/:id/sites/:domain/cert', send(async (req) => { const r = await PE.certForSite(req.params.id, req.params.domain, req.body || {}, who(req)); audit(req, 'proxy_cert_issue', req.params.domain, { ok: r.ok, stage: r.stage }); return r; }));
+router.delete('/:id/sites/:domain', send(async (req) => { const r = await PE.removeSite(req.params.id, req.params.domain, who(req)); audit(req, 'proxy_site_remove', req.params.domain, { ok: r.ok }); return r; }));
+router.post('/:id/test', send(async (req) => { const r = await PX.testConfig(req.params.id); audit(req, 'proxy_test', req.params.id, { ok: r.ok, command: r.command }); return r; }));
+
+module.exports = router;

@@ -69,6 +69,7 @@ app.use('/api/volumes', require('./routes/volumes'));
 app.use('/api/networks', require('./routes/networks'));
 app.use('/api/compose', require('./routes/compose'));
 app.use('/api/git-connect', require('./routes/git-connect'));
+app.use('/api/proxies', require('./routes/proxies'));
 app.use('/api/swarm', require('./routes/swarm')); // Docker Swarm on the server in use
 app.use('/api/files', require('./routes/files'));
 app.use('/api/system', require('./routes/system'));
@@ -659,6 +660,7 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
   if (process.env.NODE_ENV !== 'test') require('./uptime').start(); // Observe → Uptime checks
   if (process.env.NODE_ENV !== 'test') require('./task-recipes').start(); // Deploy → Tasks: scheduled recipes
+  if (process.env.NODE_ENV !== 'test') require('./proxy-edit').start(); // Proxies & SSL: renew DockGate's Let's Encrypt certificates
   if (process.env.NODE_ENV !== 'test') require('./cron-monitor').start(); // cron jobs failed / did not run
   if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
   if (process.env.NODE_ENV !== 'test') { require('./swarm-monitor').start(); require('./swarm-stacks').startBridgeKeeper(); require('./agent/control').start(); require('./compose-heal').start(); require('./compose-autoscale').start(); require('./swarm-firewall').start(); require('./compose-keep').start(); }
