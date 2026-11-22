@@ -23,6 +23,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS compose_scaling (
   updated_at INTEGER, PRIMARY KEY (server_id, project, service)
 )`);
 try { db.exec('ALTER TABLE compose_scaling ADD COLUMN keep_running INTEGER DEFAULT 0'); } catch (e) { /* there */ }
+try { db.exec('ALTER TABLE compose_scaling ADD COLUMN labels TEXT'); } catch (e) { /* there */ } // labels DockGate adds (Proxies & SSL: Traefik / caddy-docker-proxy)
 // Where the override of a project is (so resolveComposeFiles needs no SSH round trip to know).
 db.exec(`CREATE TABLE IF NOT EXISTS compose_overrides (
   server_id TEXT NOT NULL, project TEXT NOT NULL, path TEXT NOT NULL, updated_at INTEGER, PRIMARY KEY (server_id, project)
@@ -40,6 +41,20 @@ const q = {
 };
 
 function checkName(n, what) { if (!NAME.test(String(n || ''))) throw bad(`${what} "${String(n).slice(0, 40)}": letters, digits, dot, dash or underscore (up to 63)`); return n; }
+const LABEL_KEY = /^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,200}$/;
+/** Labels for the override: keys checked, values plain one-line strings. */
+function checkLabels(obj) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (!LABEL_KEY.test(k)) throw bad(`Label "${String(k).slice(0, 60)}": letters, digits, dot, dash, slash or underscore`);
+    const val = String(v);
+    if (/[\r\n]/.test(val) || val.length > 1000) throw bad(`Label ${k}: one line, up to 1000 characters`);
+    out[k] = val;
+  }
+  return out;
+}
+// a YAML double-quoted string; $ doubled so compose does not read it as a variable
+const yq = (v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '$$$$')}"`;
 function checkReplicas(n) { if (!Number.isInteger(n) || n < 0 || n > MAX_REPLICAS) throw bad(`Replicas: a whole number from 0–${MAX_REPLICAS}`); return n; }
 
 /** Where the override of a project lives. Never inside the project folder. */
@@ -65,6 +80,8 @@ function buildOverride(rules = {}) {
     const aliases = [...new Set((r.aliases || []).map(a => checkName(a, 'Alias')))];
     const nets = [...new Set((r.networks && r.networks.length ? r.networks : ['default']).map(n => checkName(n, 'Network')))];
     if (aliases.length) body.push('    networks:', ...nets.flatMap(n => [`      ${n}:`, '        aliases:', ...aliases.map(a => `          - ${a}`)]));
+    const labels = Object.entries(checkLabels(r.labels));
+    if (labels.length) body.push('    labels:', ...labels.map(([k, v]) => `      ${k}: ${yq(v)}`));
     if (body.length) lines.push(`  ${svc}:`, ...body);
   }
   return lines.length ? `# Written by DockGate — your compose files are not changed. Remove this file to go back.\nservices:\n${lines.join('\n')}\n` : '';
@@ -75,7 +92,8 @@ function readRules(serverId, project) {
   const out = {};
   for (const r of q.rules.all(serverId, project)) {
     let aliases = []; try { aliases = JSON.parse(r.aliases || '[]'); } catch (e) { /* none */ }
-    out[r.service] = { replicas: r.replicas, dropPorts: !!r.fix_ports, dropName: !!r.fix_name, aliases, mode: r.mode, heal: !!r.heal, keepRunning: !!r.keep_running };
+    let labels = {}; try { labels = JSON.parse(r.labels || '{}') || {}; } catch (e) { /* none */ }
+    out[r.service] = { replicas: r.replicas, dropPorts: !!r.fix_ports, dropName: !!r.fix_name, aliases, mode: r.mode, heal: !!r.heal, keepRunning: !!r.keep_running, ...(Object.keys(labels).length ? { labels } : {}) };
   }
   return out;
 }
@@ -252,6 +270,44 @@ async function setReplicas(project, service, n, opts = {}) {
   return { from: before.length, to: n };
 }
 
+/**
+ * Labels DockGate adds to a service (Proxies & SSL puts it behind Traefik or caddy-docker-proxy): into the override
+ * (your compose files are not changed), then the service is re-created so they apply. A failure puts the earlier
+ * override back. labels: the whole set DockGate keeps for the service ({} removes them).
+ */
+async function setLabels(project, service, labels, opts = {}) {
+  const h = helpers();
+  if (!h.validateProjectName(project)) throw bad('Invalid project name');
+  checkName(service, 'Service');
+  const want = checkLabels(labels);
+  if (h.busy(project)) throw bad('A deploy of this project is running — try again when it ends', 409);
+  const log = opts.log || (() => {});
+  const sid = serverIdNow();
+  let r = await h.resolveComposeFiles(project);
+  if (!r.files || !r.files.length) throw bad(r.reason || 'DockGate can not find the compose files of this project');
+  const cfg = await configOf(r, project);
+  if (!(cfg.services || {})[service]) throw bad(`No service ${service} in ${project}`, 404);
+  const rules = readRules(sid, project);
+  const next = Object.fromEntries(Object.entries({ ...rules, [service]: { ...(rules[service] || {}), labels: want } }).map(([k, v]) => [k, { ...v, networks: Object.keys(((cfg.services || {})[k] || {}).networks || { default: null }) }]));
+  const { previous } = await writeOverride(r, sid, project, buildOverride(next));
+  r = await h.resolveComposeFiles(project);
+  const started = Date.now();
+  try {
+    const args = ['up', '-d', '--no-deps', service];
+    log(`$ docker compose ${args.join(' ')}`);
+    await h.runResolved(r, project, args, (d) => String(d).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
+  } catch (e) {
+    await writeOverride(r, sid, project, previous || '');
+    const back = await h.resolveComposeFiles(project);
+    await h.runResolved(back, project, ['up', '-d', '--no-deps', service], null).catch(() => {});
+    throw Object.assign(bad(`${service} could not be re-created with the labels: ${String(e.message).slice(0, 300)} — the previous setting is back`, 500), { rolledBack: true });
+  }
+  db.prepare(`INSERT INTO compose_scaling (server_id, project, service, labels, updated_at) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(server_id, project, service) DO UPDATE SET labels = excluded.labels, updated_at = excluded.updated_at`).run(sid, project, service, JSON.stringify(want), Date.now());
+  h.recordDeploy({ project, kind: 'labels', status: 'done', sourceIp: opts.sourceIp, startedAt: started, finishedAt: Date.now(), details: { service, labels: Object.keys(want).length } });
+  return { ok: true, labels: want };
+}
+
 /** Turn auto-heal on or off for a service. */
 function setHeal(project, service, on, { sourceIp, perHour } = {}) {
   checkName(project, 'Project'); checkName(service, 'Service');
@@ -287,4 +343,4 @@ async function pauseKeep(serverId, project) {
   return had;
 }
 
-module.exports = { setKeep, pauseKeep, setHeal, setReplicas, configOf, replicasOf, FILE, MAX_REPLICAS, NAME, overridePath, buildOverride, readRules, saveRule, writeOverride, overrideFor, removeAll, composeVersion, verAtLeast, checkScalable, limitsOf, checkName, checkReplicas };
+module.exports = { setLabels, checkLabels, setKeep, pauseKeep, setHeal, setReplicas, configOf, replicasOf, FILE, MAX_REPLICAS, NAME, overridePath, buildOverride, readRules, saveRule, writeOverride, overrideFor, removeAll, composeVersion, verAtLeast, checkScalable, limitsOf, checkName, checkReplicas };

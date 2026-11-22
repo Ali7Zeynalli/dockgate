@@ -118,7 +118,7 @@ async function writeFile(ctx, p, path, text, { mode = null } = {}) {
   const fail = (r) => { if (r.code !== 0) throw err(`${path} could not be written: ${(r.err || r.out).trim().slice(0, 300)}`, 502); };
   // `cat > file` keeps the file itself (a bind-mounted single file can not be replaced by a rename)
   if (b64.length <= CH) fail(await pl.exec(`mkdir -p ${shq(dir)} && printf %s ${shq(b64)} | base64 -d > ${shq(pl.path)}.dgtmp && cat ${shq(pl.path)}.dgtmp > ${shq(pl.path)} && rm -f ${shq(pl.path)}.dgtmp${fin}`));
-  else if (/helper/.test(pl.via)) { // each helper run is a new container: no temp file between runs; apply() puts the old file back on failure
+  else if (/helper/.test(pl.via) && pl.path === '/w') { // a single bind-mounted file through helpers: no folder to stage in (each run is a new container); apply() puts the old file back on failure
     for (let i = 0; i < b64.length; i += CH) fail(await pl.exec(`printf %s ${shq(b64.slice(i, i + CH))} | base64 -d ${i ? '>>' : '>'} ${shq(pl.path)}${i + CH >= b64.length ? fin : ''}`));
   } else {
     const tmp = `${pl.path}.dgtmp`;
@@ -378,7 +378,21 @@ async function expose(body, user, log = () => {}) {
     for (const net of joined) { try { await ctx.c.getNetwork(net).disconnect({ Container: p.cid }); res.steps.push({ t: `${p.name} left the network ${net} again`, ok: true }); } catch (e) { res.steps.push({ t: `${p.name} is still on ${net}: ${e.message}`, ok: false }); } }
     mountCache.delete(ctx.serverId + p.cid); return res;
   };
-  if (plan.mode === 'labels') return { ok: true, labels: plan.labels, text: plan.text, steps: [{ t: 'Labels ready — add them to the container (they apply when it is re-created)', ok: true }] };
+  if (plan.mode === 'labels') {
+    if (!body.applyLabels) return { ok: true, labels: plan.labels, text: plan.text, steps: [{ t: 'Labels ready — add them to the container (they apply when it is re-created)', ok: true }] };
+    // into the Compose project's override (the compose files are not changed), then the service is re-created
+    const t0 = await containerInfo(ctx, plan.container);
+    if (!t0.project || !t0.service) return leave({ ok: false, stage: 'labels', steps: [{ t: `${t0.name} is not part of a Compose project — add the labels yourself`, ok: false }], text: plan.text });
+    const CS = require('./compose-scale');
+    const kept = (CS.readRules(ctx.serverId, t0.project)[t0.service] || {}).labels || {};
+    const steps = [];
+    try {
+      await CS.setLabels(t0.project, t0.service, { ...kept, ...plan.labels }, { log: (l) => steps.push({ t: l.trim(), ok: true }) });
+      steps.push({ t: `${t0.project}/${t0.service} re-created with the labels (kept in DockGate's override — your compose files are not changed)`, ok: true });
+      PX.invalidate();
+      return { ok: true, steps, labels: plan.labels };
+    } catch (e) { steps.push({ t: e.message, ok: false }); return leave({ ok: false, stage: 'labels', steps, text: plan.text }); }
+  }
   const domain = String(body.domain).toLowerCase();
   if (p.kind === 'apache' && p.where === 'host') await run(ctx, p, 'command -v a2enmod >/dev/null 2>&1 && a2enmod -q proxy proxy_http headers rewrite ssl proxy_balancer lbmethod_byrequests lbmethod_bybusyness proxy_wstunnel slotmem_shm socache_shmcb >/dev/null 2>&1; true');
   const res = await apply(ctx, p, plan.changes.map(c => ({ path: c.path, text: c.text })), { domains: [], user, note: `site ${domain}`, probeSites: false });
@@ -403,6 +417,7 @@ async function expose(body, user, log = () => {}) {
 async function removeSite(id, domain, user) {
   const p = await PX.proxyById(id); const ctx = activeCtx(); const d = await PX.scan();
   const s = d.sites.find(x => x.proxy === id && x.domain === domain); if (!s) throw err('Site not found', 404);
+  if (p.kind === 'traefik' || p.kind === 'caddy-docker-proxy') return removeLabelSite(ctx, p, s, domain);
   const path = s.file && s.file.startsWith('/') ? s.file : p.config;
   const cur = await readFile(ctx, p, path);
   let change;
@@ -411,6 +426,49 @@ async function removeSite(id, domain, user) {
   const r = await apply(ctx, p, [change], { domains: domainsFor(d, p, path).filter(x => x.domain !== domain), user, note: `removed ${domain}` });
   if (r.ok) for (const row of q.certs.all(ctx.serverId).filter(x => x.proxy === p.name && JSON.parse(x.names)[0] === domain)) { q.delCert.run(row.id); r.steps.push({ t: `DockGate stopped renewing the certificate of ${domain} (the files stay)`, ok: true }); }
   return r;
+}
+
+/** A Traefik / caddy-docker-proxy site whose labels DockGate put in the project's override: those labels go, the service is re-created. */
+async function removeLabelSite(ctx, p, s, domain) {
+  const cname = String(s.file || '').replace(/^labels of /, '');
+  const t = await containerInfo(ctx, cname).catch(() => null);
+  if (!t || !t.project || !t.service) throw err(`${domain} comes from labels of ${cname} — remove them from its compose file`, 409);
+  const CS = require('./compose-scale');
+  const kept = (CS.readRules(ctx.serverId, t.project)[t.service] || {}).labels || {};
+  const id = p.kind === 'traefik' ? `dg-${G.slug(domain).replace(/_/g, '-')}` : null;
+  const left = Object.fromEntries(Object.entries(kept).filter(([k, v]) => id ? !k.includes(`.${id}.`) && !k.includes(`.${id}-http.`) && !k.includes(`.${id}-https.`) : !(/^caddy(\.|$)/.test(k) && (k !== 'caddy' || String(v).split(/[\s,]+/).some(x => x.replace(/^https?:\/\//, '') === domain)))));
+  if (Object.keys(left).length === Object.keys(kept).length) throw err(`${domain} was not added by DockGate — remove its labels from the compose file of ${t.project}`, 409);
+  if (id && !Object.keys(left).some(k => k.startsWith('traefik.http.'))) delete left['traefik.enable']; // no DockGate router left on this service
+  const steps = [];
+  await CS.setLabels(t.project, t.service, left, { log: (l) => steps.push({ t: l.trim(), ok: true }) });
+  steps.push({ t: `DockGate's labels for ${domain} removed from ${t.project}/${t.service} (re-created)`, ok: true });
+  PX.invalidate();
+  return { ok: true, steps };
+}
+
+// ---------- a site's settings as a form ----------
+async function siteContext(id, domain) {
+  const p = await PX.proxyById(id); const ctx = activeCtx(); const d = await PX.scan();
+  const s = d.sites.find(x => x.proxy === id && x.domain === domain); if (!s) throw err('Site not found', 404);
+  if (!['nginx', 'caddy'].includes(p.kind)) throw err(`${PX.LABEL[p.kind] || p.kind}: use the config editor`);
+  const file = s.file && s.file.startsWith('/') ? s.file : p.config;
+  const lock = lockReason(p, file); if (lock) throw err(lock, 409);
+  return { p, ctx, d, s, file, text: (await readFile(ctx, p, file)).text };
+}
+async function siteSettings(id, domain) {
+  const { p, file, text } = await siteContext(id, domain);
+  return { kind: p.kind, file, settings: p.kind === 'caddy' ? G.caddySiteSettings(text, domain) : G.nginxSiteSettings(text, domain) };
+}
+async function siteSettingsPlan(id, domain, body) {
+  const { p, file, text } = await siteContext(id, domain);
+  const after = p.kind === 'caddy' ? G.caddyApplySettings(text, domain, body) : G.nginxApplySettings(text, domain, body);
+  return { file, before: text, after, same: after === text };
+}
+async function saveSiteSettings(id, domain, body, user) {
+  const { p, ctx, d, file, text } = await siteContext(id, domain);
+  const after = p.kind === 'caddy' ? G.caddyApplySettings(text, domain, body) : G.nginxApplySettings(text, domain, body);
+  if (after === text) return { ok: true, steps: [{ t: 'No change', ok: true }] };
+  return apply(ctx, p, [{ path: file, text: after }], { domains: domainsFor(d, p, file), user, note: `settings of ${domain}` });
 }
 
 // ---------- certificates (Let's Encrypt through DockGate) ----------
@@ -734,5 +792,5 @@ function startCertCheck() {
   certTimer = setInterval(() => checkAllCerts().catch(e => console.warn('[proxies] certificate check:', e.message)), 24 * 3600000);
 }
 
-module.exports = { certOverview, reloadProxy, certbotRenew, certbotHook, checkAllCerts, certAlerts, fleet, activeCtx, ctxFor, openFile, saveFile, versions, versionText, restoreVersion, targets, exposePlan, expose, removeSite, acmeSettings, setAcmeSettings, certForSite, certList, renew, redeploy, setAuto, forget,
+module.exports = { siteSettings, siteSettingsPlan, saveSiteSettings, certOverview, reloadProxy, certbotRenew, certbotHook, checkAllCerts, certAlerts, fleet, activeCtx, ctxFor, openFile, saveFile, versions, versionText, restoreVersion, targets, exposePlan, expose, removeSite, acmeSettings, setAcmeSettings, certForSite, certList, renew, redeploy, setAuto, forget,
   renewDue, start, lbGet, lbSet, traefikLive, stats, accessStats, logTime, apply, cmds, probe, sha, _q: q };

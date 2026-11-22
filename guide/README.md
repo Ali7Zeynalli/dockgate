@@ -3,6 +3,8 @@
 How each part of DockGate works, where to click, and what to do when something goes wrong.
 The pages follow the sidebar, so the name you see on screen is the name of the page here.
 
+> This guide is also inside DockGate: **System → Help** (with search), and the **?** next to a page's title opens the part about that page.
+
 > Every page works on the server picked in the top bar (**SERVERS ▾**). *Local* is the host DockGate runs on; other servers are reached over SSH.
 
 ## Start here

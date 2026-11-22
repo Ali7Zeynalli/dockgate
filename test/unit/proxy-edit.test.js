@@ -32,6 +32,9 @@ echo "curl $scheme $url" >> ${log}
 code=$(grep "^$scheme:" ${status} | head -1 | cut -d: -f2)
 printf %s "\${code:-000}"
 `, { mode: 0o755 });
+// base64 that fails while ${dir}/fail-base64 exists (a write that breaks half way)
+const realB64 = require('node:child_process').execFileSync('sh', ['-c', 'command -v base64']).toString().trim();
+fs.writeFileSync(path.join(bin, 'base64'), `#!/bin/sh\nif [ -f ${dir}/fail-base64 ]; then echo "base64: write error" >&2; exit 1; fi\nexec ${realB64} "$@"\n`, { mode: 0o755 });
 process.env.PATH = `${bin}:${process.env.PATH}`;
 
 // a host proxy whose commands run in a local shell
@@ -144,4 +147,14 @@ test('certificate alerts: once per threshold, internal and test certificates ski
     await PE.certAlerts({ id: 'test-srv', name: 'Test' }, { certs: [cert({ daysLeft: 6 })], errors: [] }); // crossed 7
     assert.equal(sent.length, 1); assert.match(sent[0].subject, /expires in 6 days/);
   } finally { HM.deliver = orig; }
+});
+
+test('a write that breaks half way never empties the file (the cause of a lost Caddyfile in an early build)', async () => {
+  fs.writeFileSync(conf, 'server { listen 80; server_name keep.example.test; }\n'); setStatus(200, 200);
+  fs.writeFileSync(path.join(dir, 'fail-base64'), '1');
+  try {
+    const r = await PE.apply(ctx, p, [{ path: conf, text: 'server { listen 80; server_name new.example.test; }\n' }], { domains: [] });
+    assert.equal(r.ok, false);
+    assert.equal(fs.readFileSync(conf, 'utf8'), 'server { listen 80; server_name keep.example.test; }\n');
+  } finally { fs.rmSync(path.join(dir, 'fail-base64'), { force: true }); }
 });

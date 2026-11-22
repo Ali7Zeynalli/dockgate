@@ -26,6 +26,7 @@ const navItems = {
   tools: { label: 'Tools', icon: Icons.terminal, tabs: [['terminal', 'Terminal'], ['files', 'Files']], default: 'terminal' },
   // SYSTEM — DockGate itself
   settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['security', 'Security'], ['notifications', 'Notifications'], ['registries', 'Registry logins'], ['update', 'Software update']], default: 'general' },
+  help: { label: 'Help', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>' },
   activity: { label: 'Activity', icon: SRV_ICONS.activity, tabs: [['audit', 'Audit log'], ['notification-log', 'Notifications sent']], default: 'audit' },
 };
 
@@ -37,7 +38,7 @@ const navGroups = [
   { label: 'Servers', items: ['infra'] },
   { label: 'Server', id: 'server', items: ['srv-status', 'srv-security', 'srv-system', 'srv-software', 'srv-automation'] },
   { label: 'Tools', items: ['tools'] },
-  { label: 'System', items: ['settings', 'activity'] }
+  { label: 'System', items: ['settings', 'activity', 'help'] }
 ];
 /** The SERVER group's heading names the server in use, so it is always clear which server those pages change. */
 function syncServerGroupLabel() {

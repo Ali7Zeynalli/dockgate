@@ -2,6 +2,29 @@
 
 ---
 
+## [2.83.0] - 2026-11-22
+
+### Added
+- **System → Help: the guide inside DockGate.**
+  - Every page of the guide, the index from `guide/README.md`, and a search over all pages section by section.
+  - The guide shipped is the one for the installed version, and it works without internet: the guide is now in the image, with its screenshots compressed from 21 MB to 9 MB.
+  - **?** next to a page's title opens the part of the guide about that page in a side panel, without leaving the page.
+  - Links between guide pages stay inside DockGate.
+- **Site settings** (Proxies & SSL → a site's ⋯), a form instead of the config file.
+  - nginx: names, where the site goes, WebSockets, upload limit, http → https.
+  - Caddy: names and where the site goes.
+  - The changed lines are shown, then saved the safe way (check → reload → the sites must answer as before).
+  - Only the names that change are touched, so an HTTP server shared with other sites keeps theirs.
+- **Traefik / caddy-docker-proxy labels into a Compose project.** "Put a container on a domain" can add the labels to the container's Compose project: they go into DockGate's override (your compose files are not changed) and the service is re-created. If that fails, the earlier override goes back. **Remove the site** takes them out again.
+
+### Fixed
+- **A write that failed half way could empty a config file.** This was fixed for most cases in 2.81 and is now guarded everywhere:
+  - each write checks the new text is complete before it replaces the file;
+  - large files on a read-only folder mount are staged inside the mount;
+  - a test makes sure a broken write never empties the file.
+
+---
+
 ## [2.82.0] - 2026-11-22
 
 ### Added

@@ -124,17 +124,18 @@ Router.register('proxies', async (content, params = {}) => {
       : plan.changes.map(c => `<div style="margin-bottom:8px"><div class="td-mono text-sm" style="margin-bottom:4px">${e(c.path)}${c.before ? '' : ' <span class="ui-sub">(new file)</span>'}</div>${lineDiffHtml(c.before || '', c.text)}</div>`).join('');
     const steps = [
       ...plan.join.map(n => `Join ${e(plan.proxy.name)} to the network <b>${e(n)}</b> (no restart)`),
-      ...(plan.mode === 'labels' ? ['Show the labels to add to the container'] : [`Write ${plan.changes.length} file${plan.changes.length === 1 ? '' : 's'} (earlier versions are kept)`, 'Run the config check', 'Reload the proxy']),
+      ...(plan.mode === 'labels' ? [plan.project ? `Add the labels to <b>${e(plan.project)}</b> (DockGate's override — your compose files are not changed) and re-create the service, or copy them yourself` : 'Show the labels to add to the container'] : [`Write ${plan.changes.length} file${plan.changes.length === 1 ? '' : 's'} (earlier versions are kept)`, 'Run the config check', 'Reload the proxy']),
       ...(plan.flow === 'letsencrypt' ? ["Ask Let's Encrypt for the certificate (checked over http://" + e(req.domain) + '/.well-known/…)', 'Write the certificate and switch the site to HTTPS', 'DockGate renews it 30 days before it expires'] : []),
     ];
     showModal(`Preview — ${e(req.domain)}`, `${plan.notes.map(n => `<div class="insight-card warning" style="margin-bottom:8px"><div>${e(n)}</div></div>`).join('')}
       <ol style="margin:0 0 10px 18px;padding:0">${steps.map(s => `<li>${s}</li>`).join('')}</ol>${diffs}`, [
       { label: 'Back' },
-      { label: plan.mode === 'labels' ? 'Show the labels' : 'Apply', className: 'btn btn-primary', onClick: async () => {
-        showToast(plan.flow === 'letsencrypt' ? "Applying — Let's Encrypt can take a minute…" : 'Applying…', 'info');
-        try { const r = await API.post('/proxies/expose', req); if (r.ok) closeWizard(); showResult(r.ok ? `${req.domain} is set up` : `${req.domain} — not done`, r, reloadAll); }
+      ...(plan.mode === 'labels' ? [{ label: 'Show the labels', onClick: async () => { try { const r = await API.post('/proxies/expose', req); showResult(`Labels for ${req.domain}`, r); } catch (er) { showToast(er.message, 'error'); } } }] : []),
+      ...(plan.mode !== 'labels' || plan.project ? [{ label: plan.mode === 'labels' ? `Add to ${plan.project}` : 'Apply', className: 'btn btn-primary', onClick: async () => {
+        showToast(plan.flow === 'letsencrypt' ? "Applying — Let's Encrypt can take a minute…" : plan.mode === 'labels' ? 'Re-creating the service with the labels…' : 'Applying…', 'info');
+        try { const r = await API.post('/proxies/expose', { ...req, applyLabels: plan.mode === 'labels' }); if (r.ok) closeWizard(); showResult(r.ok ? `${req.domain} is set up` : `${req.domain} — not done`, r, reloadAll); }
         catch (er) { showToast(er.message, 'error'); }
-      } }]);
+      } }] : [])]);
   }
 
   // ---------- one site's actions ----------
@@ -146,10 +147,11 @@ Router.register('proxies', async (content, params = {}) => {
     const items = [
       [`<a class="btn btn-secondary" href="${s.https ? 'https' : 'http'}://${e(s.domain)}" target="_blank" rel="noopener">Open ↗</a>`, 'Open the site in a new tab.'],
       [UI.btn('+ Uptime check', 'data-a="up"'), 'Watch it on Web → Uptime (status, response time, certificate days).'],
+      ...(['nginx', 'caddy'].includes(p.kind) ? [[UI.btn('Site settings…', 'data-a="settings"'), 'Names, where it goes, WebSockets, upload limit, http → https — as a form.']] : []),
       ...(fileKind && s.file && s.file.startsWith('/') ? [[UI.btn('Edit the config', 'data-a="edit"'), `${e(s.file)}${s.line ? ':' + s.line : ''}`]] : []),
       ...(canLb ? [[UI.btn('Load balancing…', 'data-a="lb"'), 'The containers behind the site, the method, backup servers.']] : []),
       ...(canCert ? [[UI.btn(s.https ? "Use a Let's Encrypt certificate" : 'Add HTTPS (Let\'s Encrypt)', 'data-a="cert"'), s.https ? 'DockGate gets the certificate and renews it; the site\'s certificate lines are switched to it.' : 'DockGate gets a certificate, adds the HTTPS server and sends http to https.']] : []),
-      ...(fileKind ? [[UI.btn('Remove the site', 'data-a="rm" class="btn btn-danger"'), 'Only sites DockGate added; the earlier config is kept as a version.']] : []),
+      ...(fileKind || ['traefik', 'caddy-docker-proxy'].includes(p.kind) ? [[UI.btn('Remove the site', 'data-a="rm" class="btn btn-danger"'), fileKind ? 'Only sites DockGate added; the earlier config is kept as a version.' : 'Only labels DockGate added to a Compose project; the service is re-created without them.']] : []),
     ];
     const m = showModal(e(s.domain), `<div class="ui-sub" style="margin-bottom:10px">${e(s.proxyName)} → ${e(s.target ? s.target.label : '—')}</div>${items.map(([b, t]) => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)"><div style="min-width:230px">${b}</div><div class="ui-sub">${t}</div></div>`).join('')}`, [{ label: 'Close' }]);
     const ov = m.overlay;
@@ -157,6 +159,7 @@ Router.register('proxies', async (content, params = {}) => {
     on('up', async () => { try { await API.post('/uptime', { name: s.domain, type: 'http', target: `${s.https ? 'https' : 'http'}://${s.domain}` }); showToast('Uptime check added', 'success'); m.close(); } catch (er) { showToast(er.message, 'error'); } });
     on('edit', () => { m.close(); go('files', { p: s.proxy, path: s.file }); });
     on('lb', () => { m.close(); lbDialog(s); });
+    on('settings', () => { m.close(); settingsDialog(s); });
     on('cert', () => { m.close(); showConfirm(`Let's Encrypt for ${e(s.domain)}`, `DockGate adds the challenge location to the HTTP server of ${e(s.domain)} (if missing), asks Let's Encrypt for a certificate, ${s.https ? 'switches the site\'s certificate lines to it' : 'adds an HTTPS server and sends http to https'}, checks and reloads. The domain's DNS must point to this server and port 80 must reach ${e(s.proxyName)}.`, async () => {
       const ask = async () => {
         showToast('Asking Let\'s Encrypt…', 'info');
@@ -171,6 +174,32 @@ Router.register('proxies', async (content, params = {}) => {
     on('rm', () => { m.close(); showConfirm(`Remove ${e(s.domain)}?`, `DockGate removes the site it added from ${e(s.proxyName)}, checks and reloads. The file is kept as a version you can restore.`, async () => {
       try { const r = await API.delete(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}`); showResult(r.ok ? `${s.domain} removed` : `${s.domain} — not removed`, r, reloadAll); } catch (er) { showToast(er.message, 'error'); }
     }, true); });
+  }
+
+  // ---------- a site's settings as a form ----------
+  async function settingsDialog(s) {
+    let r; try { r = await API.get(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}/settings`); } catch (er) { showToast(er.message, 'error'); return; }
+    const st = r.settings; const nginx = r.kind === 'nginx';
+    let tg = []; try { tg = await API.get('/proxies/targets'); } catch (er) { /* type it */ }
+    UI.dialog({ title: `Site settings — ${e(s.domain)}`, wide: true, saveLabel: 'Preview →', body: `
+      <div class="ui-sub" style="margin-bottom:8px">${e(s.proxyName)} · <span class="td-mono">${e(r.file)}</span>. Saving goes the safe way: the changed lines first, then check → reload → the sites must answer as before.</div>
+      <label class="ui-field"><span>Names</span><input class="input" data-sn value="${e(st.names.join(' '))}"></label>
+      <label class="ui-field" style="margin-top:8px"><span>Goes to</span>${st.target ? `<input class="input td-mono" data-st value="${e(st.target)}" list="px-set-addrs"><datalist id="px-set-addrs">${tg.flatMap(t => t.ports.map(pt => `<option value="${e(t.name)}:${pt}">`)).join('')}</datalist>` : `<div class="ui-sub">${st.upstream ? `Several servers (${e(st.upstream)}) — change them under Load balancing.` : 'Not a single host:port — change it in the editor.'}</div>`}</label>
+      ${nginx ? `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;align-items:center">
+        <label><input type="checkbox" data-sw ${st.websocket ? 'checked' : ''}> WebSockets</label>
+        ${st.https && st.http ? `<label><input type="checkbox" data-sr ${st.redirect ? 'checked' : ''}> Send http to https</label>` : ''}
+        <label style="display:flex;gap:6px;align-items:center">Upload limit <input class="input" data-sm value="${e(st.maxBody)}" placeholder="nginx default 1m" style="width:120px"></label></div>` : ''}`,
+      onSave: async (ov) => {
+        const q = (x) => ov.querySelector(x);
+        const body = { names: q('[data-sn]').value, ...(q('[data-st]') ? { target: q('[data-st]').value.trim() } : {}), ...(nginx ? { websocket: q('[data-sw]').checked, maxBody: q('[data-sm]').value.trim(), ...(q('[data-sr]') ? { redirect: q('[data-sr]').checked } : {}) } : {}) };
+        const plan = await API.post(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}/settings/plan`, body);
+        if (plan.same) { showToast('No change', 'info'); return false; }
+        showModal(`Save the settings of ${e(s.domain)}?`, `<div class="td-mono text-sm" style="margin-bottom:4px">${e(plan.file)}</div>${lineDiffHtml(plan.before, plan.after)}`, [{ label: 'Back' }, { label: 'Save, check and reload', className: 'btn btn-primary', onClick: async () => {
+          try { const x = await API.put(`/proxies/${enc(s.proxy)}/sites/${enc(s.domain)}/settings`, body); showResult(x.ok ? `${s.domain} saved and reloaded` : `${s.domain} — not saved`, x, () => { if (x.ok) { ov.remove(); reloadAll(); } }); } catch (er) { showToast(er.message, 'error'); }
+        } }]);
+        return false;
+      },
+    });
   }
 
   // ---------- load balancing ----------

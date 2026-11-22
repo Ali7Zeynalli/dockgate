@@ -200,3 +200,29 @@ test('Apache existing site: challenge lines, HTTPS copy without them, certificat
   assert.deepEqual(G.apacheCertNames(a, 'ap.example.test'), ['ap.example.test', 'www.ap.example.test']);
   assert.throws(() => G.apacheEnsureAcme('<VirtualHost *:443>\n  ServerName x.example.test\n  SSLEngine on\n</VirtualHost>', 'x.example.test'), /No HTTP/);
 });
+
+test('site settings form (nginx): names, target, WebSockets, upload limit, redirect — shared servers keep the other names', () => {
+  const st = G.nginxSiteSettings(ONE_LINE, 'shop.example.test');
+  assert.deepEqual(st, { names: ['shop.example.test'], target: 'shop-site-web-1:80', upstream: null, websocket: false, maxBody: '', https: true, http: true, redirect: true });
+  const t = G.nginxApplySettings(ONE_LINE, 'shop.example.test', { names: 'shop.example.test www.shop.example.test', target: 'app:8080', websocket: true, maxBody: '20m' });
+  const st2 = G.nginxSiteSettings(t, 'shop.example.test');
+  assert.deepEqual([st2.names, st2.target, st2.websocket, st2.maxBody], [['shop.example.test', 'www.shop.example.test'], 'app:8080', true, '20m']);
+  assert.match(G.nginxBlocks(t, 'server')[0].text, /server_name shop\.example\.test api\.example\.test www\.shop\.example\.test;/, 'api keeps its place in the shared HTTP server');
+  assert.deepEqual(G.nginxSiteSettings(t, 'api.example.test').upstream, 'api_pool');
+  assert.throws(() => G.nginxApplySettings(ONE_LINE, 'shop.example.test', { redirect: false }), /shared with api\.example\.test/);
+  const solo = 'server {\n  listen 80;\n  server_name a.example.test;\n  return 301 https://$host$request_uri;\n}\nserver {\n  listen 443 ssl;\n  server_name a.example.test;\n  location / {\n    proxy_pass http://app:80;\n  }\n}\n';
+  const off = G.nginxApplySettings(solo, 'a.example.test', { redirect: false });
+  assert.equal(G.nginxSiteSettings(off, 'a.example.test').redirect, false);
+  assert.match(G.nginxBlocks(off, 'server')[0].text, /proxy_pass http:\/\/app:80;/);
+  assert.equal(G.nginxSiteSettings(G.nginxApplySettings(off, 'a.example.test', { redirect: true }), 'a.example.test').redirect, true);
+  assert.equal(G.nginxSiteSettings(G.nginxApplySettings(t, 'shop.example.test', { websocket: false, maxBody: '' }), 'shop.example.test').websocket, false);
+  assert.throws(() => G.nginxApplySettings(ONE_LINE, 'shop.example.test', { target: 'x:1; return 200' }), /host:port/);
+  assert.throws(() => G.nginxApplySettings(ONE_LINE, 'shop.example.test', { names: 'bad;name' }), /Not a domain/);
+});
+
+test('site settings form (Caddy): names and the single target', () => {
+  const c = 'grafana.example.test {\n  tls internal\n  reverse_proxy gitdemo-web-1:80\n}\n';
+  assert.deepEqual(G.caddySiteSettings(c, 'grafana.example.test'), { names: ['grafana.example.test'], plainHttp: false, target: 'gitdemo-web-1:80', upstream: null });
+  const t = G.caddyApplySettings(c, 'grafana.example.test', { names: 'grafana.example.test g.example.test', target: 'app:3000' });
+  assert.equal(t, 'grafana.example.test, g.example.test {\n  tls internal\n  reverse_proxy app:3000\n}\n');
+});

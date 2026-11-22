@@ -70,6 +70,7 @@ app.use('/api/networks', require('./routes/networks'));
 app.use('/api/compose', require('./routes/compose'));
 app.use('/api/git-connect', require('./routes/git-connect'));
 app.use('/api/proxies', require('./routes/proxies'));
+app.use('/api/help', require('./routes/help')); // System → Help: the guide inside DockGate
 app.use('/api/swarm', require('./routes/swarm')); // Docker Swarm on the server in use
 app.use('/api/files', require('./routes/files'));
 app.use('/api/system', require('./routes/system'));

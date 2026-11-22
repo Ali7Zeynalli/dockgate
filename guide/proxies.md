@@ -43,7 +43,7 @@ Notes:
 | Caddy | the Caddyfile | everything |
 | HAProxy | `haproxy.cfg` | everything (HTTPS routing only when the frontend already has a certificate) |
 | Apache | `apachectl -S` and the files it names | everything, Let's Encrypt included |
-| Traefik, caddy-docker-proxy | the labels of containers and Swarm services | labels to copy (they apply when the container is re-created) |
+| Traefik, caddy-docker-proxy | the labels of containers and Swarm services | labels: added to a Compose project (override) or copied |
 | Nginx Proxy Manager, nginx-proxy | their own configs | read-only: use their own UI or `VIRTUAL_HOST` |
 
 An nginx container that only serves its own app is not counted as a proxy. That means it has no `proxy_pass`, no domain and no port 80 or 443.
@@ -65,6 +65,12 @@ Each domain is one row. It shows where the domain goes, which proxy serves it an
 
 - **Open ↗** and **+ Uptime check**.
 - **Edit the config** opens the file at the site's lines.
+- **Site settings…** (nginx, Caddy) — the site as a form:
+  - names;
+  - where it goes (one container);
+  - WebSockets, upload limit, and **Send http to https** (nginx).
+
+  Save shows the changed lines, then goes the safe way. Only the names that change are touched, so an HTTP server shared with other sites keeps their names. The redirect of a shared HTTP server is changed in the editor.
 - **Load balancing…** (see [Load balancing](#load-balancing)).
 - **Add HTTPS** or **Use a Let's Encrypt certificate** (nginx and Apache sites).
 - **Remove the site.** Only sites DockGate added can be removed. Others are removed in the editor.
@@ -95,7 +101,10 @@ Each domain is one row. It shows where the domain goes, which proxy serves it an
 - **nginx:** a new file `conf.d/<domain>.conf`, made by DockGate. A single container is reached through Docker's DNS, so nginx still starts while the container is down.
 - **Caddy, HAProxy:** a block between `# dockgate:begin` and `# dockgate:end` in the Caddyfile or `haproxy.cfg`.
 - **Apache:** a file in `conf/dockgate/` (container) or `sites-enabled/` (Debian). The proxy modules it needs are loaded.
-- **Traefik and caddy-docker-proxy:** labels as a Compose snippet and as `docker run` flags. Traefik's entry points and certificate resolvers are read from its command line.
+- **Traefik and caddy-docker-proxy:** the labels. Traefik's entry points and certificate resolvers are read from its command line.
+  - **Add to** *(the project)* (when the container is part of a Compose project): the labels go into DockGate's override for the project — your compose files are not changed — and the service is re-created so they apply. If the re-create fails, the earlier override is put back.
+  - **Show the labels**: as a Compose snippet and as `docker run` flags, to add yourself.
+  - **Remove the site** takes DockGate's labels for that domain out again and re-creates the service.
 
 ## Certificates
 

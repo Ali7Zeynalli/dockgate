@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/DockGate-v2.82.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
+  <img src="https://img.shields.io/badge/DockGate-v2.83.0-00d4aa?style=for-the-badge&logo=docker&logoColor=white" alt="DockGate">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.82.0-orange?style=for-the-badge" alt="Changelog"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-v2.83.0-orange?style=for-the-badge" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/RAM-≤256MB-success?style=for-the-badge" alt="RAM">
 </p>
 
@@ -57,7 +57,7 @@
 | **Servers** | Servers · SSH keys · Edge agent |
 | **Server** — the one picked in the top bar | Status (overview, graphs, alerts, logs, system info, connection) · Security (SSH, users, firewall, fail2ban) · System (names, network, time, disks, kernel, config files) · Software (setup, services, Docker engine, auto updates) · Automation (cron, timers, scripts, schedules) |
 | **Tools** | Terminal · Files |
-| **System** — DockGate itself | Settings · Activity (audit log, notifications sent) |
+| **System** — DockGate itself | Settings · Activity (audit log, notifications sent) · Help (this guide, inside DockGate) |
 
 ---
 
