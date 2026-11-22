@@ -45,11 +45,12 @@ function nginxProxyBlock(s, up, ind) {
   return `${ind}location ${s.path} {\n${L.map(l => `${ind}  ${l}`).join('\n')}\n${ind}}`;
 }
 /** A whole nginx site file. With https 'letsencrypt' and no certificate yet (certReady false) only the HTTP part is written. */
-function nginxSite(input, { certReady = true } = {}) {
+function nginxSite(input, { certReady = true, resolve = false } = {}) {
   const s = siteInput(input);
   const up = s.targets.length > 1 || s.lb !== 'round_robin' ? `dg_${slug(s.domain)}` : s.targets[0];
   const out = [`${MARK} Site ${s.domain} → ${s.targets.join(', ')}.`, '# DockGate keeps earlier versions of this file; edit it freely.'];
-  if (up.startsWith('dg_')) out.push(`upstream ${up} {`, ...(LB.nginx[s.lb] ? [`  ${LB.nginx[s.lb]}`] : []), ...s.targets.map(t => `  server ${t};`), '}');
+  const res = resolve && s.dockerDns; // container names through Docker's DNS, resolved while nginx runs
+  if (up.startsWith('dg_')) out.push(`upstream ${up} {`, ...(LB.nginx[s.lb] ? [`  ${LB.nginx[s.lb]}`] : []), ...(res ? resolveHead(up, '  ') : []), ...s.targets.map(t => `  server ${t}${res && isHostName(t) ? ' resolve' : ''};`), '}');
   const head = (ssl) => [ssl ? '  listen 443 ssl;' : '  listen 80;', ...(s.ipv6 ? [ssl ? '  listen [::]:443 ssl;' : '  listen [::]:80;'] : []), `  server_name ${s.names.join(' ')};`,
     ...(s.dockerDns && !up.startsWith('dg_') ? ['  resolver 127.0.0.11 valid=10s ipv6=off;'] : []), ...(s.maxBody ? [`  client_max_body_size ${s.maxBody};`] : [])];
   const wantsTls = s.https === 'letsencrypt' || s.https === 'existing';
@@ -185,16 +186,32 @@ function lbServers(list) {
   if (!servers.some(s => !s.backup && !s.down)) throw err('At least one server must take traffic (not backup, not down)');
   return servers;
 }
-/** Write the servers and method of nginx upstream `name`. */
-function nginxSetUpstream(text, name, { method = 'round_robin', servers }) {
+// nginx ≥ 1.27.3 resolves upstream names while it runs (`server name:port resolve` with a zone and a resolver): it then
+// starts even when a container behind it is missing, and follows the container's new IP after a re-create.
+const RESOLVE_MIN = [1, 27, 3];
+function nginxResolves(version) {
+  const m = String(version || '').match(/(\d+)\.(\d+)\.(\d+)/); if (!m) return false;
+  const v = m.slice(1).map(Number);
+  for (let i = 0; i < 3; i++) if (v[i] !== RESOLVE_MIN[i]) return v[i] > RESOLVE_MIN[i];
+  return true;
+}
+const isHostName = (addr) => !/^unix:/.test(addr) && !/^\[/.test(addr) && !/^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(addr) && !/^localhost(:\d+)?$/i.test(addr);
+/** The zone and resolver lines an upstream needs for `resolve` (Docker's DNS). */
+const resolveHead = (name, ind) => [`${ind}zone ${name} 64k;`, `${ind}resolver 127.0.0.11 valid=10s ipv6=off;`];
+
+/** Write the servers and method of nginx upstream `name`. `resolve` (nginx ≥ 1.27.3): names are resolved while nginx runs; kept when the upstream had it. */
+function nginxSetUpstream(text, name, { method = 'round_robin', servers, resolve }) {
   const list = lbServers(servers);
   const b = nginxBlocks(text, 'upstream').find(x => x.args === name);
   if (!b) throw err(`upstream ${name} is not in this file`);
   if (method === 'ip_hash' && list.some(s => s.backup)) throw err('nginx does not allow backup servers with ip_hash');
   const ind = b.indent + '  ';
-  const keep = upstreamStatements(b.text).filter(l => /^(keepalive|keepalive_timeout|keepalive_requests|zone|resolver|hash|random)\b/.test(l) && !(method !== 'round_robin' && /^(hash|random)\b/.test(l))).map(l => `${ind}${l};`);
+  const stm = upstreamStatements(b.text);
+  const res = resolve == null ? stm.some(l => /^server\s.*\sresolve\b/.test(l)) : !!resolve;
+  const keep = stm.filter(l => /^(keepalive|keepalive_timeout|keepalive_requests|zone|resolver|hash|random)\b/.test(l) && !(method !== 'round_robin' && /^(hash|random)\b/.test(l))).map(l => `${ind}${l};`);
+  if (res) { const [z, r] = resolveHead(name, ind); if (!keep.some(l => /^\s*zone\b/.test(l))) keep.push(z); if (!keep.some(l => /^\s*resolver\b/.test(l))) keep.push(r); }
   const lines = [`${b.indent}upstream ${name} {`, ...(LB.nginx[method] ? [ind + LB.nginx[method]] : []), ...keep,
-    ...list.map(s => `${ind}server ${s.addr}${s.weight > 1 ? ` weight=${s.weight}` : ''}${s.maxFails ? ` max_fails=${s.maxFails}` : ''}${s.failTimeout ? ` fail_timeout=${s.failTimeout}` : ''}${s.backup ? ' backup' : ''}${s.down ? ' down' : ''};`), `${b.indent}}`];
+    ...list.map(s => `${ind}server ${s.addr}${s.weight > 1 ? ` weight=${s.weight}` : ''}${s.maxFails ? ` max_fails=${s.maxFails}` : ''}${s.failTimeout ? ` fail_timeout=${s.failTimeout}` : ''}${s.backup ? ' backup' : ''}${s.down ? ' down' : ''}${res && isHostName(s.addr) ? ' resolve' : ''};`), `${b.indent}}`];
   return text.slice(0, b.start) + lines.join('\n') + text.slice(b.end);
 }
 /** `set $v http://host:port; proxy_pass $v;` (DockGate's single-container form) → `proxy_pass http://host:port;` in the servers of `domain`. */
@@ -502,5 +519,5 @@ function removeMarked(text, domain) {
 }
 const isDockgateFile = (text) => String(text || '').startsWith(MARK);
 
-module.exports = { nginxSiteSettings, nginxApplySettings, caddySiteSettings, caddyApplySettings, nginxCertNames, apacheVhosts, apacheEnsureAcme, apacheSetHttps, apacheCertNames, APACHE_MODS, fmtBlock, MARK, ACME_ROOT, slug, siteInput, nginxSite, nginxBlocks, nginxEnsureAcme, nginxSetCert, nginxAddHttps, nginxUpstreams, nginxSetUpstream, nginxMakeUpstream,
+module.exports = { nginxResolves, nginxSiteSettings, nginxApplySettings, caddySiteSettings, caddyApplySettings, nginxCertNames, apacheVhosts, apacheEnsureAcme, apacheSetHttps, apacheCertNames, APACHE_MODS, fmtBlock, MARK, ACME_ROOT, slug, siteInput, nginxSite, nginxBlocks, nginxEnsureAcme, nginxSetCert, nginxAddHttps, nginxUpstreams, nginxSetUpstream, nginxMakeUpstream,
   caddySite, caddyAdd, caddySiteRange, caddyLb, caddySetLb, haproxyAdd, haproxyBackends, haproxySetBackend, apacheSite, traefikLabels, caddyLabels, labelsText, removeMarked, isDockgateFile, lbServers };

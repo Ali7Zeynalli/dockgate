@@ -40,6 +40,7 @@ router.post('/:id/sites/:domain/settings/plan', send((req) => PE.siteSettingsPla
 router.put('/:id/sites/:domain/settings', send(async (req) => { const r = await PE.saveSiteSettings(req.params.id, req.params.domain, req.body || {}, who(req)); audit(req, 'proxy_site_settings', req.params.domain, { ok: r.ok, stage: r.stage }); return r; }));
 router.post('/:id/sites/:domain/cert', send(async (req) => { const r = await PE.certForSite(req.params.id, req.params.domain, req.body || {}, who(req)); audit(req, 'proxy_cert_issue', req.params.domain, { ok: r.ok, stage: r.stage }); return r; }));
 router.delete('/:id/sites/:domain', send(async (req) => { const r = await PE.removeSite(req.params.id, req.params.domain, who(req)); audit(req, 'proxy_site_remove', req.params.domain, { ok: r.ok }); return r; }));
+router.post('/:id/start', send(async (req) => { const r = await PE.startProxy(req.params.id, who(req)); audit(req, 'proxy_start', req.params.id, { ok: r.ok }); return r; }));
 router.post('/:id/reload', send(async (req) => { const r = await PE.reloadProxy(req.params.id); audit(req, 'proxy_reload', req.params.id, { ok: r.ok }); return r; }));
 router.post('/:id/test', send(async (req) => { const r = await PX.testConfig(req.params.id); audit(req, 'proxy_test', req.params.id, { ok: r.ok, command: r.command }); return r; }));
 

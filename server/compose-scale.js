@@ -23,7 +23,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS compose_scaling (
   updated_at INTEGER, PRIMARY KEY (server_id, project, service)
 )`);
 try { db.exec('ALTER TABLE compose_scaling ADD COLUMN keep_running INTEGER DEFAULT 0'); } catch (e) { /* there */ }
-try { db.exec('ALTER TABLE compose_scaling ADD COLUMN labels TEXT'); } catch (e) { /* there */ } // labels DockGate adds (Proxies & SSL: Traefik / caddy-docker-proxy)
+try { db.exec('ALTER TABLE compose_scaling ADD COLUMN labels TEXT'); } catch (e) { /* there */ }
+try { db.exec('ALTER TABLE compose_scaling ADD COLUMN extra_networks TEXT'); } catch (e) { /* there */ } // networks DockGate joined a service to (Proxies & SSL) // labels DockGate adds (Proxies & SSL: Traefik / caddy-docker-proxy)
 // Where the override of a project is (so resolveComposeFiles needs no SSH round trip to know).
 db.exec(`CREATE TABLE IF NOT EXISTS compose_overrides (
   server_id TEXT NOT NULL, project TEXT NOT NULL, path TEXT NOT NULL, updated_at INTEGER, PRIMARY KEY (server_id, project)
@@ -69,7 +70,7 @@ function overridePath(serverId, project) {
  * checked against NAME, so nothing a user typed reaches the file unchecked; numbers are integers.
  */
 function buildOverride(rules = {}) {
-  const lines = [];
+  const lines = []; const externals = new Set();
   for (const [svc, r] of Object.entries(rules || {})) {
     checkName(svc, 'Service');
     const body = [];
@@ -79,12 +80,17 @@ function buildOverride(rules = {}) {
     // Aliases go on the networks the service already uses (adding "default" would join it to a network it is not on).
     const aliases = [...new Set((r.aliases || []).map(a => checkName(a, 'Alias')))];
     const nets = [...new Set((r.networks && r.networks.length ? r.networks : ['default']).map(n => checkName(n, 'Network')))];
-    if (aliases.length) body.push('    networks:', ...nets.flatMap(n => [`      ${n}:`, '        aliases:', ...aliases.map(a => `          - ${a}`)]));
+    const joined = [...new Set((r.extraNetworks || []).map(n => checkName(n, 'Network')))].filter(n => n !== 'default'); // the project's own network is never external
+    const extra = joined.filter(n => !nets.includes(n)); // `docker compose config` already lists them once the override is in use
+    // the service's own networks are listed too: an override that names only the new one would take it off them
+    if (aliases.length || joined.length) body.push('    networks:', ...nets.flatMap(n => aliases.length ? [`      ${n}:`, '        aliases:', ...aliases.map(a => `          - ${a}`)] : [`      ${n}: {}`]), ...extra.map(n => `      ${n}: {}`));
+    for (const n of joined) externals.add(n);
     const labels = Object.entries(checkLabels(r.labels));
     if (labels.length) body.push('    labels:', ...labels.map(([k, v]) => `      ${k}: ${yq(v)}`));
     if (body.length) lines.push(`  ${svc}:`, ...body);
   }
-  return lines.length ? `# Written by DockGate — your compose files are not changed. Remove this file to go back.\nservices:\n${lines.join('\n')}\n` : '';
+  const nets = externals.size ? `networks:\n${[...externals].map(n => `  ${n}:\n    external: true`).join('\n')}\n` : '';
+  return lines.length ? `# Written by DockGate — your compose files are not changed. Remove this file to go back.\nservices:\n${lines.join('\n')}\n${nets}` : '';
 }
 
 /** Saved choices of a project: { service: { replicas, dropPorts, dropName, aliases } }. */
@@ -93,7 +99,8 @@ function readRules(serverId, project) {
   for (const r of q.rules.all(serverId, project)) {
     let aliases = []; try { aliases = JSON.parse(r.aliases || '[]'); } catch (e) { /* none */ }
     let labels = {}; try { labels = JSON.parse(r.labels || '{}') || {}; } catch (e) { /* none */ }
-    out[r.service] = { replicas: r.replicas, dropPorts: !!r.fix_ports, dropName: !!r.fix_name, aliases, mode: r.mode, heal: !!r.heal, keepRunning: !!r.keep_running, ...(Object.keys(labels).length ? { labels } : {}) };
+    let extraNetworks = []; try { extraNetworks = JSON.parse(r.extra_networks || '[]') || []; } catch (e) { /* none */ }
+    out[r.service] = { replicas: r.replicas, dropPorts: !!r.fix_ports, dropName: !!r.fix_name, aliases, mode: r.mode, heal: !!r.heal, keepRunning: !!r.keep_running, ...(Object.keys(labels).length ? { labels } : {}), ...(extraNetworks.length ? { extraNetworks } : {}) };
   }
   return out;
 }
@@ -308,6 +315,32 @@ async function setLabels(project, service, labels, opts = {}) {
   return { ok: true, labels: want };
 }
 
+/**
+ * Networks DockGate joined a running service to (docker network connect), written into the override so the service
+ * keeps them when Compose re-creates it. Nothing is re-created now: the container is on them already.
+ */
+async function addNetworks(project, service, networks) {
+  const h = helpers();
+  if (!h.validateProjectName(project)) throw bad('Invalid project name');
+  checkName(service, 'Service');
+  const add = [...new Set(networks)].map(n => checkName(n, 'Network'));
+  const sid = serverIdNow();
+  const r = await h.resolveComposeFiles(project);
+  if (!r.files || !r.files.length) throw bad(r.reason || 'DockGate can not find the compose files of this project');
+  const cfg = await configOf(r, project);
+  const svc = (cfg.services || {})[service]; if (!svc) throw bad(`No service ${service} in ${project}`, 404);
+  const rules = readRules(sid, project);
+  const before = (rules[service] || {}).extraNetworks || [];
+  const have = Object.keys(svc.networks || { default: null }).filter(n => !before.includes(n)); // the config already holds DockGate's override
+  const want = [...new Set([...before, ...add])].filter(n => !have.includes(n) && !have.includes(`${project}_${n}`));
+  if (!want.length || (want.length === before.length && want.every(n => before.includes(n)))) return { ok: true, networks: want };
+  const next = Object.fromEntries(Object.entries({ ...rules, [service]: { ...(rules[service] || {}), extraNetworks: want } }).map(([k, v]) => [k, { ...v, networks: Object.keys(((cfg.services || {})[k] || {}).networks || { default: null }) }]));
+  await writeOverride(r, sid, project, buildOverride(next));
+  db.prepare(`INSERT INTO compose_scaling (server_id, project, service, extra_networks, updated_at) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(server_id, project, service) DO UPDATE SET extra_networks = excluded.extra_networks, updated_at = excluded.updated_at`).run(sid, project, service, JSON.stringify(want), Date.now());
+  return { ok: true, networks: want };
+}
+
 /** Turn auto-heal on or off for a service. */
 function setHeal(project, service, on, { sourceIp, perHour } = {}) {
   checkName(project, 'Project'); checkName(service, 'Service');
@@ -343,4 +376,4 @@ async function pauseKeep(serverId, project) {
   return had;
 }
 
-module.exports = { setLabels, checkLabels, setKeep, pauseKeep, setHeal, setReplicas, configOf, replicasOf, FILE, MAX_REPLICAS, NAME, overridePath, buildOverride, readRules, saveRule, writeOverride, overrideFor, removeAll, composeVersion, verAtLeast, checkScalable, limitsOf, checkName, checkReplicas };
+module.exports = { addNetworks, setLabels, checkLabels, setKeep, pauseKeep, setHeal, setReplicas, configOf, replicasOf, FILE, MAX_REPLICAS, NAME, overridePath, buildOverride, readRules, saveRule, writeOverride, overrideFor, removeAll, composeVersion, verAtLeast, checkScalable, limitsOf, checkName, checkReplicas };
