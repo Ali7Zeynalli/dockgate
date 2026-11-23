@@ -15,12 +15,33 @@ const API = {
     return res.json();
   },
 
+  // A server with an access password, not yet unlocked in this session: ask for it once (one prompt per server,
+  // shared by the requests that wait for it), unlock it, then send the request again.
+  _unlocking: {},
+  async _gate(send, path) {
+    try { return await this._res(await send(), path); } // await: a refused answer must reach the catch
+    catch (err) {
+      const d = err && err.data;
+      if (!(err.status === 403 && d && d.needsAccessPassword && d.serverId) || /^\/servers\/(active|[^/]+\/unlock)$/.test(path) || typeof window.promptAccessPassword !== 'function') throw err;
+      const id = d.serverId;
+      if (!this._unlocking[id]) {
+        this._unlocking[id] = (async () => {
+          const pw = await window.promptAccessPassword(d.serverName || id);
+          if (pw == null) return false;
+          try { await this.post(`/servers/${encodeURIComponent(id)}/unlock`, { accessPassword: pw }); return true; } catch (e2) { if (typeof showToast === 'function') showToast(e2.message, 'error'); return false; }
+        })().finally(() => { setTimeout(() => { delete this._unlocking[id]; }, 0); });
+      }
+      if (!(await this._unlocking[id])) throw err;
+      return this._res(await send(), path);
+    }
+  },
+
   async get(path) {
-    return this._res(await fetch(this.base + path, { credentials: 'same-origin' }), path);
+    return this._gate(() => fetch(this.base + path, { credentials: 'same-origin' }), path);
   },
 
   async post(path, body = {}) {
-    return this._res(await fetch(this.base + path, {
+    return this._gate(() => fetch(this.base + path, {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -28,7 +49,7 @@ const API = {
   },
 
   async put(path, body = {}) {
-    return this._res(await fetch(this.base + path, {
+    return this._gate(() => fetch(this.base + path, {
       method: 'PUT', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -36,7 +57,7 @@ const API = {
   },
 
   async del(path) {
-    return this._res(await fetch(this.base + path, { method: 'DELETE', credentials: 'same-origin' }), path);
+    return this._gate(() => fetch(this.base + path, { method: 'DELETE', credentials: 'same-origin' }), path);
   },
 
   async delete(path) { return this.del(path); },
@@ -69,6 +90,13 @@ function isRemoteActive() {
 
 // Socket.IO connection
 const socket = io({ transports: ['websocket', 'polling'], withCredentials: true });
+// a live stream (terminal, logs, build…) to a server this session has not unlocked: ask for its access password;
+// the stream is opened again by the page (reopen it) once unlocked
+socket.on('gate:locked', async ({ serverId, error }) => {
+  if (typeof window.promptAccessPassword !== 'function') { if (typeof showToast === 'function') showToast(error, 'error'); return; }
+  if (API._unlocking[serverId]) return;
+  API._unlocking[serverId] = (async () => { const pw = await window.promptAccessPassword(serverId); if (pw == null) return false; try { await API.post(`/servers/${encodeURIComponent(serverId)}/unlock`, { accessPassword: pw }); if (typeof showToast === 'function') showToast('Unlocked — open it again', 'success'); return true; } catch (e) { if (typeof showToast === 'function') showToast(e.message, 'error'); return false; } })().finally(() => setTimeout(() => { delete API._unlocking[serverId]; }, 0));
+});
 
 // Handshake rejected (no/expired session) → just reflect "disconnected"; the REST 401 path drives
 // the login screen. Deliberately NO reload here — api.js runs before the auth gate, so reloading on

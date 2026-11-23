@@ -206,7 +206,7 @@ The system journal and log files of the server in the [log viewer](observe.md#th
 | **Connection test** | Logs in now and checks Docker |
 | **Docker access** | **Grant…** adds the SSH user to the `docker` group (needs passwordless `sudo`) |
 | **Host key** | Pinned on first connect; **Re-trust…** after a rebuild |
-| **Access password** | A second password asked before anyone switches to this server in DockGate |
+| **Access password** | A second password, asked once per DockGate session before this server is used (switching to it, its console, its pages, terminals and logs). See [Servers](servers.md). |
 | **Notifications** | Turn Telegram / email alerts for this server on or off |
 | **Remove server from DockGate** | DockGate forgets the server, its SSH key file and history. Nothing on the server is changed |
 

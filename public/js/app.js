@@ -457,6 +457,14 @@ function promptAccessPassword(label) {
 // Returns true on success, false if the user cancelled or the password was wrong; rethrows other errors.
 async function activateServer(id, label) {
   try {
+    // locked in this session (the servers list says so): ask first, so the switch is one request, not a refused one
+    const info = await API.get('/servers').then(d => (d.servers || []).find(s => s.id === id)).catch(() => null);
+    if (info && info.hasAccessPassword && !info.unlocked) {
+      const pw = await promptAccessPassword(label);
+      if (pw == null) return false;
+      try { await API.post('/servers/active', { id, accessPassword: pw }); return true; }
+      catch (e2) { showToast(e2.message || 'Access password incorrect', 'error', 7000); return false; }
+    }
     await API.post('/servers/active', { id });
     return true;
   } catch (err) {

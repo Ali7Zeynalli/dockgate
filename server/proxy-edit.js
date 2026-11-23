@@ -426,6 +426,13 @@ async function route(ctx, p, name, port) {
   throw err(`The host can not reach ${t.name}:${port}`);
 }
 
+/** The ports an nginx proxy's sites listen on (the most used; 80 / 443 when those are used at all). */
+async function nginxPorts(p) {
+  const parsed = (await PX.rawFor()).nginx[p.id] || { servers: [] };
+  const pick = (ssl, dflt) => { const cnt = {}; for (const sv of parsed.servers || []) for (const l of sv.listen || []) { const isSsl = /\bssl\b/.test(l); const m = l.match(/(?:^|:)(\d{2,5})(?:\s|$)/); if (m && isSsl === ssl) cnt[m[1]] = (cnt[m[1]] || 0) + 1; } const ks = Object.keys(cnt); if (!ks.length || ks.includes(String(dflt))) return dflt; return Number(ks.sort((a, b) => cnt[b] - cnt[a])[0]); };
+  const http = pick(false, 80);
+  return { http, https: pick(true, http === 80 ? 443 : http === 8080 ? 8443 : 443) };
+}
 /** Where a new site file goes for an nginx / Apache proxy. */
 async function siteFileFor(p, domain) {
   const files = await knownFiles(p); const raw = await PX.rawFor();
@@ -490,9 +497,7 @@ async function exposePlan(body) {
   const https = p.kind === 'caddy' ? (body.https === 'none' ? 'none' : 'auto') : body.https;
   const input = { ...base, https };
   if (PX.NGINXISH.has(p.kind)) { // listen where this nginx already listens: nginx-unprivileged and host-network proxies are not on 80 / 443
-    const parsed = (await PX.rawFor()).nginx[p.id] || { servers: [] };
-    const pick = (ssl, dflt) => { const cnt = {}; for (const sv of parsed.servers || []) for (const l of sv.listen || []) { const isSsl = /\bssl\b/.test(l); const m = l.match(/(?:^|:)(\d{2,5})(?:\s|$)/); if (m && isSsl === ssl) cnt[m[1]] = (cnt[m[1]] || 0) + 1; } const ks = Object.keys(cnt); if (!ks.length || ks.includes(String(dflt))) return dflt; return Number(ks.sort((a, b) => cnt[b] - cnt[a])[0]); };
-    input.httpPort = pick(false, 80); input.httpsPort = pick(true, 443);
+    const np = await nginxPorts(p); input.httpPort = np.http; input.httpsPort = np.https;
     if (input.httpPort !== 80) notes.push(`${p.name} listens on ${input.httpPort} (not 80): the site listens there too.${https === 'letsencrypt' ? " Let's Encrypt asks on port 80 of the server: it must reach this port." : ''}`);
   }
   G.siteInput(input);
@@ -731,7 +736,8 @@ async function certForSite(id, domain, { redirect = true } = {}, user, log = () 
   const apache = p.kind === 'apache';
   const steps = [];
   const cur = await readFile(ctx, p, file);
-  const a = apache ? G.apacheEnsureAcme(cur.text, domain) : G.nginxEnsureAcme(cur.text, domain);
+  const np = apache ? null : await nginxPorts(p);
+  const a = apache ? G.apacheEnsureAcme(cur.text, domain) : G.nginxEnsureAcme(cur.text, domain, { httpPort: np.http });
   if (a.changed) {
     const r = await apply(ctx, p, [{ path: file, text: a.text }], { domains: domainsFor(d, p, file), user, note: `certificate check for ${domain}` });
     steps.push(...r.steps); if (!r.ok) return { ...r, steps };
@@ -742,7 +748,7 @@ async function certForSite(id, domain, { redirect = true } = {}, user, log = () 
   let got;
   try { got = await obtain(ctx, p, names, certPath, keyPath, log); steps.push({ t: `Certificate for ${names.join(', ')} written to ${certPath}`, ok: true }); }
   catch (e) { steps.push({ t: `Certificate: ${e.message}`, ok: false }); return { ok: false, stage: 'certificate', steps, output: "Check that the domain's DNS points to this server and that port 80 reaches the proxy." }; }
-  const next = apache ? G.apacheSetHttps(now, domain, certPath, keyPath) : G.nginxAddHttps(now, domain, certPath, keyPath, { redirect });
+  const next = apache ? G.apacheSetHttps(now, domain, certPath, keyPath) : G.nginxAddHttps(now, domain, certPath, keyPath, { redirect, httpPort: np.http, httpsPort: np.https });
   const r = await apply(ctx, p, [{ path: file, text: next.text }], { domains: domainsFor(d, p, file), user, note: `HTTPS for ${domain}` });
   if (r.ok) { recordCert(ctx, p, names, certPath, keyPath, got); r.steps.push({ t: `DockGate renews it ${acmeSettings().renewDays} days before it expires`, ok: true }); }
   else r.steps.push({ t: `The certificate files stay at ${certPath}, but DockGate does not renew them until the site uses them. Fix what stopped the site, then press again.`, ok: true });

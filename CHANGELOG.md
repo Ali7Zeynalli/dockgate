@@ -4,6 +4,12 @@
 
 ## [2.86.0] - 2026-11-23
 
+### Security
+- **A server's access password protected only the switch to it.** Once someone unlocked a server, it stayed open for every session: another browser, a new login and a DockGate restart reached it without the password. The Server Console APIs and the terminals never asked for it.
+  - It is now asked once per DockGate session and covers every way in: the pages that work on the server in use, the Server Console APIs (`/api/servers/<id>/…`), and live streams (terminals, logs, stats, events, builds, pushes).
+  - An unlock lasts 12 hours, ends when the session signs out, and is not shared with anyone else.
+  - Any page that needs it asks for it once and then goes on. Switching to a locked server asks first, so the browser console no longer shows a refused request.
+
 ### Fixed
 - **A new nginx site could be written where nginx never reads it, and DockGate said it worked.** New sites always went to `conf.d/`. An nginx that loads `vhosts/`, SWAG's `site-confs/` or another folder never loaded them: the check and the reload passed, and the site never answered.
   - The site now goes to a folder nginx really loads into `http { }` (the one that already holds sites).
@@ -17,6 +23,8 @@
 - **Caddy with a JSON config** showed no sites, and its check used the Caddyfile adapter. Its sites are read, and it is checked as JSON. Writers that make Caddyfiles say so instead of breaking it.
 - **HAProxy started with several `-f` files or a folder:** only one file was read. All are read, and checked together.
 - A stopped proxy can get a new site (without Let's Encrypt): saving starts it.
+- DockGate's own short-lived helper containers (config writes, site checks, commands on the host) no longer show in Events or in the containers list.
+- Adding HTTPS to an existing nginx site used ports 80 / 443 even on an nginx that listens on 8080 / 8443. It now uses the proxy's ports.
 
 ---
 

@@ -60,6 +60,7 @@ app.use('/api/auth', require('./routes/auth'));  // open: login / logout / statu
 app.use('/api/hooks', require('./routes/hooks'));
 app.post('/api/compose/webhook/:project', (req, res, next) => { req.url = `/webhook/${encodeURIComponent(req.params.project)}${req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : ''}`; require('./routes/compose')(req, res, next); });
 app.use('/api', requireAuth);                    // everything else needs a session
+app.use('/api', require('./auth/server-gate').requireServerGate); // a server's access password, per session
 
 // REST Routes
 app.use('/api/containers', require('./routes/containers'));
@@ -299,6 +300,7 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+  socket.use(require('./auth/server-gate').socketGate(socket)); // a locked server opens no stream
 
   // System (host) terminal — shell on the active server (remote SSH host or local container). See host-terminal.js.
   attachHostTerminal(socket, { dockerService, stmts, logAction });
@@ -532,11 +534,13 @@ io.on('connection', (socket) => {
       eventStream.on('data', (chunk) => {
         pending += chunk.toString();
         const lines = pending.split('\n'); pending = lines.pop();
+        // DockGate's own short-lived helpers (config writes, site checks, commands on the host) are not your events
+        const own = (ev) => ev && ev.Type === 'container' && ev.Actor && ev.Actor.Attributes && ev.Actor.Attributes['dockgate.helper'];
         for (const line of lines) {
           if (!line.trim()) continue;
-          try { socket.emit('events:data', JSON.parse(line)); } catch (e) { /* ignore parse errors */ }
+          try { const ev = JSON.parse(line); if (!own(ev)) socket.emit('events:data', ev); } catch (e) { /* ignore parse errors */ }
         }
-        if (pending.trim().startsWith('{') && pending.trim().endsWith('}')) { try { socket.emit('events:data', JSON.parse(pending)); pending = ''; } catch (e) { /* not complete yet */ } }
+        if (pending.trim().startsWith('{') && pending.trim().endsWith('}')) { try { const ev = JSON.parse(pending); pending = ''; if (!own(ev)) socket.emit('events:data', ev); } catch (e) { /* not complete yet */ } }
       });
       eventStream.on('error', (err) => {
         socket.emit('events:error', { error: err.message });

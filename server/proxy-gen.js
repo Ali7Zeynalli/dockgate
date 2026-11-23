@@ -100,13 +100,13 @@ const serverNames = (block) => ((block.match(/\bserver_name\s+([^;]+);/) || [])[
 const isSslServer = (block) => /\blisten\s+[^;]*\bssl\b/.test(block) || /\bssl_certificate\s/.test(block);
 
 /** The HTTP (port 80) server of `domain` answers the ACME challenge from ACME_ROOT. A server-level `return` moves into `location /` (it would run first). */
-function nginxEnsureAcme(text, domain) {
+function nginxEnsureAcme(text, domain, { httpPort = 80 } = {}) {
   const blocks = nginxBlocks(text, 'server').filter(b => serverNames(b.text).includes(domain) && !isSslServer(b.text));
   if (!blocks.length) { // HTTPS only: add an HTTP server that answers the check and sends the rest to https
     const tls = nginxBlocks(text, 'server').find(b => serverNames(b.text).includes(domain));
     if (!tls) throw err(`${domain} is not in this file`);
     const names = serverNames(tls.text).filter(n => /^[a-z0-9.*-]+$/i.test(n));
-    const add = `\n${tls.indent}server {\n${tls.indent}  listen 80;\n${tls.indent}  server_name ${names.join(' ')};\n${nginxAcme(tls.indent + '  ')}\n${tls.indent}  location / {\n${tls.indent}    return 301 https://$host$request_uri;\n${tls.indent}  }\n${tls.indent}}`;
+    const add = `\n${tls.indent}server {\n${tls.indent}  listen ${httpPort};\n${tls.indent}  server_name ${names.join(' ')};\n${nginxAcme(tls.indent + '  ')}\n${tls.indent}  location / {\n${tls.indent}    return 301 https://$host$request_uri;\n${tls.indent}  }\n${tls.indent}}`;
     return { text: text.slice(0, tls.end) + add + text.slice(tls.end), changed: true, added: true };
   }
   const b = blocks[0];
@@ -144,15 +144,16 @@ function nginxSetCert(text, domain, certPath, keyPath) {
 }
 
 /** Add HTTPS to an HTTP-only nginx site: a copy of its server on 443 with the certificate; with redirect the HTTP server sends to https. */
-function nginxAddHttps(text, domain, certPath, keyPath, { redirect = true } = {}) {
+function nginxAddHttps(text, domain, certPath, keyPath, { redirect = true, httpPort = 80, httpsPort = 443 } = {}) {
   const all = nginxBlocks(text, 'server');
   if (all.some(b => serverNames(b.text).includes(domain) && isSslServer(b.text))) return nginxSetCert(text, domain, certPath, keyPath);
   const b0 = all.find(x => serverNames(x.text).includes(domain));
   if (!b0) throw err(`${domain} is not in this file`);
   const b = { ...b0, text: fmtBlock(b0.text, b0.indent).replace(/^\s+/, '') };
   const ind = b.indent + '  ';
-  let tls = b.text.replace(/\blisten\s+([^;]*?)\b80\b([^;]*);/g, (m0, a, z) => `listen ${a}443${z} ssl;`).replace(/ ssl ssl;/g, ' ssl;');
-  if (!/\blisten\s+[^;]*443/.test(tls)) tls = tls.replace(/\{/, `{\n${ind}listen 443 ssl;`);
+  const hp = String(httpPort || 80), sp = String(httpsPort || 443); // the ports this nginx listens on (8080 / 8443 when unprivileged)
+  let tls = b.text.replace(new RegExp(`\\blisten\\s+([^;]*?)\\b${hp}\\b([^;]*);`, 'g'), (m0, a, z) => `listen ${a}${sp}${z} ssl;`).replace(/ ssl ssl;/g, ' ssl;');
+  if (!new RegExp(`\\blisten\\s+[^;]*\\b${sp}\\b`).test(tls)) tls = tls.replace(/\{/, `{\n${ind}listen ${sp} ssl;`);
   tls = tls.replace(/(\bserver_name\s+[^;]+;[^\n]*\n)/, `$1${ind}ssl_certificate ${certPath};\n${ind}ssl_certificate_key ${keyPath};\n`);
   tls = tls.replace(new RegExp(`\\n[ \\t]*location \\^~ /\\.well-known/acme-challenge/ \\{[^}]*\\}`), '');
   let http = b.text;
