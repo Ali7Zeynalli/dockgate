@@ -188,6 +188,33 @@ Each certificate in the list has **Renew now** when someone can be asked to rene
 
 To renew only by hand, turn **Auto renew** off for a DockGate certificate: DockGate then keeps it, warns before it expires, and renews it only when you press **Renew now**. Let's Encrypt allows 5 new certificates for the same names a week.
 
+### Expired or expiring: "Why? · fix"
+
+Certificates that expired or expire within 14 days are listed in a box above the table. **Why? · fix** checks what the renewal needs and tells you what is wrong:
+
+| Check | What it looks at |
+|---|---|
+| Who renews it | DockGate's last error; certbot's method (`webroot`, `standalone`, `dns`), its timer or cron and its container; acme.sh; the errors in Caddy's and Traefik's logs; Let's Encrypt's limit of 5 certificates a week |
+| DNS | each name points to this server. Cloudflare's addresses are marked (Let's Encrypt then talks to Cloudflare); a private address may be NAT |
+| Challenge path | a real token is written where the proxy serves `/.well-known/acme-challenge/`, then fetched by name the way Let's Encrypt does (following redirects), then removed |
+| Port 80 | for certbot `standalone`: whether something else already holds port 80 |
+| Served | the proxy serves the newest file, not an old one |
+
+Then it offers the fix that applies. Each one asks first:
+
+| Kept by | Fix |
+|---|---|
+| DockGate | **Put the files back, then renew** (when the files on disk were changed or removed), **Renew now** |
+| certbot | **certbot test run** (`certbot renew --dry-run`, changes nothing), **Renew now**, or **Let DockGate get and renew it** |
+| acme.sh | **Renew now** (`--force`) |
+| Caddy | **Make Caddy get it again**: the stored certificate is moved to `dockgate-backup/` in Caddy's data folder and Caddy is reloaded |
+| Traefik | **Make Traefik get it again**: `acme.json` is copied to `acme.json.dockgate-<time>`, the certificate is taken out of it, and Traefik is restarted |
+| Nginx Proxy Manager | renew it in Nginx Proxy Manager (DockGate only shows the checks) |
+| A file nobody renews | **Let DockGate get and renew it** (nginx and Apache sites) |
+| Any | **Reload the proxy** (all proxies that use it) when an old certificate is still served |
+
+If DNS or the challenge path fails, fix that first: a renewal can not work until Let's Encrypt reaches the server by name on port 80.
+
 ### Let's Encrypt from DockGate
 
 DockGate is the ACME client. It answers the certificate check through the proxy itself, so nothing else is installed:

@@ -2,6 +2,16 @@
 
 ---
 
+## [2.87.0] - 2026-11-23
+
+### Added
+- **Proxies & SSL → Certificates: "Why? · fix" for expired and expiring certificates.** Certificates that expired or expire within 14 days are listed in a box above the table.
+  - **Why?** checks what the renewal needs: who renews it (DockGate's last error, certbot's method, timer and container, acme.sh, Caddy's and Traefik's logged errors, Let's Encrypt's weekly limit), each name's DNS (this server, Cloudflare, a private address), the challenge path from outside with a real token fetched by name, port 80 for certbot `standalone`, and whether the proxy serves the newest file.
+  - **Fix** offers what applies to whoever keeps it: put DockGate's files back and renew, renew now (DockGate, certbot, acme.sh), a certbot test run (`--dry-run`), let DockGate get and renew it (certbot, acme.sh or a plain file on an nginx or Apache site), make Caddy get it again (the stored certificate is moved to a backup folder and Caddy reloaded), make Traefik get it again (`acme.json` is backed up, the certificate taken out, Traefik restarted), and reload the proxies. Nginx Proxy Manager gets the checks only.
+  - Every fix asks first and is written to the audit log.
+
+---
+
 ## [2.86.1] - 2026-11-23
 
 ### Fixed
