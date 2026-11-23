@@ -2,6 +2,24 @@
 
 ---
 
+## [2.86.0] - 2026-11-23
+
+### Fixed
+- **A new nginx site could be written where nginx never reads it, and DockGate said it worked.** New sites always went to `conf.d/`. An nginx that loads `vhosts/`, SWAG's `site-confs/` or another folder never loaded them: the check and the reload passed, and the site never answered.
+  - The site now goes to a folder nginx really loads into `http { }` (the one that already holds sites).
+  - If nginx loads no folder, DockGate makes `conf.d/` and adds its `include`.
+  - After the reload DockGate checks that nginx lists the new file; if not, the site is taken out again and the reason is shown.
+  - The new site is asked once; a 502 says the proxy can not reach the container.
+- **Load balancing showed the wrong servers when the upstream was in another file** (an `upstreams.conf`). The upstream's name was shown as one server. Saving moved the site to a new upstream and left the shared one as it was. The upstream is now read and changed where it is, and the other sites that use it are named.
+- **"The sites answer as before" never ran for HAProxy and Apache.** Their official images have no curl or wget, so a change that passed the config check but broke a site (200 → 503) stayed. Sites are now asked from a short-lived helper that shares the proxy's network, on every port the proxy listens on. A broken site puts the earlier file back.
+- **nginx on another port** (nginx-unprivileged on 8080, a proxy on the host network): new sites were written with `listen 80`. They now listen where the proxy already listens.
+- **A proxy running as a Swarm service** was one proxy per replica, and a change went into one task container only: the other replicas missed it, and it was lost when Swarm replaced the task. It is now one entry with its replicas, read-only, and says where to change it.
+- **Caddy with a JSON config** showed no sites, and its check used the Caddyfile adapter. Its sites are read, and it is checked as JSON. Writers that make Caddyfiles say so instead of breaking it.
+- **HAProxy started with several `-f` files or a folder:** only one file was read. All are read, and checked together.
+- A stopped proxy can get a new site (without Let's Encrypt): saving starts it.
+
+---
+
 ## [2.85.1] - 2026-11-23
 
 ### Added

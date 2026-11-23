@@ -28,10 +28,11 @@ function siteInput(o = {}) {
   const FILE = /^\/[\w.@+\-/]{1,300}$/;
   for (const k of ['certPath', 'keyPath']) if (o[k] && (!FILE.test(String(o[k])) || /(^|\/)\.\.(\/|$)/.test(o[k]))) throw err(`Not a file path: ${o[k]}`);
   if (o.path && o.path !== '/' && !/^\/[\w.\-/~%]{0,200}$/.test(String(o.path))) throw err(`Not a URL path: ${o.path}`);
+  const port = (v, d) => { const n = Number(v); return Number.isInteger(n) && n > 0 && n < 65536 ? n : d; }; // the ports the proxy really listens on (nginx-unprivileged: 8080)
   const maxBody = o.maxBody == null || o.maxBody === '' ? null : String(o.maxBody).trim();
   if (maxBody && !/^\d{1,5}[kmg]?$/i.test(maxBody)) throw err('Upload limit: a number with k, m or g (e.g. 50m)');
   return { domain, aliases, names: [domain, ...aliases], targets, https, redirect: o.redirect !== false, websocket: !!o.websocket, lb, maxBody,
-    ipv6: !!o.ipv6, certPath: o.certPath ? String(o.certPath) : null, keyPath: o.keyPath ? String(o.keyPath) : null, dockerDns: !!o.dockerDns, path: o.path && o.path !== '/' ? String(o.path) : '/' };
+    ipv6: !!o.ipv6, certPath: o.certPath ? String(o.certPath) : null, keyPath: o.keyPath ? String(o.keyPath) : null, dockerDns: !!o.dockerDns, path: o.path && o.path !== '/' ? String(o.path) : '/', httpPort: port(o.httpPort, 80), httpsPort: port(o.httpsPort, 443) };
 }
 
 // ---------- nginx ----------
@@ -51,7 +52,7 @@ function nginxSite(input, { certReady = true, resolve = false } = {}) {
   const out = [`${MARK} Site ${s.domain} → ${s.targets.join(', ')}.`, '# DockGate keeps earlier versions of this file; edit it freely.'];
   const res = resolve && s.dockerDns; // container names through Docker's DNS, resolved while nginx runs
   if (up.startsWith('dg_')) out.push(`upstream ${up} {`, ...(LB.nginx[s.lb] ? [`  ${LB.nginx[s.lb]}`] : []), ...(res ? resolveHead(up, '  ') : []), ...s.targets.map(t => `  server ${t}${res && isHostName(t) ? ' resolve' : ''};`), '}');
-  const head = (ssl) => [ssl ? '  listen 443 ssl;' : '  listen 80;', ...(s.ipv6 ? [ssl ? '  listen [::]:443 ssl;' : '  listen [::]:80;'] : []), `  server_name ${s.names.join(' ')};`,
+  const head = (ssl) => [ssl ? `  listen ${s.httpsPort} ssl;` : `  listen ${s.httpPort};`, ...(s.ipv6 ? [ssl ? `  listen [::]:${s.httpsPort} ssl;` : `  listen [::]:${s.httpPort};`] : []), `  server_name ${s.names.join(' ')};`,
     ...(s.dockerDns && !up.startsWith('dg_') ? ['  resolver 127.0.0.11 valid=10s ipv6=off;'] : []), ...(s.maxBody ? [`  client_max_body_size ${s.maxBody};`] : [])];
   const wantsTls = s.https === 'letsencrypt' || s.https === 'existing';
   const tls = wantsTls && certReady;
@@ -519,5 +520,14 @@ function removeMarked(text, domain) {
 }
 const isDockgateFile = (text) => String(text || '').startsWith(MARK);
 
-module.exports = { nginxResolves, nginxSiteSettings, nginxApplySettings, caddySiteSettings, caddyApplySettings, nginxCertNames, apacheVhosts, apacheEnsureAcme, apacheSetHttps, apacheCertNames, APACHE_MODS, fmtBlock, MARK, ACME_ROOT, slug, siteInput, nginxSite, nginxBlocks, nginxEnsureAcme, nginxSetCert, nginxAddHttps, nginxUpstreams, nginxSetUpstream, nginxMakeUpstream,
+/** Add `line` (an include) inside the http { } block of an nginx main file, before its closing brace. */
+function nginxAddHttpInclude(text, line) {
+  const m = /(^|[\s;}])http\s*\{/m.exec(text); if (!m) throw err('No http { } block in the main nginx config');
+  let i = m.index + m[0].length, depth = 1;
+  for (; i < text.length && depth; i++) { const ch = text[i]; if (ch === '#') { while (i < text.length && text[i] !== '\n') i++; continue; } if (ch === '{') depth++; else if (ch === '}') depth--; }
+  const close = i - 1; // the http block's closing brace
+  return `${text.slice(0, close).replace(/\s*$/, '')}\n    ${line}\n${text.slice(close)}`;
+}
+
+module.exports = { nginxAddHttpInclude, nginxResolves, nginxSiteSettings, nginxApplySettings, caddySiteSettings, caddyApplySettings, nginxCertNames, apacheVhosts, apacheEnsureAcme, apacheSetHttps, apacheCertNames, APACHE_MODS, fmtBlock, MARK, ACME_ROOT, slug, siteInput, nginxSite, nginxBlocks, nginxEnsureAcme, nginxSetCert, nginxAddHttps, nginxUpstreams, nginxSetUpstream, nginxMakeUpstream,
   caddySite, caddyAdd, caddySiteRange, caddyLb, caddySetLb, haproxyAdd, haproxyBackends, haproxySetBackend, apacheSite, traefikLabels, caddyLabels, labelsText, removeMarked, isDockgateFile, lbServers };

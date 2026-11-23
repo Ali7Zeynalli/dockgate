@@ -180,8 +180,8 @@ async function startProxy(id, user) {
 function cmds(p) {
   const cont = p.where === 'container';
   if (PX.NGINXISH.has(p.kind)) return { test: 'nginx -t', reload: cont ? 'nginx -s reload' : 'systemctl reload nginx 2>/dev/null || nginx -s reload' };
-  if (p.kind === 'caddy') { const cfg = p.config || '/etc/caddy/Caddyfile'; return { test: `caddy validate --config ${shq(cfg)} --adapter caddyfile`, reload: `caddy reload --config ${shq(cfg)} --adapter caddyfile${cont ? '' : ' 2>/dev/null || systemctl reload caddy'}` }; }
-  if (p.kind === 'haproxy') return { test: `haproxy -c -f ${shq(p.config)}`, reload: cont ? 'kill -USR2 1' : 'systemctl reload haproxy' };
+  if (p.kind === 'caddy') { const cfg = p.config || '/etc/caddy/Caddyfile'; const ad = p.caddyJson ? '' : ' --adapter caddyfile'; return { test: `caddy validate --config ${shq(cfg)}${ad}`, reload: `caddy reload --config ${shq(cfg)}${ad}${cont ? '' : ' 2>/dev/null || systemctl reload caddy'}` }; }
+  if (p.kind === 'haproxy') return { test: `haproxy -c ${(p.haproxyArgs && p.haproxyArgs.length ? p.haproxyArgs : [p.config]).map(f => `-f ${shq(f)}`).join(' ')}`, reload: cont ? 'kill -USR2 1' : 'systemctl reload haproxy 2>/dev/null || kill -USR2 $(pidof haproxy | cut -d" " -f1)' }; // the check: every file it loads, as it starts
   const ab = p.apacheBin && p.apacheBin !== 'none' ? p.apacheBin : 'httpd';
   if (p.kind === 'apache') return { test: cont ? `${ab} -t` : 'apachectl configtest', reload: cont ? `${ab} -k graceful` : 'apachectl graceful 2>/dev/null || systemctl reload apache2 2>/dev/null || systemctl reload httpd' };
   return null;
@@ -191,13 +191,54 @@ function cmds(p) {
  * (https first, then http) or { domain, https } — asked only the way the site is served, so a site without HTTPS
  * is not answered by another site's TLS server. Up to 20 sites, asked at the same time.
  */
+/** The ports a proxy listens on inside its own network, from its config: [{ scheme, port }] (80 / 443 always tried). */
+async function listenPorts(p) {
+  const raw = await PX.rawFor().catch(() => ({ files: {} }));
+  const text = (raw.files[p.id] || []).map(f => f.text).join('\n').replace(/#[^\n]*/g, '');
+  const out = [['https', 443], ['http', 80]];
+  const add = (port, ssl) => { const n = Number(port); if (n > 0 && n < 65536 && !out.some(([s, x]) => x === n && s === (ssl ? 'https' : 'http'))) out.push([ssl ? 'https' : 'http', n]); };
+  for (const m of text.matchAll(/(?:^|[;{\s])listen\s+([^;]+);/g)) { const pm = m[1].match(/(?:^|:|\s)(\d{2,5})(?:\s|$)/); if (pm) add(pm[1], /\bssl\b|\bquic\b/.test(m[1])); }
+  for (const m of text.matchAll(/^\s*bind\s+\S*?:(\d{2,5})([^\n]*)/gm)) add(m[1], /\bssl\b|\bcrt\b/.test(m[2]));
+  for (const m of text.matchAll(/^\s*Listen\s+(?:\S+:)?(\d{2,5})(?:\s+(\w+))?/gm)) add(m[1], m[1] === '443' || m[2] === 'https');
+  for (const m of text.matchAll(/^[^\s#][^{\n]*:(\d{2,5})\s*\{/gm)) add(m[1], m[1] === '443'); // Caddy site addresses with a port
+  return out.slice(0, 8).map(([scheme, port]) => ({ scheme, port }));
+}
+const PROBE_IMAGE = 'curlimages/curl:8.11.1';
+/** A command in a short-lived container that shares proxy container `cid`'s network: it sees the proxy at 127.0.0.1. */
+async function inProxyNet(ctx, cid, script) {
+  let img = PROBE_IMAGE;
+  try { await ctx.c.getImage(img).inspect(); } catch (e) {
+    try { await new Promise((res, rej) => ctx.c.pull(img, (e2, st) => e2 ? rej(e2) : ctx.c.modem.followProgress(st, (e3) => e3 ? rej(e3) : res()))); }
+    catch (e4) { img = 'alpine'; await ctx.c.getImage(img).inspect().catch(() => new Promise((res, rej) => ctx.c.pull(img, (e5, st) => e5 ? rej(e5) : ctx.c.modem.followProgress(st, (e6) => e6 ? rej(e6) : res())))); } // no curl image: busybox wget (http only)
+  }
+  const ct = await ctx.c.createContainer({ Image: img, Entrypoint: ['sh', '-c'], Cmd: [script], Labels: { 'dockgate.helper': 'proxy-probe' }, HostConfig: { NetworkMode: `container:${cid}` } });
+  let timer;
+  try {
+    await ct.start();
+    await Promise.race([ct.wait(), new Promise((res) => { timer = setTimeout(() => { ct.kill().catch(() => {}); res(); }, 60000); })]);
+    const buf = await ct.logs({ stdout: true, stderr: true });
+    const b = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf)); let out = ''; let i = 0;
+    if (b.length > 8 && (b[0] === 1 || b[0] === 2) && b[1] === 0) { while (i + 8 <= b.length) { const n = b.readUInt32BE(i + 4); out += b.slice(i + 8, i + 8 + n).toString('utf8'); i += 8 + n; } } else out = b.toString('utf8');
+    return { code: 0, out, err: '' };
+  } finally { clearTimeout(timer); await ct.remove({ force: true }).catch(() => {}); }
+}
+/**
+ * HTTP status of each site asked through the proxy (127.0.0.1, with the site's name), before and after a change.
+ * Items are a domain (https first, then http) or { domain, https }. Every port the proxy listens on is tried, so a
+ * proxy on 8080 (nginx-unprivileged) is asked too. A proxy container is asked from a helper that shares its
+ * network, so images without curl or wget (httpd, haproxy) are asked as well. Up to 20 sites, at the same time.
+ */
 async function probe(ctx, p, items) {
   const list = []; const seen = new Set();
   for (const it of items) { const o = typeof it === 'string' ? { domain: it, https: null } : it; if (!o || !P.isDomain(o.domain) || o.domain.startsWith('*.') || seen.has(o.domain)) continue; seen.add(o.domain); list.push(o); }
   if (!list.length) return {};
-  const ask = (o) => `pr ${shq(o.domain)} ${o.https === true ? 'https:443' : o.https === false ? 'http:80' : "'https:443 http:80'"} &`;
-  const script = `pr() { d=$1; if command -v curl >/dev/null 2>&1; then for sp in $2; do s=\${sp%%:*}; po=\${sp##*:}; c=$(curl -sk -o /dev/null -m 6 -w '%{http_code}' --resolve "$d:$po:127.0.0.1" "$s://$d/" 2>/dev/null); if [ -n "$c" ] && [ "$c" != 000 ]; then echo "@@P $d $c"; return; fi; done; echo "@@P $d 000"; elif command -v wget >/dev/null 2>&1; then c=$(wget -q -S -O /dev/null -T 6 --header "Host: $d" "http://127.0.0.1/" 2>&1 | awk '/HTTP\\//{c=$2} END{print c}'); echo "@@P $d \${c:-000}"; else echo "@@P $d 000"; fi; }; ${list.slice(0, 20).map(ask).join(' ')} wait`;
-  const r = await run(ctx, p, script).catch(() => ({ out: '' }));
+  const ports = await listenPorts(p);
+  const cands = (o) => ports.filter(x => o.https === true ? x.scheme === 'https' : o.https === false ? x.scheme === 'http' : true).map(x => `${x.scheme}:${x.port}`).join(' ');
+  const ask = (o) => `pr ${shq(o.domain)} ${shq(cands(o))} &`;
+  const script = `pr() { d=$1; for sp in $2; do s=\${sp%%:*}; po=\${sp##*:}; if command -v curl >/dev/null 2>&1; then c=$(curl -sk -o /dev/null -m 6 -w '%{http_code}' --resolve "$d:$po:127.0.0.1" "$s://$d:$po/" 2>/dev/null); elif [ "$s" = http ] && command -v wget >/dev/null 2>&1; then c=$(wget -q -S -O /dev/null -T 6 --header "Host: $d" "http://127.0.0.1:$po/" 2>&1 | awk '/HTTP\\//{c=$2} END{print c}'); else c=; fi; if [ -n "$c" ] && [ "$c" != 000 ]; then echo "@@P $d $c"; return; fi; done; echo "@@P $d 000"; }; ${list.slice(0, 20).map(ask).join(' ')} wait`;
+  let r = null;
+  if (p.where === 'container' && p.running !== false) r = await inProxyNet(ctx, p.cid, script).catch(() => null);
+  if (!r || !/@@P /.test(r.out)) r = await run(ctx, p, script).catch(() => ({ out: '' })); // no helper (no image): from inside the proxy
   const res = {}; for (const m of String(r.out).matchAll(/@@P (\S+) (\d{3})/g)) res[m[1]] = Number(m[2]);
   return res;
 }
@@ -209,6 +250,7 @@ const locks = new Set();
  * reload and site probe run; on any failure the earlier files go back. → { ok, stage, steps, output, probe }
  */
 async function apply(ctx, p, changes, opts = {}) {
+  if (p.swarmService) throw err(swarmLock(p), 409);
   if (isStopped(p)) return applyStopped(ctx, p, changes, opts);
   return applyRunning(ctx, p, changes, opts);
 }
@@ -264,7 +306,7 @@ async function applyRunning(ctx, p, changes, { domains = [], user = null, note =
     if (r.code !== 0) { step('Reload — failed', false); const back = await restore(); await run(ctx, p, `${C.reload} 2>&1`).catch(() => {}); if (back) step('Put the earlier files back and reloaded'); return { ok: false, stage: 'reload', steps, output: (r.out + r.err).trim().slice(-4000) }; }
     step('Reloaded');
     let after = {};
-    if (probeSites && Object.keys(before).length && Object.values(before).every(c => !c)) step(`The sites could not be asked from inside ${p.name} (no curl or wget there, or none answered before) — open them to check`);
+    if (probeSites && Object.keys(before).length && Object.values(before).every(c => !c)) step(`The sites could not be asked through ${p.name} (none answered before) — open them to check`);
     else if (probeSites && Object.keys(before).length) {
       await sleep(1500); after = await probe(ctx, p, domains.filter(x => (typeof x === 'string' ? x : x.domain) in before));
       const broke = Object.keys(before).filter(d => healthy(before[d]) && !healthy(after[d] || 0));
@@ -284,7 +326,10 @@ async function applyRunning(ctx, p, changes, { domains = [], user = null, note =
 }
 
 // ---------- editing files ----------
+const caddyJsonOnly = (p) => { if (p.kind === 'caddy' && p.caddyJson) throw err(`${p.name} runs a JSON config (${p.config}): DockGate writes Caddyfiles — change the JSON in Config files (it is checked with caddy validate and reloaded the safe way)`, 409); };
+const swarmLock = (p) => p.swarmService ? `${p.swarmService} is a Swarm service (${p.replicas} replica${p.replicas === 1 ? '' : 's'} here): a change written into one task container misses the others and is lost when Swarm replaces it. Change the config where the service gets it (its image, a Docker config or a shared mount), then update the service in Swarm → Services.` : null;
 function lockReason(p, path) {
+  if (p.swarmService) return swarmLock(p);
   if (p.kind === 'traefik') return 'Traefik reads these files by itself (no reload needed): edit them where they are mounted from — DockGate shows them read-only';
   if (p.kind === 'caddy-docker-proxy') return `${PX.LABEL[p.kind]} is configured by container labels`;
   if (p.kind === 'nginx-proxy') return 'nginx-proxy writes its config from the containers\' VIRTUAL_HOST — change those instead';
@@ -386,10 +431,13 @@ async function siteFileFor(p, domain) {
   const files = await knownFiles(p); const raw = await PX.rawFor();
   const main = ((raw.files[p.id] || [])[0] || {}).text || '';
   if (PX.NGINXISH.has(p.kind)) {
-    const inc = [...main.matchAll(/include\s+([^;]+);/g)].map(m => m[1].trim());
-    const confd = inc.find(i => /conf\.d\/\*\.conf$/.test(i)); const sites = inc.find(i => /sites-enabled\/\*$/.test(i));
-    const dir = confd ? confd.replace(/\/\*\.conf$/, '') : sites ? sites.replace(/\/\*$/, '') : (files.find(f => /\/conf\.d\//.test(f)) || '/etc/nginx/conf.d/x').replace(/\/[^/]+$/, '');
-    return { path: `${dir.startsWith('/') ? dir : '/etc/nginx/' + dir}/${domain}.conf` };
+    // a folder nginx really loads into http { } (not just conf.d by name: vhosts/, SWAG's site-confs/, sites-enabled/)
+    const t = P.nginxSiteTarget(raw.nginx[p.id] || { files: raw.files[p.id] || [], servers: [] });
+    if (t) return { path: t.path(domain) };
+    // no folder of sites is loaded: conf.d is made and included in http { } of the main file
+    const mainPath = ((raw.files[p.id] || [])[0] || {}).path || '/etc/nginx/nginx.conf';
+    const dir = `${mainPath.replace(/\/[^/]+$/, '')}/conf.d`;
+    return { path: `${dir}/${domain}.conf`, nginxInclude: { file: mainPath, line: `include ${dir}/*.conf;` } };
   }
   if (p.kind === 'apache') {
     if (p.where === 'container' && p.apacheRoot && /\/etc\/apache2/.test(p.apacheRoot)) return { path: `${p.apacheRoot}/sites-enabled/dg-${domain}.conf` }; // Debian layout: sites-enabled is loaded already
@@ -413,7 +461,7 @@ async function traefikInfo(ctx, p) {
 async function exposePlan(body) {
   const ctx = activeCtx(); const d = await PX.scan({ fresh: true });
   const p = d.proxies.find(x => x.id === body.proxy); if (!p) throw err('Choose a proxy', 400);
-  if (!p.running) throw err(`${p.name} is not running`);
+  if (p.swarmService) throw err(swarmLock(p), 409);
   if (p.kind === 'npm') throw err('Nginx Proxy Manager adds sites in its own web UI (Hosts → Proxy Hosts)');
   if (p.kind === 'nginx-proxy') throw err('nginx-proxy: set VIRTUAL_HOST (and LETSENCRYPT_HOST) on the container instead');
   const targetsIn = (Array.isArray(body.targets) && body.targets.length ? body.targets : [{ container: body.container, port: body.port }]).filter(t => t && t.container);
@@ -441,6 +489,12 @@ async function exposePlan(body) {
   }
   const https = p.kind === 'caddy' ? (body.https === 'none' ? 'none' : 'auto') : body.https;
   const input = { ...base, https };
+  if (PX.NGINXISH.has(p.kind)) { // listen where this nginx already listens: nginx-unprivileged and host-network proxies are not on 80 / 443
+    const parsed = (await PX.rawFor()).nginx[p.id] || { servers: [] };
+    const pick = (ssl, dflt) => { const cnt = {}; for (const sv of parsed.servers || []) for (const l of sv.listen || []) { const isSsl = /\bssl\b/.test(l); const m = l.match(/(?:^|:)(\d{2,5})(?:\s|$)/); if (m && isSsl === ssl) cnt[m[1]] = (cnt[m[1]] || 0) + 1; } const ks = Object.keys(cnt); if (!ks.length || ks.includes(String(dflt))) return dflt; return Number(ks.sort((a, b) => cnt[b] - cnt[a])[0]); };
+    input.httpPort = pick(false, 80); input.httpsPort = pick(true, 443);
+    if (input.httpPort !== 80) notes.push(`${p.name} listens on ${input.httpPort} (not 80): the site listens there too.${https === 'letsencrypt' ? " Let's Encrypt asks on port 80 of the server: it must reach this port." : ''}`);
+  }
   G.siteInput(input);
   const changes = []; let flow = null;
   if (PX.NGINXISH.has(p.kind) || p.kind === 'apache') {
@@ -461,9 +515,10 @@ async function exposePlan(body) {
     changes.push({ path: sf.path, text: gen({ ...input, certPath, keyPath }, { ...opt, certReady: https !== 'letsencrypt' }), final: https === 'letsencrypt' ? gen({ ...input, certPath, keyPath }, { ...opt, certReady: true }) : null });
     if (p.kind === 'apache' && p.where === 'host') notes.push('Apache on the server: DockGate turns on the proxy modules it needs (a2enmod proxy proxy_http headers rewrite ssl proxy_balancer) before the check.');
     if (sf.include) { const inc = await readFile(ctx, p, sf.include.file); if (!inc.text.includes(sf.include.line)) changes.push({ path: sf.include.file, text: inc.text.replace(/\s*$/, `\n${sf.include.line}\n`) }); }
+    if (sf.nginxInclude) { const inc = await readFile(ctx, p, sf.nginxInclude.file); if (!inc.text.includes(sf.nginxInclude.line)) { changes.push({ path: sf.nginxInclude.file, text: G.nginxAddHttpInclude(inc.text, sf.nginxInclude.line) }); notes.push(`${p.name} loads no folder of sites: DockGate adds "${sf.nginxInclude.line}" to http { } in ${sf.nginxInclude.file}.`); } }
     return { mode: 'file', proxy: p, changes: await withBefore(ctx, p, changes), flow, certPath, keyPath, join, notes };
   }
-  if (p.kind === 'caddy') { const cur = await readFile(ctx, p, p.config); changes.push({ path: p.config, text: G.caddyAdd(cur.text, input) }); }
+  if (p.kind === 'caddy') { caddyJsonOnly(p); const cur = await readFile(ctx, p, p.config); changes.push({ path: p.config, text: G.caddyAdd(cur.text, input) }); }
   else if (p.kind === 'haproxy') { const cur = await readFile(ctx, p, p.config); changes.push({ path: p.config, text: G.haproxyAdd(cur.text, input) }); if (https !== 'none') notes.push('HAProxy: HTTPS works when its frontend already has a certificate (bind … ssl crt). DockGate adds the routing only.'); }
   else throw err(`${PX.LABEL[p.kind] || p.kind}: not supported`);
   return { mode: 'file', proxy: p, changes: await withBefore(ctx, p, changes), join, notes };
@@ -474,6 +529,7 @@ async function expose(body, user, log = () => {}) {
   const ctx = activeCtx(); const plan = await exposePlan(body);
   const p = plan.proxy;
   if (plan.flow === 'letsencrypt' && !acmeSettings().tos) throw err("Accept the certificate authority's terms first", 409);
+  if (plan.flow === 'letsencrypt' && p.running === false) throw err(`${p.name} is stopped: Let's Encrypt asks it over port 80 — start it first, or add the site without HTTPS (saving it starts the proxy)`, 409);
   const joined = [];
   for (const net of plan.join) {
     log(`Joining ${p.name} to the network ${net}…`);
@@ -514,6 +570,20 @@ async function expose(body, user, log = () => {}) {
   if (p.kind === 'apache' && (p.where === 'host' || /\/etc\/apache2/.test(p.apacheRoot || ''))) await run(ctx, p, 'command -v a2enmod >/dev/null 2>&1 && a2enmod -q proxy proxy_http headers rewrite ssl proxy_balancer lbmethod_byrequests lbmethod_bybusyness proxy_wstunnel slotmem_shm socache_shmcb >/dev/null 2>&1; true');
   const res = await apply(ctx, p, plan.changes.map(c => ({ path: c.path, text: c.text })), { domains: [], user, note: `site ${domain}`, probeSites: false });
   if (!res.ok) return leave({ ...res, site: domain });
+  // nginx -t passes for a file nginx never reads: make sure the new site is really loaded, else take it out again
+  const sitePath = plan.changes[0].path;
+  const loaded = await siteLoaded(ctx, p, sitePath, domain);
+  if (loaded === false) {
+    const back = await apply(ctx, p, plan.changes.map(c => ({ path: c.path, text: c.before === '' || c.before == null ? null : c.before })), { domains: [], user, note: `undo site ${domain} (not loaded)`, probeSites: false, versions: false });
+    res.steps.push({ t: `${p.name} does not load ${sitePath} (it is not in a folder its config includes) — the site was taken out again${back.ok ? '' : ', but putting the files back failed'}`, ok: false });
+    return leave({ ...res, ok: false, stage: 'loaded', site: domain });
+  }
+  if (loaded) res.steps.push({ t: `${p.name} loads ${sitePath}`, ok: true });
+  // and ask the new site itself (from the proxy's own network): a 502 means the proxy can not reach the container
+  const ans = (await probe(ctx, p, [{ domain, https: false }]))[domain] || 0;
+  res.steps.push(ans === 0 ? { t: `${domain} could not be asked from ${p.name} — open it to check`, ok: true, warn: true }
+    : healthy(ans) ? { t: `${domain} answers ${ans}`, ok: true }
+    : { t: `${domain} answers ${ans}: ${p.name} has the site but can not reach where it goes — check the container and its port`, ok: true, warn: true });
   await keep(res);
   if (plan.flow !== 'letsencrypt') return { ...res, site: domain };
   log('The HTTP site is live; asking Let\'s Encrypt for a certificate…');
@@ -529,6 +599,15 @@ async function expose(body, user, log = () => {}) {
   const fin = plan.changes[0];
   const r2 = await apply(ctx, p, [{ path: fin.path, text: fin.final }], { domains: [], user, note: `HTTPS for ${domain}`, probeSites: false });
   return { ...r2, steps: [...res.steps, ...r2.steps], site: domain };
+}
+
+/** Is a new site file really loaded? nginx: listed by nginx -T; Apache: its name in -S. null when it can not be told. */
+async function siteLoaded(ctx, p, path, domain) {
+  try {
+    if (PX.NGINXISH.has(p.kind)) { const r = await run(ctx, p, 'nginx -T 2>/dev/null'); if (!r.out) return null; return r.out.includes(`# configuration file ${path}:`); }
+    if (p.kind === 'apache') { const C = cmds(p); const bin = C.test.split(' ')[0]; const r = await run(ctx, p, `${bin === 'apachectl' ? 'apachectl' : bin} -S 2>&1`); if (!r.out) return null; return new RegExp(`\\b${domain.replace(/[.]/g, '\\.')}\\b`).test(r.out); }
+  } catch (e) { return null; }
+  return null; // Caddy, HAProxy: the site went into the main config file
 }
 
 /** Remove a site DockGate made. */
@@ -571,6 +650,7 @@ async function siteContext(id, domain) {
   if (!['nginx', 'caddy'].includes(p.kind)) throw err(`${PX.LABEL[p.kind] || p.kind}: use the config editor`);
   const file = s.file && s.file.startsWith('/') ? s.file : p.config;
   const lock = lockReason(p, file); if (lock) throw err(lock, 409);
+  caddyJsonOnly(p);
   return { p, ctx, d, s, file, text: (await readFile(ctx, p, file)).text };
 }
 async function siteSettings(id, domain) {
@@ -746,14 +826,25 @@ async function lbGet(id, domain) {
   if (PX.NGINXISH.has(p.kind)) {
     const block = G.nginxBlocks(text, 'server').find(b => (b.text.match(/server_name\s+([^;]+);/) || [, ''])[1].split(/\s+/).includes(domain) && /proxy_pass/.test(b.text));
     const pp = block && ((block.text.match(/proxy_pass\s+https?:\/\/([^/;$\s]+)/) || [])[1] || (block.text.match(/set\s+\$\w+\s+https?:\/\/([^/;\s]+)/) || [])[1]);
-    const up = G.nginxUpstreams(text).find(u => u.name === pp);
+    // the upstream may be defined in another file (upstreams.conf): looked up in every file of the config, and
+    // changed where it is — with the other sites that use it named, since they change too
+    let up = G.nginxUpstreams(text).find(u => u.name === pp); let upFile = up ? file : null;
+    if (!up && pp) {
+      const raw = await PX.rawFor();
+      for (const f of raw.files[p.id] || []) { const u = G.nginxUpstreams(f.text).find(x => x.name === pp); if (u) { up = u; upFile = f.path; break; } }
+      if (up) up = G.nginxUpstreams((await readFile(ctx, p, upFile)).text).find(x => x.name === pp) || up; // the file as it is now
+    }
     const ri = await resolveInfo(ctx, p);
     const resolve = { resolves: ri.resolves, version: ri.version, why: ri.why };
-    if (up) return { kind: 'nginx', file, upstream: up.name, method: up.method, servers: up.servers, methods: methods.nginx, resolve };
+    if (up) {
+      const raw = await PX.rawFor();
+      const users = [...new Set(d.sites.filter(s => s.proxy === id && s.domain !== domain && (raw.files[p.id] || []).some(f => f.path === s.file && new RegExp(`proxy_pass\\s+https?://${pp.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[/;\\s]`).test(f.text) && f.text.includes(s.domain))).map(s => s.domain))];
+      return { kind: 'nginx', file: upFile, siteFile: file, upstream: up.name, method: up.method, servers: up.servers, methods: methods.nginx, resolve, sharedWith: users };
+    }
     if (pp) return { kind: 'nginx', file, upstream: null, method: 'round_robin', servers: [{ addr: pp, weight: 1, backup: false, down: false }], methods: methods.nginx, single: true, resolve };
     throw err(`${domain} has no proxy_pass to a host:port`);
   }
-  if (p.kind === 'caddy') { const lb = G.caddyLb(text, domain); if (!lb) throw err(`${domain} has no reverse_proxy`); return { kind: 'caddy', file, method: lb.method, servers: lb.targets.map(a => ({ addr: a, weight: 1, backup: false, down: false })), methods: methods.caddy }; }
+  if (p.kind === 'caddy') { caddyJsonOnly(p); const lb = G.caddyLb(text, domain); if (!lb) throw err(`${domain} has no reverse_proxy`); return { kind: 'caddy', file, method: lb.method, servers: lb.targets.map(a => ({ addr: a, weight: 1, backup: false, down: false })), methods: methods.caddy }; }
   if (p.kind === 'haproxy') { const b = G.haproxyBackends(text).find(x => x.name === site.backend); if (!b) throw err('Backend not found'); return { kind: 'haproxy', file, backend: b.name, method: b.method, servers: b.servers, methods: methods.haproxy }; }
   throw err(`${PX.LABEL[p.kind]}: not supported`);
 }
@@ -968,5 +1059,5 @@ function startCertCheck() {
   certTimer = setInterval(() => checkAllCerts().catch(e => console.warn('[proxies] certificate check:', e.message)), 24 * 3600000);
 }
 
-module.exports = { renewNow, startProxy, startAndWatch, siteSettings, siteSettingsPlan, saveSiteSettings, certOverview, reloadProxy, certbotRenew, certbotHook, checkAllCerts, certAlerts, fleet, activeCtx, ctxFor, openFile, saveFile, versions, versionText, restoreVersion, targets, exposePlan, expose, removeSite, acmeSettings, setAcmeSettings, certForSite, certList, renew, redeploy, setAuto, forget,
+module.exports = { listenPorts, renewNow, startProxy, startAndWatch, siteSettings, siteSettingsPlan, saveSiteSettings, certOverview, reloadProxy, certbotRenew, certbotHook, checkAllCerts, certAlerts, fleet, activeCtx, ctxFor, openFile, saveFile, versions, versionText, restoreVersion, targets, exposePlan, expose, removeSite, acmeSettings, setAcmeSettings, certForSite, certList, renew, redeploy, setAuto, forget,
   renewDue, start, lbGet, lbSet, traefikLive, stats, accessStats, logTime, apply, cmds, probe, sha, _q: q };

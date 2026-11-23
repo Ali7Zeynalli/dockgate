@@ -17,7 +17,7 @@ Router.register('proxies', async (content, params = {}) => {
   try { await load(false); } catch (er) { content.innerHTML = UI.errorState(er, { title: 'Proxies could not be read' }); return; }
   if (!alive()) return;
   const T = [['overview', 'Overview'], ['sites', 'Sites'], ['certs', 'Certificates'], ['files', 'Config files'], ['logs', 'Logs'], ['stats', 'Stats'], ...(d.proxies.some(p => p.kind === 'traefik' && p.running) ? [['traefik', 'Traefik live']] : [])];
-  content.innerHTML = `${UI.header('Proxies & SSL', `The web servers in front of your apps on <b>${e(srv.name || (!srv.id || srv.id === 'local' ? 'Local' : srv.id))}</b>: which domain goes where, certificates, config files, load balancing and logs.`, `${UI.btn('↻ Refresh', 'data-px-refresh')} ${d.proxies.some(p => p.running && p.kind !== 'npm' && p.kind !== 'nginx-proxy') ? UI.primary('+ Put a container on a domain', 'data-expose') : ''}`)}
+  content.innerHTML = `${UI.header('Proxies & SSL', `The web servers in front of your apps on <b>${e(srv.name || (!srv.id || srv.id === 'local' ? 'Local' : srv.id))}</b>: which domain goes where, certificates, config files, load balancing and logs.`, `${UI.btn('↻ Refresh', 'data-px-refresh')} ${d.proxies.some(p => (p.running || p.where === 'container') && !p.swarmService && p.kind !== 'npm' && p.kind !== 'nginx-proxy') ? UI.primary('+ Put a container on a domain', 'data-expose') : ''}`)}
     <div class="tabs" style="margin-bottom:14px">${T.map(([k, l]) => `<button class="tab ${tab === k ? 'active' : ''}" data-ptab="${k}">${l}</button>`).join('')}</div>
     <div id="px-body"><div class="card" style="padding:20px"><div class="skeleton" style="height:120px"></div></div></div>`;
   content.querySelectorAll('[data-ptab]').forEach(b => b.onclick = () => go(b.dataset.ptab));
@@ -50,7 +50,7 @@ Router.register('proxies', async (content, params = {}) => {
     let tg = [];
     try { tg = await API.get('/proxies/targets'); } catch (er) { showToast(er.message, 'error'); return; }
     let certs = null; API.get('/proxies/certs').then(r => { certs = r; }).catch(() => {});
-    const usable = d.proxies.filter(p => p.running && !['npm', 'nginx-proxy'].includes(p.kind)).sort((a, b) => (b.ports.some(x => x === 80 || x === 443) ? 1 : 0) - (a.ports.some(x => x === 80 || x === 443) ? 1 : 0) || b.sites - a.sites);
+    const usable = d.proxies.filter(p => (p.running || p.where === 'container') && !p.swarmService && !['npm', 'nginx-proxy'].includes(p.kind)).sort((a, b) => (b.ports.some(x => x === 80 || x === 443) ? 1 : 0) - (a.ports.some(x => x === 80 || x === 443) ? 1 : 0) || b.sites - a.sites);
     const portOpts = (name) => ((tg.find(t => t.name === name) || {}).ports || []);
     const rowHtml = (i, c = '', port = '') => `<div style="display:flex;gap:6px;margin-bottom:6px" data-trow="${i}"><select class="select" data-tc style="flex:2"><option value="">— container —</option>${tg.map(t => `<option value="${e(t.name)}" ${t.name === c ? 'selected' : ''}>${e(t.name)}${t.project ? ` (${e(t.project)})` : ''}</option>`).join('')}</select><input class="input" data-tp placeholder="port" list="px-ports-${i}" value="${e(port)}" style="width:110px"><datalist id="px-ports-${i}"></datalist>${i ? '<button type="button" class="btn btn-xs btn-ghost" data-trm>✕</button>' : ''}</div>`;
     let dlg; dlg = UI.dialog({ title: 'Put a container on a domain', wide: true, saveLabel: 'Preview →', body: `
@@ -59,7 +59,7 @@ Router.register('proxies', async (content, params = {}) => {
         <label class="ui-field"><span>Domain</span><input class="input" data-dom placeholder="app.example.com" value="${e(preset.domain || '')}"></label>
         <label class="ui-field"><span>Also answer on <span class="ui-sub">(optional)</span></span><input class="input" data-al placeholder="www.app.example.com"></label>
       </div>
-      <label class="ui-field" style="margin-top:8px"><span>Proxy</span><select class="select" data-px>${usable.map(p => `<option value="${e(p.id)}" ${p.id === preset.proxy ? 'selected' : ''}>${e(p.name)} — ${e(p.label)}${p.ports.length ? ` · ${e(p.ports.join(', '))}` : ''}</option>`).join('')}</select></label>
+      <label class="ui-field" style="margin-top:8px"><span>Proxy</span><select class="select" data-px>${usable.map(p => `<option value="${e(p.id)}" ${p.id === preset.proxy ? 'selected' : ''}>${e(p.name)} — ${e(p.label)}${p.ports.length ? ` · ${e(p.ports.join(', '))}` : ''}${p.running ? '' : ' (stopped — saving starts it)'}</option>`).join('')}</select></label>
       <div style="margin-top:8px"><div class="ui-field"><span>Goes to (container and its port) — add more to balance the load</span></div><div data-trows>${rowHtml(0, preset.container || '', preset.port || '')}</div><button type="button" class="btn btn-xs btn-secondary" data-tadd>+ Another container</button></div>
       <div data-lbrow style="display:none;margin-top:8px"><label class="ui-field"><span>Balancing</span><select class="select" data-lb><option value="round_robin">Round robin — in turn</option><option value="least_conn">Least connections</option><option value="ip_hash">Same visitor → same container (IP hash)</option></select></label></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
@@ -142,12 +142,14 @@ Router.register('proxies', async (content, params = {}) => {
   function siteMenu(s) {
     const p = proxyOf(s.proxy);
     const fileKind = FILE_KINDS.includes(p.kind) || p.kind === 'npm';
-    const canCert = p.kind === 'nginx' || p.kind === 'apache';
-    const canLb = ['nginx', 'caddy', 'haproxy'].includes(p.kind) && (s.targetsAll || []).length;
+    const fixed = p.swarmService || (p.kind === 'caddy' && p.caddyJson); // read-only here: a Swarm service, or a Caddy JSON config (edited in Config files)
+    const canCert = (p.kind === 'nginx' || p.kind === 'apache') && !fixed;
+    const canLb = ['nginx', 'caddy', 'haproxy'].includes(p.kind) && (s.targetsAll || []).length && !fixed;
     const items = [
       [`<a class="btn btn-secondary" href="${s.https ? 'https' : 'http'}://${e(s.domain)}" target="_blank" rel="noopener">Open ↗</a>`, 'Open the site in a new tab.'],
       [UI.btn('+ Uptime check', 'data-a="up"'), 'Watch it on Web → Uptime (status, response time, certificate days).'],
-      ...(['nginx', 'caddy'].includes(p.kind) ? [[UI.btn('Site settings…', 'data-a="settings"'), 'Names, where it goes, WebSockets, upload limit, http → https — as a form.']] : []),
+      ...(fixed ? [[UI.chip(p.swarmService ? 'Swarm service' : 'Caddy JSON config'), p.swarmService ? 'Read-only here: change the config where the service gets it, then update it in Swarm → Services.' : 'Site settings and load balancing write Caddyfiles: change this JSON in Config files.']] : []),
+      ...(['nginx', 'caddy'].includes(p.kind) && !fixed ? [[UI.btn('Site settings…', 'data-a="settings"'), 'Names, where it goes, WebSockets, upload limit, http → https — as a form.']] : []),
       ...(fileKind && s.file && s.file.startsWith('/') ? [[UI.btn('Edit the config', 'data-a="edit"'), `${e(s.file)}${s.line ? ':' + s.line : ''}`]] : []),
       ...(canLb ? [[UI.btn('Load balancing…', 'data-a="lb"'), 'The containers behind the site, the method, backup servers.']] : []),
       ...(canCert ? [[UI.btn(s.https ? "Use a Let's Encrypt certificate" : 'Add HTTPS (Let\'s Encrypt)', 'data-a="cert"'), s.https ? 'DockGate gets the certificate and renews it; the site\'s certificate lines are switched to it.' : 'DockGate gets a certificate, adds the HTTPS server and sends http to https.']] : []),
@@ -210,6 +212,7 @@ Router.register('proxies', async (content, params = {}) => {
     const row = (x) => `<tr data-srow><td><input class="input td-mono" data-addr value="${e(x.addr)}" list="px-lb-addrs" style="min-width:200px"></td><td><input class="input" data-w type="number" min="1" max="100" value="${x.weight || 1}" style="width:70px" ${lb.kind === 'caddy' ? 'disabled' : ''}></td><td style="text-align:center"><input type="checkbox" data-bk ${x.backup ? 'checked' : ''} ${lb.kind === 'caddy' ? 'disabled' : ''}></td><td style="text-align:center"><input type="checkbox" data-dn ${x.down ? 'checked' : ''}></td><td><button type="button" class="btn btn-xs btn-ghost" data-rm>✕</button></td></tr>`;
     UI.dialog({ title: `Load balancing — ${e(s.domain)}`, wide: true, saveLabel: 'Save, check and reload', body: `
       <div class="ui-sub" style="margin-bottom:8px">${e(s.proxyName)} · <span class="td-mono">${e(lb.file)}</span>${lb.upstream ? ` · upstream <span class="td-mono">${e(lb.upstream)}</span>` : lb.single ? ` · one server now: DockGate makes an upstream for it${lb.resolve && lb.resolve.resolves ? '' : ' (nginx then needs each server\'s name to resolve when it reloads)'}` : ''}</div>
+      ${(lb.sharedWith || []).length ? `<div class="insight-card warning" style="margin-bottom:8px"><div>The upstream <span class="td-mono">${e(lb.upstream)}</span> is also used by ${lb.sharedWith.map(e).join(', ')}: they change too.</div></div>` : ''}
       ${lb.resolve && lb.resolve.resolves ? `<div class="ui-sub" style="margin-bottom:8px">nginx ${e(lb.resolve.version)}: container names are resolved while it runs (<span class="td-mono">resolve</span>) — nginx starts even when one is missing.</div>` : lb.resolve && lb.resolve.why ? `<div class="insight-card warning" style="margin-bottom:8px"><div>${e(lb.resolve.why)}</div></div>` : ''}
       <label class="ui-field"><span>Method</span><select class="select" data-m>${lb.methods.map(m => `<option value="${m}" ${m === lb.method ? 'selected' : ''}>${names[m] || m}</option>`).join('')}</select></label>
       <datalist id="px-lb-addrs">${tg.flatMap(t => t.ports.map(p => `<option value="${e(t.name)}:${p}">`)).join('')}</datalist>
@@ -293,7 +296,7 @@ Router.register('proxies', async (content, params = {}) => {
         ${d.warnings.map(w => `<div class="insight-card ${w.level === 'bad' ? 'danger' : 'warning'}" style="margin-bottom:8px"><div style="flex:1">${e(w.text)}</div>${w.stopped ? `<div style="display:flex;gap:6px;flex-shrink:0">${UI.btn('Edit the config', `data-files="${e(w.proxy)}"`)} ${UI.btn('Start', `data-start="${e(w.proxy)}"`)}</div>` : ''}</div>`).join('')}
         ${UI.table([{ label: 'Proxy' }, { label: 'Where it runs' }, { label: 'Ports' }, { label: 'Config' }, { label: 'Sites' }, { label: 'State' }, { label: '', align: 'right' }], proxies.map(p => ({ cells: [
           `<b>${e(p.name)}</b><div class="ui-sub">${e(p.label)} ${e(p.version || '')}</div>`,
-          p.where === 'host' ? (p.enabled === 'manual' ? 'server · started by hand (no systemd unit)' : `server · systemd ${e(p.unit)}.service`) : `container${p.project ? ' · ' + e(p.project) : ''}${p.hostNet ? '<div class="ui-sub">host network: reaches containers at their published ports</div>' : ''}${p.derived ? `<div class="ui-sub" title="${e(p.image)}">image ${e(p.image)}, built from ${e(p.label)}</div>` : ''}`,
+          p.where === 'host' ? (p.enabled === 'manual' ? 'server · started by hand (no systemd unit)' : `server · systemd ${e(p.unit)}.service`) : `${p.swarmService ? `Swarm service ${e(p.swarmService)} · ${p.replicas} replica${p.replicas === 1 ? '' : 's'} here<div class="ui-sub">read-only: change its config where the service gets it</div>` : `container${p.project ? ' · ' + e(p.project) : ''}`}${p.hostNet ? '<div class="ui-sub">host network: reaches containers at their published ports</div>' : ''}${p.derived ? `<div class="ui-sub" title="${e(p.image)}">image ${e(p.image)}, built from ${e(p.label)}</div>` : ''}`,
           `<span class="td-mono">${e(p.ports.join(', ') || '—')}</span>`,
           `<span class="td-mono text-xs">${e(p.config || '—')}</span>${p.managedBy ? `<div class="ui-sub">🔒 managed by ${e(p.managedBy)}</div>` : ''}${p.problem && !p.stopReason ? `<div class="ui-sub" style="color:var(--warning)">${e(p.problem)}</div>` : ''}`,
           p.sites, `${p.running ? UI.pill('ok', e(p.state)) : UI.pill(p.state === 'inactive' ? 'warn' : 'bad', e(p.restarting ? 'restarting' : p.state))}${!p.running && p.stopReason && p.stopReason.length ? `<div class="ui-sub td-mono text-xs" style="color:var(--danger);max-width:360px;white-space:pre-wrap" title="Its last log lines">${e(p.stopReason.join('\n'))}</div>` : ''}`,
