@@ -28,10 +28,11 @@ function siteInput(o = {}) {
   const FILE = /^\/[\w.@+\-/]{1,300}$/;
   for (const k of ['certPath', 'keyPath']) if (o[k] && (!FILE.test(String(o[k])) || /(^|\/)\.\.(\/|$)/.test(o[k]))) throw err(`Not a file path: ${o[k]}`);
   if (o.path && o.path !== '/' && !/^\/[\w.\-/~%]{0,200}$/.test(String(o.path))) throw err(`Not a URL path: ${o.path}`);
+  const port = (v, d) => { const n = Number(v); return Number.isInteger(n) && n > 0 && n < 65536 ? n : d; }; // the ports the proxy really listens on (nginx-unprivileged: 8080)
   const maxBody = o.maxBody == null || o.maxBody === '' ? null : String(o.maxBody).trim();
   if (maxBody && !/^\d{1,5}[kmg]?$/i.test(maxBody)) throw err('Upload limit: a number with k, m or g (e.g. 50m)');
   return { domain, aliases, names: [domain, ...aliases], targets, https, redirect: o.redirect !== false, websocket: !!o.websocket, lb, maxBody,
-    ipv6: !!o.ipv6, certPath: o.certPath ? String(o.certPath) : null, keyPath: o.keyPath ? String(o.keyPath) : null, dockerDns: !!o.dockerDns, path: o.path && o.path !== '/' ? String(o.path) : '/' };
+    ipv6: !!o.ipv6, certPath: o.certPath ? String(o.certPath) : null, keyPath: o.keyPath ? String(o.keyPath) : null, dockerDns: !!o.dockerDns, path: o.path && o.path !== '/' ? String(o.path) : '/', httpPort: port(o.httpPort, 80), httpsPort: port(o.httpsPort, 443) };
 }
 
 // ---------- nginx ----------
@@ -51,7 +52,7 @@ function nginxSite(input, { certReady = true, resolve = false } = {}) {
   const out = [`${MARK} Site ${s.domain} → ${s.targets.join(', ')}.`, '# DockGate keeps earlier versions of this file; edit it freely.'];
   const res = resolve && s.dockerDns; // container names through Docker's DNS, resolved while nginx runs
   if (up.startsWith('dg_')) out.push(`upstream ${up} {`, ...(LB.nginx[s.lb] ? [`  ${LB.nginx[s.lb]}`] : []), ...(res ? resolveHead(up, '  ') : []), ...s.targets.map(t => `  server ${t}${res && isHostName(t) ? ' resolve' : ''};`), '}');
-  const head = (ssl) => [ssl ? '  listen 443 ssl;' : '  listen 80;', ...(s.ipv6 ? [ssl ? '  listen [::]:443 ssl;' : '  listen [::]:80;'] : []), `  server_name ${s.names.join(' ')};`,
+  const head = (ssl) => [ssl ? `  listen ${s.httpsPort} ssl;` : `  listen ${s.httpPort};`, ...(s.ipv6 ? [ssl ? `  listen [::]:${s.httpsPort} ssl;` : `  listen [::]:${s.httpPort};`] : []), `  server_name ${s.names.join(' ')};`,
     ...(s.dockerDns && !up.startsWith('dg_') ? ['  resolver 127.0.0.11 valid=10s ipv6=off;'] : []), ...(s.maxBody ? [`  client_max_body_size ${s.maxBody};`] : [])];
   const wantsTls = s.https === 'letsencrypt' || s.https === 'existing';
   const tls = wantsTls && certReady;
@@ -99,13 +100,13 @@ const serverNames = (block) => ((block.match(/\bserver_name\s+([^;]+);/) || [])[
 const isSslServer = (block) => /\blisten\s+[^;]*\bssl\b/.test(block) || /\bssl_certificate\s/.test(block);
 
 /** The HTTP (port 80) server of `domain` answers the ACME challenge from ACME_ROOT. A server-level `return` moves into `location /` (it would run first). */
-function nginxEnsureAcme(text, domain) {
+function nginxEnsureAcme(text, domain, { httpPort = 80 } = {}) {
   const blocks = nginxBlocks(text, 'server').filter(b => serverNames(b.text).includes(domain) && !isSslServer(b.text));
   if (!blocks.length) { // HTTPS only: add an HTTP server that answers the check and sends the rest to https
     const tls = nginxBlocks(text, 'server').find(b => serverNames(b.text).includes(domain));
     if (!tls) throw err(`${domain} is not in this file`);
     const names = serverNames(tls.text).filter(n => /^[a-z0-9.*-]+$/i.test(n));
-    const add = `\n${tls.indent}server {\n${tls.indent}  listen 80;\n${tls.indent}  server_name ${names.join(' ')};\n${nginxAcme(tls.indent + '  ')}\n${tls.indent}  location / {\n${tls.indent}    return 301 https://$host$request_uri;\n${tls.indent}  }\n${tls.indent}}`;
+    const add = `\n${tls.indent}server {\n${tls.indent}  listen ${httpPort};\n${tls.indent}  server_name ${names.join(' ')};\n${nginxAcme(tls.indent + '  ')}\n${tls.indent}  location / {\n${tls.indent}    return 301 https://$host$request_uri;\n${tls.indent}  }\n${tls.indent}}`;
     return { text: text.slice(0, tls.end) + add + text.slice(tls.end), changed: true, added: true };
   }
   const b = blocks[0];
@@ -143,15 +144,16 @@ function nginxSetCert(text, domain, certPath, keyPath) {
 }
 
 /** Add HTTPS to an HTTP-only nginx site: a copy of its server on 443 with the certificate; with redirect the HTTP server sends to https. */
-function nginxAddHttps(text, domain, certPath, keyPath, { redirect = true } = {}) {
+function nginxAddHttps(text, domain, certPath, keyPath, { redirect = true, httpPort = 80, httpsPort = 443 } = {}) {
   const all = nginxBlocks(text, 'server');
   if (all.some(b => serverNames(b.text).includes(domain) && isSslServer(b.text))) return nginxSetCert(text, domain, certPath, keyPath);
   const b0 = all.find(x => serverNames(x.text).includes(domain));
   if (!b0) throw err(`${domain} is not in this file`);
   const b = { ...b0, text: fmtBlock(b0.text, b0.indent).replace(/^\s+/, '') };
   const ind = b.indent + '  ';
-  let tls = b.text.replace(/\blisten\s+([^;]*?)\b80\b([^;]*);/g, (m0, a, z) => `listen ${a}443${z} ssl;`).replace(/ ssl ssl;/g, ' ssl;');
-  if (!/\blisten\s+[^;]*443/.test(tls)) tls = tls.replace(/\{/, `{\n${ind}listen 443 ssl;`);
+  const hp = String(httpPort || 80), sp = String(httpsPort || 443); // the ports this nginx listens on (8080 / 8443 when unprivileged)
+  let tls = b.text.replace(new RegExp(`\\blisten\\s+([^;]*?)\\b${hp}\\b([^;]*);`, 'g'), (m0, a, z) => `listen ${a}${sp}${z} ssl;`).replace(/ ssl ssl;/g, ' ssl;');
+  if (!new RegExp(`\\blisten\\s+[^;]*\\b${sp}\\b`).test(tls)) tls = tls.replace(/\{/, `{\n${ind}listen ${sp} ssl;`);
   tls = tls.replace(/(\bserver_name\s+[^;]+;[^\n]*\n)/, `$1${ind}ssl_certificate ${certPath};\n${ind}ssl_certificate_key ${keyPath};\n`);
   tls = tls.replace(new RegExp(`\\n[ \\t]*location \\^~ /\\.well-known/acme-challenge/ \\{[^}]*\\}`), '');
   let http = b.text;
@@ -519,5 +521,14 @@ function removeMarked(text, domain) {
 }
 const isDockgateFile = (text) => String(text || '').startsWith(MARK);
 
-module.exports = { nginxResolves, nginxSiteSettings, nginxApplySettings, caddySiteSettings, caddyApplySettings, nginxCertNames, apacheVhosts, apacheEnsureAcme, apacheSetHttps, apacheCertNames, APACHE_MODS, fmtBlock, MARK, ACME_ROOT, slug, siteInput, nginxSite, nginxBlocks, nginxEnsureAcme, nginxSetCert, nginxAddHttps, nginxUpstreams, nginxSetUpstream, nginxMakeUpstream,
+/** Add `line` (an include) inside the http { } block of an nginx main file, before its closing brace. */
+function nginxAddHttpInclude(text, line) {
+  const m = /(^|[\s;}])http\s*\{/m.exec(text); if (!m) throw err('No http { } block in the main nginx config');
+  let i = m.index + m[0].length, depth = 1;
+  for (; i < text.length && depth; i++) { const ch = text[i]; if (ch === '#') { while (i < text.length && text[i] !== '\n') i++; continue; } if (ch === '{') depth++; else if (ch === '}') depth--; }
+  const close = i - 1; // the http block's closing brace
+  return `${text.slice(0, close).replace(/\s*$/, '')}\n    ${line}\n${text.slice(close)}`;
+}
+
+module.exports = { nginxAddHttpInclude, nginxResolves, nginxSiteSettings, nginxApplySettings, caddySiteSettings, caddyApplySettings, nginxCertNames, apacheVhosts, apacheEnsureAcme, apacheSetHttps, apacheCertNames, APACHE_MODS, fmtBlock, MARK, ACME_ROOT, slug, siteInput, nginxSite, nginxBlocks, nginxEnsureAcme, nginxSetCert, nginxAddHttps, nginxUpstreams, nginxSetUpstream, nginxMakeUpstream,
   caddySite, caddyAdd, caddySiteRange, caddyLb, caddySetLb, haproxyAdd, haproxyBackends, haproxySetBackend, apacheSite, traefikLabels, caddyLabels, labelsText, removeMarked, isDockgateFile, lbServers };

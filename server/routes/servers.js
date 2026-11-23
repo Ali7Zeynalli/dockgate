@@ -69,6 +69,7 @@ router.get('/', (req, res) => {
         id: s.id,
         name: s.name || null,
         hasAccessPassword: !!s.access_pass,
+        unlocked: !s.access_pass || require('../auth/server-gate').isUnlocked(require('../auth/server-gate').keyOfReq(req), s.id), // this session typed it
         type: s.type,
         host: s.host,
         port: s.port,
@@ -312,7 +313,9 @@ router.post('/active', async (req, res) => {
     // DockGate session itself is already authenticated). Enforced here so the API itself is gated, not just UI.
     if (id !== 'local') {
       const server = stmts.getServer.get(id);
-      if (server && server.access_pass && !verifyServerAccessPass(server, accessPassword)) {
+      const gate = require('../auth/server-gate'); const key = gate.keyOfReq(req);
+      if (server && server.access_pass && accessPassword != null && verifyServerAccessPass(server, accessPassword)) gate.unlock(key, id); // unlocked for this session
+      if (server && server.access_pass && !gate.isUnlocked(key, id)) {
         // 403 (not 401): the DockGate session is valid — this is a per-server gate, not session expiry.
         // A 401 would trip the client's auth-expired handler and bounce the user to the login screen.
         return res.status(403).json({
@@ -327,6 +330,17 @@ router.post('/active', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// POST /api/servers/:id/unlock — type a server's access password for this session (the server in use does not change)
+router.post('/:id/unlock', (req, res) => {
+  const server = stmts.getServer.get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  if (!server.access_pass) return res.json({ success: true, unlocked: true });
+  if (!verifyServerAccessPass(server, (req.body || {}).accessPassword)) return res.status(403).json({ error: 'Access password is incorrect', needsAccessPassword: true, serverId: server.id });
+  require('../auth/server-gate').unlock(require('../auth/server-gate').keyOfReq(req), server.id);
+  logAction({ req, server: 'local', resourceId: server.id, resourceType: 'server', resourceName: server.name || server.id, action: 'unlock' });
+  res.json({ success: true, unlocked: true });
 });
 
 // DELETE /api/servers/:id

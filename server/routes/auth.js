@@ -102,6 +102,7 @@ router.post('/login', (req, res) => {
 
 // POST /api/auth/logout — clear the session cookie.
 router.post('/logout', (req, res) => {
+  require('../auth/server-gate').forget(require('../auth/server-gate').keyOfReq(req)); // its unlocked servers lock again
   res.setHeader('Set-Cookie', clearSessionCookie());
   res.json({ success: true });
 });

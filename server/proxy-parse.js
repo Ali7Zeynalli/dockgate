@@ -64,7 +64,7 @@ function walk(src, fn) {
     }
     return block;
   };
-  parseBlock('main', [], 0);
+  return parseBlock('main', [], 0); // the file's own top level (its directives), for callers that need it
 }
 /** nginx servers → one site per domain (the http server that only redirects is folded into the https one). */
 function nginxSites(parsed) {
@@ -296,4 +296,56 @@ function nginxAllCerts(parsed) {
   return [...out].filter(x => !x.includes('$') && !/^data:/.test(x)).map(x => (x.startsWith('/') ? x : `/etc/nginx/${x}`)).slice(0, 80);
 }
 
-module.exports = { nginxAllCerts, caddyImports, traefikFileSites, isDomain, parseNginxT, nginxSites, upstreamOf, parseCaddyfile, traefikSites, caddyLabelSites, parseHaproxy, parseApacheS, parseAccessLine, parseCaddyJsonLine, parseCertPem, traefikAcme };
+/**
+ * Where a new nginx site file goes: a folder nginx really loads into its http block — `include <dir>/*.conf;` in
+ * http { } of the main file, or at the top of a file included there (conf.d/default.conf including sites/*.conf).
+ * The folder that already holds server blocks wins; then the usual names. Folders of modules, mime types, snippets
+ * and includes inside server / location blocks are left out (a server block there would not load or would break).
+ * → { dir, path(domain) } or null when nginx loads no folder of sites.
+ */
+function nginxSiteTarget(parsed) {
+  const files = parsed.files || [];
+  if (!files.length) return null;
+  const main = files[0];
+  const base = main.path.replace(/\/[^/]+$/, '') || '/etc/nginx';
+  const abs = (g) => (g.startsWith('/') ? g : `${base}/${g}`);
+  const strip = (t) => t.replace(/#[^\n]*/g, (c) => ' '.repeat(c.length));
+  const incs = (dirs) => dirs.filter(d => d.name === 'include' && d.args[0]).map(d => abs(d.args[0]));
+  let httpIncs = [];
+  walk(strip(main.text), (b) => { if (b.name === 'http') httpIncs = httpIncs.concat(incs(b.directives)); });
+  const globToRe = (g) => new RegExp('^' + g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]') + '$');
+  const level2 = []; // a file included in http: its own top-level includes are in http too
+  for (const f of files.slice(1)) if (httpIncs.some(g => globToRe(g).test(f.path))) level2.push(...incs(walk(strip(f.text), () => {}).directives));
+  const skip = /(^|\/)(modules?(-enabled|-available)?|mime\.types|fastcgi|uwsgi|scgi|snippets?|stream|streams?\.d|letsencrypt|options-ssl)/i;
+  const cands = [...new Set([...httpIncs, ...level2])].filter(g => /\*/.test(g.split('/').pop()) && !/\*/.test(g.slice(0, g.lastIndexOf('/'))) && !skip.test(g))
+    .map(g => { const dir = g.slice(0, g.lastIndexOf('/')); const pat = g.slice(g.lastIndexOf('/') + 1); return { dir, pat }; })
+    .filter(c => /^[^*?]*\*[^*?]*$/.test(c.pat));
+  if (!cands.length) return null;
+  const sitesIn = (dir) => (parsed.servers || []).filter(sv => sv.file.replace(/\/[^/]+$/, '') === dir).length;
+  const usual = (dir) => { const i = ['conf.d', 'sites-enabled', 'site-confs', 'vhosts', 'sites', 'http.d'].indexOf(dir.split('/').pop()); return i < 0 ? 99 : i; };
+  cands.sort((a, b) => sitesIn(b.dir) - sitesIn(a.dir) || usual(a.dir) - usual(b.dir));
+  const c = cands[0];
+  return { dir: c.dir, pattern: `${c.dir}/${c.pat}`, path: (domain) => `${c.dir}/${c.pat.replace('*', domain + (c.pat === '*' ? '.conf' : ''))}` };
+}
+
+/** Is this Caddy config JSON (caddy run --config caddy.json)? A Caddyfile's global options block also starts with "{". */
+function isCaddyJson(text) { try { const j = JSON.parse(String(text || '')); return !!(j && typeof j === 'object' && (j.apps || j.admin || j.logging)); } catch (e) { return false; } }
+/** Sites of a Caddy JSON config: apps.http.servers.*.routes[].match[].host → the reverse_proxy upstreams under them. */
+function parseCaddyJson(text) {
+  let j; try { j = JSON.parse(String(text || '')); } catch (e) { return []; }
+  const servers = (((j || {}).apps || {}).http || {}).servers || {};
+  const out = [];
+  const dials = (handles) => { const t = []; for (const h of handles || []) { if (h.handler === 'reverse_proxy') for (const u of h.upstreams || []) if (u.dial) t.push(String(u.dial)); if (h.handler === 'subroute') for (const r of h.routes || []) t.push(...dials(r.handle)); } return t; };
+  for (const sv of Object.values(servers)) {
+    const listen = sv.listen || [':443'];
+    const tls = !(sv.automatic_https && sv.automatic_https.disable) && listen.some(l => /:443$/.test(l));
+    for (const r of sv.routes || []) {
+      const hosts = (r.match || []).flatMap(m => m.host || []);
+      const targets = [...new Set(dials(r.handle))];
+      for (const h of hosts) if (isDomain(h) || /^\*\./.test(h)) out.push({ domain: String(h).toLowerCase(), https: tls, targets, root: null });
+    }
+  }
+  return out;
+}
+
+module.exports = { isCaddyJson, parseCaddyJson, nginxSiteTarget, nginxAllCerts, caddyImports, traefikFileSites, isDomain, parseNginxT, nginxSites, upstreamOf, parseCaddyfile, traefikSites, caddyLabelSites, parseHaproxy, parseApacheS, parseAccessLine, parseCaddyJsonLine, parseCertPem, traefikAcme };

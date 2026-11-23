@@ -21,7 +21,7 @@ Every change goes through the same steps, whether it is a saved file, a new site
 2. It writes the new file.
 3. It runs the proxy's own check: `nginx -t`, `caddy validate`, `haproxy -c`, or `httpd -t` / `apachectl configtest`.
 4. It reloads the proxy (nginx `-s reload`, `caddy reload`, HAProxy `USR2`, Apache `graceful`). Running connections are kept.
-5. It asks each site through the proxy itself (127.0.0.1, with the site's name). Each site must answer as well as it did before the change.
+5. It asks each site through the proxy itself (127.0.0.1, with the site's name, on every port the proxy listens on). Each site must answer as well as it did before the change. A proxy container is asked from a short-lived helper that shares its network, so images without curl or wget (the official httpd and haproxy) are checked too.
 
 **If any step fails, the earlier files go back** (and are reloaded). For example, if the check fails, or a site that answered 200 now answers 502, nothing stays changed. The result window shows each step and the check's output.
 
@@ -69,6 +69,15 @@ What DockGate reads from each proxy:
 | Traefik | the labels of containers and Swarm services, and the files of its file provider (`--providers.file.filename` / `directory`, or in `traefik.yml`) | labels: added to a Compose project (override) or copied; file provider files are shown read-only |
 | caddy-docker-proxy | the labels of containers and Swarm services | labels: added to a Compose project (override) or copied |
 | Nginx Proxy Manager, nginx-proxy | their own configs | read-only: use their own UI or `VIRTUAL_HOST` |
+
+**Read-only proxies.**
+
+- A proxy that runs as a **Swarm service** is one entry, with its number of replicas. Its config is not changed here: a file written into one task container would miss the other replicas and be lost when Swarm replaces it. Change it where the service gets it (its image, a Docker config or a shared mount), then update the service in Swarm → Services.
+- **Caddy with a JSON config** (`caddy run --config caddy.json`): its sites are read, and the JSON can be edited in Config files (checked with `caddy validate`). Site settings, load balancing and new sites write Caddyfiles, so they are not offered.
+
+**HAProxy** with several `-f` files or a folder: every file is read, and the check runs with all of them.
+
+**A stopped proxy** can get a new site too (not with Let's Encrypt): saving starts it and watches it.
 
 An nginx container that only serves its own app is not counted as a proxy. That means it has no `proxy_pass`, no domain and no port 80 or 443. The same goes for an Apache image built for an app (for example `php:apache`) without `ProxyPass`.
 
@@ -131,7 +140,7 @@ A `docker network connect` is lost when the proxy container is re-created (for e
 
 **What gets written:**
 
-- **nginx:** a new file `conf.d/<domain>.conf`, made by DockGate. A single container is reached through Docker's DNS, so nginx still starts while the container is down. Several containers go into an `upstream` block; see [Load balancing](#load-balancing) for what nginx needs so it still starts when one of them is missing.
+- **nginx:** a new file `<domain>.conf` in a folder nginx really loads into `http { }`: the one that already holds sites (`conf.d/`, `sites-enabled/`, `vhosts/`, SWAG's `site-confs/` …). If nginx loads no folder of sites, DockGate makes `conf.d/` and adds its `include` to `http { }`. After the reload DockGate checks that nginx lists the new file (`nginx -T`); if not, the site is taken out again. The new site is then asked once: a 502 means the proxy can not reach the container. The site listens where the proxy already listens (8080 for nginx-unprivileged). A single container is reached through Docker's DNS, so nginx still starts while the container is down. Several containers go into an `upstream` block; see [Load balancing](#load-balancing) for what nginx needs so it still starts when one of them is missing.
 - **Caddy, HAProxy:** a block between `# dockgate:begin` and `# dockgate:end` in the Caddyfile or `haproxy.cfg`.
 - **Apache:** a file in `conf/dockgate/` (container) or `sites-enabled/` (Debian). The proxy modules it needs are loaded.
 - **Traefik and caddy-docker-proxy:** the labels. Traefik's entry points and certificate resolvers are read from its command line.
@@ -248,7 +257,7 @@ From a site's **⋯ → Load balancing…**:
 - **Method:** round robin, least connections, IP hash; for Caddy also random and first available (failover).
 - **Servers:** host:port, weight, **Backup** (used only when the others are down) and **Off** (kept in the list without traffic).
 - **What DockGate edits:**
-  - **nginx:** the `upstream` block. A site with one `proxy_pass` gets an upstream made for it.
+  - **nginx:** the `upstream` block, in whichever file it is (an `upstreams.conf` too). If other sites use the same upstream, the dialog names them: they change too. A site with one `proxy_pass` gets an upstream made for it.
 
     nginx reads the names in an `upstream` when it starts. If one container is missing, nginx does not start, and every site on it stops answering. **nginx 1.27.3 or newer** (in a container) can look the names up while it runs. DockGate then adds `zone`, Docker's `resolver` and `resolve` to the upstream, and a missing container does not stop nginx. For an older nginx, the dialog and the preview warn you.
   - **Caddy:** the site's `reverse_proxy` and `lb_policy`.

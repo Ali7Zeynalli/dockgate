@@ -24,7 +24,14 @@ The list shows each server's status, address, login, setup state, and CPU, memor
 
 After adding, DockGate offers to **create a deploy user**: a non-root user with `sudo`, Docker access and an SSH key DockGate makes. DockGate then connects as that user. Nothing is locked down by this step; you can also do it later from **Server → Software → Setup**.
 
-Edit, remove and Docker access of a server are in its console → **Settings**. A server can have an **access password**: a second password asked before anyone switches to that server in DockGate, and before it is changed or removed.
+Edit, remove and Docker access of a server are in its console → **Settings**. A server can have an **access password**: a second password on top of the DockGate login, asked before the server is changed or removed too.
+
+**How the access password works.** It is asked once per DockGate session (this browser, this login):
+
+- Switching to the server, opening its Server Console, or any page that works on it while it is the server in use (Containers, Compose, Proxies & SSL, Files …) asks for it if this session has not typed it yet.
+- It covers every way in: the pages, the Server Console APIs (`/api/servers/<id>/…`), and live streams — terminals, logs, stats, events, builds.
+- After it is typed, this session can use the server for 12 hours. Signing out, another browser or login, and a DockGate restart ask again. One person unlocking it does not unlock it for anyone else.
+- The health numbers on the dashboards (CPU, memory, disk, alerts) are shown without it.
 
 ---
 

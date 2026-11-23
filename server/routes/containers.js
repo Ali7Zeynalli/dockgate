@@ -27,7 +27,8 @@ function redactSecrets(body) {
 router.get('/', async (req, res) => {
   try {
     const all = req.query.all !== 'false';
-    const containers = await dockerService.listContainers(all);
+    // DockGate's own short-lived helpers (config writes, site checks, commands on the host) are not listed
+    const containers = (await dockerService.listContainers(all)).filter(c => !(c.labels || {})['dockgate.helper']);
     // Containers moved to Swarm (docker run → stack): kept stopped; marked so they are not started twice.
     const moved = new Map();
     try { for (const r of require('../swarm-stacks').stackRows()) if (r.from_container) moved.set(JSON.parse(r.from_container).id, r.name); } catch (e) { /* Swarm off */ }
