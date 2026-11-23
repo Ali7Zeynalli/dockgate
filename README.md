@@ -28,7 +28,7 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/00-demo.gif" alt="DockGate: dashboard, containers, Swarm, the database client, Server sections (Status, Security, Software, Automation), Deploy tasks and monitoring" width="100%">
+  <img src="screenshots/00-demo.gif" alt="DockGate: dashboard, containers, Swarm, the database client, Proxies &amp; SSL (proxies, sites, certificates), Deploy projects, Server sections (Status, Security, Software, Automation) and monitoring" width="100%">
 </p>
 
 ---
@@ -38,10 +38,10 @@
 - **Docker** — containers, images, volumes, networks and builds, with logs, a terminal and file editing inside containers.
 - **Compose** — create, edit and deploy projects locally or on a remote server, with deploy history and image updates. **Tasks** runs your Makefile, justfile, npm scripts and deploy.sh, and **deploy recipes** deploy on a GitHub / GitLab / Bitbucket push with checks and rollback. Replicas, auto-heal, Auto Scaling and updates without downtime — **without Swarm**, your compose files untouched.
 - **Docker Swarm** — set up a cluster and move Compose projects and containers to it and back, as well protected as before. Each service gets its own page; published ports are firewalled on every server at once.
-- **Servers** — provision, secure (SSH, users, firewall, fail2ban) and monitor any number of hosts over SSH; cron jobs with alerts, **scripts** (templates, blocks or your own shell), system settings (network with automatic rollback, DNS, kernel, disks) and a file manager with a safe editor.
+- **Servers** — provision, secure (SSH, users, firewall, fail2ban) and monitor any number of hosts over SSH, each with an optional access password asked once per session; cron jobs with alerts, **scripts** (templates, blocks or your own shell), system settings (network with automatic rollback, DNS, kernel, disks) and a file manager with a safe editor.
 - **Databases** — a database client for PostgreSQL in your containers, on any server: an Explorer tree, tabs and right-click menus; tables edited like a spreadsheet, a SQL editor with autocomplete and plans, table design (columns, indexes, keys) with a rolled-back Test, export to SQL / CSV / Excel, `.sql` and CSV import, test data, users, backups — read-only until you allow changes, no port opened.
 - **Uptime** — checks your sites (HTTP, SSL, TCP, DNS) from DockGate and from your other servers, linked to the containers behind them.
-- **Proxies & SSL** — nginx, Caddy, Traefik, HAProxy and Apache: which domain goes to which container, putting a container on a domain, Let's Encrypt certificates that DockGate gets and renews, a config editor that checks, reloads and puts the old file back if a site breaks, load balancing, logs, stats and Traefik's live routers.
+- **Proxies & SSL** — nginx, Caddy, Traefik, HAProxy and Apache, in containers (images built from them too) or installed on the server: which domain goes to which container, putting a container on a domain, Let's Encrypt certificates that DockGate gets and renews (or you renew by hand), every certificate watched with alerts before it expires, a config editor that checks, reloads and puts the old file back if a site breaks, load balancing, logs, stats and Traefik's live routers.
 - **Alerts** — Telegram, email and webhook, plus an optional Edge agent that keeps alerting — and keeps replicas, healing and Auto Scaling running — when DockGate is offline.
 - **Light** — at most 256 MB RAM and 0.5 CPU; plain JavaScript, no build step, works offline.
 
@@ -131,6 +131,10 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 <tr>
 <td width="50%"><img src="screenshots/37-project.png" alt="A project's page"><br><sub><b>A project's page</b> — Overview, Services, Files, Deploys, Automation (auto-deploy in one click), Settings</sub></td>
 <td width="50%"><img src="screenshots/38-new-project.png" alt="New project"><br><sub><b>New project</b> — Git, a folder, already on the server, YAML, template, or connect a stack to Git</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/39-proxies.png" alt="Proxies & SSL"><br><sub><b>Proxies & SSL</b> — which domain goes to which container, in every proxy on the server</sub></td>
+<td width="50%"><img src="screenshots/40-certificates.png" alt="Certificates"><br><sub><b>Certificates</b> — who renews each one, Renew now, alerts before expiry</sub></td>
 </tr>
 </table>
 
