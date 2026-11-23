@@ -127,6 +127,8 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
       if (!same.target && s.targets && s.targets.length) { same.target = resolve(s.targets[0], proxy); same.targetsAll = s.targets.map(t => resolve(t, proxy)); }
       return;
     }
+    // a site without a domain is opened at the server's address on the port the proxy publishes for it
+    if (s.nameless && s.port) s.openPort = proxy.where === 'container' && !proxy.hostNet ? ((proxy.portMap || {})[s.port] || null) : s.port;
     sites.push({ ...s, proxy: proxy.id, proxyName: proxy.name, proxyKind: proxy.kind, target: s.targets && s.targets.length ? resolve(s.targets[0], proxy) : (s.root ? { label: `files: ${s.root}`, kind: 'files' } : null), targetsAll: (s.targets || []).map(t => resolve(t, proxy)) });
   };
 
@@ -145,7 +147,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
     const name = (ct.Names || [''])[0].replace(/^\//, '');
     const p = { id: 'c:' + ct.Id.slice(0, 12), cid: ct.Id, name: svc || name, task: svc ? name : null, kind, label: LABEL[kind], image: ct.Image, where: 'container', project: L['com.docker.compose.project'] || L['com.docker.stack.namespace'] || null, state: ct.State, running: ct.State === 'running',
       ports: [...new Set((ct.Ports || []).filter(x => x.PublicPort).map(x => x.PublicPort))].sort((a, b) => a - b), version: derived ? null : (ct.Image.split(':')[1] || 'latest'), derived,
-      hostNet: ((ct.HostConfig || {}).NetworkMode || '') === 'host', swarmService: svc, replicas: 1, config: null, sites: 0, managedBy: kind === 'npm' ? 'Nginx Proxy Manager' : kind === 'nginx-proxy' ? 'nginx-proxy (from container env)' : null, problem: null };
+      hostNet: ((ct.HostConfig || {}).NetworkMode || '') === 'host', portMap: Object.fromEntries((ct.Ports || []).filter(x => x.PublicPort).map(x => [x.PrivatePort, x.PublicPort])), swarmService: svc, replicas: 1, config: null, sites: 0, managedBy: kind === 'npm' ? 'Nginx Proxy Manager' : kind === 'nginx-proxy' ? 'nginx-proxy (from container env)' : null, problem: null };
     proxies.push(p); jobs.push({ ct, p, kind, derived, name });
   }
   // each proxy is read with a few `docker exec`s: four at a time, so a server with many containers is not read one by one
@@ -235,7 +237,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
     ...services.map(s => ({ labels: (s.Spec && s.Spec.Labels) || {}, name: s.Spec.Name, swarm: true, service: true }))];
   for (const src of labelSources) {
     if (src.swarm && !src.service) continue; // a task container: its service carries the labels
-    if (traefik) for (const s of P.traefikSites(src.labels)) addSite({ domain: s.domain, https: s.tls, resolver: s.resolver, targets: [src.name + (s.port ? ':' + s.port : '')], file: `labels of ${src.name}`, router: s.router }, traefik);
+    if (traefik) for (const s of P.traefikSites(src.labels)) addSite({ domain: s.domain, nameless: s.nameless, anyName: s.anyName, https: s.tls, resolver: s.resolver, targets: [src.name + (s.port ? ':' + s.port : '')], file: `labels of ${src.name}`, router: s.router }, traefik);
     if (cdp) for (const s of P.caddyLabelSites(src.labels)) addSite({ domain: s.domain, https: true, targets: [src.name + (s.port ? ':' + s.port : '')], file: `labels of ${src.name}` }, cdp);
   }
   if (traefik && !labelSources.some(s => Object.keys(s.labels).some(k => k.startsWith('traefik.http.routers.'))) && !sites.some(s => s.proxy === traefik.id)) traefik.problem = traefik.problem || 'no routers found in labels or in its file provider';
@@ -324,7 +326,7 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnpH 2>/dev/null || ss -l
     if (holders.length > 1) warnings.push({ level: 'bad', text: `${holders.map(h => h.name).join(' and ')} both want port ${port}.` });
     for (const i of idle) warnings.push({ level: 'warn', text: `${i.name} is installed and enabled but not running — at boot it would also want ports 80 / 443.` });
   }
-  const dup = new Map(); for (const s of sites) dup.set(s.domain, (dup.get(s.domain) || new Set()).add(s.proxyName));
+  const dup = new Map(); for (const s of sites.filter(x => !x.nameless)) dup.set(s.domain, (dup.get(s.domain) || new Set()).add(s.proxyName));
   for (const [d, set] of dup) if (set.size > 1) warnings.push({ level: 'warn', text: `${d} is configured in ${[...set].join(' and ')}.` });
   for (const s of sites) if (s.target && s.target.container && !s.target.container.running) warnings.push({ level: 'bad', text: `${s.domain} goes to ${s.target.container.name}, which is ${s.target.container.state}.`, site: s.domain });
 
@@ -500,7 +502,7 @@ async function certificates({ ctx = activeCtx(), fresh = false, served = true } 
     }
   }
   const covered = (dom) => certs.some(ct => ct.names.some(n => n === dom || (n.startsWith('*.') && dom.endsWith(n.slice(1)) && dom.split('.').length === n.split('.').length)));
-  const uncovered = d.sites.filter(s => s.https && !covered(s.domain)).map(s => s.domain);
+  const uncovered = d.sites.filter(s => s.https && !s.nameless && !covered(s.domain)).map(s => s.domain);
   return { server: ctx.serverId, certs, uncovered: [...new Set(uncovered)], notes, errors, certbot, helpers: d.helpers || [], certbotRenew: certbotLabel };
 }
 /** Certificate files named in each proxy's config. */

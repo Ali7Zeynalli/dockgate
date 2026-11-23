@@ -2,6 +2,16 @@
 
 ---
 
+## [2.86.1] - 2026-11-23
+
+### Fixed
+- **Proxies & SSL → Sites was empty for sites without a domain.** Only server blocks with a domain name were listed. A proxy reached by IP or port showed no sites, even though it was working. That covers `server_name _;`, an IP as the name, only `listen 8080;`, Caddy's `:8080 { }`, a HAProxy `default_backend`, and a Traefik rule with only `PathPrefix`.
+  - These sites are now listed, marked **no domain**, by their address (`:8080`, `192.168.1.10`, `/api`), with where they go and the state of the container.
+  - **Open** goes to the server's address on the port the proxy publishes for the site.
+  - Actions that need a domain (site settings, load balancing, Let's Encrypt, Remove) are not offered for them, and they are left out of the "configured in two proxies" and certificate warnings.
+
+---
+
 ## [2.86.0] - 2026-11-23
 
 ### Security

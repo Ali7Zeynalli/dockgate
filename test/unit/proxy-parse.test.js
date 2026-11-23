@@ -136,7 +136,8 @@ test('HAProxy: host ACLs → backends', () => {
 backend shop
   server s1 10.0.0.5:80 check
   server s2 10.0.0.6:80 check`);
-  assert.deepEqual(s, [{ domain: 'shop.example.test', targets: ['10.0.0.5:80', '10.0.0.6:80'], backend: 'shop', https: true, line: 1 }]);
+  assert.deepEqual(s.filter(x => !x.nameless), [{ domain: 'shop.example.test', targets: ['10.0.0.5:80', '10.0.0.6:80'], backend: 'shop', https: true, line: 1 }]);
+  assert.deepEqual(s.filter(x => x.nameless).map(x => [x.domain, x.https]), [[':443', true]], 'default_backend: every other name, by port');
 });
 
 test('apachectl -S: name vhosts and aliases', () => {

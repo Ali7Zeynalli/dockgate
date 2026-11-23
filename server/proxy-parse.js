@@ -2,6 +2,12 @@
 // access log lines and certificates. Pure functions — the commands that produce the text are in proxies.js.
 const crypto = require('crypto');
 
+/**
+ * A site without a domain (reached by IP or port: `server_name _;`, `:8080 { }`, a PathPrefix rule) gets a label as
+ * its name — "192.168.1.10", ":8080", ":80" — so it is listed too. → { label, port, ip }
+ */
+function namelessLabel(port, ip) { const p = Number(port) || 80; return { label: ip ? (p === 80 || p === 443 ? ip : `${ip}:${p}`) : `:${p}`, port: p, ip: ip || null }; }
+const isIp = (h) => /^\d+(\.\d+){3}$/.test(String(h || '')) || /^\[?[0-9a-f:]+\]?$/i.test(String(h || '')) && String(h).includes(':');
 const isDomain = (h) => /^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(h || '')) && !/^\d+(\.\d+){3}$/.test(h);
 
 // ---------- nginx ----------
@@ -79,6 +85,16 @@ function nginxSites(parsed) {
     if (!pp && (s.root || (s.locations.find(l => l.root) || {}).root) && !cur.target) cur.root = s.root || s.locations.find(l => l.root).root;
     by.set(n, cur);
   }
+  // servers with no domain that proxy somewhere (server_name _ / an IP / none): listed by their address
+  for (const s of parsed.servers) {
+    if (s.names.some(n => isDomain(n))) continue;
+    const pp = (s.locations.find(l => l.path === '/' && l.proxyPass) || s.locations.find(l => l.proxyPass) || {}).proxyPass || s.proxyPass;
+    if (!pp) continue; // a default page, not a site
+    const l = (s.listen[0] || '80'); const pm = l.match(/(?:^|:)(\d{2,5})(?:\s|$)/);
+    const nl = namelessLabel(pm ? pm[1] : (s.ssl ? 443 : 80), s.names.find(isIp) || null);
+    if (by.has(nl.label)) continue;
+    by.set(nl.label, { domain: nl.label, nameless: true, port: nl.port, anyName: !nl.ip, http: !s.ssl, https: !!s.ssl, redirect: false, target: pp, cert: s.cert || null, file: s.file, line: s.line, root: null });
+  }
   return [...by.values()].map(x => ({ ...x, targets: upstreamOf(x.target, parsed.upstreams) }));
 }
 /** proxy_pass http://name:port/… → ['host:port', …] (an upstream name gives its servers). */
@@ -115,7 +131,14 @@ function parseCaddyfile(text) {
   const out = [];
   for (const s of sites) for (const a of s.addrs) {
     const host = a.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
-    if (!isDomain(host) && host !== 'localhost') continue;
+    if (!isDomain(host) && host !== 'localhost') {
+      // ":80 { }", "http://192.168.1.10 { }", ":8080 { }": a site reached by IP or port
+      const pm = a.match(/:(\d{2,5})$/); const isHttp = /^http:\/\//.test(a);
+      if (!(host === '' || isIp(host)) || !s.targets.length) continue;
+      const nl = namelessLabel(pm ? pm[1] : (isHttp || !host ? 80 : 443), host || null);
+      out.push({ domain: nl.label, nameless: true, port: nl.port, anyName: !host, https: !isHttp && nl.port === 443, targets: s.targets.map(x => x.replace(/^https?:\/\//, '')), root: s.root, line: s.line });
+      continue;
+    }
     out.push({ domain: host, https: !/^http:\/\//.test(a) && !/:80$/.test(a), targets: s.targets.map(x => x.replace(/^https?:\/\//, '')), root: s.root, line: s.line });
   }
   return out;
@@ -137,6 +160,7 @@ function traefikSites(labels = {}) {
     const hosts = []; for (const mm of String(r.rule || '').matchAll(/Host(?:SNI)?\(([^)]*)\)/g)) for (const h of mm[1].split(',')) hosts.push(h.replace(/[`'"\s]/g, ''));
     const port = ports[r.service] || Object.values(ports)[0] || null;
     for (const h of hosts) if (isDomain(h)) out.push({ domain: h, router: name, port, tls: String(r.tls).toLowerCase() === 'true' || !!r['tls.certresolver'], resolver: r['tls.certresolver'] || null, entrypoints: r.entrypoints || null });
+    if (!hosts.length) { const pth = (String(r.rule || '').match(/Path(?:Prefix)?\(\s*[`'"]([^`'"]+)/) || [])[1]; if (pth) out.push({ domain: pth, nameless: true, anyName: true, router: name, port, tls: String(r.tls).toLowerCase() === 'true', resolver: null, entrypoints: r.entrypoints || null }); } // a path on any name
   }
   return out;
 }
@@ -170,6 +194,11 @@ function parseHaproxy(text) {
   }
   const out = [];
   for (const f of fronts) for (const u of f.uses) for (const host of f.acls[u.acl] || []) if (isDomain(host)) out.push({ domain: host, targets: backends[u.backend] || [], backend: u.backend, https: f.binds.some(b => b.ssl), line: f.line });
+  // a frontend's default_backend answers every other name: listed by the port it binds
+  for (const f of fronts) {
+    const be = f.def || (f.kind === 'listen' ? f.name : null); if (!be || !backends[be]) continue;
+    for (const b of f.binds) { const pm = b.addr.match(/:(\d{2,5})$/); if (!pm) continue; const nl = namelessLabel(pm[1], null); if (out.some(x => x.domain === nl.label)) continue; out.push({ domain: nl.label, nameless: true, anyName: true, port: nl.port, targets: backends[be], backend: be, https: b.ssl, line: f.line }); }
+  }
   return out;
 }
 
@@ -348,4 +377,4 @@ function parseCaddyJson(text) {
   return out;
 }
 
-module.exports = { isCaddyJson, parseCaddyJson, nginxSiteTarget, nginxAllCerts, caddyImports, traefikFileSites, isDomain, parseNginxT, nginxSites, upstreamOf, parseCaddyfile, traefikSites, caddyLabelSites, parseHaproxy, parseApacheS, parseAccessLine, parseCaddyJsonLine, parseCertPem, traefikAcme };
+module.exports = { namelessLabel, isIp, isCaddyJson, parseCaddyJson, nginxSiteTarget, nginxAllCerts, caddyImports, traefikFileSites, isDomain, parseNginxT, nginxSites, upstreamOf, parseCaddyfile, traefikSites, caddyLabelSites, parseHaproxy, parseApacheS, parseAccessLine, parseCaddyJsonLine, parseCertPem, traefikAcme };
