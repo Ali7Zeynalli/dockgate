@@ -364,6 +364,11 @@ Router.register('proxies', async (content, params = {}) => {
       const a = r.acme;
       const cb = r.certbot;
       body.innerHTML = `${head}
+        ${(() => { // expired or about to: why, and the fix for whoever keeps it
+          const due = r.certs.filter(c => !c.internal && !c.staging && c.daysLeft <= 14).sort((a, b) => a.daysLeft - b.daysLeft);
+          if (!due.length) return '';
+          return `<div class="card" style="padding:12px 14px;margin-bottom:12px;border-color:${due.some(c => c.daysLeft < 0) ? 'var(--danger)' : 'var(--warning)'}"><div style="font-weight:600;margin-bottom:6px">${due.some(c => c.daysLeft < 0) ? 'Expired or expiring soon' : 'Expiring soon'} — ${due.length} certificate${due.length === 1 ? '' : 's'}</div>${due.map(c => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--border)"><b style="min-width:200px">${e(c.names[0])}</b>${c.daysLeft < 0 ? UI.pill('bad', `expired ${-c.daysLeft} d ago`) : UI.pill('warn', `${c.daysLeft} days`)}<span class="ui-sub" style="flex:1">${e(c.renewal)} · ${e(c.proxies.join(', '))}</span>${UI.btn('Why? · fix', `data-doctor="${e(c.fingerprint)}" data-dname="${e(c.names[0])}"`)}</div>`).join('')}<div class="ui-sub" style="margin-top:6px">"Why?" checks what a renewal needs — the domain's DNS, port 80 and the check path from outside, the program that renews it — and offers the fix that applies.</div></div>`;
+        })()}
         ${(r.errors || []).map(er => `<div class="insight-card warning" style="margin-bottom:8px"><div><b>${e(er.proxy)}</b> logged certificate errors (it renews by itself — this is why it may not):<pre class="td-mono text-xs" style="white-space:pre-wrap;margin:6px 0 0">${e(er.lines.join('\n'))}</pre></div></div>`).join('')}
         ${UI.table([{ label: 'Names' }, { label: 'Issuer' }, { label: 'Kept by' }, { label: 'Expires' }, { label: '' }, { label: 'Renewal' }], r.certs.map(c => {
           const cs = certSite(c.names[0]);
@@ -393,6 +398,19 @@ Router.register('proxies', async (content, params = {}) => {
       wireHead();
       body.querySelectorAll('[data-le]').forEach(b => b.onclick = () => { const [pid, dom] = b.dataset.le.split('|'); siteMenu(sites.find(s => s.proxy === pid && s.domain === dom)); });
       body.querySelectorAll('[data-reload]').forEach(b => b.onclick = async () => { const done = busy(b, 'Reloading…'); try { const x = await API.post(`/proxies/${enc(b.dataset.reload)}/reload`, {}); showResult(x.ok ? 'Reloaded — the renewed certificate is served' : 'Not reloaded', { ...x, steps: [{ t: x.ok ? 'Check ok, reloaded' : `Stopped at: ${x.stage}`, ok: x.ok }] }, () => go('certs', { t: Date.now() })); } catch (er) { showToast(er.message, 'error'); } finally { done(); } });
+      const doctor = async (fp, name) => {
+        const m = showModal(`Why? — ${e(name)}`, '<div class="ui-sub">Checking: DNS, port 80, the check path from outside, the program that renews it…</div>', [{ label: 'Close' }]);
+        let dg; try { dg = await API.get(`/proxies/certs/doctor/${encodeURIComponent(fp)}`); } catch (er) { m.overlay.querySelector('.modal-body').innerHTML = `<div class="ui-sub" style="color:var(--danger)">${e(er.message)}</div>`; return; }
+        const icon = (ok) => ok === true ? '<span style="color:var(--success)">✓</span>' : ok === false ? '<span style="color:var(--danger)">✗</span>' : '<span style="color:var(--warning)">!</span>';
+        m.overlay.querySelector('.modal-body').innerHTML = `<div class="insight-card ${dg.checks.some(c => c.ok === false) ? 'danger' : 'warning'}" style="margin-bottom:10px"><div>${e(dg.verdict)}</div></div>
+          ${dg.checks.map(c => `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">${icon(c.ok)}<div style="flex:1"><b>${e(c.title)}</b><div class="ui-sub" style="white-space:pre-wrap">${e(c.detail)}</div></div></div>`).join('')}
+          ${dg.fixes.length ? `<div style="margin-top:12px;font-weight:600">Fix</div>${dg.fixes.map(f => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0">${UI.btn(e(f.label), `data-fix="${e(f.id)}"`)}<span class="ui-sub">${e(f.desc)}</span></div>`).join('')}` : '<div class="ui-sub" style="margin-top:10px">No fix DockGate can run for this certificate — the checks above say what to change.</div>'}`;
+        m.overlay.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => { const f = dg.fixes.find(x => x.id === b.dataset.fix); showConfirm(`${e(f.label)} — ${e(name)}?`, e(f.desc), async () => {
+          m.close(); showToast(`${f.label}…`, 'info');
+          try { const x = await API.post(`/proxies/certs/doctor/${encodeURIComponent(fp)}/fix`, { action: f.id }); showResult(x.ok ? `${f.label} — done` : `${f.label} — not done`, x); go('certs', { t: Date.now() }); } catch (er) { showToast(er.message, 'error'); }
+        }); });
+      };
+      body.querySelectorAll('[data-doctor]').forEach(b => b.onclick = () => doctor(b.dataset.doctor, b.dataset.dname));
       body.querySelectorAll('[data-rnow]').forEach(b => b.onclick = () => showConfirm(`Renew ${e(b.dataset.rname)} now?`, `${e(b.dataset.rwho)} asks for a new certificate now, even when this one is not due yet. Then the proxies that use it are checked and reloaded. Let's Encrypt allows 5 new certificates for the same names a week.`, async () => {
         const done = busy(b, 'Renewing…');
         try { const x = await API.post('/proxies/certs/renew', { fingerprint: b.dataset.rnow }); showResult(x.ok ? `${b.dataset.rname} renewed` : `${b.dataset.rname} — not renewed`, x); go('certs', { t: Date.now() }); } catch (er) { showToast(er.message, 'error'); } finally { done(); }
