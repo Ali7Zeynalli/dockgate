@@ -15,6 +15,7 @@ The first page after login: the state of the server picked in the top bar.
 | Part | What it shows |
 |---|---|
 | **Top bar** | With Swarm on, *Swarm · 6/6 tasks* (or *no leader*); **Prune…**; refresh. With several servers, a strip of every server with its state and *Open the console* |
+| **Needs attention on all servers** | With several servers: containers in trouble (restarting, unhealthy, stopped with an error), images with a newer version in their registry (from the daily check), and scheduled work whose last run failed (DockGate's tasks, deploy recipes, cron jobs with alerts) — on every server. **Open** switches to that server and opens the container or the page. A server with an access password not typed in this session shows only *locked*. Swarm's own task containers are left out (Swarm → Services shows a service in trouble) |
 | **Host Metrics** | The host's CPU, memory, disk and swap over the last 15 minutes, live; uptime and load; network I/O; processes, open ports, disks and top processes |
 | **Counters** | Total containers, running, stopped, restarting; images, volumes, networks, Compose projects |
 | **Container Resources** | CPU, memory and network I/O of the containers |

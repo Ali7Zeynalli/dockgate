@@ -189,7 +189,7 @@ router.post('/:c/backups/swap', send(async (req) => { const r = await BK.swap(re
 router.post('/:c/backups/schedule', send(async (req) => {
   const dockerSvc = require('../docker');
   const id = dockerSvc.getActiveServerId();
-  if (id === 'local') throw Object.assign(new Error('Scheduled backups run on SSH servers (Scripts + Cron). On this machine, make backups here or use Tools → Schedules.'), { statusCode: 400 });
+  if (id === 'local') throw Object.assign(new Error('On this machine a scheduled backup is a task in Tools → Schedules: Add schedule → "Back up a database".'), { statusCode: 400 });
   const server = require('../db').stmts.getServer.get(id);
   const t = await S.resolve(req.params.c);
   const b = req.body || {};

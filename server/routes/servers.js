@@ -94,6 +94,14 @@ router.get('/', (req, res) => {
 
 // GET /api/servers/overview — batched per-server snapshot for the Servers list (DB-only, no SSH):
 // provisioning readiness (latest matrix) + the most recent stored host_metrics sample. Cheap + fast.
+// Dashboard → "Needs attention on all servers": newer images, containers in trouble, failed scheduled work.
+router.get('/attention', async (req, res) => {
+  try {
+    const gate = require('../auth/server-gate'); const key = gate.keyOfReq(req);
+    res.json(await require('../fleet-attention').summary((id) => gate.isGated(id) && !gate.isUnlocked(key, id)));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/overview', (req, res) => {
   try {
     const out = {};

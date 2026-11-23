@@ -211,6 +211,7 @@ Then it offers the fix that applies. Each one asks first:
 | Traefik | **Make Traefik get it again**: `acme.json` is copied to `acme.json.dockgate-<time>`, the certificate is taken out of it, and Traefik is restarted |
 | Nginx Proxy Manager | renew it in Nginx Proxy Manager (DockGate only shows the checks) |
 | A file nobody renews | **Let DockGate get and renew it** (nginx and Apache sites) |
+| certbot with its timer off | **Turn on certbot.timer** (`systemctl enable --now`) |
 | Any | **Reload the proxy** (all proxies that use it) when an old certificate is still served |
 
 If DNS or the challenge path fails, fix that first: a renewal can not work until Let's Encrypt reaches the server by name on port 80.
@@ -247,6 +248,19 @@ DockGate is the ACME client. It answers the certificate check through the proxy 
 
 **Let's Encrypt account:** your email, the certificate authority (Let's Encrypt, Let's Encrypt staging for tests, or another ACME URL) and the terms. The account key is kept encrypted.
 
+### Wildcards and the DNS check (Cloudflare)
+
+DockGate normally answers Let's Encrypt's check over HTTP (port 80). A **wildcard** certificate (`*.example.com`) can only be checked through DNS, and the DNS check also works when port 80 is closed or the site is behind Cloudflare's proxy.
+
+Under **Let's Encrypt account → DNS check (Cloudflare)**: choose Cloudflare, paste an API token with **Zone → DNS → Edit** for your zones (stored encrypted; **Test the token** asks Cloudflare whether it is active), and choose **Wildcard names only** or **Every certificate**. Then, for each name, DockGate:
+
+1. adds the TXT record `_acme-challenge.<name>` in the right Cloudflare zone,
+2. waits until public DNS (1.1.1.1 and 8.8.8.8) answers it,
+3. lets Let's Encrypt check it,
+4. removes the record.
+
+With it set up, **Use Let's Encrypt** on a site also covers its wildcard names (`server_name *.example.com`), renewals use the DNS check too, and **Why? · fix** offers **Let DockGate get and renew it** for wildcard certificates.
+
 ### All servers and alerts
 
 **All servers** shows every certificate on every server, the one that expires first at the top. The list comes from a check DockGate runs once a day; **Check all servers now** runs it at once.
@@ -255,11 +269,13 @@ DockGate is the ACME client. It answers the certificate check through the proxy 
 
 The daily check sends an alert to your notification channels:
 
-- **14, 7, 3 and 1 days** before a certificate expires, and when it has expired — whoever should renew it. The alert says who that is ("certbot should have renewed it by now — check it", or "nothing renews it").
-- When a **renewed certificate is not loaded** (the proxy still serves the old one).
+- **14, 7, 3 and 1 days** before a certificate expires and on the day it ends — then **every day** while it stays expired. The alert says who should renew it ("certbot should have renewed it by now", or "nothing renews it"), **why** — the failed checks of **Why? · fix** (DNS, the challenge path, certbot's method and timer…) — what DockGate fixed by itself, and the fixes to choose from.
+- When a **renewed certificate is not loaded** (the proxy still serves the old one) — unless DockGate reloaded the proxy by itself.
 - When **Caddy or Traefik log certificate errors** (once a day per proxy).
 
-Each alert is sent once per threshold. Internal (Caddy `tls internal`) and test (staging) certificates are left out.
+Internal (Caddy `tls internal`) and test (staging) certificates are left out.
+
+**Fix safe problems by itself** (Let's Encrypt account, on by default): the daily check reloads a proxy that still serves an old certificate and turns on certbot's timer when it is installed but off. Everything else (renewing, taking a certificate over, Caddy / Traefik re-issue) is only suggested in the alert. Each automatic fix is written to the audit log.
 
 ## Config files
 

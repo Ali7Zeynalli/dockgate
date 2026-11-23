@@ -678,9 +678,15 @@ async function saveSiteSettings(id, domain, body, user) {
 function acmeSettings() {
   const dirKey = getSetting('proxy_acme_directory', 'letsencrypt');
   return { email: getSetting('proxy_acme_email', ''), directory: dirKey, directoryUrl: ACME.DIRECTORIES[dirKey] || dirKey, renewDays: Number(getSetting('proxy_acme_renew_days', '30')) || 30,
-    tos: getSetting('proxy_acme_tos', null) === '1' || (getSetting('proxy_acme_tos', null) == null && q.allCerts.all().length > 0), terms: 'https://letsencrypt.org/repository/' };
+    tos: getSetting('proxy_acme_tos', null) === '1' || (getSetting('proxy_acme_tos', null) == null && q.allCerts.all().length > 0), terms: 'https://letsencrypt.org/repository/',
+    autoFix: getSetting('proxy_cert_autofix', '1') !== '0',
+    dns: { provider: getSetting('proxy_dns_provider', '') || '', hasToken: !!getSetting('proxy_dns_cf_token', ''), mode: getSetting('proxy_dns_mode', 'wildcard') === 'all' ? 'all' : 'wildcard' } };
 }
-function setAcmeSettings({ email, directory, renewDays, tos }) {
+function setAcmeSettings({ email, directory, renewDays, tos, autoFix, dnsProvider, dnsToken, dnsMode }) {
+  if (dnsProvider != null) { if (!['', 'cloudflare'].includes(dnsProvider)) throw err('DNS provider: Cloudflare, or none'); stmts.setSetting.run('proxy_dns_provider', dnsProvider); }
+  if (dnsToken != null) { const t = String(dnsToken).trim(); if (t && !/^[A-Za-z0-9_-]{20,200}$/.test(t)) throw err('That does not look like a Cloudflare API token'); stmts.setSetting.run('proxy_dns_cf_token', t ? encrypt(t) : ''); }
+  if (dnsMode != null) stmts.setSetting.run('proxy_dns_mode', dnsMode === 'all' ? 'all' : 'wildcard');
+  if (autoFix != null) stmts.setSetting.run('proxy_cert_autofix', autoFix ? '1' : '0');
   if (tos != null) stmts.setSetting.run('proxy_acme_tos', tos ? '1' : '0');
   if (email != null) { const e = String(email).trim(); if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) throw err('Not an email address'); stmts.setSetting.run('proxy_acme_email', e); }
   if (directory != null) { const dd = String(directory).trim(); if (!ACME.DIRECTORIES[dd] && !/^https:\/\/\S+$/.test(dd) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(dd)) throw err('Directory: letsencrypt, letsencrypt-staging or an https:// URL (http:// only for a test CA on this machine)'); stmts.setSetting.run('proxy_acme_directory', dd); }
@@ -699,13 +705,26 @@ async function certPlace(ctx, p, domain) {
   }
   return { certPath: `${dir}/fullchain.pem`, keyPath: `${dir}/privkey.pem` };
 }
+/** The DNS check (Cloudflare) for ACME.issue, when it is set up and wanted for these names — else null (HTTP check). */
+function dnsChallenge(names, log = () => {}) {
+  const st = acmeSettings();
+  if (st.dns.provider !== 'cloudflare' || !st.dns.hasToken) return null;
+  if (st.dns.mode !== 'all' && !names.some(n => n.startsWith('*.'))) return null;
+  const token = decrypt(getSetting('proxy_dns_cf_token', '')); const CF = require('./dns-cloudflare');
+  return { set: (fqdn, value) => CF.setTxt(token, fqdn, value), clear: (h) => CF.clearTxt(token, h), wait: (fqdn, value) => CF.waitTxt(fqdn, value, { log }) };
+}
+/** Check the saved Cloudflare token (Certificates → Let's Encrypt account → Test). */
+async function testDns() {
+  const t = getSetting('proxy_dns_cf_token', ''); if (!t) throw err('Save a Cloudflare API token first');
+  return require('./dns-cloudflare').verify(decrypt(t));
+}
 async function obtain(ctx, p, names, certPath, keyPath, log = () => {}) {
   const st = acmeSettings();
   if (!st.tos) throw err("Accept the certificate authority's terms first (Certificates → Let's Encrypt account)", 409);
   const accKey = getSetting(`proxy_acme_account:${st.directoryUrl}`);
   const challengeDir = `${G.ACME_ROOT}/.well-known/acme-challenge`;
   const res = await ACME.issue({
-    directory: st.directoryUrl, email: st.email || undefined, accountKeyPem: accKey ? decrypt(accKey) : null, domains: names, log,
+    directory: st.directoryUrl, email: st.email || undefined, accountKeyPem: accKey ? decrypt(accKey) : null, domains: names, log, dns: dnsChallenge(names, log),
     setChallenge: async (token, keyAuth) => { const r = await run(ctx, p, `mkdir -p ${shq(challengeDir)} && printf %s ${shq(keyAuth)} > ${shq(`${challengeDir}/${token}`)} && chmod 755 ${shq(G.ACME_ROOT)} ${shq(G.ACME_ROOT + '/.well-known')} ${shq(challengeDir)} && chmod 644 ${shq(`${challengeDir}/${token}`)}`); if (r.code !== 0) throw err(`Could not write the challenge: ${(r.err || r.out).trim()}`, 502); },
     clearChallenge: async (token) => { await run(ctx, p, `rm -f ${shq(`${challengeDir}/${token}`)}`); },
   });
@@ -743,7 +762,8 @@ async function certForSite(id, domain, { redirect = true } = {}, user, log = () 
     steps.push(...r.steps); if (!r.ok) return { ...r, steps };
   }
   const now = (await readFile(ctx, p, file)).text;
-  const names = apache ? G.apacheCertNames(now, domain) : G.nginxCertNames(now, domain);
+  const wildcards = !!dnsChallenge(['*.x']); // wildcard names only when the DNS check is set up
+  const names = apache ? G.apacheCertNames(now, domain, { wildcards }) : G.nginxCertNames(now, domain, { wildcards });
   const { certPath, keyPath } = await certPlace(ctx, p, domain);
   let got;
   try { got = await obtain(ctx, p, names, certPath, keyPath, log); steps.push({ t: `Certificate for ${names.join(', ')} written to ${certPath}`, ok: true }); }
@@ -1017,7 +1037,7 @@ async function certbotHook(preview = false) {
   return { ok: true, path, text };
 }
 
-/** The daily check of every certificate on every server, whoever renews it. Alerts once per threshold. */
+/** The daily check of every certificate on every server, whoever renews it (alerts: see certAlerts). */
 const THRESHOLDS = [0, 1, 3, 7, 14]; // the smallest one the days left fall under
 async function checkAllCerts({ notify = true } = {}) {
   const servers = [{ id: 'local', name: 'Local' }, ...stmts.getServers.all().map(x => ({ id: x.id, name: x.name || x.host }))];
@@ -1037,21 +1057,56 @@ async function checkAllCerts({ notify = true } = {}) {
   q.alertPrune.run(Date.now() - 120 * 86400000);
   return out;
 }
+// Expiring certificates: an alert at 14, 7, 3 and 1 days left and on the day it ends, then every day while it stays
+// expired. Each alert says why (the "Why? · fix" check, run on that server) and what DockGate fixed by itself: with
+// "Fix safe problems by itself" on, it reloads a proxy that still serves the old file and turns on certbot's timer.
+const AUTO_FIXES = ['reload', 'certbot-timer'];
+async function certWhy(sv, c) {
+  const D = require('./cert-doctor'); const dockerSvc = require('./docker');
+  const out = { reason: '', fixed: [], suggest: [] };
+  try {
+    const dg = await dockerSvc.withServer(sv.id, () => D.diagnose(c.fingerprint));
+    const bad = dg.checks.filter(x => x.ok === false).map(x => `${x.title}: ${String(x.detail).split('\n')[0]}`);
+    out.reason = bad.length ? bad.slice(0, 3).join('\n') : dg.verdict;
+    for (const f of dg.fixes) {
+      if (acmeSettings().autoFix && AUTO_FIXES.includes(f.id)) {
+        const r = await dockerSvc.withServer(sv.id, () => D.fix(c.fingerprint, f.id, 'DockGate (automatic)')).catch(e => ({ ok: false, steps: [{ t: e.message }] }));
+        out.fixed.push(`${r.ok ? '✓' : '✗'} ${f.label}${r.ok ? '' : ` — ${((r.steps || [])[0] || {}).t || 'failed'}`}`);
+        try { require('./audit').logAction({ server: sv.id, resourceType: 'proxy', resourceName: c.names[0], action: 'proxy_cert_autofix', details: { fix: f.id, ok: !!r.ok } }); } catch (e) { /* best effort */ }
+      } else out.suggest.push(f.label);
+    }
+  } catch (e) { out.reason = `The check could not run: ${e.message}`; }
+  return out;
+}
 async function certAlerts(sv, snap) {
   const HM = require('./notifications/health-monitor');
-  const once = async (key, type, subject, text, html) => { if (q.alerted.get(key)) return; q.alertPut.run(key, Date.now()); await HM.deliver(type, { id: sv.id, name: sv.name }, subject, text, html, { always: true, retry: true }).catch(() => {}); };
+  const once = async (key, type, subject, text, html) => { if (q.alerted.get(key)) return false; q.alertPut.run(key, Date.now()); await HM.deliver(type, { id: sv.id, name: sv.name }, subject, text, html, { always: true, retry: true }).catch(() => {}); return true; };
   const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const day = new Date().toISOString().slice(0, 10);
   for (const c of snap.certs) {
     if (c.internal || c.staging) continue;
     const t = THRESHOLDS.find(x => c.daysLeft <= x);
     if (t != null) {
-      const who = c.auto ? `${c.renewal.replace(/ — .*/, '')} should have renewed it by now — check it` : 'nothing renews it — renew it or switch it to Let\'s Encrypt';
+      const key = c.daysLeft < 0 ? `exp:${c.fingerprint}:expired:${day}` : `exp:${c.fingerprint}:${t}`;
+      if (q.alerted.get(key)) continue;
+      const why = await certWhy(sv, c);
+      const who = c.auto ? `${c.renewal.replace(/ — .*/, '')} should have renewed it by now` : 'nothing renews it';
       const when = c.daysLeft < 0 ? `expired ${-c.daysLeft} days ago` : `expires in ${c.daysLeft} days`;
-      await once(`exp:${c.fingerprint}:${t}`, 'cert_expiring', `Certificate ${when} — ${c.names[0]} on ${sv.name}`, `${c.daysLeft <= 3 ? '🔴' : '🟠'} Certificate ${when} — ${sv.name}\n${c.names.join(', ')} (${c.proxies.join(', ')})\n${who}.`, `<p>The certificate for <b>${esc(c.names.join(', '))}</b> on <b>${esc(sv.name)}</b> (${esc(c.proxies.join(', '))}) ${when}.</p><p>${esc(who)}.</p>`);
+      const extra = [why.reason && `Why: ${why.reason}`, why.fixed.length && `Fixed by DockGate:\n${why.fixed.join('\n')}`, why.suggest.length && `To fix (Proxies & SSL → Certificates → Why? · fix): ${why.suggest.join(' · ')}`].filter(Boolean).join('\n');
+      await once(key, 'cert_expiring', `Certificate ${when} — ${c.names[0]} on ${sv.name}`,
+        `${c.daysLeft <= 3 ? '🔴' : '🟠'} Certificate ${when} — ${sv.name}\n${c.names.join(', ')} (${c.proxies.join(', ')})\n${who}.${extra ? '\n' + extra : ''}`,
+        `<p>The certificate for <b>${esc(c.names.join(', '))}</b> on <b>${esc(sv.name)}</b> (${esc(c.proxies.join(', '))}) ${when}. ${esc(who)}.</p>${why.reason ? `<p><b>Why:</b><br>${esc(why.reason).replace(/\n/g, '<br>')}</p>` : ''}${why.fixed.length ? `<p><b>Fixed by DockGate:</b><br>${why.fixed.map(esc).join('<br>')}</p>` : ''}${why.suggest.length ? `<p><b>To fix</b> (Proxies &amp; SSL → Certificates → Why? · fix): ${why.suggest.map(esc).join(' · ')}</p>` : ''}`);
+      continue; // the stale check below is part of this one
     }
-    if (c.served && c.served.stale) await once(`stale:${c.fingerprint}`, 'cert_not_loaded', `Renewed certificate not loaded — ${c.names[0]} on ${sv.name}`, `🟠 Renewed certificate not loaded — ${sv.name}\n${c.served.proxy} still serves the one that ends ${c.served.notAfter.slice(0, 10)}; the file on disk is newer. Reload ${c.served.proxy} (Proxies & SSL → Certificates → Reload).`, `<p><b>${esc(c.served.proxy)}</b> on <b>${esc(sv.name)}</b> still serves the old certificate of ${esc(c.names[0])} (ends ${esc(c.served.notAfter.slice(0, 10))}); the renewed file is not loaded. Reload it.</p>`);
+    if (c.served && c.served.stale) {
+      if (acmeSettings().autoFix && !q.alerted.get(`stale-fix:${c.fingerprint}:${day}`)) {
+        q.alertPut.run(`stale-fix:${c.fingerprint}:${day}`, Date.now());
+        const why = await certWhy(sv, c);
+        if (why.fixed.some(x => x.startsWith('✓'))) continue; // reloaded: nothing to tell
+      }
+      await once(`stale:${c.fingerprint}`, 'cert_not_loaded', `Renewed certificate not loaded — ${c.names[0]} on ${sv.name}`, `🟠 Renewed certificate not loaded — ${sv.name}\n${c.served.proxy} still serves the one that ends ${c.served.notAfter.slice(0, 10)}; the file on disk is newer. Reload ${c.served.proxy} (Proxies & SSL → Certificates → Reload).`, `<p><b>${esc(c.served.proxy)}</b> on <b>${esc(sv.name)}</b> still serves the old certificate of ${esc(c.names[0])} (ends ${esc(c.served.notAfter.slice(0, 10))}); the renewed file is not loaded. Reload it.</p>`);
+    }
   }
-  const day = new Date().toISOString().slice(0, 10);
   for (const e of snap.errors || []) await once(`acme:${sv.id}:${e.proxy}:${day}`, 'cert_acme_error', `Certificate errors in ${e.proxy} on ${sv.name}`, `🟠 ${e.proxy} could not get or renew a certificate — ${sv.name}\n${e.lines.slice(-2).join('\n').slice(0, 600)}`, `<p><b>${esc(e.proxy)}</b> on <b>${esc(sv.name)}</b> logged certificate errors:</p><pre>${esc(e.lines.join('\n'))}</pre>`);
 }
 function fleet() {
@@ -1065,5 +1120,5 @@ function startCertCheck() {
   certTimer = setInterval(() => checkAllCerts().catch(e => console.warn('[proxies] certificate check:', e.message)), 24 * 3600000);
 }
 
-module.exports = { run, readFile, writeFile, cmds, inProxyNet, listenPorts, renewNow, startProxy, startAndWatch, siteSettings, siteSettingsPlan, saveSiteSettings, certOverview, reloadProxy, certbotRenew, certbotHook, checkAllCerts, certAlerts, fleet, activeCtx, ctxFor, openFile, saveFile, versions, versionText, restoreVersion, targets, exposePlan, expose, removeSite, acmeSettings, setAcmeSettings, certForSite, certList, renew, redeploy, setAuto, forget,
+module.exports = { run, readFile, writeFile, cmds, testDns, dnsChallenge, inProxyNet, listenPorts, renewNow, startProxy, startAndWatch, siteSettings, siteSettingsPlan, saveSiteSettings, certOverview, reloadProxy, certbotRenew, certbotHook, checkAllCerts, certAlerts, fleet, activeCtx, ctxFor, openFile, saveFile, versions, versionText, restoreVersion, targets, exposePlan, expose, removeSite, acmeSettings, setAcmeSettings, certForSite, certList, renew, redeploy, setAuto, forget,
   renewDue, start, lbGet, lbSet, traefikLive, stats, accessStats, logTime, apply, cmds, probe, sha, _q: q };

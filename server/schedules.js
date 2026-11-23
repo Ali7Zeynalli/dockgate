@@ -5,6 +5,9 @@
 //   volume_backup  — tar.gz of a volume written to a folder on that server (default /var/backups/dockgate),
 //                    the newest N kept.
 //   git_sync       — DockGate-managed Git stacks of that server: redeploy when the branch has a new commit.
+//   db_backup      — pg_dump / pg_dumpall of a PostgreSQL container, the same backup as Databases → Backups (kept
+//                    where those are: DockGate's data folder for this machine, /var/backups/dockgate/postgres on an
+//                    SSH server), the newest N of that database kept.
 // Times are wall-clock times in the timezone from Settings → General (UTC when it is "auto").
 const { db, stmts } = require('./db');
 
@@ -37,7 +40,8 @@ const q = {
   delServer: db.prepare('DELETE FROM schedules WHERE server_id = ?'),
 };
 
-const KINDS = ['prune', 'volume_backup', 'git_sync'];
+const KINDS = ['prune', 'volume_backup', 'git_sync', 'db_backup'];
+const DB_FORMATS = ['custom', 'sql'];
 const FREQS = ['daily', 'weekly', 'hourly'];
 const PRUNE_KEYS = ['containers', 'images', 'networks', 'build_cache'];
 
@@ -96,8 +100,16 @@ function validate(body) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(volume)) bad('Choose a volume');
     const dir = String(p.dir || '/var/backups/dockgate').replace(/\/+$/, '');
     if (!/^\/[\w./-]+$/.test(dir) || dir.split('/').includes('..') || dir.split('/').filter(Boolean).length < 2) bad('The backup folder must be an absolute path at least two levels deep, e.g. /var/backups/dockgate');
-    const keep = Math.round(Number(p.keep || 7)); if (!(keep >= 1 && keep <= 365)) bad('Keep between 1 and 365 copies');
+    const keep = Math.round(Number(p.keep == null || p.keep === '' ? 7 : p.keep)); if (!(keep >= 1 && keep <= 365)) bad('Keep between 1 and 365 copies');
     params = { volume, dir, keep };
+  } else if (kind === 'db_backup') {
+    const container = String(p.container || '');
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(container)) bad('Choose a PostgreSQL container');
+    const database = String(p.database || '').trim();
+    if (database && !/^[^\0/'"\\]{1,63}$/.test(database)) bad('Database name: up to 63 characters');
+    const format = database ? (DB_FORMATS.includes(p.format) ? p.format : 'custom') : 'sql';
+    const keep = Math.round(Number(p.keep == null || p.keep === '' ? 7 : p.keep)); if (!(keep >= 1 && keep <= 365)) bad('Keep between 1 and 365 copies');
+    params = { container, database, format, keep };
   } else {
     params = { projects: Array.isArray(p.projects) ? p.projects.filter(x => /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(x)) : [] };
   }
@@ -107,6 +119,7 @@ function validate(body) {
 function defaultName(kind, p) {
   if (kind === 'prune') return 'Prune ' + PRUNE_KEYS.filter(k => p[k]).map(k => ({ containers: 'stopped containers', images: 'unused images', networks: 'unused networks', build_cache: 'build cache' }[k])).join(', ');
   if (kind === 'volume_backup') return `Back up volume ${p.volume}`;
+  if (kind === 'db_backup') return `Back up database ${p.container}${p.database ? ' / ' + p.database : ' (all)'}`;
   return p.projects && p.projects.length ? `Sync Git stacks ${p.projects.join(', ')}` : 'Sync Git stacks';
 }
 
@@ -164,6 +177,20 @@ async function runGitSync(serverId, p) {
   return { ok: !failed.length, message: msg || 'nothing to do' };
 }
 
+/** A database backup made the way Databases → Backups makes it, on that server; then only the newest `keep` stay. */
+async function runDbBackup(serverId, p) {
+  const PB = require('./pg-backup');
+  return require('./docker').withServer(serverId, async () => {
+    const r = await PB.create(p.container, p.database ? { database: p.database, kind: p.format } : { kind: 'all' });
+    const want = p.database ? p.database.replace(/[^A-Za-z0-9_.-]+/g, '_') : 'all';
+    const ext = p.database && p.format === 'custom' ? '.dump' : '.sql.gz';
+    const mine = (await PB.list(p.container)).files.filter(f => f.database === want && f.name.endsWith(ext));
+    let removed = 0;
+    for (const f of mine.slice(p.keep)) { try { await PB.remove(p.container, f.name); removed++; } catch (e) { /* the next run tries again */ } }
+    return { ok: true, message: `${fmtBytes(r.size)} · ${r.dir}/${r.file} · keeps ${p.keep}${removed ? ` · ${removed} older removed` : ''}` };
+  });
+}
+
 const running = new Set();
 async function runOne(id, { manual = false } = {}) {
   const s = q.get.get(id);
@@ -175,6 +202,7 @@ async function runOne(id, { manual = false } = {}) {
   try {
     const p = JSON.parse(s.params || '{}');
     if (s.kind === 'git_sync') res = await runGitSync(s.server_id, p);
+    else if (s.kind === 'db_backup') res = await runDbBackup(s.server_id, p);
     else {
       const docker = dockerFor(s.server_id);
       res = s.kind === 'prune' ? await runPrune(docker, p) : await runVolumeBackup(docker, p);

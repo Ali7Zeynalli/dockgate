@@ -48,6 +48,13 @@ function fetchLikeAcme(url, hops = 3) {
   });
 }
 
+/** certbot's own timer, when it is installed but not running (certbot.timer, or snap's snap.certbot.renew.timer). */
+async function installedCertbotTimer(ctx) {
+  const r = await PX.hostExec(ctx.server, 'systemctl list-unit-files certbot.timer snap.certbot.renew.timer --no-legend --no-pager 2>/dev/null').catch(() => null);
+  const m = /^(certbot\.timer|snap\.certbot\.renew\.timer)\s/m.exec(String(r ? r.out : ''));
+  return m ? m[1] : null;
+}
+
 /** certbot's renewal settings of a certificate: { authenticator, webroot } (from /etc/letsencrypt/renewal/<name>.conf). */
 async function certbotConf(ctx, c, name) {
   const read = `cat /etc/letsencrypt/renewal/${name}.conf 2>/dev/null; echo; echo @@LOG; tail -n 300 /var/log/letsencrypt/letsencrypt.log 2>/dev/null | grep -iE 'error|failed|problem|too many|rateLimited|unauthorized|connection' | tail -n 4`;
@@ -100,7 +107,7 @@ async function diagnose(fingerprint) {
   add(c.daysLeft < 0 ? false : c.daysLeft <= 14 ? null : true, c.daysLeft < 0 ? `Expired ${-c.daysLeft} days ago` : `Expires in ${c.daysLeft} days`, `${c.names.join(', ')} · ${c.selfSigned ? 'self-signed' : c.issuer} · kept by ${c.renewal}`);
 
   // who renews it, and is it able to
-  let cb = null; let rateLimited = false;
+  let cb = null; let rateLimited = false; let certbotTimer = null;
   if (c.internal) add(true, 'Internal certificate', `${c.renewal}: renewed by itself, not a public certificate`);
   else if (c.managedId) {
     const m = (ov.managed || []).find(x => x.id === c.managedId) || {};
@@ -111,7 +118,10 @@ async function diagnose(fingerprint) {
     cb = name ? await certbotConf(ctx, c, name) : { found: false, logErrors: [] };
     const inCt = c.certbotContainer && !c.proxies.includes('host');
     if (inCt) { const d = await PX.scan(); const h = (d.helpers || []).find(x => x.name === c.certbotContainer); add(h && h.running ? true : false, `certbot runs in the container ${c.certbotContainer}`, h && h.running ? 'it is running' : 'it is stopped: nothing renews the certificate'); }
-    else add(ov.certbot && ov.certbot.timer ? true : false, 'certbot on the server', ov.certbot && ov.certbot.timer ? `renews by its ${ov.certbot.timer}` : 'no timer or cron runs certbot renew: nothing renews the certificate on its own');
+    else {
+      add(ov.certbot && ov.certbot.timer ? true : false, 'certbot on the server', ov.certbot && ov.certbot.timer ? `renews by its ${ov.certbot.timer}` : 'no timer or cron runs certbot renew: nothing renews the certificate on its own');
+      if (!(ov.certbot && ov.certbot.timer) && ctx.server) certbotTimer = await installedCertbotTimer(ctx);
+    }
     if (cb.found) {
       const holds80 = (await PX.scan()).ports.some(x => x.port === 80);
       if (cb.authenticator === 'standalone') add(holds80 ? false : null, 'certbot method: standalone', holds80 ? 'certbot starts its own server on port 80 to answer the check, but a proxy holds port 80 — every renewal fails. Let DockGate renew it, or switch certbot to webroot.' : 'certbot needs port 80 free at renewal time');
@@ -128,7 +138,8 @@ async function diagnose(fingerprint) {
   } else if (c.renewer === 'npm') add(null, 'Nginx Proxy Manager keeps it', 'renew it in Nginx Proxy Manager (SSL Certificates → ⋯ → Renew)');
   else add(false, 'Nobody renews it', 'a certificate file in the config: when it expires, nothing makes a new one');
   if (rateLimited) add(false, "Let's Encrypt rate limit", "too many certificates for these names this week (5 per week): wait, then try again — another try now fails the same way");
-  if (wildcard) add(null, 'Wildcard name', `${c.names.find(n => n.startsWith('*.'))} needs a DNS check: DockGate can not renew wildcards (certbot or acme.sh with a DNS plugin can)`);
+  const dnsReady = !!PE.dnsChallenge(['*.x']);
+  if (wildcard) add(dnsReady ? true : null, 'Wildcard name', dnsReady ? `${c.names.find(n => n.startsWith('*.'))}: DockGate answers its DNS check through Cloudflare` : `${c.names.find(n => n.startsWith('*.'))} needs a DNS check: set up Cloudflare under Let's Encrypt account to let DockGate renew it (or certbot / acme.sh with a DNS plugin)`);
 
   // DNS of each name → this server?
   const mine = await serverAddresses(ctx);
@@ -162,10 +173,11 @@ async function diagnose(fingerprint) {
   if (c.served && c.served.stale) add(false, 'The proxy serves an older certificate', `${c.served.proxy} still serves the one that ends ${String(c.served.notAfter).slice(0, 10)}; the file is newer — a reload fixes it`);
 
   // the fixes that apply
-  const canTakeOver = !c.managedId && !c.internal && !wildcard && ['certbot', 'acme.sh', 'none'].includes(c.renewer) && !!(n0 && await siteFor(c, n0));
+  const canTakeOver = !c.managedId && !c.internal && (!wildcard || dnsReady) && ['certbot', 'acme.sh', 'none'].includes(c.renewer) && !!(n0 && await siteFor(c, n0));
   if (c.served && c.served.stale) fixes.push({ id: 'reload', label: 'Reload the proxy', desc: 'Check its config and reload it, so it serves the newer file.' });
   if (c.managedId) fixes.push({ id: 'putback', label: 'Put the files back, then renew', desc: 'Writes DockGate\'s copy of the certificate to the proxy again (after a re-create), then asks Let\'s Encrypt for a new one.' });
   if (c.managedId || c.renewer === 'certbot' || c.renewer === 'acme.sh') fixes.push({ id: 'renew', label: 'Renew now', desc: `${c.managedId ? 'DockGate asks Let\'s Encrypt' : c.renewer} for a new certificate now, then the proxies using it are reloaded.` });
+  if (certbotTimer) fixes.push({ id: 'certbot-timer', label: `Turn on ${certbotTimer}`, desc: `systemctl enable --now ${certbotTimer}: certbot then renews its certificates twice a day by itself.` });
   if (c.renewer === 'certbot') fixes.push({ id: 'certbot-dry-run', label: 'certbot test run', desc: 'certbot renew --dry-run: tries the whole renewal against Let\'s Encrypt\'s test service, changes nothing.' });
   if (canTakeOver) fixes.push({ id: 'takeover', label: 'Let DockGate get and renew it', desc: 'DockGate gets a new certificate from Let\'s Encrypt through the proxy, switches the site to it and renews it from now on. The old files stay.' });
   if (c.renewer === 'caddy' && !c.internal) fixes.push({ id: 'caddy-reissue', label: 'Make Caddy get it again', desc: 'Moves Caddy\'s stored certificate aside (kept) and reloads Caddy, which then asks for a new one.' });
@@ -174,7 +186,7 @@ async function diagnose(fingerprint) {
   return { fingerprint, names: c.names, daysLeft: c.daysLeft, renewal: c.renewal, verdict: firstBad ? `${firstBad.title}: ${firstBad.detail.split('\n')[0]}` : c.daysLeft < 0 ? 'Nothing found that blocks a renewal — renew it now.' : 'Nothing found that blocks a renewal.', checks, fixes };
 }
 
-const FIXES = ['reload', 'renew', 'putback', 'certbot-dry-run', 'takeover', 'caddy-reissue', 'traefik-reissue'];
+const FIXES = ['reload', 'renew', 'putback', 'certbot-dry-run', 'certbot-timer', 'takeover', 'caddy-reissue', 'traefik-reissue'];
 async function fix(fingerprint, action, user) {
   if (!FIXES.includes(action)) throw err('Unknown fix');
   const ctx = PE.activeCtx();
@@ -199,6 +211,14 @@ async function fix(fingerprint, action, user) {
     else { if (!ctx.server) throw err('DockGate has no access to the host here (DG_HOST_ACCESS is off)'); r = await PX.hostExec(ctx.server, rootSh(cmd)); }
     const text = (r.out + r.err).trim(); const ok = r.code === 0 && /succeeded|Congratulations/i.test(text) && !/fail/i.test(text.split('\n').slice(-6).join('\n'));
     return { ok, steps: [{ t: ok ? 'certbot test run: the renewal works (nothing was changed)' : 'certbot test run failed — the reason is below', ok }], output: text.slice(-6000) };
+  }
+  if (action === 'certbot-timer') {
+    if (!ctx.server) throw err('DockGate has no access to the host here (DG_HOST_ACCESS is off)');
+    const unit = await installedCertbotTimer(ctx); if (!unit) throw err('certbot.timer is not installed on this server');
+    const r = await PX.hostExec(ctx.server, rootSh(`systemctl enable --now ${unit} 2>&1 && systemctl is-active ${unit}`));
+    const ok = r.code === 0;
+    PX.invalidate();
+    return { ok, steps: [{ t: ok ? `${unit} is on: certbot renews by itself from now on` : `${unit} could not be turned on — the reason is below`, ok }], output: (r.out + r.err).trim() };
   }
   if (action === 'takeover') {
     const sf = await siteFor(c, names[0]); if (!sf) throw err('No nginx or Apache site uses this certificate for its first name: DockGate can not answer the check for it');

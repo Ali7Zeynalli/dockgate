@@ -126,9 +126,11 @@ function nginxEnsureAcme(text, domain, { httpPort = 80 } = {}) {
 }
 
 /** The names a certificate for `domain` should hold: the server_name of its HTTP server (where the check is answered). */
-function nginxCertNames(text, domain) {
+// A name a certificate can cover: a domain, or a wildcard (*.example.com) when DockGate can answer the DNS check.
+const certName = (n, wildcards) => (DOMAIN_RE.test(n) && !n.startsWith('*.')) || (!!wildcards && n.startsWith('*.') && DOMAIN_RE.test(n.slice(2)));
+function nginxCertNames(text, domain, { wildcards = false } = {}) {
   const b = nginxBlocks(text, 'server').find(x => serverNames(x.text).includes(domain) && !isSslServer(x.text)) || nginxBlocks(text, 'server').find(x => serverNames(x.text).includes(domain));
-  const names = b ? serverNames(b.text).filter(n => DOMAIN_RE.test(n) && !n.startsWith('*.')) : [];
+  const names = b ? serverNames(b.text).filter(n => certName(n, wildcards)) : [];
   return [domain, ...names.filter(n => n !== domain)].slice(0, 50);
 }
 /** Swap the certificate of every TLS server of `domain` to certPath / keyPath. */
@@ -485,7 +487,7 @@ function apacheSetHttps(text, domain, certPath, keyPath) {
   copy = copy.replace(/^(\s*ServerName\s+[^\n]+\n)/im, `$1${http.indent}  SSLEngine on\n${http.indent}  SSLCertificateFile ${certPath}\n${http.indent}  SSLCertificateKeyFile ${keyPath}\n`);
   return { text: text.slice(0, http.end) + '\n' + copy + text.slice(http.end), changed: true };
 }
-const apacheCertNames = (text, domain) => { const v = apacheVhosts(text).find(x => x.names.includes(domain) && !x.ssl) || apacheVhosts(text).find(x => x.names.includes(domain)); return [domain, ...(v ? v.names.filter(n => n !== domain && DOMAIN_RE.test(n) && !n.startsWith('*.')) : [])].slice(0, 50); };
+const apacheCertNames = (text, domain, { wildcards = false } = {}) => { const v = apacheVhosts(text).find(x => x.names.includes(domain) && !x.ssl) || apacheVhosts(text).find(x => x.names.includes(domain)); return [domain, ...(v ? v.names.filter(n => n !== domain && certName(n, wildcards)) : [])].slice(0, 50); };
 
 // ---------- labels ----------
 function traefikLabels(input, { entrypoints = [], resolver = null } = {}) {

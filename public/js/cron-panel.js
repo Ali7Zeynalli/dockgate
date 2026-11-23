@@ -66,9 +66,13 @@ async function renderCronPanelAll(serverId, container) {
           j.src.editable ? '-' : null,
           j.src.editable ? { label: `${Icons.trash} Delete…`, attrs: `data-del="${esc(j.src.id)}|${j.index}"`, danger: true } : null])}`,
       ] })), { empty: 'No jobs here.', minWidth: 940 }) : ''}
-    ${(filter === 'all' || filter === 'timers') && d.timers.length ? `${UI.header('systemd timers', 'Many distributions run their regular work (apt, logrotate, fstrim, certbot) with timers instead of cron. Shown, not changed.')}
-      ${UI.table([{ label: 'Timer' }, { label: 'When' }, { label: 'Runs' }, { label: 'Next run' }, { label: 'Last run' }],
-        d.timers.map(t => ({ cells: [`<span class="td-mono">${esc(t.unit)}</span>`, `<span class="td-mono ui-sub">${esc(t.calendar || '—')}</span>`, `<span class="td-mono">${esc(t.runs)}</span>`, t.next ? fmtWhen(t.next) : '—', t.last ? fmtWhen(t.last) : '—'] })), { minWidth: 800 })}` : ''}
+    ${(filter === 'all' || filter === 'timers') && d.timers.length ? `${UI.header('systemd timers', 'Many distributions run their regular work (apt, logrotate, fstrim, certbot) with timers instead of cron. Turn one on or off, run its job once, or read its log; the timer files themselves are not changed.')}
+      ${UI.table([{ label: 'On' }, { label: 'Timer' }, { label: 'When' }, { label: 'Runs' }, { label: 'Next run' }, { label: 'Last run' }, { label: '', align: 'right' }],
+        d.timers.map(t => ({ cells: [
+          t.canToggle ? `<div class="toggle ${t.state === 'enabled' ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${t.state === 'enabled'}" aria-label="On" data-ttoggle="${esc(t.unit)}"></div>` : `<span class="ui-sub" title="A static timer is started by another unit">${esc(t.state || '—')}</span>`,
+          `<span class="td-mono">${esc(t.unit)}</span>${t.active === 'active' ? '' : `<div class="ui-sub">${t.active === 'unknown' ? (t.state === 'enabled' ? 'turned on' : 'turned off') : esc(t.active)}</div>`}`,
+          `<span class="td-mono ui-sub">${esc(t.calendar || '—')}</span>`, `<span class="td-mono">${esc(t.runs)}</span>`, t.next ? fmtWhen(t.next) : '—', t.last ? fmtWhen(t.last) : '—',
+          `${UI.btn('Run now', `data-trun="${esc(t.unit)}"`)} ${UI.btn('Log', `data-tlog="${esc(t.unit)}"`)}`] })), { minWidth: 900 })}` : ''}
     ${filter === 'all' && d.periodic.length ? `<details style="margin-top:12px"><summary class="text-sm" style="cursor:pointer">Scripts in /etc/cron.hourly, daily, weekly, monthly (${d.periodic.length})</summary><div class="ui-sub td-mono" style="margin-top:6px;line-height:1.8">${['hourly', 'daily', 'weekly', 'monthly'].map(p => { const l = d.periodic.filter(x => x.period === p); return l.length ? `<b>${p}</b>: ${l.map(x => esc(x.name)).join(', ')}` : ''; }).filter(Boolean).join('<br>')}</div></details>` : ''}
     ${failed[0] ? `<div class="insight-card danger" style="margin-top:14px"><div style="flex:1"><b>${esc(failed[0].meta && failed[0].meta.name ? failed[0].meta.name : cmdShort(failed[0].command))} failed (exit ${failed[0].lastCode})</b> ${fmtWhen(failed[0].lastRun)}<div style="margin-top:8px">${UI.btn('Run now…', `data-run="${esc(failed[0].src.id)}|${failed[0].index}"`, 'btn-primary')} ${failed[0].meta && failed[0].meta.log ? UI.btn('Open its log', `data-log="${esc(failed[0].src.id)}|${failed[0].index}"`) : ''}</div></div></div>` : ''}
     <div class="ui-sub" style="margin-top:12px">Written by DockGate: ${esc(d.sshUser)}'s crontab${d.sshUser !== 'root' ? ', root\'s crontab (sudo)' : ''} and <span class="td-mono">${esc(d.dgFile)}</span>. The crontab before each change is kept (${UI.btn('Earlier versions…', 'data-versions')}).</div>`;
@@ -90,6 +94,36 @@ async function renderCronPanelAll(serverId, container) {
     showLog(j, p);
   }));
   container.querySelector('[data-versions]')?.addEventListener('click', versions);
+  const timerOf = (u) => d.timers.find(t => t.unit === u);
+  container.querySelectorAll('[data-ttoggle]').forEach(el => el.addEventListener('click', () => {
+    const t = timerOf(el.dataset.ttoggle), on = t.state !== 'enabled';
+    showConfirm(on ? 'Turn on timer' : 'Turn off timer', `${on ? 'Turn on' : 'Turn off'} <span class="td-mono">${esc(t.unit)}</span>? ${on ? `It starts now and runs <span class="td-mono">${esc(t.runs)}</span> on its schedule, also after a reboot.` : `<span class="td-mono">${esc(t.runs)}</span> stops running on its schedule, also after a reboot.`}`, async () => {
+      try { const r = await API.post(`/servers/${serverId}/cron/timer`, { unit: t.unit, action: on ? 'enable' : 'disable' }); if (r.ok) showToast(`${t.unit}: ${on ? 'on' : 'off'}`); else showModal(`${esc(t.unit)}: not changed`, `<pre class="td-mono" style="white-space:pre-wrap;font-size:12px">${esc(r.output)}</pre>`, [{ label: 'Close', className: 'btn btn-secondary' }]); }
+      catch (e) { showToast(e.message, 'error', 9000); }
+      reload();
+    }, !on);
+  }));
+  container.querySelectorAll('[data-trun]').forEach(b => b.addEventListener('click', () => {
+    const t = timerOf(b.dataset.trun);
+    showConfirm('Run now', `Start <span class="td-mono">${esc(t.runs)}</span> once now (what <span class="td-mono">${esc(t.unit)}</span> runs)? Its last log lines are shown here (up to 2 minutes).`, async () => {
+      const m = showModal(`Running ${esc(t.runs)}…`, '<div data-out><span class="ui-sub">Running…</span></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+      m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+      const box = () => m.overlay.querySelector('[data-out]');
+      try {
+        const r = await API.post(`/servers/${serverId}/cron/timer`, { unit: t.unit, action: 'run' });
+        if (box()) box().innerHTML = `<div style="margin-bottom:8px">${r.ok ? UI.pill('ok', '✓ finished') : UI.pill('bad', `✗ exit ${r.code}`)}</div><pre class="td-mono" style="font-size:12px;max-height:50vh;overflow:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:8px;margin:0;white-space:pre-wrap">${esc(r.output || '(no output)')}</pre>`;
+      } catch (e) { if (box()) box().innerHTML = `<div class="text-danger">${esc(e.message)}</div>`; }
+      reload();
+    });
+  }));
+  container.querySelectorAll('[data-tlog]').forEach(b => b.addEventListener('click', () => {
+    const t = timerOf(b.dataset.tlog);
+    const m = showModal(`📜 ${esc(t.runs)}`, `<div class="ui-sub td-mono" style="margin-bottom:8px">journalctl -u ${esc(t.runs)}</div><div data-lv></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
+    const viewer = LogViewer.mount(m.overlay.querySelector('[data-lv]'), { key: 'timer-log', fileName: t.runs, height: '50vh', compact: true,
+      load: async () => ({ text: (await API.post(`/servers/${serverId}/cron/timer`, { unit: t.unit, action: 'logs' })).output, format: 'auto' }) });
+    new MutationObserver((_, o) => { if (!document.body.contains(m.overlay)) { viewer.destroy(); o.disconnect(); } }).observe(document.getElementById('modal-root'), { childList: true });
+  }));
 
   // Preview the change as a diff, then write it.
   async function change(source, op, title, quick = false) {

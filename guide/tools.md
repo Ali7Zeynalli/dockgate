@@ -239,7 +239,7 @@ Statements that change data still need **Allow changes** (or Test run), and DROP
 | **Names** | `<container>-<database or all>-<date-time>.dump` / `.sql.gz` — the same as Scripts' *Database backup* block, so scheduled backups show in the same list |
 | **Restore…** | Always into a **new database** first (nothing that exists changes); then **Swap it in place of …** renames the current one to `<name>_before_<date>` and puts the restored one in its place (its sessions are closed for a moment). "Keep owners and grants" can be turned off when the backup's users do not exist here. A failed restore removes the new database |
 | **Whole-server backup** | Restored by hand into an empty PostgreSQL (a new container) — **How to restore** shows the command |
-| **Schedule…** | SSH servers: pick how often (every few hours, every day, days of the week, once a month) and the time from lists — hour 00–23 and minute 00–59, server time — or a custom cron line. Makes the script `pg-backup-<container>-<db>` in Server → Automation → Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
+| **Schedule…** | This machine: opens Tools → Schedules with **Back up a database** filled in. SSH servers: pick how often (every few hours, every day, days of the week, once a month) and the time from lists — hour 00–23 and minute 00–59, server time — or a custom cron line. Makes the script `pg-backup-<container>-<db>` in Server → Automation → Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
 | **Download / Delete** | The file itself |
 
 ## Schedules
@@ -252,11 +252,27 @@ Jobs DockGate runs by itself on a server.
 |---|---|
 | **Prune unused data** | Removes the things you tick: unused images, stopped containers, unused networks. Unused volumes are never pruned |
 | **Back up a volume** | Saves the volume as a `.tar.gz` in a folder on the server and keeps the newest *N* copies (1–365, default 7) |
+| **Back up a database** | A PostgreSQL container's database (or all of them and the users, `pg_dumpall`) — the same backup as Databases → Backups, kept where those are (DockGate's data folder for this machine, `/var/backups/dockgate/postgres` on an SSH server), so it is restored from there. Keeps the newest *N* of that database. The container must be running when the task runs |
 | **Sync Git stacks** | Pulls the chosen Git stacks (or every DockGate-managed Git stack on the server) and redeploys, only when there is a new commit |
 
 **How often:** every hour (at a minute), every day or every week, at a time in `HH:MM`. Times are in UTC unless a timezone is set in **Settings → General → Timezone**.
 
 The list shows each task's server, schedule, last run (with its result) and next run. Each row has an on/off switch, **Run now**, **Edit…** and **Delete…**. Deleting a task keeps the backups it made. A failed run sends the **Scheduled task failed** notification.
+
+A task runs on its own server whatever server is picked in the top bar.
+
+### Everything on a server
+
+The second view lists everything that runs on a schedule on one server, by its next run:
+
+| Where it lives | What |
+|---|---|
+| DockGate · Schedules | the tasks above |
+| DockGate · Deploy recipe | Deploy → Tasks recipes with a schedule |
+| Cron | the server's cron jobs (SSH servers) — the same as Server → Automation → Cron |
+| systemd timer | the server's timers (SSH servers) |
+
+Each row says which clock its schedule is written in (DockGate's timezone or the server's clock), when it runs next (in your browser's time) and how its last run ended. Jobs that start within 10 minutes of each other are marked **starts with another job**, so two heavy ones (a backup and a prune) can be moved apart. **Open** goes to the page where the row is changed.
 
 ## Errors and fixes
 

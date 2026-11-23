@@ -1,5 +1,5 @@
 // A small ACME client (RFC 8555) for Let's Encrypt and other ACME CAs, with Node's crypto only:
-// ES256 account key, http-01 challenges, an EC P-256 certificate key and a CSR built here (DER).
+// ES256 account key, http-01 challenges (or dns-01 through a DNS provider: wildcards), an EC P-256 certificate key and a CSR built here (DER).
 //   issue({ directory, email, accountKeyPem, domains, setChallenge(token, keyAuth), clearChallenge(token), log })
 //     → { certPem, keyPem, accountKeyPem, notAfter }
 const crypto = require('crypto');
@@ -83,20 +83,40 @@ class Acme {
   }
 }
 
-async function issue({ directory, email, accountKeyPem, domains, setChallenge, clearChallenge = async () => {}, log = () => {}, fetchImpl }) {
+/** The dns-01 TXT value for a key authorization. */
+const dnsValue = (keyAuth) => b64u(crypto.createHash('sha256').update(keyAuth).digest());
+
+/**
+ * dns (optional): { set(fqdn, value) → handle, clear(handle), wait(fqdn, value) } — answer with dns-01 (a TXT record
+ * _acme-challenge.<name>) instead of http-01. Needed for wildcard names.
+ */
+async function issue({ directory, email, accountKeyPem, domains, setChallenge, clearChallenge = async () => {}, dns = null, log = () => {}, fetchImpl }) {
   const names = [...new Set(domains.map(d => String(d).toLowerCase()))];
   if (!names.length) throw new Error('No domain');
-  if (names.some(n => n.startsWith('*.'))) throw Object.assign(new Error('A wildcard certificate needs a DNS check; DockGate checks over HTTP — list the names instead'), { statusCode: 400 });
+  if (!dns && names.some(n => n.startsWith('*.'))) throw Object.assign(new Error('A wildcard certificate needs the DNS check — set up Cloudflare under Certificates → Let\'s Encrypt account, or list the names instead'), { statusCode: 400 });
   const a = new Acme(directory, accountKeyPem, { log, fetchImpl });
   log(`Account at ${a.url}`); await a.account(email);
   const d = await a.dir();
   const order = await a.post(d.newOrder, { identifiers: names.map(value => ({ type: 'dns', value })) });
   const orderUrl = order.headers.get('location'); let o = order.body;
-  const tokens = [];
+  const tokens = [], records = [];
   try {
     for (const authUrl of o.authorizations) {
       const az = (await a.post(authUrl, null)).body;
       if (az.status === 'valid') { log(`${az.identifier.value}: already checked`); continue; }
+      const shown = `${az.wildcard ? '*.' : ''}${az.identifier.value}`;
+      if (dns) {
+        const ch = (az.challenges || []).find(c => c.type === 'dns-01');
+        if (!ch) throw Object.assign(new Error(`${shown}: the CA offers no DNS check`), { statusCode: 502 });
+        const fqdn = `_acme-challenge.${az.identifier.value}`, value = dnsValue(`${ch.token}.${thumbprint(a.jwk)}`);
+        log(`${shown}: adding the TXT record ${fqdn}`);
+        records.push(await dns.set(fqdn, value));
+        if (dns.wait) await dns.wait(fqdn, value);
+        await a.post(ch.url, {});
+        await a.poll(authUrl, b => b.status === 'valid');
+        log(`${shown}: checked`);
+        continue;
+      }
       const ch = (az.challenges || []).find(c => c.type === 'http-01');
       if (!ch) throw Object.assign(new Error(`${az.identifier.value}: the CA offers no HTTP check`), { statusCode: 502 });
       const keyAuth = `${ch.token}.${thumbprint(a.jwk)}`;
@@ -115,7 +135,10 @@ async function issue({ directory, email, accountKeyPem, domains, setChallenge, c
     const notAfter = new Date(new crypto.X509Certificate(first).validTo).toISOString();
     log(`Issued for ${names.join(', ')}, valid until ${notAfter.slice(0, 10)}`);
     return { certPem, keyPem: certKey.export({ type: 'pkcs8', format: 'pem' }), accountKeyPem: a.accountKeyPem(), notAfter };
-  } finally { for (const t of tokens) await clearChallenge(t).catch(() => {}); }
+  } finally {
+    for (const t of tokens) await clearChallenge(t).catch(() => {});
+    for (const h of records) await dns.clear(h).catch(() => {});
+  }
 }
 
-module.exports = { issue, csr, thumbprint, jwkOf, DIRECTORIES, Acme, _der: { tlv, seq, set, oid } };
+module.exports = { issue, csr, thumbprint, dnsValue, jwkOf, DIRECTORIES, Acme, _der: { tlv, seq, set, oid } };
