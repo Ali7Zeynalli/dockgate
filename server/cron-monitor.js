@@ -72,6 +72,14 @@ async function send(server, a) {
   await HM.deliver(a.type, { id: `cron:${server.id}:${j.meta.name}`, name: where }, subject, text, body, { always: true, retry: true });
 }
 
+/** Jobs whose last run ended with an exit code other than 0. */
+function failedJobs(info) {
+  const out = [];
+  for (const src of info.sources || []) for (const j of src.jobs || []) if (j.enabled && j.lastCode != null && j.lastCode !== 0) out.push({ name: (j.meta && j.meta.name) || String(j.command).slice(0, 80), code: j.lastCode, at: j.lastRun || null });
+  return out;
+}
+/** What the last check found failed on a server (null when it is not watched). */
+function lastFailed(serverId) { return getJ(`failed:${serverId}`, null); }
 let timer = null, busy = false;
 async function tick() {
   if (busy) return; busy = true;
@@ -83,6 +91,7 @@ async function tick() {
         const seen = getJ(`seen:${id}`, {});
         const alerts = evaluate(info, seen);
         setJ(`seen:${id}`, seen);
+        setJ(`failed:${id}`, { at: Date.now(), jobs: failedJobs(info) }); // for the Dashboard's "needs attention"
         for (const a of alerts) await send(server, a);
       } catch (e) { /* server not reachable: the health monitor reports that */ }
     }
@@ -91,4 +100,4 @@ async function tick() {
 function start() { if (!timer) { timer = setInterval(tick, INTERVAL); if (timer.unref) timer.unref(); setTimeout(tick, 60000); } }
 function stop() { if (timer) clearInterval(timer); timer = null; }
 
-module.exports = { remember, evaluate, tick, start, stop };
+module.exports = { remember, evaluate, tick, start, stop, failedJobs, lastFailed };

@@ -1208,12 +1208,12 @@ Router.register('databases', async (content, params = {}) => {
     const when = (t) => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
     pane.innerHTML = `
       <div class="dbg-bar"><b>Backups of ${esc(st.c)}</b><span class="ui-sub">in <span class="td-mono">${esc(b.dir)}</span>${b.local ? ' (DockGate\'s data folder)' : ' on the server'}</span><span style="flex:1"></span>
-        ${b.local ? '' : UI.btn('Schedule…', 'data-sched')} ${UI.primary('Back up now', 'data-bk')}</div>
+        ${b.local ? UI.btn('Schedule…', 'data-sched-local') : UI.btn('Schedule…', 'data-sched')} ${UI.primary('Back up now', 'data-bk')}</div>
       ${UI.table([{ label: 'Backup' }, { label: 'Size' }, { label: 'Made' }, { label: '', align: 'right' }], b.files.map(f => ({ cells: [
         `${f.whole ? UI.pill('info', 'whole server') : `<b>${esc(f.database)}</b>`} <span class="ui-sub">${f.format === 'custom' ? 'pg_dump custom' : 'SQL, gzip'}</span><div class="td-mono ui-sub" style="font-size:11px">${esc(f.name)}</div>`,
         formatBytes(f.size), when(f.mtime),
         `${UI.btn('Download', `data-dl="${esc(f.name)}"`)} ${f.restorable ? UI.btn('Restore…', `data-rs="${esc(f.name)}"`) : UI.btn('How to restore', `data-howto="${esc(f.name)}"`)} ${UI.menu([{ label: `${Icons.trash} Delete…`, attrs: `data-delbk="${esc(f.name)}"`, danger: true }])}`] })), { empty: 'No backups yet — "Back up now" makes one.', minWidth: 620 })}
-      <div class="ui-sub" style="margin-top:10px">A restore goes into a <b>new database</b> first, so you can look at it; then <b>Swap</b> puts it in place of the old one (kept, renamed). ${b.local ? 'Scheduled backups run on SSH servers (Scripts + Cron).' : 'Scheduled backups are a script in Server Console → Scripts with a Cron job, its log and failure alerts.'}</div>`;
+      <div class="ui-sub" style="margin-top:10px">A restore goes into a <b>new database</b> first, so you can look at it; then <b>Swap</b> puts it in place of the old one (kept, renamed). ${b.local ? 'Scheduled backups of this machine are a task in Tools → Schedules (with a failure alert), kept in this list.' : 'Scheduled backups are a script in Server Console → Scripts with a Cron job, its log and failure alerts.'}</div>`;
     const m = pane;
     m.querySelector('[data-bk]').onclick = () => UI.dialog({ title: `Back up ${esc(st.c)}`, saveLabel: 'Back up now',
       body: `<label class="ui-field"><span class="ui-label">What</span><select class="input" id="bk-w">${st.info.databases.filter(d => d.connect).map(d => `<option value="db:${esc(d.name)}" ${d.name === st.db ? 'selected' : ''}>Database ${esc(d.name)}${d.size != null ? ' · ' + formatBytes(d.size) : ''}</option>`).join('')}<option value="all">The whole server — every database and the users (pg_dumpall)</option></select></label>
@@ -1225,6 +1225,7 @@ Router.register('databases', async (content, params = {}) => {
         const r = await API.post(`${base()}/backups`, w === 'all' ? { kind: 'all' } : { database: w.slice(3), kind: ov.querySelector('#bk-f').value });
         showToast(`Backed up: ${r.file} (${formatBytes(r.size)})`); drawBackups();
       } });
+    const scl = m.querySelector('[data-sched-local]'); if (scl) scl.onclick = () => Router.navigate('schedules', { add: 'db_backup', container: st.c, database: st.db || '' });
     let sp = null;
     const sc = m.querySelector('[data-sched]'); if (sc) sc.onclick = () => UI.dialog({ title: 'Scheduled backups', saveLabel: 'Schedule',
       body: `<label class="ui-field"><span class="ui-label">What</span><select class="input" id="sc-d">${st.info.databases.filter(d => d.connect).map(d => `<option value="${esc(d.name)}" ${d.name === st.db ? 'selected' : ''}>Database ${esc(d.name)}</option>`).join('')}<option value="">The whole server (pg_dumpall)</option></select></label>

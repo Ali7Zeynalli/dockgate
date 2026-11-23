@@ -2,6 +2,24 @@
 
 ---
 
+## [2.88.0] - 2026-11-23
+
+### Added
+- **Tools → Schedules → Back up a database.** A PostgreSQL container's database (or all of them, `pg_dumpall`) on a schedule, on any server — this machine too. It is the same backup as Databases → Backups and is kept where those are, so it is restored from there; the newest *N* stay. On this machine, Databases → Backups → **Schedule…** opens it filled in.
+- **Tools → Schedules → Everything on a server.** One list of everything that runs on a schedule on a server: DockGate's tasks, deploy recipes with a schedule, cron jobs and systemd timers. Each row shows which clock its schedule is in, the next run, the last result, and **Open** to change it where it lives. Jobs starting within 10 minutes of each other are marked.
+- **Cron → Timers can be changed.** Each systemd timer has an on / off switch (`systemctl enable --now` / `disable --now`), **Run now** (its service once, with the last log lines) and **Log** (`journalctl -u`). Turned-off timers are listed too.
+- **Dashboard → Needs attention on all servers.** With several servers: containers in trouble (restarting, unhealthy, stopped with an error), images with a newer version, and scheduled work whose last run failed, on every server. **Open** switches to that server and opens the container or the page. A locked server (access password) shows only that it is locked.
+- **Certificates: wildcards through the DNS check (Cloudflare).** Under Let's Encrypt account → DNS check: a Cloudflare API token (stored encrypted, **Test the token**), for wildcard names only or for every certificate. DockGate adds the `_acme-challenge` TXT record, waits for public DNS, lets Let's Encrypt check it and removes it. **Use Let's Encrypt** then covers a site's wildcard names, renewals use it too, and **Why? · fix** offers to take wildcard certificates over.
+- **Certificates: alerts keep coming and say why.** An expired certificate is alerted every day (not once). Each alert has the reason from **Why? · fix**, what DockGate fixed by itself and the fixes to choose from.
+- **Certificates: Fix safe problems by itself** (on by default). The daily check reloads a proxy that still serves an old certificate and turns on certbot's timer when it is installed but off; everything else is only suggested. **Why? · fix** also offers **Turn on certbot.timer**.
+
+### Fixed
+- **Cron and Timers tabs were empty.** The page title got a help (?) button, so the tab no longer found its own section.
+- **A schedule's "Keep" of 0 became 7** (volume and database backups); it is now refused like any value outside 1–365.
+- On this machine, Databases → Backups → Schedule pointed to Tools → Schedules, which had no database backup.
+
+---
+
 ## [2.87.0] - 2026-11-23
 
 ### Added

@@ -152,6 +152,34 @@ test('certificate alerts: once per threshold, internal and test certificates ski
   } finally { HM.deliver = orig; }
 });
 
+test('expired certificates: an alert every day, with the reason and what was fixed by itself', async () => {
+  const HM = require('../../server/notifications/health-monitor');
+  const D = require('../../server/cert-doctor');
+  const sent = []; const orig = HM.deliver, oDiag = D.diagnose, oFix = D.fix; const fixed = [];
+  HM.deliver = async (type, srv, subject, text) => { sent.push({ type, subject, text }); };
+  D.diagnose = async (fp) => ({ fingerprint: fp, verdict: 'x', checks: [{ ok: false, title: 'DNS of old.example.test', detail: '10.9.9.9 — not this server' }],
+    fixes: [{ id: 'reload', label: 'Reload the proxy' }, { id: 'takeover', label: 'Let DockGate get and renew it' }] });
+  D.fix = async (fp, id) => { fixed.push(id); return { ok: true, steps: [] }; };
+  try {
+    const c = { names: ['old.example.test'], issuer: 'R11', validTo: '2026-11-01T00:00:00Z', daysLeft: -3, renewal: 'none (a file)', renewer: 'none', auto: false, internal: false, staging: false, proxies: ['nginx'], served: null, fingerprint: 'EXP1' };
+    await PE.certAlerts({ id: 'local', name: 'Local' }, { certs: [c], errors: [] });
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].subject, /expired 3 days ago/);
+    assert.match(sent[0].text, /Why: DNS of old\.example\.test: 10\.9\.9\.9/);
+    assert.match(sent[0].text, /Fixed by DockGate:\n✓ Reload the proxy/);
+    assert.match(sent[0].text, /To fix .*Let DockGate get and renew it/);
+    assert.deepEqual(fixed, ['reload'], 'only the safe fix runs by itself');
+    await PE.certAlerts({ id: 'local', name: 'Local' }, { certs: [c], errors: [] });
+    assert.equal(sent.length, 1, 'once a day');
+    PE._q.alertPrune.run(Date.now() + 1000); // as if a day passed
+    await PE.certAlerts({ id: 'local', name: 'Local' }, { certs: [{ ...c, daysLeft: -4 }], errors: [] });
+    assert.equal(sent.length, 2); assert.match(sent[1].subject, /expired 4 days ago/);
+    PE.setAcmeSettings({ autoFix: false }); fixed.length = 0; PE._q.alertPrune.run(Date.now() + 1000);
+    await PE.certAlerts({ id: 'local', name: 'Local' }, { certs: [c], errors: [] });
+    assert.deepEqual(fixed, []); assert.match(sent[2].text, /To fix .*Reload the proxy/);
+  } finally { HM.deliver = orig; D.diagnose = oDiag; D.fix = oFix; PE.setAcmeSettings({ autoFix: true }); }
+});
+
 test('a write that breaks half way never empties the file (the cause of a lost Caddyfile in an early build)', async () => {
   fs.writeFileSync(conf, 'server { listen 80; server_name keep.example.test; }\n'); setStatus(200, 200);
   fs.writeFileSync(path.join(dir, 'fail-base64'), '1');

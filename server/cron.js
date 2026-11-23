@@ -41,7 +41,8 @@ function readScript() {
     s('etccrontab'), 'cat /etc/crontab 2>/dev/null || sudo -n cat /etc/crontab 2>/dev/null',
     s('crond'), `for f in /etc/cron.d/*; do [ -f "$f" ] || continue; echo "__FILE__$f"; cat "$f" 2>/dev/null || sudo -n cat "$f" 2>/dev/null; done`,
     s('periodic'), 'for p in hourly daily weekly monthly; do [ -d /etc/cron.$p ] && for f in /etc/cron.$p/*; do [ -f "$f" ] && echo "$p $(basename "$f")"; done; done',
-    s('timers'), 'command -v systemctl >/dev/null 2>&1 && systemctl show --all --property=Id,ActiveState,NextElapseUSecRealtime,LastTriggerUSec,TimersCalendar,Unit "*.timer" --no-pager 2>/dev/null',
+    s('timerfiles'), `command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files --type=timer --no-legend --no-pager 2>/dev/null | awk '$1 !~ /@\\./ {print $1, $2}'`,
+    s('timers'), `command -v systemctl >/dev/null 2>&1 && { u=$(systemctl list-unit-files --type=timer --no-legend --no-pager 2>/dev/null | awk '$1 !~ /@\\./ {print $1}'); [ -n "$u" ] && systemctl show --property=Id,ActiveState,UnitFileState,NextElapseUSecRealtime,LastTriggerUSec,TimersCalendar,Unit $u --no-pager 2>/dev/null; }`,
     s('runs'), `{ command -v journalctl >/dev/null 2>&1 && journalctl -t CRON -t crond -t cron --since "-2 days" -o short-unix --no-pager -q 2>/dev/null || sudo -n journalctl -t CRON -t crond --since "-2 days" -o short-unix --no-pager -q 2>/dev/null; } | grep -E "CMD|CMDEND" | tail -n 800`,
     s('state'), `for f in ${STATE_USER}/*.last; do [ -f "$f" ] && echo "user $(basename "$f" .last) $(cat "$f")"; done; for f in ${STATE_ROOT}/*.last; do [ -f "$f" ] && echo "root $(basename "$f" .last) $(cat "$f" 2>/dev/null || sudo -n cat "$f" 2>/dev/null)"; done; true`,
     s('end'),
@@ -60,17 +61,51 @@ function sections(out) {
 function rc(text) { const m = /__RC__(\d+)\s*$/.exec(text || ''); return { code: m ? Number(m[1]) : 1, text: String(text || '').replace(/__RC__\d+\s*$/, '').replace(/\n$/, '') }; }
 const noCrontab = (t) => /no crontab for/i.test(t);
 
-// systemd timers: blocks of key=value separated by a blank line
-function parseTimers(text) {
+// systemd timers: blocks of key=value separated by a blank line (systemctl show), plus "name state" lines of the
+// installed timer files, so a turned-off timer is listed too (and every timer when systemd is not running).
+function parseTimers(text, filesText = '') {
   const out = [];
+  const files = new Map(String(filesText || '').split('\n').map(l => l.trim().split(/\s+/)).filter(a => a[0] && a[0].endsWith('.timer')).map(a => [a[0], a[1] || '']));
   for (const block of String(text || '').split(/\n\s*\n/)) {
     const o = {}; block.split('\n').forEach(l => { const i = l.indexOf('='); if (i > 0) o[l.slice(0, i)] = l.slice(i + 1); });
     if (!o.Id || !o.Id.endsWith('.timer')) continue;
     const cal = /OnCalendar=([^;]+?)\s*;/.exec(o.TimersCalendar || '');
     const ts = (v) => { const t = Date.parse(String(v || '').replace(/^\w{3} /, '').replace(/ ([A-Z]{2,5})$/, '')); return Number.isFinite(t) ? t : null; };
-    out.push({ unit: o.Id, runs: o.Unit || '', active: o.ActiveState, calendar: cal ? cal[1].trim() : '', next: ts(o.NextElapseUSecRealtime), last: ts(o.LastTriggerUSec) });
+    const state = o.UnitFileState || files.get(o.Id) || '';
+    out.push({ unit: o.Id, runs: o.Unit || o.Id.replace(/\.timer$/, '.service'), active: o.ActiveState, state, canToggle: TOGGLABLE.has(state), calendar: cal ? cal[1].trim() : '', next: ts(o.NextElapseUSecRealtime), last: ts(o.LastTriggerUSec) });
   }
-  return out.filter(t => t.active === 'active' || t.next);
+  const seen = new Set(out.map(t => t.unit));
+  for (const [unit, state] of files) if (!seen.has(unit)) out.push({ unit, runs: unit.replace(/\.timer$/, '.service'), active: 'unknown', state, canToggle: TOGGLABLE.has(state), calendar: '', next: null, last: null });
+  return out.filter(t => t.active === 'active' || t.next || t.state === 'enabled' || t.state === 'disabled').sort((a, b) => a.unit.localeCompare(b.unit));
+}
+const TOGGLABLE = new Set(['enabled', 'disabled']);
+const UNIT_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,200}\.(timer|service)$/;
+const rootSh = (cmd) => `if [ "$(id -u)" = 0 ]; then ${cmd}; else sudo -n ${cmd}; fi`;
+
+/** systemd timers: turn on or off (enable --now / disable --now), run its service once now, or read its log. */
+async function timerAction(server, unit, action) {
+  if (!UNIT_RE.test(String(unit || '')) || !String(unit).endsWith('.timer')) throw Object.assign(new Error('Unknown timer'), { statusCode: 400 });
+  const info = await remoteExec.execRemote(server, `systemctl show --property=Unit,UnitFileState ${shq(unit)} --no-pager 2>/dev/null; echo; systemctl list-unit-files ${shq(unit)} --no-legend --no-pager 2>/dev/null`);
+  const io = String(info.stdout || '');
+  if (!io.includes(unit) && !/Unit=/.test(io)) throw Object.assign(new Error(`${unit} is not installed on this server`), { statusCode: 404 });
+  const svc = (/^Unit=(.+)$/m.exec(io) || [])[1] || unit.replace(/\.timer$/, '.service');
+  if (!UNIT_RE.test(svc)) throw Object.assign(new Error('Unexpected service name'), { statusCode: 400 });
+  let cmd, limit = 30000;
+  if (action === 'enable') cmd = rootSh(`systemctl enable --now ${shq(unit)}`);
+  else if (action === 'disable') cmd = rootSh(`systemctl disable --now ${shq(unit)}`);
+  else if (action === 'run') { cmd = `${rootSh(`systemctl start ${shq(svc)}`)}; rc=$?; ${rootSh(`journalctl -u ${shq(svc)} -n 40 --no-pager -o short-iso`)} 2>/dev/null; exit $rc`; limit = 120000; }
+  else if (action === 'logs') cmd = `journalctl -u ${shq(svc)} -n 300 --no-pager -o short-iso 2>/dev/null || ${rootSh(`journalctl -u ${shq(svc)} -n 300 --no-pager -o short-iso`)}`;
+  else throw Object.assign(new Error('Unknown action'), { statusCode: 400 });
+  let timer;
+  const r = await Promise.race([
+    remoteExec.execRemote(server, `${cmd} 2>&1`),
+    new Promise((_, rej) => { timer = setTimeout(() => rej(Object.assign(new Error(action === 'run' ? `${svc} is still running after 2 minutes — it goes on on the server; see its log` : 'No answer from the server'), { statusCode: 504 })), limit); }),
+  ]).finally(() => clearTimeout(timer));
+  const output = (String(r.stdout || '') + String(r.stderr || '')).trimEnd();
+  const noSudo = /a password is required|sudo: .*(terminal|password)/i.test(output);
+  const hint = noSudo ? 'This needs root: log in as root or give the SSH user passwordless sudo.'
+    : /not been booted with systemd|Failed to connect to bus/i.test(output) ? 'systemd is not running on this server (a container or WSL?): timers can not be started or stopped here.' : '';
+  return { ok: r.code === 0, code: r.code, unit, service: svc, output: hint ? `${output}\n${hint}` : output };
 }
 // Last run of each command from the cron log: "<unix> host CRON[pid]: (root) CMD (command)"
 function parseRuns(text) {
@@ -127,7 +162,7 @@ async function read(server) {
   const periodic = String(S.periodic || '').split('\n').filter(Boolean).map(l => { const [p, name] = l.split(' '); return { period: p, name }; });
   return {
     sshUser, sudo, cronRunning: String(S.cronrun).trim() === 'yes', now, tz: tz || '+0000', tzName: tzName || '', offsetMin: off,
-    sources, periodic, timers: parseTimers(S.timers), dgFile: DG_FILE,
+    sources, periodic, timers: parseTimers(S.timers, S.timerfiles), dgFile: DG_FILE,
   };
 }
 
@@ -214,4 +249,4 @@ async function runNow(server, source, command, user) {
   return { output: out.replace(/__DGRUN__\d+ \d+\s*$/, '').trimEnd(), code: m ? Number(m[1]) : r.code, ms: m ? Number(m[2]) : null };
 }
 
-module.exports = { read, change, runNow, sourceText, wrapCommand, unwrapCommand, wrapper, readScript, sections, parseTimers, parseRuns, parseState, offsetMin, SOURCES, DG_FILE, WRAP_ROOT, STATE_ROOT };
+module.exports = { read, change, runNow, timerAction, sourceText, wrapCommand, unwrapCommand, wrapper, readScript, sections, parseTimers, parseRuns, parseState, offsetMin, SOURCES, DG_FILE, WRAP_ROOT, STATE_ROOT };

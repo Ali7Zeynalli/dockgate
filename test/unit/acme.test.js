@@ -22,6 +22,7 @@ function fakeCa({ failChallenge = false } = {}) {
   const nonces = new Set(); const accounts = new Map(); const orders = new Map(); const seen = { badNonce: 0, posts: 0 };
   let base; const challenges = new Map(); // token → { authz, expect, domain }
   let answers = null; // filled by the test's setChallenge
+  const dnsRecords = new Map(); // fqdn → [TXT values], filled by the test's dns.set
   const nonce = () => { const n = b64u(crypto.randomBytes(12)); nonces.add(n); return n; };
   const srv = http.createServer((req, res) => {
     let body = ''; req.on('data', c => { body += c; }); req.on('end', () => {
@@ -41,11 +42,17 @@ function fakeCa({ failChallenge = false } = {}) {
       if (req.url === '/acct') { assert.equal(payload.termsOfServiceAgreed, true); const kid = `${base}/acct/1`; accounts.set(kid, jwk); return send(201, { status: 'valid' }, { Location: kid }); }
       if (req.url === '/order') {
         const id = String(orders.size + 1); const o = { status: 'pending', identifiers: payload.identifiers, authorizations: [], finalize: `${base}/fin/${id}`, jwk };
-        for (const idf of payload.identifiers) { const tok = b64u(crypto.randomBytes(16)); const az = `${base}/authz/${tok}`; o.authorizations.push(az); challenges.set(tok, { status: 'pending', domain: idf.value, expect: `${tok}.${A.thumbprint(jwk)}` }); }
+        for (const idf of payload.identifiers) { const tok = b64u(crypto.randomBytes(16)); const az = `${base}/authz/${tok}`; o.authorizations.push(az); const wild = idf.value.startsWith('*.'); challenges.set(tok, { status: 'pending', domain: wild ? idf.value.slice(2) : idf.value, wildcard: wild, expect: `${tok}.${A.thumbprint(jwk)}` }); }
         orders.set(id, o); return send(201, o, { Location: `${base}/o/${id}` });
       }
       let m;
-      if ((m = req.url.match(/^\/authz\/(.+)$/))) { const c = challenges.get(m[1]); return send(200, { status: c.status, identifier: { type: 'dns', value: c.domain }, challenges: [{ type: 'dns-01', url: `${base}/x`, token: 'no' }, { type: 'http-01', url: `${base}/chall/${m[1]}`, token: m[1], ...(c.error ? { error: c.error } : {}) }] }); }
+      if ((m = req.url.match(/^\/dnschall\/(.+)$/))) {
+        const c = challenges.get(m[1]); // what the CA would read from DNS: TXT _acme-challenge.<domain>
+        const txt = (dnsRecords.get(`_acme-challenge.${c.domain}`) || []);
+        if (!txt.includes(A.dnsValue(c.expect))) { c.status = 'invalid'; c.error = { detail: `No TXT record found at _acme-challenge.${c.domain}` }; } else c.status = 'valid';
+        return send(200, { status: 'processing' });
+      }
+      if ((m = req.url.match(/^\/authz\/(.+)$/))) { const c = challenges.get(m[1]); return send(200, { status: c.status, identifier: { type: 'dns', value: c.domain }, ...(c.wildcard ? { wildcard: true } : {}), challenges: [{ type: 'dns-01', url: `${base}/dnschall/${m[1]}`, token: m[1] }, { type: 'http-01', url: `${base}/chall/${m[1]}`, token: m[1], ...(c.error ? { error: c.error } : {}) }] }); }
       if ((m = req.url.match(/^\/chall\/(.+)$/))) {
         const c = challenges.get(m[1]);
         // what the CA would fetch from http://domain/.well-known/acme-challenge/<token>
@@ -68,7 +75,7 @@ function fakeCa({ failChallenge = false } = {}) {
       return send(404, { detail: 'no route' });
     });
   });
-  return new Promise(res => srv.listen(0, '127.0.0.1', () => { base = `http://127.0.0.1:${srv.address().port}`; res({ url: `${base}/dir`, seen, setAnswers: (m2) => { answers = m2; }, close: () => { srv.close(); fs.rmSync(dir, { recursive: true, force: true }); }, nonces }); }));
+  return new Promise(res => srv.listen(0, '127.0.0.1', () => { base = `http://127.0.0.1:${srv.address().port}`; res({ url: `${base}/dir`, seen, dnsRecords, setAnswers: (m2) => { answers = m2; }, close: () => { srv.close(); fs.rmSync(dir, { recursive: true, force: true }); }, nonces }); }));
 }
 
 test('issue: account, http-01 answered, CSR, certificate chain and key that match', { skip: !haveOpenssl && 'openssl not available' }, async () => {
@@ -108,4 +115,25 @@ test('a stale nonce is retried with the fresh one', { skip: !haveOpenssl && 'ope
 
 test('wildcards are refused (they need a DNS check)', async () => {
   await assert.rejects(A.issue({ directory: 'http://127.0.0.1:9/dir', domains: ['*.example.test'], setChallenge: async () => {} }), /wildcard/);
+});
+
+test('issue with the DNS check: a wildcard and its base name, TXT records added, waited for and removed', { skip: !haveOpenssl && 'openssl not available' }, async () => {
+  const ca = await fakeCa(); ca.setAnswers(new Map()); const log = []; const waited = []; let n = 0;
+  const dns = {
+    set: async (fqdn, value) => { const l = ca.dnsRecords.get(fqdn) || []; l.push(value); ca.dnsRecords.set(fqdn, l); return { fqdn, value, id: ++n }; },
+    clear: async (h) => { ca.dnsRecords.set(h.fqdn, (ca.dnsRecords.get(h.fqdn) || []).filter(v => v !== h.value)); },
+    wait: async (fqdn, value) => { waited.push(fqdn); assert.ok((ca.dnsRecords.get(fqdn) || []).includes(value)); },
+  };
+  try {
+    const r = await A.issue({ directory: ca.url, domains: ['*.example.test', 'example.test'], dns, log: (m) => log.push(m), setChallenge: async () => { throw new Error('no HTTP check with dns'); } });
+    const leaf = new crypto.X509Certificate(r.certPem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/)[0]);
+    assert.match(leaf.subjectAltName, /DNS:\*\.example\.test/); assert.match(leaf.subjectAltName, /DNS:example\.test/);
+    assert.deepEqual(waited, ['_acme-challenge.example.test', '_acme-challenge.example.test']);
+    assert.deepEqual(ca.dnsRecords.get('_acme-challenge.example.test'), [], 'records removed after the check');
+    assert.ok(log.some(l => /\*\.example\.test: checked/.test(l)));
+  } finally { ca.close(); }
+});
+
+test('a wildcard without the DNS check is refused before anything is asked', async () => {
+  await assert.rejects(() => A.issue({ directory: 'http://127.0.0.1:1/dir', domains: ['*.example.test'], setChallenge: async () => {} }), /needs the DNS check/);
 });

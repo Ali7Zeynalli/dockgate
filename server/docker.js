@@ -9,6 +9,7 @@ const { decrypt } = require('./auth/secrets');
 // _docker dəyişəni runtime-da setActiveServer() ilə dəyişir
 let _docker = new Docker({ socketPath: '/var/run/docker.sock' });
 let _activeServerId = 'local';
+const scope = new (require('async_hooks').AsyncLocalStorage)(); // see withServer()
 
 function createLocalClient() {
   return new Docker({ socketPath: '/var/run/docker.sock' });
@@ -64,9 +65,9 @@ function setActiveServer(serverId) {
   return _activeServerId;
 }
 
-function getActiveServerId() { return _activeServerId; }
+function getActiveServerId() { const s = scope.getStore(); return s ? s.id : _activeServerId; }
 
-function isLocalActive() { return _activeServerId === 'local'; }
+function isLocalActive() { return getActiveServerId() === 'local'; }
 
 /**
  * Operations requiring the host CLI (compose, buildx, build-cache prune, self-update,
@@ -75,16 +76,30 @@ function isLocalActive() { return _activeServerId === 'local'; }
  * throw a clear error instead of silently acting on the wrong host.
  */
 function assertLocalActive(operation) {
-  if (_activeServerId !== 'local') {
-    const err = new Error(`"${operation}" is only supported on the local host (active server: ${_activeServerId}). This operation requires the host CLI / host filesystem and does not apply to a remote SSH host. Switch to Local first.`);
+  if (getActiveServerId() !== 'local') {
+    const err = new Error(`"${operation}" is only supported on the local host (active server: ${getActiveServerId()}). This operation requires the host CLI / host filesystem and does not apply to a remote SSH host. Switch to Local first.`);
     err.statusCode = 400;
     throw err;
   }
 }
 
 // docker dəyişəninə hər müraciətdə getter işləyir — dinamik client dönür
+// withServer(id, fn): run fn with `docker` and getActiveServerId() pointing at another server, for that async call
+// chain only (a scheduled task must not depend on — or change — the server picked in the top bar).
+function withServer(serverId, fn) {
+  const id = serverId || 'local';
+  if (id === getActiveServerId()) return fn();
+  let client;
+  if (id === 'local') client = createLocalClient();
+  else {
+    const server = require('./db').stmts.getServer.get(id);
+    if (!server) throw new Error(`Server not found: ${id}`);
+    client = createSshClient(server);
+  }
+  return scope.run({ id, docker: client }, fn);
+}
 const docker = new Proxy({}, {
-  get(_, prop) { return _docker[prop]; },
+  get(_, prop) { const s = scope.getStore(); return (s ? s.docker : _docker)[prop]; },
 });
 
 // ============ CACHE LAYER ============
@@ -1222,7 +1237,7 @@ async function dockerSummaryForServer(server) {
 
 module.exports = {
   docker, invalidateCache, createLocalClient, createSshClient, dockerSummaryForServer,
-  setActiveServer, getActiveServerId, isLocalActive, assertLocalActive, testServerConnection,
+  setActiveServer, getActiveServerId, withServer, isLocalActive, assertLocalActive, testServerConnection,
   listContainers, inspectContainer, getContainerStats, containerAction,
   containerTop, containerExecOnce, containerExportStream, updateContainer, commitContainer, recreateContainer,
   containerListFiles, containerDownloadFile, containerUpload,

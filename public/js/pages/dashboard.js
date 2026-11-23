@@ -30,6 +30,37 @@ Router.register('dashboard', async (content) => {
     return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:18px">${cards}</div>`;
   }
 
+  // Needs attention on all servers: newer images, containers in trouble, failed scheduled work (server/fleet-attention.js).
+  async function attention() {
+    const box = content.querySelector('#dash-attn'); if (!box) return;
+    let d; try { d = await API.get('/servers/attention'); } catch (e) { box.innerHTML = ''; return; }
+    if (!Router.isActiveNav(pageNavId) || !document.body.contains(box)) return;
+    const rows = [];
+    for (const sv of d.servers) {
+      const who = `<b>${escapeHtml(sv.name)}</b>`;
+      if (sv.locked) { rows.push({ sv, kind: 'locked', cells: [who, UI.pill('off', 'locked'), '<span class="ui-sub">Needs its access password — switch to it to see inside</span>', ''] }); continue; }
+      if (!sv.reachable) rows.push({ sv, kind: 'down', cells: [who, UI.pill('bad', 'not reachable'), `<span class="ui-sub">${escapeHtml(sv.error || '')}</span>`, ''] });
+      sv.problems.forEach(p => rows.push({ sv, kind: 'ctr', target: p.name, cells: [who, UI.pill(p.problem === 'unhealthy' || p.problem === 'restarting' ? 'warn' : 'bad', escapeHtml(p.problem)), `<span class="td-mono">${escapeHtml(p.name)}</span>${p.project ? ` <span class="ui-sub">· ${escapeHtml(p.project)}</span>` : ''}<div class="ui-sub">${escapeHtml(p.status)}</div>`] }));
+      sv.updates.forEach(u => rows.push({ sv, kind: 'upd', target: u.containers[0] || null, cells: [who, UI.pill('info', 'newer image'), `<span class="td-mono">${escapeHtml(u.image)}</span>${u.from || u.to ? ` <span class="ui-sub">${escapeHtml(u.from || '?')} → ${escapeHtml(u.to || 'newer')}</span>` : ''}<div class="ui-sub">${u.containers.length ? `used by ${escapeHtml(u.containers.join(', '))}` : 'no container uses it now'}</div>`] }));
+      sv.jobs.forEach(j => rows.push({ sv, kind: j.source === 'Cron' ? 'cron' : j.source === 'Deploy recipe' ? 'recipe' : 'task', target: j.note, cells: [who, UI.pill('bad', 'failed'), `${escapeHtml(j.source)} · <b>${escapeHtml(j.name)}</b>${j.note ? ` <span class="ui-sub">· ${escapeHtml(j.note.slice(0, 120))}</span>` : ''}${j.at ? `<div class="ui-sub">${formatTime(new Date(j.at).toISOString())}</div>` : ''}`] }));
+    }
+    const t = d.totals;
+    const summary = [t.problems && `${t.problems} container${t.problems === 1 ? '' : 's'} in trouble`, t.updates && `${t.updates} newer image${t.updates === 1 ? '' : 's'}`, t.jobs && `${t.jobs} failed job${t.jobs === 1 ? '' : 's'}`, t.unreachable && `${t.unreachable} not reachable`].filter(Boolean).join(' · ');
+    box.innerHTML = rows.length ? `${UI.header('Needs attention on all servers', summary + '. Open goes to that server.')}${UI.table([{ label: 'Server' }, { label: '' }, { label: 'What' }, { label: '', align: 'right' }],
+      rows.map((r, i) => ({ cells: [...r.cells.slice(0, 3), r.kind === 'down' ? '' : UI.btn('Open', `data-attn="${i}"`)] })), { minWidth: 760 })}`
+      : `<div class="ui-sub">✓ Nothing needs attention on any server: no container in trouble, no newer image, no failed scheduled job.</div>`;
+    box.querySelectorAll('[data-attn]').forEach(b => b.addEventListener('click', async () => {
+      const r = rows[Number(b.dataset.attn)];
+      if (!(await useServer(r.sv.id))) return; // switching asks for the access password when one is set
+      if ((r.kind === 'ctr' || r.kind === 'upd') && r.target) Router.navigate('container-detail', { id: r.target });
+      else if (r.kind === 'upd') Router.navigate('resources', { tab: 'containers' });
+      else if (r.kind === 'cron') Router.navigate('srv-automation', { tab: 'srv-cron' });
+      else if (r.kind === 'recipe') Router.navigate('tasks', { dir: r.target });
+      else if (r.kind === 'task') Router.navigate('schedules');
+      else Router.navigate('dashboard');
+    }));
+  }
+
   // Observe → Uptime at a glance: "Sites · 11/12 up" (red when one is down).
   function uptimeButton(list) {
     if (!Array.isArray(list) || !list.length) return '';
@@ -78,6 +109,7 @@ Router.register('dashboard', async (content) => {
            <button class="btn btn-secondary btn-sm" id="dash-refresh" title="Refresh">${Icons.refresh}</button>`)}
 
         ${fleetCards(srvData.servers || [], (fleetOv && fleetOv.servers) || {}, activeId)}
+        ${(srvData.servers || []).length > 1 ? '<div id="dash-attn" style="margin-bottom:18px"></div>' : ''}
 
         <!-- Active remote server's host metrics (renderHostMonitoring owns its own 5s poll) -->
         <div id="dash-host" class="mb-3"></div>
@@ -381,6 +413,7 @@ Router.register('dashboard', async (content) => {
       // "connecting…" and rebuilt the chart every 30s). We only mount fresh when there's no live node yet or
       // the active server changed; otherwise we reattach the still-polling node. Local host metrics need the
       // /proc mount (deferred), so skipped.
+      attention(); // not awaited: it asks every server
       const dashHost = document.getElementById('dash-host');
       if (dashHost && typeof renderHostMonitoring === 'function') { // local too: the machine DockGate runs on
         if (hostNode && hostForServer === activeId) {

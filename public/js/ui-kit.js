@@ -11,7 +11,7 @@ const UI = {
     const first = root.querySelector('.ui-ph'); if (!first) return;
     const parent = first.parentElement; let on = false;
     [...parent.children].forEach(el => {
-      if (el.classList.contains('ui-ph')) { const t = (el.querySelector('.ui-ph-title') || {}).textContent || ''; on = titles.includes(t.trim()); }
+      if (el.classList.contains('ui-ph')) { const h = el.querySelector('.ui-ph-title'); const t = h ? [...h.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('') : ''; on = titles.includes(t.trim()); } // the title's own text, not its ? help button
       el.style.display = on ? '' : 'none';
     });
   },

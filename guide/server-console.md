@@ -119,6 +119,8 @@ The wrapper of root's jobs is a root-owned copy (`/usr/local/lib/dockgate/dg-cro
 
 ⋯ → **Run now…** runs the command once as its user and shows the output and exit code (up to 2 minutes).
 
+**Timers:** each systemd timer has an on / off switch (`systemctl enable --now` / `disable --now`, asked first; it lasts over a reboot), **Run now** (starts the service the timer runs, once, and shows its last log lines; up to 2 minutes) and **Log** (`journalctl -u <service>`). Turned-off timers are listed too. The timer files themselves are not changed. On a machine where systemd does not run (a container, WSL) timers are listed but can not be started or stopped.
+
 ## Automation → Scripts
 
 Build a shell script from **blocks** — DockGate writes the script, safely quoted — then save it to the server, run it once, or schedule it.
