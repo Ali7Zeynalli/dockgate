@@ -37,3 +37,12 @@ test('Caddy JSON: told apart from a Caddyfile, its sites read through subroutes'
   assert.equal(P.isCaddyJson('{\n  email a@b.c\n}\na.test {\n  reverse_proxy web:80\n}\n'), false, 'a Caddyfile with a global options block');
   assert.deepEqual(P.parseCaddyJson(json).map(s => [s.domain, s.https, s.targets.join(',')]), [['a.test', true, 'web:8080'], ['www.a.test', true, 'web:8080']]);
 });
+
+test('sites without a domain are listed by their address (server_name _, an IP, a port, a path)', () => {
+  const t = P.parseNginxT('# configuration file /etc/nginx/conf.d/default.conf:\nserver { listen 80 default_server; server_name _; location / { proxy_pass http://app:3000; } }\nserver { listen 8080; location / { proxy_pass http://api:8000; } }\nserver { listen 80; server_name 192.168.1.10; location / { proxy_pass http://web:80; } }\nserver { listen 81; server_name _; root /usr/share/nginx/html; }\n');
+  const n = P.nginxSites(t).filter(s => s.nameless);
+  assert.deepEqual(n.map(s => [s.domain, s.port, s.anyName, s.targets.join()]), [[':80', 80, true, 'app:3000'], [':8080', 8080, true, 'api:8000'], ['192.168.1.10', 80, false, 'web:80']], 'a default page without proxy_pass is not a site');
+  assert.deepEqual(P.parseCaddyfile(':8080 {\n  reverse_proxy api:8000\n}\nhttp://10.0.0.5 {\n  reverse_proxy web:80\n}\n').map(s => [s.domain, !!s.nameless]), [[':8080', true], ['10.0.0.5', true]]);
+  assert.deepEqual(P.traefikSites({ 'traefik.http.routers.a.rule': 'PathPrefix(`/api`)' }).map(s => [s.domain, s.nameless]), [['/api', true]]);
+  assert.deepEqual(P.parseHaproxy('frontend web\n  bind *:80\n  default_backend app\nbackend app\n  server a1 app:3000\n').map(s => [s.domain, s.nameless, s.targets.join()]), [[':80', true, 'app:3000']]);
+});

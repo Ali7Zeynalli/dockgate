@@ -8,6 +8,16 @@ Router.register('proxies', async (content, params = {}) => {
   const e = (s) => escapeHtml(String(s == null ? '' : s));
   const enc = encodeURIComponent;
   const srv = Store.get('activeServer') || {};
+  // where a site opens: its domain, or (no domain) the server's address on the port the proxy publishes for it
+  const siteUrl = (s) => {
+    const scheme = s.https ? 'https' : 'http';
+    if (!s.nameless) return `${scheme}://${s.domain}`;
+    const host = (srv.id && srv.id !== 'local' && srv.host) || location.hostname;
+    const path = s.domain.startsWith('/') ? s.domain : '';
+    const port = s.openPort && !(scheme === 'http' && s.openPort === 80) && !(scheme === 'https' && s.openPort === 443) ? `:${s.openPort}` : '';
+    return `${scheme}://${host}${port}${path}`;
+  };
+  const siteName = (s) => !s.nameless ? `<b>${e(s.domain)}</b>` : `<b>${e(s.domain)}</b> ${UI.chip('no domain')}<div class="ui-sub">${s.domain.startsWith('/') ? 'this path on any name' : s.anyName ? `any name on port ${e(s.port)}` : `by IP, port ${e(s.port)}`}${s.port && !s.openPort && !s.domain.startsWith('/') ? ' · not published' : ''}</div>`;
   const go = (t, extra = {}) => Router.navigate('proxies', { tab: t, ...extra }, { replace: true });
   const sslPill = (d) => d == null ? '' : d < 0 ? UI.pill('bad', `expired ${-d} d ago`) : d <= 14 ? UI.pill('warn', `${d} days`) : UI.pill('ok', `${d} days`);
   const card = (t, inner, extra = '') => `<div class="card" style="padding:14px 16px">${t ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b>${t}</b><span style="flex:1"></span>${extra}</div>` : ''}${inner}</div>`;
@@ -142,23 +152,23 @@ Router.register('proxies', async (content, params = {}) => {
   function siteMenu(s) {
     const p = proxyOf(s.proxy);
     const fileKind = FILE_KINDS.includes(p.kind) || p.kind === 'npm';
-    const fixed = p.swarmService || (p.kind === 'caddy' && p.caddyJson); // read-only here: a Swarm service, or a Caddy JSON config (edited in Config files)
+    const fixed = p.swarmService || (p.kind === 'caddy' && p.caddyJson) || s.nameless; // no domain: the forms and Let's Encrypt work on names // read-only here: a Swarm service, or a Caddy JSON config (edited in Config files)
     const canCert = (p.kind === 'nginx' || p.kind === 'apache') && !fixed;
     const canLb = ['nginx', 'caddy', 'haproxy'].includes(p.kind) && (s.targetsAll || []).length && !fixed;
     const items = [
-      [`<a class="btn btn-secondary" href="${s.https ? 'https' : 'http'}://${e(s.domain)}" target="_blank" rel="noopener">Open ↗</a>`, 'Open the site in a new tab.'],
+      ...(s.nameless && !s.openPort && !s.domain.startsWith('/') ? [] : [[`<a class="btn btn-secondary" href="${e(siteUrl(s))}" target="_blank" rel="noopener">Open ↗</a>`, `Open ${e(siteUrl(s))} in a new tab.`]]),
       [UI.btn('+ Uptime check', 'data-a="up"'), 'Watch it on Web → Uptime (status, response time, certificate days).'],
-      ...(fixed ? [[UI.chip(p.swarmService ? 'Swarm service' : 'Caddy JSON config'), p.swarmService ? 'Read-only here: change the config where the service gets it, then update it in Swarm → Services.' : 'Site settings and load balancing write Caddyfiles: change this JSON in Config files.']] : []),
+      ...(fixed ? [[UI.chip(s.nameless ? 'No domain' : p.swarmService ? 'Swarm service' : 'Caddy JSON config'), s.nameless ? 'Reached by IP or port, not by a name: site settings, load balancing and Let\'s Encrypt work on domain names — change it in the editor. Put a domain on it with “Put a container on a domain”.' : p.swarmService ? 'Read-only here: change the config where the service gets it, then update it in Swarm → Services.' : 'Site settings and load balancing write Caddyfiles: change this JSON in Config files.']] : []),
       ...(['nginx', 'caddy'].includes(p.kind) && !fixed ? [[UI.btn('Site settings…', 'data-a="settings"'), 'Names, where it goes, WebSockets, upload limit, http → https — as a form.']] : []),
       ...(fileKind && s.file && s.file.startsWith('/') ? [[UI.btn('Edit the config', 'data-a="edit"'), `${e(s.file)}${s.line ? ':' + s.line : ''}`]] : []),
       ...(canLb ? [[UI.btn('Load balancing…', 'data-a="lb"'), 'The containers behind the site, the method, backup servers.']] : []),
       ...(canCert ? [[UI.btn(s.https ? "Use a Let's Encrypt certificate" : 'Add HTTPS (Let\'s Encrypt)', 'data-a="cert"'), s.https ? 'DockGate gets the certificate and renews it; the site\'s certificate lines are switched to it.' : 'DockGate gets a certificate, adds the HTTPS server and sends http to https.']] : []),
-      ...(fileKind || ['traefik', 'caddy-docker-proxy'].includes(p.kind) ? [[UI.btn('Remove the site', 'data-a="rm" class="btn btn-danger"'), fileKind ? 'Only sites DockGate added; the earlier config is kept as a version.' : 'Only labels DockGate added to a Compose project; the service is re-created without them.']] : []),
+      ...(!s.nameless && (fileKind || ['traefik', 'caddy-docker-proxy'].includes(p.kind)) ? [[UI.btn('Remove the site', 'data-a="rm" class="btn btn-danger"'), fileKind ? 'Only sites DockGate added; the earlier config is kept as a version.' : 'Only labels DockGate added to a Compose project; the service is re-created without them.']] : []),
     ];
     const m = showModal(e(s.domain), `<div class="ui-sub" style="margin-bottom:10px">${e(s.proxyName)} → ${e(s.target ? s.target.label : '—')}</div>${items.map(([b, t]) => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)"><div style="min-width:230px">${b}</div><div class="ui-sub">${t}</div></div>`).join('')}`, [{ label: 'Close' }]);
     const ov = m.overlay;
     const on = (a, fn) => { const b = ov.querySelector(`[data-a="${a}"]`); if (b) b.onclick = fn; };
-    on('up', async () => { try { await API.post('/uptime', { name: s.domain, type: 'http', target: `${s.https ? 'https' : 'http'}://${s.domain}` }); showToast('Uptime check added', 'success'); m.close(); } catch (er) { showToast(er.message, 'error'); } });
+    on('up', async () => { try { await API.post('/uptime', { name: s.domain, type: 'http', target: siteUrl(s) }); showToast('Uptime check added', 'success'); m.close(); } catch (er) { showToast(er.message, 'error'); } });
     on('edit', () => { m.close(); go('files', { p: s.proxy, path: s.file }); });
     on('lb', () => { m.close(); lbDialog(s); });
     on('settings', () => { m.close(); settingsDialog(s); });
@@ -312,9 +322,9 @@ Router.register('proxies', async (content, params = {}) => {
       const drawRows = (qq) => {
         const rows = sites.filter(s => !qq || (s.domain + ' ' + (s.target ? s.target.label : '') + ' ' + s.proxyName).toLowerCase().includes(qq.toLowerCase()));
         body.querySelector('[data-st]').innerHTML = UI.table([{ label: 'Domain' }, { label: 'Goes to' }, { label: 'Proxy' }, { label: 'HTTPS' }, { label: 'Target' }, { label: '', align: 'right' }], rows.map(s => ({ cells: [
-          `<b>${e(s.domain)}</b>${s.managed ? `<div class="ui-sub">🔒 ${e(s.managed)}</div>` : ''}${s.proxyStopped ? `<div>${UI.pill('bad', 'proxy stopped')}</div>` : ''}`, siteTarget(s), `${e(s.proxyName)}<div class="ui-sub td-mono" title="${e(s.file || '')}">${e(String(s.file || '').split('/').pop())}${s.line ? ':' + s.line : ''}</div>`,
-          s.https ? `${UI.pill('ok', 'HTTPS')}${s.redirect ? '<div class="ui-sub">http → https</div>' : ''}` : UI.pill('warn', 'HTTP only'), targetState(s),
-          `<a class="btn btn-xs btn-secondary" href="${s.https ? 'https' : 'http'}://${e(s.domain)}" target="_blank" rel="noopener">Open ↗</a> ${UI.btn('⋯', `data-menu="${e(s.proxy)}|${e(s.domain)}" title="What you can do with this site"`)}`] })), { minWidth: 0, empty: 'No site found in the configs.' });
+          `${siteName(s)}${s.managed ? `<div class="ui-sub">🔒 ${e(s.managed)}</div>` : ''}${s.proxyStopped ? `<div>${UI.pill('bad', 'proxy stopped')}</div>` : ''}`, siteTarget(s), `${e(s.proxyName)}<div class="ui-sub td-mono" title="${e(s.file || '')}">${e(String(s.file || '').split('/').pop())}${s.line ? ':' + s.line : ''}</div>`,
+          s.https ? `${UI.pill('ok', 'HTTPS')}${s.redirect ? '<div class="ui-sub">http → https</div>' : ''}` : s.nameless ? UI.chip('HTTP') : UI.pill('warn', 'HTTP only'), targetState(s),
+          `${s.nameless && !s.openPort && !s.domain.startsWith('/') ? '' : `<a class="btn btn-xs btn-secondary" href="${e(siteUrl(s))}" target="_blank" rel="noopener">Open ↗</a>`} ${UI.btn('⋯', `data-menu="${e(s.proxy)}|${e(s.domain)}" title="What you can do with this site"`)}`] })), { minWidth: 0, empty: 'No site found in the configs.' });
         body.querySelectorAll('[data-menu]').forEach(b => b.onclick = () => { const [pid, dom] = b.dataset.menu.split('|'); siteMenu(sites.find(s => s.proxy === pid && s.domain === dom)); });
       };
       drawRows(q);

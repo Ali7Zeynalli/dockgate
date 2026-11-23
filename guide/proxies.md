@@ -94,7 +94,9 @@ An nginx container that only serves its own app is not counted as a proxy. That 
 
 ![Proxies & SSL — Sites](images/proxies-sites.png)
 
-Each domain is one row. It shows where the domain goes, which proxy serves it and where, HTTPS, and the state of the container behind it. **⋯** opens what you can do with a site:
+Each domain is one row. It shows where the domain goes, which proxy serves it and where, HTTPS, and the state of the container behind it.
+
+**Sites without a domain** are listed too, marked **no domain**: a server reached by IP or port (`server_name _;`, `server_name 192.168.1.10;`, a server with only `listen 8080;`, Caddy's `:8080 { }`, a HAProxy `default_backend`, a Traefik rule with only `PathPrefix`). Their name is their address — `:8080`, `192.168.1.10`, `/api`. **Open** goes to the server's address on the port the proxy publishes for it (none when the port is not published). Site settings, load balancing and Let's Encrypt need a domain, so they are not offered: change such a site in the editor, or give it a domain with **Put a container on a domain**. A default page without `proxy_pass` is not listed. **⋯** opens what you can do with a site:
 
 ![What you can do with a site](images/proxies-site-menu.png)
 
