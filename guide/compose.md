@@ -15,7 +15,7 @@ A Compose **stack** (project) is a group of containers started from one `docker-
 | **State** | `2/2 running`, `not deployed`, or **Runs on Swarm** for a project moved to Swarm |
 | **Services** | The services in the compose file |
 
-The buttons above the list: **↻** reloads it, **Git ▾** (shown when there are Git stacks) pulls or deploys all of them, and **New project** adds a new one.
+The buttons above the list: **↻** reloads it, **Git ▾** (shown when there are Git stacks) pulls or deploys **every** Git stack of the server at once (to pull one stack, use **Pull** on its page), and **New project** adds a new one.
 
 Click a stack's **name** (or **⋯ → Open the stack**) to open its page. The row's **⋯** keeps only the everyday actions: Up, Restart, Rebuild, Git sync, Down, Delete.
 
@@ -29,7 +29,7 @@ The top bar of the page: **Up**, **Restart**, **Rebuild…**, **Sync** (Git stac
 
 | Tab | What is there |
 |---|---|
-| **Overview** | Where the stack comes from (Git cloned by DockGate, a Git checkout on the server, an uploaded folder, adopted, written in the editor, or started outside DockGate), its state, folder, compose files and server; the **Git** card (repository, branch, commit, **Pull**, **Sync and deploy**) or **Connect to Git…**; the last deploy; the services |
+| **Overview** | Where the stack comes from (Git cloned by DockGate, a Git checkout on the server, an uploaded folder, adopted, written in the editor, or started outside DockGate), its state, folder, compose files and server; the **Git** card (repository, branch, commit, **Pull**, **Sync and deploy**, **Access…**) or **Connect to Git…**; the last deploy; the services |
 | **Services** | Each service: container, image, state, published ports, and **Logs**, **Terminal**, **Open** for its container |
 | **Files** | The project's files (Dockerfile, .env, configs) to open, edit, add and delete, plus **Edit YAML**, **Open folder in Files** and **Terminal in this folder** |
 | **Deploys** | The Compose deploy history (what changed, **Redeploy this…**) — a deploy recipe that ran `docker compose up` here is in it too, as *deploy recipe* with its name, how it started and its run — and, below it, the **recipe and task runs** of the stack's folder with their logs |
@@ -82,6 +82,7 @@ On the stack's page (and Up / Restart / Rebuild / Git sync / Down / Delete also 
 | **Connect to Git…** | A stack uploaded as files becomes a Git checkout in the same folder, with a compare first and a backup — see [Connect to Git](git-connect.md) |
 | **Git pull (files only)** | Fetch the newest commit without touching the containers |
 | **Git sync and deploy** | Pull, then `docker compose up -d --build` |
+| **Git access…** | How DockGate reaches the repository of a stack it did not clone (adopted, or found by its containers): **the server's own git setup** (the SSH user's key or credential helper — the default), an **access token** (HTTPS; stored encrypted, never written into the repository) or an **SSH key** from Servers → SSH keys (add its public key to the repository's Deploy keys). **Test** asks the repository for its branches. Pull, Sync and Pull every stack use it; an SSH remote is reached over HTTPS for a token, an HTTPS one over SSH for a key |
 | **Force pull (discard server changes)…** | Reset the checkout on the server to the remote branch, then rebuild |
 | **Move to Swarm…** / **Move back to Compose…** | See [Swarm → Stacks and Migrate](swarm-stacks-and-migrate.md) |
 | **Delete stack…** | Stops and removes the containers and untracks the project. Optionally also removes the project files. For an adopted project the folder is never deleted |
@@ -103,6 +104,9 @@ A Git stack with new commits on the remote shows a blue badge: click it to sync 
 | You see | Why | What to do |
 |---|---|---|
 | `Invalid project name (only a-z, 0-9, _, -)` | Uppercase letters, spaces or dots in the name | e.g. `my-app` |
+| Pull / Sync: `could not read Username for 'https://github.com'` | A private repository over HTTPS, and git has no access token | **Git → Access…** on the stack's page: paste an access token (or choose an SSH key) and **Test** |
+| Pull / Sync: `Permission denied (publickey)` | The server's SSH key is not accepted for the repository | **Git → Access…**: choose an SSH key and add its public key to the repository's Deploy keys — or use an access token |
+| Pull / Sync: `The repository refused the access token` | The token is wrong, expired, or can not read this repository | Paste a new token in **Git → Access…** |
 | `A different project named "<name>" already exists — rename this one.` | The name is taken on this server | Choose another name |
 | `Invalid compose file: …` | The YAML does not parse, or Compose refuses it | Fix the line shown in the message |
 | `No docker-compose.yml (or compose.yaml) found in the folder` | Upload a folder without a compose file | Add one at the top of the folder |

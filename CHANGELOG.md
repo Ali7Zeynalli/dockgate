@@ -2,6 +2,23 @@
 
 ---
 
+## [2.88.2] - 2026-11-24
+
+### Added
+- **Git → Access… for stacks DockGate did not clone** (adopted from the server, or found by their containers). DockGate had no credentials for them, so Pull and Sync used only the server user's own git setup and failed on private repositories (`could not read Username`, `Permission denied (publickey)`).
+  - Choose **the server's own git setup** (the default), an **access token** (HTTPS; stored encrypted, never written into the repository) or an **SSH key** from Servers → SSH keys.
+  - **Test** asks the repository for its branches.
+  - Pull, Sync and Pull every stack use it. An SSH remote is reached over HTTPS for a token, and an HTTPS one over SSH for a key.
+
+### Fixed
+- **Pull, Pull every stack and Sync now update the checkout the same way:** fetch the branch, then fast-forward (or reset with Force).
+  - A stack cloned with an access token pulled without it. Now the token is used.
+  - git's authentication errors now say what to do (private repository, SSH key not accepted, token refused). The token never shows in a message.
+- **A stack's page opened the Pull result twice and could pull twice.** When the page rendered twice in a row, its buttons got two handlers.
+- **The Git ▾ menu of the stacks list says it acts on every Git stack of the server.** Its result window says so too and has **Access…** next to each failed stack.
+
+---
+
 ## [2.88.1] - 2026-11-24
 
 ### Fixed

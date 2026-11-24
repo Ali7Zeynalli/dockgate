@@ -2096,10 +2096,56 @@ async function persistSshConfigForRepo(server, repoRoot, keyId) {
 }
 
 // Strip embedded credentials from a remote URL before display (https://user:tok@host → //***@host).
+/** The project's Git context, with the access DockGate keeps for it (Git → Access…) when it has none of its own. */
+async function resolveProjectGitContext(project) {
+  const ctx = await resolveProjectGitContextRaw(project);
+  if (ctx && ctx.isGit && !ctx.keyId && !ctx.token) {
+    const a = require('../git-access').get(ctx.serverId || 'local', project);
+    if (a.keyId || a.token) Object.assign(ctx, { keyId: a.keyId, token: a.token, accessFrom: 'dockgate' });
+  }
+  return ctx;
+}
+
+/**
+ * Bring a project's checkout to the newest commit of its branch — the one way every Pull / Pull all / Sync does it.
+ * Fetches from origin, or with the access DockGate keeps: a token (over HTTPS) or an SSH key (over SSH), so private
+ * repositories work without credentials on the server. force: reset --hard to it; else fast-forward only.
+ * Returns { before, after, branch }; errors say what to do (git-access.explain), with the token taken out.
+ */
+async function gitUpdate(ctx, { force = false, onData = null, log = () => {} } = {}) {
+  const GA = require('../git-access');
+  const server = ctx.server, root = ctx.repoRoot, keyId = ctx.keyId || null;
+  const run = (args) => gitInDir(server, root, args, onData, keyId);
+  const fail = (e, code) => { const err = new Error(GA.explain(redactToken(String((e && (e.stderr || e.message)) || e), ctx.token))); err.statusCode = code || e.statusCode || 500; throw err; };
+  let branch = ctx.branch && ctx.branch !== 'HEAD' ? ctx.branch : '';
+  if (!branch) { try { branch = (await run(['rev-parse', '--abbrev-ref', 'HEAD'])).trim(); } catch (e) { /* detached */ } if (branch === 'HEAD') branch = ''; }
+  let origin = ''; try { origin = (await run(['remote', 'get-url', 'origin'])).trim(); } catch (e) { /* no origin */ }
+  let src = 'origin';
+  if (ctx.token && origin) src = GA.withToken(origin, ctx.token);
+  else if (keyId && /^https:\/\//i.test(origin)) src = GA.toSsh(origin);
+  await persistSshConfigForRepo(server, root, keyId);
+  const before = (await run(['rev-parse', 'HEAD'])).trim();
+  const fetchArgs = ['fetch', '--quiet', ...(force && ctx.type === 'managed' ? ['--depth', '1'] : []), src, ...(branch ? [branch] : [])];
+  log(`$ git fetch ${src === 'origin' ? 'origin' : redactRemoteUrl(src)}${branch ? ' ' + branch : ''}\n`);
+  try { await run(fetchArgs); } catch (e) { fail(e); }
+  if (force) {
+    log('$ git reset --hard FETCH_HEAD\n');
+    try { await run(['reset', '--hard', 'FETCH_HEAD']); } catch (e) { fail(e); }
+  } else {
+    log('$ git merge --ff-only FETCH_HEAD\n');
+    try { await run(['merge', '--ff-only', 'FETCH_HEAD']); } catch (e) {
+      const err = new Error(`The checkout has its own changes or commits, so it can not simply move to the new commit: ${redactToken(String(e.stderr || e.message || e), ctx.token).trim().split('\n').slice(-2).join(' ')} — resolve it on the server, or use Force pull (local changes are lost).`);
+      err.statusCode = 409; err.diverged = true; throw err;
+    }
+  }
+  const after = (await run(['rev-parse', 'HEAD'])).trim();
+  return { before, after, branch };
+}
+
 function redactRemoteUrl(u) { return String(u || '').replace(/\/\/[^@/]+@/, '//***@'); }
 
 // Resolve complete Git context for ANY project (DockGate-managed, adopted from server, or external container).
-async function resolveProjectGitContext(project) {
+async function resolveProjectGitContextRaw(project) {
   if (!validateProjectName(project)) return { isGit: false, project };
 
   const activeServer = remoteCompose.getActiveRemoteServer();
@@ -2300,37 +2346,8 @@ router.post('/:project/git-pull', async (req, res) => {
     const root = ctx.repoRoot;
     const branch = ctx.branch || 'main';
     const keyId = ctx.keyId || null;
-    const url = keyId ? ctx.repoUrl : gitUrlWithToken(ctx.repoUrl, ctx.token);
-    const before = (await gitInDir(server, root, ['rev-parse', 'HEAD'], null, keyId)).trim();
-
     const force = req.body && (req.body.force === true || req.body.force === '1');
-
-    // Ensure SSH key is persisted in the repo's .git/config so pull works
-    await persistSshConfigForRepo(server, root, keyId);
-
-    if (force) {
-      if (ctx.type === 'managed') {
-        if (ctx.isRemote && server) {
-          await remoteCompose.runGitOnRemote(server, keyId, root, ['fetch', '--depth', '1', 'origin', branch]);
-          await remoteCompose.runGitOnRemote(server, keyId, root, ['reset', '--hard', 'FETCH_HEAD']);
-        } else {
-          await gitWithKey(keyId, ['-C', root, 'fetch', '--depth', '1', 'origin', branch]);
-          await gitWithKey(keyId, ['-C', root, 'reset', '--hard', 'FETCH_HEAD']);
-        }
-      } else {
-        await gitInDir(server, root, ['fetch', '--all', '--quiet'], null, keyId);
-        const targetRef = branch && branch !== 'HEAD' ? `origin/${branch}` : '@{u}';
-        await gitInDir(server, root, ['reset', '--hard', targetRef], null, keyId);
-      }
-    } else {
-      try {
-        await gitInDir(server, root, ['pull'], null, keyId);
-      } catch (e) {
-        return res.status(409).json({ error: 'Git pull failed: ' + e.message + '. You may need to resolve conflicts manually on the server, or use ⚠️ Force Pull to overwrite local changes.' });
-      }
-    }
-
-    const after = (await gitInDir(server, root, ['rev-parse', 'HEAD'], null, keyId)).trim();
+    const { before, after } = await gitUpdate(ctx, { force });
     invalidateExternalGit(project);
 
     // If managed, persist the updated commit
@@ -2378,6 +2395,48 @@ router.post('/:project/git-pull', async (req, res) => {
   }
 });
 
+// Git → Access…: how DockGate reaches the repository of a stack it did not clone (adopted / found by its containers).
+router.get('/:project/git-access', async (req, res) => {
+  try {
+    const project = req.params.project; if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const ctx = await resolveProjectGitContextRaw(project); if (!ctx || !ctx.isGit) return res.status(400).json({ error: 'Not a Git checkout' });
+    const GA = require('../git-access');
+    res.json({ ...GA.describe(ctx.serverId || 'local', project), managed: ctx.type === 'managed', ownKey: !!ctx.keyId, ownToken: !!ctx.token, repoUrl: redactRemoteUrl(ctx.repoUrl || ''), branch: ctx.branch || '' });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+// body { method: server | token | key, token, keyId }
+router.put('/:project/git-access', async (req, res) => {
+  try {
+    const project = req.params.project; if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const ctx = await resolveProjectGitContextRaw(project); if (!ctx || !ctx.isGit) return res.status(400).json({ error: 'Not a Git checkout' });
+    const b = req.body || {};
+    const r = require('../git-access').set(ctx.serverId || 'local', project, { method: b.method, keyId: b.keyId, token: b.token });
+    invalidateExternalGit(project);
+    logAction({ req, server: ctx.serverId || 'local', resourceId: project, resourceType: 'compose', resourceName: project, action: 'git-access', details: { method: r.method, keyId: r.keyId } });
+    res.json(r);
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+// body { method, token, keyId } — the access to try (empty: what is saved); asks the repository for its branches
+router.post('/:project/git-access/test', async (req, res) => {
+  try {
+    const project = req.params.project; if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
+    const GA = require('../git-access');
+    const ctx = await resolveProjectGitContext(project); if (!ctx || !ctx.isGit) return res.status(400).json({ error: 'Not a Git checkout' });
+    const b = req.body || {};
+    const saved = GA.get(ctx.serverId || 'local', project);
+    const method = b.method || (ctx.keyId ? 'key' : ctx.token ? 'token' : 'server');
+    const keyId = method === 'key' ? (b.keyId || ctx.keyId || saved.keyId) : null;
+    const token = method === 'token' ? (b.token || ctx.token || saved.token) : '';
+    let origin = ''; try { origin = (await gitInDir(ctx.server, ctx.repoRoot, ['remote', 'get-url', 'origin'])).trim(); } catch (e) { /* none */ }
+    if (!origin) return res.status(400).json({ error: 'The checkout has no origin remote' });
+    const src = token ? GA.withToken(origin, token) : keyId && /^https:\/\//i.test(origin) ? GA.toSsh(origin) : origin;
+    try {
+      const out = String(await gitInDir(ctx.server, ctx.repoRoot, ['ls-remote', '--heads', src], null, keyId || null));
+      res.json({ ok: true, via: method, branches: out.split('\n').filter(Boolean).length, url: token ? GA.toHttps(origin) : src });
+    } catch (e) { res.json({ ok: false, via: method, error: GA.explain(redactToken(String(e.stderr || e.message || e), token)) }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
+
 // Unified Git Sync (Pull latest + docker compose up -d --build --force-recreate)
 router.post('/:project/git-sync', async (req, res) => {
   const project = req.params.project;
@@ -2419,25 +2478,11 @@ router.post('/:project/git-sync', async (req, res) => {
       try {
         setStep(job, 'pull', 'running');
         job.phase = 'pull';
-        const root = ctx.repoRoot;
-        const branch = ctx.branch || 'main';
-        const keyId = ctx.keyId || null;
-        const targetRef = branch && branch !== 'HEAD' ? `origin/${branch}` : '@{u}';
-
-        jobLog(job, `$ git -C ${root} fetch --all\n`);
-        await gitInDir(server, root, ['fetch', '--all', '--quiet'], stream, keyId);
-
-        if (force) {
-          jobLog(job, `$ git -C ${root} reset --hard ${targetRef}\n`);
-          await gitInDir(server, root, ['reset', '--hard', targetRef], stream, keyId);
-        } else {
-          try {
-            jobLog(job, `$ git -C ${root} merge --ff-only ${targetRef}\n`);
-            await gitInDir(server, root, ['merge', '--ff-only', targetRef], stream, keyId);
-          } catch (e) {
-            jobLog(job, `Fast-forward failed, performing reset to ${targetRef}...\n`);
-            await gitInDir(server, root, ['reset', '--hard', targetRef], stream, keyId);
-          }
+        try { await gitUpdate(ctx, { force, onData: stream, log: (m) => jobLog(job, m) }); }
+        catch (e) {
+          if (!e.diverged) throw e;
+          jobLog(job, 'Fast-forward is not possible: resetting to the fetched commit…\n');
+          await gitUpdate(ctx, { force: true, onData: stream, log: (m) => jobLog(job, m) });
         }
         setStep(job, 'pull', 'done');
 
@@ -2524,23 +2569,8 @@ router.post('/git-pull-all', async (req, res) => {
       try {
         const root = ctx.repoRoot;
         const keyId = ctx.keyId || null;
-        const branch = ctx.branch || 'main';
-        const before = (await gitInDir(ctx.server, root, ['rev-parse', 'HEAD'], null, keyId)).trim();
-
-        // Persist SSH config so pull works
-        await persistSshConfigForRepo(ctx.server, root, keyId);
-
-        // Native git pull (like single-project pull)
         const force = req.body && (req.body.force === true || req.body.force === '1');
-        if (force) {
-          await gitInDir(ctx.server, root, ['fetch', '--all', '--quiet'], null, keyId);
-          const targetRef = branch && branch !== 'HEAD' ? `origin/${branch}` : '@{u}';
-          await gitInDir(ctx.server, root, ['reset', '--hard', targetRef], null, keyId);
-        } else {
-          await gitInDir(ctx.server, root, ['pull'], null, keyId);
-        }
-
-        const after = (await gitInDir(ctx.server, root, ['rev-parse', 'HEAD'], null, keyId)).trim();
+        const { before, after } = await gitUpdate(ctx, { force });
         invalidateExternalGit(gp.name);
 
         const meta = readGitMeta(gp.name);
