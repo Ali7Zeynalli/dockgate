@@ -63,6 +63,9 @@ const cfg = {
     diskMs:      num(env.DISK_POLL_MIN, 5) * 60 * 1000,
     healthMs:    num(env.HEALTH_POLL_SEC, 60) * 1000,
     reconnectMs: num(env.RECONNECT_SEC, 5) * 1000,
+    // Docker's socket unreachable this long: the agent exits so Docker starts it again with a fresh mount of the
+    // socket (after Docker itself restarted, the old mount points to a dead socket: ECONNREFUSED for ever).
+    socketGiveUpMs: num(env.SOCKET_GIVEUP_SEC, 120) * 1000,
   },
   healthPort: num(env.AGENT_HEALTH_PORT, 9000),
   socketPath: env.DOCKER_SOCKET || '/var/run/docker.sock',

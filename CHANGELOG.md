@@ -2,6 +2,20 @@
 
 ---
 
+## [2.88.3] - 2026-11-24
+
+### Fixed
+- **The Edge agent stayed unhealthy after Docker restarted.** Docker restarted (for example an upgrade with `live-restore`) while the agent kept running, so its mount of `/var/run/docker.sock` pointed to the old socket (`connect ECONNREFUSED /var/run/docker.sock`). The agent tried again every 5 seconds for days, and Docker does not restart a container only for being unhealthy.
+  - Agent 1.4.1 exits after 2 minutes without Docker (`SOCKET_GIVEUP_SEC`), and Docker starts it again with the new socket.
+  - The Edge agent page shows an unhealthy agent with the reason and a **Restart** button.
+- **The same "Container Unhealthy" alert came again and again** (every cooldown, for as long as the container stayed unhealthy).
+  - Now it comes at once, then after 1 hour, 6 hours, and once a day after that. The alert says which one it is (#2, #3…), how long the container has been unhealthy, and when the next one comes.
+  - When the container is healthy again, the next problem is told at once.
+  - DockGate keeps this in its database, so a restart of DockGate does not start the alerts over. The agent does the same.
+- An unhealthy `dockgate-agent` with this error now says why and what to do in its alert.
+
+---
+
 ## [2.88.2] - 2026-11-24
 
 ### Added

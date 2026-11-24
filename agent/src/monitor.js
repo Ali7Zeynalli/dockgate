@@ -9,6 +9,7 @@ const { cfg, getRule } = require('./config');
 const mailer = require('./mailer');
 const telegram = require('./telegram');
 const templates = require('./templates');
+const { backoff, fmtFor } = require('./backoff');
 
 const LABEL = cfg.serverLabel;
 
@@ -28,6 +29,9 @@ class Monitor {
     this.healthCheckTimer = null;
     this.stopped = false;
     this.lastEventAt = null;
+    this.failSince = null;          // first failed connect to Docker in a row (null while connected)
+    this.unhealthy = backoff();     // containers that stay unhealthy: alerts thin out (backoff.js)
+    this.exit = (code) => process.exit(code); // replaced in tests
   }
 
   start() {
@@ -66,10 +70,12 @@ class Monitor {
       }
       if (err) {
         console.error(`[agent:${LABEL}] failed to connect:`, err.message);
+        if (this._socketGone(err)) return;
         this._scheduleReconnect();
         return;
       }
 
+      this.failSince = null;
       this.stream = stream;
 
       // One JSON object per line; a chunk can carry several events (two containers dying together) or half of one.
@@ -99,6 +105,22 @@ class Monitor {
         }
       });
     });
+  }
+
+  /**
+   * Docker's socket has not answered for cfg.intervals.socketGiveUpMs: exit, so Docker (restart: unless-stopped)
+   * starts the agent again — with a fresh mount of /var/run/docker.sock. When Docker itself restarted while the agent
+   * kept running (live-restore), the old mount points to a socket nobody listens on: ECONNREFUSED for ever, and
+   * Docker never restarts a container only for being unhealthy. Returns true when it gave up.
+   */
+  _socketGone(err, now = Date.now()) {
+    if (!/ECONNREFUSED|ENOENT|ECONNRESET|EPIPE/.test(String((err && (err.code || err.message)) || ''))) return false;
+    if (!this.failSince) this.failSince = now;
+    if (now - this.failSince < cfg.intervals.socketGiveUpMs) return false;
+    console.error(`[agent:${LABEL}] Docker's socket has not answered for ${Math.round((now - this.failSince) / 1000)} s — exiting so Docker starts the agent again with a fresh socket (Docker itself was probably restarted)`);
+    this.stopped = true;
+    this.exit(1);
+    return true;
   }
 
   _scheduleReconnect() {
@@ -235,6 +257,7 @@ class Monitor {
         html: templates.containerUnhealthyTemplate({ containerName: name, containerId: id, image, time, failingStreak, lastOutput, server: LABEL, logs }),
         telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: image, 'Failing Streak': failingStreak, Time: time }) + telegram.formatLogs(logs),
       });
+      this.unhealthy.sent(name); // the periodic sweep then waits before telling again
     }
 
     // Container started — debounced, because a `docker restart` also fires start (die→…→start→restart);
@@ -282,6 +305,8 @@ class Monitor {
 
     try {
       const containers = await this.docker.listContainers({ filters: { health: ['unhealthy'] } });
+      // healthy again (or gone): their next problem is told at once
+      this.unhealthy.keepOnly(containers.map(c => (c.Names?.[0] || '').replace(/^\//, '') || c.Id?.substring(0, 12)));
       if (containers.length === 0) return;
 
       const prefix = this._prefix();
@@ -289,7 +314,8 @@ class Monitor {
 
       for (const c of containers) {
         const name = (c.Names?.[0] || '').replace(/^\//, '') || c.Id?.substring(0, 12);
-        if (this._isThrottled('container_unhealthy', name)) continue;
+        const bo = this.unhealthy.check(name, Date.now(), (Number(rule.cooldown_minutes) || 0) * 60000);
+        if (!bo.due) continue;
 
         let failingStreak = '—', lastOutput = '';
         try {
@@ -315,19 +341,20 @@ class Monitor {
             server: LABEL,
             logs,
           }),
-          telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: c.Image, 'Failing Streak': failingStreak }) + telegram.formatLogs(logs),
-        });
-        break; // one notification per cycle, cooldown handles others
+          telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: c.Image, 'Failing Streak': failingStreak, ...(bo.n > 1 ? { Alert: `#${bo.n} — unhealthy for ${fmtFor(Date.now() - bo.since)}, next in ${fmtFor(bo.next)} if it stays so` } : {}) }) + telegram.formatLogs(logs),
+        }, { bypassCooldown: true });
+        this.unhealthy.sent(name);
+        break; // one notification per cycle
       }
     } catch (e) {
       // Daemon unreachable — silent
     }
   }
 
-  async _sendNotification(eventType, resourceKey, { subject, html, telegramText }) {
+  async _sendNotification(eventType, resourceKey, { subject, html, telegramText }, { bypassCooldown = false } = {}) {
     const rule = getRule(eventType);
     if (!rule || !rule.enabled) return;
-    if (this._isThrottled(eventType, resourceKey)) return;
+    if (!bypassCooldown && this._isThrottled(eventType, resourceKey)) return; // the unhealthy sweep keeps its own pace (backoff.js)
 
     let sent = false;
 
