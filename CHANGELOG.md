@@ -2,6 +2,17 @@
 
 ---
 
+## [2.88.1] - 2026-11-24
+
+### Fixed
+- **Proxies & SSL → Sites missed nginx sites when nginx's config check failed.** The cause was most often a `proxy_pass` to a removed or stopped container (`host not found in upstream`): nginx keeps running, but `nginx -T` prints nothing.
+  - DockGate read only `*.conf` files then, so `sites-enabled/example.com` and other files without the extension were missed. The nginx with no sites found was then taken for an app's own web server and hidden ("Not counted as proxies").
+  - Now the files are read from `nginx.conf` through every `include`, of any name, in containers, on the server itself and in stopped containers (only what nginx really loads, so `sites-available` is left out).
+  - The sites are listed, and the proxy is marked red with nginx's own reason. A failing config never hides the proxy.
+  - For nginx on the server itself, the message is nginx's own error instead of always "needs root"; "needs root" is shown only when the error is a permission one.
+
+---
+
 ## [2.88.0] - 2026-11-23
 
 ### Added

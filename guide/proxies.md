@@ -81,6 +81,8 @@ What DockGate reads from each proxy:
 
 An nginx container that only serves its own app is not counted as a proxy. That means it has no `proxy_pass`, no domain and no port 80 or 443. The same goes for an Apache image built for an app (for example `php:apache`) without `ProxyPass`.
 
+**When nginx's config check fails.** DockGate reads nginx's sites with `nginx -T`, which prints nothing when the config does not pass its check — most often a `proxy_pass` to a container that was removed or stopped (`host not found in upstream`). nginx keeps running, but a reload or restart would fail. DockGate then reads the files itself, from `nginx.conf` through every `include` (`conf.d/*.conf`, `sites-enabled/*` of any name), lists the sites as usual, and marks the proxy red with nginx's own reason. Such an nginx is never taken for an app's own web server.
+
 **Web ports** shows who holds 80, 443, 8080, 8443 and the proxies' own ports: a container (`docker → edge-nginx`), a proxy on the server, or a container on the host network.
 
 **Warnings** are shown at the top, for example:

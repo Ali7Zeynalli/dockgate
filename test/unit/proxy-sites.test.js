@@ -46,3 +46,23 @@ test('sites without a domain are listed by their address (server_name _, an IP, 
   assert.deepEqual(P.traefikSites({ 'traefik.http.routers.a.rule': 'PathPrefix(`/api`)' }).map(s => [s.domain, s.nameless]), [['/api', true]]);
   assert.deepEqual(P.parseHaproxy('frontend web\n  bind *:80\n  default_backend app\nbackend app\n  server a1 app:3000\n').map(s => [s.domain, s.nameless, s.targets.join()]), [[':80', true, 'app:3000']]);
 });
+
+test('nginx whose config check fails: its files are found by following the include lines (sites-enabled too)', () => {
+  assert.deepEqual(P.nginxIncludes('events {}\nhttp {\n  include mime.types;\n  include /etc/nginx/conf.d/*.conf; # include /off;\n  include "/etc/nginx/sites-enabled/*";\n  include $dyn;\n}', '/etc/nginx'),
+    ['/etc/nginx/mime.types', '/etc/nginx/conf.d/*.conf', '/etc/nginx/sites-enabled/*']);
+  const re = P.globRe('/etc/nginx/sites-enabled/*');
+  assert.equal(re.test('/etc/nginx/sites-enabled/shop.example.com'), true);
+  assert.equal(re.test('/etc/nginx/sites-enabled/a/b'), false, '* stays in one folder');
+  assert.equal(P.globRe('/x/site?.conf').test('/x/site1.conf'), true);
+  const files = [
+    { path: '/etc/nginx/nginx.conf', text: 'http { include conf.d/*.conf; include /etc/nginx/sites-enabled/*; }' },
+    { path: '/etc/nginx/conf.d/default.conf', text: 'server { listen 80; server_name a.example.test; location / { proxy_pass http://a:1; } }' },
+    { path: '/etc/nginx/sites-enabled/shop.example.test', text: 'server { listen 80; server_name shop.example.test; location / { proxy_pass http://gone:3000; } }' },
+    { path: '/etc/nginx/sites-available/old.example.test', text: 'server { listen 80; server_name old.example.test; }' },
+  ];
+  const reach = P.nginxReachable(files);
+  assert.deepEqual(reach.map(f => f.path), ['/etc/nginx/nginx.conf', '/etc/nginx/conf.d/default.conf', '/etc/nginx/sites-enabled/shop.example.test'], 'sites-available is not loaded by nginx');
+  const sites = P.nginxSites(P.parseNginxT(reach.map(f => `# configuration file ${f.path}:\n${f.text}`).join('\n')));
+  assert.deepEqual(sites.map(s => s.domain).sort(), ['a.example.test', 'shop.example.test']);
+  assert.deepEqual(P.nginxReachable([{ path: '/etc/nginx/conf.d/x.conf', text: '' }, { path: '/etc/nginx/x.txt', text: '' }]).map(f => f.path), ['/etc/nginx/conf.d/x.conf'], 'no nginx.conf: the .conf files');
+});
