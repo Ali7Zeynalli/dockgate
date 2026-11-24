@@ -1,5 +1,5 @@
 // Server Console → System: hostname, /etc/hosts, DNS, network interfaces, kernel (sysctl), open-file limit, journal
-// size, disks (/etc/fstab) and a catalog of the server's config files. Every change shows what changes, then runs as a
+// size, disks (/etc/fstab), swap and a catalog of the server's config files. Every change shows what changes, then runs as a
 // guarded job (backup → write → check with the owning tool → apply; restored when a check fails). Network changes
 // keep the change only when a new SSH login works — otherwise the server restores it by itself after 120 s.
 /** System, or one section of it when the container says which (Server → System tabs). */
@@ -40,8 +40,25 @@ async function renderSystemPanelAll(serverId, container) {
       !i.docker && stack ? UI.btn('Edit…', `data-net="${esc(i.name)}"`) : '',
     ] };
   };
-  const fstabRows = d.fstab.filter(l => l.kind === 'entry');
+  const fstabRows = d.fstab.filter(l => l.kind === 'entry' && l.fstype !== 'swap'); // swap lines are under Swap
   const mounted = (t) => d.mounts.some(m => m.target === t);
+
+  const sw = d.swap || { devices: [], fstab: [] };
+  const gb = (mb) => mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 ? 1 : 0)} GB` : `${mb} MB`;
+  function swapHtml() {
+    const total = sw.devices.reduce((a, x) => a + x.sizeMb, 0), used = sw.devices.reduce((a, x) => a + x.usedMb, 0);
+    const off = (sw.fstab || []).filter(p => !sw.devices.some(x => x.path === p));
+    const rows = [
+      ...sw.devices.map(x => ({ cells: [`<span class="td-mono">${esc(x.path)}</span>`, esc(x.type), gb(x.sizeMb), `${gb(x.usedMb)}${x.sizeMb ? ` <span class="ui-sub">(${Math.round(x.usedMb * 100 / x.sizeMb)}%)</span>` : ''}`, `<span class="td-mono">${esc(x.prio)}</span>`,
+        x.type === 'file' ? `${UI.btn('Resize…', `data-swresize="${esc(x.path)}"`)} ${UI.btn('Turn off & remove…', `data-swrm="${esc(x.path)}"`)}` : '<span class="ui-sub">partition — not changed here</span>'] })),
+      ...off.map(p => ({ cells: [`<span class="td-mono">${esc(p)}</span> ${UI.pill('warn', 'in fstab, not on')}`, '—', '—', '—', '—', p.startsWith('/dev/') ? '' : UI.btn('Remove…', `data-swrm="${esc(p)}"`)] })),
+    ];
+    return `<div style="margin:14px 0 6px"><b>Swap</b> <span class="ui-sub">· ${total ? `${gb(total)}, ${gb(used)} in use` : 'none'}${sw.ramMb ? ` · RAM ${gb(sw.ramMb)}` : ''} · a safety net when memory runs out (builds, spikes): without it the kernel stops a process instead.</span></div>
+      ${sw.container ? `<div class="insight-card warning" style="margin-bottom:8px"><div>This server is a container (<b>${esc(sw.container)}</b>): its host decides swap, a swap file can not be turned on here.</div></div>` : ''}
+      ${rows.length ? UI.table([{ label: 'Swap' }, { label: 'Type' }, { label: 'Size' }, { label: 'In use' }, { label: 'Priority' }, { label: '', align: 'right' }], rows, { minWidth: 760 }) : ''}
+      ${UI.settings([{ label: 'Swappiness', desc: '10 keeps apps in RAM and swaps only under pressure; 60 is the kernel default. Written to /etc/sysctl.d/99-dockgate.conf, the same file as Kernel &amp; limits.', value: `<span class="td-mono">${esc(sw.swappiness || '—')}</span>${sw.dockgate ? ` <span class="ui-sub">· DockGate: ${esc(sw.dockgate)}</span>` : ''}${sw.legacy && !sw.dockgate ? ` <span class="ui-sub">· older file 99-swappiness.conf: ${esc(sw.legacy)}</span>` : ''}`, action: UI.btn('Edit', 'data-swappiness') }])}
+      <div style="margin:6px 0 12px">${!sw.container && !sw.devices.some(x => x.path === '/swapfile') ? UI.btn(sw.devices.length ? '+ Add swap file…' : `+ Create swap file (${gb(sw.defaultMb || 4096)})…`, 'data-swadd') : ''}</div>`;
+  }
 
   container.innerHTML = `
     ${UI.header('System', `${esc(d.os || 'Linux')} · the server's own settings. Each change shows what changes in the file, is checked by the tool that owns it, and is restored when a check fails.`)}
@@ -71,6 +88,7 @@ async function renderSystemPanelAll(serverId, container) {
     ${UI.table([{ label: 'Mount point' }, { label: 'Source' }, { label: 'Type' }, { label: 'Options' }, { label: 'Use' }, { label: '', align: 'right' }],
       fstabRows.map(l => { const u = d.df.find(x => x.target === l.target); return { cells: [`<span class="td-mono">${esc(l.target)}</span> ${mounted(l.target) ? '' : UI.pill('warn', 'not mounted')}`, `<span class="td-mono ui-sub">${esc(l.source)}</span>`, esc(l.fstype), `<span class="td-mono ui-sub">${esc(l.options)}</span>`, u ? `${esc(u.used)} / ${esc(u.size)} <span class="ui-sub">(${esc(u.pct)})</span>` : '<span class="ui-sub">—</span>', ['/', '/boot', '/boot/efi'].includes(l.target) ? '' : UI.btn('Remove…', `data-fsrm="${l.i}"`)] }; }), { minWidth: 820 })}
     <div style="margin:6px 0 12px">${UI.btn('+ Add mount…', 'data-fsadd')}</div>
+    ${swapHtml()}
 
     ${UI.header('Config files', 'Where things are set on this server. Files open in the editor (diff before save, earlier versions, sudo); folders open in Quick Files. A ✓ means the editor checks it before or after saving.')}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">${d.catalog.map(g => `<div class="card" style="padding:12px 14px"><b style="font-size:13px">${esc(g.group)}</b>${g.items.map(([p, desc, chk]) => `<div style="display:flex;gap:8px;align-items:baseline;margin-top:6px"><a href="#" data-open="${esc(p)}" class="td-mono" style="font-size:12.5px">${esc(p)}</a>${chk ? '<span title="Checked by the editor" style="color:var(--success)">✓</span>' : ''}<span class="ui-sub" style="flex:1;text-align:right">${esc(desc)}</span></div>`).join('')}</div>`).join('')}</div>`;
@@ -148,6 +166,23 @@ async function renderSystemPanelAll(serverId, container) {
         setTimeout(() => reviewThenRun('network', body, `Network: ${i.name}`, 'kept only when a new SSH login works; restored by the server after 120 s otherwise').catch(e => showToast(e.message, 'error', 9000)), 0);
       } });
   }));
+
+  const swapDialog = (path, sizeMb, title) => UI.dialog({ title, saveLabel: 'Apply',
+    body: `<label class="ui-field"><span class="ui-label">Size</span><select class="input" id="sw-size">${[1024, 2048, 4096, 8192, 16384].map(m => `<option value="${m}" ${m === sizeMb ? 'selected' : ''}>${gb(m)}</option>`).join('')}</select>
+      <span class="ui-sub">4 GB suits most servers. Needs the size + 1 GB free on the disk${sw.rootFreeMb ? ` (free on /: ${gb(sw.rootFreeMb)})` : ''}.</span></label>
+      <div class="ui-sub">File <span class="td-mono">${esc(path)}</span>${sw.devices.some(x => x.path === path) ? ' — turned off first (only when the RAM can take back what is in it), then made again at the new size' : ''}. A file the kernel does not take is removed again, and the reason shown.</div>`,
+    onSave: async (ov) => { const sizeMb = Number(ov.querySelector('#sw-size').value); setTimeout(() => run('swap', { action: 'set', path, sizeMb }, `Swap ${path} → ${gb(sizeMb)}`).catch(e => showToast(e.message, 'error', 9000)), 0); } });
+  const swAdd = container.querySelector('[data-swadd]');
+  if (swAdd) swAdd.addEventListener('click', () => swapDialog('/swapfile', sw.defaultMb || 4096, 'Create a swap file'));
+  container.querySelectorAll('[data-swresize]').forEach(b => b.addEventListener('click', () => { const x = sw.devices.find(v => v.path === b.dataset.swresize); swapDialog(x.path, [1024, 2048, 4096, 8192, 16384].includes(x.sizeMb) ? x.sizeMb : 4096, `Resize ${x.path}`); }));
+  container.querySelectorAll('[data-swrm]').forEach(b => b.addEventListener('click', () => {
+    const x = sw.devices.find(v => v.path === b.dataset.swrm);
+    showModal(`Turn off &amp; remove ${esc(b.dataset.swrm)}`, `${serverContextBanner()}<div class="text-sm">The swap is turned off, its line taken out of /etc/fstab and the file deleted.${x && x.usedMb ? ` <b>${gb(x.usedMb)}</b> is in it now: it is moved back to RAM first, and nothing is changed when the free RAM (${gb(sw.availMb || 0)}) can not take it.` : ''}</div>`,
+      [{ label: 'Cancel', className: 'btn btn-secondary' }, { label: 'Turn off & remove', className: 'btn btn-danger', onClick: () => run('swap', { action: 'remove', path: b.dataset.swrm }, `Remove swap ${b.dataset.swrm}`).catch(e => showToast(e.message, 'error', 9000)) }]);
+  }));
+  container.querySelector('[data-swappiness]').addEventListener('click', () => UI.dialog({ title: 'Swappiness', saveLabel: 'Review changes…',
+    body: `<label class="ui-field"><span class="ui-label">vm.swappiness</span><input class="input td-mono" id="sw-sp" type="number" min="0" max="200" value="${esc(sw.dockgate || sw.swappiness || 10)}"><span class="ui-sub">0–200. 10 is a good value for servers; 60 is the kernel default. Applied now, kept after a reboot.</span></label>`,
+    onSave: async (ov) => { const value = ov.querySelector('#sw-sp').value.trim(); await API.post(`/servers/${serverId}/system/swap`, { action: 'swappiness', value, preview: true }); setTimeout(() => reviewThenRun('swap', { action: 'swappiness', value }, `Swappiness → ${value}`).catch(e => showToast(e.message, 'error', 9000)), 0); } }));
 
   container.querySelectorAll('[data-fsrm]').forEach(b => b.addEventListener('click', () => {
     const l = d.fstab.find(x => String(x.i) === b.dataset.fsrm);

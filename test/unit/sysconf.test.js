@@ -146,3 +146,34 @@ test('fstab check: errors from old and new findmnt versions are caught; a clean 
     assert.match(r.stdout, new RegExp(`bad=${want}`), `${JSON.stringify(out)} → ${r.stdout}`);
   }
 });
+
+test('swap: scripts are valid shell; make/resize/remove plans touch only swap files DockGate can see', async () => {
+  const SW = require('../../server/swap');
+  const sh = (src) => new Promise((res) => execFile('sh', ['-n', '-c', src], (e, o, er) => res(e ? er : '')));
+  for (const s of [SW.createScript('/swapfile', 4096), SW.removeScript('/swap.img'), SW.swappinessScript(10), SW.swappinessScript(10, { keepSet: true })]) assert.equal(await sh(s), '');
+  const cur = { devices: [{ path: '/swap.img', type: 'file', sizeMb: 2048, usedMb: 10, prio: -2 }, { path: '/dev/sda3', type: 'partition', sizeMb: 1024, usedMb: 0, prio: -3 }], fstab: ['/swap.img', '/dev/sda3', '/old.swap'] };
+  const make = X.swapPlan({ action: 'set' }, cur);
+  assert.match(decoded(make)[0], /P='\/swapfile'; S=4096/);
+  assert.match(cmds(make), /\| base64 -d \| \{\{S\}\}sh/);
+  assert.match(decoded(X.swapPlan({ action: 'set', path: '/swap.img', sizeMb: 8192 }, cur))[0], /S=8192/);
+  assert.throws(() => X.swapPlan({ action: 'set', path: '/dev/sda3' }, cur), /Swap file/);
+  assert.throws(() => X.swapPlan({ action: 'set', sizeMb: 100 }, cur), /256 MB/);
+  assert.throws(() => X.swapPlan({ action: 'set', path: '/x;rm -rf /' }, cur), /Swap file/);
+  assert.throws(() => X.swapPlan({ action: 'set' }, { ...cur, container: 'lxc' }), /container/);
+  assert.match(decoded(X.swapPlan({ action: 'remove', path: '/old.swap' }, cur))[0], /Swap removed/);
+  assert.throws(() => X.swapPlan({ action: 'remove', path: '/etc/passwd' }, cur), /not a swap file/);
+  const rm = decoded(X.swapPlan({ action: 'remove', path: '/swap.img' }, cur))[0];
+  assert.match(rm, /MemAvailable/, 'refuses when the RAM can not take back what is in swap');
+});
+
+test('swap: swappiness lands in 99-dockgate.conf and the older 99-swappiness.conf (which wins at boot) is removed', () => {
+  const p = X.sysctlPlan({ 'vm.swappiness': '10', 'vm.max_map_count': '262144' });
+  assert.match(p.text, /^vm\.swappiness = 10$/m);
+  assert.match(cmds(p.plan), /99-swappiness\.conf/);
+  assert.doesNotMatch(cmds(X.sysctlPlan({ 'vm.max_map_count': '262144' }).plan), /99-swappiness/);
+  const SW = require('../../server/swap');
+  assert.match(SW.swappinessScript(30), /sysctl -w vm\.swappiness=30/);
+  assert.doesNotMatch(SW.swappinessScript(30), /sysctl --system/);
+  assert.throws(() => SW.checkSwappiness(300), /0 – 200/);
+  assert.deepEqual(SW.parseSwaps('Filename\tType\tSize\tUsed\tPriority\n/swapfile                               file\t\t4194300\t\t1024\t\t-2\n'), [{ path: '/swapfile', type: 'file', sizeMb: 4096, usedMb: 1, prio: -2 }]);
+});

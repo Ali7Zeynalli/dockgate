@@ -82,6 +82,22 @@ router.post('/:id/system/network', send(async (req) => {
     if (newSshIp && newSshIp !== row.host) { require('../db').db.prepare('UPDATE servers SET host = ? WHERE id = ?').run(newSshIp, row.id); try { require('../security/service').refreshConnections(row.id); } catch (e) { /* next request reconnects */ } }
   });
 }));
+// body { action: 'set', path?, sizeMb? } | { action: 'remove', path } | { action: 'swappiness', value }
+router.post('/:id/system/swap', send(async (req) => {
+  const row = loadServer(req); const cur = await current(row);
+  const b = req.body || {};
+  if (b.action === 'swappiness') {
+    const v = require('../swap').checkSwappiness(b.value);
+    const values = Object.fromEntries(Object.entries(cur.sysctlDrop).filter(([k]) => X.SYSCTL_INFO[k]));
+    values['vm.swappiness'] = String(v);
+    const r = X.sysctlPlan(values);
+    if (b.preview) return { file: X.F.sysctl, before: Object.entries(cur.sysctlDrop).map(([k, val]) => `${k} = ${val}`).join('\n'), after: r.text };
+    return start(req, row, r.plan, `Swappiness → ${v}`, 'system_swappiness', { value: v });
+  }
+  const plan = X.swapPlan(b, cur.swap);
+  const title = b.action === 'remove' ? `Remove swap ${b.path}` : `Swap ${b.path || '/swapfile'} → ${b.sizeMb || require('../swap').DEFAULT_MB} MB`;
+  return start(req, row, plan, title, 'system_swap', { action: b.action, path: b.path || '/swapfile', sizeMb: b.sizeMb });
+}));
 // body { action: 'add'|'remove', entry? | index+raw, preview }
 router.post('/:id/system/fstab', send(async (req) => {
   const row = loadServer(req); const cur = await current(row);

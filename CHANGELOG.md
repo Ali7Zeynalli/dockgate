@@ -2,6 +2,30 @@
 
 ---
 
+## [2.88.4] - 2026-11-24
+
+### Added
+- **System → Disks → Swap.** See the server's swap (size, how much is in use, priority) and change it here.
+  - **Create swap file** (4 GB by default), **Resize…** (1–16 GB) and **Turn off & remove…**.
+  - Turning swap off is refused when the free RAM can not take back what is in it.
+  - **Swappiness** is edited here too, in the same file as Kernel & limits.
+  - Swap partitions are shown but not changed.
+
+### Changed
+- **Setup → Swap file is always 4 GB now** (before: sized to the RAM). It needs 5 GB free on the disk.
+
+### Fixed
+- **Setup → Swap file no longer runs `sysctl --system`.** That re-applied every kernel setting on the server. Now only `vm.swappiness` is applied.
+- **Swappiness from Setup and from Kernel no longer fight.** Setup wrote `99-swappiness.conf`, which sorts after `99-dockgate.conf` and won at boot over a value set in Kernel.
+  - Now both write `vm.swappiness` to `99-dockgate.conf`, and a swappiness already set in Kernel is kept.
+  - The older file is removed when swappiness is set again.
+- **A swap file the kernel does not take is removed again,** with the reason. Before, it stayed on the disk.
+  - Where `fallocate` is not supported, DockGate writes the file out in full and tries again.
+  - btrfs gets copy-on-write turned off.
+  - On a container VPS (LXC, OpenVZ) or on ZFS, DockGate says why a swap file can not be used.
+
+---
+
 ## [2.88.3] - 2026-11-24
 
 ### Fixed

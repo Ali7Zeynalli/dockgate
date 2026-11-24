@@ -41,7 +41,7 @@ What is installed on the server. Each component is detected first, installed onl
 | **SSH hardening** | Safe limits only: 3 login attempts, 30 s to log in, no empty passwords, no X11 forwarding, drop dead connections after about 10 min. It does **not** turn off password or root login (that is done in Access & SSH, with its lockout guards) |
 | **Fail2ban** | Bans addresses after repeated failed SSH logins. Writes its own `jail.d/dockgate.conf`; an existing `jail.local` is left alone |
 | **Automatic security updates** | Applies security patches by itself |
-| **Swap file** | Optional: 2 GB under 2 GB RAM, else equal to RAM up to 4 GB, with low swappiness. A safety net for Docker builds on small servers |
+| **Swap file** | Optional: a 4 GB `/swapfile` with swappiness 10 (a swappiness already set in Kernel is kept). A safety net for Docker builds and memory spikes. Refused with the reason when the disk lacks 5 GB free or the server is a container VPS (LXC, OpenVZ); a file the kernel does not take is removed again. Change it later in System → Disks → Swap |
 | **Docker Engine + Compose** | From Docker's own repository |
 | **Docker log limits** | Caps container logs (10 MB × 3 per container) so they can not fill the disk, and turns on live-restore (containers keep running while Docker restarts; not in Swarm mode). Merges into an existing `daemon.json` |
 | **Deploy user (non-root + SSH key)** | A user with `sudo` and Docker access, and a key DockGate makes. DockGate then connects as it |
@@ -187,6 +187,7 @@ The server's own settings, each through a form. Every change shows what changes 
 | **Open files limit** | `/etc/security/limits.d/99-dockgate.conf` and systemd `DefaultLimitNOFILE` | — (services get it when they restart) |
 | **Journal size** | `/etc/systemd/journald.conf.d/99-dockgate.conf` | journald restarts; the journal is shrunk to it |
 | **Disks** (`/etc/fstab`): add or remove a mount | `/etc/fstab` | `findmnt --verify`, and a new mount is mounted once — a failure restores the file. `/`, `/boot` are not removed here |
+| **Swap** (under Disks): make, resize, or turn off & remove a swap file; swappiness | the swap file, its `/etc/fstab` line, `vm.swappiness` in `/etc/sysctl.d/99-dockgate.conf` | the kernel (`swapon`) — a file it does not take is removed again; turning swap off is refused when the free RAM can not take back what is in it. Swap partitions are shown, not changed |
 
 **The address DockGate connects to** is protected: changing it needs the new address, and DockGate then tests a login to it and switches to it.
 
