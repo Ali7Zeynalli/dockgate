@@ -1,4 +1,4 @@
-// Provisioning job runner — owns the in-memory job registry (live log / status), spawns the isolated
+// Provisioning job runner - owns the in-memory job registry (live log / status), spawns the isolated
 // worker, and persists each completed item + the run outcome to SQLite. Mirrors the deploy-job pattern
 // (compose.js): the run keeps going if the browser closes; clients poll GET /provision/job/:id.
 const { execFile } = require('child_process');
@@ -24,9 +24,9 @@ function planItems(server, { preset, only, confirm } = {}) {
   return catalog.guardedResolve({ hasKey: !!server.key_path, preset, only, confirm });
 }
 
-// server: a prepared config { id, host, port, username, key_path, keyPath, password, passphrase } —
+// server: a prepared config { id, host, port, username, key_path, keyPath, password, passphrase } -
 // keyPath absolute + secrets decrypted by the caller (route).
-// The running job for a server, if any (one provisioning run per server at a time — two parallel runs
+// The running job for a server, if any (one provisioning run per server at a time - two parallel runs
 // would fight over the package manager lock).
 function runningJobFor(serverId) {
   for (const j of provisionJobs.values()) if (j.serverId === serverId && j.status === 'running') return j;
@@ -35,7 +35,7 @@ function runningJobFor(serverId) {
 
 function startProvision(server, opts = {}) {
   const busy = runningJobFor(server.id);
-  if (busy) { const e = new Error('Provisioning is already running on this server — wait for it to finish or cancel it.'); e.statusCode = 409; e.jobId = busy.id; throw e; }
+  if (busy) { const e = new Error('Provisioning is already running on this server - wait for it to finish or cancel it.'); e.statusCode = 409; e.jobId = busy.id; throw e; }
   const planned = planItems(server, opts); // may throw 409
   const skipped = planned.skipped;
   // Special items run after the shell steps, as their own guarded jobs (see runSpecialItems).
@@ -100,7 +100,7 @@ function handleEvent(job, evt) {
 }
 
 // Deploy user (and future special items): runs after the shell steps succeeded. Skipped when DockGate
-// already connects as a non-root user with a key — there is nothing to create.
+// already connects as a non-root user with a key - there is nothing to create.
 async function runSpecialItems(job) {
   if (!job._specials || !job._specials.includes('deploy-user')) return;
   const label = catalog.byId['deploy-user'].label;
@@ -111,7 +111,7 @@ async function runSpecialItems(job) {
   if (job.error || job.cancelled || job.items.some(i => i.state === 'failed')) { record('skipped', { reason: 'earlier steps did not complete' }); return; }
   const row = stmts.getServer.get(job.serverId);
   if (!row) return;
-  if (row.username !== 'root' && row.key_path) { record('present', { log: `DockGate already connects as ${row.username} with a key` }); jobLog(job, `▶ ${label}\n  ✓ already present — DockGate connects as ${row.username}`); return; }
+  if (row.username !== 'root' && row.key_path) { record('present', { log: `DockGate already connects as ${row.username} with a key` }); jobLog(job, `▶ ${label}\n  ✓ already present - DockGate connects as ${row.username}`); return; }
   const t0 = Date.now();
   job.phase = 'deploy-user';
   jobLog(job, `▶ ${label}`);
@@ -157,11 +157,11 @@ function cancelJob(id) {
   if (!j) { const e = new Error('Job not found'); e.statusCode = 404; throw e; }
   if (j.status !== 'running' || !j._child) return { status: j.status };
   try { j._child.kill('SIGTERM'); } catch (e) {}
-  jobLog(j, '■ Cancel requested — stopping after the current item');
+  jobLog(j, '■ Cancel requested - stopping after the current item');
   return { status: 'cancelling' };
 }
 
-// Read-only live scan — runs every catalog item's detect over SSH (isolated worker, no install, no DB).
+// Read-only live scan - runs every catalog item's detect over SSH (isolated worker, no install, no DB).
 // Resolves { distro, items:[{id,label,present,na,reason}] }. Used when the Setup UI opens.
 function scanServer(server) {
   return new Promise((resolve, reject) => {

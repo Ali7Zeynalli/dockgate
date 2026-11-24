@@ -1,5 +1,5 @@
 'use strict';
-// Server Console → System: what each change writes (hostname, hosts, DNS, sysctl, limits, journald, network, fstab),
+// Server Console > System: what each change writes (hostname, hosts, DNS, sysctl, limits, journald, network, fstab),
 // the checks and rollbacks in each plan, input validation, reading the server, and the editor's system-file checks.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -33,7 +33,7 @@ test('DNS: resolved drop-in or resolv.conf, tested with a lookup and restored wh
   assert.match(a.text, /^DNS=1\.1\.1\.1 9\.9\.9\.9$/m); assert.match(a.text, /^Domains=internal\.example\.com$/m);
   assert.match(cmds(a.plan), /getent ahosts 'cloudflare\.com'.*restored/s);
   const b = X.dnsPlan({ servers: ['8.8.8.8'], resolved: false, resolvLink: '/etc/resolv.conf' });
-  assert.equal(b.text, '# Managed by DockGate (Server Console → System → DNS)\nnameserver 8.8.8.8\n');
+  assert.equal(b.text, '# Managed by DockGate (Server Console > System > DNS)\nnameserver 8.8.8.8\n');
   assert.throws(() => X.dnsPlan({ servers: '8.8.8.8', resolved: false, resolvLink: '/run/NetworkManager/resolv.conf' }), /managed by another program/);
   assert.throws(() => X.dnsPlan({ servers: 'dns.google', resolved: true }), /not an IP/);
   assert.throws(() => X.dnsPlan({ servers: '', resolved: true }), /at least one/);
@@ -143,7 +143,7 @@ test('fstab check: errors from old and new findmnt versions are caught; a clean 
     const cmd = X.fstabVerify('/x').replace(/^out=\$\(findmnt --verify --tab-file \/x 2>&1\); rc=\$\?/, `out=$(cat ${f}); (exit ${rc}); rc=$?`);
     const r = await runSh(`${cmd}; echo "bad=$bad"`);
     fs.unlinkSync(f);
-    assert.match(r.stdout, new RegExp(`bad=${want}`), `${JSON.stringify(out)} → ${r.stdout}`);
+    assert.match(r.stdout, new RegExp(`bad=${want}`), `${JSON.stringify(out)} -> ${r.stdout}`);
   }
 });
 
@@ -174,6 +174,6 @@ test('swap: swappiness lands in 99-dockgate.conf and the older 99-swappiness.con
   const SW = require('../../server/swap');
   assert.match(SW.swappinessScript(30), /sysctl -w vm\.swappiness=30/);
   assert.doesNotMatch(SW.swappinessScript(30), /sysctl --system/);
-  assert.throws(() => SW.checkSwappiness(300), /0 – 200/);
+  assert.throws(() => SW.checkSwappiness(300), /0 - 200/);
   assert.deepEqual(SW.parseSwaps('Filename\tType\tSize\tUsed\tPriority\n/swapfile                               file\t\t4194300\t\t1024\t\t-2\n'), [{ path: '/swapfile', type: 'file', sizeMb: 4096, usedMb: 1, prio: -2 }]);
 });

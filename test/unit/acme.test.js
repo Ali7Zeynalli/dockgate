@@ -20,9 +20,9 @@ function fakeCa({ failChallenge = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dg-acme-'));
   execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-days', '2', '-subj', '/CN=Test CA', '-keyout', path.join(dir, 'ca.key'), '-out', path.join(dir, 'ca.pem')], { stdio: 'ignore' });
   const nonces = new Set(); const accounts = new Map(); const orders = new Map(); const seen = { badNonce: 0, posts: 0 };
-  let base; const challenges = new Map(); // token → { authz, expect, domain }
+  let base; const challenges = new Map(); // token -> { authz, expect, domain }
   let answers = null; // filled by the test's setChallenge
-  const dnsRecords = new Map(); // fqdn → [TXT values], filled by the test's dns.set
+  const dnsRecords = new Map(); // fqdn -> [TXT values], filled by the test's dns.set
   const nonce = () => { const n = b64u(crypto.randomBytes(12)); nonces.add(n); return n; };
   const srv = http.createServer((req, res) => {
     let body = ''; req.on('data', c => { body += c; }); req.on('end', () => {

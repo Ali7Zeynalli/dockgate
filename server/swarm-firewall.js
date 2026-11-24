@@ -1,7 +1,7 @@
-// Swarm → Firewall: the ports Swarm services publish, on every server of the cluster, in one table — and opening or
+// Swarm > Firewall: the ports Swarm services publish, on every server of the cluster, in one table - and opening or
 // closing one on all of them at once. A Swarm port is open on every server (ingress) or on the servers that run a
 // task (host mode), and Docker sends the traffic past UFW's normal rules. With DockGate's Docker port isolation
-// (Server Console → Firewall → Docker ports) such traffic is dropped unless a `ufw route allow` rule lets it
+// (Server Console > Firewall > Docker ports) such traffic is dropped unless a `ufw route allow` rule lets it
 // through; this page writes those rules. Which port the rule names:
 //   ingress  the published port (Docker forwards it to the ingress network on that same port)
 //   host     the container port (Docker forwards straight to the task)
@@ -59,9 +59,9 @@ async function clusterServers(c = dockerService.docker) {
 /** Where one Swarm port stands on one server's firewall (fw: firewallOf result). */
 function portState(fw, port) {
   if (!fw) return { state: 'unknown', text: 'DockGate can not read this server' };
-  if (!fw.managed) return { state: 'open', text: 'no firewall — open to everyone', risk: true };
-  if (fw.backend === 'firewalld') return { state: 'open', text: 'Docker publishes past firewalld — open to everyone', risk: true };
-  if (!fw.dockerIsolation) return { state: 'open', text: 'Docker publishes past UFW — open to everyone (turn on Docker port isolation)', risk: true };
+  if (!fw.managed) return { state: 'open', text: 'no firewall - open to everyone', risk: true };
+  if (fw.backend === 'firewalld') return { state: 'open', text: 'Docker publishes past firewalld - open to everyone', risk: true };
+  if (!fw.dockerIsolation) return { state: 'open', text: 'Docker publishes past UFW - open to everyone (turn on Docker port isolation)', risk: true };
   const g = (fw._groups || []).find(x => x.dir === 'in' && x.container === port.checkPort && (!x.proto || x.proto === port.proto) && x.action !== 'deny');
   if (!g) return { state: 'closed', text: 'closed' };
   const who = (g.remotes || g.entries.map(e => e.remote)).map(r => (r === 'any4' || r === 'any6' || r === 'any' ? 'anyone' : r));
@@ -73,8 +73,8 @@ async function overview() {
   const c = dockerService.docker;
   const [ports, { clusterId, servers }] = await Promise.all([publishedPorts(c), clusterServers(c)]);
   const fws = await Promise.all(servers.map(async (s) => {
-    if (!s.row) return { error: 'not a DockGate server — add it in Servers to manage its firewall' };
-    if (s.row.id === 'local' || s.row.type === 'local') return { error: 'DockGate\'s own server — add it as an SSH server to manage its firewall' };
+    if (!s.row) return { error: 'not a DockGate server - add it in Servers to manage its firewall' };
+    if (s.row.id === 'local' || s.row.type === 'local') return { error: 'DockGate\'s own server - add it as an SSH server to manage its firewall' };
     try { return await fwRoutes().firewallOf(s.row); } catch (e) { return { error: e.message }; }
   }));
   const asked = Object.fromEntries(q.all.all(clusterId).map(r => [`${r.port}/${r.proto}`, { ...r, sources: JSON.parse(r.sources) }]));
@@ -87,7 +87,7 @@ async function overview() {
 }
 
 /**
- * Open (sources: ['any4','any6','@list','1.2.3.4', …]) or close (sources: []) one Swarm port on every server that
+ * Open (sources: ['any4','any6','@list','1.2.3.4', ...]) or close (sources: []) one Swarm port on every server that
  * DockGate manages. Returns per server what happened.
  */
 async function apply({ port, proto = 'tcp', sources = [] }, { sourceIp } = {}) {
@@ -111,14 +111,14 @@ const wantRule = (p) => FW.normRule({ dir: 'in', action: 'allow', proto: p.proto
 
 /** Make one server's firewall match what is asked for one port. */
 async function applyOn(s, p, sources) {
-  if (!s.row) return { ok: false, skipped: true, text: 'not a DockGate server — add it in Servers' };
-  if (s.row.id === 'local' || s.row.type === 'local') return { ok: false, skipped: true, text: 'DockGate\'s own server — add it as an SSH server to manage its firewall' };
+  if (!s.row) return { ok: false, skipped: true, text: 'not a DockGate server - add it in Servers' };
+  if (s.row.id === 'local' || s.row.type === 'local') return { ok: false, skipped: true, text: 'DockGate\'s own server - add it as an SSH server to manage its firewall' };
   const R = fwRoutes();
   let fw;
   try { fw = await R.firewallOf(s.row); } catch (e) { return { ok: false, text: e.message }; }
-  if (!fw.managed) return { ok: false, skipped: true, text: 'no firewall on this server — the port is open to everyone' };
-  if (fw.backend !== 'ufw' || !fw.dockerIsolation) return { ok: false, skipped: true, text: fw.backend === 'firewalld' ? 'firewalld: Docker publishes past it — not managed here' : 'Docker port isolation is off — the port is open to everyone (Server Console → Firewall → Docker ports)' };
-  if (p.checkPort === fw.sshPort) return { ok: false, text: 'that is the SSH port of this server — not changed here' };
+  if (!fw.managed) return { ok: false, skipped: true, text: 'no firewall on this server - the port is open to everyone' };
+  if (fw.backend !== 'ufw' || !fw.dockerIsolation) return { ok: false, skipped: true, text: fw.backend === 'firewalld' ? 'firewalld: Docker publishes past it - not managed here' : 'Docker port isolation is off - the port is open to everyone (Server Console > Firewall > Docker ports)' };
+  if (p.checkPort === fw.sshPort) return { ok: false, text: 'that is the SSH port of this server - not changed here' };
   const want = sources.length ? wantRule(p) : null;
   const key = want ? FW.ruleKey(want) : null;
   const old = (fw._groups || []).find(g => g.dir === 'in' && g.container === p.checkPort && (g.proto || 'tcp') === p.proto && g.action !== 'deny') || null;

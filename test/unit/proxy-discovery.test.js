@@ -1,5 +1,5 @@
 'use strict';
-// Proxies & SSL — finding proxies the way servers really run them: images built FROM a proxy image (compose
+// Proxies & SSL - finding proxies the way servers really run them: images built FROM a proxy image (compose
 // `build:`), Caddy `import`s, Traefik's file provider, log files named in the config, and the local host.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,7 +16,7 @@ test('kindOfConfig: images built FROM a proxy image keep its env / command', () 
   assert.equal(PX.kindOfConfig({ Entrypoint: ['/entrypoint.sh'], Cmd: ['traefik'] }), 'traefik');
   assert.equal(PX.kindOfConfig({ Env: ['NODE_VERSION=22'], Cmd: ['node', 'server.js'] }), null);
   assert.equal(PX.kindOfConfig({}), null);
-  assert.equal(PX.kindOf('webshop-proxy'), null, 'the name alone says nothing — the image config does');
+  assert.equal(PX.kindOf('webshop-proxy'), null, 'the name alone says nothing - the image config does');
 });
 
 test('caddyImports: files and globs relative to the Caddyfile, not snippets', () => {

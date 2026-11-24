@@ -1,5 +1,5 @@
 'use strict';
-// Proxies & SSL — what DockGate writes into proxy configs (server/proxy-gen.js) and the access-log stats
+// Proxies & SSL - what DockGate writes into proxy configs (server/proxy-gen.js) and the access-log stats
 // (server/proxy-edit.js accessStats): new sites, the ACME challenge, HTTPS, load balancing, removal.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -201,7 +201,7 @@ test('Apache existing site: challenge lines, HTTPS copy without them, certificat
   assert.throws(() => G.apacheEnsureAcme('<VirtualHost *:443>\n  ServerName x.example.test\n  SSLEngine on\n</VirtualHost>', 'x.example.test'), /No HTTP/);
 });
 
-test('site settings form (nginx): names, target, WebSockets, upload limit, redirect — shared servers keep the other names', () => {
+test('site settings form (nginx): names, target, WebSockets, upload limit, redirect - shared servers keep the other names', () => {
   const st = G.nginxSiteSettings(ONE_LINE, 'shop.example.test');
   assert.deepEqual(st, { names: ['shop.example.test'], target: 'shop-site-web-1:80', upstream: null, websocket: false, maxBody: '', https: true, http: true, redirect: true });
   const t = G.nginxApplySettings(ONE_LINE, 'shop.example.test', { names: 'shop.example.test www.shop.example.test', target: 'app:8080', websocket: true, maxBody: '20m' });

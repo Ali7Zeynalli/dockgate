@@ -1,12 +1,12 @@
 // Command builders for the server-security features. Every command the security worker runs is built
 // HERE from validated values only (usernames match USERNAME_RE, ports are integers, keys / file contents
-// travel base64-encoded) — the UI never sends shell.
+// travel base64-encoded) - the UI never sends shell.
 //
 // `{{S}}` is the privilege prefix: the worker replaces it with "" when logged in as root and with
 // "sudo -n " otherwise. Rollback scripts run as root (systemd-run / nohup under sudo), so they never
 // contain {{S}}.
 //
-// A "plan" is { steps: [ { label, cmd } | { label, test: {...} } ], rollback? } — see worker.js.
+// A "plan" is { steps: [ { label, cmd } | { label, test: {...} } ], rollback? } - see worker.js.
 const P = require('./parse');
 
 const b64 = (s) => Buffer.from(String(s), 'utf8').toString('base64');
@@ -161,13 +161,13 @@ function accessPlan({ id, content, test, portChange }) {
   steps.push({
     label: 'Write and validate the new sshd config (sshd -t)',
     cmd: [
-      `grep -qiE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\\.d/' /etc/ssh/sshd_config || { echo "/etc/ssh/sshd_config does not include sshd_config.d/*.conf — add 'Include /etc/ssh/sshd_config.d/*.conf' at the top first"; exit 1; }`,
+      `grep -qiE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\\.d/' /etc/ssh/sshd_config || { echo "/etc/ssh/sshd_config does not include sshd_config.d/*.conf - add 'Include /etc/ssh/sshd_config.d/*.conf' at the top first"; exit 1; }`,
       `{{S}}mkdir -p /etc/ssh/sshd_config.d`,
       `if {{S}}test -f ${DROPIN}; then {{S}}cp -p ${DROPIN} ${prev}; else {{S}}rm -f ${prev}; fi`,
-      // the old hardening file's values are already merged into `content` — move it aside (one file)
+      // the old hardening file's values are already merged into `content` - move it aside (one file)
       `if {{S}}test -f ${LEGACY}; then {{S}}mv -f ${LEGACY} ${lprev}; else {{S}}rm -f ${lprev}; fi`,
       writeFile(DROPIN, content, '0644'),
-      `{{S}}sshd -t || { if {{S}}test -f ${prev}; then {{S}}mv -f ${prev} ${DROPIN}; else {{S}}rm -f ${DROPIN}; fi; [ -f ${lprev} ] && {{S}}mv -f ${lprev} ${LEGACY}; echo "sshd rejected the config — nothing was applied"; exit 1; }`,
+      `{{S}}sshd -t || { if {{S}}test -f ${prev}; then {{S}}mv -f ${prev} ${DROPIN}; else {{S}}rm -f ${DROPIN}; fi; [ -f ${lprev} ] && {{S}}mv -f ${lprev} ${LEGACY}; echo "sshd rejected the config - nothing was applied"; exit 1; }`,
     ].join(' && '),
   });
   steps.push({ label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, restoreRoot) });
@@ -200,7 +200,7 @@ function deployUserPlan({ username, keys, test }) {
       { label: `Grant passwordless sudo (${sudoersFile(u)}, checked with visudo)`, cmd: sudoersCmd(u) },
       { label: `Add "${u}" to the docker group`, cmd: dockerGroupCmd(u) },
       { label: keys.length > 1 ? 'Install DockGate\'s key and your public key' : 'Install DockGate\'s public key', cmd: addKeysCmd(u, keys) },
-      { label: `Test: NEW SSH login as ${u} with the key → sudo -n true, docker group`, test },
+      { label: `Test: NEW SSH login as ${u} with the key -> sudo -n true, docker group`, test },
     ],
   };
 }
@@ -242,7 +242,7 @@ const writeKeysPlan = (u, content) => ({ steps: [{ label: `Update ${u}'s authori
 // (container ↔ container, host ↔ container) passes; NEW connections from outside to a published
 // container port are dropped unless a `ufw route allow` rule (ufw-user-forward) lets them through.
 const DOCKER_BLOCK = `# BEGIN DOCKGATE-DOCKER
-# Managed by DockGate — keeps published Docker ports behind UFW. Open a port with: ufw route allow proto tcp from any to any port <container-port>
+# Managed by DockGate - keeps published Docker ports behind UFW. Open a port with: ufw route allow proto tcp from any to any port <container-port>
 *filter
 :ufw-user-forward - [0:0]
 :ufw-docker-logging-deny - [0:0]
@@ -267,9 +267,9 @@ COMMIT
 
 // IPv6: Docker with ip6tables (default on IPv6 networks since Docker 27) NATs published ports through the
 // ip6tables FORWARD chain too, so the same idea goes into after6.rules. Container networks there are ULA
-// (fc00::/7) or link-local; traffic between them passes, new outside → container connections are dropped.
+// (fc00::/7) or link-local; traffic between them passes, new outside -> container connections are dropped.
 const DOCKER_BLOCK6 = `# BEGIN DOCKGATE-DOCKER
-# Managed by DockGate — IPv6 twin of the after.rules block. Open a port with: ufw route allow proto tcp from any to any port <container-port>
+# Managed by DockGate - IPv6 twin of the after.rules block. Open a port with: ufw route allow proto tcp from any to any port <container-port>
 *filter
 :ufw6-user-forward - [0:0]
 :ufw6-docker-logging-deny - [0:0]
@@ -292,16 +292,16 @@ const AFTER6 = '/etc/ufw/after6.rules';
 const stripBlock = (f) => `{{S}}sed -i '/# BEGIN DOCKGATE-DOCKER/,/# END DOCKGATE-DOCKER/d' ${f}`;
 const STRIP_BLOCK = stripBlock(AFTER);
 
-/** Turn Docker port isolation on (keepPublic: [{ port: containerPort, proto }]) or off — IPv4 and IPv6. */
+/** Turn Docker port isolation on (keepPublic: [{ port: containerPort, proto }]) or off - IPv4 and IPv6. */
 function isolationPlan({ id, enable, keepPublic, test }) {
   const prev = `${AFTER}.dockgate-prev`, prev6 = `${AFTER6}.dockgate-prev`;
   const restoreRoot = `[ -f ${prev} ] && mv -f ${prev} ${AFTER}\n[ -f ${prev6} ] && mv -f ${prev6} ${AFTER6}\nufw reload >/dev/null 2>&1`;
   // after6.rules only exists (and only matters) when UFW manages IPv6 (IPV6=yes in /etc/default/ufw)
   const v6 = (cmd) => `if {{S}}test -f ${AFTER6}; then ${cmd}; fi`;
   const steps = [
-    { label: `Back up ${AFTER} and ${AFTER6}`, cmd: `command -v ufw >/dev/null 2>&1 && {{S}}ufw status | grep -q 'Status: active' || { echo "UFW is not active — turn the firewall on first"; exit 1; }; {{S}}cp -p ${AFTER} ${prev} && ${v6(`{{S}}cp -p ${AFTER6} ${prev6}`)}` },
+    { label: `Back up ${AFTER} and ${AFTER6}`, cmd: `command -v ufw >/dev/null 2>&1 && {{S}}ufw status | grep -q 'Status: active' || { echo "UFW is not active - turn the firewall on first"; exit 1; }; {{S}}cp -p ${AFTER} ${prev} && ${v6(`{{S}}cp -p ${AFTER6} ${prev6}`)}` },
     enable
-      ? { label: 'Add the DOCKER-USER rules, IPv4 + IPv6 (drop new outside → container connections)', cmd: `${STRIP_BLOCK} && echo ${b64('\n' + DOCKER_BLOCK)} | base64 -d | {{S}}tee -a ${AFTER} >/dev/null && ${v6(`${stripBlock(AFTER6)} && echo ${b64('\n' + DOCKER_BLOCK6)} | base64 -d | {{S}}tee -a ${AFTER6} >/dev/null`)}` }
+      ? { label: 'Add the DOCKER-USER rules, IPv4 + IPv6 (drop new outside -> container connections)', cmd: `${STRIP_BLOCK} && echo ${b64('\n' + DOCKER_BLOCK)} | base64 -d | {{S}}tee -a ${AFTER} >/dev/null && ${v6(`${stripBlock(AFTER6)} && echo ${b64('\n' + DOCKER_BLOCK6)} | base64 -d | {{S}}tee -a ${AFTER6} >/dev/null`)}` }
       : { label: 'Remove the DOCKER-USER rules (IPv4 + IPv6)', cmd: `${STRIP_BLOCK} && ${v6(stripBlock(AFTER6))}` },
     { label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, restoreRoot) },
   ];
@@ -335,7 +335,7 @@ function fwdAddCmd({ zone, port, proto, from, action }) {
     : fwd(zone, `--add-rich-rule=${shq(fwdRichRule({ port, proto, from, action }))}`);
   return `${add} && ${FWD_RELOAD}`;
 }
-/** Remove parsed firewalld rules (see parse.parseFirewalld) — one entry each, then reload. */
+/** Remove parsed firewalld rules (see parse.parseFirewalld) - one entry each, then reload. */
 function fwdRemoveCmd(zone, rules) {
   const seen = new Set(), cmds = [];
   for (const r of rules) {
@@ -394,7 +394,7 @@ const READ_FAIL2BAN = [
   `echo @@dockgate; {{S}}cat ${F2B.JAIL_FILE} 2>/dev/null`,
   `echo @@daemon; {{S}}cat ${F2B.DAEMON_FILE} 2>/dev/null`,
   "echo @@jaillocal; {{S}}grep -lE '^\\[(sshd|recidive)\\]' /etc/fail2ban/jail.local /etc/fail2ban/jail.d/*.local 2>/dev/null",
-  // Every option a jail file sets under [sshd] / [recidive], as "file|jail|line", in fail2ban's read order —
+  // Every option a jail file sets under [sshd] / [recidive], as "file|jail|line", in fail2ban's read order -
   // tells WHICH file wins when the running value is not the one in DockGate's file.
   `echo @@f2bsrc; for f in /etc/fail2ban/jail.d/*.conf /etc/fail2ban/jail.local /etc/fail2ban/jail.d/*.local; do [ -f "$f" ] || continue; ` +
     `{{S}}awk -v F="$f" '/^[ \\t]*\\[/{s=$0; gsub(/[][ \\t]/,"",s)} (s=="sshd"||s=="recidive"||s=="DEFAULT") && /^[ \\t]*[A-Za-z][A-Za-z.]*[ \\t]*=/{print F"|"s"|"$0}' "$f" 2>/dev/null; done; ` +
@@ -419,12 +419,12 @@ function fail2banWritePlan(files, { label } = {}) {
   const others = files.filter(o => !own.has(o.path));
   return {
     steps: [
-      { label: 'Back up the fail2ban files that change', cmd: `command -v fail2ban-client >/dev/null 2>&1 || { echo "fail2ban is not installed — install it in Setup first"; exit 1; }; {{S}}mkdir -p /etc/fail2ban/jail.d /etc/fail2ban/fail2ban.d && for f in ${paths}; do if {{S}}test -f "$f"; then {{S}}cp -p "$f" "$f.dockgate-prev"; else {{S}}rm -f "$f.dockgate-prev"; fi; done` },
+      { label: 'Back up the fail2ban files that change', cmd: `command -v fail2ban-client >/dev/null 2>&1 || { echo "fail2ban is not installed - install it in Setup first"; exit 1; }; {{S}}mkdir -p /etc/fail2ban/jail.d /etc/fail2ban/fail2ban.d && for f in ${paths}; do if {{S}}test -f "$f"; then {{S}}cp -p "$f" "$f.dockgate-prev"; else {{S}}rm -f "$f.dockgate-prev"; fi; done` },
       // tee into an existing file keeps its owner and mode; DockGate's own files are 0644.
       ...files.map(o => ({ label: label && files.length === 1 ? label : `Write ${o.path}`, cmd: own.has(o.path) ? writeFile(o.path, o.text, '0644') : `echo ${b64(o.text)} | base64 -d | {{S}}tee ${o.path} >/dev/null` })),
       // recidive needs its log file to exist, or fail2ban refuses to start at all.
-      { label: 'Test the whole configuration (fail2ban-client -t)', cmd: `{{S}}touch ${F2B.LOG_FILE}; {{S}}fail2ban-client -t >/dev/null 2>&1 || { out=$({{S}}fail2ban-client -t 2>&1 | tail -5); ${restore}; echo "fail2ban rejected the configuration — nothing was applied:"; echo "$out"; exit 1; }` },
-      { label: 'Reload fail2ban (current bans are kept)', cmd: `if {{S}}fail2ban-client ping >/dev/null 2>&1; then {{S}}fail2ban-client reload >/dev/null; else {{S}}systemctl enable --now fail2ban; fi || { ${restore}; {{S}}fail2ban-client reload >/dev/null 2>&1; echo "reload failed — previous files restored"; exit 1; }` },
+      { label: 'Test the whole configuration (fail2ban-client -t)', cmd: `{{S}}touch ${F2B.LOG_FILE}; {{S}}fail2ban-client -t >/dev/null 2>&1 || { out=$({{S}}fail2ban-client -t 2>&1 | tail -5); ${restore}; echo "fail2ban rejected the configuration - nothing was applied:"; echo "$out"; exit 1; }` },
+      { label: 'Reload fail2ban (current bans are kept)', cmd: `if {{S}}fail2ban-client ping >/dev/null 2>&1; then {{S}}fail2ban-client reload >/dev/null; else {{S}}systemctl enable --now fail2ban; fi || { ${restore}; {{S}}fail2ban-client reload >/dev/null 2>&1; echo "reload failed - previous files restored"; exit 1; }` },
       { label: others.length ? 'Clean up (a copy of each other file is kept as *.dockgate-backup)' : 'Clean up', cmd: `${others.map(o => `{ {{S}}test -f ${o.path}.dockgate-prev && {{S}}cp -p ${o.path}.dockgate-prev ${o.path}.dockgate-backup; true; } && `).join('')}for f in ${paths}; do {{S}}rm -f "$f.dockgate-prev"; done; true` },
     ],
   };
@@ -434,11 +434,11 @@ function fail2banWritePlan(files, { label } = {}) {
 function fail2banSettingsPlan(settings, sshPort, others = []) {
   return fail2banWritePlan([{ path: F2B.JAIL_FILE, text: F2B.buildJailConf(settings, sshPort) }, { path: F2B.DAEMON_FILE, text: F2B.buildDaemonConf(settings) }, ...others]);
 }
-/** Every fail2ban config file DockGate shows in Configuration → Files (sections "file <path>"). */
+/** Every fail2ban config file DockGate shows in Configuration > Files (sections "file <path>"). */
 const READ_F2B_FILES = 'for f in /etc/fail2ban/jail.d/* /etc/fail2ban/jail.local /etc/fail2ban/fail2ban.d/* /etc/fail2ban/fail2ban.local; do ' +
   '[ -f "$f" ] || continue; case "$f" in *" "*) continue;; *.conf|*.local) echo "@@file $f"; {{S}}cat "$f" 2>/dev/null;; esac; done';
 
-/** Read several fail2ban files at once (sections "file0", "file1", …). */
+/** Read several fail2ban files at once (sections "file0", "file1", ...). */
 function readFilesScript(paths) {
   for (const p of paths) if (!/^\/etc\/fail2ban\/[\w.\/-]+$/.test(p) || p.includes('..')) throw new Error(`Refusing to read ${p}`);
   return paths.map((p, i) => `echo @@file${i}; {{S}}cat ${p} 2>/dev/null`).join('; ');
@@ -454,8 +454,8 @@ function f2bPortSyncCmd(port) {
     `{{S}}mkdir -p /etc/fail2ban/jail.d; F=${F2B.JAIL_FILE}; ` +
     `if {{S}}grep -q '^\\[sshd\\]' "$F" 2>/dev/null; then {{S}}sed -i '/^\\[sshd\\]/,/^\\[/{/^port[[:space:]]*=/d}' "$F" && {{S}}sed -i '/^\\[sshd\\]/a port = ${p}' "$F"; ` +
     `else printf '\\n[sshd]\\nport = ${p}\\n' | {{S}}tee -a "$F" >/dev/null; fi; ` +
-    `{{S}}fail2ban-client -t >/dev/null 2>&1 && {{S}}fail2ban-client reload >/dev/null 2>&1 && echo "fail2ban now bans port ${p}" || echo "WARNING: could not update fail2ban — set its sshd port to ${p} in the Fail2ban tab"; ` +
-    `else echo "fail2ban not running — nothing to update"; fi; true`;
+    `{{S}}fail2ban-client -t >/dev/null 2>&1 && {{S}}fail2ban-client reload >/dev/null 2>&1 && echo "fail2ban now bans port ${p}" || echo "WARNING: could not update fail2ban - set its sshd port to ${p} in the Fail2ban tab"; ` +
+    `else echo "fail2ban not running - nothing to update"; fi; true`;
 }
 
 module.exports.READ_FAIL2BAN = READ_FAIL2BAN;
@@ -475,7 +475,7 @@ module.exports.READ_HEALTH = READ_HEALTH;
 module.exports.UFW_RELOAD = '{{S}}ufw reload >/dev/null';
 Object.assign(module.exports, { FWD_RELOAD, fwdAddCmd, fwdRemoveCmd, fwdRichRule });
 
-// ---------------------------------------------------------------- Services sub-pages (Docker · Time sync · Auto updates)
+// ---------------------------------------------------------------- Services sub-pages (Docker, Time sync, Auto updates)
 const UNITS = { docker: 'docker', timesync: 'chrony chronyd systemd-timesyncd', 'unattended-upgrades': 'unattended-upgrades apt-daily-upgrade dnf-automatic' };
 const logsFor = (item) => `echo @@logs; for u in ${UNITS[item]}; do if systemctl list-unit-files "$u.service" >/dev/null 2>&1 && systemctl cat "$u.service" >/dev/null 2>&1; then echo "#unit=$u"; {{S}}journalctl -u "$u" -n 60 --no-pager -o short-iso 2>/dev/null; break; fi; done`;
 const SERVICE_INFO = {
@@ -512,10 +512,10 @@ function dockerSettingsPlan({ maxSize, maxFile, liveRestore }) {
   const restore = `if {{S}}test -f ${F}.dockgate-prev; then {{S}}mv -f ${F}.dockgate-prev ${F}; else {{S}}rm -f ${F}; fi`;
   return {
     steps: [
-      { label: 'Check Docker and swarm mode', cmd: `command -v docker >/dev/null 2>&1 || { echo "Docker is not installed"; exit 1; }; ${liveRestore ? `[ "$({{S}}docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)" = active ] && { echo "live-restore cannot be used in swarm mode — turn it off"; exit 1; }; ` : ''}command -v python3 >/dev/null 2>&1 || { echo "python3 is needed to edit daemon.json safely"; exit 1; }` },
+      { label: 'Check Docker and swarm mode', cmd: `command -v docker >/dev/null 2>&1 || { echo "Docker is not installed"; exit 1; }; ${liveRestore ? `[ "$({{S}}docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)" = active ] && { echo "live-restore cannot be used in swarm mode - turn it off"; exit 1; }; ` : ''}command -v python3 >/dev/null 2>&1 || { echo "python3 is needed to edit daemon.json safely"; exit 1; }` },
       { label: `Back up and update ${F}`, cmd: `{{S}}mkdir -p /etc/docker && { if {{S}}test -f ${F}; then {{S}}cp -p ${F} ${F}.dockgate-prev; else {{S}}rm -f ${F}.dockgate-prev; fi; } && {{S}}python3 -c ${shq(py)} ${maxSize} ${maxFile} ${liveRestore ? 'true' : 'false'}` },
-      { label: 'Validate (dockerd --validate)', cmd: `if {{S}}dockerd --validate --config-file ${F} >/dev/null 2>&1 || ! {{S}}dockerd --help 2>/dev/null | grep -q -- --validate; then true; else out=$({{S}}dockerd --validate --config-file ${F} 2>&1 | tail -3); ${restore}; echo "Docker rejected daemon.json — restored: $out"; exit 1; fi` },
-      { label: 'Apply (restart if no containers run, otherwise reload)', cmd: `if [ -z "$({{S}}docker ps -q 2>/dev/null)" ]; then {{S}}systemctl restart docker; else {{S}}systemctl reload docker; fi || { ${restore}; {{S}}systemctl restart docker; echo "Docker failed to apply the change — restored"; exit 1; }` },
+      { label: 'Validate (dockerd --validate)', cmd: `if {{S}}dockerd --validate --config-file ${F} >/dev/null 2>&1 || ! {{S}}dockerd --help 2>/dev/null | grep -q -- --validate; then true; else out=$({{S}}dockerd --validate --config-file ${F} 2>&1 | tail -3); ${restore}; echo "Docker rejected daemon.json - restored: $out"; exit 1; fi` },
+      { label: 'Apply (restart if no containers run, otherwise reload)', cmd: `if [ -z "$({{S}}docker ps -q 2>/dev/null)" ]; then {{S}}systemctl restart docker; else {{S}}systemctl reload docker; fi || { ${restore}; {{S}}systemctl restart docker; echo "Docker failed to apply the change - restored"; exit 1; }` },
       { label: 'Clean up', cmd: `{{S}}rm -f ${F}.dockgate-prev; true` },
     ],
   };
@@ -524,13 +524,13 @@ function dockerSettingsPlan({ maxSize, maxFile, liveRestore }) {
 /** Debian/Ubuntu unattended-upgrades: on/off + automatic reboot (and when). */
 function unattendedSettingsPlan({ enabled, autoReboot, rebootTime }) {
   const auto = `APT::Periodic::Update-Package-Lists "${enabled ? 1 : 0}";\nAPT::Periodic::Unattended-Upgrade "${enabled ? 1 : 0}";\n`;
-  const dg = `// Managed by DockGate (Server Console → Services → Auto updates)\nUnattended-Upgrade::Automatic-Reboot "${autoReboot ? 'true' : 'false'}";\nUnattended-Upgrade::Automatic-Reboot-Time "${rebootTime}";\n`;
+  const dg = `// Managed by DockGate (Server Console > Services > Auto updates)\nUnattended-Upgrade::Automatic-Reboot "${autoReboot ? 'true' : 'false'}";\nUnattended-Upgrade::Automatic-Reboot-Time "${rebootTime}";\n`;
   const A = '/etc/apt/apt.conf.d/20auto-upgrades', D = '/etc/apt/apt.conf.d/52dockgate-unattended';
   return {
     steps: [
-      { label: 'Check unattended-upgrades', cmd: `dpkg -l unattended-upgrades 2>/dev/null | grep -q '^ii' || { echo "unattended-upgrades is not installed — install it in Setup first"; exit 1; }; for f in ${A} ${D}; do if {{S}}test -f $f; then {{S}}cp -p $f $f.dockgate-prev; else {{S}}rm -f $f.dockgate-prev; fi; done` },
+      { label: 'Check unattended-upgrades', cmd: `dpkg -l unattended-upgrades 2>/dev/null | grep -q '^ii' || { echo "unattended-upgrades is not installed - install it in Setup first"; exit 1; }; for f in ${A} ${D}; do if {{S}}test -f $f; then {{S}}cp -p $f $f.dockgate-prev; else {{S}}rm -f $f.dockgate-prev; fi; done` },
       { label: 'Write the settings', cmd: `${writeFile(A, auto, '0644')} && ${writeFile(D, dg, '0644')}` },
-      { label: 'Validate (apt-config)', cmd: `apt-config dump >/dev/null 2>&1 || { for f in ${A} ${D}; do if {{S}}test -f $f.dockgate-prev; then {{S}}mv -f $f.dockgate-prev $f; else {{S}}rm -f $f; fi; done; echo "apt rejected the settings — restored"; exit 1; }; {{S}}rm -f ${A}.dockgate-prev ${D}.dockgate-prev` },
+      { label: 'Validate (apt-config)', cmd: `apt-config dump >/dev/null 2>&1 || { for f in ${A} ${D}; do if {{S}}test -f $f.dockgate-prev; then {{S}}mv -f $f.dockgate-prev $f; else {{S}}rm -f $f; fi; done; echo "apt rejected the settings - restored"; exit 1; }; {{S}}rm -f ${A}.dockgate-prev ${D}.dockgate-prev` },
     ],
   };
 }
@@ -543,16 +543,16 @@ function dnfAutomaticPlan({ enabled, upgradeType, reboot }) {
   if (!['default', 'security'].includes(upgradeType)) throw P.httpError(400, 'upgradeType must be default or security');
   if (!['never', 'when-needed'].includes(reboot)) throw P.httpError(400, 'reboot must be never or when-needed');
   const F = '/etc/dnf/automatic.conf';
-  // active key → replace it; else the first commented-out one → un-comment it; else add under [commands]
+  // active key -> replace it; else the first commented-out one -> un-comment it; else add under [commands]
   const set = (k, v) => `if {{S}}grep -qE '^[[:space:]]*${k}[[:space:]]*=' ${F}; then {{S}}sed -i -E 's/^[[:space:]]*${k}[[:space:]]*=.*/${k} = ${v}/' ${F}; ` +
     `elif {{S}}grep -qE '^#[[:space:]]*${k}[[:space:]]*=' ${F}; then {{S}}sed -i -E '0,/^#[[:space:]]*${k}[[:space:]]*=.*/s//${k} = ${v}/' ${F}; ` +
     `else {{S}}sed -i '/^\\[commands\\]/a ${k} = ${v}' ${F}; fi`;
   const restore = `{{S}}mv -f ${F}.dockgate-prev ${F}`;
   return {
     steps: [
-      { label: 'Check dnf-automatic', cmd: `{{S}}test -f ${F} || { echo "dnf-automatic is not installed — install it in Setup → Auto updates"; exit 1; }; {{S}}grep -q '^\\[commands\\]' ${F} || { echo "${F} has no [commands] section"; exit 1; }; {{S}}cp -p ${F} ${F}.dockgate-prev` },
-      { label: 'Write the settings', cmd: `{ ${set('apply_updates', enabled ? 'yes' : 'no')} && ${set('upgrade_type', upgradeType)} && ${set('reboot', reboot)}; } || { ${restore}; echo "could not write ${F} — restored"; exit 1; }` },
-      { label: enabled ? 'Enable the daily timer' : 'Disable the daily timer', cmd: `${enabled ? '{{S}}systemctl enable --now dnf-automatic.timer' : '{{S}}systemctl disable --now dnf-automatic.timer'} >/dev/null 2>&1 || { ${restore}; echo "systemctl could not ${enabled ? 'enable' : 'disable'} dnf-automatic.timer — restored"; exit 1; }` },
+      { label: 'Check dnf-automatic', cmd: `{{S}}test -f ${F} || { echo "dnf-automatic is not installed - install it in Setup > Auto updates"; exit 1; }; {{S}}grep -q '^\\[commands\\]' ${F} || { echo "${F} has no [commands] section"; exit 1; }; {{S}}cp -p ${F} ${F}.dockgate-prev` },
+      { label: 'Write the settings', cmd: `{ ${set('apply_updates', enabled ? 'yes' : 'no')} && ${set('upgrade_type', upgradeType)} && ${set('reboot', reboot)}; } || { ${restore}; echo "could not write ${F} - restored"; exit 1; }` },
+      { label: enabled ? 'Enable the daily timer' : 'Disable the daily timer', cmd: `${enabled ? '{{S}}systemctl enable --now dnf-automatic.timer' : '{{S}}systemctl disable --now dnf-automatic.timer'} >/dev/null 2>&1 || { ${restore}; echo "systemctl could not ${enabled ? 'enable' : 'disable'} dnf-automatic.timer - restored"; exit 1; }` },
       { label: 'Clean up', cmd: `{{S}}rm -f ${F}.dockgate-prev; true` },
     ],
   };
@@ -564,7 +564,7 @@ module.exports.dockerSettingsPlan = dockerSettingsPlan;
 module.exports.unattendedSettingsPlan = unattendedSettingsPlan;
 
 // ---------------------------------------------------------------- Time sync (chrony NTP sources)
-const CHRONY_CONF = 'C=/etc/chrony/chrony.conf; [ -f $C ] || C=/etc/chrony.conf; [ -f $C ] || { echo "chrony is not installed — install it in Setup → Time sync"; exit 1; }';
+const CHRONY_CONF = 'C=/etc/chrony/chrony.conf; [ -f $C ] || C=/etc/chrony.conf; [ -f $C ] || { echo "chrony is not installed - install it in Setup > Time sync"; exit 1; }';
 const CHRONY_RESTORE = 'if {{S}}test -f $C.dockgate-prev; then {{S}}mv -f $C.dockgate-prev $C; fi';
 const CHRONY_RESTART = '{{S}}systemctl restart chrony 2>/dev/null || {{S}}systemctl restart chronyd 2>/dev/null || {{S}}rc-service chronyd restart';
 
@@ -574,7 +574,7 @@ const CHRONY_RESTART = '{{S}}systemctl restart chrony 2>/dev/null || {{S}}system
  * back to defaults); DockGate's sources live between BEGIN/END markers. Validated with `chronyd -p`.
  */
 function ntpPlan({ servers }) {
-  const block = '# BEGIN DOCKGATE-NTP — managed by DockGate (Server Console → Services → Time sync)\n' +
+  const block = '# BEGIN DOCKGATE-NTP - managed by DockGate (Server Console > Services > Time sync)\n' +
     servers.map(x => `${x.type} ${x.host} iburst`).join('\n') + '\n# END DOCKGATE-NTP\n';
   // remove DockGate's block, un-comment the distro's lines, drop trailing blank lines (no build-up)
   const reset = "{{S}}sed -i -e '/^# BEGIN DOCKGATE-NTP/,/^# END DOCKGATE-NTP/d' -e 's/^#dockgate# //' $C && {{S}}sed -i -e :a -e '/^\\n*$/{$d;N;ba' -e '}' $C";
@@ -585,8 +585,8 @@ function ntpPlan({ servers }) {
     steps: [
       { label: 'Back up the chrony configuration', cmd: `${CHRONY_CONF}; {{S}}cp -p $C $C.dockgate-prev` },
       { label: servers.length ? `Use ${servers.map(x => x.host).join(', ')}` : "Go back to the distro's own NTP sources", cmd: `${CHRONY_CONF}; ${apply}` },
-      { label: 'Validate (chronyd -p)', cmd: `${CHRONY_CONF}; {{S}}chronyd -p -f $C >/dev/null 2>&1 || { out=$({{S}}chronyd -p -f $C 2>&1 | tail -2); ${CHRONY_RESTORE}; echo "chrony rejected the configuration — restored: $out"; exit 1; }` },
-      { label: 'Restart chrony', cmd: `${CHRONY_CONF}; ${CHRONY_RESTART} || { ${CHRONY_RESTORE}; ${CHRONY_RESTART}; echo "chrony failed to start — previous configuration restored"; exit 1; }` },
+      { label: 'Validate (chronyd -p)', cmd: `${CHRONY_CONF}; {{S}}chronyd -p -f $C >/dev/null 2>&1 || { out=$({{S}}chronyd -p -f $C 2>&1 | tail -2); ${CHRONY_RESTORE}; echo "chrony rejected the configuration - restored: $out"; exit 1; }` },
+      { label: 'Restart chrony', cmd: `${CHRONY_CONF}; ${CHRONY_RESTART} || { ${CHRONY_RESTORE}; ${CHRONY_RESTART}; echo "chrony failed to start - previous configuration restored"; exit 1; }` },
       { label: 'Clean up', cmd: `${CHRONY_CONF}; {{S}}rm -f $C.dockgate-prev; true` },
     ],
   };
@@ -603,7 +603,7 @@ function ufwEnablePlan({ id, sshPorts, webPorts, test }) {
   const allow = [...new Set([...sshPorts, ...webPorts].map(P.assertPort))];
   return {
     steps: [
-      { label: 'Make sure UFW is installed', cmd: 'command -v ufw >/dev/null 2>&1 || { if command -v apt-get >/dev/null 2>&1; then {{S}}env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y ufw >/dev/null; else echo "UFW is not available on this distribution — use firewalld (Setup → Firewall)"; exit 1; fi; }' },
+      { label: 'Make sure UFW is installed', cmd: 'command -v ufw >/dev/null 2>&1 || { if command -v apt-get >/dev/null 2>&1; then {{S}}env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y ufw >/dev/null; else echo "UFW is not available on this distribution - use firewalld (Setup > Firewall)"; exit 1; fi; }' },
       { label: `Allow ${allow.map(p => p + '/tcp').join(', ')} before switching on`, cmd: allow.map(p => `{{S}}ufw allow ${p}/tcp >/dev/null`).join(' && ') },
       { label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, 'ufw --force disable >/dev/null 2>&1') },
       { label: 'Switch the firewall on (deny incoming by default)', cmd: '{{S}}ufw default deny incoming >/dev/null && {{S}}ufw default allow outgoing >/dev/null && {{S}}ufw --force enable >/dev/null', rollbackOnFail: true },
@@ -620,7 +620,7 @@ module.exports.ufwEnablePlan = ufwEnablePlan;
 const ufwAct = (a) => (a === 'LIMIT' ? 'limit' : 'allow');
 /**
  * Commands that turn a port's current sources into the wanted ones. Adds run first, then removes, so a
- * source that stays is never interrupted. UFW rules are deleted by their spec (not by number — numbers
+ * source that stays is never interrupted. UFW rules are deleted by their spec (not by number - numbers
  * shift as rules are added); the spec matches a rule regardless of its comment.
  *   cur:  [{ src, action, proto|null, kind?, key? }]   (from the server)
  *   add:  [{ src, tag }]                                (normalised addresses or 'any')

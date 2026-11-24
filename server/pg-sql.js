@@ -1,12 +1,12 @@
-// PostgreSQL helpers for Tools → Databases (pure, unit tested): split a SQL text into statements, tell what a
+// PostgreSQL helpers for Tools > Databases (pure, unit tested): split a SQL text into statements, tell what a
 // statement does, quote identifiers and literals, and read psql's CSV output.
-//   split(text)            [{ sql, start, end }] — top-level ";" only (quotes, $tag$ bodies and comments respected)
-//   hasMeta(sql)           a backslash outside quotes / comments (a psql command such as \\! — never sent)
+//   split(text)            [{ sql, start, end }] - top-level ";" only (quotes, $tag$ bodies and comments respected)
+//   hasMeta(sql)           a backslash outside quotes / comments (a psql command such as \\! - never sent)
 //   errorAt(stderr, sql)   { line, col, offset } of a psql error inside the statement (from LINE n + the caret)
-//   kind(sql)              { first, rows, write, danger } — first keyword, returns rows?, changes data?, needs a confirm?
-//   ident(name)            "name" — always quoted ("" doubled)
-//   lit(value)             'value' or NULL — standard_conforming_strings is forced on for every session
-//   parseCsv(text)         [[field…]…] with null for the NULL marker
+//   kind(sql)              { first, rows, write, danger } - first keyword, returns rows?, changes data?, needs a confirm?
+//   ident(name)            "name" - always quoted ("" doubled)
+//   lit(value)             'value' or NULL - standard_conforming_strings is forced on for every session
+//   parseCsv(text)         [[field...]...] with null for the NULL marker
 //   readResult(out, sql)   { kind: 'rows', columns, rows } | { kind: 'tag', tag } (+ tag after RETURNING rows)
 
 const NULL_MARK = '␀'; // "␀": psql prints NULL as this (-P null=␀); an empty string stays ""
@@ -25,7 +25,7 @@ function split(text) {
       while (i < n && depth) { if (s[i] === '/' && s[i + 1] === '*') { depth++; i += 2; } else if (s[i] === '*' && s[i + 1] === '/') { depth--; i += 2; } else i++; }
       continue;
     }
-    if (c === "'") { // '…' with '' — E'…' also takes \'
+    if (c === "'") { // '...' with '' - E'...' also takes \'
       const esc = i > 0 && /[eE]/.test(s[i - 1]) && !/[\w$]/.test(s[i - 2] || '');
       i++;
       while (i < n) { if (esc && s[i] === '\\') { i += 2; continue; } if (s[i] === "'") { if (s[i + 1] === "'") { i += 2; continue; } i++; break; } i++; }
@@ -43,7 +43,7 @@ function split(text) {
   return out;
 }
 
-/** A backslash outside strings, quoted names, $…$ bodies and comments: psql would run it as one of its own commands. */
+/** A backslash outside strings, quoted names, $...$ bodies and comments: psql would run it as one of its own commands. */
 function hasMeta(text) {
   const s = String(text || ''); const n = s.length; let i = 0;
   while (i < n) {
@@ -59,7 +59,7 @@ function hasMeta(text) {
   return false;
 }
 
-/** Where psql says the error is: "LINE 3: …" and the caret under it → line / column / offset inside the statement. */
+/** Where psql says the error is: "LINE 3: ..." and the caret under it -> line / column / offset inside the statement. */
 function errorAt(stderr, sql) {
   const lines = String(stderr || '').split('\n');
   const k = lines.findIndex(l => /^(psql:[^:]*:\d+:\s*)?LINE (\d+):/.test(l));
@@ -87,7 +87,7 @@ function errorAt(stderr, sql) {
   return { line, col: Math.max(0, col), offset: before + Math.max(0, col) };
 }
 
-/** What psql would still wait for at the end of the text: an open quote, $…$ body, block comment or parenthesis. */
+/** What psql would still wait for at the end of the text: an open quote, $...$ body, block comment or parenthesis. */
 function incomplete(text) {
   const s = String(text || ''); const n = s.length; let i = 0, depth = 0;
   while (i < n) {
@@ -103,7 +103,7 @@ function incomplete(text) {
   return depth > 0 ? 'a ( is not closed' : null;
 }
 
-/** :name placeholders outside strings, quoted names, $…$ bodies and comments (not ::casts, not [1:2]). */
+/** :name placeholders outside strings, quoted names, $...$ bodies and comments (not ::casts, not [1:2]). */
 function params(text, values) {
   const s = String(text || ''); const n = s.length; let i = 0; const names = []; let out = '';
   const copyTo = (j) => { out += s.slice(i, j); i = j; };
@@ -150,11 +150,11 @@ function kind(sql) {
   if (first === 'DROP') danger = 'DROP removes it for good';
   else if (first === 'TRUNCATE') danger = 'TRUNCATE empties the table';
   else if ((first === 'DELETE' || first === 'UPDATE') && !has(/\bWHERE\b/i)) danger = `${first} without WHERE changes every row`;
-  else if (first === 'ALTER' && has(/\bDROP\b/i)) danger = 'ALTER … DROP removes a part of it';
+  else if (first === 'ALTER' && has(/\bDROP\b/i)) danger = 'ALTER ... DROP removes a part of it';
   return { first, rows, write, danger };
 }
 
-// Quoted strings, identifiers and $…$ bodies replaced by blanks (for keyword checks only).
+// Quoted strings, identifiers and $...$ bodies replaced by blanks (for keyword checks only).
 function blank(sql) {
   return String(sql)
     .replace(/\$([A-Za-z_][A-Za-z_0-9]*)?\$[\s\S]*?\$\1\$/g, ' ')
@@ -199,7 +199,7 @@ function parseCsv(text) {
 const TAG_RE = /^(INSERT \d+ \d+|UPDATE \d+|DELETE \d+|MERGE \d+|COPY \d+|SELECT \d+|MOVE \d+|FETCH \d+)$/;
 const ANY_TAG_RE = /^[A-Z][A-Z ]*[A-Z]( \d+){0,2}$/;
 
-/** One statement's output → rows (with the command tag that follows RETURNING rows) or a command tag. */
+/** One statement's output -> rows (with the command tag that follows RETURNING rows) or a command tag. */
 function readResult(out, sql) {
   const k = kind(sql);
   const text = String(out || '').replace(/\n$/, '');

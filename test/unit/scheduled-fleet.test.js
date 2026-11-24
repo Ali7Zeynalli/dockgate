@@ -1,5 +1,5 @@
 'use strict';
-// Tools → Schedules "Back up a database", systemd timers in Cron, "Everything on a server", the Dashboard's
+// Tools > Schedules "Back up a database", systemd timers in Cron, "Everything on a server", the Dashboard's
 // "Needs attention on all servers", and docker.withServer (a task runs on its own server, not the one in use).
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -28,7 +28,7 @@ test('timer actions refuse odd names before anything runs on the server', async 
   for (const u of ['x;rm -rf /.timer', 'apt-daily.service', '../a.timer', '']) await assert.rejects(() => cron.timerAction({ id: 'x' }, u, 'run'), /Unknown timer/);
 });
 
-test('containers in trouble: restarting, unhealthy, stopped with an error — not a clean stop', () => {
+test('containers in trouble: restarting, unhealthy, stopped with an error - not a clean stop', () => {
   assert.equal(FA.problemOf({ State: 'restarting', Status: 'Restarting (1) 3 seconds ago' }), 'restarting');
   assert.equal(FA.problemOf({ State: 'running', Status: 'Up 2 hours (unhealthy)' }), 'unhealthy');
   assert.equal(FA.problemOf({ State: 'exited', Status: 'Exited (1) 5 minutes ago' }), 'stopped with exit 1');

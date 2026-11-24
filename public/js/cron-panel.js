@@ -1,7 +1,7 @@
-// Server Console → Cron: scheduled jobs of the server — crontabs, /etc/cron.d, cron.daily…, systemd timers.
+// Server Console > Cron: scheduled jobs of the server - crontabs, /etc/cron.d, cron.daily..., systemd timers.
 // Editable: the SSH user's crontab, root's crontab (sudo) and /etc/cron.d/dockgate. Everything else is shown
-// as it is (system and package files are not rewritten; ⋯ → Open in Files to change one yourself).
-/** Cron jobs and systemd timers — or only one of them (Server → Automation: Cron, Timers). */
+// as it is (system and package files are not rewritten; ⋯ > Open in Files to change one yourself).
+/** Cron jobs and systemd timers - or only one of them (Server > Automation: Cron, Timers). */
 async function renderCronPanel(serverId, container) {
   await renderCronPanelAll(serverId, container);
   if (container.dataset.only === 'cron') UI.onlySections(container, ['Cron jobs']);
@@ -19,7 +19,7 @@ async function renderCronPanelAll(serverId, container) {
   const local = (ms) => new Date(ms);
   const fmtServer = (ms) => { const x = new Date(ms + d.offsetMin * 60000); return x.toISOString().slice(0, 16).replace('T', ' '); };
   const fmtWhen = (ms) => {
-    if (!ms) return '—';
+    if (!ms) return '-';
     const diff = ms - Date.now(), abs = Math.abs(diff), m = Math.round(abs / 60000);
     const rel = m < 60 ? `${m} min` : m < 2880 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`;
     return `${fmtServer(ms)} <span class="ui-sub">(${diff > 0 ? 'in ' + rel : rel + ' ago'})</span>`;
@@ -36,8 +36,8 @@ async function renderCronPanelAll(serverId, container) {
   const toggle = (j) => j.src.editable ? `<div class="toggle ${j.enabled ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${j.enabled}" aria-label="On" data-toggle="${esc(j.src.id)}|${j.index}"></div>` : `<span class="ui-sub" title="Read only">${j.enabled ? 'on' : 'off'}</span>`;
   const ago = (ms) => { const m = Math.round(Math.abs(Date.now() - ms) / 60000); return `<span title="${fmtServer(ms)} server time">${m < 60 ? m + ' min' : m < 2880 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d'} ago</span>`; };
   const last = (j) => {
-    if (j.lastCode != null) return j.lastCode === 0 ? `<span style="color:var(--success)">✓</span> ${ago(j.lastRun)}` : `<span style="color:var(--danger);font-weight:600">✗ exit ${j.lastCode}</span> · ${ago(j.lastRun)}`;
-    return j.lastRun ? `<span class="ui-sub">started</span> ${ago(j.lastRun)}` : '<span class="ui-sub">—</span>';
+    if (j.lastCode != null) return j.lastCode === 0 ? `<span style="color:var(--success)">✓</span> ${ago(j.lastRun)}` : `<span style="color:var(--danger);font-weight:600">✗ exit ${j.lastCode}</span>, ${ago(j.lastRun)}`;
+    return j.lastRun ? `<span class="ui-sub">started</span> ${ago(j.lastRun)}` : '<span class="ui-sub">-</span>';
   };
   const cmdShort = (c) => String(c).replace(/^(\/usr\/local\/lib\/dockgate\/dg-cron|~\/\.dockgate\/bin\/dg-cron)\s+\S+\s+/, '').replace(/\s+>>\s+\S+\/[\w.-]+\.log 2>&1$/, '');
   const notes = d.sources.filter(s => s.note).map(s => `<div class="insight-card warning" style="margin:0 0 8px"><div><b>${esc(s.label)}</b>: ${esc(s.note)}</div></div>`).join('');
@@ -50,32 +50,32 @@ async function renderCronPanelAll(serverId, container) {
     ${!d.cronRunning ? '<div class="insight-card danger" style="margin-bottom:10px"><div><b>No cron daemon is running.</b> None of these jobs runs until it is started (Services tab: <span class="td-mono">cron</span> / <span class="td-mono">crond</span>).</div></div>' : ''}
     ${notes}
     ${UI.chips([['all', 'All', counts.all], ['user', d.sshUser, counts.user], ...(d.sshUser !== 'root' ? [['root', 'root', counts.root]] : []), ['dockgate', 'DockGate file', counts.dockgate], ['system', 'System (read only)', counts.system], ['timers', 'systemd timers', counts.timers], ['failed', 'Failed', counts.failed]], filter)}
-    ${filter !== 'timers' ? UI.table([{ label: 'On' }, { label: 'Schedule' }, { label: 'Command' }, { label: 'User · source' }, { label: 'Next run' }, { label: 'Last run' }, { label: '', align: 'right' }],
+    ${filter !== 'timers' ? UI.table([{ label: 'On' }, { label: 'Schedule' }, { label: 'Command' }, { label: 'User, source' }, { label: 'Next run' }, { label: 'Last run' }, { label: '', align: 'right' }],
       shown.map(j => ({ cls: j.enabled ? '' : 'ui-row-off', cells: [
         toggle(j),
         `<b>${esc(j.human)}</b><div class="ui-sub td-mono">${esc(j.schedule)}</div>${j.error ? `<div class="text-danger ui-sub">${esc(j.error)}</div>` : ''}`,
         `${j.meta && j.meta.name ? `<b>${esc(j.meta.name)}</b> ${j.meta.notify ? UI.pill('info', 'alerts') : ''} ${j.meta.log ? UI.pill('off', 'log') : ''}<br>` : ''}<span class="td-mono" style="font-size:12px;display:inline-block;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom" title="${esc(j.command)}">${esc(cmdShort(j.command))}</span>`,
-        `${esc(j.user)}<div class="ui-sub" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(j.src.label)}">${esc(j.src.label.replace(/ — .*$/, '').replace(/ \(package \/ system\)$/, ''))}</div>`,
-        j.enabled ? (j.next[0] ? `<span title="${fmtServer(j.next[0])} server time">${fmtServer(j.next[0]).slice(5)}</span><div class="ui-sub">${(() => { const m = Math.round((j.next[0] - Date.now()) / 60000); return 'in ' + (m < 60 ? m + ' min' : m < 2880 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d'); })()}</div>` : (/@reboot/i.test(j.schedule) ? '<span class="ui-sub">at reboot</span>' : '—')) : '<span class="ui-sub">— turned off</span>',
+        `${esc(j.user)}<div class="ui-sub" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(j.src.label)}">${esc(j.src.label.replace(/ - .*$/, '').replace(/ \(package \/ system\)$/, ''))}</div>`,
+        j.enabled ? (j.next[0] ? `<span title="${fmtServer(j.next[0])} server time">${fmtServer(j.next[0]).slice(5)}</span><div class="ui-sub">${(() => { const m = Math.round((j.next[0] - Date.now()) / 60000); return 'in ' + (m < 60 ? m + ' min' : m < 2880 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d'); })()}</div>` : (/@reboot/i.test(j.schedule) ? '<span class="ui-sub">at reboot</span>' : '-')) : '<span class="ui-sub">- turned off</span>',
         last(j),
         `${j.src.editable ? UI.btn('Edit', `data-edit="${esc(j.src.id)}|${j.index}"`) : ''} ${UI.menu([
-          { label: 'Run now…', attrs: `data-run="${esc(j.src.id)}|${j.index}"` },
+          { label: 'Run now...', attrs: `data-run="${esc(j.src.id)}|${j.index}"` },
           j.meta && j.meta.log ? { label: 'Open its log', attrs: `data-log="${esc(j.src.id)}|${j.index}"` } : null,
           !j.src.editable && j.src.id.startsWith('file:') ? { label: 'Open in Files', attrs: `data-files="${esc(j.src.id.slice(5))}"` } : null,
           !j.src.editable && j.src.id === 'etc' ? { label: 'Open in Files', attrs: 'data-files="/etc/crontab"' } : null,
           j.src.editable ? '-' : null,
-          j.src.editable ? { label: `${Icons.trash} Delete…`, attrs: `data-del="${esc(j.src.id)}|${j.index}"`, danger: true } : null])}`,
+          j.src.editable ? { label: `${Icons.trash} Delete...`, attrs: `data-del="${esc(j.src.id)}|${j.index}"`, danger: true } : null])}`,
       ] })), { empty: 'No jobs here.', minWidth: 940 }) : ''}
     ${(filter === 'all' || filter === 'timers') && d.timers.length ? `${UI.header('systemd timers', 'Many distributions run their regular work (apt, logrotate, fstrim, certbot) with timers instead of cron. Turn one on or off, run its job once, or read its log; the timer files themselves are not changed.')}
       ${UI.table([{ label: 'On' }, { label: 'Timer' }, { label: 'When' }, { label: 'Runs' }, { label: 'Next run' }, { label: 'Last run' }, { label: '', align: 'right' }],
         d.timers.map(t => ({ cells: [
-          t.canToggle ? `<div class="toggle ${t.state === 'enabled' ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${t.state === 'enabled'}" aria-label="On" data-ttoggle="${esc(t.unit)}"></div>` : `<span class="ui-sub" title="A static timer is started by another unit">${esc(t.state || '—')}</span>`,
+          t.canToggle ? `<div class="toggle ${t.state === 'enabled' ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${t.state === 'enabled'}" aria-label="On" data-ttoggle="${esc(t.unit)}"></div>` : `<span class="ui-sub" title="A static timer is started by another unit">${esc(t.state || '-')}</span>`,
           `<span class="td-mono">${esc(t.unit)}</span>${t.active === 'active' ? '' : `<div class="ui-sub">${t.active === 'unknown' ? (t.state === 'enabled' ? 'turned on' : 'turned off') : esc(t.active)}</div>`}`,
-          `<span class="td-mono ui-sub">${esc(t.calendar || '—')}</span>`, `<span class="td-mono">${esc(t.runs)}</span>`, t.next ? fmtWhen(t.next) : '—', t.last ? fmtWhen(t.last) : '—',
+          `<span class="td-mono ui-sub">${esc(t.calendar || '-')}</span>`, `<span class="td-mono">${esc(t.runs)}</span>`, t.next ? fmtWhen(t.next) : '-', t.last ? fmtWhen(t.last) : '-',
           `${UI.btn('Run now', `data-trun="${esc(t.unit)}"`)} ${UI.btn('Log', `data-tlog="${esc(t.unit)}"`)}`] })), { minWidth: 900 })}` : ''}
     ${filter === 'all' && d.periodic.length ? `<details style="margin-top:12px"><summary class="text-sm" style="cursor:pointer">Scripts in /etc/cron.hourly, daily, weekly, monthly (${d.periodic.length})</summary><div class="ui-sub td-mono" style="margin-top:6px;line-height:1.8">${['hourly', 'daily', 'weekly', 'monthly'].map(p => { const l = d.periodic.filter(x => x.period === p); return l.length ? `<b>${p}</b>: ${l.map(x => esc(x.name)).join(', ')}` : ''; }).filter(Boolean).join('<br>')}</div></details>` : ''}
-    ${failed[0] ? `<div class="insight-card danger" style="margin-top:14px"><div style="flex:1"><b>${esc(failed[0].meta && failed[0].meta.name ? failed[0].meta.name : cmdShort(failed[0].command))} failed (exit ${failed[0].lastCode})</b> ${fmtWhen(failed[0].lastRun)}<div style="margin-top:8px">${UI.btn('Run now…', `data-run="${esc(failed[0].src.id)}|${failed[0].index}"`, 'btn-primary')} ${failed[0].meta && failed[0].meta.log ? UI.btn('Open its log', `data-log="${esc(failed[0].src.id)}|${failed[0].index}"`) : ''}</div></div></div>` : ''}
-    <div class="ui-sub" style="margin-top:12px">Written by DockGate: ${esc(d.sshUser)}'s crontab${d.sshUser !== 'root' ? ', root\'s crontab (sudo)' : ''} and <span class="td-mono">${esc(d.dgFile)}</span>. The crontab before each change is kept (${UI.btn('Earlier versions…', 'data-versions')}).</div>`;
+    ${failed[0] ? `<div class="insight-card danger" style="margin-top:14px"><div style="flex:1"><b>${esc(failed[0].meta && failed[0].meta.name ? failed[0].meta.name : cmdShort(failed[0].command))} failed (exit ${failed[0].lastCode})</b> ${fmtWhen(failed[0].lastRun)}<div style="margin-top:8px">${UI.btn('Run now...', `data-run="${esc(failed[0].src.id)}|${failed[0].index}"`, 'btn-primary')} ${failed[0].meta && failed[0].meta.log ? UI.btn('Open its log', `data-log="${esc(failed[0].src.id)}|${failed[0].index}"`) : ''}</div></div></div>` : ''}
+    <div class="ui-sub" style="margin-top:12px">Written by DockGate: ${esc(d.sshUser)}'s crontab${d.sshUser !== 'root' ? ', root\'s crontab (sudo)' : ''} and <span class="td-mono">${esc(d.dgFile)}</span>. The crontab before each change is kept (${UI.btn('Earlier versions...', 'data-versions')}).</div>`;
 
   const find = (key) => { const [src, idx] = key.split('|'); return all.find(j => j.src.id === src && String(j.index) === idx); };
   container.querySelectorAll('[data-chip]').forEach(b => b.addEventListener('click', () => { st.set('filter', b.dataset.chip); reload(); }));
@@ -106,7 +106,7 @@ async function renderCronPanelAll(serverId, container) {
   container.querySelectorAll('[data-trun]').forEach(b => b.addEventListener('click', () => {
     const t = timerOf(b.dataset.trun);
     showConfirm('Run now', `Start <span class="td-mono">${esc(t.runs)}</span> once now (what <span class="td-mono">${esc(t.unit)}</span> runs)? Its last log lines are shown here (up to 2 minutes).`, async () => {
-      const m = showModal(`Running ${esc(t.runs)}…`, '<div data-out><span class="ui-sub">Running…</span></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+      const m = showModal(`Running ${esc(t.runs)}...`, '<div data-out><span class="ui-sub">Running...</span></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
       m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
       const box = () => m.overlay.querySelector('[data-out]');
       try {
@@ -140,8 +140,8 @@ async function renderCronPanelAll(serverId, container) {
 
   function openJob(j) {
     const meta = (j && j.meta) || {};
-    const srcOpts = editable.map(s => `<option value="${s.id}" ${j ? (j.src.id === s.id ? 'selected' : '') : (s.id === (d.sshUser === 'root' ? 'user' : 'user') ? 'selected' : '')}>${esc(s.id === 'user' ? `${d.sshUser} (SSH user) — crontab` : s.id === 'root' ? 'root — crontab (sudo)' : `${d.dgFile} (choose the user)`)}</option>`).join('');
-    const dlg = UI.dialog({ title: j ? 'Edit cron job' : 'New cron job', saveLabel: 'Review changes…', wide: true,
+    const srcOpts = editable.map(s => `<option value="${s.id}" ${j ? (j.src.id === s.id ? 'selected' : '') : (s.id === (d.sshUser === 'root' ? 'user' : 'user') ? 'selected' : '')}>${esc(s.id === 'user' ? `${d.sshUser} (SSH user) - crontab` : s.id === 'root' ? 'root - crontab (sudo)' : `${d.dgFile} (choose the user)`)}</option>`).join('');
+    const dlg = UI.dialog({ title: j ? 'Edit cron job' : 'New cron job', saveLabel: 'Review changes...', wide: true,
       body: `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
           <label class="ui-field"><span class="ui-label">Name</span><input class="input" id="cj-name" value="${esc(meta.name || '')}" placeholder="db-backup"><span class="ui-sub">Needed for its log and alerts</span></label>
@@ -150,26 +150,26 @@ async function renderCronPanelAll(serverId, container) {
         </div>
         <div class="ui-field"><span class="ui-label">When</span>${SchedulePicker.html((j && j.schedule) || '30 3 * * *', { minutes: true })}<div style="margin-top:6px"><button type="button" class="ui-fchip" data-preset="@reboot">At reboot</button></div></div>
         <div style="display:grid;grid-template-columns:minmax(200px,1fr) 2fr;gap:10px;align-items:start">
-          <label class="ui-field"><span class="ui-label">Schedule (server time)</span><input class="input td-mono" id="cj-sched" value="${esc((j && j.schedule) || '30 3 * * *')}"><span class="ui-sub">minute hour day month weekday · or @daily, @hourly, @reboot</span></label>
-          <div class="ui-field"><span class="ui-label" id="cj-human">—</span><div class="ui-sub td-mono" id="cj-next" style="line-height:1.7"></div></div>
+          <label class="ui-field"><span class="ui-label">Schedule (server time)</span><input class="input td-mono" id="cj-sched" value="${esc((j && j.schedule) || '30 3 * * *')}"><span class="ui-sub">minute hour day month weekday, or @daily, @hourly, @reboot</span></label>
+          <div class="ui-field"><span class="ui-label" id="cj-human">-</span><div class="ui-sub td-mono" id="cj-next" style="line-height:1.7"></div></div>
         </div>
-        <label class="ui-field"><span class="ui-label">Command</span><textarea class="input td-mono" id="cj-cmd" rows="2" placeholder="/opt/scripts/backup.sh">${esc(j ? cmdShort(j.command) : '')}</textarea><span class="ui-sub">Cron has a short PATH — use full paths. A % in the command means a new line to cron: write \\% for a literal one.</span></label>
+        <label class="ui-field"><span class="ui-label">Command</span><textarea class="input td-mono" id="cj-cmd" rows="2" placeholder="/opt/scripts/backup.sh">${esc(j ? cmdShort(j.command) : '')}</textarea><span class="ui-sub">Cron has a short PATH - use full paths. A % in the command means a new line to cron: write \\% for a literal one.</span></label>
         <div style="display:grid;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-primary)">
           <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="cj-log" ${meta.log ? 'checked' : ''}> Keep its output in a log <span class="ui-sub" id="cj-logpath"></span></label>
           <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="cj-fail" ${(meta.notify || []).includes('fail') ? 'checked' : ''}> Notify when it fails (exit code ≠ 0, with its last lines)</label>
           <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="cj-missed" ${(meta.notify || []).includes('missed') ? 'checked' : ''}> Notify when it does not run (no start within 30 min of its time)</label>
-          <span class="ui-sub">Alerts use a small wrapper DockGate installs (<span class="td-mono">dg-cron</span>); it records how each run ended. Channels: Settings → Notifications.</span>
+          <span class="ui-sub">Alerts use a small wrapper DockGate installs (<span class="td-mono">dg-cron</span>); it records how each run ended. Channels: Settings > Notifications.</span>
         </div>`,
       onOpen: (ov) => {
         const sched = ov.querySelector('#cj-sched'), src = ov.querySelector('#cj-src');
         const sync = () => {
           ov.querySelector('#cj-userf').style.display = src.value === 'dockgate' ? '' : 'none';
           const name = ov.querySelector('#cj-name').value.trim() || 'NAME';
-          ov.querySelector('#cj-logpath').textContent = `— ${src.value === 'user' ? '~/.dockgate/cron-logs' : '/var/log/dockgate-cron'}/${name}.log`;
+          ov.querySelector('#cj-logpath').textContent = `- ${src.value === 'user' ? '~/.dockgate/cron-logs' : '/var/log/dockgate-cron'}/${name}.log`;
         };
         let t = null;
         const next = () => { clearTimeout(t); t = setTimeout(async () => {
-          try { const r = await API.post(`/servers/${serverId}/cron/next`, { schedule: sched.value, offsetMin: d.offsetMin }); ov.querySelector('#cj-human').textContent = r.human; ov.querySelector('#cj-next').innerHTML = r.next.length ? 'Next: ' + r.next.map(x => fmtServer(x)).join(' · ') + (d.offsetMin !== yourOffset ? `<br><span>${esc(tzTxt(d.offsetMin))} server · first one is ${esc(local(r.next[0]).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }))} your time</span>` : '') : (/@reboot/i.test(sched.value) ? 'Runs when the server starts' : ''); }
+          try { const r = await API.post(`/servers/${serverId}/cron/next`, { schedule: sched.value, offsetMin: d.offsetMin }); ov.querySelector('#cj-human').textContent = r.human; ov.querySelector('#cj-next').innerHTML = r.next.length ? 'Next: ' + r.next.map(x => fmtServer(x)).join(', ') + (d.offsetMin !== yourOffset ? `<br><span>${esc(tzTxt(d.offsetMin))} server, first one is ${esc(local(r.next[0]).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }))} your time</span>` : '') : (/@reboot/i.test(sched.value) ? 'Runs when the server starts' : ''); }
           catch (e) { ov.querySelector('#cj-human').textContent = 'Not a valid schedule'; ov.querySelector('#cj-next').textContent = e.message; }
         }, 250); };
         sched.addEventListener('input', next);
@@ -193,7 +193,7 @@ async function renderCronPanelAll(serverId, container) {
 
   async function runNow(j) {
     showConfirm('Run now', `Run <span class="td-mono">${esc(cmdShort(j.command))}</span> once now, as <b>${esc(j.user)}</b>? Its output is shown here (up to 2 minutes).`, async () => {
-      const m = showModal(`Running ${esc(j.meta && j.meta.name ? j.meta.name : 'job')}…`, '<div data-out><span class="ui-sub">Running…</span></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+      const m = showModal(`Running ${esc(j.meta && j.meta.name ? j.meta.name : 'job')}...`, '<div data-out><span class="ui-sub">Running...</span></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
       m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
       try {
         const r = await API.post(`/servers/${serverId}/cron/run`, { source: j.src.id, command: j.command, user: j.user });
@@ -219,7 +219,7 @@ async function renderCronPanelAll(serverId, container) {
   async function versions() {
     const lists = await Promise.all(editable.map(s => API.get(`/servers/${serverId}/cron/versions?source=${s.id}`).then(l => l.map(v => ({ ...v, source: s.id }))).catch(() => [])));
     const list = lists.flat().sort((a, b) => b.t - a.t);
-    const m = showModal('Earlier versions', list.length ? `<div class="text-sm" style="margin-bottom:8px">The crontab before each change from DockGate (the last 5 of each).</div>${list.map(v => `<button type="button" class="btn btn-secondary" style="display:flex;width:100%;justify-content:space-between;margin-bottom:6px" data-ver="${v.id}"><span>${esc({ user: d.sshUser + "'s crontab", root: "root's crontab", dockgate: d.dgFile }[v.source])}</span><span class="ui-sub">${esc(new Date(v.t).toLocaleString())}</span></button>`).join('')}` : '<div class="text-sm">No earlier version yet — one is kept with each change made here.</div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const m = showModal('Earlier versions', list.length ? `<div class="text-sm" style="margin-bottom:8px">The crontab before each change from DockGate (the last 5 of each).</div>${list.map(v => `<button type="button" class="btn btn-secondary" style="display:flex;width:100%;justify-content:space-between;margin-bottom:6px" data-ver="${v.id}"><span>${esc({ user: d.sshUser + "'s crontab", root: "root's crontab", dockgate: d.dgFile }[v.source])}</span><span class="ui-sub">${esc(new Date(v.t).toLocaleString())}</span></button>`).join('')}` : '<div class="text-sm">No earlier version yet - one is kept with each change made here.</div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
     m.overlay.querySelectorAll('[data-ver]').forEach(b => b.addEventListener('click', async () => {
       try { const v = await API.get(`/files/version?id=${b.dataset.ver}`); showModal('Earlier version', `<pre class="td-mono" style="font-size:12px;max-height:60vh;overflow:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:8px;margin:0;white-space:pre">${esc(v.content || '(empty)')}</pre><div class="ui-sub" style="margin-top:6px">To bring a job back, add it again with + New job.</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]); }
       catch (e) { showToast(e.message, 'error'); }

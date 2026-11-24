@@ -1,10 +1,10 @@
 // Read-only browse of a private Docker registry via the Registry HTTP API v2 (the "token-dance" auth).
 // Used by the Registries "Browse" view to list a KNOWN repo's tags and per-tag digest/size. Works on any
-// spec-compliant registry — ghcr.io, registry.gitlab.com, quay.io, self-hosted registry:2 — and Docker
+// spec-compliant registry - ghcr.io, registry.gitlab.com, quay.io, self-hosted registry:2 - and Docker
 // Hub (registry-1.docker.io). Full /v2/_catalog enumeration is intentionally NOT done here (Docker Hub
 // and GHCR don't support it); the caller passes a known repo (auto-tracked on push, or user-pinned).
 // Stored passwords/PATs are decrypted per call and used only as the Basic credential to fetch a bearer
-// token — never logged.
+// token - never logged.
 
 const { decrypt } = require('./auth/secrets');
 
@@ -25,18 +25,18 @@ function basicAuth(username, password) {
 }
 
 // Registrable-ish domain (last two labels). Used to confirm a token realm belongs to the same provider
-// as the configured registry before sending it the credential — auth.docker.io ⟷ registry-1.docker.io,
+// as the configured registry before sending it the credential - auth.docker.io ⟷ registry-1.docker.io,
 // gitlab.com ⟷ registry.gitlab.com, ghcr.io, quay.io all share their last two labels.
 function baseDomain(host) {
   return String(host || '').toLowerCase().split('.').slice(-2).join('.');
 }
 
-// Docker Hub's v2 API needs official single-name images under the "library/" namespace (nginx → library/nginx).
+// Docker Hub's v2 API needs official single-name images under the "library/" namespace (nginx -> library/nginx).
 function normRepo(serverAddress, repo) {
   return (HUB_ALIASES.includes(serverAddress) && !repo.includes('/')) ? 'library/' + repo : repo;
 }
 
-// Parse  WWW-Authenticate: Bearer realm="…",service="…",scope="…"
+// Parse  WWW-Authenticate: Bearer realm="...",service="...",scope="..."
 function parseBearer(header) {
   if (!header || !/^Bearer/i.test(header)) return null;
   const out = {};
@@ -65,12 +65,12 @@ async function v2Get(registry, path, { scope, accept, method = 'GET' } = {}) {
       const tHeaders = {};
       if (registry.username) {
         // Only hand the stored credential to a realm that is HTTPS and on the SAME domain as the
-        // configured registry — a malicious/compromised registry (or a MITM on the unauthenticated
+        // configured registry - a malicious/compromised registry (or a MITM on the unauthenticated
         // /v2/ probe) must not redirect the admin's PAT to another host, least of all over cleartext.
         const expectedHost = new URL(apiBase(registry.server_address)).host;
-        if (tokenUrl.protocol !== 'https:') throw new Error('Registry auth realm is not HTTPS — refusing to send the credential');
+        if (tokenUrl.protocol !== 'https:') throw new Error('Registry auth realm is not HTTPS - refusing to send the credential');
         if (baseDomain(tokenUrl.hostname) !== baseDomain(expectedHost)) {
-          throw new Error(`Registry auth realm host "${tokenUrl.hostname}" doesn't match the registry — refusing to send the credential`);
+          throw new Error(`Registry auth realm host "${tokenUrl.hostname}" doesn't match the registry - refusing to send the credential`);
         }
         const pw = registry.password ? decrypt(registry.password) : '';
         tHeaders.Authorization = basicAuth(registry.username, pw);
@@ -107,7 +107,7 @@ async function listTags(registry, repoIn) {
 }
 
 // Digest + total (config + layers) size for repo:ref, read from the manifest. Returns 0 size for a
-// multi-arch manifest list (no per-layer sizes at that level) — acceptable for an at-a-glance view.
+// multi-arch manifest list (no per-layer sizes at that level) - acceptable for an at-a-glance view.
 async function getManifestInfo(registry, repoIn, ref) {
   const repo = normRepo(registry.server_address, repoIn);
   const scope = `repository:${repo}:pull`;
@@ -138,7 +138,7 @@ async function getRemoteDigest(registry, repoIn, ref) {
     'application/vnd.oci.image.manifest.v1+json',
   ].join(', ');
   const res = await v2Get(registry, `/v2/${repo}/manifests/${encodeURIComponent(ref)}`, { scope: `repository:${repo}:pull`, accept, method: 'HEAD' });
-  if (res.status === 401 || res.status === 403) throw new Error('not authorized — add a login in Deploy → Registries');
+  if (res.status === 401 || res.status === 403) throw new Error('not authorized - add a login in Deploy > Registries');
   if (res.status === 404) throw new Error('tag not found in the registry');
   if (!res.ok) throw new Error(`registry answered ${res.status}`);
   const d = res.headers.get('docker-content-digest');
@@ -146,8 +146,8 @@ async function getRemoteDigest(registry, repoIn, ref) {
   return d;
 }
 
-// The image config of repo:ref for one platform (os/arch) — the JSON that holds Env, Labels and the build
-// date. Read so a newer image can be shown as "15.8 → 15.19" instead of two digests. Three GETs: the tag's
+// The image config of repo:ref for one platform (os/arch) - the JSON that holds Env, Labels and the build
+// date. Read so a newer image can be shown as "15.8 -> 15.19" instead of two digests. Three GETs: the tag's
 // manifest (an index for multi-arch images), the platform's manifest, then its config blob.
 async function getRemoteConfig(registry, repoIn, ref, { os = 'linux', arch = 'amd64', variant } = {}) {
   const repo = normRepo(registry.server_address, repoIn);

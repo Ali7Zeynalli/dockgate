@@ -1,4 +1,4 @@
-// Web → Proxies & SSL (server/proxies.js reads, server/proxy-edit.js changes) — the server in use. Mounted at /api/proxies.
+// Web > Proxies & SSL (server/proxies.js reads, server/proxy-edit.js changes) - the server in use. Mounted at /api/proxies.
 const express = require('express');
 const router = express.Router();
 const PX = require('../proxies');

@@ -1,5 +1,5 @@
 // Docker Events page: past events from the chosen range, then live, in the shared LogViewer.
-// Source = event type (container, image, network, volume …); level from the action (OOM / failed exit = error,
+// Source = event type (container, image, network, volume ...); level from the action (OOM / failed exit = error,
 // stop / kill / remove = warning).
 Router.register('events', async (content) => {
   const cleanupFns = [];
@@ -21,10 +21,10 @@ Router.register('events', async (content) => {
   const toRow = (ev) => {
     const attrs = ev.Actor?.Attributes || {};
     const type = ev.Type || 'unknown', action = ev.Action || '';
-    const actor = attrs.name || (ev.Actor?.ID || '').slice(0, 12) || '—';
+    const actor = attrs.name || (ev.Actor?.ID || '').slice(0, 12) || '-';
     const details = Object.entries(attrs).filter(([k]) => k !== 'name').map(([k, v]) => `${k}=${v}`).join(', ');
     const t = ev.timeNano ? Math.floor(Number(ev.timeNano) / 1e6) : (ev.time ? ev.time * 1000 : Date.now());
-    return { t, l: levelOf(action, attrs), src: type, msg: `${action}  ${actor}${details ? '  · ' + details : ''}`, meta: { Type: type, Action: action, Actor: actor, ID: ev.Actor?.ID || '', Details: details, _csv: [new Date(t).toISOString(), type, action, actor, details] } };
+    return { t, l: levelOf(action, attrs), src: type, msg: `${action}  ${actor}${details ? ' , ' + details : ''}`, meta: { Type: type, Action: action, Actor: actor, ID: ev.Actor?.ID || '', Details: details, _csv: [new Date(t).toISOString(), type, action, actor, details] } };
   };
   const shown = [];
   const viewer = LogViewer.mount(content.querySelector('[data-lvroot]'), {

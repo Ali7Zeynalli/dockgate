@@ -1,5 +1,5 @@
-// Shared "Run Container" guided form — used by the Images page (per-image) and the
-// Containers page (header button). Pulls (optionally) → creates → starts via POST /containers/run.
+// Shared "Run Container" guided form - used by the Images page (per-image) and the
+// Containers page (header button). Pulls (optionally) -> creates -> starts via POST /containers/run.
 async function openRunContainerModal(prefill = '') {
   // Accept either an image string (Images/Containers buttons) or a full prefill object from a
   // template: { image, name, ports:[{host,container,proto}], volumes:[{host,container,mode}], env:[{key,val}], pull }.
@@ -71,7 +71,7 @@ async function openRunContainerModal(prefill = '') {
         <button type="button" class="btn btn-xs btn-secondary" id="run-add-env">+ Add variable</button>
       </div></div>
       <div id="run-env-paste" style="display:none;margin-bottom:8px">
-        <textarea class="input" id="run-env-paste-ta" placeholder="Paste a .env — one KEY=VALUE per line" style="width:100%;min-height:84px;font-family:var(--font-mono);font-size:12px"></textarea>
+        <textarea class="input" id="run-env-paste-ta" placeholder="Paste a .env - one KEY=VALUE per line" style="width:100%;min-height:84px;font-family:var(--font-mono);font-size:12px"></textarea>
         <div style="display:flex;gap:6px;margin-top:4px"><button type="button" class="btn btn-xs btn-primary" id="run-env-import">Import ↓</button><button type="button" class="btn btn-xs btn-secondary" id="run-env-paste-cancel">Cancel</button></div>
       </div>
       <div id="run-envs"></div></div>
@@ -90,13 +90,13 @@ async function openRunContainerModal(prefill = '') {
   submitBtn.innerHTML = `${Icons.play} Run Container`;
   root.querySelector('#modal-footer').appendChild(submitBtn);
 
-  // Search Docker Hub → fill the image field with the chosen repository
+  // Search Docker Hub -> fill the image field with the chosen repository
   root.querySelector('#run-hub-btn')?.addEventListener('click', () => openHubSearch(name => {
     root.querySelector('#run-image').value = name;
     root.querySelector('#run-pull').checked = true; // a Hub image is usually not present locally yet
   }));
 
-  // Repeatable rows — addRow can optionally fill the new row's inputs (used for template prefill)
+  // Repeatable rows - addRow can optionally fill the new row's inputs (used for template prefill)
   const addRow = (listId, builder, fill) => {
     const list = root.querySelector('#' + listId);
     const wrap = document.createElement('div');
@@ -130,7 +130,7 @@ async function openRunContainerModal(prefill = '') {
     el.querySelector('.run-e-val').value = e.val != null ? e.val : '';
   }));
 
-  // Volume quick-presets → add a prefilled volume row
+  // Volume quick-presets -> add a prefilled volume row
   root.querySelectorAll('[data-volpreset]').forEach(b => b.addEventListener('click', () => {
     const [host, container, mode] = b.dataset.volpreset.split('|');
     addRow('run-vols', volRow, el => {
@@ -140,7 +140,7 @@ async function openRunContainerModal(prefill = '') {
     });
   }));
 
-  // Paste .env → bulk-create env rows
+  // Paste .env -> bulk-create env rows
   const pastePanel = root.querySelector('#run-env-paste');
   root.querySelector('#run-paste-env-btn')?.addEventListener('click', () => {
     const open = pastePanel.style.display === 'none';
@@ -159,7 +159,7 @@ async function openRunContainerModal(prefill = '') {
     showToast(pairs.length ? `${pairs.length} variable(s) imported` : 'No KEY=VALUE lines found', pairs.length ? 'success' : 'warning');
   });
 
-  // Suggest env keys declared by the selected (local) image → datalist on the KEY inputs
+  // Suggest env keys declared by the selected (local) image -> datalist on the KEY inputs
   const localImageShortId = (name) => {
     const img = (images || []).find(i => (i.repoTags || []).includes(name));
     return img ? img.shortId : null;

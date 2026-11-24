@@ -1,6 +1,5 @@
-// Tools → Databases — a database client in the page: the Explorer on the left (container → database → schema →
-// Tables / Views / Materialized views / Sequences / Functions → table → columns, indexes, foreign keys, triggers),
-// tabs on the right (table data, design, SQL queries, database overview, admin, backups — a single click opens a
+// Tools > Databases - a database client in the page: the Explorer on the left (container -> database -> schema -> // Tables / Views / Materialized views / Sequences / Functions -> table -> columns, indexes, foreign keys, triggers),
+// tabs on the right (table data, design, SQL queries, database overview, admin, backups - a single click opens a
 // preview tab, a double click or an edit keeps it), right-click menus on every node and tab, a status bar.
 // PostgreSQL in containers of the server picked in the top bar (server/pg-studio.js); read-only until "Allow changes".
 Router.register('databases', async (content, params = {}) => {
@@ -17,7 +16,7 @@ Router.register('databases', async (content, params = {}) => {
   const qn = (s, t) => `${quoteId(s)}.${quoteId(t)}`;
   const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
-  // st.c / st.db / st.info / st.view: the ACTIVE tab's context — the admin and backup views below read them
+  // st.c / st.db / st.info / st.view: the ACTIVE tab's context - the admin and backup views below read them
   const st = { c: null, db: null, s: null, t: null, view: null, info: null,
     containers: [], infos: {}, infoErr: {}, objects: {}, structs: {}, loading: new Set(),
     open: new Set(lsGet('open', [])), filter: '', tabs: [], active: null, sel: null };
@@ -103,8 +102,8 @@ Router.register('databases', async (content, params = {}) => {
         <button type="button" class="dbx-ib" data-x-newq title="New query">${IC.plus}</button>
         <button type="button" class="dbx-ib" data-x-refresh title="Refresh">${IC.refresh}</button>
         <button type="button" class="dbx-ib" data-x-collapse title="Collapse all">${IC.collapse}</button></div>
-      <input class="input dbx-find" data-x-find placeholder="Filter tables, views, functions…">
-      <div class="dbx-tree" data-tree tabindex="0"><div class="dbx-msg">Loading…</div></div>
+      <input class="input dbx-find" data-x-find placeholder="Filter tables, views, functions...">
+      <div class="dbx-tree" data-tree tabindex="0"><div class="dbx-msg">Loading...</div></div>
     </aside>
     <div class="dbx-sp" data-split></div>
     <section class="dbx-main">
@@ -133,7 +132,7 @@ Router.register('databases', async (content, params = {}) => {
   async function ensureInfo(c, force) {
     if (st.infos[c] && !force) return st.infos[c];
     const cont = st.containers.find(x => x.name === c);
-    if (!cont || cont.state !== 'running') { st.infoErr[c] = `${c} is ${cont ? cont.state : 'missing'} — start the container to open it`; return null; }
+    if (!cont || cont.state !== 'running') { st.infoErr[c] = `${c} is ${cont ? cont.state : 'missing'} - start the container to open it`; return null; }
     st.loading.add(`c|${c}`); drawTree();
     try { st.infos[c] = await API.get(`${baseOf(c)}/info`); delete st.infoErr[c]; }
     catch (e) { st.infoErr[c] = e.message; delete st.infos[c]; }
@@ -175,19 +174,19 @@ Router.register('databases', async (content, params = {}) => {
     const q = st.filter.trim().toLowerCase();
     const hit = (n) => !q || String(n).toLowerCase().includes(q);
     let h = '';
-    if (!st.containers.length) h = `<div class="dbx-msg" style="padding:10px 12px">No PostgreSQL container on this server. DockGate finds containers of the postgres, postgis, timescaledb, pgvector, supabase/postgres and bitnami/postgresql images — pick another server in the top bar, or deploy one from Deploy → App templates.</div>`;
+    if (!st.containers.length) h = `<div class="dbx-msg" style="padding:10px 12px">No PostgreSQL container on this server. DockGate finds containers of the postgres, postgis, timescaledb, pgvector, supabase/postgres and bitnami/postgresql images - pick another server in the top bar, or deploy one from Deploy > App templates.</div>`;
     for (const c of st.containers) {
       const ck = `c|${c.name}`; const co = st.open.has(ck); const info = st.infos[c.name];
-      h += row(ck, 0, { icon: IC.server, iconCls: c.state === 'running' ? 'c-on' : 'c-off', label: esc(c.name), meta: c.state !== 'running' ? esc(c.state) : info ? `PG ${esc(String(info.serverVersion).split(' ')[0])}` : '', open: co, title: `${c.name} · ${c.image || ''} · ${c.state}` });
+      h += row(ck, 0, { icon: IC.server, iconCls: c.state === 'running' ? 'c-on' : 'c-off', label: esc(c.name), meta: c.state !== 'running' ? esc(c.state) : info ? `PG ${esc(String(info.serverVersion).split(' ')[0])}` : '', open: co, title: `${c.name}, ${c.image || ''}, ${c.state}` });
       if (!co) continue;
-      if (st.loading.has(ck)) { h += msg(1, 'Connecting…'); continue; }
-      if (st.infoErr[c.name]) { h += msg(1, `⚠ ${esc(st.infoErr[c.name]).slice(0, 220)}`, true) + `<div class="dbx-msg" style="padding-left:40px"><a href="#" data-conn="${esc(c.name)}">Connection settings…</a></div>`; continue; }
+      if (st.loading.has(ck)) { h += msg(1, 'Connecting...'); continue; }
+      if (st.infoErr[c.name]) { h += msg(1, `⚠ ${esc(st.infoErr[c.name]).slice(0, 220)}`, true) + `<div class="dbx-msg" style="padding-left:40px"><a href="#" data-conn="${esc(c.name)}">Connection settings...</a></div>`; continue; }
       if (!info) continue;
       for (const d of info.databases.filter(x => x.connect)) {
         const dk = `d|${c.name}|${d.name}`; const dop = st.open.has(dk); const ok = `${c.name}|${d.name}`; const obj = st.objects[ok];
         h += row(dk, 1, { icon: IC.db, label: esc(d.name), meta: d.size != null ? formatBytes(d.size) : '', open: dop });
         if (!dop) continue;
-        if (st.loading.has(`d|${ok}`)) { h += msg(2, 'Loading…'); continue; }
+        if (st.loading.has(`d|${ok}`)) { h += msg(2, 'Loading...'); continue; }
         if (!obj) continue;
         if (obj.error) { h += msg(2, `⚠ ${esc(obj.error)}`, true); continue; }
         const schemas = [...new Set([...obj.relations.map(r => r.schema), ...obj.functions.map(f => f.schema)])].sort((a, b) => (a === 'public' ? -1 : b === 'public' ? 1 : a.localeCompare(b)));
@@ -207,10 +206,10 @@ Router.register('databases', async (content, params = {}) => {
             if (!items.length) h += msg(4, 'None.');
             for (const r of items) {
               const tk = `t|${c.name}|${d.name}|${s}|${r.name}`; const to = st.open.has(tk) && r.kind !== 'S';
-              h += row(tk, 4, { icon: relIcon(r.kind), label: esc(r.name), meta: r.kind === 'S' || r.kind === 'v' ? '' : `${r.rows >= 0 ? '≈' + Number(r.rows).toLocaleString() + ' · ' : ''}${formatBytes(r.size)}`, open: r.kind === 'S' ? null : to, title: `${s}.${r.name} — ${kindName[r.kind] || r.kind}` });
+              h += row(tk, 4, { icon: relIcon(r.kind), label: esc(r.name), meta: r.kind === 'S' || r.kind === 'v' ? '' : `${r.rows >= 0 ? '≈' + Number(r.rows).toLocaleString() + ', ' : ''}${formatBytes(r.size)}`, open: r.kind === 'S' ? null : to, title: `${s}.${r.name} - ${kindName[r.kind] || r.kind}` });
               if (!to) continue;
               const skey = `${c.name}|${d.name}|${s}|${r.name}`;
-              if (st.loading.has(`t|${skey}`)) { h += msg(5, 'Loading…'); continue; }
+              if (st.loading.has(`t|${skey}`)) { h += msg(5, 'Loading...'); continue; }
               const x = st.structs[skey]; if (!x) continue;
               if (x.error) { h += msg(5, `⚠ ${esc(x.error)}`, true); continue; }
               const fkCols = new Set(); (x.constraints || []).filter(k => k.type === 'f').forEach(k => { const m = /FOREIGN KEY \(([^)]+)\)/.exec(k.def || ''); if (m) m[1].split(',').forEach(n => fkCols.add(n.trim().replace(/^"|"$/g, ''))); });
@@ -220,7 +219,7 @@ Router.register('databases', async (content, params = {}) => {
                 const gkey = `g|${skey}|${gk}`; const go = gk === 'cols' ? !st.open.has(gkey + '|closed') : st.open.has(gkey);
                 h += row(gkey, 5, { icon: IC.folder, label: gl, meta: `${list.length}`, open: go, cls: 'dim' });
                 if (!go) continue;
-                if (gk === 'cols') list.forEach(col => { h += row(`k|${skey}|${col.name}`, 6, { icon: (x.pk || []).includes(col.name) ? IC.key : fkCols.has(col.name) ? IC.fk : IC.col, label: esc(col.name), meta: `${esc(col.type)}${col.notnull ? ' · not null' : ''}`, title: `${col.name} ${col.type}${col.default ? ' default ' + col.default : ''}${col.comment ? ' — ' + col.comment : ''}` }); });
+                if (gk === 'cols') list.forEach(col => { h += row(`k|${skey}|${col.name}`, 6, { icon: (x.pk || []).includes(col.name) ? IC.key : fkCols.has(col.name) ? IC.fk : IC.col, label: esc(col.name), meta: `${esc(col.type)}${col.notnull ? ', not null' : ''}`, title: `${col.name} ${col.type}${col.default ? ' default ' + col.default : ''}${col.comment ? ' - ' + col.comment : ''}` }); });
                 if (gk === 'idx') list.forEach(i => { h += row(`i|${skey}|${i.name}`, 6, { icon: IC.idx, label: esc(i.name), meta: i.primary ? 'primary' : i.unique ? 'unique' : '', title: i.def }); });
                 if (gk === 'fks') list.forEach(k => { h += row(`x|${skey}|${k.name}`, 6, { icon: IC.fk, label: esc(k.name), meta: esc((/REFERENCES ([^\s(]+)/.exec(k.def || '') || [])[1] || ''), title: k.def }); });
                 if (gk === 'trg') list.forEach(tg => { h += row(`r|${skey}|${tg.name}`, 6, { icon: IC.trg, label: esc(tg.name), meta: tg.enabled ? '' : 'disabled', title: tg.def }); });
@@ -231,7 +230,7 @@ Router.register('databases', async (content, params = {}) => {
           if (fl.length) {
             const fkey = `f|${c.name}|${d.name}|${s}|fns`; const fo = st.open.has(fkey) || !!q;
             h += row(fkey, 3, { icon: IC.folder, label: 'Functions', meta: `${fl.length}`, open: fo, cls: 'dim' });
-            if (fo) fl.forEach((f, n) => { h += row(`n|${c.name}|${d.name}|${s}|${n}|${f.name}`, 4, { icon: IC.fn, label: `${esc(f.name)}<span class="dbx-meta" style="margin-left:2px">(${esc(f.args)})</span>`, meta: esc(f.result), title: `${f.name}(${f.args}) → ${f.result}` }); });
+            if (fo) fl.forEach((f, n) => { h += row(`n|${c.name}|${d.name}|${s}|${n}|${f.name}`, 4, { icon: IC.fn, label: `${esc(f.name)}<span class="dbx-meta" style="margin-left:2px">(${esc(f.args)})</span>`, meta: esc(f.result), title: `${f.name}(${f.args}) -> ${f.result}` }); });
           }
         }
       }
@@ -251,7 +250,7 @@ Router.register('databases', async (content, params = {}) => {
     if (p[0] === 'd') firstOpen(p[1], p[2], await ensureObjects(p[1], p[2]));
     if (p[0] === 't') await ensureStruct(p[1], p[2], p[3], p[4]);
   }
-  /** The first time a database is opened: show public → Tables at once. */
+  /** The first time a database is opened: show public > Tables at once. */
   function firstOpen(c, db, o) {
     const seen = new Set(lsGet('seenDb', []));
     if (!o || o.error || seen.has(`${c}|${db}`)) return;
@@ -339,20 +338,20 @@ Router.register('databases', async (content, params = {}) => {
         '-',
         { label: 'Users, sessions and databases', act: async () => { const i = await ensureInfo(c); if (i) openTab({ type: 'admin', c, db: i.database }, { pin: true }); } },
         { label: 'Backups', act: () => openTab({ type: 'backups', c }, { pin: true }) },
-        { label: 'Connection settings…', act: () => connection(c) },
+        { label: 'Connection settings...', act: () => connection(c) },
         '-',
-        info ? { label: info.allowWrite ? 'Make it read-only' : 'Allow changes…', act: () => toggleWrite(c) } : null]);
+        info ? { label: info.allowWrite ? 'Make it read-only' : 'Allow changes...', act: () => toggleWrite(c) } : null]);
     }
     if (p[0] === 'd') {
       const [, c, db] = p;
       return showMenu(x, y, [{ header: `${c} › ${db}` },
         { label: 'New query', act: () => newQuery(c, db) },
-        { label: 'Open — tables, sizes, rows', act: () => openTab({ type: 'overview', c, db }, { pin: true }) },
-        { label: 'New table…', act: () => newTable(c, db, 'public') },
+        { label: 'Open - tables, sizes, rows', act: () => openTab({ type: 'overview', c, db }, { pin: true }) },
+        { label: 'New table...', act: () => newTable(c, db, 'public') },
         '-',
-        { label: 'Export… (SQL, CSV, Excel)', act: () => exportDialog(c, db) },
-        { label: 'Import a .sql file…', act: () => importDialog(c, db) },
-        { label: 'New table from a CSV…', act: () => csvNewTable(c, db) },
+        { label: 'Export... (SQL, CSV, Excel)', act: () => exportDialog(c, db) },
+        { label: 'Import a .sql file...', act: () => importDialog(c, db) },
+        { label: 'New table from a CSV...', act: () => csvNewTable(c, db) },
         { label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } },
         '-',
         { label: 'Users, sessions, VACUUM', act: () => openTab({ type: 'admin', c, db }, { pin: true }) },
@@ -361,19 +360,19 @@ Router.register('databases', async (content, params = {}) => {
     }
     if (p[0] === 's') {
       const [, c, db, s] = p;
-      return showMenu(x, y, [{ header: `${db} › ${s}` }, { label: 'New query', act: () => newQuery(c, db, `SET search_path TO ${quoteId(s)};\n\n`) }, { label: 'New table…', act: () => newTable(c, db, s) }, { label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } }, '-', { label: 'Copy name', act: () => copy(s) }]);
+      return showMenu(x, y, [{ header: `${db} › ${s}` }, { label: 'New query', act: () => newQuery(c, db, `SET search_path TO ${quoteId(s)};\n\n`) }, { label: 'New table...', act: () => newTable(c, db, s) }, { label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } }, '-', { label: 'Copy name', act: () => copy(s) }]);
     }
     if (p[0] === 'f') {
       const [, c, db, s, kind] = p;
-      return showMenu(x, y, [kind === 'tables' ? { label: 'New table…', act: () => newTable(c, db, s) } : null, { label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } }]);
+      return showMenu(x, y, [kind === 'tables' ? { label: 'New table...', act: () => newTable(c, db, s) } : null, { label: 'Refresh', act: () => { forgetDb(c, db); return ensureObjects(c, db, true); } }]);
     }
     if (p[0] === 't') {
       const [, c, db, s, t] = p; const r = relOf(c, db, s, t) || { kind: 'r' }; const isTable = r.kind === 'r' || r.kind === 'p'; const isSeq = r.kind === 'S';
       const w = !!(st.infos[c] && st.infos[c].allowWrite);
-      return showMenu(x, y, [{ header: `${s}.${t} — ${kindName[r.kind] || 'table'}` },
+      return showMenu(x, y, [{ header: `${s}.${t} - ${kindName[r.kind] || 'table'}` },
         isSeq ? null : { label: 'Open data', kbd: 'click', act: () => openTab({ type: 'data', c, db, s, t }, { pin: false }) },
         isSeq ? null : { label: 'Open in a new tab', kbd: 'double-click', act: () => openTab({ type: 'data', c, db, s, t }, { pin: true, fresh: true }) },
-        { label: 'Design — columns, indexes, keys', act: () => openTab({ type: 'design', c, db, s, t }, { pin: true }) },
+        { label: 'Design - columns, indexes, keys', act: () => openTab({ type: 'design', c, db, s, t }, { pin: true }) },
         '-',
         isSeq ? null : { label: 'New query: SELECT', act: () => genSql('select', c, db, s, t) },
         isTable ? { label: 'New query: INSERT', act: () => genSql('insert', c, db, s, t) } : null,
@@ -382,8 +381,8 @@ Router.register('databases', async (content, params = {}) => {
         r.kind === 'v' || r.kind === 'm' ? { label: 'New query: view definition', act: () => newQuery(c, db, `SELECT pg_get_viewdef('${qn(s, t).replace(/'/g, "''")}'::regclass, true);\n`) } : null,
         '-',
         isSeq ? null : { label: 'Count rows', act: () => countRows(c, db, s, t) },
-        isSeq ? null : { label: 'Export… (SQL, CSV, Excel)', act: () => exportDialog(c, db, [`${s}.${t}`]) },
-        isTable ? { label: 'Fill with test data…', act: () => mockDialog(c, db, s, t) } : null,
+        isSeq ? null : { label: 'Export... (SQL, CSV, Excel)', act: () => exportDialog(c, db, [`${s}.${t}`]) },
+        isTable ? { label: 'Fill with test data...', act: () => mockDialog(c, db, s, t) } : null,
         isSeq ? null : { label: 'Export CSV', act: () => { window.location.href = `/api${dbBaseOf(c, db)}/export?schema=${enc(s)}&table=${enc(t)}&format=csv`; } },
         isSeq ? null : { label: 'Export JSON lines', act: () => { window.location.href = `/api${dbBaseOf(c, db)}/export?schema=${enc(s)}&table=${enc(t)}&format=json`; } },
         { label: 'Copy name', act: () => copy(qn(s, t)) },
@@ -391,8 +390,8 @@ Router.register('databases', async (content, params = {}) => {
         isTable ? { label: 'VACUUM ANALYZE', disabled: !w, title: w ? '' : 'Allow changes first', act: () => withCtx(c, db, () => maintain('vacuum', s, t)) } : null,
         isTable || r.kind === 'm' ? { label: r.kind === 'm' ? 'REFRESH MATERIALIZED VIEW' : 'ANALYZE', disabled: !w, title: w ? '' : 'Allow changes first', act: () => (r.kind === 'm' ? runDanger(c, db, `REFRESH MATERIALIZED VIEW ${qn(s, t)}`, `Refresh ${s}.${t}?`, null) : withCtx(c, db, () => maintain('analyze', s, t))) } : null,
         '-',
-        isTable ? { label: 'Empty (TRUNCATE)…', danger: true, disabled: !w, title: w ? '' : 'Allow changes first', act: () => runDanger(c, db, `TRUNCATE TABLE ${qn(s, t)}`, `Delete <b>every row</b> of <span class="td-mono">${esc(s)}.${esc(t)}</span>? This can not be undone.`, t) } : null,
-        { label: `Drop ${kindName[r.kind] || 'table'}…`, danger: true, disabled: !w, title: w ? '' : 'Allow changes first', act: () => runDanger(c, db, `DROP ${r.kind === 'v' ? 'VIEW' : r.kind === 'm' ? 'MATERIALIZED VIEW' : r.kind === 'S' ? 'SEQUENCE' : r.kind === 'f' ? 'FOREIGN TABLE' : 'TABLE'} ${qn(s, t)}`, `Drop <span class="td-mono">${esc(s)}.${esc(t)}</span> and its data? Objects that depend on it make it fail (nothing is dropped then).`, t, { drop: { c, db, s, t } }) }]);
+        isTable ? { label: 'Empty (TRUNCATE)...', danger: true, disabled: !w, title: w ? '' : 'Allow changes first', act: () => runDanger(c, db, `TRUNCATE TABLE ${qn(s, t)}`, `Delete <b>every row</b> of <span class="td-mono">${esc(s)}.${esc(t)}</span>? This can not be undone.`, t) } : null,
+        { label: `Drop ${kindName[r.kind] || 'table'}...`, danger: true, disabled: !w, title: w ? '' : 'Allow changes first', act: () => runDanger(c, db, `DROP ${r.kind === 'v' ? 'VIEW' : r.kind === 'm' ? 'MATERIALIZED VIEW' : r.kind === 'S' ? 'SEQUENCE' : r.kind === 'f' ? 'FOREIGN TABLE' : 'TABLE'} ${qn(s, t)}`, `Drop <span class="td-mono">${esc(s)}.${esc(t)}</span> and its data? Objects that depend on it make it fail (nothing is dropped then).`, t, { drop: { c, db, s, t } }) }]);
     }
     if (p[0] === 'k') {
       const [, c, db, s, t, col] = p;
@@ -435,7 +434,7 @@ Router.register('databases', async (content, params = {}) => {
     return newQuery(c, db, `SELECT pg_get_functiondef(p.oid) AS definition\nFROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace\nWHERE n.nspname = '${s.replace(/'/g, "''")}' AND p.proname = '${fname.replace(/'/g, "''")}';\n`, `ƒ ${fname}`);
   }
   async function countRows(c, db, s, t) {
-    showToast(`Counting ${s}.${t}…`, 'info', 2000);
+    showToast(`Counting ${s}.${t}...`, 'info', 2000);
     const r = await API.post(`${dbBaseOf(c, db)}/count`, { schema: s, table: t });
     showToast(`${s}.${t}: ${Number(r.count).toLocaleString()} rows`, 'success', 6000);
   }
@@ -460,7 +459,7 @@ Router.register('databases', async (content, params = {}) => {
   // ---------- tabs ----------
   const keyOf = (t) => (t.type === 'sql' ? `sql|${t.wb}` : t.type === 'create' ? `create|${t.id}` : t.type === 'backups' ? `backups|${t.c}` : t.type === 'data' || t.type === 'design' ? `${t.type}|${t.c}|${t.db}|${t.s}|${t.t}` : `${t.type}|${t.c}|${t.db}`);
   const tabIcon = (t) => ({ data: relIcon((relOf(t.c, t.db, t.s, t.t) || {}).kind), design: IC.design, create: IC.plus, sql: IC.sql, overview: IC.db, admin: IC.admin, backups: IC.backup }[t.type] || IC.table);
-  const tabTitle = (t) => (t.type === 'create' ? 'New table' : t.type === 'data' ? t.t : t.type === 'design' ? `${t.t}` : t.type === 'sql' ? t.title : t.type === 'overview' ? t.db : t.type === 'admin' ? `Admin · ${t.db}` : `Backups · ${t.c}`);
+  const tabTitle = (t) => (t.type === 'create' ? 'New table' : t.type === 'data' ? t.t : t.type === 'design' ? `${t.t}` : t.type === 'sql' ? t.title : t.type === 'overview' ? t.db : t.type === 'admin' ? `Admin, ${t.db}` : `Backups, ${t.c}`);
   const tabSub = (t) => (t.type === 'design' ? 'design' : t.type === 'sql' || t.type === 'overview' || t.type === 'create' ? t.db : t.type === 'data' ? (t.s !== 'public' ? t.s : '') : '');
   function persistTabs() {
     lsSet('tabs', st.tabs.map(t => ({ id: t.id, type: t.type, c: t.c, db: t.db, s: t.s, t: t.t, wb: t.wb, title: t.title, preview: !!t.preview, grid: t.grid ? { limit: t.grid.limit, sort: t.grid.sort, filters: t.grid.filters, where: t.grid.where } : undefined })));
@@ -516,7 +515,7 @@ Router.register('databases', async (content, params = {}) => {
   }
   function drawTabs() {
     const el = root.querySelector('[data-tabs]');
-    el.innerHTML = st.tabs.map(t => `<div class="dbx-tab ${t.id === st.active ? 'on' : ''} ${t.preview ? 'pv' : ''}" role="tab" aria-selected="${t.id === st.active}" data-tab="${t.id}" title="${esc(`${t.c}${t.db ? ' › ' + t.db : ''}${t.t ? ' › ' + t.s + '.' + t.t : ''}${t.preview ? ' — preview (double-click to keep)' : ''}`)}"><span class="dbx-ic">${tabIcon(t)}</span><span class="dbx-tt">${esc(tabTitle(t))}</span>${tabSub(t) ? `<span class="dbx-tsub">${esc(tabSub(t))}</span>` : ''}<button type="button" class="dbx-x" data-close="${t.id}" title="Close">×</button></div>`).join('');
+    el.innerHTML = st.tabs.map(t => `<div class="dbx-tab ${t.id === st.active ? 'on' : ''} ${t.preview ? 'pv' : ''}" role="tab" aria-selected="${t.id === st.active}" data-tab="${t.id}" title="${esc(`${t.c}${t.db ? ' › ' + t.db : ''}${t.t ? ' › ' + t.s + '.' + t.t : ''}${t.preview ? ' - preview (double-click to keep)' : ''}`)}"><span class="dbx-ic">${tabIcon(t)}</span><span class="dbx-tt">${esc(tabTitle(t))}</span>${tabSub(t) ? `<span class="dbx-tsub">${esc(tabSub(t))}</span>` : ''}<button type="button" class="dbx-x" data-close="${t.id}" title="Close">×</button></div>`).join('');
     const on = el.querySelector('.dbx-tab.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   const tabsEl = root.querySelector('[data-tabs]');
@@ -534,7 +533,7 @@ Router.register('databases', async (content, params = {}) => {
       { label: 'Close all', act: () => closeMany([...st.tabs]) },
       '-',
       t.preview ? { label: 'Keep open', act: () => { t.preview = false; drawTabs(); persistTabs(); } } : null,
-      t.type === 'sql' ? { label: 'Rename…', act: () => { const n = prompt('Query name', t.title); if (n && n.trim()) { t.title = n.trim().slice(0, 60); drawTabs(); persistTabs(); } } } : null,
+      t.type === 'sql' ? { label: 'Rename...', act: () => { const n = prompt('Query name', t.title); if (n && n.trim()) { t.title = n.trim().slice(0, 60); drawTabs(); persistTabs(); } } } : null,
       t.type === 'data' ? { label: 'Design', act: () => openTab({ type: 'design', c: t.c, db: t.db, s: t.s, t: t.t }, { pin: true }) } : null,
       t.type === 'design' ? { label: 'Open data', act: () => openTab({ type: 'data', c: t.c, db: t.db, s: t.s, t: t.t }, { pin: true }) } : null,
       t.t ? { label: 'Reveal in Explorer', act: () => reveal(t) } : null,
@@ -553,7 +552,7 @@ Router.register('databases', async (content, params = {}) => {
     const pane = paneOf(t); if (!pane) return;
     if (again && t.inst) { try { t.inst.destroy(); } catch (e) {} t.inst = null; }
     const info = st.infos[t.c];
-    if (!info) { pane.innerHTML = `<div class="card" style="padding:20px"><b style="color:var(--danger)">Could not open ${esc(t.c)}</b><pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:8px 0">${esc(st.infoErr[t.c] || '')}</pre><div class="ui-sub">DockGate runs <span class="td-mono">psql</span> inside the container as the user from its POSTGRES_USER (or "postgres"). Set another user, database or password under Connection settings.</div><div style="margin-top:10px">${UI.btn('Connection settings…', 'data-conn')} ${UI.btn('Try again', 'data-retry')}</div></div>`; pane.querySelector('[data-conn]').onclick = () => connection(t.c); pane.querySelector('[data-retry]').onclick = async () => { await reloadInfo(t.c); renderTab(t); }; return; }
+    if (!info) { pane.innerHTML = `<div class="card" style="padding:20px"><b style="color:var(--danger)">Could not open ${esc(t.c)}</b><pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:8px 0">${esc(st.infoErr[t.c] || '')}</pre><div class="ui-sub">DockGate runs <span class="td-mono">psql</span> inside the container as the user from its POSTGRES_USER (or "postgres"). Set another user, database or password under Connection settings.</div><div style="margin-top:10px">${UI.btn('Connection settings...', 'data-conn')} ${UI.btn('Try again', 'data-retry')}</div></div>`; pane.querySelector('[data-conn]').onclick = () => connection(t.c); pane.querySelector('[data-retry]').onclick = async () => { await reloadInfo(t.c); renderTab(t); }; return; }
     if (t.type === 'data') {
       const ed = await DataEditor.mount(pane, {
         dbBase: () => dbBaseOf(t.c, t.db), schema: t.s, table: t.t, info: () => st.infos[t.c], grid: t.grid || (t.grid = freshGrid()), kindName,
@@ -583,9 +582,9 @@ Router.register('databases', async (content, params = {}) => {
     panesEl().querySelectorAll('.dbx-pane').forEach(p => p.classList.remove('on'));
     let w = panesEl().querySelector('[data-welcome]');
     if (!w) { w = document.createElement('div'); w.className = 'dbx-pane on'; w.dataset.welcome = '1'; panesEl().appendChild(w); }
-    w.innerHTML = `<div class="dbx-welcome"><h3>Databases</h3><div class="ui-sub">PostgreSQL in the containers of <b>${esc((Store.get('activeServer') || {}).name || (Store.get('activeServer') || {}).host || 'this server')}</b>, reached with <span class="td-mono">docker exec … psql</span> — no port opened. Open a container on the left: a click on a table opens its data, a double-click keeps the tab, a right-click shows everything you can do.</div>
-      ${st.containers.length ? `<div class="dbx-cards">${st.containers.map(c => `<div class="dbx-card" data-wc="${esc(c.name)}"><div style="display:flex;gap:8px;align-items:center"><span class="dbx-ic ${c.state === 'running' ? 'c-on' : 'c-off'}" style="color:${c.state === 'running' ? 'var(--success)' : 'var(--text-muted)'}">${IC.server}</span><b>${esc(c.name)}</b></div><div class="ui-sub" style="margin-top:4px">${esc(c.image || '')} · ${esc(c.state)}</div><div style="margin-top:8px;display:flex;gap:6px">${UI.btn('New query', `data-wq="${esc(c.name)}"`, 'btn-primary')} ${UI.btn('Open', `data-wo="${esc(c.name)}"`)}</div></div>`).join('')}</div>` : ''}
-      <div class="ui-sub" style="margin-top:16px">Keys: in the Explorer ↑ ↓ move, → ← open and close, Enter opens, Shift+F10 the menu · in a query Ctrl+Enter runs the statement at the cursor, Ctrl+Shift+Enter all · middle-click closes a tab.</div></div>`;
+    w.innerHTML = `<div class="dbx-welcome"><h3>Databases</h3><div class="ui-sub">PostgreSQL in the containers of <b>${esc((Store.get('activeServer') || {}).name || (Store.get('activeServer') || {}).host || 'this server')}</b>, reached with <span class="td-mono">docker exec ... psql</span> - no port opened. Open a container on the left: a click on a table opens its data, a double-click keeps the tab, a right-click shows everything you can do.</div>
+      ${st.containers.length ? `<div class="dbx-cards">${st.containers.map(c => `<div class="dbx-card" data-wc="${esc(c.name)}"><div style="display:flex;gap:8px;align-items:center"><span class="dbx-ic ${c.state === 'running' ? 'c-on' : 'c-off'}" style="color:${c.state === 'running' ? 'var(--success)' : 'var(--text-muted)'}">${IC.server}</span><b>${esc(c.name)}</b></div><div class="ui-sub" style="margin-top:4px">${esc(c.image || '')}, ${esc(c.state)}</div><div style="margin-top:8px;display:flex;gap:6px">${UI.btn('New query', `data-wq="${esc(c.name)}"`, 'btn-primary')} ${UI.btn('Open', `data-wo="${esc(c.name)}"`)}</div></div>`).join('')}</div>` : ''}
+      <div class="ui-sub" style="margin-top:16px">Keys: in the Explorer ↑ ↓ move, -> ← open and close, Enter opens, Shift+F10 the menu, in a query Ctrl+Enter runs the statement at the cursor, Ctrl+Shift+Enter all, middle-click closes a tab.</div></div>`;
     w.querySelectorAll('[data-wo]').forEach(b => b.onclick = (e) => { e.stopPropagation(); toggle(`c|${b.dataset.wo}`, true); });
     w.querySelectorAll('[data-wq]').forEach(b => b.onclick = async (e) => { e.stopPropagation(); const i = await ensureInfo(b.dataset.wq); if (i) newQuery(b.dataset.wq, i.database); });
     w.querySelectorAll('[data-wc]').forEach(b => b.onclick = () => toggle(`c|${b.dataset.wc}`, true));
@@ -597,18 +596,18 @@ Router.register('databases', async (content, params = {}) => {
     const t = activeTab(); const i = t ? st.infos[t.c] : null;
     if (!t) { el.innerHTML = `<span>${st.containers.length} PostgreSQL container${st.containers.length === 1 ? '' : 's'}</span>`; return; }
     el.innerHTML = `<span title="Container">${IC.server.replace('width="15" height="15"', 'width="12" height="12"')} ${esc(t.c)}</span>${t.db ? `<span>› ${esc(t.db)}</span>` : ''}${t.t ? `<span>› ${esc(t.s)}.${esc(t.t)}</span>` : ''}
-      ${i ? `<span style="color:var(--text-muted)">PostgreSQL ${esc(String(i.serverVersion).split(' ')[0])} · ${esc(i.user)}${i.superuser ? ' (superuser)' : ''}</span>` : ''}
+      ${i ? `<span style="color:var(--text-muted)">PostgreSQL ${esc(String(i.serverVersion).split(' ')[0])}, ${esc(i.user)}${i.superuser ? ' (superuser)' : ''}</span>` : ''}
       <span style="flex:1"></span>
       ${i && i.production ? `<span style="color:var(--danger);font-weight:600">● production</span>` : ''}
-      ${i ? `<button type="button" data-s-rw title="${i.allowWrite ? 'Changes are allowed — click to make it read-only' : 'Statements that change data are refused — click to allow changes'}" style="${i.allowWrite ? 'color:var(--warning)' : ''}">${i.allowWrite ? '✎ Changes allowed' : '🔒 Read-only'}</button>` : ''}
-      <button type="button" data-s-conn>Connection…</button>`;
+      ${i ? `<button type="button" data-s-rw title="${i.allowWrite ? 'Changes are allowed - click to make it read-only' : 'Statements that change data are refused - click to allow changes'}" style="${i.allowWrite ? 'color:var(--warning)' : ''}">${i.allowWrite ? '✎ Changes allowed' : '🔒 Read-only'}</button>` : ''}
+      <button type="button" data-s-conn>Connection...</button>`;
     const rw = el.querySelector('[data-s-rw]'); if (rw) rw.onclick = () => toggleWrite(t.c);
     el.querySelector('[data-s-conn]').onclick = () => connection(t.c);
   }
 
   // ---------- design: the table's structure, edited like a sheet (server/pg-ddl.js) ----------
   // Changes wait (yellow = changed, green = new, struck = dropped) until Save: Show SQL, 🧪 Test (rolled back),
-  // Discard, Save — all in one transaction. "New table" is the same editor with a name.
+  // Discard, Save - all in one transaction. "New table" is the same editor with a name.
   const TYPES = ['bigint', 'integer', 'smallint', 'numeric(12,2)', 'real', 'double precision', 'boolean', 'text', 'varchar(255)', 'char(1)', 'uuid', 'date', 'timestamptz', 'timestamp', 'time', 'interval', 'jsonb', 'json', 'bytea', 'inet', 'cidr', 'text[]', 'integer[]', 'bigint[]'];
   const DZ_CSS = `<style>
     .dz-sub{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 12px}
@@ -681,7 +680,7 @@ Router.register('databases', async (content, params = {}) => {
            <div class="dbg-bar"><label class="ui-field" style="margin:0"><span class="ui-label">Schema</span><select class="input" data-z-schema style="width:auto">${schemas().map(x => `<option ${x === z.schema ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
              <label class="ui-field" style="margin:0;flex:1;min-width:200px"><span class="ui-label">Table name</span><input class="input td-mono" data-z-name value="${esc(z.name)}" placeholder="orders"></label>
              <label class="ui-field" style="margin:0;flex:2;min-width:200px"><span class="ui-label">Comment</span><input class="input" data-z-comment value="${esc(z.comment)}" placeholder="(optional)"></label></div>`
-        : `<div class="dbx-head"><span class="dbx-ic">${relIcon(s.kind)}</span><b>${esc(s.schema)}.${esc(s.name)}</b><span class="ui-sub">${esc(kindName[s.kind] || s.kind)} · ${formatBytes(s.size)}${s.rows >= 0 && s.kind !== 'v' && s.kind !== 'S' ? ` · ≈ ${Number(s.rows).toLocaleString()} rows` : ''}</span><span style="flex:1"></span>
+        : `<div class="dbx-head"><span class="dbx-ic">${relIcon(s.kind)}</span><b>${esc(s.schema)}.${esc(s.name)}</b><span class="ui-sub">${esc(kindName[s.kind] || s.kind)}, ${formatBytes(s.size)}${s.rows >= 0 && s.kind !== 'v' && s.kind !== 'S' ? `, ≈ ${Number(s.rows).toLocaleString()} rows` : ''}</span><span style="flex:1"></span>
             ${s.kind !== 'S' ? UI.btn('Open data', 'data-d-data', 'btn-primary') : ''} ${UI.btn('New query', 'data-d-q')} ${editableKind ? UI.btn('Table ▾', 'data-d-tbl') : ''} ${UI.btn('Refresh', 'data-d-ref')}</div>
            ${s.comment ? `<div class="ui-sub" style="margin:-4px 0 8px">${esc(s.comment)}</div>` : ''}`;
       let body = '';
@@ -724,12 +723,12 @@ Router.register('databases', async (content, params = {}) => {
         const lines = s.columns.map(c => `  ${quoteId(c.name)} ${c.type}${c.identity ? ` GENERATED ${c.identity === 'a' ? 'ALWAYS' : 'BY DEFAULT'} AS IDENTITY` : ''}${c.notnull ? ' NOT NULL' : ''}${c.default && !c.identity ? ` DEFAULT ${c.default}` : ''}`)
           .concat(cons.filter(c => c.type !== 't').map(c => `  CONSTRAINT ${quoteId(c.name)} ${c.def}`));
         const ddl = `CREATE TABLE ${qn(s.schema, s.name)} (\n${lines.join(',\n')}\n);\n${s.indexes.filter(i => !i.primary && !cons.some(c => c.name === i.name)).map(i => i.def + ';').join('\n')}${s.comment ? `\nCOMMENT ON TABLE ${qn(s.schema, s.name)} IS '${s.comment.replace(/'/g, "''")}';` : ''}${s.columns.filter(c => c.comment).map(c => `\nCOMMENT ON COLUMN ${qn(s.schema, s.name)}.${quoteId(c.name)} IS '${c.comment.replace(/'/g, "''")}';`).join('')}`;
-        body = `<div class="dbg-bar">${UI.btn('Copy', 'data-z-copyddl')} ${UI.btn('Open in a query', 'data-z-ddlq')}<span class="ui-sub">Made from the catalog — sequences, grants and triggers are not in it.</span></div>${pre(ddl)}`;
+        body = `<div class="dbg-bar">${UI.btn('Copy', 'data-z-copyddl')} ${UI.btn('Open in a query', 'data-z-ddlq')}<span class="ui-sub">Made from the catalog - sequences, grants and triggers are not in it.</span></div>${pre(ddl)}`;
         t._ddl = ddl;
       }
       const n = creating ? (z.name.trim() ? 1 : 0) : ops.length;
       pane.innerHTML = DZ_CSS + head + (subs.length > 1 ? `<div class="dz-sub">${subs.map(([k, l]) => `<button type="button" data-sub="${k}" class="${z.sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : '') + body
-        + (editableKind && (creating || n) ? `<div class="dz-bar"><b>${creating ? 'New table' : `${n} change${n === 1 ? '' : 's'}`}</b><span class="ui-sub">${info.allowWrite ? (creating ? '' : 'saved together, in one transaction') : '🔒 read-only — Test works; allow changes to save'}</span><span style="flex:1"></span>
+        + (editableKind && (creating || n) ? `<div class="dz-bar"><b>${creating ? 'New table' : `${n} change${n === 1 ? '' : 's'}`}</b><span class="ui-sub">${info.allowWrite ? (creating ? '' : 'saved together, in one transaction') : '🔒 read-only - Test works; allow changes to save'}</span><span style="flex:1"></span>
             ${UI.btn('Show SQL', 'data-z-sql')} ${UI.btn('🧪 Test', 'data-z-test')} ${creating ? '' : UI.btn('Discard', 'data-z-discard')} ${UI.primary(creating ? 'Create table' : 'Save', 'data-z-save')}</div>` : '');
       bind();
     };
@@ -767,23 +766,23 @@ Router.register('databases', async (content, params = {}) => {
           <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="ui-field" style="flex:1"><span class="ui-label">Name (optional)</span><input class="input td-mono" id="zi-n"></label><label class="ui-field"><span class="ui-label">Method</span><select class="input" id="zi-m"><option>btree</option><option>hash</option><option>gin</option><option>gist</option><option>brin</option></select></label></div>
           <label class="ui-field"><span class="ui-label">Only rows where (optional, a partial index)</span><input class="input td-mono" id="zi-w" placeholder="deleted_at IS NULL"></label>
           <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="zi-u"> Unique</label>
-          <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin-top:4px"><input type="checkbox" id="zi-cc"> CONCURRENTLY — does not block writes on a busy table (made after the other changes, not in a transaction)</label>`,
+          <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin-top:4px"><input type="checkbox" id="zi-cc"> CONCURRENTLY - does not block writes on a busy table (made after the other changes, not in a transaction)</label>`,
         onSave: async (ov) => { const c = picked(ov, 'zi-c'); if (!c.length) throw new Error('Pick at least one column'); const op = { op: 'addIndex', columns: c, unique: ov.querySelector('#zi-u').checked, method: ov.querySelector('#zi-m').value, name: ov.querySelector('#zi-n').value.trim() || undefined, where: ov.querySelector('#zi-w').value.trim() || undefined, concurrently: ov.querySelector('#zi-cc').checked }; qOp(op, `${op.unique ? 'unique ' : ''}index on (${c.join(', ')})${op.method !== 'btree' ? ' using ' + op.method : ''}`); } });
       const zf = pane.querySelector('[data-z-fk]'); if (zf) zf.onclick = () => UI.dialog({ title: 'Add foreign key', saveLabel: 'Add',
         body: `<label class="ui-field"><span class="ui-label">Column</span><select class="input td-mono" id="zf-c">${colOpts()}</select></label>
           <label class="ui-field"><span class="ui-label">Points to the table</span><select class="input td-mono" id="zf-t">${tablesOfDb().map(r => `<option value="${esc(r.schema)}|${esc(r.name)}">${r.schema !== 'public' ? esc(r.schema) + '.' : ''}${esc(r.name)}</option>`).join('')}</select></label>
-          <label class="ui-field"><span class="ui-label">Its column</span><select class="input td-mono" id="zf-rc"><option>…</option></select></label>
+          <label class="ui-field"><span class="ui-label">Its column</span><select class="input td-mono" id="zf-rc"><option>...</option></select></label>
           <div style="display:flex;gap:10px"><label class="ui-field" style="flex:1"><span class="ui-label">When that row is deleted</span><select class="input" id="zf-d"><option value="NO ACTION">refuse (no action)</option><option value="CASCADE">delete these rows too (cascade)</option><option value="SET NULL">set this column to NULL</option><option value="RESTRICT">refuse at once (restrict)</option></select></label>
             <label class="ui-field" style="flex:1"><span class="ui-label">When its key changes</span><select class="input" id="zf-u"><option value="NO ACTION">refuse (no action)</option><option value="CASCADE">change these too (cascade)</option><option value="SET NULL">set NULL</option></select></label></div>
-          <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="zf-nv"> Do not check the rows there now (NOT VALID) — only new rows</label><div data-zf-warn class="ui-sub" style="color:var(--warning);margin-top:6px"></div>`,
+          <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="zf-nv"> Do not check the rows there now (NOT VALID) - only new rows</label><div data-zf-warn class="ui-sub" style="color:var(--warning);margin-top:6px"></div>`,
         onOpen: (ov) => {
           const ts = ov.querySelector('#zf-t'), rc = ov.querySelector('#zf-rc'), cc = ov.querySelector('#zf-c'), warn = ov.querySelector('[data-zf-warn]'); let ref = null;
           const check = () => { const a = s.columns.find(c => c.name === cc.value); const b = ref && (ref.columns || []).find(c => c.name === rc.value); const base = (x) => String(x || '').replace(/\(.*$/, '').replace(/^character varying$/, 'varchar').trim();
-            warn.textContent = a && b && base(a.type) !== base(b.type) ? `⚠ ${a.name} is ${a.type} and ${b.name} is ${b.type} — PostgreSQL refuses a key between different types. Change one of the types first.` : b && ref && !(ref.pk || []).includes(b.name) && !(ref.indexes || []).some(i => i.unique && new RegExp('\\(' + b.name + '\\)').test(i.def)) ? `⚠ ${b.name} is not a primary key or unique there — PostgreSQL needs one of those.` : ''; };
-          const load = async () => { const [rs, rt] = ts.value.split('|'); rc.innerHTML = '<option>…</option>'; ref = await ensureStruct(t.c, t.db, rs, rt); rc.innerHTML = (ref.columns || []).map(c => `<option ${(ref.pk || []).includes(c.name) ? 'selected' : ''}>${esc(c.name)}</option>`).join(''); check(); };
+            warn.textContent = a && b && base(a.type) !== base(b.type) ? `⚠ ${a.name} is ${a.type} and ${b.name} is ${b.type} - PostgreSQL refuses a key between different types. Change one of the types first.` : b && ref && !(ref.pk || []).includes(b.name) && !(ref.indexes || []).some(i => i.unique && new RegExp('\\(' + b.name + '\\)').test(i.def)) ? `⚠ ${b.name} is not a primary key or unique there - PostgreSQL needs one of those.` : ''; };
+          const load = async () => { const [rs, rt] = ts.value.split('|'); rc.innerHTML = '<option>...</option>'; ref = await ensureStruct(t.c, t.db, rs, rt); rc.innerHTML = (ref.columns || []).map(c => `<option ${(ref.pk || []).includes(c.name) ? 'selected' : ''}>${esc(c.name)}</option>`).join(''); check(); };
           ts.onchange = load; rc.onchange = check; cc.onchange = check; if (ts.value) load();
         },
-        onSave: async (ov) => { const [rs, rt] = ov.querySelector('#zf-t').value.split('|'); const c = ov.querySelector('#zf-c').value, rc = ov.querySelector('#zf-rc').value; if (!rt || !rc || rc === '…') throw new Error('Pick the table and its column'); qOp({ op: 'addForeignKey', columns: [c], refSchema: rs, refTable: rt, refColumns: [rc], onDelete: ov.querySelector('#zf-d').value, onUpdate: ov.querySelector('#zf-u').value, notValid: ov.querySelector('#zf-nv').checked }, `${c} → ${rt}.${rc}`); } });
+        onSave: async (ov) => { const [rs, rt] = ov.querySelector('#zf-t').value.split('|'); const c = ov.querySelector('#zf-c').value, rc = ov.querySelector('#zf-rc').value; if (!rt || !rc || rc === '...') throw new Error('Pick the table and its column'); qOp({ op: 'addForeignKey', columns: [c], refSchema: rs, refTable: rt, refColumns: [rc], onDelete: ov.querySelector('#zf-d').value, onUpdate: ov.querySelector('#zf-u').value, notValid: ov.querySelector('#zf-nv').checked }, `${c} -> ${rt}.${rc}`); } });
       const zu = pane.querySelector('[data-z-uq]'); if (zu) zu.onclick = () => UI.dialog({ title: 'Add unique', saveLabel: 'Add', body: `<div class="ui-sub" style="margin-bottom:6px">No two rows may have the same values in these columns.</div>${colChecks('zu-c')}`, onSave: async (ov) => { const c = picked(ov, 'zu-c'); if (!c.length) throw new Error('Pick at least one column'); qOp({ op: 'addUnique', columns: c }, `unique (${c.join(', ')})`); } });
       const zp = pane.querySelector('[data-z-pk]'); if (zp) zp.onclick = () => UI.dialog({ title: 'Add primary key', saveLabel: 'Add', body: `<div class="ui-sub" style="margin-bottom:6px">Rows are found and edited by it; its columns become NOT NULL and unique.</div>${colChecks('zp-c')}`, onSave: async (ov) => { const c = picked(ov, 'zp-c'); if (!c.length) throw new Error('Pick at least one column'); qOp({ op: 'addPrimaryKey', columns: c }, `primary key (${c.join(', ')})`); } });
       const zk = pane.querySelector('[data-z-ck]'); if (zk) zk.onclick = () => UI.dialog({ title: 'Add check', saveLabel: 'Add', body: `<label class="ui-field"><span class="ui-label">Every row must satisfy</span><input class="input td-mono" id="zk-e" placeholder="price >= 0"></label><label class="ui-field"><span class="ui-label">Name (optional)</span><input class="input td-mono" id="zk-n"></label>`, onSave: async (ov) => { const e = ov.querySelector('#zk-e').value.trim(); if (!e) throw new Error('Write the condition'); qOp({ op: 'addCheck', expr: e, name: ov.querySelector('#zk-n').value.trim() || undefined }, `check (${e})`); } });
@@ -813,12 +812,12 @@ Router.register('databases', async (content, params = {}) => {
     async function run(test) {
       try {
         const r = await API.post(`${dbBaseOf(t.c, t.db)}/ddl/apply`, { ...body(), test, confirm: !test });
-        if (test) return showToast(`🧪 Test passed — ${r.statements.length} statement${r.statements.length === 1 ? '' : 's'} ran and were rolled back. Nothing changed.`, 'success', 6000);
+        if (test) return showToast(`🧪 Test passed - ${r.statements.length} statement${r.statements.length === 1 ? '' : 's'} ran and were rolled back. Nothing changed.`, 'success', 6000);
         showToast(creating ? `Created ${z.schema}.${z.name}` : 'Saved', 'success');
         forgetDb(t.c, t.db); ensureObjects(t.c, t.db, true);
         if (creating) {
           const name = z.name.trim(), sch = z.schema;
-          if (t.csv) { try { showToast(`Loading ${t.csv.data.length.toLocaleString()} rows…`, 'info', 4000); const n = await loadCsvRows(t, sch, name); showToast(`Created ${sch}.${name} with ${n.toLocaleString()} rows from ${t.csv.file}`, 'success', 8000); } catch (e) { showModal('The table is made, the rows are not', `<div class="text-sm" style="color:var(--danger)">${esc(e.message)}</div><div class="ui-sub" style="margin-top:8px">Change the column types in Design, then load the file with the table's Import CSV.</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]); } }
+          if (t.csv) { try { showToast(`Loading ${t.csv.data.length.toLocaleString()} rows...`, 'info', 4000); const n = await loadCsvRows(t, sch, name); showToast(`Created ${sch}.${name} with ${n.toLocaleString()} rows from ${t.csv.file}`, 'success', 8000); } catch (e) { showModal('The table is made, the rows are not', `<div class="text-sm" style="color:var(--danger)">${esc(e.message)}</div><div class="ui-sub" style="margin-top:8px">Change the column types in Design, then load the file with the table's Import CSV.</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]); } }
           closeTab(t.id, true); openTab({ type: t.csv ? 'data' : 'design', c: t.c, db: t.db, s: sch, t: name }, { pin: true }); return;
         }
         st.tabs.filter(x => x !== t && x.c === t.c && x.db === t.db && x.s === t.s && x.t === t.t && x.type === 'data' && x.inst && x.inst.reload).forEach(x => x.inst.reload());
@@ -830,17 +829,17 @@ Router.register('databases', async (content, params = {}) => {
       if (!info.allowWrite) return showConfirm('Allow changes?', `The connection to <b>${esc(t.c)}</b> is read-only. Allow changes and save?`, async () => { await setWrite(true, t.c); save(); });
       let r; try { r = await API.post(`${dbBaseOf(t.c, t.db)}/ddl/preview`, body()); } catch (e) { return showToast(e.message, 'error', 9000); }
       const risky = r.statements.some(x => /DROP|TYPE /.test(x.sql));
-      showConfirm(creating ? 'Create table' : 'Save structure changes', `${r.statements.length} statement${r.statements.length === 1 ? '' : 's'} in one transaction${info.production ? ' — <b style="color:var(--danger)">production</b>' : ''}${risky ? '. <b>Dropping columns or changing types can lose data</b> — 🧪 Test first, back up if in doubt.' : ''}:${pre(r.statements.map(x => x.sql + ';').join('\n'))}`, () => run(false), risky || !!info.production);
+      showConfirm(creating ? 'Create table' : 'Save structure changes', `${r.statements.length} statement${r.statements.length === 1 ? '' : 's'} in one transaction${info.production ? ' - <b style="color:var(--danger)">production</b>' : ''}${risky ? '. <b>Dropping columns or changing types can lose data</b> - 🧪 Test first, back up if in doubt.' : ''}:${pre(r.statements.map(x => x.sql + ';').join('\n'))}`, () => run(false), risky || !!info.production);
     }
     draw();
   }
 
-  // Table ▾ (and the tree): rename, move, duplicate, comment — each shows its SQL, can be tested, then runs
+  // Table ▾ (and the tree): rename, move, duplicate, comment - each shows its SQL, can be tested, then runs
   function quickDdl(t, ops, title, done) {
     UI.dialog({ title, saveLabel: 'Run', wide: false, body: '<div data-q-sql><div class="skeleton" style="height:60px"></div></div>',
       onOpen: async (ov, { save }) => {
         try { const r = await API.post(`${dbBaseOf(t.c, t.db)}/ddl/preview`, { schema: t.s, table: t.t, ops }); ov.querySelector('[data-q-sql]').innerHTML = `<pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:0">${esc(r.statements.map(x => x.sql + ';').join('\n'))}</pre><div style="margin-top:8px">${UI.btn('🧪 Test', 'data-q-test')}</div>`;
-          ov.querySelector('[data-q-test]').onclick = async () => { try { await API.post(`${dbBaseOf(t.c, t.db)}/ddl/apply`, { schema: t.s, table: t.t, ops, test: true }); showToast('🧪 Test passed — rolled back', 'success'); } catch (e) { showToast(e.message, 'error', 9000); } };
+          ov.querySelector('[data-q-test]').onclick = async () => { try { await API.post(`${dbBaseOf(t.c, t.db)}/ddl/apply`, { schema: t.s, table: t.t, ops, test: true }); showToast('🧪 Test passed - rolled back', 'success'); } catch (e) { showToast(e.message, 'error', 9000); } };
         } catch (e) { ov.querySelector('[data-q-sql]').innerHTML = `<div class="text-danger">${esc(e.message)}</div>`; save.disabled = true; }
       },
       onSave: async () => {
@@ -853,12 +852,12 @@ Router.register('databases', async (content, params = {}) => {
     const retarget = (s2, t2) => { st.tabs.filter(o => o.c === t.c && o.db === t.db && o.s === t.s && o.t === t.t).forEach(o => { o.s = s2; o.t = t2; o.dzReload = true; destroyTab(o); }); persistTabs(); const a = activeTab(); if (a) { panesEl().querySelectorAll('.dbx-pane').forEach(p => p.classList.remove('on')); activate(a.id); } drawTabs(); };
     const ask = (title, label, value, fn) => UI.dialog({ title, saveLabel: 'Next', body: `<label class="ui-field"><span class="ui-label">${label}</span><input class="input td-mono" id="qa-v" value="${esc(value)}"></label>`, onSave: async (ov) => { const v = ov.querySelector('#qa-v').value.trim(); if (!v) throw new Error('Needed'); setTimeout(() => fn(v), 50); } });
     showMenu(x, y, [{ header: `${t.s}.${t.t}` },
-      { label: 'Rename…', act: () => ask('Rename table', 'New name', t.t, (v) => quickDdl(t, [{ op: 'renameTable', name: v }], `Rename ${t.t}`, () => retarget(t.s, v))) },
-      { label: 'Move to another schema…', act: () => ask('Move to schema', 'Schema (must exist)', t.s, (v) => quickDdl(t, [{ op: 'setSchema', schema: v }], `Move ${t.t}`, () => retarget(v, t.t))) },
-      { label: 'Duplicate…', act: () => UI.dialog({ title: `Duplicate ${t.t}`, saveLabel: 'Next', body: `<label class="ui-field"><span class="ui-label">New table</span><input class="input td-mono" id="du-n" value="${esc(t.t)}_copy"></label><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="du-d" checked> With the rows</label><div class="ui-sub" style="margin-top:6px">Columns, defaults, constraints and indexes are copied (LIKE … INCLUDING ALL); serial columns keep using the old sequence.</div>`, onSave: async (ov) => { const n = ov.querySelector('#du-n').value.trim(), wd = ov.querySelector('#du-d').checked; setTimeout(() => quickDdl(t, [{ op: 'duplicate', name: n, withData: wd }], `Duplicate ${t.t}`, () => openTab({ type: 'design', c: t.c, db: t.db, s: t.s, t: n }, { pin: true })), 50); } }) },
-      { label: 'Comment…', act: () => ask('Table comment', 'Comment (empty removes it)', (st.structs[`${t.c}|${t.db}|${t.s}|${t.t}`] || {}).comment || ' ', (v) => quickDdl(t, [{ op: 'comment', text: v.trim() }], 'Comment', () => { t.dzReload = true; renderTab(t, true); })) },
+      { label: 'Rename...', act: () => ask('Rename table', 'New name', t.t, (v) => quickDdl(t, [{ op: 'renameTable', name: v }], `Rename ${t.t}`, () => retarget(t.s, v))) },
+      { label: 'Move to another schema...', act: () => ask('Move to schema', 'Schema (must exist)', t.s, (v) => quickDdl(t, [{ op: 'setSchema', schema: v }], `Move ${t.t}`, () => retarget(v, t.t))) },
+      { label: 'Duplicate...', act: () => UI.dialog({ title: `Duplicate ${t.t}`, saveLabel: 'Next', body: `<label class="ui-field"><span class="ui-label">New table</span><input class="input td-mono" id="du-n" value="${esc(t.t)}_copy"></label><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="du-d" checked> With the rows</label><div class="ui-sub" style="margin-top:6px">Columns, defaults, constraints and indexes are copied (LIKE ... INCLUDING ALL); serial columns keep using the old sequence.</div>`, onSave: async (ov) => { const n = ov.querySelector('#du-n').value.trim(), wd = ov.querySelector('#du-d').checked; setTimeout(() => quickDdl(t, [{ op: 'duplicate', name: n, withData: wd }], `Duplicate ${t.t}`, () => openTab({ type: 'design', c: t.c, db: t.db, s: t.s, t: n }, { pin: true })), 50); } }) },
+      { label: 'Comment...', act: () => ask('Table comment', 'Comment (empty removes it)', (st.structs[`${t.c}|${t.db}|${t.s}|${t.t}`] || {}).comment || ' ', (v) => quickDdl(t, [{ op: 'comment', text: v.trim() }], 'Comment', () => { t.dzReload = true; renderTab(t, true); })) },
       '-',
-      ...(nodeMenuItems(`t|${t.c}|${t.db}|${t.s}|${t.t}`).filter(it => it && it !== '-' && /VACUUM|ANALYZE|TRUNCATE|Drop|Export…|test data/.test(it.label || ''))),
+      ...(nodeMenuItems(`t|${t.c}|${t.db}|${t.s}|${t.t}`).filter(it => it && it !== '-' && /VACUUM|ANALYZE|TRUNCATE|Drop|Export...|test data/.test(it.label || ''))),
     ]);
   }
   const nodeMenuItems = (key) => { let items = null; const real = showMenu; showMenu = (x, y, list) => { items = list; }; try { nodeMenu(key, 0, 0); } finally { showMenu = real; } return items || []; };
@@ -877,19 +876,19 @@ Router.register('databases', async (content, params = {}) => {
     const draw = () => {
       const q = view.q.toLowerCase(); const list = rels.filter(r => !q || `${r.schema}.${r.name}`.toLowerCase().includes(q));
       pane.innerHTML = `
-        <div class="dbx-head"><span class="dbx-ic">${IC.db}</span><b>${esc(t.db)}</b><span class="ui-sub">${d.size != null ? formatBytes(d.size) : ''} · ${rels.filter(r => r.kind === 'r' || r.kind === 'p').length} tables · ${rels.filter(r => r.kind === 'v' || r.kind === 'm').length} views · ${o.functions.length} functions · owner ${esc(d.owner || '?')}</span><span style="flex:1"></span>
-          ${UI.btn('New query', 'data-o-q', 'btn-primary')} ${UI.btn('+ New table', 'data-o-nt')} ${UI.btn('Export…', 'data-o-ex')} ${UI.btn('Import…', 'data-o-im')} ${UI.btn('Admin', 'data-o-adm')} ${UI.btn('Backups', 'data-o-bk')} ${UI.btn('Refresh', 'data-o-ref')}</div>
-        <div class="dbg-bar"><input class="input" data-o-find placeholder="Filter…" value="${esc(view.q)}" style="max-width:280px;padding:4px 10px">
+        <div class="dbx-head"><span class="dbx-ic">${IC.db}</span><b>${esc(t.db)}</b><span class="ui-sub">${d.size != null ? formatBytes(d.size) : ''}, ${rels.filter(r => r.kind === 'r' || r.kind === 'p').length} tables, ${rels.filter(r => r.kind === 'v' || r.kind === 'm').length} views, ${o.functions.length} functions, owner ${esc(d.owner || '?')}</span><span style="flex:1"></span>
+          ${UI.btn('New query', 'data-o-q', 'btn-primary')} ${UI.btn('+ New table', 'data-o-nt')} ${UI.btn('Export...', 'data-o-ex')} ${UI.btn('Import...', 'data-o-im')} ${UI.btn('Admin', 'data-o-adm')} ${UI.btn('Backups', 'data-o-bk')} ${UI.btn('Refresh', 'data-o-ref')}</div>
+        <div class="dbg-bar"><input class="input" data-o-find placeholder="Filter..." value="${esc(view.q)}" style="max-width:280px;padding:4px 10px">
           <span class="ui-sub" data-o-n>${list.length} of ${rels.length}</span><span style="flex:1"></span>
-          <span class="ui-sub">With the ticked:</span> ${UI.btn('ANALYZE', `data-o-bulk="analyze" ${w ? '' : 'disabled title="Allow changes first"'}`)} ${UI.btn('VACUUM ANALYZE', `data-o-bulk="vacuum" ${w ? '' : 'disabled title="Allow changes first"'}`)} ${UI.btn('Empty…', `data-o-bulk="truncate" ${w ? '' : 'disabled title="Allow changes first"'}`, 'btn-danger')} ${UI.btn('Drop…', `data-o-bulk="drop" ${w ? '' : 'disabled title="Allow changes first"'}`, 'btn-danger')}</div>
+          <span class="ui-sub">With the ticked:</span> ${UI.btn('ANALYZE', `data-o-bulk="analyze" ${w ? '' : 'disabled title="Allow changes first"'}`)} ${UI.btn('VACUUM ANALYZE', `data-o-bulk="vacuum" ${w ? '' : 'disabled title="Allow changes first"'}`)} ${UI.btn('Empty...', `data-o-bulk="truncate" ${w ? '' : 'disabled title="Allow changes first"'}`, 'btn-danger')} ${UI.btn('Drop...', `data-o-bulk="drop" ${w ? '' : 'disabled title="Allow changes first"'}`, 'btn-danger')}</div>
         ${UI.table([{ label: '<input type="checkbox" data-o-all title="Tick all shown">' }, { label: 'Name' }, { label: 'Kind' }, { label: 'Rows ≈', align: 'right' }, { label: 'Size', align: 'right' }, { label: '', align: 'right' }], list.map(r => ({ cells: [
           r.kind === 'S' ? '' : `<input type="checkbox" data-o-ck="${esc(r.schema)}|${esc(r.name)}" ${view.sel.has(`${r.schema}|${r.name}`) ? 'checked' : ''}>`,
           `<span class="dbx-ic" style="vertical-align:-3px">${relIcon(r.kind)}</span> <a href="#" class="td-mono" data-o-open="${esc(r.schema)}|${esc(r.name)}">${r.schema !== 'public' ? `<span class="ui-sub">${esc(r.schema)}.</span>` : ''}${esc(r.name)}</a>`,
           `<span class="ui-sub">${esc(kindName[r.kind] || r.kind)}</span>`,
-          `<span style="font-variant-numeric:tabular-nums">${r.kind === 'v' || r.kind === 'S' || r.rows < 0 ? '—' : Number(r.rows).toLocaleString()}</span>`,
-          `<span style="font-variant-numeric:tabular-nums">${r.kind === 'v' ? '—' : formatBytes(r.size)}</span>`,
-          `<div class="td-actions" style="justify-content:flex-end">${r.kind !== 'S' ? UI.btn('Data', `data-o-data="${esc(r.schema)}|${esc(r.name)}"`) : ''} ${UI.btn('Design', `data-o-design="${esc(r.schema)}|${esc(r.name)}"`)} <button type="button" class="btn btn-xs btn-ghost" data-o-menu="${esc(r.schema)}|${esc(r.name)}" title="More">⋯</button></div>`] })), { empty: 'No tables yet — create one with a CREATE TABLE in a new query.', minWidth: 640 })}
-        <div class="ui-sub" style="margin-top:8px">Total ${formatBytes(total)} in tables, indexes and views. Rows are the planner's estimate — "Count rows" in a table's menu counts exactly.</div>`;
+          `<span style="font-variant-numeric:tabular-nums">${r.kind === 'v' || r.kind === 'S' || r.rows < 0 ? '-' : Number(r.rows).toLocaleString()}</span>`,
+          `<span style="font-variant-numeric:tabular-nums">${r.kind === 'v' ? '-' : formatBytes(r.size)}</span>`,
+          `<div class="td-actions" style="justify-content:flex-end">${r.kind !== 'S' ? UI.btn('Data', `data-o-data="${esc(r.schema)}|${esc(r.name)}"`) : ''} ${UI.btn('Design', `data-o-design="${esc(r.schema)}|${esc(r.name)}"`)} <button type="button" class="btn btn-xs btn-ghost" data-o-menu="${esc(r.schema)}|${esc(r.name)}" title="More">⋯</button></div>`] })), { empty: 'No tables yet - create one with a CREATE TABLE in a new query.', minWidth: 640 })}
+        <div class="ui-sub" style="margin-top:8px">Total ${formatBytes(total)} in tables, indexes and views. Rows are the planner's estimate - "Count rows" in a table's menu counts exactly.</div>`;
       const f = pane.querySelector('[data-o-find]'); f.oninput = () => { view.q = f.value; t.ovq = f.value; const pos = f.selectionStart; draw(); const g = pane.querySelector('[data-o-find]'); g.focus(); g.setSelectionRange(pos, pos); };
       const sp = (v) => v.split('|');
       pane.querySelectorAll('[data-o-open],[data-o-data]').forEach(a => a.onclick = (e) => { e.preventDefault(); const [s, n] = sp(a.dataset.oOpen || a.dataset.oData); const r = relOf(t.c, t.db, s, n); openTab({ type: r && r.kind === 'S' ? 'design' : 'data', c: t.c, db: t.db, s, t: n }, { pin: true }); });
@@ -932,14 +931,14 @@ Router.register('databases', async (content, params = {}) => {
     UI.dialog({ title: `Export from ${esc(db)}`, saveLabel: 'Download', wide: true,
       body: `<div style="display:grid;grid-template-columns:minmax(220px,1fr) minmax(260px,1.2fr);gap:16px">
         <div><div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><b>Tables</b><span class="ui-sub" data-ex-n></span><span style="flex:1"></span>${UI.btn('All', 'data-ex-all')} ${UI.btn('None', 'data-ex-none')}</div>
-          <input class="input" data-ex-find placeholder="Filter…" style="padding:3px 8px;margin-bottom:6px">
+          <input class="input" data-ex-find placeholder="Filter..." style="padding:3px 8px;margin-bottom:6px">
           <div style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px" data-ex-list>${rels.map(r => `<label style="display:flex;gap:6px;align-items:center;font-weight:400" data-ex-row="${esc(r.schema + '.' + r.name)}"><input type="checkbox" class="ex-t" value="${esc(r.schema + '.' + r.name)}" ${pre.has(`${r.schema}.${r.name}`) ? 'checked' : ''}> <span class="td-mono">${r.schema !== 'public' ? esc(r.schema) + '.' : ''}${esc(r.name)}</span><span class="ui-sub" style="margin-left:auto">${r.rows >= 0 ? '≈' + Number(r.rows).toLocaleString() : ''}</span></label>`).join('')}</div></div>
         <div><div class="ui-label">Format</div>
-          ${[['sql', 'SQL — CREATE and INSERT (pg_dump)', 'Load it into any PostgreSQL with psql or Import .sql'], ['csv', 'CSV — one file per table, in a .zip', 'For spreadsheets and other tools'], ['xlsx', 'Excel (.xlsx) — one sheet per table', 'Up to 1 048 576 rows a sheet']].map(([v, l, h], i) => `<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:6px 0"><input type="radio" name="ex-f" value="${v}" ${i === 0 ? 'checked' : ''} style="margin-top:3px"><span><b>${l}</b><br><span class="ui-sub">${h}</span></span></label>`).join('')}
+          ${[['sql', 'SQL - CREATE and INSERT (pg_dump)', 'Load it into any PostgreSQL with psql or Import .sql'], ['csv', 'CSV - one file per table, in a .zip', 'For spreadsheets and other tools'], ['xlsx', 'Excel (.xlsx) - one sheet per table', 'Up to 1 048 576 rows a sheet']].map(([v, l, h], i) => `<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:6px 0"><input type="radio" name="ex-f" value="${v}" ${i === 0 ? 'checked' : ''} style="margin-top:3px"><span><b>${l}</b><br><span class="ui-sub">${h}</span></span></label>`).join('')}
           <div data-ex-sql style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
             <label class="ui-field"><span class="ui-label">What</span><select class="input" id="ex-w"><option value="both">Structure and data</option><option value="schema">Structure only (CREATE TABLE, indexes, keys)</option><option value="data">Data only</option></select></label>
-            <label class="ui-field"><span class="ui-label">Rows as</span><select class="input" id="ex-r"><option value="insert">INSERT statements — readable, work everywhere</option><option value="copy">COPY — much faster to load, psql only</option></select></label>
-            <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="ex-c"> Drop the tables first (DROP … IF EXISTS) — to replace them where it is loaded</label>
+            <label class="ui-field"><span class="ui-label">Rows as</span><select class="input" id="ex-r"><option value="insert">INSERT statements - readable, work everywhere</option><option value="copy">COPY - much faster to load, psql only</option></select></label>
+            <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="ex-c"> Drop the tables first (DROP ... IF EXISTS) - to replace them where it is loaded</label>
             <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin-top:4px"><input type="checkbox" id="ex-g" checked> Compress (.sql.gz)</label>
           </div></div></div>`,
       onOpen: (ov) => {
@@ -958,10 +957,10 @@ Router.register('databases', async (content, params = {}) => {
         const tq = all && fmt === 'sql' ? '' : `tables=${enc(picked.join(','))}`;
         if (fmt === 'sql') {
           const url = `/api${dbBaseOf(c, db)}/dump?${tq}&what=${ov.querySelector('#ex-w').value}&rows=${ov.querySelector('#ex-r').value}&clean=${ov.querySelector('#ex-c').checked ? 1 : 0}&gz=${ov.querySelector('#ex-g').checked ? 1 : 0}`;
-          window.location.href = url; showToast('The export is downloading…', 'info');
+          window.location.href = url; showToast('The export is downloading...', 'info');
           return;
         }
-        showToast(`Making the ${fmt === 'xlsx' ? 'Excel file' : 'zip'}…`, 'info', 3000);
+        showToast(`Making the ${fmt === 'xlsx' ? 'Excel file' : 'zip'}...`, 'info', 3000);
         const r = await fetch(`/api${dbBaseOf(c, db)}/export-zip?${tq}&format=${fmt}`, { credentials: 'same-origin' });
         if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error; } catch (e) {} throw new Error(m); }
         const blob = await r.blob(); const a = document.createElement('a');
@@ -974,11 +973,11 @@ Router.register('databases', async (content, params = {}) => {
     UI.dialog({ title: `Import into ${esc(db)}`, saveLabel: 'Import',
       body: `<div class="ui-label">A SQL file</div>
         <input type="file" class="input" id="im-f" accept=".sql,.gz,.sql.gz,.txt">
-        <div class="ui-sub" style="margin:4px 0 10px">.sql or .sql.gz — a pg_dump in plain format, or any SQL. psql runs it and stops at the first error. (A .dump in custom format goes through Backups → Restore.)</div>
-        <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="im-1" checked> In one transaction — if a statement fails, nothing of the file stays</label>
+        <div class="ui-sub" style="margin:4px 0 10px">.sql or .sql.gz - a pg_dump in plain format, or any SQL. psql runs it and stops at the first error. (A .dump in custom format goes through Backups > Restore.)</div>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="im-1" checked> In one transaction - if a statement fails, nothing of the file stays</label>
         <div data-im-prog style="display:none;margin-top:10px"><div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden"><div data-im-bar style="height:100%;width:0;background:var(--accent,#3b82f6)"></div></div><div class="ui-sub" data-im-txt style="margin-top:4px"></div></div>
         <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:10px"><div class="ui-label">CSV</div>
-          <div class="ui-sub">Into a table that exists: open its data → <b>Export / import → Import CSV…</b> (match columns, upsert, Test). Into a <b>new</b> table: ${UI.btn('New table from a CSV…', 'data-im-csv')}</div></div>`,
+          <div class="ui-sub">Into a table that exists: open its data -> <b>Export / import > Import CSV...</b> (match columns, upsert, Test). Into a <b>new</b> table: ${UI.btn('New table from a CSV...', 'data-im-csv')}</div></div>`,
       onOpen: (ov) => { ov.querySelector('[data-im-csv]').onclick = () => { const m = ov.closest('.modal-overlay'); if (m) m.querySelector('.modal-footer .btn-secondary').click(); csvNewTable(c, db); }; },
       onSave: async (ov) => {
         const f = ov.querySelector('#im-f').files[0]; if (!f) throw new Error('Pick a file');
@@ -989,19 +988,19 @@ Router.register('databases', async (content, params = {}) => {
           const x = new XMLHttpRequest();
           x.open('POST', `/api${dbBaseOf(c, db)}/import-sql?gz=${gz}&single=${single}&name=${enc(f.name)}`);
           x.setRequestHeader('Content-Type', 'application/octet-stream');
-          x.upload.onprogress = (e) => { if (e.lengthComputable) { bar.style.width = `${Math.round(e.loaded / e.total * 100)}%`; txt.textContent = e.loaded < e.total ? `Sending ${formatBytes(e.loaded)} of ${formatBytes(e.total)}…` : 'Running it in the database…'; } };
+          x.upload.onprogress = (e) => { if (e.lengthComputable) { bar.style.width = `${Math.round(e.loaded / e.total * 100)}%`; txt.textContent = e.loaded < e.total ? `Sending ${formatBytes(e.loaded)} of ${formatBytes(e.total)}...` : 'Running it in the database...'; } };
           x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch (e) {} if (x.status >= 200 && x.status < 300) res(j); else rej(new Error(j.error || x.statusText)); };
           x.onerror = () => rej(new Error('The upload failed'));
           x.send(f);
         });
         const tags = Object.entries(r.tags || {}).map(([k, v]) => `${v} ${k}`).join(', ');
-        showToast(`Imported ${f.name} in ${(r.ms / 1000).toFixed(1)} s${tags ? ' — ' + tags : ''}`, 'success', 8000);
+        showToast(`Imported ${f.name} in ${(r.ms / 1000).toFixed(1)} s${tags ? ' - ' + tags : ''}`, 'success', 8000);
         forgetDb(c, db); await ensureObjects(c, db, true);
         st.tabs.filter(x => x.c === c && x.db === db && x.type === 'overview').forEach(x => { if (x.id === st.active) renderTab(x, true); else destroyTab(x); });
       } });
   }
 
-  // CSV → a new table: columns and types guessed from the file, edited in the New table tab, the rows loaded after CREATE
+  // CSV -> a new table: columns and types guessed from the file, edited in the New table tab, the rows loaded after CREATE
   function parseCsvText(text) {
     const first = text.split(/\r?\n/, 1)[0] || '';
     const sep = [',', ';', '\t', '|'].map(s => [s, first.split(s).length]).sort((a, b) => b[1] - a[1])[0][0];
@@ -1040,7 +1039,7 @@ Router.register('databases', async (content, params = {}) => {
       tab.dz = { sub: 'cols', schema: 'public', name: tname, comment: `Imported from ${f.name}`, draft: head.map((h, i) => ({ ...dzCol(null, []), name: h, type: guessType(data.map(r => r[i])) })), queued: [] };
       tab.csv = { head, data, file: f.name };
       renderTab(tab, true); void t;
-      showToast(`${data.length.toLocaleString()} rows read — check the column names and types, then Create table: the rows are loaded right after`, 'info', 9000);
+      showToast(`${data.length.toLocaleString()} rows read - check the column names and types, then Create table: the rows are loaded right after`, 'info', 9000);
     };
     inp.click();
   }
@@ -1060,14 +1059,14 @@ Router.register('databases', async (content, params = {}) => {
     UI.dialog({ title: `Test data for ${esc(s)}.${esc(t)}`, saveLabel: 'Add the rows', wide: true,
       body: `<div class="ui-sub" style="margin-bottom:8px">Rows of made-up values that fit the columns: names, e-mails and phones by column name, numbers within the column's size, dates, enums, JSON; foreign keys get keys that exist in the other table; unique columns get unique values. Columns with a default or identity keep it.</div>
         <label class="ui-field"><span class="ui-label">How many rows</span><input class="input" type="number" id="mk-n" value="100" min="1" max="100000"></label>
-        <div>${UI.btn('🧪 Preview — made and rolled back', 'data-mk-test')}</div><div data-mk-out style="margin-top:10px"></div>`,
+        <div>${UI.btn('🧪 Preview - made and rolled back', 'data-mk-test')}</div><div data-mk-out style="margin-top:10px"></div>`,
       onOpen: (ov) => {
         ov.querySelector('[data-mk-test]').onclick = async () => {
           const out = ov.querySelector('[data-mk-out]'); out.innerHTML = '<div class="skeleton" style="height:80px"></div>';
           try {
             const r = await API.post(`${dbBaseOf(c, db)}/mock`, { schema: s, table: t, rows: Number(ov.querySelector('#mk-n').value), test: true });
             const cols = Object.keys(r.sample[0] || {});
-            out.innerHTML = `<div class="ui-sub">${r.rows} rows made and rolled back — filled: ${r.columns.map(esc).join(', ')}${r.skipped.length ? ` · left to their default: ${r.skipped.map(esc).join(', ')}` : ''}</div>
+            out.innerHTML = `<div class="ui-sub">${r.rows} rows made and rolled back - filled: ${r.columns.map(esc).join(', ')}${r.skipped.length ? `, left to their default: ${r.skipped.map(esc).join(', ')}` : ''}</div>
               <div style="overflow:auto;max-height:220px;margin-top:6px">${UI.table(cols.map(k => ({ label: esc(k) })), r.sample.map(x => ({ cells: cols.map(k => `<span class="td-mono" style="font-size:11.5px">${esc(x[k] == null ? 'NULL' : typeof x[k] === 'object' ? JSON.stringify(x[k]) : x[k])}</span>`) })), { minWidth: 400 })}</div>`;
           } catch (e) { out.innerHTML = `<div class="text-danger text-sm">${esc(e.message)}</div>`; }
         };
@@ -1096,7 +1095,7 @@ Router.register('databases', async (content, params = {}) => {
   async function toggleWrite(c = st.c) {
     const i = await ensureInfo(c); if (!i) return;
     if (i.allowWrite) return setWrite(false, c).then(() => showToast('Read-only again'));
-    showConfirm('Allow changes', `Allow statements and edits that <b>change data</b> on <b>${esc(c)}</b>${i.production ? ' — <b style="color:var(--danger)">marked as production</b>' : ''}? Dangerous SQL still asks first, and every change is in the audit log.`, () => setWrite(true, c).then(() => showToast('Changes allowed')), !!i.production);
+    showConfirm('Allow changes', `Allow statements and edits that <b>change data</b> on <b>${esc(c)}</b>${i.production ? ' - <b style="color:var(--danger)">marked as production</b>' : ''}? Dangerous SQL still asks first, and every change is in the audit log.`, () => setWrite(true, c).then(() => showToast('Changes allowed')), !!i.production);
   }
   function connection(c = st.c) {
     const i = st.infos[c], cont = st.containers.find(x => x.name === c) || {}, s = cont.settings || {};
@@ -1104,9 +1103,9 @@ Router.register('databases', async (content, params = {}) => {
       body: `<div class="ui-sub" style="margin-bottom:8px">DockGate runs <span class="td-mono">psql</span> inside the container. Leave a box empty to use what the container's environment says (POSTGRES_USER, POSTGRES_DB, POSTGRES_PASSWORD).</div>
         <label class="ui-field"><span class="ui-label">User</span><input class="input td-mono" id="cn-u" value="${esc(s.user || '')}" placeholder="${esc(i ? i.login.user : 'postgres')}"></label>
         <label class="ui-field"><span class="ui-label">Login database</span><input class="input td-mono" id="cn-d" value="${esc(s.dbname || '')}" placeholder="${esc(i ? i.login.dbname : 'postgres')}"></label>
-        <label class="ui-field"><span class="ui-label">Password</span><input class="input td-mono" id="cn-p" type="password" autocomplete="new-password" placeholder="${s.hasPassword ? '(saved — type to change)' : '(from the container, if any)'}"><span class="ui-sub">Usually not needed: inside the container the local socket trusts its users. Stored encrypted.</span>${s.hasPassword ? '<label style="display:flex;gap:6px;align-items:center;font-weight:400;margin-top:4px"><input type="checkbox" id="cn-pc"> forget the saved password</label>' : ''}</label>
+        <label class="ui-field"><span class="ui-label">Password</span><input class="input td-mono" id="cn-p" type="password" autocomplete="new-password" placeholder="${s.hasPassword ? '(saved - type to change)' : '(from the container, if any)'}"><span class="ui-sub">Usually not needed: inside the container the local socket trusts its users. Stored encrypted.</span>${s.hasPassword ? '<label style="display:flex;gap:6px;align-items:center;font-weight:400;margin-top:4px"><input type="checkbox" id="cn-pc"> forget the saved password</label>' : ''}</label>
         <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="cn-w" ${i && i.allowWrite ? 'checked' : ''}> Allow changes (otherwise every session is read-only)</label>
-        <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px"><input type="checkbox" id="cn-x" ${i && i.production ? 'checked' : ''}> Production — ask before every statement that changes data</label>`,
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px"><input type="checkbox" id="cn-x" ${i && i.production ? 'checked' : ''}> Production - ask before every statement that changes data</label>`,
       onSave: async (ov) => {
         const body = { user: ov.querySelector('#cn-u').value.trim(), dbname: ov.querySelector('#cn-d').value.trim(), allowWrite: ov.querySelector('#cn-w').checked, production: ov.querySelector('#cn-x').checked };
         const p = ov.querySelector('#cn-p').value; const pc = ov.querySelector('#cn-pc');
@@ -1128,7 +1127,7 @@ Router.register('databases', async (content, params = {}) => {
     if (!alive() || !pane.isConnected) return;
     const w = st.info.allowWrite;
     const ago = (s) => s == null ? '' : s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`;
-    const when = (t) => t ? new Date(t).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—';
+    const when = (t) => t ? new Date(t).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '-';
     const pct = Math.round(a.connections / a.maxConnections * 100);
     pane.innerHTML = `
       ${UI.statusLine([`Connections <b>${a.connections}</b> / ${a.maxConnections} ${pct >= 80 ? UI.pill('warn', pct + '%') : ''}`, `Up ${ago(a.uptime)}`, ...Object.entries(a.settings || {}).filter(([k]) => ['shared_buffers', 'work_mem', 'max_wal_size', 'timezone'].includes(k)).map(([k, v]) => `${esc(k)} <span class="td-mono">${esc(v)}</span>`)])}
@@ -1141,18 +1140,18 @@ Router.register('databases', async (content, params = {}) => {
         x.me || !w ? '' : `${UI.btn('Cancel', `data-cancel="${x.pid}" title="Stop its query"`)} ${UI.btn('Terminate', `data-term="${x.pid}" title="Close the connection"`, 'btn-danger')}`] })), { minWidth: 820 })}
       <div class="dbg-bar" style="margin:18px 0 6px"><span class="ui-label" style="margin:0">Users and roles</span><span style="flex:1"></span>${w ? UI.btn('+ New user', 'data-newrole') : ''}</div>
       ${UI.table([{ label: 'Role' }, { label: 'Can' }, { label: 'Member of' }, { label: '', align: 'right' }], a.roles.map(r => ({ cells: [
-        `<b>${esc(r.name)}</b>`, [r.super && UI.pill('bad', 'superuser'), r.login ? 'login' : '<span class="ui-sub">no login</span>', r.createdb && 'create db', r.createrole && 'create role', r.replication && 'replication'].filter(Boolean).join(' · '),
+        `<b>${esc(r.name)}</b>`, [r.super && UI.pill('bad', 'superuser'), r.login ? 'login' : '<span class="ui-sub">no login</span>', r.createdb && 'create db', r.createrole && 'create role', r.replication && 'replication'].filter(Boolean).join(', '),
         `<span class="ui-sub">${esc((r.memberOf || []).join(', '))}</span>`,
-        w ? UI.menu([{ label: 'Set password…', attrs: `data-pw="${esc(r.name)}"` }, { label: 'Grant on a database…', attrs: `data-grant="${esc(r.name)}"` }, '-', { label: 'Drop…', attrs: `data-droprole="${esc(r.name)}"`, danger: true }]) : ''] })), { minWidth: 640 })}
+        w ? UI.menu([{ label: 'Set password...', attrs: `data-pw="${esc(r.name)}"` }, { label: 'Grant on a database...', attrs: `data-grant="${esc(r.name)}"` }, '-', { label: 'Drop...', attrs: `data-droprole="${esc(r.name)}"`, danger: true }]) : ''] })), { minWidth: 640 })}
       <div class="dbg-bar" style="margin:18px 0 6px"><span class="ui-label" style="margin:0">Databases</span><span style="flex:1"></span>${w ? UI.btn('+ New database', 'data-newdb') : ''}</div>
       ${UI.table([{ label: 'Database' }, { label: 'Owner' }, { label: 'Size' }, { label: '', align: 'right' }], st.info.databases.map(d => ({ cells: [
         `<b>${esc(d.name)}</b>${d.name === st.db ? ' ' + UI.pill('info', 'open') : ''}`, esc(d.owner), d.size != null ? formatBytes(d.size) : '<span class="ui-sub">no access</span>',
-        `${d.name !== st.db && d.connect ? UI.btn('Open', `data-opendb="${esc(d.name)}"`) : ''} ${w && d.name !== st.info.login.dbname ? UI.btn('Drop…', `data-dropdb="${esc(d.name)}"`, 'btn-danger') : ''}`] })), { minWidth: 560 })}
-      <div class="dbg-bar" style="margin:18px 0 6px"><span class="ui-label" style="margin:0">Tables in ${esc(st.db)} — largest first</span><span style="flex:1"></span>${w ? `${UI.btn('VACUUM ANALYZE the database', 'data-mt="vacuum"')}` : ''}</div>
+        `${d.name !== st.db && d.connect ? UI.btn('Open', `data-opendb="${esc(d.name)}"`) : ''} ${w && d.name !== st.info.login.dbname ? UI.btn('Drop...', `data-dropdb="${esc(d.name)}"`, 'btn-danger') : ''}`] })), { minWidth: 560 })}
+      <div class="dbg-bar" style="margin:18px 0 6px"><span class="ui-label" style="margin:0">Tables in ${esc(st.db)} - largest first</span><span style="flex:1"></span>${w ? `${UI.btn('VACUUM ANALYZE the database', 'data-mt="vacuum"')}` : ''}</div>
       ${UI.table([{ label: 'Table' }, { label: 'Rows' }, { label: 'Dead rows' }, { label: 'Size' }, { label: 'Last vacuum' }, { label: 'Last analyze' }, { label: '', align: 'right' }], a.tables.map(t => ({ cells: [
         `<span class="td-mono">${esc(t.schema)}.${esc(t.name)}</span>`, Number(t.live).toLocaleString(), `${Number(t.dead).toLocaleString()}${t.live > 0 && t.dead / (t.live + t.dead) > 0.2 ? ' ' + UI.pill('warn', Math.round(t.dead / (t.live + t.dead) * 100) + '%') : ''}`,
         formatBytes(t.size), `<span class="ui-sub">${when(t.last_vacuum || t.last_autovacuum)}</span>`, `<span class="ui-sub">${when(t.last_analyze || t.last_autoanalyze)}</span>`,
-        w ? UI.menu([{ label: 'VACUUM ANALYZE', attrs: `data-mtt="vacuum" data-s="${esc(t.schema)}" data-t="${esc(t.name)}"` }, { label: 'ANALYZE', attrs: `data-mtt="analyze" data-s="${esc(t.schema)}" data-t="${esc(t.name)}"` }, { label: 'REINDEX', attrs: `data-mtt="reindex" data-s="${esc(t.schema)}" data-t="${esc(t.name)}"` }, '-', { label: 'VACUUM FULL (locks the table)…', attrs: `data-mtt="vacuum_full" data-s="${esc(t.schema)}" data-t="${esc(t.name)}"`, danger: true }]) : ''] })), { minWidth: 760 })}
+        w ? UI.menu([{ label: 'VACUUM ANALYZE', attrs: `data-mtt="vacuum" data-s="${esc(t.schema)}" data-t="${esc(t.name)}"` }, { label: 'ANALYZE', attrs: `data-mtt="analyze" data-s="${esc(t.schema)}" data-t="${esc(t.name)}"` }, { label: 'REINDEX', attrs: `data-mtt="reindex" data-s="${esc(t.schema)}" data-t="${esc(t.name)}"` }, '-', { label: 'VACUUM FULL (locks the table)...', attrs: `data-mtt="vacuum_full" data-s="${esc(t.schema)}" data-t="${esc(t.name)}"`, danger: true }]) : ''] })), { minWidth: 760 })}
       ${a.statements ? `<div class="ui-label" style="margin:18px 0 6px">Slowest queries (pg_stat_statements)</div>${a.slow ? UI.table([{ label: 'Query' }, { label: 'Calls' }, { label: 'Total ms' }, { label: 'Mean ms' }], a.slow.map(q => ({ cells: [`<span class="td-mono" style="font-size:11.5px;white-space:normal;display:block;max-width:520px">${esc(q.query)}</span>`, q.calls, q.total_ms, q.mean_ms] })), { minWidth: 700 }) : `<div class="ui-sub">${esc(a.slowError || 'not readable')}</div>`}` : '<div class="ui-sub" style="margin-top:14px">Slow queries: add the pg_stat_statements extension to see them here.</div>'}`;
     const m = pane;
     const post = async (url, body, okMsg) => { try { await API.post(url, body); showToast(okMsg); drawAdmin(); } catch (e) { showToast(e.message, 'error', 9000); } };
@@ -1180,8 +1179,8 @@ Router.register('databases', async (content, params = {}) => {
   function newRole() {
     UI.dialog({ title: 'New user', saveLabel: 'Create',
       body: `<label class="ui-field"><span class="ui-label">Name</span><input class="input td-mono" id="nr-n" placeholder="app_user"></label>
-        <label class="ui-field"><span class="ui-label">Password</span><input class="input td-mono" id="nr-p" type="text" autocomplete="off" value="${esc(randomPw())}"><span class="ui-sub">Copy it now — it is not shown again.</span></label>
-        <label class="ui-field"><span class="ui-label">Access to</span><select class="input" id="nr-d"><option value="">— none yet —</option>${st.info.databases.map(d => `<option ${d.name === st.db ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>
+        <label class="ui-field"><span class="ui-label">Password</span><input class="input td-mono" id="nr-p" type="text" autocomplete="off" value="${esc(randomPw())}"><span class="ui-sub">Copy it now - it is not shown again.</span></label>
+        <label class="ui-field"><span class="ui-label">Access to</span><select class="input" id="nr-d"><option value="">- none yet -</option>${st.info.databases.map(d => `<option ${d.name === st.db ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>
         <label class="ui-field"><span class="ui-label">As</span><select class="input" id="nr-a"><option value="all">Read and write</option><option value="read">Read only</option></select></label>
         <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="nr-c"> May create databases</label>`,
       onSave: async (ov) => {
@@ -1194,7 +1193,7 @@ Router.register('databases', async (content, params = {}) => {
     const what = table ? `${schema}.${table}` : `the whole database ${st.db}`;
     const label = { vacuum: 'VACUUM ANALYZE', analyze: 'ANALYZE', reindex: 'REINDEX', vacuum_full: 'VACUUM FULL' }[action];
     showConfirm(label, `Run <b>${label}</b> on <b>${esc(what)}</b>?${action === 'vacuum_full' ? ' VACUUM FULL rewrites the table and <b>locks it</b> until it ends.' : action === 'reindex' ? ' REINDEX blocks writes to the table while it runs.' : ' It runs alongside normal work.'}`, async () => {
-      showToast(`${label} running…`, 'info');
+      showToast(`${label} running...`, 'info');
       try { const r = await API.post(url, { action, schema, table }); showToast(`${label} done in ${(r.ms / 1000).toFixed(1)} s`); if (st.view === 'admin') drawAdmin(); } catch (e) { showToast(e.message, 'error', 9000); }
     }, action === 'vacuum_full');
   }
@@ -1208,16 +1207,16 @@ Router.register('databases', async (content, params = {}) => {
     const when = (t) => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
     pane.innerHTML = `
       <div class="dbg-bar"><b>Backups of ${esc(st.c)}</b><span class="ui-sub">in <span class="td-mono">${esc(b.dir)}</span>${b.local ? ' (DockGate\'s data folder)' : ' on the server'}</span><span style="flex:1"></span>
-        ${b.local ? UI.btn('Schedule…', 'data-sched-local') : UI.btn('Schedule…', 'data-sched')} ${UI.primary('Back up now', 'data-bk')}</div>
+        ${b.local ? UI.btn('Schedule...', 'data-sched-local') : UI.btn('Schedule...', 'data-sched')} ${UI.primary('Back up now', 'data-bk')}</div>
       ${UI.table([{ label: 'Backup' }, { label: 'Size' }, { label: 'Made' }, { label: '', align: 'right' }], b.files.map(f => ({ cells: [
         `${f.whole ? UI.pill('info', 'whole server') : `<b>${esc(f.database)}</b>`} <span class="ui-sub">${f.format === 'custom' ? 'pg_dump custom' : 'SQL, gzip'}</span><div class="td-mono ui-sub" style="font-size:11px">${esc(f.name)}</div>`,
         formatBytes(f.size), when(f.mtime),
-        `${UI.btn('Download', `data-dl="${esc(f.name)}"`)} ${f.restorable ? UI.btn('Restore…', `data-rs="${esc(f.name)}"`) : UI.btn('How to restore', `data-howto="${esc(f.name)}"`)} ${UI.menu([{ label: `${Icons.trash} Delete…`, attrs: `data-delbk="${esc(f.name)}"`, danger: true }])}`] })), { empty: 'No backups yet — "Back up now" makes one.', minWidth: 620 })}
-      <div class="ui-sub" style="margin-top:10px">A restore goes into a <b>new database</b> first, so you can look at it; then <b>Swap</b> puts it in place of the old one (kept, renamed). ${b.local ? 'Scheduled backups of this machine are a task in Tools → Schedules (with a failure alert), kept in this list.' : 'Scheduled backups are a script in Server Console → Scripts with a Cron job, its log and failure alerts.'}</div>`;
+        `${UI.btn('Download', `data-dl="${esc(f.name)}"`)} ${f.restorable ? UI.btn('Restore...', `data-rs="${esc(f.name)}"`) : UI.btn('How to restore', `data-howto="${esc(f.name)}"`)} ${UI.menu([{ label: `${Icons.trash} Delete...`, attrs: `data-delbk="${esc(f.name)}"`, danger: true }])}`] })), { empty: 'No backups yet - "Back up now" makes one.', minWidth: 620 })}
+      <div class="ui-sub" style="margin-top:10px">A restore goes into a <b>new database</b> first, so you can look at it; then <b>Swap</b> puts it in place of the old one (kept, renamed). ${b.local ? 'Scheduled backups of this machine are a task in Tools > Schedules (with a failure alert), kept in this list.' : 'Scheduled backups are a script in Server Console > Scripts with a Cron job, its log and failure alerts.'}</div>`;
     const m = pane;
     m.querySelector('[data-bk]').onclick = () => UI.dialog({ title: `Back up ${esc(st.c)}`, saveLabel: 'Back up now',
-      body: `<label class="ui-field"><span class="ui-label">What</span><select class="input" id="bk-w">${st.info.databases.filter(d => d.connect).map(d => `<option value="db:${esc(d.name)}" ${d.name === st.db ? 'selected' : ''}>Database ${esc(d.name)}${d.size != null ? ' · ' + formatBytes(d.size) : ''}</option>`).join('')}<option value="all">The whole server — every database and the users (pg_dumpall)</option></select></label>
-        <label class="ui-field"><span class="ui-label">Format</span><select class="input" id="bk-f"><option value="custom">pg_dump custom (.dump) — compressed, restore a single table if needed</option><option value="sql">Plain SQL (.sql.gz) — readable, works with any psql</option></select></label>
+      body: `<label class="ui-field"><span class="ui-label">What</span><select class="input" id="bk-w">${st.info.databases.filter(d => d.connect).map(d => `<option value="db:${esc(d.name)}" ${d.name === st.db ? 'selected' : ''}>Database ${esc(d.name)}${d.size != null ? ', ' + formatBytes(d.size) : ''}</option>`).join('')}<option value="all">The whole server - every database and the users (pg_dumpall)</option></select></label>
+        <label class="ui-field"><span class="ui-label">Format</span><select class="input" id="bk-f"><option value="custom">pg_dump custom (.dump) - compressed, restore a single table if needed</option><option value="sql">Plain SQL (.sql.gz) - readable, works with any psql</option></select></label>
         <div class="ui-sub">It runs while the database is in use (a consistent snapshot); large databases take a while.</div>`,
       onOpen: (ov) => { const w = ov.querySelector('#bk-w'), f = ov.querySelector('#bk-f'); w.onchange = () => { f.disabled = w.value === 'all'; if (f.disabled) f.value = 'sql'; }; },
       onSave: async (ov) => {
@@ -1231,9 +1230,9 @@ Router.register('databases', async (content, params = {}) => {
       body: `<label class="ui-field"><span class="ui-label">What</span><select class="input" id="sc-d">${st.info.databases.filter(d => d.connect).map(d => `<option value="${esc(d.name)}" ${d.name === st.db ? 'selected' : ''}>Database ${esc(d.name)}</option>`).join('')}<option value="">The whole server (pg_dumpall)</option></select></label>
         <div class="ui-field"><span class="ui-label">When</span>${SchedulePicker.html('15 3 * * *')}</div>
         <label class="ui-field"><span class="ui-label">Keep for (days)</span><input class="input" id="sc-k" type="number" value="7" min="1" max="365"></label>
-        <div class="ui-sub">Makes the script <span class="td-mono">pg-backup-…</span> in Server Console → Scripts (SQL .sql.gz files in this folder, older ones deleted, disk checked) and its Cron job — with a log and alerts when it fails or does not run.</div>`,
+        <div class="ui-sub">Makes the script <span class="td-mono">pg-backup-...</span> in Server Console > Scripts (SQL .sql.gz files in this folder, older ones deleted, disk checked) and its Cron job - with a log and alerts when it fails or does not run.</div>`,
       onOpen: (ov) => { sp = SchedulePicker.bind(ov); },
-      onSave: async (ov) => { const r = await API.post(`${base()}/backups/schedule`, { database: ov.querySelector('#sc-d').value, schedule: sp.value(), keepDays: Number(ov.querySelector('#sc-k').value) }); showToast(`Scheduled ${SchedulePicker.describe(sp.value()).toLowerCase()} — script ${r.script}`); } });
+      onSave: async (ov) => { const r = await API.post(`${base()}/backups/schedule`, { database: ov.querySelector('#sc-d').value, schedule: sp.value(), keepDays: Number(ov.querySelector('#sc-k').value) }); showToast(`Scheduled ${SchedulePicker.describe(sp.value()).toLowerCase()} - script ${r.script}`); } });
     m.querySelectorAll('[data-dl]').forEach(x => x.onclick = () => { window.location.href = `/api${base()}/backups/${enc(x.dataset.dl)}/download`; });
     m.querySelectorAll('[data-delbk]').forEach(x => x.onclick = () => showDeleteConfirm('Delete backup', { message: `Delete <span class="td-mono">${esc(x.dataset.delbk)}</span>?`, phrase: 'delete',
       onConfirm: async () => { try { await API.del(`${base()}/backups/${enc(x.dataset.delbk)}`); showToast('Deleted'); drawBackups(); } catch (e) { showToast(e.message, 'error'); } } }));
@@ -1243,7 +1242,7 @@ Router.register('databases', async (content, params = {}) => {
   function showHowTo(btn, b) {
     btn.onclick = () => showModal('Restore a whole-server backup', `<div class="text-sm">A <span class="td-mono">pg_dumpall</span> file holds every database and the users. It is restored into an <b>empty</b> PostgreSQL server (a new container), so nothing running is overwritten:</div>
       <pre class="td-mono" style="white-space:pre-wrap;font-size:12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:10px">gunzip -c ${esc(b.dir)}/${esc(btn.dataset.howto)} | docker exec -i NEW_CONTAINER psql -U postgres -d postgres</pre>
-      <div class="ui-sub">To bring back one database from it, make a per-database backup instead (Back up now → Database).</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+      <div class="ui-sub">To bring back one database from it, make a per-database backup instead (Back up now > Database).</div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
   }
   function restore(f) {
     if (!st.info.allowWrite) return showConfirm('Allow changes?', 'A restore makes a new database. Turn on "Allow changes" for this connection?', async () => { await setWrite(true); restore(f); });
@@ -1255,11 +1254,11 @@ Router.register('databases', async (content, params = {}) => {
       onSave: async (ov) => {
         const target = ov.querySelector('#rs-n').value.trim();
         const o = ov.querySelector('#rs-o');
-        showToast('Restoring…', 'info');
+        showToast('Restoring...', 'info');
         const r = await API.post(`${base()}/backups/restore`, { file: f.name, target, keepOwners: o ? o.checked : true });
         st.info = await reloadInfo(st.c);
         const can = st.info.databases.some(x => x.name === f.database);
-        const rm = showModal('Restored', `<div class="text-sm">The backup is in the new database <b>${esc(r.database)}</b> (${(r.ms / 1000).toFixed(1)} s). Open it to check it.${can ? ` When it looks right, <b>Swap</b> puts it in place of <b>${esc(f.database)}</b> — the current one is kept, renamed <span class="td-mono">${esc(f.database)}_before_…</span>. Apps connected to ${esc(f.database)} are disconnected for a moment.` : ''}</div>`,
+        const rm = showModal('Restored', `<div class="text-sm">The backup is in the new database <b>${esc(r.database)}</b> (${(r.ms / 1000).toFixed(1)} s). Open it to check it.${can ? ` When it looks right, <b>Swap</b> puts it in place of <b>${esc(f.database)}</b> - the current one is kept, renamed <span class="td-mono">${esc(f.database)}_before_...</span>. Apps connected to ${esc(f.database)} are disconnected for a moment.` : ''}</div>`,
           [{ label: 'Close', className: 'btn btn-secondary' }, { label: 'Open it', className: 'btn btn-secondary', onClick: () => { openOverview(st.c, r.database); } },
            ...(can ? [{ label: `Swap in place of ${f.database}`, className: 'btn btn-danger', onClick: () => swap(r.database, f.database) }] : [])]);
         const ft = rm.overlay.querySelector('.modal-footer'); if (ft) { ft.style.flexWrap = 'wrap'; ft.style.gap = '8px'; }
@@ -1267,8 +1266,8 @@ Router.register('databases', async (content, params = {}) => {
       } });
   }
   function swap(restored, into) {
-    showDeleteConfirm('Swap databases', { message: `Put <b>${esc(restored)}</b> in place of <b>${esc(into)}</b>? Sessions on both are closed; the current <b>${esc(into)}</b> is kept as <span class="td-mono">${esc(into)}_before_…</span>.`, phrase: into,
-      onConfirm: async () => { try { const r = await API.post(`${base()}/backups/swap`, { restored, into }); showToast(`Swapped — the old one is ${r.kept}`, 'success', 9000); st.info = await reloadInfo(st.c); openOverview(st.c, into); } catch (e) { showToast(e.message, 'error', 10000); } } });
+    showDeleteConfirm('Swap databases', { message: `Put <b>${esc(restored)}</b> in place of <b>${esc(into)}</b>? Sessions on both are closed; the current <b>${esc(into)}</b> is kept as <span class="td-mono">${esc(into)}_before_...</span>.`, phrase: into,
+      onConfirm: async () => { try { const r = await API.post(`${base()}/backups/swap`, { restored, into }); showToast(`Swapped - the old one is ${r.kept}`, 'success', 9000); st.info = await reloadInfo(st.c); openOverview(st.c, into); } catch (e) { showToast(e.message, 'error', 10000); } } });
   }
 
 

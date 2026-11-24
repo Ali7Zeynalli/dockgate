@@ -1,7 +1,7 @@
-// Server Console → System: the server's own settings, each through a form, never by hand-editing:
-//   hostname · /etc/hosts · DNS · kernel (sysctl) · open-file limit · journald size · network interfaces · /etc/fstab
+// Server Console > System: the server's own settings, each through a form, never by hand-editing:
+//   hostname, /etc/hosts, DNS, kernel (sysctl), open-file limit, journald size, network interfaces, /etc/fstab
 // Every change is a "plan" for the security worker (server/security/worker.js): back up, write, validate with the
-// tool that owns the file, apply — and restore the backup when the check fails. Network changes also arm a root
+// tool that owns the file, apply - and restore the backup when the check fails. Network changes also arm a root
 // rollback timer and keep the change only when a NEW SSH login works (the same lifeline as SSH and the firewall).
 // DockGate writes its own drop-in files where the system has a .d folder, so distribution files stay untouched.
 // Everything here builds text and commands from validated values only (pure, unit tested).
@@ -18,8 +18,8 @@ const drop = (f) => `{{S}}rm -f ${f}.dockgate-prev`;
 const bad = (msg) => P.httpError(400, msg);
 /**
  * Shell that runs findmnt --verify on a tab file and sets bad=1 when it found a problem. findmnt versions report
- * differently: newer ones print "[E] …" lines and a summary ("0 parse errors, 1 error"), older ones only
- * "parse error at line N -- ignored" — any of them, or a non-zero exit, counts. Output is in $out.
+ * differently: newer ones print "[E] ..." lines and a summary ("0 parse errors, 1 error"), older ones only
+ * "parse error at line N -- ignored" - any of them, or a non-zero exit, counts. Output is in $out.
  */
 const fstabVerify = (file, sudo = '') => `out=$(${sudo}findmnt --verify --tab-file ${file} 2>&1); rc=$?; bad=0; [ $rc -ne 0 ] && bad=1; echo "$out" | grep -qE '^\\s*\\[E\\]|parse error at' && bad=1; echo "$out" | grep -qE '(^|[^0-9])[1-9][0-9]* (parse )?errors?' && bad=1`;
 
@@ -187,7 +187,7 @@ function hostnamePlan(name, hostsText) {
   return { steps: [
     { label: `Back up ${F.hosts}`, cmd: backup(F.hosts) },
     { label: `Point 127.0.1.1 at ${n} in ${F.hosts}`, cmd: writeFile(F.hosts, hosts) },
-    { label: `Set the hostname to ${n}`, cmd: `if command -v hostnamectl >/dev/null 2>&1; then {{S}}hostnamectl set-hostname ${shq(n)}; else echo ${shq(n)} | {{S}}tee /etc/hostname >/dev/null && {{S}}hostname ${shq(short)}; fi || { ${restore(F.hosts)}; echo "Could not set the hostname — restored"; exit 1; }` },
+    { label: `Set the hostname to ${n}`, cmd: `if command -v hostnamectl >/dev/null 2>&1; then {{S}}hostnamectl set-hostname ${shq(n)}; else echo ${shq(n)} | {{S}}tee /etc/hostname >/dev/null && {{S}}hostname ${shq(short)}; fi || { ${restore(F.hosts)}; echo "Could not set the hostname - restored"; exit 1; }` },
     { label: 'Check that sudo still resolves the name', cmd: `{{S}}true && getent hosts ${shq(short)} >/dev/null || echo "note: ${short} does not resolve yet"; ${drop(F.hosts)}` },
   ] };
 }
@@ -200,7 +200,7 @@ function hostsPlan(rows, currentText) {
   for (const r of rows || []) {
     if (!isIp(r.ip)) throw bad(`Hosts: "${r.ip}" is not an IP address`);
     const names = (Array.isArray(r.names) ? r.names : String(r.names || '').split(/[\s,]+/)).map(s => s.trim()).filter(Boolean);
-    if (!names.length || names.some(x => !FQDN_RE.test(x))) throw bad(`Hosts: names for ${r.ip} — letters, digits, - and .`);
+    if (!names.length || names.some(x => !FQDN_RE.test(x))) throw bad(`Hosts: names for ${r.ip} - letters, digits, - and .`);
     if (/^(127\.|::1$)/.test(r.ip)) continue; // localhost lines stay as they are
     out.push(`${r.ip}\t${names.join(' ')}${r.comment ? `\t# ${String(r.comment).replace(/[\r\n#]/g, ' ').slice(0, 80)}` : ''}`);
   }
@@ -208,7 +208,7 @@ function hostsPlan(rows, currentText) {
   return { text, plan: { steps: [
     { label: `Back up ${F.hosts}`, cmd: backup(F.hosts) },
     { label: `Write ${F.hosts}`, cmd: writeFile(F.hosts, text) },
-    { label: 'Check: localhost still resolves', cmd: `getent hosts localhost >/dev/null || { ${restore(F.hosts)}; echo "localhost stopped resolving — restored"; exit 1; }; ${drop(F.hosts)}` },
+    { label: 'Check: localhost still resolves', cmd: `getent hosts localhost >/dev/null || { ${restore(F.hosts)}; echo "localhost stopped resolving - restored"; exit 1; }; ${drop(F.hosts)}` },
   ] } };
 }
 
@@ -223,20 +223,20 @@ function dnsPlan({ servers, domains, resolved, resolvLink, testName = 'cloudflar
   if (!FQDN_RE.test(testName)) throw bad('Test name: a domain');
   const test = `getent ahosts ${shq(testName)} >/dev/null 2>&1`;
   if (resolved) {
-    const text = `# Managed by DockGate (Server Console → System → DNS)\n[Resolve]\nDNS=${list.join(' ')}\n${doms.length ? `Domains=${doms.join(' ')}\n` : ''}`;
+    const text = `# Managed by DockGate (Server Console > System > DNS)\n[Resolve]\nDNS=${list.join(' ')}\n${doms.length ? `Domains=${doms.join(' ')}\n` : ''}`;
     return { file: F.resolvedDrop, text, plan: { steps: [
       { label: `Back up ${F.resolvedDrop}`, cmd: `{{S}}mkdir -p /etc/systemd/resolved.conf.d && ${backup(F.resolvedDrop)}` },
       { label: `Write ${F.resolvedDrop}`, cmd: writeFile(F.resolvedDrop, text) },
-      { label: 'Restart systemd-resolved', cmd: `{{S}}systemctl restart systemd-resolved || { ${restore(F.resolvedDrop)}; {{S}}systemctl restart systemd-resolved; echo "systemd-resolved did not start — restored"; exit 1; }` },
-      { label: `Test: resolve ${testName}`, cmd: `sleep 1; ${test} || { ${restore(F.resolvedDrop)}; {{S}}systemctl restart systemd-resolved; echo "Names do not resolve with these servers — restored"; exit 1; }; ${drop(F.resolvedDrop)}` },
+      { label: 'Restart systemd-resolved', cmd: `{{S}}systemctl restart systemd-resolved || { ${restore(F.resolvedDrop)}; {{S}}systemctl restart systemd-resolved; echo "systemd-resolved did not start - restored"; exit 1; }` },
+      { label: `Test: resolve ${testName}`, cmd: `sleep 1; ${test} || { ${restore(F.resolvedDrop)}; {{S}}systemctl restart systemd-resolved; echo "Names do not resolve with these servers - restored"; exit 1; }; ${drop(F.resolvedDrop)}` },
     ] } };
   }
-  if (resolvLink && resolvLink !== F.resolv) throw bad(`${F.resolv} is a link to ${resolvLink} (managed by another program) — change DNS there, or in the network settings below`);
-  const text = `# Managed by DockGate (Server Console → System → DNS)\n${list.map(s => `nameserver ${s}`).join('\n')}\n${doms.length ? `search ${doms.join(' ')}\n` : ''}`;
+  if (resolvLink && resolvLink !== F.resolv) throw bad(`${F.resolv} is a link to ${resolvLink} (managed by another program) - change DNS there, or in the network settings below`);
+  const text = `# Managed by DockGate (Server Console > System > DNS)\n${list.map(s => `nameserver ${s}`).join('\n')}\n${doms.length ? `search ${doms.join(' ')}\n` : ''}`;
   return { file: F.resolv, text, plan: { steps: [
     { label: `Back up ${F.resolv}`, cmd: backup(F.resolv) },
     { label: `Write ${F.resolv}`, cmd: writeFile(F.resolv, text) },
-    { label: `Test: resolve ${testName}`, cmd: `${test} || { ${restore(F.resolv)}; echo "Names do not resolve with these servers — restored"; exit 1; }; ${drop(F.resolv)}` },
+    { label: `Test: resolve ${testName}`, cmd: `${test} || { ${restore(F.resolv)}; echo "Names do not resolve with these servers - restored"; exit 1; }; ${drop(F.resolv)}` },
   ] } };
 }
 
@@ -244,18 +244,18 @@ function dnsPlan({ servers, domains, resolved, resolvLink, testName = 'cloudflar
 function sysctlPlan(values) {
   const lines = [];
   for (const [k, v] of Object.entries(values || {})) {
-    if (!SYSCTL_INFO[k]) throw bad(`Kernel setting "${k}" is not offered here — edit /etc/sysctl.d yourself in Files`);
+    if (!SYSCTL_INFO[k]) throw bad(`Kernel setting "${k}" is not offered here - edit /etc/sysctl.d yourself in Files`);
     if (v === '' || v == null) continue;
     const val = String(v).trim();
     if (!/^[0-9]+( [0-9]+)?$/.test(val)) throw bad(`${k}: a number (or two numbers for a range)`);
     const choices = SYSCTL_INFO[k][2]; if (choices && !choices.includes(val)) throw bad(`${k}: one of ${choices.join(', ')}`);
     lines.push(`${k} = ${val}`);
   }
-  const text = `# Managed by DockGate (Server Console → System → Kernel)\n${lines.join('\n')}\n`;
+  const text = `# Managed by DockGate (Server Console > System > Kernel)\n${lines.join('\n')}\n`;
   return { text, plan: { steps: [
     { label: `Back up ${F.sysctl}`, cmd: backup(F.sysctl) },
     { label: `Write ${F.sysctl}`, cmd: writeFile(F.sysctl, text) },
-    { label: 'Apply (sysctl -p) — an unknown value restores the file', cmd: `out=$({{S}}sysctl -p ${F.sysctl} 2>&1) || { ${restore(F.sysctl)}; {{S}}sysctl --system >/dev/null 2>&1; echo "The kernel refused: $out — restored"; exit 1; }; echo "$out"; ${drop(F.sysctl)}` },
+    { label: 'Apply (sysctl -p) - an unknown value restores the file', cmd: `out=$({{S}}sysctl -p ${F.sysctl} 2>&1) || { ${restore(F.sysctl)}; {{S}}sysctl --system >/dev/null 2>&1; echo "The kernel refused: $out - restored"; exit 1; }; echo "$out"; ${drop(F.sysctl)}` },
     ...(lines.some(l => l.startsWith('vm.swappiness ')) ? [{ label: `Remove ${SWAP.LEGACY_FILE} (an older swappiness file that would win at boot)`, cmd: `if {{S}}test -f ${SWAP.LEGACY_FILE} && ! {{S}}grep -vqE '^[[:space:]]*(#|$|vm\\.swappiness[[:space:]]*=)' ${SWAP.LEGACY_FILE}; then {{S}}rm -f ${SWAP.LEGACY_FILE}; fi; true` }] : []),
   ] } };
 }
@@ -267,13 +267,13 @@ function swapPlan(op, current) {
     if (cur.container) throw bad(`This server is a container (${cur.container}): its host decides swap`);
     const path = SWAP.checkPath(op.path || '/swapfile'), size = SWAP.checkSize(op.sizeMb == null ? SWAP.DEFAULT_MB : op.sizeMb);
     const dev = cur.devices.find(d => d.path === path);
-    if (dev && dev.type !== 'file') throw bad(`${path} is a ${dev.type}, not a file — it is not changed here`);
+    if (dev && dev.type !== 'file') throw bad(`${path} is a ${dev.type}, not a file - it is not changed here`);
     return { steps: [{ label: dev ? `Resize ${path} to ${size} MB` : `Make a ${size} MB swap file at ${path}`, cmd: SWAP.asRoot(SWAP.createScript(path, size), '{{S}}') }] };
   }
   if (op.action === 'remove') {
     const path = SWAP.checkPath(op.path);
     const dev = cur.devices.find(d => d.path === path);
-    if (dev && dev.type !== 'file') throw bad(`${path} is a ${dev.type}, not a file — it is not removed here`);
+    if (dev && dev.type !== 'file') throw bad(`${path} is a ${dev.type}, not a file - it is not removed here`);
     if (!dev && !(cur.fstab || []).includes(path)) throw bad(`${path} is not a swap file on this server`);
     return { steps: [{ label: `Turn off and remove ${path}`, cmd: SWAP.asRoot(SWAP.removeScript(path), '{{S}}') }] };
   }
@@ -283,9 +283,9 @@ function swapPlan(op, current) {
 /** Open-file limit for logins (limits.d) and for services (systemd DefaultLimitNOFILE). Takes effect for new sessions / restarted services. */
 function nofilePlan(n) {
   const v = Number(n);
-  if (!Number.isInteger(v) || v < 1024 || v > 1048576) throw bad('Open files: 1024 – 1048576');
-  const limits = `# Managed by DockGate (Server Console → System → Limits)\n*    soft nofile ${v}\n*    hard nofile ${v}\nroot soft nofile ${v}\nroot hard nofile ${v}\n`;
-  const sys = `# Managed by DockGate (Server Console → System → Limits)\n[Manager]\nDefaultLimitNOFILE=${v}\n`;
+  if (!Number.isInteger(v) || v < 1024 || v > 1048576) throw bad('Open files: 1024 - 1048576');
+  const limits = `# Managed by DockGate (Server Console > System > Limits)\n*    soft nofile ${v}\n*    hard nofile ${v}\nroot soft nofile ${v}\nroot hard nofile ${v}\n`;
+  const sys = `# Managed by DockGate (Server Console > System > Limits)\n[Manager]\nDefaultLimitNOFILE=${v}\n`;
   return { steps: [
     { label: 'Back up', cmd: `${backup(F.limits)}; {{S}}mkdir -p /etc/systemd/system.conf.d && ${backup(F.systemdLimits)}` },
     { label: `Write ${F.limits} and ${F.systemdLimits}`, cmd: `${writeFile(F.limits, limits)} && ${writeFile(F.systemdLimits, sys)}` },
@@ -297,10 +297,10 @@ function nofilePlan(n) {
 function journaldPlan(maxUse) {
   const m = /^(\d{1,5})(M|G)$/i.exec(String(maxUse || '').trim());
   if (!m) throw bad('Journal size: a number with M or G, e.g. 500M or 2G');
-  const text = `# Managed by DockGate (Server Console → System → Logs)\n[Journal]\nSystemMaxUse=${m[1]}${m[2].toUpperCase()}\n`;
+  const text = `# Managed by DockGate (Server Console > System > Logs)\n[Journal]\nSystemMaxUse=${m[1]}${m[2].toUpperCase()}\n`;
   return { steps: [
     { label: `Write ${F.journald}`, cmd: `{{S}}mkdir -p /etc/systemd/journald.conf.d && ${backup(F.journald)} && ${writeFile(F.journald, text)}` },
-    { label: 'Restart journald and shrink the journal', cmd: `{{S}}systemctl restart systemd-journald || { ${restore(F.journald)}; {{S}}systemctl restart systemd-journald; echo "journald did not start — restored"; exit 1; }; {{S}}journalctl --vacuum-size=${m[1]}${m[2].toUpperCase()} >/dev/null 2>&1; ${drop(F.journald)}` },
+    { label: 'Restart journald and shrink the journal', cmd: `{{S}}systemctl restart systemd-journald || { ${restore(F.journald)}; {{S}}systemctl restart systemd-journald; echo "journald did not start - restored"; exit 1; }; {{S}}journalctl --vacuum-size=${m[1]}${m[2].toUpperCase()} >/dev/null 2>&1; ${drop(F.journald)}` },
   ] };
 }
 
@@ -320,13 +320,13 @@ function networkPlan(cfg, { id, test }) {
   const dns = (cfg.dns || []).map(s => String(s).trim()).filter(Boolean);
   for (const s of dns) if (!isIp(s)) throw bad(`DNS: "${s}" is not an IP address`);
   const mtu = cfg.mtu ? Number(cfg.mtu) : null;
-  if (mtu != null && (!Number.isInteger(mtu) || mtu < 576 || mtu > 9216)) throw bad('MTU: 576 – 9216');
+  if (mtu != null && (!Number.isInteger(mtu) || mtu < 576 || mtu > 9216)) throw bad('MTU: 576 - 9216');
   // The address DockGate connects to must stay, unless the new address is given (DockGate then switches to it).
   const keepsSsh = dhcp || !cfg.sshIp || addresses.some(a => a.split('/')[0] === cfg.sshIp) || cfg.sshIp === cfg.newSshIp;
-  if (!keepsSsh && !cfg.newSshIp) throw bad(`DockGate connects to ${cfg.sshIp} — keep that address, or give the new address DockGate should use after the change`);
+  if (!keepsSsh && !cfg.newSshIp) throw bad(`DockGate connects to ${cfg.sshIp} - keep that address, or give the new address DockGate should use after the change`);
   let steps, restoreRoot, text = null;
   if (cfg.stack === 'netplan') {
-    const y = [`# Managed by DockGate (Server Console → System → Network)`, 'network:', '  version: 2', '  ethernets:', `    ${iface}:`];
+    const y = [`# Managed by DockGate (Server Console > System > Network)`, 'network:', '  version: 2', '  ethernets:', `    ${iface}:`];
     if (dhcp) y.push('      dhcp4: true'); else { y.push('      dhcp4: false', '      addresses:', ...addresses.map(a => `        - ${a}`)); if (gw) y.push('      routes:', '        - to: default', `          via: ${gw}`); }
     if (dns.length) y.push('      nameservers:', `        addresses: [${dns.join(', ')}]`);
     if (mtu) y.push(`      mtu: ${mtu}`);
@@ -336,7 +336,7 @@ function networkPlan(cfg, { id, test }) {
     steps = [
       { label: 'Back up /etc/netplan', cmd: `{{S}}mkdir -p /var/lib/dockgate && {{S}}rm -rf ${bk} && {{S}}cp -a /etc/netplan ${bk}` },
       { label: `Write ${F.netplan}`, cmd: `${writeFile(F.netplan, text, '0600')}` },
-      { label: 'Check (netplan generate)', cmd: `out=$({{S}}netplan generate 2>&1) || { {{S}}rm -rf /etc/netplan && {{S}}cp -a ${bk} /etc/netplan; echo "netplan refused: $out — restored"; exit 1; }` },
+      { label: 'Check (netplan generate)', cmd: `out=$({{S}}netplan generate 2>&1) || { {{S}}rm -rf /etc/netplan && {{S}}cp -a ${bk} /etc/netplan; echo "netplan refused: $out - restored"; exit 1; }` },
     ];
   } else if (cfg.stack === 'nm') {
     const bk = '/var/lib/dockgate/nm-prev';
@@ -349,7 +349,7 @@ function networkPlan(cfg, { id, test }) {
       { label: `Find the connection of ${iface}`, cmd: `C=$(nmcli -g GENERAL.CONNECTION device show ${iface} 2>/dev/null); [ -n "$C" ] || { echo "No NetworkManager connection on ${iface}"; exit 1; }; echo "$C" | {{S}}tee /var/lib/dockgate/nm-conn >/dev/null` },
       { label: 'Change it', cmd: `C=$(cat /var/lib/dockgate/nm-conn); {{S}}nmcli connection modify "$C" ${mods.join(' ')} || { echo "NetworkManager refused the settings"; exit 1; }` },
     ];
-  } else throw bad('This server\'s network is not managed by netplan or NetworkManager — edit its files in Files');
+  } else throw bad('This server\'s network is not managed by netplan or NetworkManager - edit its files in Files');
   return { text, plan: { steps: [
     ...steps,
     { label: 'Arm automatic rollback (120 s)', cmd: plans._armRollback(id, restoreRoot) },
@@ -366,15 +366,15 @@ function fstabPlan(op, currentText) {
   let mountTarget = null;
   if (op.action === 'remove') {
     const l = lines[op.index];
-    if (l == null || l !== op.raw) throw P.httpError(409, '/etc/fstab changed after it was read — reload and try again');
+    if (l == null || l !== op.raw) throw P.httpError(409, '/etc/fstab changed after it was read - reload and try again');
     const e = parseFstab(l)[0];
-    if (e.kind === 'entry' && ['/', '/boot', '/boot/efi', '/usr', '/var'].includes(e.target)) throw bad(`${e.target} is needed to start the server — not removed here`);
+    if (e.kind === 'entry' && ['/', '/boot', '/boot/efi', '/usr', '/var'].includes(e.target)) throw bad(`${e.target} is needed to start the server - not removed here`);
     lines.splice(op.index, 1);
   } else if (op.action === 'add') {
     const e = op.entry || {};
-    if (!/^(UUID=[0-9a-fA-F-]{8,}|LABEL=[\w.-]+|\/dev\/[\w./-]+|[\w.-]+:\/[\w./-]*|\/\/[\w.-]+\/[\w.$-]+|tmpfs)$/.test(String(e.source || ''))) throw bad('Source: UUID=…, /dev/…, server:/path (NFS), //server/share (SMB) or tmpfs');
+    if (!/^(UUID=[0-9a-fA-F-]{8,}|LABEL=[\w.-]+|\/dev\/[\w./-]+|[\w.-]+:\/[\w./-]*|\/\/[\w.-]+\/[\w.$-]+|tmpfs)$/.test(String(e.source || ''))) throw bad('Source: UUID=..., /dev/..., server:/path (NFS), //server/share (SMB) or tmpfs');
     if (!/^\/[\w./-]*$/.test(String(e.target || '')) || e.target === '/') throw bad('Mount point: an absolute path, not /');
-    if (!/^[a-z0-9.]{2,12}$/.test(String(e.fstype || ''))) throw bad('File system: ext4, xfs, btrfs, nfs, cifs, tmpfs …');
+    if (!/^[a-z0-9.]{2,12}$/.test(String(e.fstype || ''))) throw bad('File system: ext4, xfs, btrfs, nfs, cifs, tmpfs ...');
     const opts = String(e.options || 'defaults').trim();
     if (!/^[\w.,=:/@-]+$/.test(opts)) throw bad('Options: e.g. defaults,nofail');
     if (lines.some(l => parseFstab(l)[0].target === e.target)) throw bad(`${e.target} is already in /etc/fstab`);
@@ -386,8 +386,8 @@ function fstabPlan(op, currentText) {
     { label: 'Back up /etc/fstab', cmd: backup(F.fstab) },
     ...(mountTarget ? [{ label: `Create ${mountTarget}`, cmd: `{{S}}mkdir -p ${shq(mountTarget)}` }] : []),
     { label: 'Write /etc/fstab', cmd: writeFile(F.fstab, text) },
-    { label: 'Check (findmnt --verify)', cmd: `${fstabVerify(F.fstab, '{{S}}')}; if [ "$bad" = 1 ]; then ${restore(F.fstab)}; echo "findmnt found errors — restored: $(echo "$out" | grep -E '\\[E\\]|parse error at|[1-9][0-9]* (parse )?errors?' | head -3)"; exit 1; fi` },
-    ...(mountTarget ? [{ label: `Mount ${mountTarget} now (a failure restores the file)`, cmd: `{{S}}systemctl daemon-reload 2>/dev/null; out=$({{S}}mount ${shq(mountTarget)} 2>&1) || { ${restore(F.fstab)}; {{S}}systemctl daemon-reload 2>/dev/null; echo "mount failed — restored: $out"; exit 1; }` }] : []),
+    { label: 'Check (findmnt --verify)', cmd: `${fstabVerify(F.fstab, '{{S}}')}; if [ "$bad" = 1 ]; then ${restore(F.fstab)}; echo "findmnt found errors - restored: $(echo "$out" | grep -E '\\[E\\]|parse error at|[1-9][0-9]* (parse )?errors?' | head -3)"; exit 1; fi` },
+    ...(mountTarget ? [{ label: `Mount ${mountTarget} now (a failure restores the file)`, cmd: `{{S}}systemctl daemon-reload 2>/dev/null; out=$({{S}}mount ${shq(mountTarget)} 2>&1) || { ${restore(F.fstab)}; {{S}}systemctl daemon-reload 2>/dev/null; echo "mount failed - restored: $out"; exit 1; }` }] : []),
     { label: 'Done', cmd: `{{S}}systemctl daemon-reload 2>/dev/null; ${drop(F.fstab)}` },
   ] } };
 }
@@ -395,9 +395,9 @@ function fstabPlan(op, currentText) {
 // Known config files: where they are, what they do, and the check the editor runs (file-extras.js).
 const CATALOG = [
   { group: 'SSH and access', items: [['/etc/ssh/sshd_config', 'SSH server (use Access & SSH for the usual settings)', 'sshd'], ['/etc/sudoers', 'Who may use sudo (checked with visudo)', 'sudoers'], ['/etc/security/limits.conf', 'Per-user limits', null]] },
-  { group: 'Network', items: [['/etc/hosts', 'Names → addresses', null], ['/etc/resolv.conf', 'DNS (often written by another program)', null], ['/etc/netplan', 'Ubuntu network settings (folder)', 'netplan'], ['/etc/network/interfaces', 'Debian network settings (ifupdown)', null], ['/etc/NetworkManager/system-connections', 'NetworkManager connections (folder)', null]] },
+  { group: 'Network', items: [['/etc/hosts', 'Names -> addresses', null], ['/etc/resolv.conf', 'DNS (often written by another program)', null], ['/etc/netplan', 'Ubuntu network settings (folder)', 'netplan'], ['/etc/network/interfaces', 'Debian network settings (ifupdown)', null], ['/etc/NetworkManager/system-connections', 'NetworkManager connections (folder)', null]] },
   { group: 'System', items: [['/etc/fstab', 'Disks mounted at boot (checked with findmnt)', 'fstab'], ['/etc/sysctl.d', 'Kernel settings (folder)', null], ['/etc/systemd/journald.conf', 'Journal size and retention', null], ['/etc/logrotate.d', 'Log rotation (folder)', null], ['/etc/environment', 'Variables for every login', null], ['/etc/crontab', 'System cron (see the Cron tab)', null]] },
-  { group: 'Docker', items: [['/etc/docker/daemon.json', 'Docker daemon (log limits in Services → Docker)', 'json'], ['/etc/systemd/system/docker.service.d', 'Docker service overrides (folder)', null]] },
+  { group: 'Docker', items: [['/etc/docker/daemon.json', 'Docker daemon (log limits in Services > Docker)', 'json'], ['/etc/systemd/system/docker.service.d', 'Docker service overrides (folder)', null]] },
   { group: 'Web servers', items: [['/etc/nginx/nginx.conf', 'nginx (checked with nginx -t)', 'nginx'], ['/etc/nginx/sites-available', 'nginx sites (folder)', 'nginx'], ['/etc/caddy/Caddyfile', 'Caddy', null], ['/etc/haproxy/haproxy.cfg', 'HAProxy', null]] },
 ];
 

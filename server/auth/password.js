@@ -1,4 +1,4 @@
-// Password hashing for the admin login — uses Node's built-in scrypt (no external dependency).
+// Password hashing for the admin login - uses Node's built-in scrypt (no external dependency).
 // The hash + salt live in the settings table (auth_password_hash / auth_salt), written by first-run setup.
 const crypto = require('crypto');
 
@@ -24,7 +24,7 @@ function verifyPassword(plain, salt, hash) {
   let expected;
   try { expected = Buffer.from(hash, 'hex'); } catch (e) { return false; }
   const candidate = crypto.scryptSync(String(plain), salt, KEYLEN);
-  // Length mismatch would make timingSafeEqual throw — guard first (still constant per-branch).
+  // Length mismatch would make timingSafeEqual throw - guard first (still constant per-branch).
   if (candidate.length !== expected.length) return false;
   return crypto.timingSafeEqual(candidate, expected);
 }

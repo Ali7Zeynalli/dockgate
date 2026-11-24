@@ -1,4 +1,4 @@
-// Server Console → System API (server/sysconf.js). Mounted under /api/servers. Changes run as security plans;
+// Server Console > System API (server/sysconf.js). Mounted under /api/servers. Changes run as security plans;
 // the page polls /api/servers/:id/jobs/:jobId (routes/security.js) for their steps.
 const express = require('express');
 const router = express.Router();
@@ -22,7 +22,7 @@ const send = (fn) => async (req, res) => {
 };
 const audit = (req, row, action, details) => logAction({ req, server: row.id, resourceType: 'system', resourceName: row.name || row.id, action, details });
 async function current(row) { return X.parseRead(await runner.read(cfgOf(row), X.READ)); }
-// preview → { before, after } (the file as it is and as it would be); otherwise start the plan → { jobId }
+// preview -> { before, after } (the file as it is and as it would be); otherwise start the plan -> { jobId }
 function start(req, row, plan, title, action, details, onSuccess) {
   const jobId = runner.startPlan(cfgOf(row), plan, {
     title, successText: `${title}: done.`,
@@ -37,7 +37,7 @@ router.get('/:id/system', send(async (req) => ({ ...(await current(loadServer(re
 router.post('/:id/system/hostname', send(async (req) => {
   const row = loadServer(req); const cur = await current(row);
   const name = String((req.body || {}).hostname || '').trim();
-  return start(req, row, X.hostnamePlan(name, cur.hostsText), `Hostname → ${name}`, 'system_hostname', { from: cur.hostname, to: name });
+  return start(req, row, X.hostnamePlan(name, cur.hostsText), `Hostname -> ${name}`, 'system_hostname', { from: cur.hostname, to: name });
 }));
 router.post('/:id/system/hosts', send(async (req) => {
   const row = loadServer(req); const cur = await current(row);
@@ -60,11 +60,11 @@ router.post('/:id/system/sysctl', send(async (req) => {
 }));
 router.post('/:id/system/nofile', send(async (req) => {
   const row = loadServer(req); const n = (req.body || {}).nofile;
-  return start(req, row, X.nofilePlan(n), `Open files → ${n}`, 'system_nofile', { nofile: n });
+  return start(req, row, X.nofilePlan(n), `Open files -> ${n}`, 'system_nofile', { nofile: n });
 }));
 router.post('/:id/system/journald', send(async (req) => {
   const row = loadServer(req); const m = (req.body || {}).maxUse;
-  return start(req, row, X.journaldPlan(m), `Journal size → ${m}`, 'system_journald', { maxUse: m });
+  return start(req, row, X.journaldPlan(m), `Journal size -> ${m}`, 'system_journald', { maxUse: m });
 }));
 // body { iface, dhcp, addresses[], gateway, dns[], mtu, newSshIp?, preview }
 router.post('/:id/system/network', send(async (req) => {
@@ -77,7 +77,7 @@ router.post('/:id/system/network', send(async (req) => {
   // DockGate's address matters only for the interface that holds it
   const holds = cur.net.interfaces.some(i => i.name === b.iface && i.v4.some(a => a.ip === cur.net.sshServerIp));
   const r = X.networkPlan({ ...b, stack, sshIp: holds ? cur.net.sshServerIp : null }, { id, test: { username: row.username, ...(newSshIp ? { host: newSshIp } : {}) } });
-  if (b.preview) return { stack, file: stack === 'netplan' ? X.F.netplan : 'NetworkManager connection', before: stack === 'netplan' ? ((cur.net.netplanFiles.find(f => f.path === X.F.netplan) || {}).text || '') : '', after: r.text || '(nmcli connection modify …)' };
+  if (b.preview) return { stack, file: stack === 'netplan' ? X.F.netplan : 'NetworkManager connection', before: stack === 'netplan' ? ((cur.net.netplanFiles.find(f => f.path === X.F.netplan) || {}).text || '') : '', after: r.text || '(nmcli connection modify ...)' };
   return start(req, row, r.plan, `Network: ${b.iface}`, 'system_network', { iface: b.iface, dhcp: !!b.dhcp, addresses: b.addresses, gateway: b.gateway, newSshIp }, async () => {
     if (newSshIp && newSshIp !== row.host) { require('../db').db.prepare('UPDATE servers SET host = ? WHERE id = ?').run(newSshIp, row.id); try { require('../security/service').refreshConnections(row.id); } catch (e) { /* next request reconnects */ } }
   });
@@ -92,10 +92,10 @@ router.post('/:id/system/swap', send(async (req) => {
     values['vm.swappiness'] = String(v);
     const r = X.sysctlPlan(values);
     if (b.preview) return { file: X.F.sysctl, before: Object.entries(cur.sysctlDrop).map(([k, val]) => `${k} = ${val}`).join('\n'), after: r.text };
-    return start(req, row, r.plan, `Swappiness → ${v}`, 'system_swappiness', { value: v });
+    return start(req, row, r.plan, `Swappiness -> ${v}`, 'system_swappiness', { value: v });
   }
   const plan = X.swapPlan(b, cur.swap);
-  const title = b.action === 'remove' ? `Remove swap ${b.path}` : `Swap ${b.path || '/swapfile'} → ${b.sizeMb || require('../swap').DEFAULT_MB} MB`;
+  const title = b.action === 'remove' ? `Remove swap ${b.path}` : `Swap ${b.path || '/swapfile'} -> ${b.sizeMb || require('../swap').DEFAULT_MB} MB`;
   return start(req, row, plan, title, 'system_swap', { action: b.action, path: b.path || '/swapfile', sizeMb: b.sizeMb });
 }));
 // body { action: 'add'|'remove', entry? | index+raw, preview }

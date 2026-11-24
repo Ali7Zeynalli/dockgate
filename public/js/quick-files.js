@@ -1,7 +1,7 @@
-// Quick Files — the file browser (file-browser.js) in a window over any page, like Quick Terminal.
+// Quick Files - the file browser (file-browser.js) in a window over any page, like Quick Terminal.
 // Header button "Files" or Ctrl+Shift+F. z-index 950: dialogs (.modal-overlay, 1000) and the editor (1200) open above it. Minimize keeps the folder and the open editor; it follows the server
 // picked in the header and remembers the last folder per server.
-// QuickFiles.open(path?) — also for "Open folder" links elsewhere.
+// QuickFiles.open(path?) - also for "Open folder" links elsewhere.
 window.QuickFiles = (() => {
   let ov = null, fb = null, state = 'closed', serverId = null; // closed | open | min
   const KEY = 'dg_qf_path_';
@@ -16,9 +16,9 @@ window.QuickFiles = (() => {
     ov.innerHTML = `<div class="card" data-qf-win style="width:min(1200px,96vw);height:min(820px,90vh);display:flex;flex-direction:column;padding:0;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)">
       <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
         <strong style="flex:1">📁 Quick Files <span class="ui-sub" data-qf-srv></span></strong>
-        <button class="btn btn-xs btn-ghost" data-qf-page title="Open Tools → Files">Open page</button>
+        <button class="btn btn-xs btn-ghost" data-qf-page title="Open Tools > Files">Open page</button>
         <button class="btn btn-xs btn-ghost" data-qf-max title="Maximize">⤢</button>
-        <button class="btn btn-xs btn-ghost" data-qf-min title="Minimize (Esc) — keeps the folder">—</button>
+        <button class="btn btn-xs btn-ghost" data-qf-min title="Minimize (Esc) - keeps the folder">-</button>
         <button class="btn btn-xs btn-ghost" data-qf-close title="Close">×</button>
       </div>
       <div data-qf-body style="flex:1;min-height:0;overflow:auto;padding:12px 14px"></div></div>`;
@@ -59,7 +59,7 @@ window.QuickFiles = (() => {
   function badge() {
     const b = document.getElementById('btn-quick-files'); if (!b) return;
     b.classList.toggle('active', state === 'open');
-    b.title = state === 'min' ? 'Quick Files — minimized, click to show (Ctrl+Shift+F)' : 'Quick Files (Ctrl+Shift+F)';
+    b.title = state === 'min' ? 'Quick Files - minimized, click to show (Ctrl+Shift+F)' : 'Quick Files (Ctrl+Shift+F)';
     const dot = b.querySelector('[data-qf-dot]'); if (dot) dot.style.display = state === 'min' ? '' : 'none';
   }
 

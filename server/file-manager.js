@@ -1,20 +1,20 @@
-// Remote file manager (Phase 2) — browse/upload/download/mkdir/rename/delete on a remote SSH host via SFTP.
+// Remote file manager (Phase 2) - browse/upload/download/mkdir/rename/delete on a remote SSH host via SFTP.
 // Connections are POOLED per server (ssh-pool.js): DockGate connects once and reuses the session for many
-// operations — the FileZilla model — instead of a fresh SSH handshake per op. Local host is not handled here
-// (Phase 3, deferred) — the route returns a "switch to a remote server" message for local.
+// operations - the FileZilla model - instead of a fresh SSH handshake per op. Local host is not handled here
+// (Phase 3, deferred) - the route returns a "switch to a remote server" message for local.
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('ssh2');              // still used by archiveDirTo's own exec (tar) connection
-const remoteExec = require('./remote-compose');  // execRemote + shq — reused so SSH-exec/quoting isn't duplicated
+const remoteExec = require('./remote-compose');  // execRemote + shq - reused so SSH-exec/quoting isn't duplicated
 const pool = require('./ssh-pool');
 const { withSftp, authFor } = pool;              // metadata ops go through the pooled connection
 const crypto = require('crypto');
 
 // SFTP status 3 = PERMISSION_DENIED. The UI then offers to do the same with sudo.
 const isDenied = (e) => !!e && (e.code === 3 || /permission denied/i.test(String(e.message || '')));
-const accessErr = (file) => Object.assign(new Error(`Permission denied: ${file} belongs to another user — open it with sudo`), { statusCode: 403, code: 'EACCES' });
+const accessErr = (file) => Object.assign(new Error(`Permission denied: ${file} belongs to another user - open it with sudo`), { statusCode: 403, code: 'EACCES' });
 const sudoErr = (out) => (/password is required|no tty present|askpass|a terminal is required/i.test(out)
-  ? Object.assign(new Error('sudo asks this user for a password — DockGate needs passwordless sudo (the deploy user from Server Console → Setup has it)'), { statusCode: 403, code: 'SUDO' })
+  ? Object.assign(new Error('sudo asks this user for a password - DockGate needs passwordless sudo (the deploy user from Server Console > Setup has it)'), { statusCode: 403, code: 'SUDO' })
   : null);
 const rand = () => crypto.randomBytes(5).toString('hex');
 
@@ -30,13 +30,13 @@ function normRemote(p) {
   return '/' + parts.join('/');
 }
 function joinRemote(dir, name) {
-  // name is a single segment — strip any slashes to keep it inside dir
+  // name is a single segment - strip any slashes to keep it inside dir
   const clean = String(name || '').replace(/[/\\]/g, '').trim();
   if (!clean || clean === '.' || clean === '..') throw Object.assign(new Error('Invalid name'), { statusCode: 400 });
   return normRemote(dir + '/' + clean);
 }
 
-// The remote user's home directory (absolute) — used as a friendly starting point for the folder picker.
+// The remote user's home directory (absolute) - used as a friendly starting point for the folder picker.
 function homeDir(server) {
   return withSftp(server, sftp => new Promise((resolve) => sftp.realpath('.', (e, abs) => resolve(e ? '/' : abs))));
 }
@@ -60,8 +60,8 @@ async function downloadTo(server, p, res) {
   const lease = await pool.acquire(server);
   return await new Promise((resolve, reject) => {
     let settled = false;
-    // transport=true → the connection is suspect (stream broke / client aborted) → destroy the lease;
-    // an app error (stat ENOENT) leaves the connection healthy → just release it.
+    // transport=true -> the connection is suspect (stream broke / client aborted) -> destroy the lease;
+    // an app error (stat ENOENT) leaves the connection healthy -> just release it.
     const done = (err, transport) => {
       if (settled) return; settled = true;
       if (err) { transport ? pool.destroyLease(lease) : pool.release(lease); reject(err); }
@@ -88,7 +88,7 @@ async function uploadFrom(server, dir, name, req) {
   return await new Promise((resolve, reject) => {
     let settled = false;
     // Any failure/abort DESTROYS the lease: the write stream leaves a dangling/partial file handle on the
-    // channel, so the connection must not go back to the pool. No retry — the request body is already consumed.
+    // channel, so the connection must not go back to the pool. No retry - the request body is already consumed.
     const done = (err) => {
       if (settled) return; settled = true;
       if (err) { pool.destroyLease(lease); reject(err); }
@@ -106,16 +106,16 @@ async function uploadFrom(server, dir, name, req) {
 async function mkdir(server, dir, name, opts = {}) {
   const target = joinRemote(dir, name);
   // Idempotent when opts.ensure (used by folder upload): treat an already-existing DIRECTORY as success.
-  // SFTP v3 (OpenSSH) returns a generic SSH_FX_FAILURE for "already exists" — indistinguishable by code from
-  // other errors — so we confirm with stat() (OpenSSH's own try-mkdir-then-stat pattern).
+  // SFTP v3 (OpenSSH) returns a generic SSH_FX_FAILURE for "already exists" - indistinguishable by code from
+  // other errors - so we confirm with stat() (OpenSSH's own try-mkdir-then-stat pattern).
   const existed = await withSftp(server, sftp => new Promise((resolve, reject) => {
     sftp.mkdir(target, (e) => {
       if (!e) return resolve(false);              // freshly created
       if (!opts.ensure) return reject(e);         // strict (manual "+ Folder"): surface the error as before
       sftp.stat(target, (e2, st) => {
-        if (!e2 && st.isDirectory()) return resolve(true);   // already a directory → success
+        if (!e2 && st.isDirectory()) return resolve(true);   // already a directory -> success
         if (!e2) return reject(Object.assign(new Error('A file with that name already exists'), { statusCode: 409 }));
-        reject(e);                                            // truly missing / other → the original mkdir error
+        reject(e);                                            // truly missing / other -> the original mkdir error
       });
     });
   }));
@@ -136,7 +136,7 @@ async function remove(server, p, isDir) {
   return { path: target };
 }
 
-// Recursively list a remote directory (flat, sorted) — for the project Files tree on a remote host.
+// Recursively list a remote directory (flat, sorted) - for the project Files tree on a remote host.
 function listTree(server, baseDir) {
   const base = normRemote(baseDir);
   return withSftp(server, sftp => new Promise((resolve, reject) => {
@@ -149,7 +149,7 @@ function listTree(server, baseDir) {
           if (i >= list.length) return cb();
           const ent = list[i++];
           const r = rel ? rel + '/' + ent.filename : ent.filename;
-          // A subdir we can't read (EACCES — e.g. a root-owned bind-mount dir, or .ssh) must NOT kill the
+          // A subdir we can't read (EACCES - e.g. a root-owned bind-mount dir, or .ssh) must NOT kill the
           // whole listing: list it, but skip its children and continue with the siblings.
           if (ent.attrs.isDirectory()) { out.push({ path: r, type: 'dir', size: 0 }); walk(dir + '/' + ent.filename, r, () => next()); }
           else { out.push({ path: r, type: 'file', size: ent.attrs.size }); next(); }
@@ -161,7 +161,7 @@ function listTree(server, baseDir) {
   }));
 }
 
-// Read a remote file as text (binary/oversized → metadata only), for the in-project editor.
+// Read a remote file as text (binary/oversized -> metadata only), for the in-project editor.
 function readFileText(server, p, { sudo = false } = {}) {
   const file = normRemote(p);
   if (sudo) return readFileSudo(server, file);
@@ -198,13 +198,13 @@ async function readFileSudo(server, file) {
   return isBinary ? { isBinary: true, size, mtime, sudo: true } : { isBinary: false, size, mtime, sudo: true, content: buf.toString('utf8') };
 }
 
-const changedErr = (file) => Object.assign(new Error(`${file} changed on the server after you opened it — reload it, or save anyway`), { statusCode: 409, code: 'CHANGED' });
+const changedErr = (file) => Object.assign(new Error(`${file} changed on the server after you opened it - reload it, or save anyway`), { statusCode: 409, code: 'CHANGED' });
 
 /**
  * Write text to a remote file without ever leaving it half written: the content goes to a temporary file next to
  * it, which gets the file's mode (and owner, where the user may set it), then replaces the file in one rename.
  * When the file belongs to someone else and its owner can not be kept, it is written in place instead (its owner
- * and mode stay) — a config owned by www-data must not become the SSH user's.
+ * and mode stay) - a config owned by www-data must not become the SSH user's.
  * opts: { sudo, baseMtime (mtime when it was opened: a newer one means someone changed it), force }
  */
 function writeFileText(server, p, content, opts = {}) {
@@ -277,7 +277,7 @@ async function chmod(server, p, mode, { recursive = false, sudo = false } = {}) 
   }
   return { path: file, mode };
 }
-/** chown a path to user[:group] — needs root, so it runs with sudo (passwordless). */
+/** chown a path to user[:group] - needs root, so it runs with sudo (passwordless). */
 async function chown(server, p, owner, group, { recursive = false } = {}) {
   const file = normRemote(p);
   if (!NAME_RE.test(String(owner || '')) || (group && !NAME_RE.test(String(group)))) throw Object.assign(new Error('Owner and group: a user / group name or number'), { statusCode: 400 });
@@ -289,7 +289,7 @@ async function chown(server, p, owner, group, { recursive = false } = {}) {
 // ---- Heavier ops that need a shell (SFTP has no copy / recursive-delete / archive) ----
 
 // Recursively delete a path. Tries the SSH user first; if root-owned leftovers block it (Docker bind-mount
-// data dirs created as root), falls back to a throwaway root container — same trick as removeRemoteDir.
+// data dirs created as root), falls back to a throwaway root container - same trick as removeRemoteDir.
 async function removeRecursive(server, p) {
   const target = normRemote(p);
   if (target === '/' || target.split('/').filter(Boolean).length < 1) {
@@ -297,7 +297,7 @@ async function removeRecursive(server, p) {
   }
   const r = await remoteExec.execRemote(server, `rm -rf ${remoteExec.shq(target)} 2>&1`);
   if (r.code === 0) return { path: target };
-  // Root-owned leftovers → escalate via a root container, but only for a deep path (≥3 segments) so a
+  // Root-owned leftovers -> escalate via a root container, but only for a deep path (≥3 segments) so a
   // system/home root can never be mounted-and-wiped.
   if (target.split('/').filter(Boolean).length < 3) {
     throw Object.assign(new Error('Delete failed: ' + (r.stdout || r.stderr || '').trim()), { statusCode: 500 });
@@ -309,7 +309,7 @@ async function removeRecursive(server, p) {
   return { path: target };
 }
 
-// Copy a file or directory (cp -a → recursive + preserves attrs/timestamps). dest is the full target path.
+// Copy a file or directory (cp -a -> recursive + preserves attrs/timestamps). dest is the full target path.
 async function copy(server, src, dest) {
   const s = normRemote(src), d = normRemote(dest);
   if (s === d) throw Object.assign(new Error('Source and destination are the same'), { statusCode: 400 });
@@ -318,7 +318,7 @@ async function copy(server, src, dest) {
   return { from: s, to: d };
 }
 
-// Move/rename a file or directory (mv -f → works across directories where SFTP rename may fail).
+// Move/rename a file or directory (mv -f -> works across directories where SFTP rename may fail).
 async function move(server, src, dest) {
   const s = normRemote(src), d = normRemote(dest);
   if (s === d) throw Object.assign(new Error('Source and destination are the same'), { statusCode: 400 });
@@ -355,7 +355,7 @@ function archiveDirTo(server, dir, res) {
 // ── Archive extraction (unzip / untar an uploaded archive on the remote host) ─────────────────────────
 // Safe by construction: extracts into a NEW subfolder (default) via shell tools over SSH, with a hard
 // timeout, tar's built-in '..'-rejection (no -P), and a post-extract symlink-containment scan. Zip uses
-// only sanitizing extractors (unzip / python3 -m zipfile / bsdtar) — never an unguarded 7z/jar.
+// only sanitizing extractors (unzip / python3 -m zipfile / bsdtar) - never an unguarded 7z/jar.
 function classifyArchive(name) {
   const n = (name || '').toLowerCase();
   if (/\.(tar\.gz|tgz)$/.test(n)) return 'tgz';
@@ -384,7 +384,7 @@ async function pickZipTool(server, run = remoteExec.execRemote) {
  * Extract an archive on the remote host. opts: { here?, overwrite?, deleteAfter? }.
  * Default destination = a new subfolder named after the archive (safest). Returns { path: destDir }.
  */
-async function extract(server, archivePath, opts = {}, run = remoteExec.execRemote) { // run: (server, cmd) → { code, stdout, stderr }; the local file manager passes its own
+async function extract(server, archivePath, opts = {}, run = remoteExec.execRemote) { // run: (server, cmd) -> { code, stdout, stderr }; the local file manager passes its own
   const src = normRemote(archivePath);
   const cwd = src.replace(/\/[^/]+$/, '') || '/';
   const base = src.split('/').pop() || 'archive';
@@ -407,14 +407,14 @@ async function extract(server, archivePath, opts = {}, run = remoteExec.execRemo
   // Subfolder mode: refuse a non-empty existing target unless overwrite was chosen.
   if (!opts.here && !opts.overwrite) {
     const chk = await run(server, `test -d ${D} && [ -n "$(ls -A ${D} 2>/dev/null)" ] && echo NONEMPTY || true`);
-    if ((chk.stdout || '').includes('NONEMPTY')) throw Object.assign(new Error(`"${stem}" already exists and isn't empty — pick "overwrite" or a different archive name`), { statusCode: 409 });
+    if ((chk.stdout || '').includes('NONEMPTY')) throw Object.assign(new Error(`"${stem}" already exists and isn't empty - pick "overwrite" or a different archive name`), { statusCode: 409 });
   }
 
   const T = 600; // hard 10-min timeout (execRemote itself has no per-command timeout)
   let cmd;
   if (kind === 'zip') {
     const tool = await pickZipTool(server, run);
-    if (!tool) throw Object.assign(new Error("No safe zip extractor on this server — install 'unzip' or 'python3', or upload a .tar.gz instead"), { statusCode: 422 });
+    if (!tool) throw Object.assign(new Error("No safe zip extractor on this server - install 'unzip' or 'python3', or upload a .tar.gz instead"), { statusCode: 422 });
     if (tool === 'unzip') cmd = `mkdir -p ${D} && timeout ${T} unzip ${opts.overwrite ? '-o' : '-n'} ${A} -d ${D} 2>&1`;
     else if (tool === 'python3') cmd = `mkdir -p ${D} && timeout ${T} python3 -m zipfile -e ${A} ${D} 2>&1`;
     else cmd = `mkdir -p ${D} && timeout ${T} bsdtar -x -C ${D} -f ${A} 2>&1`;

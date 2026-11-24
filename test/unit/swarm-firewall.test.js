@@ -1,5 +1,5 @@
 'use strict';
-// Swarm → Firewall (server/swarm-firewall.js) — which rule a Swarm port needs, and how a port stands. No Docker.
+// Swarm > Firewall (server/swarm-firewall.js) - which rule a Swarm port needs, and how a port stands. No Docker.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs'); const os = require('os'); const path = require('path');

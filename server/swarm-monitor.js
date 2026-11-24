@@ -1,4 +1,4 @@
-// Swarm alerts — phase 6. Every 30 s each swarm DockGate knows is read from one of its managers:
+// Swarm alerts - phase 6. Every 30 s each swarm DockGate knows is read from one of its managers:
 //   swarm_service_down     a service runs fewer tasks than wanted for N minutes (rule limit), and when it is back
 //   swarm_node_down        a node goes Down, and when it is Ready again
 //   swarm_update_rollback  a service update was rolled back or paused (new tasks failed)
@@ -9,7 +9,7 @@ const { stmts, db } = require('./db');
 const dockerService = require('./docker');
 
 const INTERVAL_MS = 30 * 1000;
-const state = new Map(); // clusterId → { nodes, services, updates, quorumLost, first }
+const state = new Map(); // clusterId -> { nodes, services, updates, quorumLost, first }
 let timer = null, running = false;
 
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -24,7 +24,7 @@ function ruleMinutes() {
 
 /** Servers to ask: the local Docker, the server in use and every server DockGate made a node. */
 function candidates() {
-  const ids = new Map([['local', null], [dockerService.getActiveServerId() || 'local', null]]); // server → its cluster, when known
+  const ids = new Map([['local', null], [dockerService.getActiveServerId() || 'local', null]]); // server -> its cluster, when known
   try { for (const r of db.prepare('SELECT server_id, cluster_id FROM swarm_node_servers').all()) ids.set(r.server_id, r.cluster_id); } catch (e) { /* no table yet */ }
   return [...ids].map(([id, clusterId]) => ({ row: serverRow(id), clusterId })).filter(x => x.row);
 }
@@ -44,7 +44,7 @@ function evaluate(clusterId, snap, where, { now = Date.now(), minutes = ruleMinu
   const reachable = managers.filter(n => n.ManagerStatus && n.ManagerStatus.Reachability === 'reachable').length;
   const lost = !!snap.error || (managers.length > 0 && reachable <= managers.length / 2);
   if (lost !== st.quorumLost && !first) {
-    if (lost) add('swarm_quorum', 'Swarm managers lost their majority', `🔴 Swarm on ${where}: most managers can not be reached\n${snap.error || `${reachable} of ${managers.length} managers reachable`}. Running services keep running, but nothing can be changed. Swarm → Overview.`, `<p>Swarm on <b>${esc(where)}</b>: most managers can not be reached (${esc(snap.error || `${reachable} of ${managers.length}`)}). Running services keep running, but the cluster can not be changed until they are back.</p>`);
+    if (lost) add('swarm_quorum', 'Swarm managers lost their majority', `🔴 Swarm on ${where}: most managers can not be reached\n${snap.error || `${reachable} of ${managers.length} managers reachable`}. Running services keep running, but nothing can be changed. Swarm > Overview.`, `<p>Swarm on <b>${esc(where)}</b>: most managers can not be reached (${esc(snap.error || `${reachable} of ${managers.length}`)}). Running services keep running, but the cluster can not be changed until they are back.</p>`);
     else add('swarm_quorum', 'Swarm managers are back', `🟢 Swarm on ${where}: the managers have their majority again (${reachable} of ${managers.length})`, `<p>Swarm on <b>${esc(where)}</b>: the managers have their majority again (${reachable} of ${managers.length}).</p>`);
   }
   st.quorumLost = lost;
@@ -56,7 +56,7 @@ function evaluate(clusterId, snap, where, { now = Date.now(), minutes = ruleMinu
     const s = n.Status.State, host = n.Description.Hostname, addr = n.Status.Addr;
     if (prev && !first) {
       if (prev.state === 'ready' && s === 'down') add('swarm_node_down', `server ${host} is down`, `🔴 Swarm on ${where}: ${host} (${addr}) is Down\nIts tasks are started on the other servers where they can run. A task pinned to it (data) waits until it is back.`, `<p>Swarm on <b>${esc(where)}</b>: <b>${esc(host)}</b> (${esc(addr)}) is Down. Its tasks are started on the other servers where they can run; tasks pinned to it wait.</p>`);
-      if (prev.state === 'down' && s === 'ready') add('swarm_node_down', `server ${host} is back`, `🟢 Swarm on ${where}: ${host} is Ready again after ${mins(now - prev.since)}\nTasks do not move back by themselves — Swarm → Nodes → Rebalance.`, `<p>Swarm on <b>${esc(where)}</b>: <b>${esc(host)}</b> is Ready again after ${mins(now - prev.since)}. Tasks do not move back by themselves: Swarm → Nodes → Rebalance.</p>`);
+      if (prev.state === 'down' && s === 'ready') add('swarm_node_down', `server ${host} is back`, `🟢 Swarm on ${where}: ${host} is Ready again after ${mins(now - prev.since)}\nTasks do not move back by themselves - Swarm > Nodes > Rebalance.`, `<p>Swarm on <b>${esc(where)}</b>: <b>${esc(host)}</b> is Ready again after ${mins(now - prev.since)}. Tasks do not move back by themselves: Swarm > Nodes > Rebalance.</p>`);
     }
     st.nodes.set(n.ID, { state: s, since: prev && prev.state === s ? prev.since : now });
   }
@@ -75,7 +75,7 @@ function evaluate(clusterId, snap, where, { now = Date.now(), minutes = ruleMinu
       if (!cur.alerted && now - cur.belowSince >= minutes * 60000) {
         cur.alerted = true;
         const why = snap.reasons && snap.reasons[sv.ID] ? `\nWhy: ${snap.reasons[sv.ID]}` : '';
-        add('swarm_service_down', `${name} runs ${ss.RunningTasks}/${ss.DesiredTasks}`, `🟠 Swarm on ${where}: ${name} runs ${ss.RunningTasks} of ${ss.DesiredTasks} tasks for ${mins(now - cur.belowSince)}${why}\nSwarm → Services → Tasks shows each try.`, `<p>Swarm on <b>${esc(where)}</b>: <b>${esc(name)}</b> runs ${ss.RunningTasks} of ${ss.DesiredTasks} tasks for ${mins(now - cur.belowSince)}.</p>${why ? `<p>${esc(why.trim())}</p>` : ''}`);
+        add('swarm_service_down', `${name} runs ${ss.RunningTasks}/${ss.DesiredTasks}`, `🟠 Swarm on ${where}: ${name} runs ${ss.RunningTasks} of ${ss.DesiredTasks} tasks for ${mins(now - cur.belowSince)}${why}\nSwarm > Services > Tasks shows each try.`, `<p>Swarm on <b>${esc(where)}</b>: <b>${esc(name)}</b> runs ${ss.RunningTasks} of ${ss.DesiredTasks} tasks for ${mins(now - cur.belowSince)}.</p>${why ? `<p>${esc(why.trim())}</p>` : ''}`);
       }
     } else {
       if (cur.alerted) add('swarm_service_down', `${name} is back to ${ss.RunningTasks}/${ss.DesiredTasks}`, `🟢 Swarm on ${where}: ${name} runs all ${ss.DesiredTasks} tasks again (it was short for ${mins(now - cur.belowSince)})`, `<p>Swarm on <b>${esc(where)}</b>: <b>${esc(name)}</b> runs all ${ss.DesiredTasks} tasks again (short for ${mins(now - cur.belowSince)}).</p>`);
@@ -87,7 +87,7 @@ function evaluate(clusterId, snap, where, { now = Date.now(), minutes = ruleMinu
       const key = `${us.State}:${us.CompletedAt || us.StartedAt || ''}`;
       if (st.updates.get(sv.ID) !== key && !first) {
         const what = us.State === 'rollback_completed' ? 'update rolled back' : us.State === 'paused' ? 'update paused' : 'roll back paused';
-        add('swarm_update_rollback', `${name}: ${what}`, `🟠 Swarm on ${where}: ${name} — ${what}\n${us.Message || ''}\n${us.State === 'rollback_completed' ? 'The previous version runs again.' : 'Some tasks run the new version, some the old one — Swarm → Services.'}`.trim(), `<p>Swarm on <b>${esc(where)}</b>: <b>${esc(name)}</b> — ${what}.</p><p>${esc(us.Message || '')}</p>`);
+        add('swarm_update_rollback', `${name}: ${what}`, `🟠 Swarm on ${where}: ${name} - ${what}\n${us.Message || ''}\n${us.State === 'rollback_completed' ? 'The previous version runs again.' : 'Some tasks run the new version, some the old one - Swarm > Services.'}`.trim(), `<p>Swarm on <b>${esc(where)}</b>: <b>${esc(name)}</b> - ${what}.</p><p>${esc(us.Message || '')}</p>`);
       }
       st.updates.set(sv.ID, key);
     }

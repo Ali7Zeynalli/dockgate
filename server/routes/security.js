@@ -1,4 +1,4 @@
-// Server security routes — Server Console → Overview (security status), Access & SSH, Users, Firewall,
+// Server security routes - Server Console > Overview (security status), Access & SSH, Users, Firewall,
 // the deploy-user wizard and reboot. Mounted under /api/servers (behind requireAuth).
 //
 // Every safety rule is enforced HERE, not only in the UI: DockGate never locks itself out (it keeps
@@ -68,7 +68,7 @@ router.get('/:id/jobs/:jobId', send((req) => {
 // ---------------------------------------------------------------- posture (Overview)
 router.get('/:id/security/posture', send(async (req) => {
   const row = loadServer(req);
-  // fail2ban is read in parallel (its own worker) — a failure there must not hide the rest.
+  // fail2ban is read in parallel (its own worker) - a failure there must not hide the rest.
   const [sec, f2b] = await Promise.all([readState(row, plans.READ_POSTURE), fail2banOf(row).catch(() => null)]);
   const a = P.accessState(sec);
   const ufw = P.parseUfwNumbered(sec.ufw);
@@ -77,15 +77,15 @@ router.get('/:id/security/posture', send(async (req) => {
   const published = P.parseDockerPorts(sec.docker).filter(d => !P.isLoopback(d.hostIp));
   const checks = [];
   const dep = safeForLockdown(row);
-  checks.push({ id: 'deploy-user', label: 'Deploy user', level: dep ? 'ok' : 'warn', value: dep ? `${row.username} · SSH key` : `DockGate connects as ${row.username} with ${row.key_path ? 'a key' : 'a password'}`, action: dep ? null : 'deploy-wizard' });
-  checks.push({ id: 'password-auth', label: 'Password login', level: a.passwordAuth ? 'warn' : 'ok', value: a.passwordAuth ? 'Enabled — brute-force target' : 'Disabled · keys only', action: a.passwordAuth ? 'access' : null });
+  checks.push({ id: 'deploy-user', label: 'Deploy user', level: dep ? 'ok' : 'warn', value: dep ? `${row.username}, SSH key` : `DockGate connects as ${row.username} with ${row.key_path ? 'a key' : 'a password'}`, action: dep ? null : 'deploy-wizard' });
+  checks.push({ id: 'password-auth', label: 'Password login', level: a.passwordAuth ? 'warn' : 'ok', value: a.passwordAuth ? 'Enabled - brute-force target' : 'Disabled, keys only', action: a.passwordAuth ? 'access' : null });
   checks.push({ id: 'root-login', label: 'Root SSH login', level: a.rootLogin === 'yes' ? 'crit' : (a.rootLogin === 'no' ? 'ok' : 'warn'), value: { yes: 'Allowed with password', 'prohibit-password': 'Key only', no: 'Blocked' }[a.rootLogin] || a.rootLogin, action: a.rootLogin === 'no' ? null : 'access' });
-  checks.push({ id: 'firewall', label: 'Firewall', level: ufw.active || firewalld ? 'ok' : 'crit', value: ufw.active ? 'UFW active' : (firewalld ? 'firewalld active' : 'Inactive — every port is open'), action: ufw.active || firewalld ? null : 'firewall' });
+  checks.push({ id: 'firewall', label: 'Firewall', level: ufw.active || firewalld ? 'ok' : 'crit', value: ufw.active ? 'UFW active' : (firewalld ? 'firewalld active' : 'Inactive - every port is open'), action: ufw.active || firewalld ? null : 'firewall' });
   let dp;
   if (!published.length) dp = { level: 'ok', value: 'No published container ports' };
-  else if (ufw.active && isolation) dp = { level: 'ok', value: 'Isolated · only ports you open are public' };
+  else if (ufw.active && isolation) dp = { level: 'ok', value: 'Isolated, only ports you open are public' };
   else if (ufw.active) dp = { level: 'crit', value: `${published.length} container port(s) bypass UFW and are public`, action: 'firewall' };
-  else if (firewalld) dp = { level: 'warn', value: `${published.length} published port(s) — isolation is available with UFW only` };
+  else if (firewalld) dp = { level: 'warn', value: `${published.length} published port(s) - isolation is available with UFW only` };
   else dp = { level: 'crit', value: `${published.length} published container port(s) are public`, action: 'firewall' };
   checks.push({ id: 'docker-ports', label: 'Docker ports', action: null, ...dp });
   const hk = hostKeyInfo(row);
@@ -93,8 +93,8 @@ router.get('/:id/security/posture', send(async (req) => {
   checks.push(fail2banCheck(f2b));
   // the honeypot is optional: shown as such when off, never as something to fix
   const hpJail = f2b && f2b.jails ? f2b.jails.find(j => j.name === 'dockgate-honeypot') : null;
-  checks.push(hpJail ? { id: 'honeypot', label: 'Honeypot', level: 'ok', value: `On · port 22 · ${hpJail.currentlyBanned} banned now`, action: 'honeypot' }
-    : { id: 'honeypot', label: 'Honeypot', level: 'info', value: 'Off — a fake SSH on port 22 that bans every address connecting to it (once SSH has moved off 22)', action: 'honeypot' });
+  checks.push(hpJail ? { id: 'honeypot', label: 'Honeypot', level: 'ok', value: `On, port 22, ${hpJail.currentlyBanned} banned now`, action: 'honeypot' }
+    : { id: 'honeypot', label: 'Honeypot', level: 'info', value: 'Off - a fake SSH on port 22 that bans every address connecting to it (once SSH has moved off 22)', action: 'honeypot' });
   return { checks, rebootRequired: a.rebootRequired };
 }));
 
@@ -102,13 +102,13 @@ router.get('/:id/security/posture', send(async (req) => {
 function fail2banCheck(f) {
   const base = { id: 'fail2ban', label: 'Fail2ban' };
   if (!f) return { ...base, level: 'warn', value: 'State unavailable', action: 'fail2ban' };
-  if (!f.installed) return { ...base, level: 'warn', value: 'Not installed — nothing bans brute-force IPs', action: 'setup' };
+  if (!f.installed) return { ...base, level: 'warn', value: 'Not installed - nothing bans brute-force IPs', action: 'setup' };
   if (!f.active) return { ...base, level: 'crit', value: 'Installed but not running', action: 'fail2ban' };
   const crit = f.problems.filter(p => p.level === 'crit').length, warn = f.problems.filter(p => p.level === 'warn').length;
   const banned = f.jails.reduce((n, j) => n + j.currentlyBanned, 0);
   if (crit) return { ...base, level: 'crit', value: `${crit} setting${crit > 1 ? 's' : ''} cannot work as configured`, action: 'fail2ban' };
-  if (warn) return { ...base, level: 'warn', value: `Running · ${warn} thing${warn > 1 ? 's' : ''} to review`, action: 'fail2ban' };
-  return { ...base, level: 'ok', value: `Running · ${banned} IP${banned === 1 ? '' : 's'} banned now`, action: null };
+  if (warn) return { ...base, level: 'warn', value: `Running, ${warn} thing${warn > 1 ? 's' : ''} to review`, action: 'fail2ban' };
+  return { ...base, level: 'ok', value: `Running, ${banned} IP${banned === 1 ? '' : 's'} banned now`, action: null };
 }
 
 // ---------------------------------------------------------------- Access & SSH
@@ -132,14 +132,14 @@ router.post('/:id/access', send(async (req) => {
   requireConfirm(req.body);
   const sec = await readState(row, plans.READ_ACCESS);
   const state = P.accessState(sec);
-  if (!state.readable) throw P.httpError(502, 'Could not read the sshd configuration (sshd -T) — DockGate needs root or passwordless sudo on this server');
-  if (!state.includesDropins) throw P.httpError(400, "/etc/ssh/sshd_config does not include sshd_config.d/*.conf — add 'Include /etc/ssh/sshd_config.d/*.conf' at the top, then retry");
+  if (!state.readable) throw P.httpError(502, 'Could not read the sshd configuration (sshd -T) - DockGate needs root or passwordless sudo on this server');
+  if (!state.includesDropins) throw P.httpError(400, "/etc/ssh/sshd_config does not include sshd_config.d/*.conf - add 'Include /etc/ssh/sshd_config.d/*.conf' at the top, then retry");
   const next = { ...state.dropin };
   let title, successText, portChange = null, testPort = row.port || 22;
 
   if (setting === 'rootLogin') {
     if (!P.ROOT_LOGIN_VALUES.includes(value)) throw P.httpError(400, 'Root login must be yes, prohibit-password or no');
-    if (value !== 'yes' && !safeForLockdown(row)) throw P.httpError(400, 'Create a deploy user first — DockGate must connect as a non-root user with an SSH key before root login can be restricted.');
+    if (value !== 'yes' && !safeForLockdown(row)) throw P.httpError(400, 'Create a deploy user first - DockGate must connect as a non-root user with an SSH key before root login can be restricted.');
     next.rootLogin = value;
     title = 'Root SSH login';
     successText = { yes: 'Root can log in over SSH again.', 'prohibit-password': 'Root can log in with an SSH key only.', no: 'Root can no longer log in over SSH. sudo still works.' }[value];
@@ -152,7 +152,7 @@ router.post('/:id/access', send(async (req) => {
   } else if (setting === 'sshPort') {
     const to = P.assertPort(value);
     if (to === state.sshPort) throw P.httpError(400, `SSH already listens on ${to}`);
-    if (to === 22) { const hp = await honeypotOf(row).catch(() => null); if (hp && (hp.running || hp.jailFile)) throw P.httpError(400, 'The SSH honeypot uses port 22 — turn it off first (Security → Honeypot)'); }
+    if (to === 22) { const hp = await honeypotOf(row).catch(() => null); if (hp && (hp.running || hp.jailFile)) throw P.httpError(400, 'The SSH honeypot uses port 22 - turn it off first (Security > Honeypot)'); }
     next.ports = [to];
     portChange = { from: state.sshPort, to };
     testPort = to;
@@ -165,7 +165,7 @@ router.post('/:id/access', send(async (req) => {
     if (!Number.isInteger(grace) || grace < 10 || grace > 600) throw P.httpError(400, 'Login grace time must be 10–600 seconds');
     if (!Number.isInteger(dead) || dead < 0 || dead > 240) throw P.httpError(400, 'Dead connection timeout must be 0–240 minutes (0 = off)');
     if (!Number.isInteger(idle) || idle < 0 || idle > 1440) throw P.httpError(400, 'Idle session timeout must be 0–1440 minutes (0 = off)');
-    if (idle && !state.supportsIdleTimeout) throw P.httpError(400, `This server runs OpenSSH ${state.sshVersion || '(unknown)'} — an idle session timeout needs OpenSSH 9.2 or newer`);
+    if (idle && !state.supportsIdleTimeout) throw P.httpError(400, `This server runs OpenSSH ${state.sshVersion || '(unknown)'} - an idle session timeout needs OpenSSH 9.2 or newer`);
     next.maxAuthTries = tries;
     next.loginGraceTime = grace;
     next.permitEmptyPasswords = false;
@@ -269,15 +269,15 @@ router.put('/:id/users/:name', send(async (req) => {
   if (!P.validUsername(name)) throw P.httpError(400, 'Invalid username');
   const st = await usersOf(row);
   const u = findUser(st, name);
-  if (u.uid === 0) throw P.httpError(400, 'root cannot be changed here — use Access & SSH for root login');
+  if (u.uid === 0) throw P.httpError(400, 'root cannot be changed here - use Access & SSH for root login');
   const { sudo, docker, locked } = req.body || {};
   if (locked === true) {
-    if (u.isConnection) throw P.httpError(400, 'DockGate connects as this user — it cannot be locked.');
-    if (u.sudo && !u.locked && activeSudoers(st).length <= 1) throw P.httpError(400, 'This is the last active sudo user — locking it would leave nobody who can administer the server.');
+    if (u.isConnection) throw P.httpError(400, 'DockGate connects as this user - it cannot be locked.');
+    if (u.sudo && !u.locked && activeSudoers(st).length <= 1) throw P.httpError(400, 'This is the last active sudo user - locking it would leave nobody who can administer the server.');
   }
   if (sudo === false && u.sudo) {
     if (u.isConnection) throw P.httpError(400, 'DockGate needs sudo on the user it connects as.');
-    if (activeSudoers(st).length <= 1) throw P.httpError(400, 'This is the last sudo user — at least one must keep sudo.');
+    if (activeSudoers(st).length <= 1) throw P.httpError(400, 'This is the last sudo user - at least one must keep sudo.');
   }
   if (docker === false && u.isConnection) throw P.httpError(400, 'DockGate needs Docker access on the user it connects as.');
   const steps = [];
@@ -297,8 +297,8 @@ router.delete('/:id/users/:name', send(async (req) => {
   const st = await usersOf(row);
   const u = findUser(st, name);
   if (u.uid === 0) throw P.httpError(400, 'root cannot be deleted');
-  if (u.isConnection) throw P.httpError(400, 'DockGate connects as this user — it cannot be deleted.');
-  if (u.sudo && !u.locked && activeSudoers(st).length <= 1) throw P.httpError(400, 'This is the last sudo user — deleting it would leave nobody who can administer the server.');
+  if (u.isConnection) throw P.httpError(400, 'DockGate connects as this user - it cannot be deleted.');
+  if (u.sudo && !u.locked && activeSudoers(st).length <= 1) throw P.httpError(400, 'This is the last sudo user - deleting it would leave nobody who can administer the server.');
   const removeHome = req.query.removeHome === '1' || req.query.removeHome === 'true';
   await runOrThrow(row, plans.deleteUserPlan(name, removeHome), `Delete ${name}`);
   for (const g of stmts.getGeneratedKeys.all(row.id).filter(x => x.username === name)) { removeKeyFile(g.key_path); stmts.deleteGeneratedKey.run(g.id); }
@@ -333,12 +333,12 @@ router.delete('/:id/users/:name/keys', send(async (req) => {
   const u = findUser(st, name);
   const k = u.keys.find(x => x.fingerprint === fingerprint);
   if (!k) throw P.httpError(404, 'Key not found');
-  if (k.connectionKey) throw P.httpError(400, 'DockGate uses this key to connect — it cannot be removed.');
+  if (k.connectionKey) throw P.httpError(400, 'DockGate uses this key to connect - it cannot be removed.');
   const keysLeft = st.users.filter(x => !x.locked).reduce((n, x) => n + x.keys.length, 0) - 1;
-  if (!st.passwordAuth && keysLeft <= 0) throw P.httpError(400, 'Password login is off and this is the last key — removing it would lock everyone out.');
+  if (!st.passwordAuth && keysLeft <= 0) throw P.httpError(400, 'Password login is off and this is the last key - removing it would lock everyone out.');
   const current = await runner.read(cfgOf(row), plans.readKeysScript(name));
   const { content, removed } = P.removeAuthorizedKey(current, fingerprint);
-  if (!removed) throw P.httpError(409, 'The key changed on the server — refresh and try again');
+  if (!removed) throw P.httpError(409, 'The key changed on the server - refresh and try again');
   await runOrThrow(row, plans.writeKeysPlan(name, content), `Remove key from ${name}`);
   const g = stmts.getGeneratedKey.get(row.id, name, fingerprint);
   if (g) { removeKeyFile(g.key_path); stmts.deleteGeneratedKey.run(g.id); }
@@ -346,12 +346,12 @@ router.delete('/:id/users/:name/keys', send(async (req) => {
   return { success: true };
 }));
 
-// Download a private key DockGate generated — re-check the admin password (it grants server access).
+// Download a private key DockGate generated - re-check the admin password (it grants server access).
 router.post('/:id/users/:name/keys/private', send((req) => {
   const row = loadServer(req);
   const { fingerprint, adminPassword } = req.body || {};
   const salt = (stmts.getSetting.get('auth_salt') || {}).value, hash = (stmts.getSetting.get('auth_password_hash') || {}).value;
-  if (!adminPassword || !verifyPassword(String(adminPassword), salt, hash)) throw P.httpError(403, 'That is not your DockGate password (the one you sign in to DockGate with — not the server\'s or this user\'s password)');
+  if (!adminPassword || !verifyPassword(String(adminPassword), salt, hash)) throw P.httpError(403, 'That is not your DockGate password (the one you sign in to DockGate with - not the server\'s or this user\'s password)');
   const g = stmts.getGeneratedKey.get(row.id, req.params.name, String(fingerprint || ''));
   if (!g) throw P.httpError(404, 'DockGate did not generate this key, so it has no private half for it');
   audit(req, row, 'user-key-download', { name: req.params.name, fingerprint });
@@ -398,7 +398,7 @@ async function fail2banOf(row) {
     managed: !!managed, jailFileText: sec.dockgate || '', sources, active,
     banned: jails.flatMap(j => j.banned.map(b => b.ip)),
   }) : [];
-  if (installed && !active) problems.unshift({ level: 'crit', text: 'fail2ban is installed but not running — nothing is being banned.', fix: 'start' });
+  if (installed && !active) problems.unshift({ level: 'crit', text: 'fail2ban is installed but not running - nothing is being banned.', fix: 'start' });
   return {
     installed, active, version: (sec.version || '').trim(), jails, settings, managed: !!managed, runtime, sshPort, dockgateIp,
     jailLocal: (sec.jaillocal || '').trim() || null,
@@ -418,8 +418,8 @@ const assertIp = (ip) => { const v = String(ip || '').trim(); if (!require('../p
 
 router.get('/:id/fail2ban', send(async (req) => fail2banOf(loadServer(req))));
 
-// POST /api/servers/:id/fail2ban/preview — the files Save would write for these settings, built by the same
-// functions the save plan uses (nothing runs on the server). Invalid settings → 400 with the reason.
+// POST /api/servers/:id/fail2ban/preview - the files Save would write for these settings, built by the same
+// functions the save plan uses (nothing runs on the server). Invalid settings -> 400 with the reason.
 router.post('/:id/fail2ban/preview', send(async (req) => {
   loadServer(req);
   const settings = F2B.normalizeSettings((req.body || {}).settings);
@@ -428,15 +428,15 @@ router.post('/:id/fail2ban/preview', send(async (req) => {
 }));
 
 // Moving fail2ban's sshd / recidive / allowlist / history settings out of jail.local (and other files read after
-// DockGate's) into DockGate's files. preview: what changes, nothing runs; takeover: one job — backup, rewrite,
+// DockGate's) into DockGate's files. preview: what changes, nothing runs; takeover: one job - backup, rewrite,
 // test, reload, restore everything on failure. Both read the files fresh, so the preview is what gets applied.
 async function takeoverOf(row) {
   const cur = await fail2banOf(row);
-  if (!cur.installed) throw P.httpError(400, 'fail2ban is not installed — install it in Setup first');
+  if (!cur.installed) throw P.httpError(400, 'fail2ban is not installed - install it in Setup first');
   const sec = await readState(row, plans.READ_FAIL2BAN);
   const sources = F2B.parseSources(sec.f2bsrc);
   const paths = F2B.overridingFiles(sources);
-  if (!paths.length) throw P.httpError(400, 'No other file overrides DockGate\'s fail2ban settings — nothing to move.');
+  if (!paths.length) throw P.httpError(400, 'No other file overrides DockGate\'s fail2ban settings - nothing to move.');
   const raw = await readState(row, plans.readFilesScript(paths));
   const texts = Object.fromEntries(paths.map((p, i) => [p, raw['file' + i] || '']));
   return F2B.planTakeover({ settings: cur.settings, sources, texts, dockgateIp: cur.dockgateIp, sshPort: cur.sshPort });
@@ -449,13 +449,13 @@ router.post('/:id/fail2ban/takeover', send(async (req) => {
   const cur = await fail2banOf(row);
   const jobId = runner.startPlan(cfgOf(row), plans.fail2banSettingsPlan(t.settings, cur.sshPort, t.files.map(f => ({ path: f.path, text: f.after }))), {
     title: 'Move fail2ban settings to DockGate',
-    successText: `Done — DockGate's files now hold the settings; backups: ${t.files.map(f => f.path + '.dockgate-backup').join(', ')}. Current bans were kept.`,
+    successText: `Done - DockGate's files now hold the settings; backups: ${t.files.map(f => f.path + '.dockgate-backup').join(', ')}. Current bans were kept.`,
     onSuccess: () => audit(req, row, 'fail2ban-takeover', { files: t.files.map(f => f.path), adopted: t.adopted, corrected: t.corrected }),
   });
   return { jobId };
 }));
 
-// Configuration → Files: every fail2ban config file under jail.d / fail2ban.d plus jail.local / fail2ban.local.
+// Configuration > Files: every fail2ban config file under jail.d / fail2ban.d plus jail.local / fail2ban.local.
 router.get('/:id/fail2ban/files', send(async (req) => {
   const sec = await readState(loadServer(req), plans.READ_F2B_FILES);
   const files = Object.keys(sec).filter(k => k.startsWith('file ')).map(k => { const path = k.slice(5); return { path, text: sec[k] ? sec[k].replace(/\s*$/, '\n') : '', ...F2B.fileRole(path) }; });
@@ -463,7 +463,7 @@ router.get('/:id/fail2ban/files', send(async (req) => {
   files.sort((a, b) => order(a.path) - order(b.path) || a.path.localeCompare(b.path));
   return { files, jailFile: F2B.JAIL_FILE, daemonFile: F2B.DAEMON_FILE };
 }));
-// Save one file from Configuration → Files: backup, write, test, reload, restore on failure. DockGate's own files
+// Save one file from Configuration > Files: backup, write, test, reload, restore on failure. DockGate's own files
 // must stay something DockGate can read back (its sections only, valid values, the log file recidive needs).
 router.post('/:id/fail2ban/file', send(async (req) => {
   const row = loadServer(req);
@@ -474,21 +474,21 @@ router.post('/:id/fail2ban/file', send(async (req) => {
   const known = Object.keys(sec).filter(k => k.startsWith('file ')).map(k => k.slice(5));
   const isOwn = path === F2B.JAIL_FILE || path === F2B.DAEMON_FILE;
   if (!known.includes(path) && !isOwn) throw P.httpError(400, 'Not a fail2ban file DockGate shows');
-  if (!F2B.fileRole(path).editable) throw P.httpError(400, `${path} ships with fail2ban and is not edited here — put your change in jail.local`);
+  if (!F2B.fileRole(path).editable) throw P.httpError(400, `${path} ships with fail2ban and is not edited here - put your change in jail.local`);
   if (path === F2B.JAIL_FILE) {
     const bad = F2B.sectionNames(content).filter(n => !['DEFAULT', 'sshd', 'recidive'].includes(n));
-    if (bad.length) throw P.httpError(400, `DockGate's file holds [DEFAULT], [sshd] and [recidive] only — put [${bad.join('], [')}] in /etc/fail2ban/jail.local`);
+    if (bad.length) throw P.httpError(400, `DockGate's file holds [DEFAULT], [sshd] and [recidive] only - put [${bad.join('], [')}] in /etc/fail2ban/jail.local`);
     const parsed = F2B.parseJailConf(content);
     if (!parsed) throw P.httpError(400, "DockGate's file cannot be empty");
     F2B.normalizeSettings({ ...parsed, dbpurgeage: F2B.DEFAULTS.dbpurgeage }); // 400 with the field when a value is wrong
   }
   if (path === F2B.DAEMON_FILE) {
     const lt = /^\s*logtarget\s*=\s*(.+)$/m.exec(content);
-    if (lt && lt[1].trim() !== F2B.LOG_FILE) throw P.httpError(400, `logtarget must stay ${F2B.LOG_FILE} — recidive reads that file`);
+    if (lt && lt[1].trim() !== F2B.LOG_FILE) throw P.httpError(400, `logtarget must stay ${F2B.LOG_FILE} - recidive reads that file`);
   }
   const jobId = runner.startPlan(cfgOf(row), plans.fail2banWritePlan([{ path, text: content.replace(/\s*$/, '\n') }], { label: `Write ${path}` }), {
     title: `Save ${path}`,
-    successText: 'Saved, tested and reloaded — current bans were kept.',
+    successText: 'Saved, tested and reloaded - current bans were kept.',
     onSuccess: () => audit(req, row, 'fail2ban-file', { path, bytes: content.length }),
   });
   return { jobId };
@@ -499,10 +499,10 @@ router.post('/:id/fail2ban/settings', send(async (req) => {
   requireConfirm(req.body);
   const settings = F2B.normalizeSettings(req.body.settings);
   const cur = await fail2banOf(row);
-  if (!cur.installed) throw P.httpError(400, 'fail2ban is not installed — install it in Setup first');
+  if (!cur.installed) throw P.httpError(400, 'fail2ban is not installed - install it in Setup first');
   const jobId = runner.startPlan(cfgOf(row), plans.fail2banSettingsPlan(settings, cur.sshPort), {
     title: 'Fail2ban settings',
-    successText: 'Saved and reloaded — current bans were kept.',
+    successText: 'Saved and reloaded - current bans were kept.',
     onSuccess: () => audit(req, row, 'fail2ban-settings', { settings }),
   });
   return { jobId };
@@ -512,7 +512,7 @@ router.post('/:id/fail2ban/ban', send(async (req) => {
   const row = loadServer(req);
   const jail = assertJail(req.body.jail), ip = assertIp(req.body.ip);
   const cur = await fail2banOf(row);
-  if (cur.dockgateIp && ip === cur.dockgateIp) throw P.httpError(400, 'That is the IP DockGate connects from — banning it would cut DockGate off this server.');
+  if (cur.dockgateIp && ip === cur.dockgateIp) throw P.httpError(400, 'That is the IP DockGate connects from - banning it would cut DockGate off this server.');
   if (!cur.jails.some(j => j.name === jail)) throw P.httpError(404, `Jail "${jail}" is not running`);
   await runOrThrow(row, { steps: [{ label: `Ban ${ip}`, cmd: plans.f2bBanCmd(jail, ip) }] }, 'Fail2ban');
   audit(req, row, 'fail2ban-ban', { jail, ip });
@@ -592,7 +592,7 @@ router.post('/:id/services/docker/settings', send(async (req) => {
   if (!/^\d{1,4}[kmg]$/.test(String(maxSize || ''))) throw P.httpError(400, 'Log size per file: a number with k, m or g, e.g. 10m');
   const mf = Number(maxFile);
   if (!Number.isInteger(mf) || mf < 1 || mf > 50) throw P.httpError(400, 'Log files to keep must be 1–50');
-  // Docker does not start with live-restore on while the server is in a swarm — never write that.
+  // Docker does not start with live-restore on while the server is in a swarm - never write that.
   if (liveRestore) {
     let state = null;
     try { state = ((await require('../docker').createSshClient(row).info()).Swarm || {}).LocalNodeState; } catch (e) { /* Docker not reachable: the plan reports it */ }
@@ -616,7 +616,7 @@ router.post('/:id/services/timesync/settings', send(async (req) => {
   });
   const jobId = runner.startPlan(cfgOf(row), plans.ntpPlan({ servers }), {
     title: 'Time sync sources',
-    successText: servers.length ? 'Saved — chrony restarted with the new sources. Sync can take a minute.' : "Back to the distro's own NTP sources — chrony restarted.",
+    successText: servers.length ? 'Saved - chrony restarted with the new sources. Sync can take a minute.' : "Back to the distro's own NTP sources - chrony restarted.",
     onSuccess: () => audit(req, row, 'timesync-sources', { servers }),
   });
   return { jobId };
@@ -660,7 +660,7 @@ router.post('/:id/honeypot', send(async (req) => {
   const b = req.body || {};
   const cur = await honeypotOf(row);
   const blocking = cur.checks.filter(c => c.ok === false);
-  if (blocking.length) throw P.httpError(400, `Not ready: ${blocking.map(c => `${c.label} — ${c.fix}`).join('; ')}`);
+  if (blocking.length) throw P.httpError(400, `Not ready: ${blocking.map(c => `${c.label} - ${c.fix}`).join('; ')}`);
   const files = HP.contextFiles();
   const plan = HP.installPlan({ tag: HP.imageTag(files), tarGz: await HP.contextTarGz(files), bantime: b.bantime || '30d', allow: b.allow || [] });
   const title = cur.on ? 'Honeypot settings' : 'Turn on the SSH honeypot';

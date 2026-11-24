@@ -1,4 +1,4 @@
-// Compose Auto Scaling — one loop for both executors: the Edge agent (also while DockGate is offline) and DockGate
+// Compose Auto Scaling - one loop for both executors: the Edge agent (also while DockGate is offline) and DockGate
 // (on servers without an up-to-date agent). It measures each service that has a rule, decides with the same rule as
 // Swarm (scale-decision.js), only adds what the server has room for, and changes replicas only through the
 // whitelisted executor, so the limits are checked there again.
@@ -23,7 +23,7 @@ class Scaler {
     for (const k of ['samples', 'last', 'full', 'suggested', 'nolimit']) s[k] = s[k] || {};
   }
 
-  /** One round over the rules ({ projects: { p: { s: { min, max, auto: {...} } } } }). busy(project) → skip it. */
+  /** One round over the rules ({ projects: { p: { s: { min, max, auto: {...} } } } }). busy(project) -> skip it. */
   async tick(rules, now = Date.now(), busy = async () => false) {
     const out = [];
     let cap = null;
@@ -36,7 +36,7 @@ class Scaler {
         const m = await measureService(this.docker, project, service).catch(() => null);
         if (!m) continue;
         if (!m.lim.cpu && !m.lim.mem) { // the rule needs a limit to mean anything
-          if (!this.state.nolimit[key]) { this.state.nolimit[key] = true; out.push(this.write({ mode: 'off', project, service, from: m.replicas, to: m.replicas, ok: false, reason: 'no CPU or memory limit on the running containers — nothing to measure against' })); }
+          if (!this.state.nolimit[key]) { this.state.nolimit[key] = true; out.push(this.write({ mode: 'off', project, service, from: m.replicas, to: m.replicas, ok: false, reason: 'no CPU or memory limit on the running containers - nothing to measure against' })); }
           continue;
         }
         delete this.state.nolimit[key];
@@ -76,10 +76,10 @@ class Scaler {
         }
         this.state.last[key] = { at: now, dir: d.action };
         delete this.state.suggested[key];
-        out.push(this.write({ mode, project, service, from: m.replicas, to: n, ok: !err, reason: err ? `${d.reason} — stopped at ${n}: ${err}` : d.reason }));
+        out.push(this.write({ mode, project, service, from: m.replicas, to: n, ok: !err, reason: err ? `${d.reason} - stopped at ${n}: ${err}` : d.reason }));
         if (n !== m.replicas) {
           await this.onChange(project, service, n);
-          await this.notify(`${d.action === 'up' ? '📈' : '📉'} ${key}: ${m.replicas} → ${n} replicas — ${d.reason}`).catch(() => {});
+          await this.notify(`${d.action === 'up' ? '📈' : '📉'} ${key}: ${m.replicas} -> ${n} replicas - ${d.reason}`).catch(() => {});
         }
         break; // one change per project per round
       }

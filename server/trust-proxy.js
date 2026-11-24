@@ -2,12 +2,12 @@
 // `trust proxy`) AND WebSocket handshakes, so the login rate limit and the audit IP cannot be spoofed.
 //
 // TRUST_PROXY (env), same values as Express:
-//   unset / "false"      — trust nobody (default): the IP is the TCP peer. Use when DockGate is reached directly.
-//   "loopback"           — a reverse proxy on the same host (nginx/caddy/traefik on 127.0.0.1)
-//   "uniquelocal"        — a proxy on a private network (10/8, 172.16/12, 192.168/16, fc00::/7)
-//   "10.0.0.5,10.0.0.6"  — specific proxy addresses / CIDRs
-//   "1", "2", …          — trust that many hops
-//   "true"               — trust every hop (only when DockGate is NEVER reachable without the proxy)
+//   unset / "false"      - trust nobody (default): the IP is the TCP peer. Use when DockGate is reached directly.
+//   "loopback"           - a reverse proxy on the same host (nginx/caddy/traefik on 127.0.0.1)
+//   "uniquelocal"        - a proxy on a private network (10/8, 172.16/12, 192.168/16, fc00::/7)
+//   "10.0.0.5,10.0.0.6"  - specific proxy addresses / CIDRs
+//   "1", "2", ...          - trust that many hops
+//   "true"               - trust every hop (only when DockGate is NEVER reachable without the proxy)
 const proxyaddr = require('proxy-addr');
 
 function parseTrustProxy(raw) {

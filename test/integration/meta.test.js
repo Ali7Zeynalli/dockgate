@@ -1,5 +1,5 @@
 // Integration tests for the /api/meta routes (settings, activity/audit).
-// These mount only the settings router with an isolated temp DB — no Docker daemon needed.
+// These mount only the settings router with an isolated temp DB - no Docker daemon needed.
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');

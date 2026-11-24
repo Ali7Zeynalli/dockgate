@@ -1,4 +1,4 @@
-// Tools → Databases → Export / Import / test data, for whole databases or ticked tables:
+// Tools > Databases > Export / Import / test data, for whole databases or ticked tables:
 //   dump(name, db, { tables, what, rows, clean }, onChunk)   pg_dump in the container, plain SQL (streamed)
 //   zipTables(name, db, { tables, format })                  .zip of CSV files, or one .xlsx with a sheet per table
 //   importSql(name, db, readable, { single })                 a .sql file fed to psql (stops at the first error)
@@ -33,13 +33,13 @@ async function zipTables(name, dbname, { tables, format = 'csv' } = {}) {
   const files = []; let total = 0;
   for (const x of list) {
     const parts = [];
-    await S().exportTable(name, dbname, x.schema, x.table, 'csv', (c) => { total += c.length; if (total > MAX_ZIP) throw err('More than 300 MB — export fewer tables, or use SQL (pg_dump), which streams'); parts.push(Buffer.from(c)); });
+    await S().exportTable(name, dbname, x.schema, x.table, 'csv', (c) => { total += c.length; if (total > MAX_ZIP) throw err('More than 300 MB - export fewer tables, or use SQL (pg_dump), which streams'); parts.push(Buffer.from(c)); });
     files.push({ ...x, csv: Buffer.concat(parts) });
   }
   if (format === 'xlsx') {
     const sheets = files.map(f => {
       const rows = P.parseCsv(f.csv.toString('utf8')).filter(r => !(r.length === 1 && r[0] === ''));
-      if (rows.length > 1048576) throw err(`${f.table} has more rows than a sheet can hold (1 048 576) — export it as CSV`);
+      if (rows.length > 1048576) throw err(`${f.table} has more rows than a sheet can hold (1 048 576) - export it as CSV`);
       return { name: f.schema === 'public' ? f.table : `${f.schema}.${f.table}`, rows };
     });
     return Z.xlsx(sheets);
@@ -57,7 +57,7 @@ async function importSql(name, dbname, readable, { single = false } = {}) {
   if (r.code !== 0) {
     const e = String(r.stderr || '');
     const line = (/psql:[^:]*:(\d+):/.exec(e) || [])[1];
-    throw err(`${line ? `Line ${line}: ` : ''}${e.replace(/^psql:[^:]*:\d+:\s*/gm, '').replace(/^psql:\s*/gm, '').trim().slice(0, 800)}${single ? ' — nothing was imported (one transaction).' : ' — the statements before it stay done.'}`, 400, { code: 'FAILED', line: line ? Number(line) : null });
+    throw err(`${line ? `Line ${line}: ` : ''}${e.replace(/^psql:[^:]*:\d+:\s*/gm, '').replace(/^psql:\s*/gm, '').trim().slice(0, 800)}${single ? ' - nothing was imported (one transaction).' : ' - the statements before it stay done.'}`, 400, { code: 'FAILED', line: line ? Number(line) : null });
   }
   return { ok: true, ms: Date.now() - t0, tags, tail: out.split('\n').slice(-12).join('\n') };
 }
@@ -113,7 +113,7 @@ async function mock(name, dbname, { schema, table, rows = 100, test = false } = 
   const st = await st0.structure(name, db, schema, table);
   if (st.kind !== 'r' && st.kind !== 'p') throw err('Test data goes into tables only');
   const q = P.qname(st.schema, st.name);
-  const fks = new Map(); // column → { ref, col }
+  const fks = new Map(); // column -> { ref, col }
   (st.constraints || []).filter(c => c.type === 'f').forEach(c => { const m = /FOREIGN KEY \(([^,)]+)\) REFERENCES ([^\s(]+)\(([^,)]+)\)/.exec(c.def || ''); if (m) fks.set(m[1].trim().replace(/^"|"$/g, ''), { ref: m[2], col: m[3].trim() }); });
   const uniq = new Set(st.pk || []);
   (st.indexes || []).filter(i => i.unique).forEach(i => { const m = /\(([^,()]+)\)\s*$/.exec(i.def || ''); if (m) uniq.add(m[1].trim().replace(/^"|"$/g, '')); });
@@ -134,14 +134,14 @@ async function mock(name, dbname, { schema, table, rows = 100, test = false } = 
     if (e == null) { if (c.notnull) missing.push(`${c.name} (${c.type})`); else skipped.push(c.name); continue; }
     cols.push(P.ident(c.name)); exprs.push(e.replace(/__T__/g, q));
   }
-  if (missing.length) throw err(`DockGate can not make up values for ${missing.join(', ')} — give them a default, or fill the table with SQL`);
-  if (!cols.length) throw err('Every column has a default or is generated — nothing to fill');
+  if (missing.length) throw err(`DockGate can not make up values for ${missing.join(', ')} - give them a default, or fill the table with SQL`);
+  if (!cols.length) throw err('Every column has a default or is generated - nothing to fill');
   const sql = `WITH ins AS (INSERT INTO ${q} (${cols.join(', ')}) SELECT ${exprs.join(', ')} FROM generate_series(1, ${n}) AS g RETURNING *) SELECT json_build_object('n', (SELECT count(*) FROM ins), 'sample', (SELECT coalesce(json_agg(x), '[]') FROM (SELECT * FROM ins LIMIT 5) x))`;
   const r = await st0.psql(t, ['-q', '-At', '-c', 'BEGIN', '-c', sql, '-c', test ? 'ROLLBACK' : 'COMMIT'], { db, readOnly: false, timeoutMs: 600000 });
   if (r.code !== 0) {
     const e = String(r.stderr || '').replace(/^psql:(\s*error:)?\s*/gm, '').trim();
     const fkEmpty = [...fks.entries()].find(([c]) => new RegExp(`"${c}".*null value|null value in column "${c}"`).test(e));
-    throw err(`${fkEmpty ? `${fkEmpty[1].ref} has no rows yet — fill it first. ` : ''}${e.slice(0, 600)} — nothing was added.`);
+    throw err(`${fkEmpty ? `${fkEmpty[1].ref} has no rows yet - fill it first. ` : ''}${e.slice(0, 600)} - nothing was added.`);
   }
   const outText = String(r.stdout || ''); const at = outText.indexOf('{"n"');
   const res = JSON.parse(at >= 0 ? outText.slice(at).trim() : '{"n":0,"sample":[]}');

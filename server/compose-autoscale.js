@@ -5,7 +5,7 @@
 // Auto Scaling chose is written to DockGate's override, so a later `docker compose up` through DockGate keeps it.
 const fs = require('fs');
 const { db, stmts } = require('./db');
-require('./compose-scale'); // makes the compose_scaling table this file adds columns to and reads — load it first
+require('./compose-scale'); // makes the compose_scaling table this file adds columns to and reads - load it first
 const { Scaler, cleanAuto } = require('../agent/src/control/autoscale');
 const { hostCapFrom } = require('../agent/src/control/measure');
 
@@ -43,8 +43,8 @@ function ruleOf(serverId, project, service) {
 }
 
 /**
- * Check a rule from the form. Swarm's checks (thresholds 10 apart, waits…), Compose's range (1–20), and a limit on the
- * service — without one there is nothing to measure against.
+ * Check a rule from the form. Swarm's checks (thresholds 10 apart, waits...), Compose's range (1–20), and a limit on the
+ * service - without one there is nothing to measure against.
  */
 function validateRule(body, lim) {
   const mode = ['off', 'suggest', 'auto'].includes(body.mode) ? body.mode : null;
@@ -52,7 +52,7 @@ function validateRule(body, lim) {
   if (mode === 'off') return { mode };
   const v = require('./swarm-autoscale').validate(body);
   if (v.max > CS().MAX_REPLICAS) throw bad(`Maximum replicas: up to ${CS().MAX_REPLICAS} on one server`);
-  if (!lim.cpu && !lim.mem) throw bad('This service has no CPU or memory limit in its compose file — Auto Scaling needs one to measure against (cpus / mem_limit, or deploy.resources.limits)');
+  if (!lim.cpu && !lim.mem) throw bad('This service has no CPU or memory limit in its compose file - Auto Scaling needs one to measure against (cpus / mem_limit, or deploy.resources.limits)');
   if (!lim.mem && v.memUp !== null) throw bad('Add at memory % needs a memory limit on the service');
   return { mode, ...v };
 }
@@ -73,7 +73,7 @@ async function saveRule(project, service, body = {}, { sourceIp } = {}) {
     const chk = S.checkScalable(s, service, await S.composeVersion(r));
     if (!chk.ok) throw bad(`${service}: ${chk.block}`, 409);
     const missing = chk.fixes.filter(f => !(f === 'dropPorts' ? prev.fix_ports : prev.fix_name));
-    if (missing.length) throw bad(`${service} needs ${missing.map(f => (f === 'dropPorts' ? 'its host port moved behind the proxy' : 'its container_name dropped')).join(' and ')} before it can have more than one replica — press + once and accept the fix, then set the rule`, 409);
+    if (missing.length) throw bad(`${service} needs ${missing.map(f => (f === 'dropPorts' ? 'its host port moved behind the proxy' : 'its container_name dropped')).join(' and ')} before it can have more than one replica - press + once and accept the fix, then set the rule`, 409);
   }
   let sim = prev.sim_until || 0;
   if (rule.mode === 'auto' && prev.mode !== 'auto') sim = body.skipSimulation ? 0 : Date.now() + SIM_MS;
@@ -160,7 +160,7 @@ async function readCap(serverId, docker) {
   return hostCapFrom(info, mem, load);
 }
 const EVERY_MS = 60000;
-const scalers = new Map(); // server → Scaler (its samples and waits live in memory)
+const scalers = new Map(); // server > Scaler (its samples and waits live in memory)
 let timer = null, running = false;
 
 async function tick(now = Date.now()) {
@@ -207,7 +207,7 @@ async function sampleTick(now = Date.now()) {
 }
 const pctl = (arr, p) => { if (!arr.length) return 0; const a = [...arr].sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.max(0, Math.ceil(p / 100 * a.length) - 1))]; };
 /**
- * Replicas for a rule from what the service really did. samples: [{ t, replicas, cpu, mem }] — cpu / mem as % of one
+ * Replicas for a rule from what the service really did. samples: [{ t, replicas, cpu, mem }] - cpu / mem as % of one
  * replica's own limit (mem null without a memory limit). lim: the limits from the compose file (never suggested: they
  * are the user's). fits: replicas more that fit on the server, or Infinity. Pure.
  */
@@ -228,14 +228,14 @@ function suggestFrom(samples, lim = {}, fits = Infinity, { cpuUp = 70, cpuDown =
   const notes = [];
   if (Number.isFinite(fits) && max > current + fits) { const capped = Math.max(min, current + fits); notes.push(`Only ${fits} more replica${fits === 1 ? '' : 's'} fit on the server, so the maximum is ${capped} instead of ${max}.`); max = capped; }
   const p95 = Math.round(pctl(per, 95));
-  if (p95 < 20 && lim.cpu) notes.push(`Each replica used at most ${p95}% of its ${lim.cpu} CPU limit — the limit is much higher than it needs. That is your choice in the compose file; DockGate does not change it, but a lower limit would let more replicas fit.`);
-  if (pctl(per, 95) < 2) notes.push('The service was almost idle: these numbers are a safe start — look again after a busy day.');
+  if (p95 < 20 && lim.cpu) notes.push(`Each replica used at most ${p95}% of its ${lim.cpu} CPU limit - the limit is much higher than it needs. That is your choice in the compose file; DockGate does not change it, but a lower limit would let more replicas fit.`);
+  if (pctl(per, 95) < 2) notes.push('The service was almost idle: these numbers are a safe start - look again after a busy day.');
   return {
     enough: true, readings: rows.length, hours, notes,
     values: { min, max, cpuUp, cpuDown, memUp, memDown: memUp ? memUp - 30 : null },
     why: {
-      min: `usually ${Math.round(pctl(load, 50) * 100)}% of one replica's CPU limit in all — fits in ${min} at ${cpuUp}%`,
-      max: `at its busiest (95% of the time) ${Math.round(pctl(load, 95) * 100)}% — needs ${need}; the maximum is 1.5× that`,
+      min: `usually ${Math.round(pctl(load, 50) * 100)}% of one replica's CPU limit in all - fits in ${min} at ${cpuUp}%`,
+      max: `at its busiest (95% of the time) ${Math.round(pctl(load, 95) * 100)}% - needs ${need}; the maximum is 1.5× that`,
       cpuUp: `per replica it used ${Math.round(pctl(per, 50))}% usually and ${p95}% at most`,
       memUp: memSwing ? `memory rose from ${Math.round(pctl(memPer, 50))}% to ${Math.round(pctl(memPer, 95))}% of its limit with load` : 'memory stayed about the same: CPU alone is enough',
     },

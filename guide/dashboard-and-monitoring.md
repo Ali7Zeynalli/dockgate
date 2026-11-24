@@ -1,6 +1,6 @@
 # Dashboard and Monitoring
 
-> **Where:** sidebar **Overview → Dashboard** and **Overview → Monitoring**
+> **Where:** sidebar **Overview > Dashboard** and **Overview > Monitoring**
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**). Monitoring also lists every server.
 
@@ -14,8 +14,8 @@ The first page after login: the state of the server picked in the top bar.
 
 | Part | What it shows |
 |---|---|
-| **Top bar** | With Swarm on, *Swarm · 6/6 tasks* (or *no leader*); **Prune…**; refresh. With several servers, a strip of every server with its state and *Open the console* |
-| **Needs attention on all servers** | With several servers: containers in trouble (restarting, unhealthy, stopped with an error), images with a newer version in their registry (from the daily check), and scheduled work whose last run failed (DockGate's tasks, deploy recipes, cron jobs with alerts) — on every server. **Open** switches to that server and opens the container or the page. A server with an access password not typed in this session shows only *locked*. Swarm's own task containers are left out (Swarm → Services shows a service in trouble) |
+| **Top bar** | With Swarm on, *Swarm, 6/6 tasks* (or *no leader*); **Prune...**; refresh. With several servers, a strip of every server with its state and *Open the console* |
+| **Needs attention on all servers** | With several servers: containers in trouble (restarting, unhealthy, stopped with an error), images with a newer version in their registry (from the daily check), and scheduled work whose last run failed (DockGate's tasks, deploy recipes, cron jobs with alerts) - on every server. **Open** switches to that server and opens the container or the page. A server with an access password not typed in this session shows only *locked*. Swarm's own task containers are left out (Swarm > Services shows a service in trouble) |
 | **Host Metrics** | The host's CPU, memory, disk and swap over the last 15 minutes, live; uptime and load; network I/O; processes, open ports, disks and top processes |
 | **Counters** | Total containers, running, stopped, restarting; images, volumes, networks, Compose projects |
 | **Container Resources** | CPU, memory and network I/O of the containers |
@@ -24,7 +24,7 @@ The first page after login: the state of the server picked in the top bar.
 | **Disk Usage** | Space used by images, containers, volumes and build cache |
 | **Top Images by Size** | The largest images |
 | **Uptime & Restarts** | How long containers run, and which restart often |
-| **Smart Insights** | Space you can free: containers stopped for 7+ days, unused and dangling images, volumes no container uses. Click one to open **Resources → Cleanup** |
+| **Smart Insights** | Space you can free: containers stopped for 7+ days, unused and dangling images, volumes no container uses. Click one to open **Resources > Cleanup** |
 | **Recent Activity** | The latest entries of the audit log |
 | **System Info** | Docker version, storage driver, CPUs, memory, architecture; registries connected |
 | **Quick Actions** | **Start All Stopped**, **Stop All Running**, **Restart All** (each asks first) |
@@ -37,13 +37,13 @@ Click a container, image or count to open its page.
 
 ![Monitoring](images/monitoring.png)
 
-**The server list** shows every server: its state, CPU and memory over the last 40 minutes, and disk use. Click a server for its full graphs and alert policies (**Server → Status → Monitoring**).
+**The server list** shows every server: its state, CPU and memory over the last 40 minutes, and disk use. Click a server for its full graphs and alert policies (**Server > Status > Monitoring**).
 
 **Under it**, the server picked in the top bar:
 
 | Graph | What it shows |
 |---|---|
-| **Host CPU · Host memory · Disk usage (/)** | The whole server |
+| **Host CPU, Host memory, Disk usage (/)** | The whole server |
 | **Network I/O** | Traffic in and out of the server (RX / TX) |
 | **Containers** | CPU and memory per container |
 
@@ -55,7 +55,7 @@ Click a container, image or count to open its page.
 
 ### Alerts
 
-Alerts for high CPU, memory and disk, and for a server that goes down, are set in **Settings → Notifications → Rules** (for all servers) and per server in **Server → Status → Monitoring**. They are sent through the channels in **Settings → Notifications**.
+Alerts for high CPU, memory and disk, and for a server that goes down, are set in **Settings > Notifications > Rules** (for all servers) and per server in **Server > Status > Monitoring**. They are sent through the channels in **Settings > Notifications**.
 
 ## Good to know
 

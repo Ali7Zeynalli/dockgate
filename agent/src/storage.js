@@ -3,7 +3,7 @@
 
 const MAX_LINE = 8192;
 
-// The level a structured log line states itself, or null. JSON (level / severity / lvl) or logfmt (level=…).
+// The level a structured log line states itself, or null. JSON (level / severity / lvl) or logfmt (level=...).
 const LEVEL_MAP = { error: 'error', err: 'error', fatal: 'error', panic: 'error', critical: 'error', crit: 'error', emerg: 'error', emergency: 'error', alert: 'error', dpanic: 'error',
   warn: 'warn', warning: 'warn', info: 'info', notice: 'info', information: 'info', debug: 'debug', trace: 'debug', verbose: 'debug' };
 function explicitLevel(s) {
@@ -238,12 +238,12 @@ class Storage {
   }
 
   // Level from the words in the line (the same rules as DockGate's log viewer). An HTTP 5xx / 4xx counts only where a
-  // status code stands (after the request, or status=…), not any 3-digit number (a 512-byte response is not an error).
+  // status code stands (after the request, or status=...), not any 3-digit number (a 512-byte response is not an error).
   // stderr alone is not an error: many programs (postgres, nginx) write normal lines there, so it is a warning.
   _detectLogLevel(msg, stream) {
     const s = String(msg || '');
     // A structured line names its own level ({"level":"warn"}, level=warn, "severity":"ERROR"): that wins over the
-    // words. Caddy's {"level":"warn", … "error":"reading: context canceled"} is a warning, not an error.
+    // words. Caddy's {"level":"warn", ... "error":"reading: context canceled"} is a warning, not an error.
     const own = explicitLevel(s);
     if (own) return own;
     const http = /"\s(\d{3})\s|\bHTTP\/\d(?:\.\d)?"?\s(\d{3})\b|\bstatus[=:]\s*"?(\d{3})\b/i.exec(s);

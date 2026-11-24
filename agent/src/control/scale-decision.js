@@ -1,4 +1,4 @@
-// When to add or remove replicas — one rule for Swarm Auto Scaling, Compose Auto Scaling in DockGate, and the Edge
+// When to add or remove replicas - one rule for Swarm Auto Scaling, Compose Auto Scaling in DockGate, and the Edge
 // agent (which can only ship files from agent/). Pure, unit tested.
 /**
  * The change due now, or null. Pure (unit tested).
@@ -68,7 +68,7 @@ function decideHost(rule, samples, replicas, now, last, cap, lim, everyMs) {
   const d = decide(rule, samples, replicas, now, last, everyMs);
   if (!d || d.action !== 'up') return d;
   const room = hostRoom(cap, lim);
-  if (room.fits <= 0) return { action: 'full', from: replicas, to: replicas, reason: `${d.reason} — but the server has no room (${room.why})` };
+  if (room.fits <= 0) return { action: 'full', from: replicas, to: replicas, reason: `${d.reason} - but the server has no room (${room.why})` };
   if (replicas + room.fits < d.to) return { ...d, to: replicas + room.fits, reason: `${d.reason}; only ${room.fits} more fit${room.fits === 1 ? 's' : ''} (${room.why})` };
   return d;
 }

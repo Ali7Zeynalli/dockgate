@@ -73,7 +73,7 @@ async function sendTestMessage() {
   if (!chatId) return { success: false, error: 'Telegram chat ID not configured' };
 
   return sendMessage({
-    text: '🐳 <b>DockGate — Test Message</b>\n\nTelegram notification is working correctly.\nYou will receive alerts for enabled events.',
+    text: '🐳 <b>DockGate - Test Message</b>\n\nTelegram notification is working correctly.\nYou will receive alerts for enabled events.',
     eventType: 'test',
   });
 }
@@ -83,7 +83,7 @@ function formatAlert(subject, details) {
   let msg = `🐳 <b>${escapeHtml(subject)}</b>\n`;
   if (details) {
     for (const [key, value] of Object.entries(details)) {
-      if (value !== undefined && value !== null && value !== '' && value !== '—') {
+      if (value !== undefined && value !== null && value !== '' && value !== '-') {
         msg += `\n<b>${escapeHtml(key)}:</b> <code>${escapeHtml(String(value))}</code>`;
       }
     }
@@ -100,7 +100,7 @@ function formatLogs(logs, max = 700) {
   if (!logs) return '';
   let t = String(logs).trim();
   if (!t) return '';
-  if (t.length > max) t = '…' + t.slice(-max);
+  if (t.length > max) t = '...' + t.slice(-max);
   return `\n\n📋 <b>Recent logs:</b>\n<pre>${escapeHtml(t)}</pre>`;
 }
 

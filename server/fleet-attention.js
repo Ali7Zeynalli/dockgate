@@ -1,4 +1,4 @@
-// What needs attention on every server (Dashboard → "Needs attention on all servers"):
+// What needs attention on every server (Dashboard -> "Needs attention on all servers"):
 //   updates   images with a newer version in their registry (from the daily newer-image check, nothing is asked now)
 //   problems  containers that are restarting, unhealthy, or stopped with an error (exit code other than 0)
 //   jobs      scheduled work whose last run failed: DockGate's tasks, deploy recipes, cron jobs with alerts
@@ -11,7 +11,7 @@ const failedSchedules = db.prepare("SELECT name, last_run_at, last_message FROM 
 const recipeRuns = db.prepare(`SELECT r.name, r.dir, t.status, t.started_at FROM task_recipes r
   JOIN task_runs t ON t.id = (SELECT id FROM task_runs WHERE server_id = r.server_id AND dir = r.dir AND kind = 'recipe' AND name = r.name ORDER BY started_at DESC LIMIT 1)
   WHERE r.server_id = ?`);
-// DockGate's own short-lived helpers, and Swarm's task containers (Swarm keeps old ones as history; Swarm → Services shows a service in trouble)
+// DockGate's own short-lived helpers, and Swarm's task containers (Swarm keeps old ones as history; Swarm > Services shows a service in trouble)
 const isHelper = (c) => { const l = c.Labels || {}; return !!(l['dockgate.helper'] || l['dockgate.task'] || l['com.docker.swarm.task.id']); };
 const nameOf = (c) => String((c.Names && c.Names[0]) || c.Id || '').replace(/^\//, '');
 

@@ -1,7 +1,7 @@
 'use strict';
 // Docker restarted under a running agent (its socket mount went dead): the agent exits after 2 minutes so Docker
 // starts it again with a fresh mount. And a container that stays unhealthy is told at once, then after 1 h, 6 h,
-// then once a day — not every cooldown.
+// then once a day - not every cooldown.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { backoff, STEPS_MS } = require('../src/backoff');

@@ -1,4 +1,4 @@
-// System → Help (server/help.js): the guide inside DockGate. Mounted at /api/help (behind the login).
+// System > Help (server/help.js): the guide inside DockGate. Mounted at /api/help (behind the login).
 const express = require('express');
 const path = require('path');
 const router = express.Router();

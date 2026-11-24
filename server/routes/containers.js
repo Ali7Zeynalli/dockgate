@@ -6,8 +6,8 @@ const { logAction } = require('../audit');
 
 /**
  * Return a shallow copy of an audit `details` body with secret-bearing values masked, so
- * environment variables (tokens, passwords, …) never land in the audit log or its CSV export.
- * Masks the values of an `Env` array ("KEY=secret" → "KEY=***"); everything else is left intact.
+ * environment variables (tokens, passwords, ...) never land in the audit log or its CSV export.
+ * Masks the values of an `Env` array ("KEY=secret" -> "KEY=***"); everything else is left intact.
  * @param {*} body the raw request body about to be logged
  * @returns {*} a safe-to-log copy (or the original if there is nothing to redact)
  */
@@ -29,7 +29,7 @@ router.get('/', async (req, res) => {
     const all = req.query.all !== 'false';
     // DockGate's own short-lived helpers (config writes, site checks, commands on the host) are not listed
     const containers = (await dockerService.listContainers(all)).filter(c => !(c.labels || {})['dockgate.helper']);
-    // Containers moved to Swarm (docker run → stack): kept stopped; marked so they are not started twice.
+    // Containers moved to Swarm (docker run -> stack): kept stopped; marked so they are not started twice.
     const moved = new Map();
     try { for (const r of require('../swarm-stacks').stackRows()) if (r.from_container) moved.set(JSON.parse(r.from_container).id, r.name); } catch (e) { /* Swarm off */ }
     // Enrich with metadata
@@ -56,14 +56,14 @@ async function nameOf(id) {
 // ---- Image update with history and roll back (server/image-update-runner.js) ----
 const runner = () => require('../image-update-runner');
 const activeServer = () => dockerService.getActiveServerId() || 'local';
-// History of image updates: ?name= (container) and/or ?project=&service=; none → the whole server.
+// History of image updates: ?name= (container) and/or ?project=&service=; none -> the whole server.
 router.get('/image-updates/history', (req, res) => {
   try { res.json({ rows: runner().history({ serverId: activeServer(), name: req.query.name, project: req.query.project, service: req.query.service, limit: req.query.limit }) }); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 router.get('/image-updates/job/:jobId', (req, res) => {
   const j = runner().getJob(req.params.jobId);
-  if (!j) return res.status(404).json({ error: 'Job not found (DockGate restarted?) — see the update history' });
+  if (!j) return res.status(404).json({ error: 'Job not found (DockGate restarted?) - see the update history' });
   res.json(j);
 });
 router.get('/image-updates/:historyId/log', (req, res) => {
@@ -159,7 +159,7 @@ router.get('/:id/export', async (req, res) => {
   }
 });
 
-// One-off command execution — defined BEFORE "/:id/:action" so "exec" isn't treated as an action.
+// One-off command execution - defined BEFORE "/:id/:action" so "exec" isn't treated as an action.
 // body: { cmd: "ls -la /" | ["ls","-la","/"] }
 router.post('/:id/exec', async (req, res) => {
   try {
@@ -174,13 +174,13 @@ router.post('/:id/exec', async (req, res) => {
   }
 });
 
-// Live resource / restart-policy update (C1) — body: { cpus?, memory?, restart? }
+// Live resource / restart-policy update (C1) - body: { cpus?, memory?, restart? }
 router.post('/:id/update', async (req, res) => {
   try {
     const { cpus, memory, restart } = req.body || {};
     const cfg = {};
     if (cpus !== undefined && cpus !== '') cfg.NanoCpus = Math.round(parseFloat(cpus) * 1e9) || 0;
-    // MemorySwap = -1 → limitsiz swap (Docker qaydası: MemorySwap ≥ Memory; bərabər qoymaq swap-ı 0 edərdi)
+    // MemorySwap = -1 -> limitsiz swap (Docker qaydası: MemorySwap ≥ Memory; bərabər qoymaq swap-ı 0 edərdi)
     if (memory !== undefined && memory !== '') { cfg.Memory = parseMemory(memory); cfg.MemorySwap = -1; }
     if (restart) cfg.RestartPolicy = { Name: restart, MaximumRetryCount: restart === 'on-failure' ? 3 : 0 };
     if (!Object.keys(cfg).length) return res.status(400).json({ error: 'Nothing to update' });
@@ -192,7 +192,7 @@ router.post('/:id/update', async (req, res) => {
   }
 });
 
-// Commit the container into a new image (C4) — body: { repo, tag?, comment? }
+// Commit the container into a new image (C4) - body: { repo, tag?, comment? }
 router.post('/:id/commit', async (req, res) => {
   try {
     const { repo, tag, comment } = req.body || {};
@@ -205,7 +205,7 @@ router.post('/:id/commit', async (req, res) => {
   }
 });
 
-// Recreate with (optionally) a new image — the update flow (C2). body: { image? }
+// Recreate with (optionally) a new image - the update flow (C2). body: { image? }
 router.post('/:id/recreate', async (req, res) => {
   try {
     const before = await dockerService.docker.getContainer(req.params.id).inspect().catch(() => null);
@@ -218,13 +218,13 @@ router.post('/:id/recreate', async (req, res) => {
   }
 });
 
-// C3 — browse files inside a (running) container
+// C3 - browse files inside a (running) container
 router.get('/:id/files', async (req, res) => {
   try { res.json(await dockerService.containerListFiles(req.params.id, req.query.path || '/')); }
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// C3 — download a single file from a container
+// C3 - download a single file from a container
 router.get('/:id/file', async (req, res) => {
   try {
     if (!req.query.path) return res.status(400).json({ error: 'path required' });
@@ -233,7 +233,7 @@ router.get('/:id/file', async (req, res) => {
   } catch (err) { if (!res.headersSent) res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// C3 — copy in: extract an uploaded tar into the container at ?path= (raw tar body). Before /:id/:action.
+// C3 - copy in: extract an uploaded tar into the container at ?path= (raw tar body). Before /:id/:action.
 router.post('/:id/upload', async (req, res) => {
   try {
     await dockerService.containerUpload(req.params.id, req.query.path || '/', req);
@@ -284,7 +284,7 @@ router.post('/:id/:action', async (req, res) => {
   }
 });
 
-// Create container (raw dockerode config — advanced)
+// Create container (raw dockerode config - advanced)
 router.post('/', async (req, res) => {
   try {
     const result = await dockerService.createContainer(req.body);
@@ -339,7 +339,7 @@ function buildRunConfig(b) {
   return config;
 }
 
-// Run a container from the guided form: (optional) pull → create → start.
+// Run a container from the guided form: (optional) pull -> create -> start.
 // Runs against the ACTIVE daemon (local or remote SSH) via the docker Proxy.
 router.post('/run', async (req, res) => {
   try {
@@ -356,7 +356,7 @@ router.post('/run', async (req, res) => {
     try {
       result = await dockerService.createContainer(config);
     } catch (e) {
-      // Image not present locally → pull once then retry
+      // Image not present locally -> pull once then retry
       if (/no such image|not found/i.test(e.message)) {
         await dockerService.pullImage(b.image);
         result = await dockerService.createContainer(config);

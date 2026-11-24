@@ -1,5 +1,5 @@
 // Unit tests for the pure helpers in server/docker.js.
-// These need no Docker daemon — parseStats/demuxLogs are pure functions.
+// These need no Docker daemon - parseStats/demuxLogs are pure functions.
 const { test } = require('node:test');
 const assert = require('node:assert');
 const docker = require('../../server/docker');
@@ -14,7 +14,7 @@ test('parseStats computes CPU%, memory% and IO from a raw stats sample', () => {
     pids_stats:   { current: 5 },
   };
   const s = docker.parseStats(raw);
-  // cpuDelta=1000, systemDelta=2000, cpus=2 → (1000/2000)*2*100 = 100
+  // cpuDelta=1000, systemDelta=2000, cpus=2 -> (1000/2000)*2*100 = 100
   assert.strictEqual(s.cpuPercent, 100);
   assert.strictEqual(s.memoryPercent, 50);
   assert.strictEqual(s.networkRx, 100);

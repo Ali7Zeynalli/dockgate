@@ -1,10 +1,10 @@
-// Server Console → Scripts: scripts kept in DockGate's database per server and written to the server as files.
+// Server Console > Scripts: scripts kept in DockGate's database per server and written to the server as files.
 // Two kinds (spec.kind):
-//   blocks — made with the Script Builder (script-builder.js); DockGate writes the file from the steps.
-//   code   — your own shell: the file on the server is the text (edited with the file editor, Versions kept there).
+//   blocks - made with the Script Builder (script-builder.js); DockGate writes the file from the steps.
+//   code   - your own shell: the file on the server is the text (edited with the file editor, Versions kept there).
 //            spec.external: a script that was already on the server, added where it is (never moved or deleted).
 // Every write is checked with bash -n first. A blocks script whose file was changed by hand is not replaced
-// without asking (409 CHANGED) — keep the server's version (it becomes a code script) or write the steps again. Root-owned under /opt/dockgate/scripts when the SSH user has
+// without asking (409 CHANGED) - keep the server's version (it becomes a code script) or write the steps again. Root-owned under /opt/dockgate/scripts when the SSH user has
 // passwordless sudo (so a root cron job never runs a file another user can change), else ~/.dockgate/scripts.
 const { db } = require('./db');
 const B = require('./script-builder');
@@ -39,14 +39,14 @@ function get(serverId, id) { return row(q.get.get(serverId, Number(id))); }
 const uniq = (fn, name) => { try { return fn(); } catch (e) { if (/UNIQUE/.test(e.message)) throw err(`A script named ${name} exists on this server`, 400); throw e; } };
 
 /** Save a blocks script (create or update) and write the file. A file changed by hand since DockGate wrote it
- *  → 409 CHANGED with the server's text, unless force. */
+ *  -> 409 CHANGED with the server's text, unless force. */
 async function save(server, input, id = null, { force = false } = {}) {
   const spec = { kind: 'blocks', name: String(input.name || '').trim(), title: String(input.title || '').slice(0, 120), steps: input.steps || [] };
   const text = B.build(spec); // validates
   let sid = id ? Number(id) : null;
   const old = sid ? get(server.id, sid) : null;
   if (sid && !old) throw err('Script not found', 404);
-  if (old && old.kind === 'code') throw err('This script is your own code — edit its file', 400);
+  if (old && old.kind === 'code') throw err('This script is your own code - edit its file', 400);
   if (old && old.path && old.hash && !force) {
     const cur = await readText(server, old.path).catch(() => null);
     if (cur != null && sha(cur) !== old.hash) throw err('The file was changed on the server after DockGate wrote it', 409, { code: 'CHANGED', current: cur });
@@ -157,7 +157,7 @@ async function deploy(server, name, text) {
 if ! e=$(bash -n "$t" 2>&1); then echo "$e" | sed "s|$t|${name}.sh|g"; rm -f "$t"; exit 42; fi
 if [ "$(id -u)" = 0 ] || sudo -n true 2>/dev/null; then S=; [ "$(id -u)" = 0 ] || S="sudo -n"; $S install -d -o root -g root -m 0755 /opt/dockgate/scripts && $S install -o root -g root -m 0750 "$t" /opt/dockgate/scripts/${name}.sh && echo "/opt/dockgate/scripts/${name}.sh"
 else mkdir -p "$HOME/.dockgate/scripts" && install -m 0750 "$t" "$HOME/.dockgate/scripts/${name}.sh" && echo "$HOME/.dockgate/scripts/${name}.sh"; fi; rc=$?; rm -f "$t"; exit $rc`);
-  if (r.code === 42) throw err(`bash -n: the script has a syntax error — ${String(r.stdout || '').trim().slice(0, 400)}`, 400, { code: 'SYNTAX' });
+  if (r.code === 42) throw err(`bash -n: the script has a syntax error - ${String(r.stdout || '').trim().slice(0, 400)}`, 400, { code: 'SYNTAX' });
   const path = String(r.stdout || '').trim().split('\n').pop();
   if (r.code !== 0 || !path.startsWith('/')) throw err(`Could not write the script: ${String(r.stdout || r.stderr || '').trim().slice(0, 200)}`, 500);
   return path;
@@ -177,12 +177,12 @@ const asRoot = (s) => s.path.startsWith('/opt/dockgate/') || !!s.spec.root;
 
 /** Run it once (as root when the file is root's), up to 5 minutes; output and exit code. */
 async function run(server, id) {
-  const s = get(server.id, id); if (!s || !s.path) throw Object.assign(new Error('Script not found — save it first'), { statusCode: 404 });
+  const s = get(server.id, id); if (!s || !s.path) throw Object.assign(new Error('Script not found - save it first'), { statusCode: 404 });
   const root = asRoot(s);
   let timer;
   const r = await Promise.race([
     remoteExec.execRemote(server, `s=$(date +%s%N); ${root ? '{ [ "$(id -u)" = 0 ] && bash ' + shq(s.path) + ' || sudo -n bash ' + shq(s.path) + '; }' : 'bash ' + shq(s.path)} > /tmp/.dg-run-$$ 2>&1; rc=$?; e=$(date +%s%N); tail -c 30000 /tmp/.dg-run-$$; rm -f /tmp/.dg-run-$$; echo "__DGRUN__$rc $(( (e - s) / 1000000 ))"`),
-    new Promise((_, rej) => { timer = setTimeout(() => rej(Object.assign(new Error('Still running after 5 minutes — it goes on on the server'), { statusCode: 504 })), 300000); }),
+    new Promise((_, rej) => { timer = setTimeout(() => rej(Object.assign(new Error('Still running after 5 minutes - it goes on on the server'), { statusCode: 504 })), 300000); }),
   ]).finally(() => clearTimeout(timer));
   const out = String(r.stdout || '') + String(r.stderr || '');
   const m = /__DGRUN__(\d+) (\d+)\s*$/.exec(out);
@@ -193,7 +193,7 @@ async function run(server, id) {
 
 /** Schedule it in cron (root's crontab for a root script, else the SSH user's), with log and alerts. */
 async function schedule(server, id, { schedule: sched, notify = ['fail'], log = true }) {
-  const s = get(server.id, id); if (!s || !s.path) throw Object.assign(new Error('Script not found — save it first'), { statusCode: 404 });
+  const s = get(server.id, id); if (!s || !s.path) throw Object.assign(new Error('Script not found - save it first'), { statusCode: 404 });
   const source = asRoot(s) ? (server.username === 'root' ? 'user' : 'root') : 'user';
   const cron = require('./cron');
   return cron.change(server, source, { action: 'add', entry: { schedule: sched, command: s.path, enabled: true, meta: { name: s.name, notify, log } } }, { serverId: server.id });

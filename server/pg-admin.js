@@ -1,4 +1,4 @@
-// Tools → Databases → Admin: who is connected, roles, databases, table health (dead rows, vacuum), slow queries.
+// Tools > Databases > Admin: who is connected, roles, databases, table health (dead rows, vacuum), slow queries.
 // Everything that changes something needs "Allow changes" on the connection (pg-studio settings).
 const S = require('./pg-studio');
 const P = require('./pg-sql');

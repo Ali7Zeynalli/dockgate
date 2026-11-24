@@ -4,8 +4,8 @@ const { stmts } = require('../db');
 const { logAction } = require('../audit');
 const sshKeys = require('../ssh-keys');
 
-// GET / — list keys (private key is NEVER returned, only public + fingerprint)
-// Which Git-deployed compose projects use each key (from their .dockgate-git.json) — shown as "Used by".
+// GET / - list keys (private key is NEVER returned, only public + fingerprint)
+// Which Git-deployed compose projects use each key (from their .dockgate-git.json) - shown as "Used by".
 function keyUsage() {
   const fs = require('fs'), path = require('path');
   const { COMPOSE_DIR } = require('./compose-shared');
@@ -25,14 +25,14 @@ router.get('/', (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /:id — one key (public only)
+// GET /:id - one key (public only)
 router.get('/:id', (req, res) => {
   const row = stmts.getSshKey.get(req.params.id);
   if (!row) return res.status(404).json({ error: 'SSH key not found' });
   res.json(sshKeys.mask(row));
 });
 
-// POST / — generate a new keypair.  body: { name, description?, type? (ed25519|rsa) }
+// POST / - generate a new keypair.  body: { name, description?, type? (ed25519|rsa) }
 router.post('/', async (req, res) => {
   try {
     const { name, description, type } = req.body || {};
@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// POST /import — import an existing private key.  body: { name, description?, privateKey }
+// POST /import - import an existing private key.  body: { name, description?, privateKey }
 router.post('/import', async (req, res) => {
   try {
     const { name, description, privateKey } = req.body || {};
@@ -52,7 +52,7 @@ router.post('/import', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// PUT /:id — rename / re-describe (key material is immutable).  body: { name?, description? }
+// PUT /:id - rename / re-describe (key material is immutable).  body: { name?, description? }
 router.put('/:id', (req, res) => {
   try {
     const row = stmts.getSshKey.get(req.params.id);
@@ -65,7 +65,7 @@ router.put('/:id', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /:id/test — verify the key can authenticate to a repo (git ls-remote).  body: { repoUrl }
+// POST /:id/test - verify the key can authenticate to a repo (git ls-remote).  body: { repoUrl }
 router.post('/:id/test', async (req, res) => {
   try {
     if (!stmts.getSshKey.get(req.params.id)) return res.status(404).json({ error: 'SSH key not found' });

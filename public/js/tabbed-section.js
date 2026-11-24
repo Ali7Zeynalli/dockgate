@@ -1,4 +1,4 @@
-// Tabbed section wrapper — hosts several existing routes as the pages of one section (Resources, Deploy,
+// Tabbed section wrapper - hosts several existing routes as the pages of one section (Resources, Deploy,
 // Observe, Tools). The sidebar lists the pages, so there is no second tab bar on the page itself. It invokes
 // the existing Router handler for the active page into a sub-container and manages that handler's cleanup.
 // Router.navigate already bumps Router._navId, so the previous page's in-flight async / pollers self-invalidate.
@@ -44,4 +44,4 @@ function renderTabbedSection(content, params, config) {
   const top = key === 'swarm' ? (el) => (window.SwarmUI && window.SwarmUI.jobBar ? window.SwarmUI.jobBar(el) : null) : null;
   return renderTabbedSection(content, params, { tabs: item.tabs, default: item.default, top });
 }));
-// Old #/activity?tab=logs … links are sent to their new place by Router.resolve; Activity itself is Audit log and Notifications sent.
+// Old #/activity?tab=logs ... links are sent to their new place by Router.resolve; Activity itself is Audit log and Notifications sent.

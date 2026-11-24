@@ -1,4 +1,4 @@
-// Edge Agent (observability) — Settings ▸ Notifications panel. Plain-script globals (loaded before settings.js).
+// Edge Agent (observability) - Settings ▸ Notifications panel. Plain-script globals (loaded before settings.js).
 // Renders a per-server table with Install / Start-Stop / Update / Channel / Remove, an "Install on all"
 // fan-out, and a re-openable deploy-log modal. All actions hit /api/agent/* (DockGate-initiated outbound).
 (function () {
@@ -22,7 +22,7 @@
     const actions = !installed
       ? `${UI.btn('Install', `data-act="install" data-sid="${sid}"`, 'btn-primary')}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="0"`)}`
       : `${UI.btn(state === 'running' ? 'Stop' : 'Start', `data-act="${state === 'running' ? 'stop' : 'start'}" data-sid="${sid}"`)}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="1"`)}${UI.btn('Update', `data-act="update" data-sid="${sid}"`, st.updateAvailable ? 'btn-primary' : '')}${UI.btn('Remove', `data-act="remove" data-sid="${sid}"`, 'btn-danger')}`;
-    const ver = installed ? `<span class="ui-sub">v${escapeHtml(st.version || '?')}${st.build ? ` · <span class="td-mono">${escapeHtml(st.build.slice(0, 7))}</span>` : ''}</span>${st.updateAvailable ? ` ${UI.pill('warn', 'Update available')}` : ` ${UI.pill('ok', 'Up to date')}`}` : '<span class="ui-sub">—</span>';
+    const ver = installed ? `<span class="ui-sub">v${escapeHtml(st.version || '?')}${st.build ? `, <span class="td-mono">${escapeHtml(st.build.slice(0, 7))}</span>` : ''}</span>${st.updateAvailable ? ` ${UI.pill('warn', 'Update available')}` : ` ${UI.pill('ok', 'Up to date')}`}` : '<span class="ui-sub">-</span>';
     const sick = state === 'running' && st.health === 'unhealthy';
     const stateCell = sick ? `${UI.pill('bad', 'Unhealthy')}<div class="ui-sub" style="white-space:normal;max-width:280px">${escapeHtml(st.problem || '')}</div><div style="margin-top:4px">${UI.btn('Restart', `data-act="restart" data-sid="${sid}"`, 'btn-primary')}</div>` : UI.pill(...pillOf);
     return [`<b>${escapeHtml(s.name || s.id)}</b>${s.name ? `<div class="ui-sub td-mono">${sid}</div>` : ''}`, `<span class="td-mono text-xs">${escapeHtml(s.host || '')}</span>`, stateCell, ver, actions];
@@ -30,13 +30,13 @@
 
   // Live deploy-log modal. Polls the job; stops cleanly when the job ends or the modal is closed.
   // Always shows a Close button, and a prominent status that turns green/red when the job finishes.
-  // Closing it only closes the window: the job keeps running on DockGate, and Servers → Edge agent → Agent jobs
+  // Closing it only closes the window: the job keeps running on DockGate, and Servers > Edge agent > Agent jobs
   // (or the banner there while it runs) opens it again, with the whole log so far.
   const KIND = { install: 'Install', 'install-all': 'Install', update: 'Update', reconfigure: 'Apply settings', remove: 'Remove' };
   function openJobModal(jobId, onDone) {
     const body = `<div id="edge-job-log"></div>
-      <div id="edge-job-status" style="margin-top:10px;font-size:13px;font-weight:600;color:var(--text-muted);">⏳ Working…</div>
-      <div class="ui-sub" style="margin-top:4px">Closing this window does not stop the job. Reopen it from Servers → Edge agent → Agent jobs.</div>`;
+      <div id="edge-job-status" style="margin-top:10px;font-size:13px;font-weight:600;color:var(--text-muted);">⏳ Working...</div>
+      <div class="ui-sub" style="margin-top:4px">Closing this window does not stop the job. Reopen it from Servers > Edge agent > Agent jobs.</div>`;
     const m = showModal('Edge agent job', body, []);
     if (typeof window._edgeAgentJobsRefresh === 'function' && document.getElementById('edge-agent-jobs')) setTimeout(window._edgeAgentJobsRefresh, 300);
     const footer = m.overlay.querySelector('#modal-footer');
@@ -49,7 +49,7 @@
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     // The job log in the shared LogViewer: new complete lines are appended as the job writes them.
     const viewer = LogViewer.mount(m.overlay.querySelector('#edge-job-log'), { key: 'agent-job', fileName: `agent-job-${jobId}`, live: true, limits: null, compact: true, height: '340px',
-      retention: 'DockGate keeps the newest 200 agent jobs', empty: 'Starting…' });
+      retention: 'DockGate keeps the newest 200 agent jobs', empty: 'Starting...' });
     let sent = 0;
     const feed = (log, all) => { const lines = String(log || '').split('\n'); const upto = all ? lines.length : lines.length - 1; if (upto > sent) { viewer.push(lines.slice(sent, upto).join('\n')); sent = upto; } };
     let timer = null, finished = false, sawRunning = false, titled = false;
@@ -57,20 +57,20 @@
       if (!m.overlay || !m.overlay.isConnected) { if (timer) clearTimeout(timer); return; }
       try {
         const j = await API.get('/agent/job/' + jobId);
-        if (!titled) { titled = true; const h = m.overlay.querySelector('.modal-title, .modal-header h3, .modal-header h2'); if (h) h.textContent = `Edge agent · ${KIND[j.kind] || j.kind}${(j.servers || []).length ? ' · ' + j.servers.map(x => x.id).join(', ') : ''}`; }
+        if (!titled) { titled = true; const h = m.overlay.querySelector('.modal-title, .modal-header h3, .modal-header h2'); if (h) h.textContent = `Edge agent, ${KIND[j.kind] || j.kind}${(j.servers || []).length ? ', ' + j.servers.map(x => x.id).join(', ') : ''}`; }
         if (j.status === 'running') sawRunning = true;
         feed(j.log, j.status !== 'running');
         const se = m.overlay.querySelector('#edge-job-status');
-        const per = (j.servers || []).map(s => `${s.id}: ${s.state}${s.message ? ' — ' + s.message : ''}`).join('   ·   ');
+        const per = (j.servers || []).map(s => `${s.id}: ${s.state}${s.message ? ' - ' + s.message : ''}`).join('  ,   ');
         if (j.status === 'running') {
-          if (se) { se.style.color = 'var(--text-muted)'; se.textContent = `⏳ Working…${j.total > 1 ? ` (${j.ok}/${j.total})` : ''}` + (per ? '   |   ' + per : ''); }
+          if (se) { se.style.color = 'var(--text-muted)'; se.textContent = `⏳ Working...${j.total > 1 ? ` (${j.ok}/${j.total})` : ''}` + (per ? '   |   ' + per : ''); }
         } else if (!finished) {
           finished = true;
           const okAll = j.status === 'done' && (j.failed || 0) === 0;
           if (se) {
             se.style.color = okAll ? '#16a34a' : (j.status === 'failed' ? '#dc2626' : '#d97706');
             se.textContent = (okAll ? '✓ Completed' : (j.status === 'failed' ? '✗ Failed' : '⚠ Completed with errors'))
-              + (j.total > 1 ? ` — ${j.ok}/${j.total} ok, ${j.failed} failed` : '')
+              + (j.total > 1 ? ` - ${j.ok}/${j.total} ok, ${j.failed} failed` : '')
               + (per ? '   |   ' + per : '');
           }
           closeBtn.className = 'btn btn-primary';   // highlight Close once it's done
@@ -81,19 +81,19 @@
           if (timer) clearTimeout(timer);
           return;
         }
-      } catch (e) { /* transient — keep polling */ }
+      } catch (e) { /* transient - keep polling */ }
       if (!finished) timer = setTimeout(poll, 1200);
     }
     poll();
   }
 
-  // Per-server channel override editor. installed=true → recreate the agent after saving (push the change).
+  // Per-server channel override editor. installed=true -> recreate the agent after saving (push the change).
   async function channelModal(sid, onDone, installed) {
     let cur = {};
     try { cur = await API.get('/agent/channel/' + sid); } catch (e) {}
     const v = (k) => escapeHtml(cur[k] || '');
     const body = `
-      <div class="text-xs text-muted" style="margin-bottom:10px;">Leave blank to use the global channel. Any field you fill here overrides it for <strong>${escapeHtml(sid)}</strong> only — e.g. a different Telegram bot/chat for this server.</div>
+      <div class="text-xs text-muted" style="margin-bottom:10px;">Leave blank to use the global channel. Any field you fill here overrides it for <strong>${escapeHtml(sid)}</strong> only - e.g. a different Telegram bot/chat for this server.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <input class="input" id="ec-tg-token" placeholder="Telegram Bot Token" type="password" value="${v('tg_token')}">
         <input class="input" id="ec-tg-chat" placeholder="Telegram Chat ID" value="${v('tg_chat_id')}">
@@ -104,7 +104,7 @@
         <input class="input" id="ec-smtp-from" placeholder="From Email" value="${v('smtp_from')}">
         <input class="input" id="ec-smtp-to" placeholder="To Email" value="${v('smtp_to')}">
       </div>`;
-    const m = showModal('Channel override — ' + sid, body, []);
+    const m = showModal('Channel override - ' + sid, body, []);
     const val = (id) => { const el = m.overlay.querySelector('#' + id); return el ? el.value : ''; };
     const footer = m.overlay.querySelector('#modal-footer');
 
@@ -139,7 +139,7 @@
     if (footer) { footer.appendChild(clearBtn); footer.appendChild(saveBtn); }
   }
 
-  // Server picker — choose which servers to install the agent on (the "Install on servers…" button).
+  // Server picker - choose which servers to install the agent on (the "Install on servers..." button).
   async function openInstallPicker(onDone) {
     let servers = [], status = {};
     try {
@@ -147,7 +147,7 @@
       servers = (sr.servers || sr || []).filter(s => s.id !== 'local' && s.type !== 'local');
       status = st || {};
     } catch (e) { showToast(e.message, 'error'); return; }
-    if (!servers.length) { showToast('No remote servers — add one under Infrastructure first', 'warning'); return; }
+    if (!servers.length) { showToast('No remote servers - add one under Infrastructure first', 'warning'); return; }
 
     const rows = servers.map(s => {
       const st = status[s.id] || {};
@@ -156,18 +156,18 @@
         <input type="checkbox" class="edge-pick" value="${escapeHtml(s.id)}" ${installed ? '' : 'checked'}>
         <span style="flex:1;min-width:0;">
           <span class="settings-row-label" style="margin:0;">${escapeHtml(s.id)}</span>
-          <span class="text-xs text-muted"> · ${escapeHtml(s.host || '')} · ${pill(st)}</span>
+          <span class="text-xs text-muted">, ${escapeHtml(s.host || '')}, ${pill(st)}</span>
         </span>
       </label>`;
     }).join('');
 
     const body = `
-      <div class="text-xs text-muted" style="margin-bottom:10px;">Pick the servers to install the DockGate agent on. Already-installed servers start unchecked — re-checking one reinstalls (recreates) it.</div>
+      <div class="text-xs text-muted" style="margin-bottom:10px;">Pick the servers to install the DockGate agent on. Already-installed servers start unchecked - re-checking one reinstalls (recreates) it.</div>
       <label style="display:flex;align-items:center;gap:10px;padding:4px 0 10px;font-weight:600;cursor:pointer;border-bottom:1px solid var(--border);">
         <input type="checkbox" id="edge-pick-all"> <span>Select all</span>
       </label>
       <div style="max-height:320px;overflow:auto;">${rows}</div>`;
-    const m = showModal('Install DockGate agent — choose servers', body, []);
+    const m = showModal('Install DockGate agent - choose servers', body, []);
     const allCb = m.overlay.querySelector('#edge-pick-all');
     allCb?.addEventListener('change', () => {
       m.overlay.querySelectorAll('.edge-pick').forEach(cb => { cb.checked = allCb.checked; });
@@ -188,21 +188,21 @@
     if (footer) footer.appendChild(go);
   }
 
-  // ---- public entry points used by the Servers → Edge agent page ----
+  // ---- public entry points used by the Servers > Edge agent page ----
 
   window.edgeAgentSectionHtml = function (channelConfigured) {
     return `<div class="ui-page">
-      ${UI.header('', 'A small outbound-only container on each server collects metrics and logs, watches Docker events and sends alerts through your notification channels. It needs no inbound port, works behind NAT and keeps watching when DockGate is offline. While it runs, DockGate\'s own monitor for that server pauses so you get no duplicate alerts.', `${UI.btn('Refresh', 'id="edge-refresh"')} ${UI.primary('Install on servers…', 'id="edge-install-all"')}`)}
+      ${UI.header('', 'A small outbound-only container on each server collects metrics and logs, watches Docker events and sends alerts through your notification channels. It needs no inbound port, works behind NAT and keeps watching when DockGate is offline. While it runs, DockGate\'s own monitor for that server pauses so you get no duplicate alerts.', `${UI.btn('Refresh', 'id="edge-refresh"')} ${UI.primary('Install on servers...', 'id="edge-install-all"')}`)}
       ${channelConfigured ? '' : `<div class="insight-card warning" style="margin-bottom:12px"><span>No notification channel is set up yet, so the agent installs in metrics-only mode. <a href="#/settings?tab=notifications">Set up a channel</a></span></div>`}
       <div id="edge-agent-update"></div>
-      <div id="edge-agent-table"><div class="text-xs text-muted">Loading servers…</div></div>
+      <div id="edge-agent-table"><div class="text-xs text-muted">Loading servers...</div></div>
       <h3 style="margin:22px 0 8px;font-size:15px">Agent jobs</h3>
-      <div id="edge-agent-jobs"><div class="text-xs text-muted">Loading…</div></div>
+      <div id="edge-agent-jobs"><div class="text-xs text-muted">Loading...</div></div>
     </div>`;
   };
 
   // Without a notification channel the agent still installs (metrics-only), so the table loads either way.
-  // (It used to return here, leaving "Loading servers…" for good.)
+  // (It used to return here, leaving "Loading servers..." for good.)
   window.attachEdgeAgentHandlers = function (root, channelConfigured) {
 
     async function load() {
@@ -274,12 +274,12 @@
       let jobs = [];
       try { jobs = await API.get('/agent/jobs'); } catch (e) { el.innerHTML = `<div class="text-xs text-muted">Could not load agent jobs: ${escapeHtml(e.message)}</div>`; return; }
       const running = jobs.filter(j => j.status === 'running');
-      const what = (j) => `${KIND[j.kind] || escapeHtml(j.kind)}${j.server_id ? ` · ${escapeHtml(j.server_id)}` : j.total > 1 ? ` · ${j.total} servers` : ''}`;
-      const when = (t) => (t ? formatTime(String(t).replace(' ', 'T') + (/[zZ]$/.test(t) ? '' : 'Z')) : '—');
+      const what = (j) => `${KIND[j.kind] || escapeHtml(j.kind)}${j.server_id ? `, ${escapeHtml(j.server_id)}` : j.total > 1 ? `, ${j.total} servers` : ''}`;
+      const when = (t) => (t ? formatTime(String(t).replace(' ', 'T') + (/[zZ]$/.test(t) ? '' : 'Z')) : '-');
       const result = (j) => j.status === 'running' ? UI.pill('warn', `Running${j.total > 1 ? ` ${j.ok + j.failed}/${j.total}` : ''}`)
         : j.status === 'failed' ? UI.pill('bad', 'Failed') : (j.failed ? UI.pill('warn', `${j.failed} of ${j.total} failed`) : UI.pill('ok', 'Done'));
       el.innerHTML = (running.length ? running.map(j => `<div class="insight-card info" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <span style="flex:1;min-width:200px"><b>Running:</b> ${what(j)} · started ${escapeHtml(when(j.started_at))}</span>${UI.btn('Open log', `data-job="${escapeHtml(j.id)}"`, 'btn-primary')}</div>`).join('') : '')
+            <span style="flex:1;min-width:200px"><b>Running:</b> ${what(j)}, started ${escapeHtml(when(j.started_at))}</span>${UI.btn('Open log', `data-job="${escapeHtml(j.id)}"`, 'btn-primary')}</div>`).join('') : '')
         + (jobs.length ? UI.table([{ label: 'Started' }, { label: 'Job' }, { label: 'Result' }, { label: '', align: 'right' }],
             jobs.slice(0, 10).map(j => ({ cells: [`<span class="ui-sub">${escapeHtml(when(j.started_at))}</span>`, what(j), result(j), UI.btn('Open log', `data-job="${escapeHtml(j.id)}"`)] })), { minWidth: 480 })
           : '<div class="text-xs text-muted">No agent jobs yet.</div>');
@@ -299,7 +299,7 @@
   };
 
   // Once per browser session, shortly after sign-in: if some servers run an older agent build than DockGate carries,
-  // say so in a notice that opens Servers → Edge agent (where "Update all servers" is). Nothing updates by itself.
+  // say so in a notice that opens Servers > Edge agent (where "Update all servers" is). Nothing updates by itself.
   window.openAgentJob = openJobModal;
 
   window.edgeAgentUpdateCheck = function () {
@@ -326,7 +326,7 @@
   window.edgeAgentSync = async function (silentIfNone) {
     try {
       const r = await API.post('/agent/sync', {});
-      if (r && r.jobId) { showToast(`Pushing settings to ${r.count} agent(s)…`, 'info'); openJobModal(r.jobId); }
+      if (r && r.jobId) { showToast(`Pushing settings to ${r.count} agent(s)...`, 'info'); openJobModal(r.jobId); }
       else if (!silentIfNone) showToast('No installed agents to update', 'info');
     } catch (e) { showToast('Agent sync failed: ' + e.message, 'error'); }
   };

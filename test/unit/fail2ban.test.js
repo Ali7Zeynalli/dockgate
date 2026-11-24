@@ -1,4 +1,4 @@
-// Unit tests for the fail2ban helpers — the maths and parsing the Fail2ban tab relies on.
+// Unit tests for the fail2ban helpers - the maths and parsing the Fail2ban tab relies on.
 const { test } = require('node:test');
 const assert = require('node:assert');
 const F = require('../../server/security/fail2ban');
@@ -14,9 +14,9 @@ test('fail2ban: durations parse like fail2ban does', () => {
 
 test('fail2ban: ban lengths follow fail2ban\'s default increment formula (bantime × 2^n × factor, capped)', () => {
   const day = 86400;
-  // factor 2 (the admin's config): 1d → 4d → 8d → 16d → 30d (cap)
+  // factor 2 (the admin's config): 1d -> 4d -> 8d -> 16d -> 30d (cap)
   assert.deepEqual(F.banSequence({ bantime: '24h', increment: true, factor: 2, maxtime: '30d' }, 6).map(s => s / day), [1, 4, 8, 16, 30, 30]);
-  // factor 1: 1d → 2d → 4d → 8d → 16d → 30d
+  // factor 1: 1d -> 2d -> 4d -> 8d -> 16d -> 30d
   assert.deepEqual(F.banSequence({ bantime: '24h', increment: true, factor: 1, maxtime: '30d' }, 6).map(s => s / day), [1, 2, 4, 8, 16, 30]);
   // no increment: always the same
   assert.deepEqual(F.banSequence({ bantime: '1h', increment: false, factor: 2, maxtime: '30d' }, 3), [3600, 3600, 3600]);
@@ -34,7 +34,7 @@ test('fail2ban: settings are validated; whitelist accepts IPs/CIDRs only', () =>
   assert.throws(() => F.normalizeSettings({ ...F.DEFAULTS, sshd: { ...F.DEFAULTS.sshd, mode: 'evil' } }), e => e.statusCode === 400);
 });
 
-test('fail2ban: generated files — sshd on the real port, recidive reads the log FILE, history kept', () => {
+test('fail2ban: generated files - sshd on the real port, recidive reads the log FILE, history kept', () => {
   const s = F.normalizeSettings(F.DEFAULTS);
   const jail = F.buildJailConf(s, 2222);
   assert.match(jail, /^\[sshd\][\s\S]*^port = 2222$/m);
@@ -47,7 +47,7 @@ test('fail2ban: generated files — sshd on the real port, recidive reads the lo
   assert.deepEqual(back.ignoreip, []);
 });
 
-test('fail2ban: problems — impossible recidive, wrong port, short memory, banned DockGate', () => {
+test('fail2ban: problems - impossible recidive, wrong port, short memory, banned DockGate', () => {
   const user = { ...F.DEFAULTS, recidive: { enabled: true, maxretry: 5, findtime: '1d', bantime: '1w' }, dbpurgeage: '1d' };
   const p = F.detectProblems({ settings: user, runtime: { dbpurgeage: 86400, jails: ['sshd', 'recidive'], recidiveLogpath: 'No file is currently monitored' }, sshPort: 2222, jailPort: '22', dockgateIp: '192.0.2.1', banned: ['192.0.2.1'] });
   const text = p.map(x => x.text).join('\n');
@@ -71,7 +71,7 @@ test('fail2ban: parses status, bans with time and the ban log', () => {
   assert.equal(h[1].action, 'Ban');
 });
 
-test('fail2ban: recidive on the journal — names the file that wins, or says Save / reload fixes it', () => {
+test('fail2ban: recidive on the journal - names the file that wins, or says Save / reload fixes it', () => {
   const set = F.normalizeSettings(F.DEFAULTS);
   const jailFile = F.buildJailConf(set, 22);
   const rt = { dbpurgeage: 2592000, jails: ['sshd', 'recidive'], recidiveLogpath: 'No file is currently monitored' };
@@ -90,13 +90,13 @@ test('fail2ban: recidive on the journal — names the file that wins, or says Sa
   assert.equal(F.readAfterDockgate('/etc/fail2ban/jail.d/zz-mine.conf'), true);
   assert.equal(F.readAfterDockgate('/etc/fail2ban/jail.d/defaults-debian.conf'), false);
   assert.equal(F.readAfterDockgate('/etc/fail2ban/jail.d/custom.local'), true);
-  // 2) nothing overrides, DockGate's file lacks the logpath → Save fixes it
+  // 2) nothing overrides, DockGate's file lacks the logpath > Save fixes it
   p = F.detectProblems({ ...base, sources: [], jailFileText: '[recidive]\nenabled = true\nbackend = systemd\n' }).find(x => /recidive reads/.test(x.text));
   assert.match(p.text, /does not set it yet/); assert.equal(p.fix, 'save');
   // 3) the file is right but fail2ban was not reloaded
   p = F.detectProblems({ ...base, sources: [] }).find(x => /recidive reads/.test(x.text));
   assert.match(p.text, /not reloaded/); assert.equal(p.fix, 'save');
-  // fixed: reads the log file → no recidive problem
+  // fixed: reads the log file -> no recidive problem
   assert.equal(F.detectProblems({ ...base, sources: src, runtime: { ...rt, recidiveLogpath: '`- /var/log/fail2ban.log' } }).filter(x => /recidive/.test(x.text)).length, 0);
 });
 
@@ -113,7 +113,7 @@ test('fail2ban: running values that differ from DockGate\'s file are reported wi
   // recidive enabled in DockGate's file but switched off by a later file
   p = F.detectProblems({ ...base, runtime: { ...rt, jails: ['sshd'], jailOpts: { sshd: rt.jailOpts.sshd } }, sources: F.parseSources('/etc/fail2ban/jail.local|recidive|enabled = false\n/etc/fail2ban/jail.local|sshd|maxretry = 5') });
   assert.ok(p.some(x => /recidive is on in DockGate's settings but not running: \/etc\/fail2ban\/jail\.local sets "enabled = false"/.test(x.text)));
-  // all equal → nothing
+  // all equal -> nothing
   assert.deepEqual(F.detectProblems({ ...base, runtime: { ...rt, jailOpts: { ...rt.jailOpts, sshd: { maxretry: 3, findtime: 86400, bantime: 86400 } } }, sources: [] }), []);
 });
 
@@ -179,7 +179,7 @@ test('fail2ban takeover: the user\'s jail.local is carried over, corrected and s
   assert.equal(t.settings.sshd.mode, 'aggressive');
   assert.equal(t.settings.recidive.increment, true);
   assert.equal(t.settings.recidive.maxtime, '90d');
-  // corrected: 5 bans in 1d can never happen → 3 in 30d; DockGate's IP added; existing allowlist kept
+  // corrected: 5 bans in 1d can never happen -> 3 in 30d; DockGate's IP added; existing allowlist kept
   assert.equal(t.settings.recidive.maxretry, 3);
   assert.equal(t.settings.recidive.findtime, '30d');
   assert.ok(t.corrected.some(c => c.what === 'recidive'));
@@ -223,8 +223,8 @@ test('fail2ban: allowlist not in effect, DockGate\'s IP missing, impossible reci
   assert.match(allow.text, /198\.51\.100\.10[\s\S]*jail\.local sets "ignoreip/); assert.equal(allow.fix, 'takeover');
   assert.ok(p.some(x => x.fix === 'allowdg'), "DockGate's IP offered");
   const never = p.find(x => /recidive can never trigger/.test(x.text));
-  assert.match(never.text, /5 sshd bans[\s\S]*window is 1d — these are the values fail2ban runs with/); assert.equal(never.fix, 'takeover');
-  // covered by a CIDR → no DockGate-IP warning
+  assert.match(never.text, /5 sshd bans[\s\S]*window is 1d - these are the values fail2ban runs with/); assert.equal(never.fix, 'takeover');
+  // covered by a CIDR -> no DockGate-IP warning
   assert.equal(F.coveredBy('192.0.2.44', ['192.0.2.0/24']), true);
   assert.equal(F.coveredBy('192.0.3.1', ['192.0.2.0/24']), false);
   // recidive increment is validated and written explicitly even when off

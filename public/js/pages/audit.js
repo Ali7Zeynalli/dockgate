@@ -31,7 +31,7 @@ Router.register('audit', async (content) => {
     content.innerHTML = `
       ${UI.header('Audit log', 'Every change made through DockGate: what, on which server, and from which IP address. Click a line for its details.',
         `<button class="btn btn-secondary btn-sm" id="audit-export">${Icons.download} Export CSV</button>
-         ${UI.menu([{ label: `${Icons.trash} Clear the log…`, attrs: 'id="audit-clear"', danger: true }])}`)}
+         ${UI.menu([{ label: `${Icons.trash} Clear the log...`, attrs: 'id="audit-clear"', danger: true }])}`)}
       <div data-lvroot></div>`;
     const tools = facets.servers.length > 1 ? `<select class="select" data-aserver aria-label="Server"><option value="">All servers</option>${facets.servers.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>` : '';
     viewer = LogViewer.mount(content.querySelector('[data-lvroot]'), {
@@ -49,7 +49,7 @@ Router.register('audit', async (content) => {
           try { det = JSON.stringify(JSON.parse(det)); } catch (x) { /* plain text */ }
           const server = r.server || 'local';
           return { t: toMs(r.created_at), l: levelOf(r.action), src: r.resource_type || '',
-            msg: `${r.action || ''}  ${r.resource_name || r.resource_id || '—'}${server !== 'local' ? `  @${server}` : ''}${r.source_ip ? `  from ${r.source_ip}` : ''}${det ? `  · ${det.length > 300 ? det.slice(0, 300) + '…' : det}` : ''}`,
+            msg: `${r.action || ''}  ${r.resource_name || r.resource_id || '-'}${server !== 'local' ? `  @${server}` : ''}${r.source_ip ? `  from ${r.source_ip}` : ''}${det ? ` , ${det.length > 300 ? det.slice(0, 300) + '...' : det}` : ''}`,
             meta: { Server: server, Action: r.action, Resource: r.resource_name || r.resource_id || '', 'Source IP': r.source_ip || '', Details: r.details || '' } };
         }) };
       },

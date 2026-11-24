@@ -36,7 +36,7 @@ router.post('/:id/connect', async (req, res) => {
     if (!container) return res.status(400).json({ error: 'container required' });
     await dockerService.connectNetwork(req.params.id, container);
     logAction({ req, resourceId: req.params.id, resourceType: 'network', resourceName: req.params.id.substring(0, 12), action: 'connect', details: { container } });
-    // Dual-log from the container's perspective — the action is usually initiated from the container
+    // Dual-log from the container's perspective - the action is usually initiated from the container
     // detail page, so it must also be visible when auditing that container's history.
     logAction({ req, resourceId: container, resourceType: 'container', resourceName: String(container).substring(0, 12), action: 'network-connect', details: { network: req.params.id.substring(0, 12) } });
     res.json({ success: true });

@@ -1,4 +1,4 @@
-// IP lists for firewall port sources (Firewall tab → IP lists). Official lists are fetched only when the
+// IP lists for firewall port sources (Firewall tab > IP lists). Official lists are fetched only when the
 // user asks ("Check for updates") and saved only after they confirm the shown difference.
 const express = require('express');
 const router = express.Router();

@@ -1,16 +1,16 @@
-// Isolated service-control worker — forked child process (same pattern as host-stats-worker.js /
+// Isolated service-control worker - forked child process (same pattern as host-stats-worker.js /
 // grant-docker-worker.js) so its ssh2 connection never contends with the main-process EventMonitor
 // connections to the same host. One-shot: performs ONE op, writes ONE JSON object to stdout, exits 0
 // (or writes the error to stderr and exits 1).
 //
 // SECURITY: this worker NEVER receives or runs free shell. Every command is resolved from the catalog
-// (catalog.serviceFor / serviceAction / isConfigPathAllowed) keyed by an item id + action — and a config
+// (catalog.serviceFor / serviceAction / isConfigPathAllowed) keyed by an item id + action - and a config
 // path is re-checked against the catalog allowlist HERE too (defence in depth against a route bypass).
 //
 // Input (argv[2], JSON): { host, port, username, keyPath?, password?, passphrase?, op, itemId?, configPath? }
-//   op='status'     → { distro, services:[{itemId,label,unit,timer,risk,managed,active,enabled,configPaths,na,reason}] }
-//   op='readconfig' → { path, exists, content }
-delete process.env.SSH_AUTH_SOCK; // auth strictly via the provided key/password — no agent fallback
+//   op='status'     -> { distro, services:[{itemId,label,unit,timer,risk,managed,active,enabled,configPaths,na,reason}] }
+//   op='readconfig' -> { path, exists, content }
+delete process.env.SSH_AUTH_SOCK; // auth strictly via the provided key/password - no agent fallback
 const { Client } = require('ssh2');
 const fs = require('fs');
 const catalog = require('./provision/catalog');
@@ -69,7 +69,7 @@ async function doStatus() {
   ok({ distro, services });
 }
 
-/** status/enabled output → booleans; null = unknown (no systemd and no probe for this service). */
+/** status/enabled output -> booleans; null = unknown (no systemd and no probe for this service). */
 function stateOf(statusOut, enabledOut) {
   const st = lastLine(statusOut), en = lastLine(enabledOut);
   return {
@@ -82,7 +82,7 @@ function stateOf(statusOut, enabledOut) {
 async function doReadConfig() {
   const distro = await detectDistro();
   const p = cfg.configPath;
-  // Defence in depth — the path must be an exact catalog allowlist entry for this item+distro.
+  // Defence in depth - the path must be an exact catalog allowlist entry for this item+distro.
   if (!catalog.isConfigPathAllowed(cfg.itemId, distro, p)) return fail('config path not allowed');
   const ex = await run(`test -f '${p}' && echo DG_YES || echo DG_NO`);
   if (!/DG_YES/.test(ex.out)) return ok({ path: p, exists: false, content: '' });
@@ -91,8 +91,8 @@ async function doReadConfig() {
   ok({ path: p, exists: true, content: c.out });
 }
 
-// op:'action' — run ONE lifecycle action (start/stop/restart/enable/disable). The command is resolved
-// from the catalog (serviceAction) — never from the request. Reports the post-action status.
+// op:'action' - run ONE lifecycle action (start/stop/restart/enable/disable). The command is resolved
+// from the catalog (serviceAction) - never from the request. Reports the post-action status.
 async function doAction() {
   const distro = await detectDistro();
   let cmd;
@@ -116,9 +116,9 @@ async function doAction() {
 
 const sudoErr = (out) => /password is required|a terminal is required|^sudo:/im.test(out) ? 'passwordless sudo is required for config editing' : '';
 
-// op:'writeconfig' — FIXED, guarded sequence. Content arrives base64-encoded (cfg.contentB64) and is
+// op:'writeconfig' - FIXED, guarded sequence. Content arrives base64-encoded (cfg.contentB64) and is
 // decoded on the remote, so the raw bytes NEVER touch the command string. The path is re-checked against
-// the catalog allowlist here. backup → write → validate → (on fail) restore → apply → (if the service
+// the catalog allowlist here. backup -> write -> validate -> (on fail) restore -> apply -> (if the service
 // fails to come back) restore + re-apply. A service is never left with a broken config.
 async function doWriteConfig() {
   const distro = await detectDistro();
@@ -137,7 +137,7 @@ async function doWriteConfig() {
     const cp = await run(`sudo -n cp -a -- '${p}' '${bak}'`);
     if (cp.code !== 0) return fail(sudoErr(cp.out) || 'backup failed');
   }
-  // write via base64 → tee (bytes never interpolated as raw text)
+  // write via base64 -> tee (bytes never interpolated as raw text)
   const w = await run(`printf '%s' '${b64}' | base64 -d | sudo -n tee -- '${p}' >/dev/null`);
   if (w.code !== 0) { await restore(); return fail(sudoErr(w.out) || 'write failed'); }
 
@@ -151,21 +151,21 @@ async function doWriteConfig() {
   // apply (reload for ssh, restart otherwise)
   const applyCmd = svc.verbs.apply || svc.verbs.restart;
   const ap = await run(applyCmd);
-  // Always probe is-active (valid for timers too — an enabled timer reports "active"); a daemon/timer
+  // Always probe is-active (valid for timers too - an enabled timer reports "active"); a daemon/timer
   // that fails to come up gets the previous config restored and re-applied.
   const healthOk = ['active', 'unknown'].includes(lastLine((await run(svc.verbs.status)).out)); // unknown = no systemd, nothing to probe
   if (ap.code !== 0 || !healthOk) {
     await restore();
     const re = await run(applyCmd);
     const backOk = lastLine((await run(svc.verbs.status)).out) === 'active' || re.code === 0;
-    return fail('service failed to start with the new config — previous config restored and ' + (backOk ? 'the service is back up' : 'the service is STILL DOWN, manual intervention needed') + (validatorOut ? ' · ' + validatorOut : ''));
+    return fail('service failed to start with the new config - previous config restored and ' + (backOk ? 'the service is back up' : 'the service is STILL DOWN, manual intervention needed') + (validatorOut ? ', ' + validatorOut : ''));
   }
   // Keep only the 5 most recent backups for this path (avoids unbounded .dockgate.bak.* in /etc).
   if (existed) await run(`for f in $(ls -1t '${p}'.dockgate.bak.* 2>/dev/null | tail -n +6); do sudo -n rm -f -- "$f"; done`);
   ok({ ok: true, backup: existed ? bak : null, validated: !!svc.validate, validatorOut });
 }
 
-// op:'oplist' — list current state for a service's rich ops (fail2ban bans / ufw rules).
+// op:'oplist' - list current state for a service's rich ops (fail2ban bans / ufw rules).
 async function doOpList() {
   const distro = await detectDistro();
   let plan, meta;
@@ -194,7 +194,7 @@ async function doOpList() {
   ok({ kind: 'none', meta });
 }
 
-// op:'op' — run a validated, parameterised op (ban/unban/allow/deny/delete). Confirm is gated at the
+// op:'op' - run a validated, parameterised op (ban/unban/allow/deny/delete). Confirm is gated at the
 // route; the worker re-validates the params and resolves the command from the catalog.
 async function doOp() {
   const distro = await detectDistro();

@@ -1,5 +1,5 @@
 'use strict';
-// System → Help: the guide index, search and pages (server/help.js), and the Markdown renderer (public/js/help.js) —
+// System > Help: the guide index, search and pages (server/help.js), and the Markdown renderer (public/js/help.js) -
 // nothing in a guide page becomes HTML, links to other pages stay inside DockGate, images come from the guide.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -34,7 +34,7 @@ test('every image a guide page shows is in guide/images', () => {
   }
 });
 
-test('the renderer: headings with anchors, lists, tables, code, quotes, links and images — HTML in the text stays text', () => {
+test('the renderer: headings with anchors, lists, tables, code, quotes, links and images - HTML in the text stays text', () => {
   const ctx = { window: {}, document: { addEventListener() {} }, location: { hash: '#/proxies' }, CSS: { escape: (s) => s }, API: {}, console };
   vm.createContext(ctx); vm.runInContext(fs.readFileSync(path.join(__dirname, '../../public/js/help.js'), 'utf8'), ctx);
   const Help = ctx.window.Help;

@@ -13,7 +13,7 @@ router.get('/:name', async (req, res) => {
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// V1 — download a gzipped tar of the volume's contents (helper container streams it)
+// V1 - download a gzipped tar of the volume's contents (helper container streams it)
 router.get('/:name/backup', async (req, res) => {
   try {
     logAction({ req, resourceType: 'volume', resourceName: req.params.name, action: 'backup' });
@@ -23,7 +23,7 @@ router.get('/:name/backup', async (req, res) => {
   }
 });
 
-// V3 — list a directory inside the volume (helper container, read-only)
+// V3 - list a directory inside the volume (helper container, read-only)
 router.get('/:name/files', async (req, res) => {
   try {
     res.json(await dockerService.listVolumeFiles(req.params.name, req.query.path || ''));
@@ -32,7 +32,7 @@ router.get('/:name/files', async (req, res) => {
   }
 });
 
-// V3 — download a single file from the volume
+// V3 - download a single file from the volume
 router.get('/:name/file', async (req, res) => {
   try {
     if (!req.query.path) return res.status(400).json({ error: 'path required' });
@@ -67,7 +67,7 @@ for (const [route, fn, action] of [['mkdir', (n, b) => FE.mkdir('volume', n, Str
   });
 }
 
-// V2 — restore the volume from an uploaded .tar.gz (helper container extracts the streamed upload).
+// V2 - restore the volume from an uploaded .tar.gz (helper container extracts the streamed upload).
 // The body is the raw tar.gz (Content-Type isn't application/json, so it bypasses express.json).
 router.post('/:name/restore', async (req, res) => {
   try {
@@ -79,7 +79,7 @@ router.post('/:name/restore', async (req, res) => {
   }
 });
 
-// V4 — clone the volume into a new one (helper container copies the data)
+// V4 - clone the volume into a new one (helper container copies the data)
 router.post('/:name/clone', async (req, res) => {
   try {
     const dest = (req.body || {}).dest;

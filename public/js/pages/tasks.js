@@ -1,5 +1,5 @@
-// Deploy → Tasks: the Makefile targets, just recipes, Taskfile tasks, package.json scripts, *.sh, Ansible
-// playbooks and Kamal of a folder on the server picked in the top bar (SSH, or the local one) (server/tasks.js) — run them with a live
+// Deploy > Tasks: the Makefile targets, just recipes, Taskfile tasks, package.json scripts, *.sh, Ansible
+// playbooks and Kamal of a folder on the server picked in the top bar (SSH, or the local one) (server/tasks.js) - run them with a live
 // log; deploy recipes of steps with checks and recovery, run by hand, on a schedule, by a GitHub / GitLab /
 // Bitbucket push or from CI (server/task-recipes.js, task-hooks.js); the folder's env and secrets.
 Router.register('tasks', async (content, params = {}) => {
@@ -12,7 +12,7 @@ Router.register('tasks', async (content, params = {}) => {
   const TOOL = { make: 'make', just: 'just', task: 'task', ansible: 'ansible-playbook', kamal: 'kamal' };
   const STATUS = { ok: ['ok', '✓ ok'], failed: ['bad', '✗ failed'], running: ['info', '▶ running'], cancelled: ['warn', '■ cancelled'], timeout: ['warn', '⏱ time limit'], interrupted: ['warn', 'interrupted'] };
   const pill = (s) => { const [l, t] = STATUS[s] || ['', s]; return UI.pill(l, t); };
-  const ago = (t) => (t ? (typeof timeAgo === 'function' ? timeAgo(t) : new Date(t).toLocaleString()) : '—');
+  const ago = (t) => (t ? (typeof timeAgo === 'function' ? timeAgo(t) : new Date(t).toLocaleString()) : '-');
   const srv = Store.get('activeServer') || {};
 
   content.innerHTML = `<style>
@@ -40,14 +40,14 @@ Router.register('tasks', async (content, params = {}) => {
   }
 
   function drawShell() {
-    root.innerHTML = `${UI.header('Tasks', `Tasks and deploy recipes of project folders on <b>${esc(srv.name || srv.host || 'Local')}</b> — found in the Makefile, justfile, Taskfile, package.json, *.sh, Ansible and Kamal files. Nothing runs until you press Run.`, UI.primary('+ Add folder', 'data-add'))}
-      ${isLocal ? '<div class="insight-card" style="margin-bottom:12px"><div><b>Local server:</b> tasks run where DockGate runs (its container), as its user. <span class="td-mono">git</span>, <span class="td-mono">docker compose</span>, <span class="td-mono">curl</span> and <span class="td-mono">bash</span> are there; <span class="td-mono">make</span>, <span class="td-mono">npm</span> and others only if you installed them. A URL check asks from the container — use the app\'s container name or the host\'s address, not 127.0.0.1. Folders of the host are under <span class="td-mono">/host</span>.</div></div>' : ''}
+    root.innerHTML = `${UI.header('Tasks', `Tasks and deploy recipes of project folders on <b>${esc(srv.name || srv.host || 'Local')}</b> - found in the Makefile, justfile, Taskfile, package.json, *.sh, Ansible and Kamal files. Nothing runs until you press Run.`, UI.primary('+ Add folder', 'data-add'))}
+      ${isLocal ? '<div class="insight-card" style="margin-bottom:12px"><div><b>Local server:</b> tasks run where DockGate runs (its container), as its user. <span class="td-mono">git</span>, <span class="td-mono">docker compose</span>, <span class="td-mono">curl</span> and <span class="td-mono">bash</span> are there; <span class="td-mono">make</span>, <span class="td-mono">npm</span> and others only if you installed them. A URL check asks from the container - use the app\'s container name or the host\'s address, not 127.0.0.1. Folders of the host are under <span class="td-mono">/host</span>.</div></div>' : ''}
       <div class="tk-wrap">
         <div class="card" style="padding:8px">
           ${st.projects.length ? st.projects.map(p => `<button type="button" class="tk-proj" data-proj="${esc(p.dir)}" aria-current="${p.dir === st.dir}"><b>${esc(p.name)}</b> ${p.compose ? UI.chip('compose') : ''} ${p.last ? pill(p.last.status) : ''}<small class="td-mono">${esc(p.dir)}</small></button>`).join('')
             : '<div class="ui-sub" style="padding:8px">No folders yet. Compose projects of this server show here by themselves; add any other folder with <b>+ Add folder</b>.</div>'}
         </div>
-        <div style="min-width:0" data-main>${st.dir ? '<div class="card"><div class="skeleton" style="height:200px"></div></div>' : '<div class="card" style="padding:24px"><b>Add the folder of a project</b><div class="ui-sub" style="margin-top:6px">The folder with its Makefile, deploy.sh, justfile or package.json — for example <span class="td-mono">/srv/myapp</span>.</div></div>'}</div>
+        <div style="min-width:0" data-main>${st.dir ? '<div class="card"><div class="skeleton" style="height:200px"></div></div>' : '<div class="card" style="padding:24px"><b>Add the folder of a project</b><div class="ui-sub" style="margin-top:6px">The folder with its Makefile, deploy.sh, justfile or package.json - for example <span class="td-mono">/srv/myapp</span>.</div></div>'}</div>
       </div>`;
     root.querySelector('[data-add]').onclick = addFolder;
     root.querySelectorAll('[data-proj]').forEach(b => b.onclick = () => { st.dir = b.dataset.proj; st.view = 'tasks'; st.info = null; st.recipes = null; save(); drawShell(); openProject(); });
@@ -82,9 +82,9 @@ Router.register('tasks', async (content, params = {}) => {
     const g = i.git;
     main().innerHTML = `<div class="card" style="padding:12px 14px;margin-bottom:12px">
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="font-size:15px">${esc(p.name || st.dir)}</b><span class="td-mono ui-sub">${esc(st.dir)}</span>
-          ${g ? UI.chip(`git · ${esc(g.branch || 'detached')}${g.changed ? ` · ${g.changed} changed` : ''}`, { title: `${g.last || ''}\n${g.remote || ''}` }) : UI.chip('not a Git folder')}
+          ${g ? UI.chip(`git, ${esc(g.branch || 'detached')}${g.changed ? `, ${g.changed} changed` : ''}`, { title: `${g.last || ''}\n${g.remote || ''}` }) : UI.chip('not a Git folder')}
           ${i.compose.length ? UI.chip(`compose: ${esc(i.compose.join(', '))}`) : ''}
-          <span style="flex:1"></span>${p.notAdded ? UI.btn('Add to the list', 'data-keep') : ''} ${UI.menu([{ label: 'Refresh', attrs: 'data-refresh' }, { label: 'Run a command…', attrs: 'data-custom' }, ...(g ? [] : [{ label: 'Connect to Git…', attrs: 'data-gitconnect' }]), ...(p.added ? [{ label: 'Remove from the list…', attrs: 'data-rm', danger: true }] : [])])}</div>
+          <span style="flex:1"></span>${p.notAdded ? UI.btn('Add to the list', 'data-keep') : ''} ${UI.menu([{ label: 'Refresh', attrs: 'data-refresh' }, { label: 'Run a command...', attrs: 'data-custom' }, ...(g ? [] : [{ label: 'Connect to Git...', attrs: 'data-gitconnect' }]), ...(p.added ? [{ label: 'Remove from the list...', attrs: 'data-rm', danger: true }] : [])])}</div>
         ${g && g.last ? `<div class="ui-sub" style="margin-top:4px">Last commit: ${esc(g.last)}</div>` : ''}
         ${i.running.length ? `<div style="margin-top:6px">${i.running.map(r => `${UI.pill('info', '▶ running')} ${esc(r.name)} ${UI.btn('Open log', `data-log="${r.id}"`)}`).join(' ')}</div>` : ''}
       </div>
@@ -118,7 +118,7 @@ Router.register('tasks', async (content, params = {}) => {
         ${UI.table([{ label: 'Task' }, { label: 'What it does' }, { label: '', align: 'right' }], list.map(t => ({ cells: [
           `<span class="td-mono"><b>${esc(t.name)}</b></span>${t.risky ? ' ' + UI.pill('warn', 'asks first') : ''}`,
           `<span class="text-sm">${esc(t.desc || '')}</span>${t.params && t.params.length ? `<div class="ui-sub">parameters: ${t.params.map(p => esc(p.name + (p.def != null ? '=' + p.def : ''))).join(', ')}</div>` : ''}${t.deps && t.deps.length ? `<div class="ui-sub">runs first: ${esc(t.deps.join(', '))}</div>` : ''}`,
-          `<div class="td-actions" style="justify-content:flex-end">${UI.btn('▶ Run', `data-run="${i.tasks.indexOf(t)}"`, 'btn-primary')} ${src === 'kamal' ? '' : UI.btn('Dry run', `data-dry="${i.tasks.indexOf(t)}"`, 'btn-secondary')} ${UI.btn('Options…', `data-opt="${i.tasks.indexOf(t)}"`)}</div>`] })), { minWidth: 560 })}</div>`;
+          `<div class="td-actions" style="justify-content:flex-end">${UI.btn('▶ Run', `data-run="${i.tasks.indexOf(t)}"`, 'btn-primary')} ${src === 'kamal' ? '' : UI.btn('Dry run', `data-dry="${i.tasks.indexOf(t)}"`, 'btn-secondary')} ${UI.btn('Options...', `data-opt="${i.tasks.indexOf(t)}"`)}</div>`] })), { minWidth: 560 })}</div>`;
     }).join('');
     body().querySelectorAll('[data-run]').forEach(b => b.onclick = () => { const t = i.tasks[b.dataset.run]; (t.params && t.params.some(p => p.def == null)) ? runOptions(t) : runTask(t, {}); });
     body().querySelectorAll('[data-dry]').forEach(b => b.onclick = () => runTask(i.tasks[b.dataset.dry], { dry: true }));
@@ -127,12 +127,12 @@ Router.register('tasks', async (content, params = {}) => {
   function runOptions(t) {
     const vars = t.source === 'just' ? (t.params || []).map(p => ({ name: p.name, value: p.def || '', param: true })) : t.source === 'make' || t.source === 'task' ? (t.vars || []) : [];
     UI.dialog({ title: `Run ${esc(t.source)} ${esc(t.name)}`, saveLabel: '▶ Run',
-      body: `${vars.length ? `<div class="ui-label" style="margin-bottom:4px">${t.source === 'just' ? 'Parameters' : 'Variables'} <span class="ui-sub">— empty = the file's own value</span></div>${vars.map(v => `<label class="ui-field" style="margin-bottom:6px"><span class="ui-label td-mono">${esc(v.name)}</span><input class="input td-mono" data-var="${esc(v.name)}" placeholder="${esc(v.value || '')}"></label>`).join('')}` : ''}
+      body: `${vars.length ? `<div class="ui-label" style="margin-bottom:4px">${t.source === 'just' ? 'Parameters' : 'Variables'} <span class="ui-sub">- empty = the file's own value</span></div>${vars.map(v => `<label class="ui-field" style="margin-bottom:6px"><span class="ui-label td-mono">${esc(v.name)}</span><input class="input td-mono" data-var="${esc(v.name)}" placeholder="${esc(v.value || '')}"></label>`).join('')}` : ''}
         ${t.source === 'make' || t.source === 'task' ? '<label class="ui-field"><span class="ui-label">Other variables</span><input class="input td-mono" id="ro-x" placeholder="TAG=v1.2 ENV=staging"></label>' : ''}
         ${t.source !== 'kamal' || true ? '<label class="ui-field"><span class="ui-label">Extra arguments</span><input class="input td-mono" id="ro-a" placeholder="(optional)"></label>' : ''}
-        <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="ro-r"${isLocal ? ' disabled' : ''}> Run as root (sudo -n — the SSH user needs sudo without a password)${isLocal ? ' — not on the local server' : ''}</label>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="ro-r"${isLocal ? ' disabled' : ''}> Run as root (sudo -n - the SSH user needs sudo without a password)${isLocal ? ' - not on the local server' : ''}</label>
         <label class="ui-field" style="margin-top:8px"><span class="ui-label">Time limit (minutes)</span><input class="input" id="ro-t" type="number" value="60" min="1" max="720"></label>
-        ${t.source !== 'kamal' ? '<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="ro-d"> Dry run — show what it would do</label>' : ''}`,
+        ${t.source !== 'kamal' ? '<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="ro-d"> Dry run - show what it would do</label>' : ''}`,
       onSave: async (ov) => {
         const v = {}; ov.querySelectorAll('[data-var]').forEach(x => { if (x.value !== '') v[x.dataset.var] = x.value; });
         const x = ov.querySelector('#ro-x'); if (x && x.value.trim()) for (const w of x.value.trim().split(/\s+/)) { const k = w.indexOf('='); if (k < 1) throw new Error(`"${w}" is not NAME=value`); v[w.slice(0, k)] = w.slice(k + 1); }
@@ -142,13 +142,13 @@ Router.register('tasks', async (content, params = {}) => {
   }
   function kamalRollback(t) {
     UI.dialog({ title: 'Kamal rollback', saveLabel: 'Roll back', danger: true,
-      body: `<div class="text-sm" style="margin-bottom:8px">Kamal goes back to a version that is still on the servers. DockGate asks Kamal for them (<span class="td-mono">kamal app containers</span>)…</div>
+      body: `<div class="text-sm" style="margin-bottom:8px">Kamal goes back to a version that is still on the servers. DockGate asks Kamal for them (<span class="td-mono">kamal app containers</span>)...</div>
         <div data-kv><div class="skeleton" style="height:40px"></div></div>
         <label class="ui-field" style="margin-top:8px"><span class="ui-label">Version</span><input class="input td-mono" id="kr-v" placeholder="the version (a git commit)"></label>`,
       onOpen: async (ov) => {
         const box = ov.querySelector('[data-kv]');
         let r; try { r = await API.get(`/tasks/kamal-versions?dir=${encodeURIComponent(st.dir)}`); } catch (e) { box.innerHTML = `<div class="text-danger text-sm">${esc(e.message)}</div>`; return; }
-        box.innerHTML = `${r.versions.length ? `<label class="ui-field" style="margin:0"><span class="ui-label">Versions found</span><select class="input td-mono" id="kr-s">${r.versions.map(v => `<option>${esc(v)}</option>`).join('')}</select></label>` : `<div class="ui-sub">${r.ok ? 'No versions found in the output — type one below.' : 'Kamal did not answer — type the version below.'}</div>`}
+        box.innerHTML = `${r.versions.length ? `<label class="ui-field" style="margin:0"><span class="ui-label">Versions found</span><select class="input td-mono" id="kr-s">${r.versions.map(v => `<option>${esc(v)}</option>`).join('')}</select></label>` : `<div class="ui-sub">${r.ok ? 'No versions found in the output - type one below.' : 'Kamal did not answer - type the version below.'}</div>`}
           <details style="margin-top:6px"><summary class="ui-sub" style="cursor:pointer">What Kamal said</summary><pre class="tk-code" style="max-height:200px;overflow:auto">${esc(r.output || '(nothing)')}</pre></details>`;
         const sel = ov.querySelector('#kr-s'), inp = ov.querySelector('#kr-v');
         if (sel) { inp.value = sel.value; sel.onchange = () => { inp.value = sel.value; }; }
@@ -165,7 +165,7 @@ Router.register('tasks', async (content, params = {}) => {
       try { const r = await API.post('/tasks/run', { dir: st.dir, source: t.source, name: t.name, params: t.params, pm: t.pm, inventory: t.inventory, ...opt }); openLog(r.id); }
       catch (e) { if (e.data && e.data.run) { showToast(e.message, 'warning'); openLog(e.data.run); } else showToast(e.message, 'error', 8000); }
     };
-    if (t.risky && !opt.dry) return showConfirm(`Run ${t.name}?`, `<span class="td-mono">${esc(t.source)} ${esc(t.name)}</span> in <span class="td-mono">${esc(st.dir)}</span> on <b>${esc(srv.name || srv.host)}</b> — its name says it changes things (deploy, migrate, delete…). A dry run first shows what it would do.`, go, true);
+    if (t.risky && !opt.dry) return showConfirm(`Run ${t.name}?`, `<span class="td-mono">${esc(t.source)} ${esc(t.name)}</span> in <span class="td-mono">${esc(st.dir)}</span> on <b>${esc(srv.name || srv.host)}</b> - its name says it changes things (deploy, migrate, delete...). A dry run first shows what it would do.`, go, true);
     return go();
   }
   function customCommand() {
@@ -192,7 +192,7 @@ Router.register('tasks', async (content, params = {}) => {
         let r; try { r = await API.get(`/tasks/runs/${id}?from=${from}`); } catch (e) { pre.textContent += `\n${e.message}\n`; break; }
         const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
         if (r.text) { pre.textContent += r.text; from = r.size; if (atEnd) pre.scrollTop = pre.scrollHeight; }
-        head.innerHTML = `${pill(r.status)} <b>${esc(r.name)}</b> <span class="ui-sub">${r.trigger ? esc(r.trigger) + ' · ' : ''}${r.finished ? ((r.finished - r.started) / 1000).toFixed(1) + ' s' : 'started ' + ago(r.started)}</span>`;
+        head.innerHTML = `${pill(r.status)} <b>${esc(r.name)}</b> <span class="ui-sub">${r.trigger ? esc(r.trigger) + ', ' : ''}${r.finished ? ((r.finished - r.started) / 1000).toFixed(1) + ' s' : 'started ' + ago(r.started)}</span>`;
         cancel.style.display = r.status === 'running' ? '' : 'none';
         if (r.status !== 'running') { stop = true; if (alive() && st.info) { if (st.view === 'runs') drawRuns(); } break; }
         await new Promise(res => setTimeout(res, 1000));
@@ -201,7 +201,7 @@ Router.register('tasks', async (content, params = {}) => {
   }
 
   // ---------- runs ----------
-  let runToOpen = params.run ? Number(params.run) : null; // from a stack's page → open that run's log once
+  let runToOpen = params.run ? Number(params.run) : null; // from a stack's page -> open that run's log once
   async function drawRuns() {
     if (runToOpen) { const id = runToOpen; runToOpen = null; setTimeout(() => openLog(id), 0); }
     body().innerHTML = '<div class="card"><div class="skeleton" style="height:120px"></div></div>';
@@ -221,9 +221,9 @@ Router.register('tasks', async (content, params = {}) => {
     let r; try { r = await API.get(`/tasks/env?dir=${encodeURIComponent(st.dir)}`); } catch (e) { body().innerHTML = UI.errorState(e, { compact: true }); return; }
     if (!alive() || st.view !== 'env') return;
     const row = (e = {}) => `<div class="tk-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center" data-env><input class="input td-mono" data-k value="${esc(e.key || '')}" placeholder="NAME" style="max-width:220px" ${e.key ? 'readonly' : ''}>
-      <input class="input td-mono" data-v type="${e.secret ? 'password' : 'text'}" value="${esc(e.value || '')}" placeholder="${e.secret ? '•••• (saved — type to change)' : 'value'}" autocomplete="new-password">
+      <input class="input td-mono" data-v type="${e.secret ? 'password' : 'text'}" value="${esc(e.value || '')}" placeholder="${e.secret ? '•••• (saved - type to change)' : 'value'}" autocomplete="new-password">
       <label style="display:flex;gap:4px;align-items:center;font-weight:400;white-space:nowrap"><input type="checkbox" data-s ${e.secret ? 'checked' : ''}> secret</label>${UI.btn('✕', 'data-del title="Remove"')}</div>`;
-    body().innerHTML = `<div data-envfiles style="margin-bottom:14px"><div class="card" style="padding:14px"><div class="ui-sub">Looking for env files…</div></div></div><div class="card" style="padding:14px"><div style="font-weight:600;margin-bottom:4px">DockGate's values for this folder</div><div class="ui-sub" style="margin-bottom:10px">Given to every task and recipe of this folder as environment variables (stored encrypted in DockGate, written to a file only the SSH user can read for the run, then deleted). <b>Secret</b> values are never shown again and are hidden as •••• in the logs.</div>
+    body().innerHTML = `<div data-envfiles style="margin-bottom:14px"><div class="card" style="padding:14px"><div class="ui-sub">Looking for env files...</div></div></div><div class="card" style="padding:14px"><div style="font-weight:600;margin-bottom:4px">DockGate's values for this folder</div><div class="ui-sub" style="margin-bottom:10px">Given to every task and recipe of this folder as environment variables (stored encrypted in DockGate, written to a file only the SSH user can read for the run, then deleted). <b>Secret</b> values are never shown again and are hidden as •••• in the logs.</div>
       <div data-list>${r.env.map(row).join('')}</div>${UI.btn('+ Add', 'data-add')} <span style="float:right">${UI.primary('Save', 'data-save')}</span></div>`;
     drawEnvFiles(body().querySelector('[data-envfiles]'));
     const list = body().querySelector('[data-list]');
@@ -252,10 +252,10 @@ Router.register('tasks', async (content, params = {}) => {
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <span class="td-mono" style="font-weight:600">${f.folder ? `<span class="ui-sub">${esc(f.folder)}/</span>` : ''}${esc(f.name)}</span>
         ${UI.chip(`${f.vars.length} variable${f.vars.length === 1 ? '' : 's'}`)}
-        ${f.example ? UI.chip('example — not loaded by apps') : ''}
+        ${f.example ? UI.chip('example - not loaded by apps') : ''}
         ${f.usedBy.map(u => UI.chip(u)).join(' ')}
-        ${f.inGit && !f.example && f.vars.some(v => v.secret && !v.empty) ? UI.pill('bad', 'in Git — secrets are committed') : f.inGit ? UI.chip('in Git') : ''}
-        ${f.bad ? UI.pill('warn', `${f.bad} line(s) not understood`) : ''}${f.tooBig ? UI.pill('warn', 'over 256 KB — not read') : ''}
+        ${f.inGit && !f.example && f.vars.some(v => v.secret && !v.empty) ? UI.pill('bad', 'in Git - secrets are committed') : f.inGit ? UI.chip('in Git') : ''}
+        ${f.bad ? UI.pill('warn', `${f.bad} line(s) not understood`) : ''}${f.tooBig ? UI.pill('warn', 'over 256 KB - not read') : ''}
         <span style="flex:1"></span>
         <label style="display:flex;gap:6px;align-items:center;font-weight:400;white-space:nowrap" title="Load this file into every task and recipe run of the folder; DockGate's own values below win"><input type="checkbox" data-load ${loaded.has(f.path) ? 'checked' : ''} ${f.example || f.tooBig ? 'disabled' : ''}> Load in every run</label>
       </div>
@@ -264,13 +264,13 @@ Router.register('tasks', async (content, params = {}) => {
           <tr class="ui-sub"><th style="text-align:left;width:26px"><input type="checkbox" data-all></th><th style="text-align:left">Name</th><th style="text-align:left">Value</th><th style="text-align:left;white-space:nowrap">Line</th><th></th></tr>
           ${f.vars.map(v => `<tr style="border-top:1px solid var(--border)"><td><input type="checkbox" data-key="${esc(v.key)}"></td><td class="td-mono" style="white-space:nowrap">${esc(v.key)}${v.secret ? ' ' + UI.chip('secret') : ''}</td>
             <td class="td-mono" data-val="${esc(v.key)}" style="max-width:520px;white-space:pre-wrap;word-break:break-all">${v.empty ? '<span class="ui-sub">empty</span>' : esc(v.preview)}</td><td class="ui-sub">${v.line}</td>
-            <td>${mine.has(v.key) ? UI.chip('also in DockGate — DockGate wins') : ''}</td></tr>`).join('')}
+            <td>${mine.has(v.key) ? UI.chip('also in DockGate - DockGate wins') : ''}</td></tr>`).join('')}
         </table></div>
         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${f.vars.some(v => v.secret && !v.empty) ? UI.btn('Show the values', 'data-show') : ''} ${UI.btn('Import the ticked into DockGate', 'data-import', 'btn-primary')} ${UI.btn('Import all', 'data-import-all')}</div>
       </details>` : '<div class="ui-sub" style="margin-top:6px">No variables.</div>'}
     </div>`;
     box.innerHTML = `<div style="font-weight:600;margin-bottom:4px">Env files in this folder</div>
-      <div class="ui-sub" style="margin-bottom:10px">.env and every file whose name starts with .env (.env.local, .env.production, .env-dev…) or ends in .env, in the folder and its subfolders (not node_modules, .git, vendor…). Values that look secret stay hidden until you ask. Tick <b>Load in every run</b> to give a file to the folder's tasks and recipes — <span class="td-mono">docker compose</span> reads its own files anyway.</div>
+      <div class="ui-sub" style="margin-bottom:10px">.env and every file whose name starts with .env (.env.local, .env.production, .env-dev...) or ends in .env, in the folder and its subfolders (not node_modules, .git, vendor...). Values that look secret stay hidden until you ask. Tick <b>Load in every run</b> to give a file to the folder's tasks and recipes - <span class="td-mono">docker compose</span> reads its own files anyway.</div>
       ${r.files.length ? r.files.map(fileCard).join('') : '<div class="card" style="padding:14px"><div class="ui-sub">No env files in this folder.</div></div>'}
       ${(r.missing || []).length ? `<div class="insight-card" style="margin-top:6px"><div>Named in Compose but not in the folder: ${r.missing.map(m => `<span class="td-mono">${esc(m.path)}</span> (${esc(m.compose)})`).join(', ')}</div></div>` : ''}`;
     const saveLoad = async () => {
@@ -303,7 +303,7 @@ Router.register('tasks', async (content, params = {}) => {
       + '<div class="ui-sub">A file that is already in the folder is not overwritten unless you say so. Edit it afterwards in Files.</div>';
     body().querySelectorAll('[data-tpl]').forEach(b => b.onclick = async () => {
       const add = async (overwrite) => { const x = await API.post('/tasks/templates', { dir: st.dir, name: b.dataset.tpl, overwrite }); showToast(`Added ${x.path}`); openProject(); };
-      try { await add(false); } catch (e) { if (/exists/i.test(e.message)) showConfirm('Overwrite?', `${esc(e.message)} — overwrite it?`, () => add(true).catch(x => showToast(x.message, 'error')), true); else showToast(e.message, 'error'); }
+      try { await add(false); } catch (e) { if (/exists/i.test(e.message)) showConfirm('Overwrite?', `${esc(e.message)} - overwrite it?`, () => add(true).catch(x => showToast(x.message, 'error')), true); else showToast(e.message, 'error'); }
     });
   }
 
@@ -316,10 +316,10 @@ Router.register('tasks', async (content, params = {}) => {
     body().innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><div class="ui-sub" style="flex:1">A recipe is the steps of a deploy: pull the code, run your tasks, start the containers, check that the app answers. When a step fails the <b>recovery</b> steps run (go back to the commit before, your rollback task). Run it by hand, on a schedule, on a Git push or from CI.</div>${UI.primary('+ New recipe', 'data-new')}</div>
       ${r.recipes.length ? r.recipes.map(x => `<div class="card" style="padding:12px 14px;margin-bottom:10px">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(x.name)}</b>
-          ${x.schedule ? UI.chip(`🕑 ${esc(SchedulePicker.describe(x.schedule))}`) : ''}${x.running ? ' ' + UI.pill('info', '▶ running') + ' ' + UI.btn('Log', `data-log="${x.running}"`) : ''}${x.waiting ? ' ' + UI.chip(`⏳ waiting: ${esc(x.waiting.what)}`, { title: `${x.waiting.trigger} — starts when the running deploy ends` }) : ''}${x.hook ? UI.chip(`⚡ webhook${x.hookBranch ? ' · ' + esc(x.hookBranch) : ''}`) : ''}${x.settings.servers && x.settings.servers.length > 1 ? UI.chip(`${x.settings.servers.length} servers`) : ''}
-          <span style="flex:1"></span>${UI.btn('▶ Deploy', `data-rrun="${x.id}"`, 'btn-primary')} ${UI.btn('Edit', `data-redit="${x.id}"`)} ${UI.btn('Webhook / CI…', `data-rhook="${x.id}"`)} ${UI.menu([{ label: 'Delete…', attrs: `data-rdel="${x.id}"`, danger: true }])}</div>
-        <div class="ui-sub" style="margin-top:6px">${x.steps.map((s, k) => `${k + 1}. ${esc(stepTxt(s))}`).join(' → ')}${x.onFail.length ? ` <span style="color:var(--warning)">· if it fails: ${x.onFail.map(s => esc(stepTxt(s))).join(' → ')}</span>` : ''}</div></div>`).join('')
-        : `<div class="card" style="padding:20px"><b>No recipes yet.</b><div class="ui-sub" style="margin-top:6px">${st.info.git ? 'A typical one: Git pull → your <span class="td-mono">make deploy</span> (or docker compose up) → check the URL → if it fails, back to the commit before.' : 'This folder is not a Git clone: use tasks, docker compose up and checks.'}</div><div style="margin-top:10px">${UI.btn('Start from the usual recipe', 'data-quick', 'btn-primary')}</div></div>`}`;
+          ${x.schedule ? UI.chip(`🕑 ${esc(SchedulePicker.describe(x.schedule))}`) : ''}${x.running ? ' ' + UI.pill('info', '▶ running') + ' ' + UI.btn('Log', `data-log="${x.running}"`) : ''}${x.waiting ? ' ' + UI.chip(`⏳ waiting: ${esc(x.waiting.what)}`, { title: `${x.waiting.trigger} - starts when the running deploy ends` }) : ''}${x.hook ? UI.chip(`⚡ webhook${x.hookBranch ? ', ' + esc(x.hookBranch) : ''}`) : ''}${x.settings.servers && x.settings.servers.length > 1 ? UI.chip(`${x.settings.servers.length} servers`) : ''}
+          <span style="flex:1"></span>${UI.btn('▶ Deploy', `data-rrun="${x.id}"`, 'btn-primary')} ${UI.btn('Edit', `data-redit="${x.id}"`)} ${UI.btn('Webhook / CI...', `data-rhook="${x.id}"`)} ${UI.menu([{ label: 'Delete...', attrs: `data-rdel="${x.id}"`, danger: true }])}</div>
+        <div class="ui-sub" style="margin-top:6px">${x.steps.map((s, k) => `${k + 1}. ${esc(stepTxt(s))}`).join(' -> ')}${x.onFail.length ? ` <span style="color:var(--warning)">· if it fails: ${x.onFail.map(s => esc(stepTxt(s))).join(' -> ')}</span>` : ''}</div></div>`).join('')
+        : `<div class="card" style="padding:20px"><b>No recipes yet.</b><div class="ui-sub" style="margin-top:6px">${st.info.git ? 'A typical one: Git pull -> your <span class="td-mono">make deploy</span> (or docker compose up) -> check the URL -> if it fails, back to the commit before.' : 'This folder is not a Git clone: use tasks, docker compose up and checks.'}</div><div style="margin-top:10px">${UI.btn('Start from the usual recipe', 'data-quick', 'btn-primary')}</div></div>`}`;
     const b = body();
     b.querySelector('[data-new]').onclick = () => editRecipe(null);
     const qk = b.querySelector('[data-quick]'); if (qk) qk.onclick = () => editRecipe(null, quickRecipe());
@@ -328,7 +328,7 @@ Router.register('tasks', async (content, params = {}) => {
     const deploy = async (rc, mode) => {
       try {
         const r2 = await API.post(`/tasks/recipes/${rc.id}/run`, mode ? { mode } : {});
-        if (r2.queued) showToast(mode === 'replace' ? 'The running deploy is being stopped — yours starts right after' : 'Queued — it starts when the running deploy ends', 'info', 7000);
+        if (r2.queued) showToast(mode === 'replace' ? 'The running deploy is being stopped - yours starts right after' : 'Queued - it starts when the running deploy ends', 'info', 7000);
         openLog(r2.id); drawRecipes();
       } catch (e) {
         if (e.code !== 'BUSY') return showToast(e.message, 'error', 8000);
@@ -341,7 +341,7 @@ Router.register('tasks', async (content, params = {}) => {
       }
     };
     b.querySelectorAll('[data-log]').forEach(x => x.onclick = () => openLog(Number(x.dataset.log)));
-    b.querySelectorAll('[data-rrun]').forEach(x => x.onclick = () => { const rc = st.recipes.find(y => y.id === Number(x.dataset.rrun)); showConfirm(`Deploy — ${esc(rc.name)}`, `Run the recipe in <span class="td-mono">${esc(st.dir)}</span> on ${rc.settings.servers.length > 1 ? `<b>${rc.settings.servers.length} servers</b>, one after another` : `<b>${esc(srv.name || srv.host)}</b>`}?`, () => deploy(rc)); });
+    b.querySelectorAll('[data-rrun]').forEach(x => x.onclick = () => { const rc = st.recipes.find(y => y.id === Number(x.dataset.rrun)); showConfirm(`Deploy - ${esc(rc.name)}`, `Run the recipe in <span class="td-mono">${esc(st.dir)}</span> on ${rc.settings.servers.length > 1 ? `<b>${rc.settings.servers.length} servers</b>, one after another` : `<b>${esc(srv.name || srv.host)}</b>`}?`, () => deploy(rc)); });
     b.querySelectorAll('[data-rdel]').forEach(x => x.onclick = () => { const rc = st.recipes.find(y => y.id === Number(x.dataset.rdel)); showDeleteConfirm('Delete recipe', { message: `Delete the recipe <b>${esc(rc.name)}</b>? Its webhook stops working. Past runs stay in Runs.`, phrase: rc.name, onConfirm: async () => { await API.del(`/tasks/recipes/${rc.id}`); showToast('Deleted'); drawRecipes(); } }); });
   }
   function quickRecipe() {
@@ -349,7 +349,7 @@ Router.register('tasks', async (content, params = {}) => {
     if (i.git && i.git.remote) steps.push({ type: 'git_pull' });
     const dep = i.tasks.find(t => t.source === 'make' && /^deploy$/.test(t.name)) || i.tasks.find(t => t.source === 'just' && t.name === 'deploy') || i.tasks.find(t => t.source === 'sh' && /deploy\.sh$/.test(t.name));
     if (dep) steps.push({ type: 'task', source: dep.source, name: dep.name }); else if (i.compose.length) steps.push({ type: 'compose_up', build: true });
-    if (!isLocal) steps.push({ type: 'check_url', url: 'http://127.0.0.1:8080/', tries: 10, every: 3 }); // locally 127.0.0.1 is DockGate's container — add a check with the app's address yourself
+    if (!isLocal) steps.push({ type: 'check_url', url: 'http://127.0.0.1:8080/', tries: 10, every: 3 }); // locally 127.0.0.1 is DockGate's container - add a check with the app's address yourself
     return { name: 'Deploy', steps, onFail: i.git && i.git.remote ? [{ type: 'git_back' }, ...(i.compose.length && !dep ? [{ type: 'compose_up', build: true }] : [])] : [], settings: { notify: { fail: true } } };
   }
 
@@ -390,18 +390,18 @@ Router.register('tasks', async (content, params = {}) => {
       });
       return s;
     };
-    UI.dialog({ title: rec ? `Edit recipe — ${esc(rec.name)}` : 'New deploy recipe', saveLabel: 'Save', wide: true,
+    UI.dialog({ title: rec ? `Edit recipe - ${esc(rec.name)}` : 'New deploy recipe', saveLabel: 'Save', wide: true,
       body: `<label class="ui-field"><span class="ui-label">Name</span><input class="input" id="rc-n" value="${esc(r.name)}"></label>
-        <div class="ui-label" style="margin:8px 0 4px">Steps <span class="ui-sub">— in ${esc(st.dir)}, one after another; the first that fails stops the deploy</span></div>
+        <div class="ui-label" style="margin:8px 0 4px">Steps <span class="ui-sub">- in ${esc(st.dir)}, one after another; the first that fails stops the deploy</span></div>
         <div data-steps="ok">${r.steps.map(s => stepHtml(s, 'ok')).join('')}</div><div>${UI.btn('+ Add step', 'data-add="ok"')}</div>
-        <div class="ui-label" style="margin:14px 0 4px">If it fails — recovery steps <span class="ui-sub">(optional; e.g. back to the commit before, then compose up or your rollback task)</span></div>
+        <div class="ui-label" style="margin:14px 0 4px">If it fails - recovery steps <span class="ui-sub">(optional; e.g. back to the commit before, then compose up or your rollback task)</span></div>
         <div data-steps="fail">${r.onFail.map(s => stepHtml(s, 'fail')).join('')}</div><div>${UI.btn('+ Add recovery step', 'data-add="fail"')}</div>
         <details style="margin-top:14px" ${servers.length > 1 || r.schedule ? 'open' : ''}><summary style="cursor:pointer;font-weight:600">Servers, schedule, alerts</summary>
-          <div class="ui-field" style="margin-top:8px"><span class="ui-label">Servers <span class="ui-sub">— the same folder on each, one after another</span></span>${st.servers.map(s => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-srv="${esc(s.id)}" ${servers.includes(s.id) ? 'checked' : ''}> ${esc(s.name || s.host)} <span class="ui-sub">${esc(s.host || '')}</span></label>`).join('')}
+          <div class="ui-field" style="margin-top:8px"><span class="ui-label">Servers <span class="ui-sub">- the same folder on each, one after another</span></span>${st.servers.map(s => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-srv="${esc(s.id)}" ${servers.includes(s.id) ? 'checked' : ''}> ${esc(s.name || s.host)} <span class="ui-sub">${esc(s.host || '')}</span></label>`).join('')}
             <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin-top:4px"><input type="checkbox" id="rc-cs" ${set.continueServers ? 'checked' : ''}> Go on with the next server when one fails (otherwise stop)</label></div>
           <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="rc-sch" ${r.schedule ? 'checked' : ''}> Run on a schedule</label>
           <div data-sp style="${r.schedule ? '' : 'display:none'}">${SchedulePicker.html(r.schedule || '30 3 * * *')}</div>
-          <div class="ui-field" style="margin-top:8px"><span class="ui-label">Alerts (Settings → Notifications channels)</span>
+          <div class="ui-field" style="margin-top:8px"><span class="ui-label">Alerts (Settings > Notifications channels)</span>
             <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="rc-nf" ${set.notify && set.notify.fail === false ? '' : 'checked'}> When a deploy fails</label>
             <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="rc-no" ${set.notify && set.notify.ok ? 'checked' : ''}> When a deploy works</label></div>
           <label class="ui-field"><span class="ui-label">Time limit for each step (minutes)</span><input class="input" id="rc-t" type="number" min="1" max="720" value="${esc(set.timeoutMin || 60)}"></label>
@@ -447,11 +447,11 @@ Router.register('tasks', async (content, params = {}) => {
     const localUrl = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/.test(location.hostname);
     const code = (t) => `<pre class="tk-code">${esc(t)}</pre>`;
     const tabs = h ? {
-      GitHub: `<ol class="text-sm" style="padding-left:18px;margin:6px 0"><li>Repository → <b>Settings → Webhooks → Add webhook</b></li><li>Payload URL: the URL above · Content type: <b>application/json</b></li><li>Secret: the secret above · SSL verification on</li><li>Which events: <b>Just the push event</b> → Add webhook. GitHub sends a ping; it shows a green tick when DockGate answered.</li></ol>`,
-      GitLab: `<ol class="text-sm" style="padding-left:18px;margin:6px 0"><li>Project → <b>Settings → Webhooks → Add new webhook</b></li><li>URL: the URL above</li><li>Secret token: the secret above</li><li>Trigger: <b>Push events</b> (a branch filter there is fine too) → Add webhook → Test → Push events</li></ol><div class="ui-sub">Self-hosted GitLab: allow requests to your DockGate address (Admin → Settings → Network → Outbound requests) if it is on a local network.</div>`,
-      'Bitbucket Cloud': `<ol class="text-sm" style="padding-left:18px;margin:6px 0"><li>Repository → <b>Repository settings → Webhooks → Add webhook</b></li><li>Title: DockGate · URL: the URL above</li><li>Secret: the secret above (Bitbucket signs each request with it)</li><li>Triggers: <b>Repository push</b> → Save</li></ol>`,
-      'Bitbucket Server / DC': `<ol class="text-sm" style="padding-left:18px;margin:6px 0"><li>Repository → <b>Repository settings → Webhooks → Create webhook</b></li><li>URL: the URL above · Secret: the secret above</li><li>Events: <b>Repository → Push</b> → Test connection → Create</li></ol>`,
-      'GitHub Actions': code(`# .github/workflows/deploy.yml — after your tests; secret DOCKGATE_TOKEN = the secret above
+      GitHub: `<ol class="text-sm" style="padding-left:18px;margin:6px 0"><li>Repository -> <b>Settings > Webhooks > Add webhook</b></li><li>Payload URL: the URL above, Content type: <b>application/json</b></li><li>Secret: the secret above, SSL verification on</li><li>Which events: <b>Just the push event</b> > Add webhook. GitHub sends a ping; it shows a green tick when DockGate answered.</li></ol>`,
+      GitLab: `<ol class="text-sm" style="padding-left:18px;margin:6px 0"><li>Project -> <b>Settings > Webhooks > Add new webhook</b></li><li>URL: the URL above</li><li>Secret token: the secret above</li><li>Trigger: <b>Push events</b> (a branch filter there is fine too) > Add webhook > Test > Push events</li></ol><div class="ui-sub">Self-hosted GitLab: allow requests to your DockGate address (Admin > Settings > Network > Outbound requests) if it is on a local network.</div>`,
+      'Bitbucket Cloud': `<ol class="text-sm" style="padding-left:18px;margin:6px 0"><li>Repository -> <b>Repository settings > Webhooks > Add webhook</b></li><li>Title: DockGate, URL: the URL above</li><li>Secret: the secret above (Bitbucket signs each request with it)</li><li>Triggers: <b>Repository push</b> > Save</li></ol>`,
+      'Bitbucket Server / DC': `<ol class="text-sm" style="padding-left:18px;margin:6px 0"><li>Repository -> <b>Repository settings > Webhooks > Create webhook</b></li><li>URL: the URL above, Secret: the secret above</li><li>Events: <b>Repository > Push</b> > Test connection > Create</li></ol>`,
+      'GitHub Actions': code(`# .github/workflows/deploy.yml - after your tests; secret DOCKGATE_TOKEN = the secret above
 on: { push: { branches: [main] } }
 jobs:
   deploy:
@@ -461,14 +461,14 @@ jobs:
           curl -fsS -X POST "${url}" \\
             -H "Authorization: Bearer \${{ secrets.DOCKGATE_TOKEN }}" -H "Content-Type: application/json" \\
             -d '{"branch":"\${{ github.ref_name }}","commit":"\${{ github.sha }}","author":"\${{ github.actor }}"}'`),
-      'GitLab CI': code(`# .gitlab-ci.yml — CI/CD variable DOCKGATE_TOKEN (masked) = the secret above
+      'GitLab CI': code(`# .gitlab-ci.yml - CI/CD variable DOCKGATE_TOKEN (masked) = the secret above
 deploy:
   stage: deploy
   image: curlimages/curl
   rules: [{ if: '$CI_COMMIT_BRANCH == "main"' }]
   script:
     - 'curl -fsS -X POST "${url}" -H "Authorization: Bearer $DOCKGATE_TOKEN" -H "Content-Type: application/json" -d "{\\"branch\\":\\"$CI_COMMIT_BRANCH\\",\\"commit\\":\\"$CI_COMMIT_SHA\\"}"'`),
-      'Bitbucket Pipelines': code(`# bitbucket-pipelines.yml — repository variable DOCKGATE_TOKEN (secured) = the secret above
+      'Bitbucket Pipelines': code(`# bitbucket-pipelines.yml - repository variable DOCKGATE_TOKEN (secured) = the secret above
 pipelines:
   branches:
     main:
@@ -477,25 +477,25 @@ pipelines:
           script:
             - 'curl -fsS -X POST "${url}" -H "Authorization: Bearer $DOCKGATE_TOKEN" -H "Content-Type: application/json" -d "{\\"branch\\":\\"$BITBUCKET_BRANCH\\",\\"commit\\":\\"$BITBUCKET_COMMIT\\"}"'`),
     } : {};
-    const m = UI.dialog({ title: `Webhook / CI — ${esc(rec.name)}`, saveLabel: 'Save', wide: true,
+    const m = UI.dialog({ title: `Webhook / CI - ${esc(rec.name)}`, saveLabel: 'Save', wide: true,
       body: h ? `${localUrl ? `<div class="insight-card warning" style="margin-bottom:10px"><div>This address (<span class="td-mono">${esc(location.host)}</span>) is not reachable from the internet, so <b>GitHub, GitLab.com and Bitbucket Cloud can not call it</b>. Open DockGate at its public HTTPS address (a domain, or a tunnel) and copy the URL from there. A CI runner or a Git server on the same network can use it.</div></div>` : ''}
           <label class="ui-field"><span class="ui-label">URL</span><div style="display:flex;gap:6px"><input class="input td-mono" readonly value="${esc(url)}">${UI.btn('Copy', 'data-copy="url"')}</div></label>
-          <label class="ui-field"><span class="ui-label">Secret <span class="ui-sub">— for the webhook's secret, or as <span class="td-mono">Authorization: Bearer …</span> from CI</span></span><div style="display:flex;gap:6px"><input class="input td-mono" type="password" readonly value="${esc(h.secret)}" data-secret>${UI.btn('Show', 'data-show')} ${UI.btn('Copy', 'data-copy="secret"')}</div></label>
-          <label class="ui-field"><span class="ui-label">Only these branches <span class="ui-sub">— e.g. <span class="td-mono">main</span> or <span class="td-mono">main, release/*</span>; empty = any branch</span></span><input class="input td-mono" id="hk-b" value="${esc(rec.hookBranch || '')}"></label>
+          <label class="ui-field"><span class="ui-label">Secret <span class="ui-sub">- for the webhook's secret, or as <span class="td-mono">Authorization: Bearer ...</span> from CI</span></span><div style="display:flex;gap:6px"><input class="input td-mono" type="password" readonly value="${esc(h.secret)}" data-secret>${UI.btn('Show', 'data-show')} ${UI.btn('Copy', 'data-copy="secret"')}</div></label>
+          <label class="ui-field"><span class="ui-label">Only these branches <span class="ui-sub">- e.g. <span class="td-mono">main</span> or <span class="td-mono">main, release/*</span>; empty = any branch</span></span><input class="input td-mono" id="hk-b" value="${esc(rec.hookBranch || '')}"></label>
           <div class="tab-bar" style="margin:10px 0 6px;flex-wrap:wrap">${Object.keys(tabs).map((k, n) => `<button class="tab-btn ${n ? '' : 'active'}" data-ht="${esc(k)}">${esc(k)}</button>`).join('')}</div>
           <div data-hbody>${tabs.GitHub}</div>
           <details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Show the result on the commit ${rec.hasStatusToken ? UI.pill('ok', 'token saved') : ''}</summary>
-            <div class="ui-sub" style="margin:6px 0">With a token DockGate marks the pushed commit <b>pending → success / failed</b> (as "DockGate deploy"). GitHub: a fine-grained token with <b>Commit statuses: Read and write</b> on the repository. GitLab: a project access token with the <b>api</b> scope (Developer). Bitbucket Cloud: <span class="td-mono">username:app-password</span> with <b>Repositories: Read</b> (or a repository access token with <b>Repositories: Write</b>). Bitbucket Server / DC: an HTTP access token with repository read.</div>
-            <div style="display:flex;gap:6px"><input class="input td-mono" id="hk-t" type="password" autocomplete="new-password" placeholder="${rec.hasStatusToken ? '(saved — type to change)' : 'token'}">${rec.hasStatusToken ? UI.btn('Forget', 'data-forget') : ''}</div></details>
+            <div class="ui-sub" style="margin:6px 0">With a token DockGate marks the pushed commit <b>pending -> success / failed</b> (as "DockGate deploy"). GitHub: a fine-grained token with <b>Commit statuses: Read and write</b> on the repository. GitLab: a project access token with the <b>api</b> scope (Developer). Bitbucket Cloud: <span class="td-mono">username:app-password</span> with <b>Repositories: Read</b> (or a repository access token with <b>Repositories: Write</b>). Bitbucket Server / DC: an HTTP access token with repository read.</div>
+            <div style="display:flex;gap:6px"><input class="input td-mono" id="hk-t" type="password" autocomplete="new-password" placeholder="${rec.hasStatusToken ? '(saved - type to change)' : 'token'}">${rec.hasStatusToken ? UI.btn('Forget', 'data-forget') : ''}</div></details>
           <div style="margin-top:12px;display:flex;gap:8px">${UI.btn('New secret', 'data-rotate')} ${UI.btn('Turn the webhook off', 'data-off', 'btn-danger')}</div>`
         : `<div class="text-sm">A URL and a secret for this recipe: give them to <b>GitHub, GitLab or Bitbucket</b> as a push webhook, or call the URL from your <b>CI</b> after the tests pass. Each request is checked (signature or token), the branch filtered, then the recipe runs.</div>
-          <div class="ui-sub" style="margin-top:8px">DockGate must be reachable from the sender — for GitHub.com, GitLab.com and Bitbucket Cloud that means a public HTTPS address.</div>`,
+          <div class="ui-sub" style="margin-top:8px">DockGate must be reachable from the sender - for GitHub.com, GitLab.com and Bitbucket Cloud that means a public HTTPS address.</div>`,
       onOpen: (ov, { save }) => {
         if (!h) { save.textContent = 'Turn the webhook on'; return; }
         ov.querySelectorAll('[data-ht]').forEach(b => b.onclick = () => { ov.querySelectorAll('[data-ht]').forEach(x => x.classList.toggle('active', x === b)); ov.querySelector('[data-hbody]').innerHTML = tabs[b.dataset.ht]; });
         ov.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => navigator.clipboard?.writeText(b.dataset.copy === 'url' ? url : h.secret).then(() => showToast('Copied', 'success', 2000)));
         ov.querySelector('[data-show]').onclick = () => { const i = ov.querySelector('[data-secret]'); i.type = i.type === 'password' ? 'text' : 'password'; };
-        ov.querySelector('[data-rotate]').onclick = () => showConfirm('New secret', 'Make a new URL and secret? The old ones stop working at once — update GitHub / GitLab / Bitbucket / CI.', async () => { await API.post(`/tasks/recipes/${rec.id}/hook`, {}); m.close(); await drawRecipes(); hookDialog(st.recipes.find(x => x.id === rec.id)); });
+        ov.querySelector('[data-rotate]').onclick = () => showConfirm('New secret', 'Make a new URL and secret? The old ones stop working at once - update GitHub / GitLab / Bitbucket / CI.', async () => { await API.post(`/tasks/recipes/${rec.id}/hook`, {}); m.close(); await drawRecipes(); hookDialog(st.recipes.find(x => x.id === rec.id)); });
         ov.querySelector('[data-off]').onclick = () => showConfirm('Turn the webhook off', 'The URL stops working. You can turn it on again (with a new URL).', async () => { await API.del(`/tasks/recipes/${rec.id}/hook`); m.close(); drawRecipes(); }, true);
         const fg = ov.querySelector('[data-forget]'); if (fg) fg.onclick = async () => { await API.put(`/tasks/recipes/${rec.id}/status-token`, { token: '' }); showToast('Token forgotten'); m.close(); drawRecipes(); };
       },

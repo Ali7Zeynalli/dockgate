@@ -13,7 +13,7 @@ const FileEditUI = (() => {
       try { text = (await API.get(`${base}/text?path=${encodeURIComponent(path)}`)).content; }
       catch (e) { return showToast(e.message, 'error', 8000); }
     }
-    const m = showModal(`Edit · ${esc(path)}`, `<textarea class="input" data-fe-text rows="22" spellcheck="false" style="font-family:var(--font-mono,monospace);font-size:12px;white-space:pre;tab-size:4;width:100%">${esc(text)}</textarea>
+    const m = showModal(`Edit, ${esc(path)}`, `<textarea class="input" data-fe-text rows="22" spellcheck="false" style="font-family:var(--font-mono,monospace);font-size:12px;white-space:pre;tab-size:4;width:100%">${esc(text)}</textarea>
       <div class="ui-sub" style="margin-top:6px">Text files up to 1 MB. Saving replaces the file; it keeps its owner and permissions. A running app may need a restart to read it again.</div>`, []);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     const ta = m.overlay.querySelector('[data-fe-text]');
@@ -51,9 +51,9 @@ const FileEditUI = (() => {
   /** Buttons for one row of a file list: Edit (text files) and a ⋯ menu with Rename / Delete. */
   function rowActions(path, isDir) {
     return `${isDir ? '' : `<button class="btn btn-xs btn-secondary" data-fe-edit="${esc(path)}">Edit</button> `}${UI.menu([
-      { label: 'Rename…', attrs: `data-fe-rename="${esc(path)}"` },
+      { label: 'Rename...', attrs: `data-fe-rename="${esc(path)}"` },
       '-',
-      { label: 'Delete…', attrs: `data-fe-delete="${esc(path)}" data-fe-dir="${isDir ? 1 : 0}"`, danger: true },
+      { label: 'Delete...', attrs: `data-fe-delete="${esc(path)}" data-fe-dir="${isDir ? 1 : 0}"`, danger: true },
     ])}`;
   }
   /** Header buttons for the current folder. */

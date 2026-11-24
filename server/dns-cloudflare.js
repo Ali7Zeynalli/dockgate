@@ -1,7 +1,7 @@
 // The DNS check (ACME dns-01) through Cloudflare's API: DockGate adds the TXT record _acme-challenge.<name>,
 // waits until public DNS answers it, Let's Encrypt checks it, and DockGate removes it. This is what makes
 // wildcard certificates (*.example.com) possible, and works when port 80 is closed or the site is behind
-// Cloudflare's proxy. The API token needs Zone → DNS → Edit for the zones it is used for (and Zone → Read).
+// Cloudflare's proxy. The API token needs Zone > DNS > Edit for the zones it is used for (and Zone > Read).
 const dns = require('dns');
 
 const API = 'https://api.cloudflare.com/client/v4';
@@ -36,7 +36,7 @@ async function zoneFor(token, fqdn, { fetchImpl } = {}) {
     const r = await call(token, 'GET', `/zones?name=${encodeURIComponent(name)}&status=active`, null, fetchImpl);
     if (Array.isArray(r) && r[0]) return { id: r[0].id, name: r[0].name };
   }
-  throw err(`No Cloudflare zone of this token holds ${fqdn} — add the domain to Cloudflare, or give the token access to its zone`);
+  throw err(`No Cloudflare zone of this token holds ${fqdn} - add the domain to Cloudflare, or give the token access to its zone`);
 }
 
 /** Add the TXT record; returns what clearTxt needs. */
@@ -58,7 +58,7 @@ async function waitTxt(fqdn, value, { timeoutMs = 180000, every = 5000, servers 
     const answers = await ask(fqdn);
     if (answers.length && answers.every(list => list.includes(value))) { log(`${fqdn}: the TXT record is visible in public DNS`); return true; }
     if (Date.now() > end) throw err(`${fqdn}: the TXT record did not show in public DNS within ${Math.round(timeoutMs / 1000)} s`, 504);
-    if (n === 0) log(`${fqdn}: waiting for public DNS…`);
+    if (n === 0) log(`${fqdn}: waiting for public DNS...`);
     await new Promise(r => setTimeout(r, every));
   }
 }

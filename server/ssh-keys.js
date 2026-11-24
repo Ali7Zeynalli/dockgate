@@ -22,7 +22,7 @@ function shred(file) {
 }
 function tmpName() { return path.join(TMP, 'dgkey-' + crypto.randomBytes(12).toString('hex')); }
 
-// Public API shape — NEVER returns the private key.
+// Public API shape - NEVER returns the private key.
 function mask(r) {
   return { id: r.id, name: r.name, description: r.description || '', key_type: r.key_type, public_key: r.public_key, fingerprint: r.fingerprint, created_at: r.created_at };
 }
@@ -84,7 +84,7 @@ function materializeToTemp(id) {
   return { path: file, cleanup: () => shred(file), row };
 }
 
-// Verify a key can authenticate to a repo over SSH (git ls-remote) — no clone, no side effects.
+// Verify a key can authenticate to a repo over SSH (git ls-remote) - no clone, no side effects.
 async function testAgainstRepo(id, repoUrl) {
   if (!repoUrl || !/^(ssh:\/\/|[\w.-]+@[\w.-]+:)/.test(repoUrl)) {
     const e = new Error('Use an SSH URL, e.g. git@github.com:owner/repo.git'); e.statusCode = 400; throw e;
@@ -98,7 +98,7 @@ async function testAgainstRepo(id, repoUrl) {
     const msg = (e.stderr || e.message || '').toString();
     const auth = /permission denied|publickey|authentication failed|access denied|could not read/i.test(msg);
     const er = new Error(auth
-      ? 'Key not authorized for this repo — add the public key to the repo (Deploy keys) or a machine account'
+      ? 'Key not authorized for this repo - add the public key to the repo (Deploy keys) or a machine account'
       : ('Could not reach the repo: ' + (msg.split('\n').find(Boolean) || 'unknown error')));
     er.statusCode = auth ? 403 : 400; throw er;
   } finally { k.cleanup(); }

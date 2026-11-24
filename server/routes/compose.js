@@ -34,7 +34,7 @@ function readGitMeta(project) {
 async function gitRun(args, opts = {}) {
   const { onData, ...rest } = opts;
   if (onData) {
-    // Streaming path (live progress) — git clone/fetch progress goes to stderr.
+    // Streaming path (live progress) - git clone/fetch progress goes to stderr.
     return await new Promise((resolve, reject) => {
       const child = spawn('git', args, { env: GIT_ENV, ...rest });
       let out = ''; const ch = d => { const s = d.toString(); out += s; onData(s); };
@@ -56,7 +56,7 @@ async function gitRun(args, opts = {}) {
 }
 
 // Run a git command using a named SSH key from the store: materialize it to a temp 0600 file, point
-// GIT_SSH_COMMAND at it, run, then shred. No keyId → ordinary gitRun (token-in-URL / public repo).
+// GIT_SSH_COMMAND at it, run, then shred. No keyId -> ordinary gitRun (token-in-URL / public repo).
 async function gitWithKey(keyId, args, opts) {
   if (!keyId) return gitRun(args, opts);
   const k = sshKeys.materializeToTemp(keyId);
@@ -102,7 +102,7 @@ async function runCompose(project, action, cwd, onData) {
     const { stdout, stderr } = await execFileAsync('docker', args, { cwd, env, maxBuffer: 4 * 1024 * 1024 });
     return stdout || stderr;
   }
-  // Streaming variant — live output for the deploy console. Every other caller keeps the buffered path.
+  // Streaming variant - live output for the deploy console. Every other caller keeps the buffered path.
   return await new Promise((resolve, reject) => {
     const child = spawn('docker', args, { cwd, env });
     let out = '';
@@ -115,7 +115,7 @@ async function runCompose(project, action, cwd, onData) {
 }
 
 // Per stack: services whose image has a newer version (registry check, or already pulled but not recreated),
-// and the last image update / roll back from DockGate — shown on the Compose stacks list.
+// and the last image update / roll back from DockGate - shown on the Compose stacks list.
 async function annotateImageUpdates(list) {
   try {
     const IU = require('../image-updates');
@@ -166,13 +166,13 @@ router.get('/', async (req, res) => {
         if (meta && meta.mode === 'remote' && meta.serverId === activeId) { p.remote = true; p.deploySource = meta.source || 'folder'; }
       }
       // Annotate RUNNING LOCAL projects too, so a local git/folder deploy shows its git badge + ⤓ Pull / Update.
-      // (Without this a running local project — already in the daemon list — never gets deploySource and the
+      // (Without this a running local project - already in the daemon list - never gets deploySource and the
       // git affordances stay hidden.)
       if (activeId === 'local') for (const p of list) {
         const meta = readDeployMeta(p.name);
         if (meta && meta.mode === 'local') p.deploySource = meta.source || 'folder';
       }
-      // Merge in DOWN deploy-pointer projects for the active server (no containers → not in the daemon list).
+      // Merge in DOWN deploy-pointer projects for the active server (no containers -> not in the daemon list).
       // Covers staged (deployed with up:false) and stopped projects, both remote AND local.
       const seen = new Set(list.map(p => p.name));
       for (const name of fs.readdirSync(COMPOSE_DIR)) {
@@ -233,7 +233,7 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// List all background deploy jobs (running + recent) — powers the "Deploys" console on the Compose page.
+// List all background deploy jobs (running + recent) - powers the "Deploys" console on the Compose page.
 // Defined BEFORE /:project so the literal path isn't captured as a project name. (deployJobs is defined
 // further down but referenced at call time, which is always after module load.)
 router.get('/deploy-jobs', (req, res) => {
@@ -250,21 +250,21 @@ router.get('/:project', async (req, res) => {
 });
 
 // Compose commands run the host `docker compose` CLI in a working dir on DockGate's filesystem.
-// Local → the local daemon. Remote SSH host → DOCKER_HOST=ssh:// (buildCliEnv) targets that daemon,
+// Local -> the local daemon. Remote SSH host > DOCKER_HOST=ssh:// (buildCliEnv) targets that daemon,
 // but the compose file must be local, so only DockGate-managed projects can be (re)deployed remotely.
 // Resolve where a compose project's command runs (remote-native folder, legacy remote-managed, or local
-// working/managed dir) and execute it — STREAMED when onData is given. Throws (with statusCode) on bad state.
-// Resolve the compose file(s) + cwd to drive a per-project action — so every action passes `-f <file>` and
+// working/managed dir) and execute it - STREAMED when onData is given. Throws (with statusCode) on bad state.
+// Resolve the compose file(s) + cwd to drive a per-project action - so every action passes `-f <file>` and
 // works regardless of the file's NAME (docker-compose.greennec.yaml) or LOCATION (a subdir). Without this,
 // `docker compose -p <project> <action>` auto-detects only the 4 standard names in the cwd and fails with
 // "no configuration file provided: not found" for everything else. Precedence (most authoritative first):
 //   1) deploy-meta .composeFile (survives a fully-down project)  2) git-meta .composeFile (+subdir)
-//   3) docker config_files label (CSV → multi -f; running only; UNTRUSTED → isSafeHostPath-validated)
-//   4) filesystem discovery (findComposeFile → recursive findComposeFiles; local only)  5) fail-closed.
+//   3) docker config_files label (CSV -> multi -f; running only; UNTRUSTED -> isSafeHostPath-validated)
+//   4) filesystem discovery (findComposeFile -> recursive findComposeFiles; local only)  5) fail-closed.
 // Each file is reduced to (cwd = its dir, -f = basename) so relative build contexts / bind-mounts resolve
 // exactly as they did at deploy time.
 // Every compose command DockGate runs goes through here, so DockGate's override (replicas and the fixes a replica
-// needs — server/compose-scale.js) is appended last; the user's files are never written.
+// needs - server/compose-scale.js) is appended last; the user's files are never written.
 async function resolveComposeFiles(project) {
   const r = await resolveComposeFilesBase(project);
   if (r && r.files && r.files.length) {
@@ -306,7 +306,7 @@ async function resolveComposeFilesBase(project) {
     const n = norm(gitMeta.composeFile, gitMeta.subdir ? path.join(mDir, gitMeta.subdir) : mDir);
     return { files: [n.file], cwd: n.cwd, server: null, remote: false, source: 'git metadata' };
   }
-  // 3) docker config_files label (running project) — CSV; untrusted → validate
+  // 3) docker config_files label (running project) - CSV; untrusted -> validate
   const cfg = String(proj.configFiles || '').split(',').map(s => s.trim()).filter(Boolean);
   const wd = proj.workingDir;
   if (cfg.length && wd) {
@@ -314,7 +314,7 @@ async function resolveComposeFilesBase(project) {
     if (!isSafeHostPath(wd) || !normd.every(n => isSafeHostPath(n.abs))) return { files: [], reason: 'The compose file path in the container labels is not safe to operate on.' };
     return { files: normd.map(n => n.file), cwd: normd[0].cwd, server: server || null, remote: !isLocal, source: 'docker label' };
   }
-  // 4) filesystem discovery (LOCAL only — can't fs-scan an unknown remote path here)
+  // 4) filesystem discovery (LOCAL only - can't fs-scan an unknown remote path here)
   if (isLocal) {
     const base = (wd && isSafeHostPath(wd)) ? wd : (findComposeFile(mDir) ? mDir : null);
     if (base) {
@@ -324,8 +324,8 @@ async function resolveComposeFilesBase(project) {
       if (found.length) { const n = norm(found[0], base); return { files: [n.file], cwd: n.cwd, server: null, remote: false, source: 'discovered on disk' }; }
     }
   }
-  // 5) fail-closed — never fall through to a bare `docker compose` (the old cryptic-error bug)
-  return { files: [], reason: `DockGate cannot determine which compose file to use for "${project}". It is down/external and there is no record — bring it up once from its folder, or adopt/redeploy it, so the compose file is recorded.` };
+  // 5) fail-closed - never fall through to a bare `docker compose` (the old cryptic-error bug)
+  return { files: [], reason: `DockGate cannot determine which compose file to use for "${project}". It is down/external and there is no record - bring it up once from its folder, or adopt/redeploy it, so the compose file is recorded.` };
 }
 
 async function execComposeAction(projectName, action, onData) {
@@ -343,7 +343,7 @@ async function runResolved(r, projectName, action, onData) {
   return await runCompose(projectName, fullAction, r.cwd, onData);
 }
 
-// Synchronous compose action (fast ops: down/restart) → run and return the output as JSON.
+// Synchronous compose action (fast ops: down/restart) -> run and return the output as JSON.
 async function runComposeAction(req, res, action, label) {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
@@ -353,7 +353,7 @@ async function runComposeAction(req, res, action, label) {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 }
 
-// Background compose action (long ops: up/pull/build/rebuild) → live per-step console (deployJobs), like deploy.
+// Background compose action (long ops: up/pull/build/rebuild) -> live per-step console (deployJobs), like deploy.
 function startComposeActionJob(req, res, action, label) {
   if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
   gcDeployJobs();
@@ -409,7 +409,7 @@ router.get('/:project/scaling', async (req, res) => {
       const auto = require('../compose-autoscale').ruleOf(sid, project, name); // under Auto Scaling the number moves within min–max
       const wanted = rule.replicas ?? (s.deploy && Number.isInteger(s.deploy.replicas) ? s.deploy.replicas : 1);
       const behind = proxies.filter(p => p.kind === 'nginx' && new RegExp(`https?://${name}[:/;]`).test(confs[p.id] || '')).map(p => ({ name: p.name, usesResolver: T.nginxUsesResolver(confs[p.id], name), connectTimeout: T.connectTimeoutOf(confs[p.id]) }));
-      services.push({ name, image: s.image || null, heal: !!rule.heal, keepRunning: !!rule.keepRunning, healthcheck: !!(s.healthcheck && !s.healthcheck.disable && s.healthcheck.test), exposed: (s.expose || []).length > 0 || (s.ports || []).length > 0 || await imageExposes(c, s.image), replicas: running, wanted, limits: CS.limitsOf(s), scalable: CS.checkScalable(s, name, version), fixes: { dropPorts: !!rule.dropPorts, dropName: !!rule.dropName }, ports: (s.ports || []).filter(p => p.published).map(p => `${p.host_ip ? `${p.host_ip}:` : ''}${p.published}→${p.target}`), containerName: s.container_name || null, aliases: rule.aliases || [], behind, auto, rollable: running > 0 && CS.checkScalable(s, name, version).ok && CS.checkScalable(s, name, version).fixes.every(f => rule[f]), drift: auto ? (running < auto.min || running > auto.max) : (rule.replicas !== undefined && rule.replicas !== null && running !== rule.replicas) });
+      services.push({ name, image: s.image || null, heal: !!rule.heal, keepRunning: !!rule.keepRunning, healthcheck: !!(s.healthcheck && !s.healthcheck.disable && s.healthcheck.test), exposed: (s.expose || []).length > 0 || (s.ports || []).length > 0 || await imageExposes(c, s.image), replicas: running, wanted, limits: CS.limitsOf(s), scalable: CS.checkScalable(s, name, version), fixes: { dropPorts: !!rule.dropPorts, dropName: !!rule.dropName }, ports: (s.ports || []).filter(p => p.published).map(p => `${p.host_ip ? `${p.host_ip}:` : ''}${p.published} -> ${p.target}`), containerName: s.container_name || null, aliases: rule.aliases || [], behind, auto, rollable: running > 0 && CS.checkScalable(s, name, version).ok && CS.checkScalable(s, name, version).fixes.every(f => rule[f]), drift: auto ? (running < auto.min || running > auto.max) : (rule.replicas !== undefined && rule.replicas !== null && running !== rule.replicas) });
     }
     res.json({ services, composeVersion: version, proxies: proxies.map(p => ({ name: p.name, kind: p.kind })), override: !!r.override, drift: services.some(x => x.drift), control: require('../agent/control').statusOf(sid) });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
@@ -511,8 +511,8 @@ router.post('/:project/:action', (req, res, next) => {
   if (!SWARM_BLOCKED.has(req.params.action)) return next();
   try {
     const row = require('../swarm-stacks').stackOfProject(req.params.project);
-    if (row && row.name !== req.params.project) return res.status(409).json({ error: `Part of ${req.params.project} runs on Swarm as stack ${row.name} — Compose would start those services a second time. Manage it in Swarm → Stacks (Redeploy, or Move back to Compose)` });
-    if (row) return res.status(409).json({ error: `${req.params.project} runs on Swarm now — manage it in Swarm → Stacks (Redeploy, or Move back to Compose)` });
+    if (row && row.name !== req.params.project) return res.status(409).json({ error: `Part of ${req.params.project} runs on Swarm as stack ${row.name} - Compose would start those services a second time. Manage it in Swarm > Stacks (Redeploy, or Move back to Compose)` });
+    if (row) return res.status(409).json({ error: `${req.params.project} runs on Swarm now - manage it in Swarm > Stacks (Redeploy, or Move back to Compose)` });
   } catch (e) { /* Swarm module not ready: let Compose handle it */ }
   next();
 });
@@ -550,9 +550,9 @@ router.post('/:project/down', async (req, res) => {
 });
 router.post('/:project/restart', (req, res) => runComposeAction(req, res, ['restart'], 'restart'));
 router.post('/:project/pull', (req, res) => startComposeActionJob(req, res, ['pull'], 'pull'));
-// docker compose build — compose faylındakı `build:` bölməli servislərin image-lərini qurur
+// docker compose build - compose faylındakı `build:` bölməli servislərin image-lərini qurur
 router.post('/:project/build', (req, res) => startComposeActionJob(req, res, ['build'], 'build'));
-// Parse a list of service names (?services=a,b or body.services=[...]) — safe charset only.
+// Parse a list of service names (?services=a,b or body.services=[...]) - safe charset only.
 function parseServices(src) {
   let raw = src || [];
   if (typeof raw === 'string') raw = raw.split(',');
@@ -560,8 +560,8 @@ function parseServices(src) {
 }
 // Rebuild = rebuild images from source + force-recreate so the new image lands in the container.
 // A `plan` body { stacks:[{ file, services[], noCache, force }] } rebuilds the EXACT compose file(s) the
-// user picked (different name/location/services). Without a plan: ?services=a,b → rebuild only those via
-// the resolved file(s) (+ --no-deps); empty → the whole project. Both pass -f (via execComposeAction / plan).
+// user picked (different name/location/services). Without a plan: ?services=a,b -> rebuild only those via
+// the resolved file(s) (+ --no-deps); empty -> the whole project. Both pass -f (via execComposeAction / plan).
 router.post('/:project/rebuild', (req, res) => {
   if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
   const plan = req.body && req.body.plan;
@@ -572,10 +572,10 @@ router.post('/:project/rebuild', (req, res) => {
   return startComposeActionJob(req, res, action, 'rebuild');
 });
 
-// Scan the project's tree for ALL compose files (any *.yml/.yaml with a services: block — non-standard names
+// Scan the project's tree for ALL compose files (any *.yml/.yaml with a services: block - non-standard names
 // and subdirs included), each with its services, sorted shallowest-first, so the Rebuild picker can show
 // "which services in which file". Scan root = the git repo root (if a checkout) else the resolved cwd.
-// Local → fs walk (findComposeFiles); remote → one SSH grep + `docker compose config --services` per file.
+// Local -> fs walk (findComposeFiles); remote -> one SSH grep + `docker compose config --services` per file.
 async function scanComposeFilesForRebuild(project) {
   const r = await resolveComposeFiles(project);
   const server = remoteCompose.getActiveRemoteServer();
@@ -614,8 +614,8 @@ router.get('/:project/compose-files', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Rebuild the EXACT files/services the user picked → docker compose -p <project> -f <file> up -d --build
-// [--force-recreate] [--no-deps svc…], optionally a `build --no-cache` first. Untrusted paths validated.
+// Rebuild the EXACT files/services the user picked -> docker compose -p <project> -f <file> up -d --build
+// [--force-recreate] [--no-deps svc...], optionally a `build --no-cache` first. Untrusted paths validated.
 function startRebuildPlanJob(req, res, plan) {
   gcDeployJobs();
   const project = req.params.project, reqIp = req.ip;
@@ -672,7 +672,7 @@ router.delete('/:project', async (req, res) => {
     const mDir = managedDir(project);
     const meta = readDeployMeta(project);
     // ADOPTED-IN-PLACE projects point at the USER'S OWN existing folder (source:'adopt'). A normal delete
-    // (removeFiles default true → removeRemoteDir → rm -rf) would destroy their data. NEVER remove files for
+    // (removeFiles default true -> removeRemoteDir -> rm -rf) would destroy their data. NEVER remove files for
     // an adopted project: `docker compose down` + drop DockGate's pointer only (untrack). Non-overridable.
     const isAdopted = !!(meta && meta.source === 'adopt');
     const removeFilesEff = isAdopted ? false : removeFiles;
@@ -684,7 +684,7 @@ router.delete('/:project', async (req, res) => {
       try { await remoteCompose.runComposeInRemoteDir(server, remoteDir, project, downArgs); } catch (e) { /* may already be down */ }
       let removedPath = null;
       if (removeFilesEff) removedPath = await remoteCompose.removeRemoteDir(server, remoteDir);
-      fs.rmSync(mDir, { recursive: true, force: true }); // drop the local pointer → untrack
+      fs.rmSync(mDir, { recursive: true, force: true }); // drop the local pointer -> untrack
       logAction({ req, server: dockerService.getActiveServerId(), resourceId: project, resourceType: 'compose', resourceName: project, action: 'delete', details: { removeVolumes, removeFiles: removeFilesEff, adopted: isAdopted, remoteDir: removedPath || remoteDir } });
       return res.json({ success: true, removedPath });
     }
@@ -692,7 +692,7 @@ router.delete('/:project', async (req, res) => {
     // Local daemon.
     const cwd = proj.workingDir || (meta && meta.mode === 'local' && meta.workingDir) || (fs.existsSync(mDir) ? mDir : null);
     if (cwd) { try { await runCompose(project, downArgs, cwd); } catch (e) { /* may already be down */ } }
-    // mDir is always managedDir(project) — i.e. under COMPOSE_DIR — so removing the whole managed folder is
+    // mDir is always managedDir(project) - i.e. under COMPOSE_DIR - so removing the whole managed folder is
     // safe. The old `findComposeFile(mDir)` guard skipped subdir / non-standard-named compose layouts (e.g. a
     // repo whose compose file is deploy/docker-compose.greennec.yaml), leaving the folder behind.
     if (removeFilesEff && fs.existsSync(mDir)) fs.rmSync(mDir, { recursive: true, force: true });
@@ -701,9 +701,9 @@ router.delete('/:project', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// ---- DockGate-managed compose files (create / read / edit) — local host only ----
+// ---- DockGate-managed compose files (create / read / edit) - local host only ----
 
-// Create a new managed project: write YAML → validate → up -d
+// Create a new managed project: write YAML -> validate -> up -d
 router.post('/create', async (req, res) => {
   try {
     // The YAML is written to DockGate's local managed dir; `up` targets the active daemon
@@ -727,8 +727,8 @@ router.post('/create', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// Read a managed project's YAML (for the editor) — finds ANY standard compose filename (.yml/.yaml).
-// Remote folder-deployed project → the compose file lives on the SERVER, so read it over SFTP (otherwise
+// Read a managed project's YAML (for the editor) - finds ANY standard compose filename (.yml/.yaml).
+// Remote folder-deployed project -> the compose file lives on the SERVER, so read it over SFTP (otherwise
 // the editor came back empty, because the local managed dir only holds the .dockgate-deploy.json pointer).
 router.get('/:project/file', async (req, res) => {
   try {
@@ -748,15 +748,15 @@ router.get('/:project/file', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Overwrite a managed project's YAML → validate → (optional) re-up.
-// Writes back to the project's EXISTING compose filename (e.g. docker-compose.yaml) — otherwise a
+// Overwrite a managed project's YAML -> validate -> (optional) re-up.
+// Writes back to the project's EXISTING compose filename (e.g. docker-compose.yaml) - otherwise a
 // second .yml file would shadow/be shadowed and edits would silently not apply.
 router.put('/:project/file', async (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
     const { yaml, up = false } = req.body || {};
     if (!yaml || !yaml.trim()) return res.status(400).json({ error: 'Compose YAML is required' });
-    // Remote folder-deployed project → write the compose file on the SERVER over SFTP, validate + (re)up THERE.
+    // Remote folder-deployed project -> write the compose file on the SERVER over SFTP, validate + (re)up THERE.
     const rc = remoteProjectCtx(req.params.project);
     if (rc) {
       const name = rc.composeFile || 'docker-compose.yml';
@@ -786,8 +786,8 @@ router.put('/:project/file', async (req, res) => {
 // ---- Managed project file tree: see compose-files.js (mounted here, same route order) ----
 router.use(require('./compose-files'));
 
-// Deploy a whole project FOLDER (uploaded from the browser as base64 files) → write to the managed
-// dir → up. Works on the active daemon (local or remote via DOCKER_HOST=ssh, #2-A). Image-based
+// Deploy a whole project FOLDER (uploaded from the browser as base64 files) -> write to the managed
+// dir -> up. Works on the active daemon (local or remote via DOCKER_HOST=ssh, #2-A). Image-based
 // compose is ideal; build contexts upload to the daemon, bind-mount paths resolve on the daemon's host.
 router.post('/deploy-folder', async (req, res) => {
   try {
@@ -808,7 +808,7 @@ router.post('/deploy-folder', async (req, res) => {
       if (dest !== dir && !dest.startsWith(dir + path.sep)) continue; // traversal guard
       const buf = Buffer.from(f.b64, 'base64');
       total += buf.length;
-      if (total > 1024 * 1024 * 1024) return res.status(400).json({ error: 'Folder exceeds the 1GB upload limit — use pre-built images or git-based deploy for large projects' });
+      if (total > 1024 * 1024 * 1024) return res.status(400).json({ error: 'Folder exceeds the 1GB upload limit - use pre-built images or git-based deploy for large projects' });
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, buf);
     }
@@ -828,7 +828,7 @@ router.post('/deploy-folder', async (req, res) => {
 // then finish validates the compose file and brings the project up. The single-shot /deploy-folder
 // above stays for API compatibility.
 const STAGING_DIR = path.join(COMPOSE_DIR, '.staging');
-const folderUploads = new Map(); // uploadId → { project, dir, total, files, created }
+const folderUploads = new Map(); // uploadId -> { project, dir, total, files, created }
 const UPLOAD_TTL_MS = 30 * 60 * 1000;
 const UPLOAD_MAX_BYTES = 1024 * 1024 * 1024; // 1GB total project size (uploaded file-by-file). Single file is JSON/V8-capped near ~384MB.
 
@@ -879,7 +879,7 @@ async function captureComposeFiles(project) {
     } catch (e) { content = null; }
     if (content == null) continue;
     total += Buffer.byteLength(content);
-    if (total > HISTORY_MAX_BYTES) return null; // too big to keep — the entry is stored without files
+    if (total > HISTORY_MAX_BYTES) return null; // too big to keep - the entry is stored without files
     out[name] = content;
   }
   return Object.keys(out).length ? out : null;
@@ -887,7 +887,7 @@ async function captureComposeFiles(project) {
 async function recordDeploy({ project, kind, status, error, sourceIp, startedAt, finishedAt, details = null, serverId: sid = null, noFiles = false, gitCommit = null }) {
   try {
     if (!validateProjectName(project)) return;
-    const files = status === 'done' && !noFiles ? await captureComposeFiles(project).catch(() => null) : null; // no files when Docker can not be asked — the entry is kept
+    const files = status === 'done' && !noFiles ? await captureComposeFiles(project).catch(() => null) : null; // no files when Docker can not be asked - the entry is kept
     const git = readGitMeta(project), dm = readDeployMeta(project);
     const source = git ? 'git' : (dm && dm.source) || kind || 'deploy';
     const json = files ? JSON.stringify(files) : null;
@@ -916,7 +916,7 @@ function jobStream(job, chunk) { job.log += chunk; }
 // Update one step's status in the job's per-step list (drives the UI status indicators).
 function setStep(job, id, status) { const s = (job.steps || []).find(x => x.id === id); if (s) s.status = status; }
 
-// Ensure an external network exists on the deploy's target daemon (idempotent) — so stacks sharing an
+// Ensure an external network exists on the deploy's target daemon (idempotent) - so stacks sharing an
 // `external: true` network don't fail with "network ... not found". Failure (already exists) is ignored.
 async function ensureNetwork(deploy, name, stream) {
   if (deploy && deploy.mode === 'remote') {
@@ -969,8 +969,8 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
         setStep(job, 'upload', 'done');
         baseDir = remotePath;
       } else {
-        if (update && clean) { current = 'clean'; setStep(job, 'clean', 'running'); job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server…`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) { } setStep(job, 'clean', 'done'); }
-        current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server…\n`);
+        if (update && clean) { current = 'clean'; setStep(job, 'clean', 'running'); job.phase = 'clean'; jobLog(job, `Cleaning ${remotePath} on the server...`); try { await remoteCompose.removeRemoteDir(server, remotePath); } catch (e) { } setStep(job, 'clean', 'done'); }
+        current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'upload'; jobLog(job, `Uploading files to ${remotePath} on the server...\n`);
         uploaded = await remoteCompose.uploadDirToRemote(server, u.dir, remotePath, (d, t) => jobStream(job, `\ruploaded ${d}/${t} files`));
         jobLog(job, `\nUploaded ${uploaded} file(s).`); setStep(job, 'upload', 'done');
         if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) { }
@@ -978,7 +978,7 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
       }
     } else {
       const dir = managedDir(u.project);
-      current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'promote'; jobLog(job, 'Staging project files…');
+      current = 'upload'; setStep(job, 'upload', 'running'); job.phase = 'promote'; jobLog(job, 'Staging project files...');
       fs.rmSync(dir, { recursive: true, force: true });
       fs.renameSync(u.dir, dir);
       setStep(job, 'upload', 'done'); baseDir = dir;
@@ -1003,7 +1003,7 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
         writeDeployMeta(s.name, isRemote
           ? { mode: 'remote', serverId, remotePath: cwd, composeFile: fileBase, source }
           : { mode: 'local', serverId: 'local', workingDir: cwd, composeFile: fileBase, source });
-        if (!up) continue; // staged only — files are placed, nothing started
+        if (!up) continue; // staged only - files are placed, nothing started
         current = 'stack:' + s.name; setStep(job, current, 'running'); job.phase = 'up';
         const upArgs = ['-f', fileBase, 'up', '-d'];
         if (s.build && !s.noCache) upArgs.push('--build');
@@ -1022,14 +1022,14 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
       }
       const allNames = plan.stacks.map(s => s.name);
       job.result = { plan: true, staged: !up, stacks: up ? deployed : allNames, nets: plan.createNets || [] };
-      if (!up) jobLog(job, `\n✓ Staged ${allNames.length} stack(s) — not started. Deploy each from the Compose list (Up) when ready.`);
+      if (!up) jobLog(job, `\n✓ Staged ${allNames.length} stack(s) - not started. Deploy each from the Compose list (Up) when ready.`);
       logAction({ sourceIp: reqIp, server: isRemote ? serverId : undefined, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: up ? 'deploy-folder-plan' : 'stage-folder-plan', details: { stacks: allNames, nets: plan.createNets || [], staged: !up } });
     } else if (isRemote) {
       const { remotePath, update } = u.deploy;
       writeDeployMeta(u.project, { mode: 'remote', serverId, remotePath, composeFile, source: u.git ? 'git' : 'folder' });
       if (up) {
         // On update: rebuild AND force-recreate so the new image/files actually land in the running container.
-        // u.rebuildServices (optional) → rebuild ONLY those services (+ --no-deps so deps aren't recreated).
+        // u.rebuildServices (optional) -> rebuild ONLY those services (+ --no-deps so deps aren't recreated).
         const upArgs = update ? ['up', '-d', '--build', '--force-recreate'] : ['up', '-d'];
         if (update && u.rebuildServices && u.rebuildServices.length) upArgs.push('--no-deps', ...u.rebuildServices);
         current = 'deploy'; setStep(job, 'deploy', 'running'); job.phase = 'up'; jobLog(job, `$ docker compose ${upArgs.join(' ')}`);
@@ -1039,7 +1039,7 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
       job.result = { composeFile, remotePath, updated: !!update };
       logAction({ sourceIp: reqIp, server: serverId, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: update ? 'update-folder' : 'deploy-folder', details: { files: uploaded, composeFile, remotePath, clean: !!wantClean } });
     } else {
-      // Local, single (non-plan) deploy → record the pointer so it shows as git/folder-managed (badge, Pull, delete-files).
+      // Local, single (non-plan) deploy -> record the pointer so it shows as git/folder-managed (badge, Pull, delete-files).
       writeDeployMeta(u.project, { mode: 'local', serverId: 'local', workingDir: baseDir, composeFile, source: u.git ? 'git' : 'folder' });
       if (up) {
         const upArgs = (u.git || u.redeploy || isUpdate) ? ['up', '-d', '--build', '--force-recreate'] : ['up', '-d'];
@@ -1048,11 +1048,11 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
       job.result = { composeFile };
       logAction({ sourceIp: reqIp, resourceId: u.project, resourceType: 'compose', resourceName: u.project, action: 'deploy-folder', details: { files: u.files, composeFile } });
     }
-    // Git-sourced deploy → remember the repo + the deployed plan so Redeploy can re-clone + re-apply it.
+    // Git-sourced deploy -> remember the repo + the deployed plan so Redeploy can re-clone + re-apply it.
     if (u.git) {
       fs.mkdirSync(managedDir(u.project), { recursive: true });
       const gitComposeFile = plan ? ((plan.stacks[0] && plan.stacks[0].composeFile) || composeFile) : composeFile;
-      // Record the commit we just deployed → the baseline a future redeploy diffs against ("what changed").
+      // Record the commit we just deployed -> the baseline a future redeploy diffs against ("what changed").
       let deployedCommit = u.git.deployedCommit || '';
       try { if (u.dir) deployedCommit = (await gitRun(['-C', u.dir, 'rev-parse', 'HEAD'])).stdout.trim() || deployedCommit; } catch (e) { }
       fs.writeFileSync(gitMetaPath(u.project), JSON.stringify({ ...u.git, serverId: isRemote ? serverId : 'local', deployedCommit, plan: plan || null, deployMode: isRemote ? 'remote' : 'local', remotePath: isRemote ? u.deploy.remotePath : '', composeFile: gitComposeFile }, null, 2), { mode: 0o600 });
@@ -1066,7 +1066,7 @@ async function runDeployJob(job, u, composeFile, up, reqIp) {
   }
 }
 
-// Background worker for Git deploy — native git clone on host/remote → docker compose up, with live status.
+// Background worker for Git deploy - native git clone on host/remote -> docker compose up, with live status.
 async function runGitDeployJob(job, p) {
   const stream = (c) => jobStream(job, c);
   let current = null;
@@ -1180,10 +1180,10 @@ router.post('/deploy-folder-start', async (req, res) => {
       // Re-upload an EXISTING remote folder-deployed project to its stored path, then rebuild.
       const meta = readDeployMeta(project);
       if (!meta || meta.mode !== 'remote') return res.status(400).json({ error: 'Update from folder is only for remote folder-deployed projects.' });
-      // ADOPTED projects point at the USER'S OWN folder — re-uploading (and especially clean-replace, which
+      // ADOPTED projects point at the USER'S OWN folder - re-uploading (and especially clean-replace, which
       // rm -rf's remotePath first) would destroy their files. Never update an adopted project in place; the
       // guard here mirrors the DELETE guard so no path can rm -rf an adopted folder. Edit on the server instead.
-      if (meta.source === 'adopt') return res.status(400).json({ error: 'This project was adopted in place — DockGate never re-uploads or cleans an adopted folder. Edit the files on the server directly.' });
+      if (meta.source === 'adopt') return res.status(400).json({ error: 'This project was adopted in place - DockGate never re-uploads or cleans an adopted folder. Edit the files on the server directly.' });
       const server = remoteCompose.getActiveRemoteServer();
       if (!server || meta.serverId !== dockerService.getActiveServerId()) {
         return res.status(400).json({ error: 'Switch to the server this project was deployed to, then update.' });
@@ -1193,12 +1193,12 @@ router.post('/deploy-folder-start', async (req, res) => {
       if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
         return res.status(409).json({ error: `A project named "${project}" already exists` });
       }
-      // target: { mode: 'remote', remotePath } → files land on the active remote host. Default: local (DockGate).
+      // target: { mode: 'remote', remotePath } -> files land on the active remote host. Default: local (DockGate).
       if (target && target.mode === 'remote') {
         const server = remoteCompose.getActiveRemoteServer();
         if (!server) return res.status(400).json({ error: 'Remote deploy needs a remote SSH server active in the header.' });
         if (!(await remoteCompose.checkComposeAvailable(server))) {
-          return res.status(400).json({ error: 'docker compose (v2) is not available on the remote host — install it there first.' });
+          return res.status(400).json({ error: 'docker compose (v2) is not available on the remote host - install it there first.' });
         }
         const remotePath = await remoteCompose.resolveRemotePath(server, (target.remotePath || `~/.dockgate/projects/${project}`));
         deploy = { mode: 'remote', server, remotePath, source: 'folder' };
@@ -1217,7 +1217,7 @@ router.post('/deploy-folder-file', (req, res) => {
   try {
     const { uploadId, path: relPath, b64 } = req.body || {};
     const u = folderUploads.get(uploadId);
-    if (!u) return res.status(410).json({ error: 'Upload session expired — start over' });
+    if (!u) return res.status(410).json({ error: 'Upload session expired - start over' });
     const rel = safeRelPath(relPath);
     if (!rel) return res.status(400).json({ error: 'Invalid file path' });
     const dest = path.join(u.dir, rel);
@@ -1227,7 +1227,7 @@ router.post('/deploy-folder-file', (req, res) => {
     if (u.total > UPLOAD_MAX_BYTES) {
       fs.rmSync(u.dir, { recursive: true, force: true });
       folderUploads.delete(uploadId);
-      return res.status(400).json({ error: 'Folder exceeds the 1GB upload limit — use pre-built images or git-based deploy for large projects' });
+      return res.status(400).json({ error: 'Folder exceeds the 1GB upload limit - use pre-built images or git-based deploy for large projects' });
     }
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, buf);
@@ -1237,11 +1237,11 @@ router.post('/deploy-folder-file', (req, res) => {
 });
 
 // After upload, scan the staged tree for ALL compose files + their services/networks so the UI can let the
-// user PICK which file(s), which services, and how to build — instead of auto-detecting a single root file.
+// user PICK which file(s), which services, and how to build - instead of auto-detecting a single root file.
 router.post('/deploy-folder-scan', async (req, res) => {
   try {
     const u = folderUploads.get((req.body || {}).uploadId);
-    if (!u) return res.status(410).json({ error: 'Upload session expired — start over' });
+    if (!u) return res.status(410).json({ error: 'Upload session expired - start over' });
     if (!u.files) return res.status(400).json({ error: 'No files uploaded yet' });
     const files = findComposeFiles(u.dir);
     const scanned = [];
@@ -1255,7 +1255,7 @@ router.post('/deploy-folder-finish', async (req, res) => {
   try {
     gcDeployJobs();
     const { uploadId, up = true, plan = null } = req.body || {};
-    if (!u) return res.status(410).json({ error: 'Upload session expired — start over' });
+    if (!u) return res.status(410).json({ error: 'Upload session expired - start over' });
     if (!u.files) return res.status(400).json({ error: 'No files uploaded' });
     // On an update, an optional services list rebuilds ONLY those services (see runDeployJob).
     if (u.deploy && u.deploy.update) u.rebuildServices = parseServices(req.body && req.body.services);
@@ -1285,7 +1285,7 @@ router.post('/deploy-folder-finish', async (req, res) => {
       if (!composeFile) {
         if (!up) {
           composeFile = 'compose.yaml';
-          try { fs.writeFileSync(path.join(u.dir, composeFile), `# DockGate — ${u.project}\nservices:\n  app:\n    image: alpine\n    command: echo "Configure services in compose.yaml"\n`); } catch (e) { }
+          try { fs.writeFileSync(path.join(u.dir, composeFile), `# DockGate - ${u.project}\nservices:\n  app:\n    image: alpine\n    command: echo "Configure services in compose.yaml"\n`); } catch (e) { }
         } else {
           throw Object.assign(new Error('No docker-compose.yml (or compose.yaml) found in the folder'), { statusCode: 400 });
         }
@@ -1302,10 +1302,10 @@ router.post('/deploy-folder-finish', async (req, res) => {
     folderUploads.delete(uploadId); // the job now owns u.dir
     const job = { id: crypto.randomBytes(8).toString('hex'), project: u.project, status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
     deployJobs.set(job.id, job);
-    runDeployJob(job, u, composeFile, up, req.ip); // not awaited — runs in the background
+    runDeployJob(job, u, composeFile, up, req.ip); // not awaited - runs in the background
     res.json({ jobId: job.id, project: u.project });
   } catch (err) {
-    // Validation/setup failure → clean the staging dir so a retry starts fresh.
+    // Validation/setup failure -> clean the staging dir so a retry starts fresh.
     if (u) {
       if (u.dir) try { fs.rmSync(u.dir, { recursive: true, force: true }); } catch (e) { }
       if (u.remoteReady && u.deploy && u.deploy.server && u.deploy.remotePath) {
@@ -1317,7 +1317,7 @@ router.post('/deploy-folder-finish', async (req, res) => {
   }
 });
 
-// Cancel/close mid-upload — drop the staging dir or remote staged folder.
+// Cancel/close mid-upload - drop the staging dir or remote staged folder.
 router.post('/deploy-folder-abort', (req, res) => {
   const u = folderUploads.get((req.body || {}).uploadId);
   if (u) {
@@ -1332,20 +1332,20 @@ router.post('/deploy-folder-abort', (req, res) => {
 
 // ---- Adopt from server (existing on-server folder) ----
 // Register a compose file that ALREADY lives on the active remote host IN PLACE (a deploy-meta pointer at
-// its own path, source:'adopt') — no upload, no copy. Bind-mounts + relative .env resolve exactly as a hand
+// its own path, source:'adopt') - no upload, no copy. Bind-mounts + relative .env resolve exactly as a hand
 // `docker compose up` in that folder would. Unlike Deploy-from-folder (uploads FROM the user's computer) and
-// Deploy-from-git (clones), the files are the user's own — so DELETE must NEVER remove them (see the guard).
+// Deploy-from-git (clones), the files are the user's own - so DELETE must NEVER remove them (see the guard).
 
 // Scan an arbitrary on-server ROOT for every compose file (name-agnostic: any *.yml/*.yaml with a top-level
 // `services:`), returning each with its ABSOLUTE path + services. ONE bounded remote command (no per-file SSH
-// fan-out → no pool exhaustion), depth/count-limited + `timeout`. Mirrors the remote branch of
+// fan-out -> no pool exhaustion), depth/count-limited + `timeout`. Mirrors the remote branch of
 // scanComposeFilesForRebuild, generalized to a caller-supplied root.
 async function remoteScanComposeFiles(server, root, opts = {}) {
   const maxdepth = Math.min(Math.max(parseInt(opts.maxdepth, 10) || 6, 1), 12);
   const cap = Math.min(Math.max(parseInt(opts.cap, 10) || 80, 1), 200);
   const base = String(root).replace(/\/+$/, '') || '/';
   // ONE bounded remote command. For each candidate *.yml/*.yaml with a top-level `services:`, emit F:<path>
-  // then J:<base64 of `docker compose config --format json`> — parsed in Node (robust; no fragile shell JSON)
+  // then J:<base64 of `docker compose config --format json`> - parsed in Node (robust; no fragile shell JSON)
   // to recover services + external networks + build flags, exactly like scanComposeFile does for local/folder.
   // Truncation is measured on the CANDIDATE stream (pre-filter): fetch cap+1 and emit T:1 if the extra exists.
   // `< /dev/null` stops `docker compose` from consuming the loop's stdin.
@@ -1367,7 +1367,7 @@ async function remoteScanComposeFiles(server, root, opts = {}) {
         cur.hasBuild = cur.services.some(s => svc[s] && svc[s].build);
         const nets = cfg.networks || {};
         cur.externalNets = Object.entries(nets).filter(([, v]) => v && v.external).map(([k, v]) => (v && v.name) || k);
-      } catch (e) { cur.parseError = 'compose config could not be parsed (unresolved ${VAR} / missing .env?) — you can still adopt it'; }
+      } catch (e) { cur.parseError = 'compose config could not be parsed (unresolved ${VAR} / missing .env?) - you can still adopt it'; }
       cur = null;
     }
   }
@@ -1375,7 +1375,7 @@ async function remoteScanComposeFiles(server, root, opts = {}) {
   return { files, truncated };
 }
 
-// POST /adopt-scan { root, maxdepth?, cap? } → find compose files under an on-server folder, each annotated
+// POST /adopt-scan { root, maxdepth?, cap? } -> find compose files under an on-server folder, each annotated
 // with a suggested unique project name, whether DockGate already manages that folder, and whether a compose
 // project is already RUNNING there (so the UI can reuse its exact -p name and avoid a duplicate stack).
 router.post('/adopt-scan', async (req, res) => {
@@ -1388,11 +1388,11 @@ router.post('/adopt-scan', async (req, res) => {
     const { files, truncated } = await remoteScanComposeFiles(server, root, req.body || {});
 
     const activeId = dockerService.getActiveServerId();
-    const managedByDir = new Map();          // remote folder (normalized) → managing project name (on this server)
+    const managedByDir = new Map();          // remote folder (normalized) -> managing project name (on this server)
     const reserved = new Set();              // names already taken: managed-here + EVERY running project
     if (fs.existsSync(COMPOSE_DIR)) for (const name of fs.readdirSync(COMPOSE_DIR)) {
       if (!validateProjectName(name)) continue;
-      reserved.add(name); // COMPOSE_DIR is a GLOBAL namespace — a managed project of ANY mode/server takes the name
+      reserved.add(name); // COMPOSE_DIR is a GLOBAL namespace - a managed project of ANY mode/server takes the name
       const meta = readDeployMeta(name);
       if (meta && meta.mode === 'remote' && meta.serverId === activeId && meta.remotePath) managedByDir.set(String(meta.remotePath).replace(/\/+$/, ''), name);
     }
@@ -1407,8 +1407,8 @@ router.post('/adopt-scan', async (req, res) => {
       const dirNorm = String(f.dir).replace(/\/+$/, '');
       f.alreadyManaged = managedByDir.get(dirNorm) || null;   // project name already pointing at this folder
       f.runningProject = runningByDir.get(dirNorm) || null;   // a compose project already up in this folder
-      // (1) already-managing name → idempotent re-adopt; (2) the EXACT -p name of a project running in THIS
-      // folder → Up/Down hit the same containers (no duplicate stack); (3) else the folder basename, uniquified
+      // (1) already-managing name -> idempotent re-adopt; (2) the EXACT -p name of a project running in THIS
+      // folder > Up/Down hit the same containers (no duplicate stack); (3) else the folder basename, uniquified
       // against managed + running names so it never clashes with an unrelated project.
       f.suggestedName = f.alreadyManaged || f.runningProject || uniq(sanitize(path.posix.basename(dirNorm)));
     }
@@ -1417,7 +1417,7 @@ router.post('/adopt-scan', async (req, res) => {
 });
 
 // POST /adopt-finish { up, createNets, stacks:[{ name, composeFile(ABSOLUTE), services, build, noCache, pull, noDeps }] }
-// Registers each selected compose file as an adopted project (pointer at its own folder) and — if up — runs
+// Registers each selected compose file as an adopted project (pointer at its own folder) and - if up - runs
 // `docker compose up -d [...]` in that folder over SSH. Per-stack isolation: one failure never blocks the rest.
 router.post('/adopt-finish', async (req, res) => {
   try {
@@ -1437,11 +1437,11 @@ router.post('/adopt-finish', async (req, res) => {
       if (!validateProjectName(name)) return res.status(400).json({ error: `Invalid project name: "${name}" (only a-z, 0-9, _, -).` });
       if (seen.has(name)) return res.status(400).json({ error: `Duplicate project name in the selection: "${name}".` });
       seen.add(name);
-      // Re-validate uniqueness vs an EXISTING project — allow only an idempotent re-adopt of the SAME folder.
+      // Re-validate uniqueness vs an EXISTING project - allow only an idempotent re-adopt of the SAME folder.
       const existing = readDeployMeta(name);
       const wantDir = path.posix.dirname(s.composeFile).replace(/\/+$/, '');
       if (existing && !(existing.mode === 'remote' && existing.serverId === serverId && String(existing.remotePath).replace(/\/+$/, '') === wantDir)) {
-        return res.status(409).json({ error: `A different project named "${name}" already exists — rename this one.` });
+        return res.status(409).json({ error: `A different project named "${name}" already exists - rename this one.` });
       }
       stacks.push({ name, composeFile: s.composeFile, services: parseServices(s.services), build: !!s.build, noCache: !!s.noCache, pull: !!s.pull, noDeps: !!s.noDeps });
     }
@@ -1474,7 +1474,7 @@ async function runAdoptJob(job, p) {
       const fileBase = path.posix.basename(s.composeFile);
       setStep(job, 'stack:' + s.name, 'running');
       try {
-        // In-place pointer. source:'adopt' → the DELETE guard refuses to remove the user's own folder.
+        // In-place pointer. source:'adopt' -> the DELETE guard refuses to remove the user's own folder.
         writeDeployMeta(s.name, { mode: 'remote', serverId: p.serverId, remotePath: cwd, composeFile: fileBase, source: 'adopt' });
         tracked.push(s.name);
         if (p.up) {
@@ -1491,18 +1491,18 @@ async function runAdoptJob(job, p) {
         }
         setStep(job, 'stack:' + s.name, 'done');
       } catch (e) {
-        // Pointer is already written → the stack still lists (DOWN) and can be started later. Isolate the failure.
+        // Pointer is already written -> the stack still lists (DOWN) and can be started later. Isolate the failure.
         failed.push(s.name);
         setStep(job, 'stack:' + s.name, 'failed');
         jobLog(job, `\n✗ [${s.name}] ${(e.stderr || e.message || 'failed').toString()}`);
       }
     }
     job.result = { adopt: true, up: p.up, tracked, deployed, failed };
-    // tracked = pointers written (a failed-`up` stack is still tracked → lists as DOWN, startable later).
+    // tracked = pointers written (a failed-`up` stack is still tracked -> lists as DOWN, startable later).
     const parts = [`${tracked.length} adopted`];
     if (p.up) parts.push(`${deployed.length} deployed`);
     if (failed.length) parts.push(`${failed.length} failed`);
-    jobLog(job, `\n${failed.length ? '⚠' : '✓'} ${parts.join(' · ')}.`);
+    jobLog(job, `\n${failed.length ? '⚠' : '✓'} ${parts.join(', ')}.`);
     job.status = failed.length ? 'error' : 'done'; job.phase = job.status; job.finishedAt = Date.now();
     logAction({ sourceIp: p.reqIp, server: p.serverId, resourceType: 'compose', resourceName: job.project, action: p.up ? 'adopt-deploy' : 'adopt-track', details: { tracked, deployed, failed, up: p.up } });
   } catch (err) {
@@ -1511,9 +1511,9 @@ async function runAdoptJob(job, p) {
   }
 }
 
-// Deploy from a Git repo (#2-B): clone → managed project → up. Stores repo/branch/token + a webhook
+// Deploy from a Git repo (#2-B): clone -> managed project -> up. Stores repo/branch/token + a webhook
 // secret for later re-deploys. Private repos: supply a token (embedded into the https URL; not logged).
-// Scan a git repo for compose files BEFORE deploying — ephemeral shallow clone → list every compose file
+// Scan a git repo for compose files BEFORE deploying - ephemeral shallow clone -> list every compose file
 // (with services), so the UI can let the user PICK which folder/compose instead of typing a subdir blind.
 router.post('/deploy-git-scan', async (req, res) => {
   const { token = '', keyId = '', repoUrl, branch = '' } = req.body || {};
@@ -1548,7 +1548,7 @@ router.post('/deploy-git-prepare', async (req, res) => {
     if (!validateProjectName(project || '')) return res.status(400).json({ error: 'Invalid project name (a-z, 0-9, _, -)' });
     const isHttp = /^https?:\/\//i.test(repoUrl || '');
     const isSsh = /^(ssh:\/\/|[\w.-]+@[\w.-]+:)/.test(repoUrl || '');
-    if (!repoUrl || !(isHttp || isSsh)) return res.status(400).json({ error: 'A git URL is required (https://… or git@host:owner/repo.git for an SSH key)' });
+    if (!repoUrl || !(isHttp || isSsh)) return res.status(400).json({ error: 'A git URL is required (https://... or git@host:owner/repo.git for an SSH key)' });
     if (keyId && !isSsh) return res.status(400).json({ error: 'With an SSH key, use the SSH clone URL (git@host:owner/repo.git)' });
     if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
       return res.status(409).json({ error: `A project named "${project}" already exists`, projectExists: true, project });
@@ -1560,7 +1560,7 @@ router.post('/deploy-git-prepare', async (req, res) => {
     if (target && target.mode === 'remote') {
       const server = remoteCompose.getActiveRemoteServer();
       if (!server) return res.status(400).json({ error: 'Remote deploy needs a remote SSH server active in the header.' });
-      if (!(await remoteCompose.checkComposeAvailable(server))) return res.status(400).json({ error: 'docker compose (v2) is not available on the remote host — install it there first.' });
+      if (!(await remoteCompose.checkComposeAvailable(server))) return res.status(400).json({ error: 'docker compose (v2) is not available on the remote host - install it there first.' });
 
       const remotePath = await remoteCompose.resolveRemotePath(server, (target.remotePath || `~/.dockgate/projects/${project}`));
       const deploy = { mode: 'remote', server, remotePath, source: 'git', serverId: server.id };
@@ -1612,12 +1612,12 @@ router.post('/deploy-git', async (req, res) => {
     if (!validateProjectName(project || '')) return res.status(400).json({ error: 'Invalid project name (a-z, 0-9, _, -)' });
     const isHttp = /^https?:\/\//i.test(repoUrl || '');
     const isSsh = /^(ssh:\/\/|[\w.-]+@[\w.-]+:)/.test(repoUrl || '');
-    if (!repoUrl || !(isHttp || isSsh)) return res.status(400).json({ error: 'A git URL is required (https://… or git@host:owner/repo.git for an SSH key)' });
+    if (!repoUrl || !(isHttp || isSsh)) return res.status(400).json({ error: 'A git URL is required (https://... or git@host:owner/repo.git for an SSH key)' });
     if (keyId && !isSsh) return res.status(400).json({ error: 'With an SSH key, use the SSH clone URL (git@host:owner/repo.git)' });
     if (await dockerService.getComposeProject(project).then(p => p.total > 0).catch(() => false)) {
       return res.status(409).json({ error: `A project named "${project}" already exists` });
     }
-    // Hand off to a background job (clone → transfer → up) with live per-step status, like folder deploy.
+    // Hand off to a background job (clone -> transfer -> up) with live per-step status, like folder deploy.
     const secret = crypto.randomBytes(18).toString('hex');
     const job = { id: crypto.randomBytes(8).toString('hex'), project, status: 'running', phase: 'starting', log: '', error: null, result: null, startedAt: Date.now(), finishedAt: null };
     deployJobs.set(job.id, job);
@@ -1626,7 +1626,7 @@ router.post('/deploy-git', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: redactToken(err.message, token) }); }
 });
 
-// Re-deploy a git project: fetch latest → hard reset → up --build (rebuild from new source).
+// Re-deploy a git project: fetch latest -> hard reset -> up --build (rebuild from new source).
 // onData (optional) streams the git/compose output for a live console.
 async function gitRedeploy(project, onData) {
   const meta = readGitMeta(project);
@@ -1710,43 +1710,43 @@ router.get('/:project/git-status', async (req, res) => {
         const out = (await gitWithKey(ctx.keyId || null, ['-C', ctx.repoRoot, 'ls-remote', url, ref])).stdout || '';
         remoteSHA = ((out.split('\n').find(Boolean) || '').split(/\s+/)[0] || '').trim();
       }
-    } catch (e) { /* unreachable / auth — report unknown, not behind */ }
+    } catch (e) { /* unreachable / auth - report unknown, not behind */ }
     const result = { gitManaged: true, deployedSHA, remoteSHA, hasBaseline: !!deployedSHA, behind: !!(deployedSHA && remoteSHA && deployedSHA !== remoteSHA) };
     gitStatusCache.set(project, { at: Date.now(), result });
     res.json(result);
   } catch (err) { res.json({ gitManaged: false, error: (err.message || '').toString() }); }
 });
 
-// Re-deploy a Git project: re-clone fresh → re-apply the stored plan/compose (re-transfer for remote) via
+// Re-deploy a Git project: re-clone fresh -> re-apply the stored plan/compose (re-transfer for remote) via
 // Stream "what changed since the last deploy" into a job's console: the file list (added/modified/deleted)
 // + line stat, computed from the freshly-cloned repo (`dir`) vs the commit we last deployed (meta.deployedCommit).
-// Best-effort — never throws (the deploy must proceed regardless).
+// Best-effort - never throws (the deploy must proceed regardless).
 async function streamGitChanges(job, dir, meta) {
   let newSHA = '';
   try { newSHA = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) { return; }
   const oldSHA = (meta.deployedCommit || '').trim();
-  if (!oldSHA) { jobLog(job, `\nℹ️  First tracked deploy — baseline ${newSHA.slice(0, 7)} recorded; changed files will show from the next redeploy.`); return; }
-  if (oldSHA === newSHA) { jobLog(job, `\n✓ Already at the latest commit ${newSHA.slice(0, 7)} — nothing new pulled.`); return; }
+  if (!oldSHA) { jobLog(job, `\nℹ️  First tracked deploy - baseline ${newSHA.slice(0, 7)} recorded; changed files will show from the next redeploy.`); return; }
+  if (oldSHA === newSHA) { jobLog(job, `\n✓ Already at the latest commit ${newSHA.slice(0, 7)} - nothing new pulled.`); return; }
   // The shallow clone only has HEAD; bring in the old commit's tree so we can diff against it.
   const url = meta.keyId ? meta.repoUrl : gitUrlWithToken(meta.repoUrl, meta.token);
   try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', url, oldSHA]); } catch (e) { }
   let names = '', stat = '';
   try { names = (await gitRun(['-C', dir, 'diff', '--name-status', oldSHA, newSHA])).stdout.trim(); } catch (e) { }
   try { stat = (await gitRun(['-C', dir, 'diff', '--shortstat', oldSHA, newSHA])).stdout.trim(); } catch (e) { }
-  jobLog(job, `\n📦 Changes pulled (${oldSHA.slice(0, 7)} → ${newSHA.slice(0, 7)}):`);
+  jobLog(job, `\n📦 Changes pulled (${oldSHA.slice(0, 7)} -> ${newSHA.slice(0, 7)}):`);
   if (names) {
     const icon = s => s.startsWith('A') ? '✚' : s.startsWith('D') ? '🗑' : s.startsWith('R') ? '➟' : '✎';
     for (const line of names.split('\n')) {
       const parts = line.split('\t');
-      jobLog(job, `   ${icon(parts[0])} ${parts.slice(1).join(' → ')}`);
+      jobLog(job, `   ${icon(parts[0])} ${parts.slice(1).join(' -> ')}`);
     }
     if (stat) jobLog(job, `  ${stat}`);
   } else {
-    jobLog(job, `   (couldn't compute a file diff — the old commit may be gone after a force-push/rebase)`);
+    jobLog(job, `   (couldn't compute a file diff - the old commit may be gone after a force-push/rebase)`);
   }
 }
 
-// the shared runDeployJob → live console. Works for single AND multi-stack git deploys.
+// the shared runDeployJob -> live console. Works for single AND multi-stack git deploys.
 function gitRedeployJob(project, reqIp) {
   const meta = readGitMeta(project);
   if (!meta) { const e = new Error('Not a Git-managed project'); e.statusCode = 400; throw e; }
@@ -1794,12 +1794,12 @@ function gitRedeployJob(project, reqIp) {
             await remoteCompose.runGitOnRemote(server, meta.keyId, remotePath, ['fetch', '--depth', '1', url, fromSHA]);
             const names = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['diff', '--name-status', fromSHA, toSHA])).trim();
             const stat = (await remoteCompose.runGitOnRemote(server, null, remotePath, ['diff', '--shortstat', fromSHA, toSHA])).trim();
-            jobLog(job, `\n📦 Changes pulled (${fromSHA.slice(0, 7)} → ${toSHA.slice(0, 7)}):\n`);
+            jobLog(job, `\n📦 Changes pulled (${fromSHA.slice(0, 7)} -> ${toSHA.slice(0, 7)}):\n`);
             if (names) {
               const icon = s => s.startsWith('A') ? '✚' : s.startsWith('D') ? '🗑' : s.startsWith('R') ? '➟' : '✎';
               for (const line of names.split('\n')) {
                 const parts = line.split('\t');
-                jobLog(job, `   ${icon(parts[0])} ${parts.slice(1).join(' → ')}\n`);
+                jobLog(job, `   ${icon(parts[0])} ${parts.slice(1).join(' -> ')}\n`);
               }
             }
             if (stat) jobLog(job, `  ${stat}\n`);
@@ -1844,7 +1844,7 @@ function gitRedeployJob(project, reqIp) {
 }
 
 // Redeploy step 1 (change-aware): clone the latest with the project's STORED git creds, scan its compose
-// files, and diff against the commit we last deployed → which stacks changed. The UI then shows the SAME
+// files, and diff against the commit we last deployed -> which stacks changed. The UI then shows the SAME
 // "Choose what to deploy" picker (only changed stacks pre-selected) and finishes via /deploy-folder-finish.
 router.post('/:project/redeploy-prepare', async (req, res) => {
   const project = req.params.project;
@@ -1882,21 +1882,21 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
     const files = findComposeFiles(dir);
     const scanned = [];
     for (const f of files) scanned.push(await scanComposeFile(dir, f));
-    // Diff vs the last-deployed commit → changed files → affected stacks (a compose whose folder has a change).
+    // Diff vs the last-deployed commit -> changed files -> affected stacks (a compose whose folder has a change).
     const fromSHA = (meta.deployedCommit || '').trim();
     let toSHA = '', changedFiles = [], commits = [];
     try { toSHA = (await gitRun(['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim(); } catch (e) { }
     if (fromSHA && toSHA && fromSHA !== toSHA) {
       try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '1', url, fromSHA]); } catch (e) { }
       try { const o = (await gitRun(['-C', dir, 'diff', '--name-only', fromSHA, toSHA])).stdout.trim(); changedFiles = o ? o.split('\n').map(s => s.trim()).filter(Boolean) : []; } catch (e) { }
-      // The actual commits pulled (the "what/how") — deepen the branch so fromSHA..toSHA is walkable, then log. Best-effort.
+      // The actual commits pulled (the "what/how") - deepen the branch so fromSHA..toSHA is walkable, then log. Best-effort.
       try { await gitWithKey(meta.keyId, ['-C', dir, 'fetch', '--depth', '200', url, meta.branch || toSHA]); } catch (e) { }
       try {
         const lo = (await gitRun(['-C', dir, 'log', '--pretty=format:%h\x1f%an\x1f%ad\x1f%s', '--date=short', `${fromSHA}..${toSHA}`])).stdout.trim();
         commits = lo ? lo.split('\n').map(l => { const p = l.split('\x1f'); return { hash: p[0], author: p[1], date: p[2], subject: p[3] }; }) : [];
       } catch (e) { }
     }
-    // No baseline yet (project deployed before commit-tracking, or externally) → PERSIST the current
+    // No baseline yet (project deployed before commit-tracking, or externally) > PERSIST the current
     // commit as the baseline so the NEXT pull can actually diff. (Pull never touches running containers;
     // this only sets the reference point. Without this, every pull was stuck on "first pull".)
     let baselineRecorded = false;
@@ -1916,7 +1916,7 @@ router.post('/:project/redeploy-prepare', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: (err.message || 'redeploy prepare failed').toString() }); }
 });
 
-// GET /api/compose/:project/deploys — the stack's deploy history on the active server (newest first).
+// GET /api/compose/:project/deploys - the stack's deploy history on the active server (newest first).
 router.get('/:project/deploys', (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
@@ -1924,7 +1924,7 @@ router.get('/:project/deploys', (req, res) => {
     res.json({ deploys: stmts.getComposeDeploys.all(req.params.project, dockerService.getActiveServerId() || 'local', 20) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-// GET /api/compose/:project/deploys/:id — the compose files that deploy used.
+// GET /api/compose/:project/deploys/:id - the compose files that deploy used.
 router.get('/:project/deploys/:id', (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
@@ -1933,7 +1933,7 @@ router.get('/:project/deploys/:id', (req, res) => {
     res.json({ ...row, files: row.files ? JSON.parse(row.files) : null });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-// POST /api/compose/:project/deploys/:id/redeploy — put that deploy's compose files back and `up -d`.
+// POST /api/compose/:project/deploys/:id/redeploy - put that deploy's compose files back and `up -d`.
 // Volumes are untouched; for a Git stack the next sync deploys the latest commit again.
 router.post('/:project/deploys/:id/redeploy', async (req, res) => {
   try {
@@ -1985,7 +1985,7 @@ router.post('/:project/deploys/:id/redeploy', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// Manual re-deploy → live per-step console.
+// Manual re-deploy -> live per-step console.
 router.post('/:project/redeploy', (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
@@ -2024,7 +2024,7 @@ async function projectForDir(serverId, dir) {
   }
   return null;
 }
-// A recipe that ran docker compose up in a stack's folder → the stack's deploy history (task-recipes.js calls this).
+// A recipe that ran docker compose up in a stack's folder -> the stack's deploy history (task-recipes.js calls this).
 router._recipeDeployed = async ({ serverId, dir, ok, error, recipe, trigger, runId, startedAt, commit }) => {
   try {
     const project = await projectForDir(serverId, dir);
@@ -2040,7 +2040,7 @@ router.post('/webhook/:project', async (req, res) => {
     if (!validateProjectName(req.params.project)) return res.status(404).json({ error: 'not found' });
     const meta = readGitMeta(req.params.project);
     if (!meta || !meta.secret || req.query.key !== meta.secret) return res.status(403).json({ error: 'invalid webhook key' });
-    // The stack's folder has a deploy recipe → the recipe deploys (its checks and recovery), not the simple redeploy.
+    // The stack's folder has a deploy recipe -> the recipe deploys (its checks and recovery), not the simple redeploy.
     const rec = folderRecipe(req.params.project);
     if (rec) {
       const r = await require('../task-recipes').run(rec.id, { trigger: 'webhook:compose', mode: 'queue' });
@@ -2057,7 +2057,7 @@ router.post('/webhook/:project', async (req, res) => {
 // Unified Git Context & External/Adopted Git Management
 // ============================================================================================
 
-// Docker labels (working_dir / config_files) are UNTRUSTED — anyone who can start a container can set
+// Docker labels (working_dir / config_files) are UNTRUSTED - anyone who can start a container can set
 // them. Validate hard before a value reaches a shell, on top of shq() quoting.
 function isSafeHostPath(p) {
   return typeof p === 'string' && p.length > 1 && p.length < 4096
@@ -2079,7 +2079,7 @@ async function gitInDir(server, cwd, args, onData, keyId) {
 
 // Persist SSH deploy key config into a repo's .git/config (core.sshCommand) so that
 // `git pull` works BOTH from DockGate and from a manual terminal session on the server.
-// Safe to call multiple times — idempotent.
+// Safe to call multiple times - idempotent.
 async function persistSshConfigForRepo(server, repoRoot, keyId) {
   if (!keyId) return;
   try {
@@ -2095,8 +2095,8 @@ async function persistSshConfigForRepo(server, repoRoot, keyId) {
   }
 }
 
-// Strip embedded credentials from a remote URL before display (https://user:tok@host → //***@host).
-/** The project's Git context, with the access DockGate keeps for it (Git → Access…) when it has none of its own. */
+// Strip embedded credentials from a remote URL before display (https://user:tok@host -> //***@host).
+/** The project's Git context, with the access DockGate keeps for it (Git > Access...) when it has none of its own. */
 async function resolveProjectGitContext(project) {
   const ctx = await resolveProjectGitContextRaw(project);
   if (ctx && ctx.isGit && !ctx.keyId && !ctx.token) {
@@ -2107,7 +2107,7 @@ async function resolveProjectGitContext(project) {
 }
 
 /**
- * Bring a project's checkout to the newest commit of its branch — the one way every Pull / Pull all / Sync does it.
+ * Bring a project's checkout to the newest commit of its branch - the one way every Pull / Pull all / Sync does it.
  * Fetches from origin, or with the access DockGate keeps: a token (over HTTPS) or an SSH key (over SSH), so private
  * repositories work without credentials on the server. force: reset --hard to it; else fast-forward only.
  * Returns { before, after, branch }; errors say what to do (git-access.explain), with the token taken out.
@@ -2136,7 +2136,7 @@ async function gitUpdate(ctx, { force = false, onData = null, log = () => {} } =
   } else {
     log('$ git merge --ff-only FETCH_HEAD\n');
     try { await run(['merge', '--ff-only', 'FETCH_HEAD']); } catch (e) {
-      const err = new Error(`The checkout has its own changes or commits, so it can not simply move to the new commit: ${GA.hideUrlAuth(redactToken(String(e.stderr || e.message || e), ctx.token)).trim().split('\n').slice(-2).join(' ')} — resolve it on the server, or use Force pull (local changes are lost).`);
+      const err = new Error(`The checkout has its own changes or commits, so it can not simply move to the new commit: ${GA.hideUrlAuth(redactToken(String(e.stderr || e.message || e), ctx.token)).trim().split('\n').slice(-2).join(' ')} - resolve it on the server, or use Force pull (local changes are lost).`);
       err.statusCode = 409; err.diverged = true; throw err;
     }
   }
@@ -2198,7 +2198,7 @@ async function resolveProjectGitContextRaw(project) {
     };
   }
 
-  // 2) Deploy metadata (.dockgate-deploy.json) — e.g. Adopted from server or Folder deploy
+  // 2) Deploy metadata (.dockgate-deploy.json) - e.g. Adopted from server or Folder deploy
   if (dm) {
     const isRemote = dm.mode === 'remote';
     let server = null;
@@ -2312,8 +2312,8 @@ async function detectExternalGit(project) {
   out.dirty = !!dirty;
   out.dirtyFiles = dirty ? dirty.split('\n').filter(Boolean).slice(0, 30) : [];
   out.canPull = !out.detached && !out.dirty;
-  out.reason = out.detached ? 'Detached HEAD — pull unavailable'
-    : out.dirty ? 'Uncommitted changes on the server — pull would not be safe (resolve them on the host first)'
+  out.reason = out.detached ? 'Detached HEAD - pull unavailable'
+    : out.dirty ? 'Uncommitted changes on the server - pull would not be safe (resolve them on the host first)'
       : '';
   return out;
 }
@@ -2336,7 +2336,7 @@ router.get('/:project/git-detect', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Unified Git Pull (files-only — does NOT restart or redeploy containers)
+// Unified Git Pull (files-only - does NOT restart or redeploy containers)
 router.post('/:project/git-pull', async (req, res) => {
   const project = req.params.project;
   try {
@@ -2397,7 +2397,7 @@ router.post('/:project/git-pull', async (req, res) => {
   }
 });
 
-// Git → Access…: how DockGate reaches the repository of a stack it did not clone (adopted / found by its containers).
+// Git > Access...: how DockGate reaches the repository of a stack it did not clone (adopted / found by its containers).
 router.get('/:project/git-access', async (req, res) => {
   try {
     const project = req.params.project; if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
@@ -2418,7 +2418,7 @@ router.put('/:project/git-access', async (req, res) => {
     res.json(r);
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 });
-// body { method, token, keyId } — the access to try (empty: what is saved); asks the repository for its branches
+// body { method, token, keyId } - the access to try (empty: what is saved); asks the repository for its branches
 router.post('/:project/git-access/test', async (req, res) => {
   try {
     const project = req.params.project; if (!validateProjectName(project)) return res.status(400).json({ error: 'Invalid project name' });
@@ -2484,7 +2484,7 @@ router.post('/:project/git-sync', async (req, res) => {
         try { await gitUpdate(ctx, { force, onData: stream, log: (m) => jobLog(job, m) }); }
         catch (e) {
           if (!e.diverged) throw e;
-          jobLog(job, 'Fast-forward is not possible: resetting to the fetched commit…\n');
+          jobLog(job, 'Fast-forward is not possible: resetting to the fetched commit...\n');
           await gitUpdate(ctx, { force: true, onData: stream, log: (m) => jobLog(job, m) });
         }
         setStep(job, 'pull', 'done');
@@ -2784,7 +2784,7 @@ router.post('/:project/adopt-pull', async (req, res) => {
     await gitInDir(server, root, ['fetch', '--all', '--quiet'], null, keyId);
     const targetRef = ctx.branch && ctx.branch !== 'HEAD' ? `origin/${ctx.branch}` : '@{u}';
     try { await gitInDir(server, root, ['merge', '--ff-only', targetRef], null, keyId); }
-    catch (e) { return res.status(409).json({ error: 'Not a fast-forward — your server checkout has diverged from the remote. Resolve it on the host or use Force Pull.' }); }
+    catch (e) { return res.status(409).json({ error: 'Not a fast-forward - your server checkout has diverged from the remote. Resolve it on the host or use Force Pull.' }); }
     const after = (await gitInDir(server, root, ['rev-parse', 'HEAD'], null, keyId)).trim();
     invalidateExternalGit(project);
     let changed = [], commits = [];
@@ -2836,7 +2836,7 @@ async function runAdoptRedeployJob(job, p) {
       jobLog(job, '$ git -C ' + root + ' fetch && git merge --ff-only ' + targetRef);
       await gitInDir(p.server, root, ['fetch', '--all', '--quiet'], stream, p.ctx.keyId);
       try { await gitInDir(p.server, root, ['merge', '--ff-only', targetRef], stream, p.ctx.keyId); }
-      catch (e) { throw Object.assign(new Error('Not a fast-forward — the server checkout has diverged. Use ⚠️ Force Pull to reset.'), { statusCode: 409 }); }
+      catch (e) { throw Object.assign(new Error('Not a fast-forward - the server checkout has diverged. Use ⚠️ Force Pull to reset.'), { statusCode: 409 }); }
     }
     setStep(job, 'pull', 'done');
 
@@ -2857,7 +2857,7 @@ async function runAdoptRedeployJob(job, p) {
   }
 }
 
-// Scheduled Git sync (Tools → Schedules): for each DockGate-managed Git stack of one server, ask the remote
+// Scheduled Git sync (Tools > Schedules): for each DockGate-managed Git stack of one server, ask the remote
 // for the branch head (git ls-remote, with the stack's stored token or key) and redeploy only when it moved
 // past the deployed commit. Runs the same redeploy job as the Sync button and waits for it.
 async function scheduledGitSync(serverId, projects = []) {

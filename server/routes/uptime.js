@@ -1,4 +1,4 @@
-// Observe → Uptime API (server/uptime.js).
+// Observe > Uptime API (server/uptime.js).
 const express = require('express');
 const router = express.Router();
 const U = require('../uptime');

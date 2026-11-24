@@ -23,7 +23,7 @@ test('unhealthy sweep: thinned out alerts, a hint for the agent, a restart of Do
   assert.match(m.sent[0].telegramText, /restart/i); assert.match(m.sent[0].telegramText, /socket/i);
   now += 30 * 60e3; await m._checkUnhealthy(); assert.equal(m.sent.length, 1, 'not again after 30 min');
   const m2 = mk(); // DockGate restarted
-  now += 31 * 60e3; await m2._checkUnhealthy(); assert.equal(m2.sent.length, 1, 'after 1 h — even after a restart');
+  now += 31 * 60e3; await m2._checkUnhealthy(); assert.equal(m2.sent.length, 1, 'after 1 h - even after a restart');
   assert.match(m2.sent[0].telegramText, /#2/);
   now += 5 * 3600e3; await m2._checkUnhealthy(); assert.equal(m2.sent.length, 1, 'the next one waits 6 h');
   now += 3600e3; await m2._checkUnhealthy(); assert.equal(m2.sent.length, 2);

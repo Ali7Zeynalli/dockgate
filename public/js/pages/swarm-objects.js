@@ -1,8 +1,8 @@
-// Swarm → Secrets & configs and Swarm → Networks — phase 5.
-//   Secrets & configs: create, view a config, Rotate (secret) / Edit (config) as a job — a new version
-//   <name>_v2, services move to it with rolling updates, the old one is removed —, Remove when unused.
+// Swarm > Secrets & configs and Swarm > Networks - phase 5.
+//   Secrets & configs: create, view a config, Rotate (secret) / Edit (config) as a job - a new version
+//   <name>_v2, services move to it with rolling updates, the old one is removed -, Remove when unused.
 //   Networks: overlay networks with who uses them; New overlay network (encrypted, attachable, internal);
-//   Remove when unused; Change subnet… of the ingress network when no service publishes through it.
+//   Remove when unused; Change subnet... of the ingress network when no service publishes through it.
 // Server side: server/swarm-objects.js.
 
 (() => {
@@ -15,8 +15,8 @@
     UI.dialog({ title: kind === 'secret' ? 'New secret' : 'New config', wide: kind === 'config', saveLabel: 'Create',
       body: `<label class="ui-field"><span class="ui-label">Name</span><input class="input" data-name placeholder="${kind === 'secret' ? 'db_password' : 'nginx_conf'}"></label>
         <label class="ui-field"><span class="ui-label">${kind === 'secret' ? 'Value' : 'File content'}</span>${kind === 'secret'
-          ? '<textarea class="input" data-value rows="3" autocomplete="off" style="font-family:var(--font-mono,monospace)"></textarea><span class="ui-sub">Sent to Swarm only — DockGate does not store or log it, and it is not shown again. In a task it is the file /run/secrets/&lt;name&gt; (readable only inside the task). Apps read it through *_FILE variables, e.g. POSTGRES_PASSWORD_FILE=/run/secrets/db_password.</span>'
-          : '<textarea class="input" data-value rows="14" style="font-family:var(--font-mono,monospace)" placeholder="server {\n  listen 80;\n}"></textarea><span class="ui-sub">In a task it is a file at the path you choose in the service (Settings → Env &amp; secrets → Configs). Not encrypted — use a secret for passwords.</span>'}</label>`,
+          ? '<textarea class="input" data-value rows="3" autocomplete="off" style="font-family:var(--font-mono,monospace)"></textarea><span class="ui-sub">Sent to Swarm only - DockGate does not store or log it, and it is not shown again. In a task it is the file /run/secrets/&lt;name&gt; (readable only inside the task). Apps read it through *_FILE variables, e.g. POSTGRES_PASSWORD_FILE=/run/secrets/db_password.</span>'
+          : '<textarea class="input" data-value rows="14" style="font-family:var(--font-mono,monospace)" placeholder="server {\n  listen 80;\n}"></textarea><span class="ui-sub">In a task it is a file at the path you choose in the service (Settings > Env &amp; secrets > Configs). Not encrypted - use a secret for passwords.</span>'}</label>`,
       onSave: async (ov) => { await API.post(`/swarm/objects/${kind}`, { name: ov.querySelector('[data-name]').value.trim(), value: ov.querySelector('[data-value]').value }); showToast(`${kind === 'secret' ? 'Secret' : 'Config'} created`); done(); } });
   }
   async function rotateDialog(x, done) {
@@ -37,21 +37,21 @@
       try { d = await API.get('/swarm/objects'); }
       catch (e) { content.innerHTML = UI.header('Secrets & configs', esc(e.message), UI.btn('Open Overview', 'data-go')); content.querySelector('[data-go]').onclick = () => Router.navigate('swarm', { tab: 'swarm-overview' }); return; }
       if (!Router.isActiveNav(navId)) return;
-      const table = (list, kind) => UI.table([{ label: 'Name' }, { label: 'Used by · path' }, { label: 'Created' }, { label: kind === 'config' ? 'Size' : 'Origin' }, { label: '', align: 'right' }], list.map(x => ({ cells: [
+      const table = (list, kind) => UI.table([{ label: 'Name' }, { label: 'Used by, path' }, { label: 'Created' }, { label: kind === 'config' ? 'Size' : 'Origin' }, { label: '', align: 'right' }], list.map(x => ({ cells: [
         `<b class="td-mono">${esc(x.name)}</b>${x.labels['dockgate.rotated-from'] ? `<div class="ui-sub">rotated from ${esc(x.labels['dockgate.rotated-from'])}</div>` : ''}`,
         users(x.usedBy), ago(x.createdAt),
         kind === 'config' ? `<span class="ui-sub">${x.size} bytes</span>` : (x.stack ? UI.chip(`stack ${esc(x.stack)}`) : x.labels['dockgate.created'] ? '<span class="ui-sub">DockGate</span>' : '<span class="ui-sub">outside DockGate</span>'),
         UI.menu([
           kind === 'config' ? { label: 'View', attrs: `data-a="view" data-k="${kind}" data-id="${x.id}"` } : null,
-          { label: kind === 'secret' ? 'Rotate…' : 'Edit…', attrs: `data-a="rotate" data-k="${kind}" data-id="${x.id}"` },
+          { label: kind === 'secret' ? 'Rotate...' : 'Edit...', attrs: `data-a="rotate" data-k="${kind}" data-id="${x.id}"` },
           '-',
-          { label: 'Remove…', attrs: `data-a="remove" data-k="${kind}" data-id="${x.id}"` },
+          { label: 'Remove...', attrs: `data-a="remove" data-k="${kind}" data-id="${x.id}"` },
         ]),
       ] })), { minWidth: 720, empty: kind === 'secret' ? 'No secrets yet.' : 'No configs yet.' });
-      content.innerHTML = `${UI.header('Secrets', 'Passwords, keys and certificates kept encrypted by Swarm and given only to the services that use them. DockGate never stores their values.', UI.primary('New secret…', 'data-new="secret"'))}
+      content.innerHTML = `${UI.header('Secrets', 'Passwords, keys and certificates kept encrypted by Swarm and given only to the services that use them. DockGate never stores their values.', UI.primary('New secret...', 'data-new="secret"'))}
         ${table(d.secrets, 'secret')}
         <div style="height:18px"></div>
-        ${UI.header('Configs', 'Configuration files (nginx.conf, app settings) Swarm puts into the tasks. Not encrypted — use secrets for passwords.', UI.primary('New config…', 'data-new="config"'))}
+        ${UI.header('Configs', 'Configuration files (nginx.conf, app settings) Swarm puts into the tasks. Not encrypted - use secrets for passwords.', UI.primary('New config...', 'data-new="config"'))}
         ${table(d.configs, 'config')}`;
       content.querySelectorAll('[data-new]').forEach(b => b.onclick = () => newDialog(b.dataset.new, load));
       content.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', async () => {
@@ -63,7 +63,7 @@
           return;
         }
         if (b.dataset.a === 'remove') {
-          if (x.usedBy.length) return showToast(`Still used by ${x.usedBy.map(u => u.name).join(', ')} — rotate or remove those services first`, 'error', 9000);
+          if (x.usedBy.length) return showToast(`Still used by ${x.usedBy.map(u => u.name).join(', ')} - rotate or remove those services first`, 'error', 9000);
           return showDeleteConfirm(`Remove ${x.kind} ${x.name}`, { message: `The ${x.kind} is removed from Swarm. No service uses it.${x.kind === 'secret' ? ' Its value can not be recovered.' : ''}`, phrase: x.name, confirmLabel: 'Remove',
             onConfirm: async () => { try { await API.del(`/swarm/objects/${x.kind}/${x.id}`); showToast('Removed'); load(); } catch (e) { showToast(e.message, 'error', 9000); } } });
         }
@@ -80,13 +80,13 @@
       try { nets = (await API.get('/swarm/networks')).networks; }
       catch (e) { content.innerHTML = UI.header('Networks', esc(e.message), UI.btn('Open Overview', 'data-go')); content.querySelector('[data-go]').onclick = () => Router.navigate('swarm', { tab: 'swarm-overview' }); return; }
       if (!Router.isActiveNav(navId)) return;
-      content.innerHTML = `${UI.header('Networks', 'Overlay networks connect services across the servers; services on the same network reach each other by name. The ingress network carries published ingress ports to the tasks.', UI.primary('New overlay network…', 'data-new'))}
+      content.innerHTML = `${UI.header('Networks', 'Overlay networks connect services across the servers; services on the same network reach each other by name. The ingress network carries published ingress ports to the tasks.', UI.primary('New overlay network...', 'data-new'))}
         ${UI.table([{ label: 'Network' }, { label: 'Subnet' }, { label: 'Options' }, { label: 'Used by' }, { label: '', align: 'right' }], nets.map(n => ({ cells: [
           `<b class="td-mono">${esc(n.name)}</b>${n.ingress ? ' ' + UI.pill('info', 'ingress') : ''}${n.stack ? ' ' + UI.chip(`stack ${esc(n.stack)}`) : ''}`,
-          `<span class="td-mono text-sm">${esc(n.subnets.join(', ') || '—')}</span>${(n.gateways || []).length ? `<div class="ui-sub">gateway ${esc(n.gateways.join(', '))}</div>` : ''}`,
-          [n.encrypted ? UI.pill('ok', 'encrypted') : '', n.attachable ? UI.chip('attachable') : '', n.internal ? UI.chip('internal') : ''].filter(Boolean).join(' ') || '<span class="ui-sub">—</span>',
+          `<span class="td-mono text-sm">${esc(n.subnets.join(', ') || '-')}</span>${(n.gateways || []).length ? `<div class="ui-sub">gateway ${esc(n.gateways.join(', '))}</div>` : ''}`,
+          [n.encrypted ? UI.pill('ok', 'encrypted') : '', n.attachable ? UI.chip('attachable') : '', n.internal ? UI.chip('internal') : ''].filter(Boolean).join(' ') || '<span class="ui-sub">-</span>',
           n.usedBy.length ? `<span class="text-sm">${n.usedBy.map(esc).join(', ')}</span>${n.ingress ? '<div class="ui-sub">publish ingress ports</div>' : ''}` : '<span class="ui-sub">not used</span>',
-          n.ingress ? UI.btn('Change subnet…', `data-ingress="${n.id}"`) : UI.btn('Remove…', `data-rm="${n.id}"`),
+          n.ingress ? UI.btn('Change subnet...', `data-ingress="${n.id}"`) : UI.btn('Remove...', `data-rm="${n.id}"`),
         ] })), { minWidth: 760 })}`;
       content.querySelector('[data-new]').onclick = () => UI.dialog({ title: 'New overlay network', saveLabel: 'Create',
         body: `<label class="ui-field"><span class="ui-label">Name</span><input class="input" data-n placeholder="backend"></label>
@@ -97,17 +97,17 @@
         onSave: async (ov) => {
           const r = await API.post('/swarm/networks', { name: ov.querySelector('[data-n]').value.trim(), encrypted: ov.querySelector('[data-enc]').checked, attachable: ov.querySelector('[data-att]').checked, internal: ov.querySelector('[data-int]').checked, subnet: ov.querySelector('[data-sub]').value.trim() });
           const fw = r.firewall && r.firewall.servers ? r.firewall.servers.filter(s => !s.done && s.why !== 'already allowed') : [];
-          showToast(`Network created${fw.length ? ` — check the firewall: ${fw.map(s => `${s.node}: ${s.why}`).join('; ')}` : ''}`, fw.length ? 'warning' : 'success', fw.length ? 12000 : 4000);
+          showToast(`Network created${fw.length ? ` - check the firewall: ${fw.map(s => `${s.node}: ${s.why}`).join('; ')}` : ''}`, fw.length ? 'warning' : 'success', fw.length ? 12000 : 4000);
           load();
         } });
       content.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
         const n = nets.find(x => x.id === b.dataset.rm); if (!n) return;
-        if (n.usedBy.length) return showToast(`Used by ${n.usedBy.join(', ')} — remove it from those services first`, 'error', 9000);
+        if (n.usedBy.length) return showToast(`Used by ${n.usedBy.join(', ')} - remove it from those services first`, 'error', 9000);
         showDeleteConfirm(`Remove network ${n.name}`, { message: 'No service uses it.', phrase: n.name, confirmLabel: 'Remove', onConfirm: async () => { try { await API.del(`/swarm/networks/${n.id}`); showToast('Removed'); load(); } catch (e) { showToast(e.message, 'error', 9000); } } });
       });
       content.querySelectorAll('[data-ingress]').forEach(b => b.onclick = () => {
         const n = nets.find(x => x.id === b.dataset.ingress);
-        if (n.usedBy.length) return showToast(`${n.usedBy.join(', ')} publish ports through ingress — change them to host ports or remove them first`, 'error', 10000);
+        if (n.usedBy.length) return showToast(`${n.usedBy.join(', ')} publish ports through ingress - change them to host ports or remove them first`, 'error', 10000);
         UI.dialog({ title: 'Change the ingress subnet', danger: true, saveLabel: 'Change',
           body: `<p class="text-sm">Now <span class="td-mono">${esc(n.subnets.join(', '))}</span>. Change it when it overlaps a network the servers use (a cloud private network). The ingress network is removed and created again with the new subnet; no service publishes through it now.</p>
             <label class="ui-field"><span class="ui-label">New subnet</span><input class="input" data-sub placeholder="10.250.0.0/24"></label>`,

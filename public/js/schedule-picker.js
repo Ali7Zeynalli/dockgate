@@ -1,7 +1,7 @@
 // A schedule picker that writes a cron line: how often, then the hour (00–23) and minute (00–59) from lists,
 // 24-hour clock, server time. "Custom" keeps a raw cron line for anything else.
-//   SchedulePicker.html(cron, { minutes })   minutes: offer "every N minutes" (Cron, Scripts) — not for backups
-//   SchedulePicker.bind(el, { onChange })    → { value() }
+//   SchedulePicker.html(cron, { minutes })   minutes: offer "every N minutes" (Cron, Scripts) - not for backups
+//   SchedulePicker.bind(el, { onChange })    -> { value() }
 //   SchedulePicker.describe(cron)            "Every day at 03:15"
 const SchedulePicker = (() => {
   const pad = (n) => String(n).padStart(2, '0');
@@ -11,7 +11,7 @@ const SchedulePicker = (() => {
   const EVERY_M = [5, 10, 15, 20, 30];
   const num = (s, lo, hi) => /^\d+$/.test(s) && +s >= lo && +s <= hi;
 
-  /** cron → { mode, h, m, days, dom, every } (mode 'custom' when it does not fit a simple form). */
+  /** cron -> { mode, h, m, days, dom, every } (mode 'custom' when it does not fit a simple form). */
   function parse(cron) {
     const f = String(cron || '').trim().split(/\s+/);
     const st = { mode: 'custom', h: 3, m: 15, days: [1], dom: 1, everyH: 6, everyM: 15, raw: String(cron || '').trim() };
@@ -48,11 +48,11 @@ const SchedulePicker = (() => {
     const at = `${pad(st.h)}:${pad(st.m)}`;
     switch (st.mode) {
       case 'minutes': return `Every ${st.everyM} minutes`;
-      case 'hours': return st.everyH === 1 ? `Every hour at :${pad(st.m)}` : `Every ${st.everyH} hours at :${pad(st.m)} (00:${pad(st.m)}, ${pad(st.everyH)}:${pad(st.m)}, …)`;
+      case 'hours': return st.everyH === 1 ? `Every hour at :${pad(st.m)}` : `Every ${st.everyH} hours at :${pad(st.m)} (00:${pad(st.m)}, ${pad(st.everyH)}:${pad(st.m)}, ...)`;
       case 'daily': return `Every day at ${at}`;
       case 'weekly': return `Every ${st.days.length === 7 ? 'day' : st.days.slice().sort((a, b) => (a || 7) - (b || 7)).map(d => DAY_NAME[d]).join(', ')} at ${at}`;
       case 'monthly': return `On day ${st.dom} of every month at ${at}`;
-      default: return st.raw ? `Custom: ${st.raw}` : '—';
+      default: return st.raw ? `Custom: ${st.raw}` : '-';
     }
   }
 
@@ -74,7 +74,7 @@ const SchedulePicker = (() => {
         <input class="input td-mono" data-sp-show="custom" data-sp-raw style="width:190px" value="${UI.esc(st.raw || '15 3 * * *')}" placeholder="m h dom mon dow">
       </div>
       <div data-sp-show="weekly" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${DAYS.map(([d, l]) => `<button type="button" class="ui-fchip" data-sp-day="${d}" aria-pressed="${st.days.includes(d)}">${l}</button>`).join('')}</div>
-      <div class="ui-sub" style="margin-top:6px"><span data-sp-human></span> · server time, 24-hour · <span class="td-mono" data-sp-cron></span></div>
+      <div class="ui-sub" style="margin-top:6px"><span data-sp-human></span>, server time, 24-hour, <span class="td-mono" data-sp-cron></span></div>
     </div>`;
   }
 

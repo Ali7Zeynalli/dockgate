@@ -1,4 +1,4 @@
-// ⌘K / Ctrl+K search — one window that finds containers, images, volumes, networks and stacks on the
+// ⌘K / Ctrl+K search - one window that finds containers, images, volumes, networks and stacks on the
 // server in use, every server, every page and the common actions. Opens from the shortcut or the header
 // search box; ↑ ↓ choose, Enter opens, Esc closes. Docker lists are read when the window opens (cached 30 s).
 (function () {
@@ -27,7 +27,7 @@
     const remote = active.id && active.id !== 'local' && active.type !== 'local';
     for (const [key, item] of Object.entries(typeof navItems !== 'undefined' ? navItems : {})) {
       if (key.startsWith('srv-')) {
-        for (const [tab, label] of item.tabs) out.push({ group: 'Pages', name: label, hint: `Server · ${item.label}${remote ? ' · ' + (active.name || active.id) : ''}`, run: () => Router.navigate(key, { tab }) });
+        for (const [tab, label] of item.tabs) out.push({ group: 'Pages', name: label, hint: `Server, ${item.label}${remote ? ', ' + (active.name || active.id) : ''}`, run: () => Router.navigate(key, { tab }) });
         continue;
       }
       if (item.tabs) for (const [tab, label] of item.tabs) out.push({ group: 'Pages', name: label, hint: item.label, run: () => Router.navigate(key, { tab }) });
@@ -41,7 +41,7 @@
       { group: 'Actions', name: 'Add server', hint: 'Servers', run: () => navigateThenClick('infra', { tab: 'servers' }, '[data-add]') },
       { group: 'Actions', name: 'Open quick terminal', hint: 'Ctrl+`', run: () => document.getElementById('btn-quick-terminal')?.click() },
       { group: 'Actions', name: 'Open quick files', hint: 'Ctrl+Shift+F', run: () => QuickFiles.open() },
-      { group: 'Actions', name: 'Uptime — site checks', hint: 'Observe', run: () => Router.navigate('observe', { tab: 'uptime' }) },
+      { group: 'Actions', name: 'Uptime - site checks', hint: 'Observe', run: () => Router.navigate('observe', { tab: 'uptime' }) },
     );
     return out;
   }
@@ -52,14 +52,14 @@
     const get = (u) => API.get(u).catch(() => null);
     const [ctrs, imgs, vols, nets, stacks, srv] = await Promise.all([get('/containers'), get('/images'), get('/volumes'), get('/networks'), get('/compose'), get('/servers')]);
     const out = [];
-    for (const c of ctrs || []) out.push({ group: 'Containers', name: c.name, hint: `${c.state}${/\(unhealthy\)/i.test(c.status || '') ? ' · unhealthy' : ''}${c.composeProject ? ' · ' + c.composeProject : ''} · ${c.image}`, run: () => Router.navigate('container-detail', { id: c.id }) });
-    for (const i of imgs || []) { const tag = (i.repoTags || [])[0] || i.shortId; out.push({ group: 'Images', name: tag === '<none>:<none>' ? i.shortId : tag, hint: `${formatBytes(i.size)}${i.inUse ? '' : ' · unused'}`, run: () => navigateThenSearch('resources', { tab: 'images' }, '#image-search', tag === '<none>:<none>' ? i.shortId : tag) }); }
+    for (const c of ctrs || []) out.push({ group: 'Containers', name: c.name, hint: `${c.state}${/\(unhealthy\)/i.test(c.status || '') ? ', unhealthy' : ''}${c.composeProject ? ', ' + c.composeProject : ''}, ${c.image}`, run: () => Router.navigate('container-detail', { id: c.id }) });
+    for (const i of imgs || []) { const tag = (i.repoTags || [])[0] || i.shortId; out.push({ group: 'Images', name: tag === '<none>:<none>' ? i.shortId : tag, hint: `${formatBytes(i.size)}${i.inUse ? '' : ', unused'}`, run: () => navigateThenSearch('resources', { tab: 'images' }, '#image-search', tag === '<none>:<none>' ? i.shortId : tag) }); }
     for (const v of vols || []) out.push({ group: 'Volumes', name: v.name, hint: v.inUse ? `used by ${(v.containerNames || []).join(', ')}` : 'unused', run: () => Router.navigate('resources', { tab: 'volumes' }) });
-    for (const n of nets || []) out.push({ group: 'Networks', name: n.name, hint: `${n.driver}${n.subnet ? ' · ' + n.subnet : ''}`, run: () => Router.navigate('resources', { tab: 'networks' }) });
+    for (const n of nets || []) out.push({ group: 'Networks', name: n.name, hint: `${n.driver}${n.subnet ? ', ' + n.subnet : ''}`, run: () => Router.navigate('resources', { tab: 'networks' }) });
     for (const p of stacks || []) out.push({ group: 'Stacks', name: p.name, hint: `${p.running}/${p.total} running`, run: () => Router.navigate('deploy', { tab: 'compose' }) });
     for (const s of (srv && srv.servers) || []) {
       const local = s.id === 'local' || s.type === 'local';
-      out.push({ group: 'Servers', name: local ? 'Local' : (s.name || s.id), hint: `${local ? 'this machine' : s.host || ''}${s.isActive ? ' · in use' : ''}`, run: () => local ? useServer('local').then(ok => ok && Router.navigate('dashboard')) : Router.navigate('server-console', { id: s.id }) });
+      out.push({ group: 'Servers', name: local ? 'Local' : (s.name || s.id), hint: `${local ? 'this machine' : s.host || ''}${s.isActive ? ', in use' : ''}`, run: () => local ? useServer('local').then(ok => ok && Router.navigate('dashboard')) : Router.navigate('server-console', { id: s.id }) });
     }
     cache = out; cacheAt = Date.now(); cacheServer = active;
     return out;
@@ -95,8 +95,8 @@
     overlay = document.createElement('div');
     overlay.className = 'cmdk-overlay';
     overlay.innerHTML = `<div class="cmdk" role="dialog" aria-modal="true" aria-label="Search DockGate">
-      <input id="cmdk-q" type="text" autocomplete="off" spellcheck="false" placeholder="Search containers, images, stacks, servers, pages…" aria-label="Search" value="${escapeHtml(initial)}">
-      <div id="cmdk-list" class="cmdk-list" role="listbox"><div class="cmdk-empty">Loading…</div></div>
+      <input id="cmdk-q" type="text" autocomplete="off" spellcheck="false" placeholder="Search containers, images, stacks, servers, pages..." aria-label="Search" value="${escapeHtml(initial)}">
+      <div id="cmdk-list" class="cmdk-list" role="listbox"><div class="cmdk-empty">Loading...</div></div>
       <div class="cmdk-foot"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span><span>Server in use: ${escapeHtml((Store.get('activeServer') || {}).name || (Store.get('activeServer') || {}).id || 'local')}</span></div>
     </div>`;
     document.body.appendChild(overlay);
@@ -126,7 +126,7 @@
     const box = document.getElementById('search-input');
     if (!box) return;
     const isMac = /Mac|iPhone|iPad/.test(navigator.platform || '');
-    box.placeholder = `Search or jump to…  ${isMac ? '⌘K' : 'Ctrl K'}`;
+    box.placeholder = `Search or jump to...  ${isMac ? '⌘K' : 'Ctrl K'}`;
     box.setAttribute('readonly', '');
     box.addEventListener('focus', () => { box.blur(); open(); });
     document.getElementById('global-search')?.addEventListener('click', () => open());

@@ -11,7 +11,7 @@ const { decrypt } = require('../auth/secrets');
 
 const paths = require('../paths');
 
-const monitors = new Map(); // serverId → EventMonitor
+const monitors = new Map(); // serverId > EventMonitor
 
 function buildClient(server) {
   if (!server || server.id === 'local' || server.type === 'local') {
@@ -23,7 +23,7 @@ function buildClient(server) {
     port: server.port || 22,
     username: server.username,
   };
-  // Auth precedence: key > password > SSH agent — same as docker.js createSshClient.
+  // Auth precedence: key > password > SSH agent - same as docker.js createSshClient.
   // privateKey/passphrase must go inside sshOptions; docker-modem drops them at the top level.
   if (server.key_path) {
     const keyPath = paths.keyPath(server.key_path);
@@ -33,8 +33,8 @@ function buildClient(server) {
         ...(server.passphrase ? { passphrase: decrypt(server.passphrase) } : {}),
       };
     } else {
-      // Key file is missing — the monitor will fall back to SSH agent/anonymous auth; warn instead of failing silently
-      console.warn(`[monitor-manager] SSH key not found: ${keyPath} (server: ${server.id}) — falling back to agent auth`);
+      // Key file is missing - the monitor will fall back to SSH agent/anonymous auth; warn instead of failing silently
+      console.warn(`[monitor-manager] SSH key not found: ${keyPath} (server: ${server.id}) - falling back to agent auth`);
     }
   } else if (server.password) {
     opts.password = decrypt(server.password);
@@ -106,7 +106,7 @@ function get(serverId) {
   return monitors.get(serverId);
 }
 
-// Returns the local-server monitor — fallback for the build-failed trigger.
+// Returns the local-server monitor - fallback for the build-failed trigger.
 function getLocal() {
   return monitors.get('local');
 }

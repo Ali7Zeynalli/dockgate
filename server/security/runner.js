@@ -45,7 +45,7 @@ function runningFor(serverId) {
  */
 function startPlan(server, plan, { title, onSuccess, onFailure, successText } = {}) {
   const busy = runningFor(server.id);
-  if (busy) { const e = new Error(`"${busy.title}" is still running on this server — wait for it to finish.`); e.statusCode = 409; throw e; }
+  if (busy) { const e = new Error(`"${busy.title}" is still running on this server - wait for it to finish.`); e.statusCode = 409; throw e; }
   gc();
   const id = crypto.randomBytes(6).toString('hex');
   const job = {
@@ -54,7 +54,7 @@ function startPlan(server, plan, { title, onSuccess, onFailure, successText } = 
     startedAt: Date.now(), finishedAt: null,
   };
   jobs.set(id, job);
-  // test steps never carry free text — only connection parameters
+  // test steps never carry free text - only connection parameters
   const child = execFile(process.execPath, [WORKER], { maxBuffer: 16 * 1024 * 1024 });
   child.stdin.on('error', () => {}); // a worker that died at once is reported by its exit
   child.stdin.end(JSON.stringify({ ...workerCfg(server), mode: 'plan', plan }));

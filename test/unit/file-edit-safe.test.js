@@ -1,5 +1,5 @@
 'use strict';
-// Tools → Files editor: atomic writes that keep mode and owner (remote over a fake SFTP, local on disk),
+// Tools > Files editor: atomic writes that keep mode and owner (remote over a fake SFTP, local on disk),
 // the "changed after you opened it" check, sudo errors, chmod / chown input checks, earlier versions, line diff.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -48,7 +48,7 @@ const reset = () => { files.clear(); Object.assign(opts, { denyDirWrite: false, 
 test('remote: a save goes through a temporary file and keeps mode and owner', async () => {
   reset();
   files.set('/srv/app/nginx.conf', { data: Buffer.from('old'), mode: 0o640, uid: 33, gid: 33 | 0, mtime: 50 });
-  files.get('/srv/app/nginx.conf').mode = 0o646; // others may write → the SSH user may write it
+  files.get('/srv/app/nginx.conf').mode = 0o646; // others may write -> the SSH user may write it
   const r = await R.writeFileText(SRV, '/srv/app/nginx.conf', 'new');
   const f = files.get('/srv/app/nginx.conf');
   assert.equal(r.atomic, true);
@@ -68,7 +68,7 @@ test('remote: when the owner can not be kept the file is written in place (owner
   assert.equal([...files.keys()].filter(k => k.includes('.dg-')).length, 0);
 });
 
-test('remote: a folder the user may not write but a writable file → in place; no rename support → mv', async () => {
+test('remote: a folder the user may not write but a writable file -> in place; no rename support -> mv', async () => {
   reset(); opts.denyDirWrite = true;
   files.set('/etc/app.conf', { data: Buffer.from('a'), mode: 0o644, uid: ME, gid: ME, mtime: 50 });
   assert.equal((await R.writeFileText(SRV, '/etc/app.conf', 'b')).atomic, false);
@@ -79,7 +79,7 @@ test('remote: a folder the user may not write but a writable file → in place; 
   assert.ok(execs.some(c => /^mv -f '\/srv\/\.x\.txt\.dg-[0-9a-f]+' '\/srv\/x\.txt'$/.test(c)), execs.join('\n'));
 });
 
-test('remote: a file of another user → 403 EACCES (the UI offers sudo); changed since opened → 409 CHANGED', async () => {
+test('remote: a file of another user -> 403 EACCES (the UI offers sudo); changed since opened -> 409 CHANGED', async () => {
   reset();
   files.set('/etc/nginx/nginx.conf', { data: Buffer.from('a'), mode: 0o644, uid: 0, gid: 0, mtime: 50 });
   opts.denyChown = true;
@@ -92,7 +92,7 @@ test('remote: a file of another user → 403 EACCES (the UI offers sudo); change
   assert.equal(files.get('/srv/a').data.toString(), 'b');
 });
 
-test('remote sudo: read via base64, save keeps owner/mode in one mv; a password prompt → code SUDO', async () => {
+test('remote sudo: read via base64, save keeps owner/mode in one mv; a password prompt -> code SUDO', async () => {
   reset();
   execReply = (c) => c.includes('stat -c') ? { code: 0, stdout: '5 123\n' } : { code: 0, stdout: Buffer.from('hello').toString('base64') };
   const rd = await R.readFileText(SRV, '/etc/shadowish', { sudo: true });
@@ -127,7 +127,7 @@ fs.mkdirSync(path.join(ROOT, 'srv', 'app'), { recursive: true });
 process.env.FILES_ROOT = ROOT;
 const L = require('../../server/file-manager-local');
 
-test('local: atomic save keeps the mode; changed since opened → CHANGED; chmod / chown', async () => {
+test('local: atomic save keeps the mode; changed since opened > CHANGED; chmod / chown', async () => {
   const f = path.join(ROOT, 'srv/app/run.sh');
   fs.writeFileSync(f, 'echo 1'); fs.chmodSync(f, 0o750);
   const rd = await L.readFileText(null, f);

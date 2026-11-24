@@ -1,9 +1,9 @@
-// Deploy → Tasks → Recipes: a deploy as steps — git pull, a task of the folder, any command, docker compose up,
-// checks (a URL answers, a container is healthy), a wait — then, when a step fails, the recovery steps (back to
-// the commit before the pull, a rollback task, …). One run covers one or more servers (one after another; stops
+// Deploy > Tasks > Recipes: a deploy as steps - git pull, a task of the folder, any command, docker compose up,
+// checks (a URL answers, a container is healthy), a wait - then, when a step fails, the recovery steps (back to
+// the commit before the pull, a rollback task, ...). One run covers one or more servers (one after another; stops
 // at the first that fails unless told to go on). Triggers: Run, a schedule, a webhook (task-hooks.js), CI.
 //   list / get / save / remove      the recipes of a folder
-//   run(id, { trigger, by, git })   a run in the background → { id }; git = { sha, branch, message, author } from a push
+//   run(id, { trigger, by, git })   a run in the background -> { id }; git = { sha, branch, message, author } from a push
 //     While the recipe runs, a push / CI call (or mode 'queue' | 'replace') waits as THE next run: one place per
 //     recipe, a newer push takes it (the older one is marked skipped on its commit). It starts when the run ends.
 const { db, stmts } = require('./db');
@@ -71,7 +71,7 @@ function stepShell(s, ctx) {
       const st = String(s.status || '200-399'); const [lo, hi] = st.includes('-') ? st.split('-').map(Number) : [Number(st), Number(st)];
       return `for i in $(seq 1 ${tries}); do out=$(curl -sk --max-time 10 -w '\\n%{http_code}' ${shq(s.url)} 2>/dev/null); code=$(printf '%s' "$out" | tail -n1); `
         + `if [ "$code" -ge ${lo || 200} ] 2>/dev/null && [ "$code" -le ${hi || 399} ]${s.contains ? ` && printf '%s' "$out" | grep -qF ${shq(s.contains)}` : ''}; then echo "✓ ${String(s.url).replace(/["`$\\]/g, '')} answered $code"; exit 0; fi; `
-        + `echo "… try $i: $code"; sleep ${every}; done; echo "✗ no good answer from the URL"; exit 1`;
+        + `echo "... try $i: $code"; sleep ${every}; done; echo "✗ no good answer from the URL"; exit 1`;
     }
     case 'container_healthy': {
       const t = Math.max(5, Math.min(1800, Number(s.timeout) || 120));
@@ -123,17 +123,17 @@ function save(serverId, dir, body, id = null) {
 function remove(id) { const r = get(id); q.del.run(r.id); pending.delete(r.id); return { ok: true }; }
 
 // ---------- running ----------
-const running = new Map(); // recipe id → run id
-const pending = new Map(); // recipe id → the options of the run that waits (one place: the newest push wins)
-const lastSha = new Map(); // recipe id → { sha, at } of the last run started for a commit
+const running = new Map(); // recipe id -> run id
+const pending = new Map(); // recipe id -> the options of the run that waits (one place: the newest push wins)
+const lastSha = new Map(); // recipe id -> { sha, at } of the last run started for a commit
 const short = (g, trigger) => (g && g.sha ? `${g.branch || ''} ${String(g.sha).slice(0, 10)}${g.author ? ` (${g.author})` : ''}`.trim() : trigger === 'manual' ? 'a deploy by hand' : trigger || 'a run');
 function enqueue(r, opts, curId) {
   const old = pending.get(r.id);
-  if (old && old.status) old.status('skipped', `DockGate: ${r.name} — a newer push replaced this one`).catch(() => {});
+  if (old && old.status) old.status('skipped', `DockGate: ${r.name} - a newer push replaced this one`).catch(() => {});
   pending.set(r.id, { ...opts, mode: undefined, req: null, queuedAt: Date.now() });
   if (opts.status) opts.status('pending', `DockGate: ${r.name} waits for the running deploy`).catch(() => {});
   const cur = TK.jobs.get(curId);
-  if (cur && cur.status === 'running') TK.append(cur, `\n⏳ Queued ${old ? '(replaces the one that waited) ' : ''}— ${opts.trigger}: ${short(opts.git, opts.trigger)} — starts when this run ends\n`);
+  if (cur && cur.status === 'running') TK.append(cur, `\n⏳ Queued ${old ? '(replaces the one that waited) ' : ''}- ${opts.trigger}: ${short(opts.git, opts.trigger)} - starts when this run ends\n`);
   return { queued: true, id: curId, replaced: !!old };
 }
 /** Start the run that waits, when nothing runs in the recipe's folders any more. Called when a run ends and on each tick. */
@@ -167,7 +167,7 @@ async function run(id, opts = {}) {
     const results = []; let ok = true;
     if (status) await status('pending', `DockGate: ${r.name} is running`).catch((e) => TK.append(job, `(commit status not sent: ${e.message})\n`));
     const t0 = Date.now();
-    if (git && git.sha) TK.append(job, `Triggered by ${trigger}${git.author ? ` — ${git.author}` : ''}: ${git.branch || ''} ${String(git.sha).slice(0, 10)}${git.message ? ` “${String(git.message).split('\n')[0].slice(0, 120)}”` : ''}\n`);
+    if (git && git.sha) TK.append(job, `Triggered by ${trigger}${git.author ? ` - ${git.author}` : ''}: ${git.branch || ''} ${String(git.sha).slice(0, 10)}${git.message ? ` “${String(git.message).split('\n')[0].slice(0, 120)}”` : ''}\n`);
     for (const sid of r.settings.servers) {
       if (job.cancelled) break;
       let s; try { s = TK.server(sid); } catch (e) { TK.append(job, `\n✗ server ${sid}: ${e.message}\n`); ok = false; results.push({ server: sid, ok: false }); if (!r.settings.continueServers) break; continue; }
@@ -182,9 +182,9 @@ async function run(id, opts = {}) {
     running.delete(r.id);
     const status2 = job.cancelled ? (job.timedOut ? 'timeout' : 'cancelled') : ok ? 'ok' : 'failed';
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
-    TK.append(job, `\n${status2 === 'ok' ? '✓ Deployed' : status2 === 'cancelled' ? '■ Cancelled' : status2 === 'timeout' ? '⏱ Stopped (time limit)' : '✗ Deploy failed'} · ${secs} s\n`);
+    TK.append(job, `\n${status2 === 'ok' ? '✓ Deployed' : status2 === 'cancelled' ? '■ Cancelled' : status2 === 'timeout' ? '⏱ Stopped (time limit)' : '✗ Deploy failed'}, ${secs} s\n`);
     TK.closeRun(job, status2, ok ? 0 : 1);
-    if ([...r.steps, ...r.onFail].some(x => x.type === 'compose_up')) { // → the stack's deploy history (Compose)
+    if ([...r.steps, ...r.onFail].some(x => x.type === 'compose_up')) { // -> the stack's deploy history (Compose)
       try { require('./routes/compose')._recipeDeployed({ serverId: main.id, dir: r.dir, ok, error: ok ? null : `recipe ${r.name}: ${status2}`, recipe: r.name, trigger, runId: job.id, startedAt: t0, commit: (git && git.sha) || job.meta.headAfter || null }); } catch (e) { /* history is optional */ }
     }
     if (status) await status(ok ? 'success' : 'failure', `DockGate: ${r.name} ${ok ? 'deployed' : 'failed'} in ${secs} s`).catch(() => {});
@@ -231,10 +231,10 @@ async function notify(r, job, status, secs) {
   const HM = require('./notifications/health-monitor');
   const tail = TK.runLog(job.id).text.split('\n').filter(Boolean).slice(-12).join('\n');
   const type = status === 'ok' ? 'deploy_ok' : 'deploy_failed';
-  const subject = status === 'ok' ? `Deployed — ${r.name}` : `Deploy failed — ${r.name}`;
-  const text = `${status === 'ok' ? '🟢' : '🔴'} ${subject}\n${r.dir} on ${r.settings.servers.join(', ')} · ${secs} s · run ${job.id}\n${status === 'ok' ? '' : tail}`;
+  const subject = status === 'ok' ? `Deployed - ${r.name}` : `Deploy failed - ${r.name}`;
+  const text = `${status === 'ok' ? '🟢' : '🔴'} ${subject}\n${r.dir} on ${r.settings.servers.join(', ')}, ${secs} s, run ${job.id}\n${status === 'ok' ? '' : tail}`;
   const esc = (x) => String(x).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-  await HM.deliver(type, { id: `recipe:${r.id}`, name: r.name }, subject, text, `<p><b>${esc(subject)}</b><br>${esc(r.dir)} · ${secs} s · run ${job.id}</p>${status === 'ok' ? '' : `<pre>${esc(tail)}</pre>`}`, { always: true, retry: true });
+  await HM.deliver(type, { id: `recipe:${r.id}`, name: r.name }, subject, text, `<p><b>${esc(subject)}</b><br>${esc(r.dir)}, ${secs} s, run ${job.id}</p>${status === 'ok' ? '' : `<pre>${esc(tail)}</pre>`}`, { always: true, retry: true });
 }
 
 // ---------- webhook / CI token ----------

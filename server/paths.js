@@ -6,7 +6,7 @@ const path = require('path');
 const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data');
 const DATA_DIR = process.env.DATA_DIR || DEFAULT_DATA_DIR;
 const SSH_KEYS_DIR = path.join(DATA_DIR, 'ssh-keys');
-// Before 2.9 SSH keys always went to <app>/data/ssh-keys, even with DATA_DIR set — still read from there.
+// Before 2.9 SSH keys always went to <app>/data/ssh-keys, even with DATA_DIR set - still read from there.
 const LEGACY_SSH_KEYS_DIR = path.join(DEFAULT_DATA_DIR, 'ssh-keys');
 
 function ensureKeysDir() {

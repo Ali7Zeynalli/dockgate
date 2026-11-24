@@ -33,12 +33,12 @@ function hasKey(serverId) { return !!q.get.get(serverId); }
 function forget(serverId) { q.del.run(serverId); }
 
 /**
- * Sign a message for one server. kind: 'cmd' | 'rules'. Returns { payload, sig } — payload is the exact JSON text
+ * Sign a message for one server. kind: 'cmd' | 'rules'. Returns { payload, sig } - payload is the exact JSON text
  * that was signed: { v: 1, kind, serverId, seq, issuedAt, body }.
  */
 function sign(serverId, kind, body) {
   const row = q.get.get(serverId);
-  if (!row) throw Object.assign(new Error('This agent has no key yet — update the agent (Servers → Edge agent)'), { statusCode: 409 });
+  if (!row) throw Object.assign(new Error('This agent has no key yet - update the agent (Servers > Edge agent)'), { statusCode: 409 });
   const { seq } = q.bump.get(Date.now(), serverId);
   const payload = JSON.stringify({ v: 1, kind, serverId, seq, issuedAt: Date.now(), body });
   const key = crypto.createPrivateKey(secrets.decryptStrict(row.private_enc));

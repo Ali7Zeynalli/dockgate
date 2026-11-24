@@ -1,6 +1,6 @@
-// Swarm → Services — phase 3. One row per service: replicas (a square per task), ports, the last update and,
+// Swarm > Services - phase 3. One row per service: replicas (a square per task), ports, the last update and,
 // when a task does not run, why. Actions: Scale, Update image (rolling, automatic roll back), Rollback, Restart,
-// Traffic, Logs, Tasks, Settings (the full form in 10 sections), Remove; New service… uses the same form.
+// Traffic, Logs, Tasks, Settings (the full form in 10 sections), Remove; New service... uses the same form.
 // Server side: server/swarm-services.js.
 
 (() => {
@@ -23,7 +23,7 @@
 
   // ---- update progress window ----
   function watch(id, title, onDone) {
-    const m = showModal(esc(title), `${serverContextBanner()}<div data-st class="text-sm" style="font-weight:600;margin-bottom:8px">⏳ Waiting for Swarm…</div><div data-msg class="ui-sub" style="margin-bottom:8px"></div><div data-tasks></div>
+    const m = showModal(esc(title), `${serverContextBanner()}<div data-st class="text-sm" style="font-weight:600;margin-bottom:8px">⏳ Waiting for Swarm...</div><div data-msg class="ui-sub" style="margin-bottom:8px"></div><div data-tasks></div>
       <div class="ui-sub" style="margin-top:8px">Swarm does the update; closing this window does not stop it. The Services list shows its state.</div>`, []);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     const close = document.createElement('button'); close.className = 'btn btn-secondary'; close.textContent = 'Close';
@@ -39,7 +39,7 @@
         const st = m.overlay.querySelector('[data-st]');
         const state = u ? u.State : null;
         const done = state && ['completed', 'paused', 'rollback_completed', 'rollback_paused'].includes(state);
-        const text = { updating: '⏳ Updating, one task at a time…', completed: '✓ Updated', paused: '✗ Update paused — a new task failed', rollback_started: '↩ The new version failed — rolling back…', rollback_completed: '↩ Rolled back to the previous version', rollback_paused: '✗ Roll back paused' }[state] || (Date.now() - t0 > 8000 ? '✓ Done (no rolling update was needed)' : '⏳ Waiting for Swarm…');
+        const text = { updating: '⏳ Updating, one task at a time...', completed: '✓ Updated', paused: '✗ Update paused - a new task failed', rollback_started: '↩ The new version failed - rolling back...', rollback_completed: '↩ Rolled back to the previous version', rollback_paused: '✗ Roll back paused' }[state] || (Date.now() - t0 > 8000 ? '✓ Done (no rolling update was needed)' : '⏳ Waiting for Swarm...');
         st.textContent = text;
         st.style.color = state === 'completed' || (!state && Date.now() - t0 > 8000) ? '#16a34a' : /paused/.test(state || '') ? '#dc2626' : state === 'rollback_completed' ? '#d97706' : '';
         m.overlay.querySelector('[data-msg]').textContent = u && u.Message ? u.Message : '';
@@ -83,7 +83,7 @@
 
   function openForm({ id = null, onDone } = {}) {
     css();
-    const m = showModal(id ? 'Service settings' : 'New service', '<div data-body class="text-sm text-muted">Loading…</div>', []);
+    const m = showModal(id ? 'Service settings' : 'New service', '<div data-body class="text-sm text-muted">Loading...</div>', []);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     const body = m.overlay.querySelector('[data-body]');
     const footer = m.overlay.querySelector('#modal-footer');
@@ -101,8 +101,8 @@
       const sec = {
         general: `<div class="svc-grid">
             ${isNew ? field('name', 'Name', f.name, { placeholder: 'api', hint: 'Letters, digits, dot, dash, underscore.' }) : `<div class="ui-field"><span class="ui-label">Name</span><b>${esc(f.name)}</b></div>`}
-            ${field('general.image', 'Image', g.image, { placeholder: 'nginx:1.27', hint: 'Pulled on every server that runs a task. Private registries use the login from Deploy → Registries.' })}
-            ${isNew ? field('general.mode', 'Mode', g.mode, { options: [['replicated', 'Replicated — a number of tasks'], ['global', 'Global — one task on every server'], ['replicated-job', 'Job — runs to completion'], ['global-job', 'Global job — once on every server']] }) : `<div class="ui-field"><span class="ui-label">Mode</span>${esc(g.mode)}</div>`}
+            ${field('general.image', 'Image', g.image, { placeholder: 'nginx:1.27', hint: 'Pulled on every server that runs a task. Private registries use the login from Deploy > Registries.' })}
+            ${isNew ? field('general.mode', 'Mode', g.mode, { options: [['replicated', 'Replicated - a number of tasks'], ['global', 'Global - one task on every server'], ['replicated-job', 'Job - runs to completion'], ['global-job', 'Global job - once on every server']] }) : `<div class="ui-field"><span class="ui-label">Mode</span>${esc(g.mode)}</div>`}
             ${field('general.replicas', 'Replicas', g.replicas, { type: 'number', hint: 'For replicated services and jobs.' })}
             ${field('general.entrypoint', 'Entrypoint', g.entrypoint, { placeholder: 'empty = the image\'s', hint: 'Replaces the image ENTRYPOINT.' })}
             ${field('general.command', 'Command', g.command, { placeholder: 'empty = the image\'s', hint: 'Arguments; quotes work as in a shell.' })}
@@ -116,13 +116,13 @@
             ${field('resources.cpusReserve', 'CPU reservation', r.cpusReserve, { type: 'number', hint: 'Swarm only places a task where this much is free.' })}
             ${field('resources.memoryReserve', 'Memory reservation', r.memoryReserve, { placeholder: '256M' })}
             ${field('resources.pids', 'PID limit', r.pids, { type: 'number', hint: 'Stops fork bombs.' })}
-            ${field('resources.generic', 'Generic resources (GPU …)', r.generic, { type: 'lines', placeholder: 'NVIDIA-GPU=1', hint: 'KIND=count; the servers must announce them in daemon.json.' })}
+            ${field('resources.generic', 'Generic resources (GPU ...)', r.generic, { type: 'lines', placeholder: 'NVIDIA-GPU=1', hint: 'KIND=count; the servers must announce them in daemon.json.' })}
           </div>`,
-        placement: `${field('placement.constraints', 'Constraints', pl.constraints, { type: 'lines', placeholder: 'node.labels.db==true\nnode.role!=manager', hint: 'Every line must match. Node labels are set in Swarm → Nodes → Labels.' })}
+        placement: `${field('placement.constraints', 'Constraints', pl.constraints, { type: 'lines', placeholder: 'node.labels.db==true\nnode.role!=manager', hint: 'Every line must match. Node labels are set in Swarm > Nodes > Labels.' })}
             ${field('placement.spread', 'Spread over', pl.spread, { type: 'lines', placeholder: 'node.labels.zone', hint: 'Tasks are spread evenly over the values of this label (e.g. zones).' })}
             ${field('placement.maxPerNode', 'At most per server', pl.maxPerNode, { type: 'number', hint: 'Empty = no limit.' })}`,
         update: `<div class="ui-ph-title" style="margin-bottom:6px">Update</div><div class="svc-grid">
-            ${field('update.order', 'Order', u.order, { options: [['start-first', 'start-first — the new task starts before the old one stops'], ['stop-first', 'stop-first — the old one stops first']], hint: 'start-first means no downtime; tasks with host-mode ports always use stop-first.' })}
+            ${field('update.order', 'Order', u.order, { options: [['start-first', 'start-first - the new task starts before the old one stops'], ['stop-first', 'stop-first - the old one stops first']], hint: 'start-first means no downtime; tasks with host-mode ports always use stop-first.' })}
             ${field('update.parallelism', 'Tasks at a time', u.parallelism, { type: 'number', hint: '0 = all at once.' })}
             ${field('update.delay', 'Delay between them', u.delay, { placeholder: dur })}
             ${field('update.monitor', 'Watch each new task for', u.monitor, { placeholder: dur, hint: 'A task that fails in this time counts as a failed update.' })}
@@ -151,14 +151,14 @@
             ${field('health.startPeriod', 'Start period', h.startPeriod, { placeholder: '30s', hint: 'Failures in this time after start do not count.' })}
             </div></div><div class="ui-sub" style="margin-top:6px">With start-first updates the old task keeps running until the new one is healthy.</div>`,
         env: `${field('env.env', 'Environment', e.env, { type: 'lines', placeholder: 'NAME=value', hint: 'One NAME=value per line. Use secrets for passwords.' })}
-            <div class="ui-label" style="margin-top:10px">Secrets</div>${rows('secrets', e.secrets, [{ k: 'name', label: 'secret', list: 'svc-secrets' }, { k: 'target', label: 'file name in /run/secrets (default: its name)' }], ch.secrets.length ? '' : 'No secrets yet — create them in Swarm → Secrets & configs.')}
+            <div class="ui-label" style="margin-top:10px">Secrets</div>${rows('secrets', e.secrets, [{ k: 'name', label: 'secret', list: 'svc-secrets' }, { k: 'target', label: 'file name in /run/secrets (default: its name)' }], ch.secrets.length ? '' : 'No secrets yet - create them in Swarm > Secrets & configs.')}
             <div class="ui-label" style="margin-top:10px">Configs</div>${rows('configs', e.configs, [{ k: 'name', label: 'config', list: 'svc-configs' }, { k: 'target', label: 'path in the task, e.g. /etc/nginx/nginx.conf' }])}
             <div class="svc-grid" style="margin-top:10px">${field('env.labels', 'Service labels', e.labels, { type: 'lines', placeholder: 'traefik.enable=true' })}${field('env.containerLabels', 'Container labels', e.containerLabels, { type: 'lines' })}</div>
             <datalist id="svc-secrets">${ch.secrets.map(x => `<option value="${esc(x)}">`).join('')}</datalist><datalist id="svc-configs">${ch.configs.map(x => `<option value="${esc(x)}">`).join('')}</datalist>`,
         network: `<div class="ui-label">Ports</div>${rows('ports', n.ports, [{ k: 'published', label: 'published (server) port' }, { k: 'target', label: 'container port' }, { k: 'protocol', label: 'protocol', options: ['tcp', 'udp', 'sctp'], def: 'tcp' }, { k: 'mode', label: 'mode', options: ['ingress', 'host'], def: 'ingress' }])}
             <div class="ui-sub" style="margin-top:4px"><b>ingress</b>: the port answers on every server and requests are spread over the tasks; the app sees an internal IP, not the client's. <b>host</b>: only servers running a task answer, the app sees the real client IP (needed for nginx logs and fail2ban), one task per server for that port.</div>
-            <div class="svc-grid" style="margin-top:10px">${field('network.endpointMode', 'Endpoint mode', n.endpointMode, { options: [['vip', 'VIP — one virtual IP, Swarm balances'], ['dnsrr', 'DNS round robin — the name returns every task']] })}</div>
-            <div class="ui-label" style="margin-top:10px">Networks</div>${rows('networks', n.networks, [{ k: 'name', label: 'overlay network', list: 'svc-nets' }, { k: 'aliases', label: 'aliases, comma separated' }], ch.networks.length ? `Overlay networks: ${ch.networks.map(esc).join(', ')}` : 'No overlay networks yet — create one in Swarm → Networks; without one the service is only on ingress.')}
+            <div class="svc-grid" style="margin-top:10px">${field('network.endpointMode', 'Endpoint mode', n.endpointMode, { options: [['vip', 'VIP - one virtual IP, Swarm balances'], ['dnsrr', 'DNS round robin - the name returns every task']] })}</div>
+            <div class="ui-label" style="margin-top:10px">Networks</div>${rows('networks', n.networks, [{ k: 'name', label: 'overlay network', list: 'svc-nets' }, { k: 'aliases', label: 'aliases, comma separated' }], ch.networks.length ? `Overlay networks: ${ch.networks.map(esc).join(', ')}` : 'No overlay networks yet - create one in Swarm > Networks; without one the service is only on ingress.')}
             <div class="svc-grid" style="margin-top:10px">${field('network.dns', 'DNS servers', n.dns, { type: 'lines', placeholder: '1.1.1.1' })}${field('network.extraHosts', 'Extra hosts', n.extraHosts, { type: 'lines', placeholder: '10.0.0.5 db.internal' })}</div>
             <datalist id="svc-nets">${ch.networks.map(x => `<option value="${esc(x)}">`).join('')}</datalist>`,
         mounts: `${rows('mounts', f.mounts, [{ k: 'type', label: 'type', options: ['volume', 'bind', 'tmpfs'], def: 'volume' }, { k: 'source', label: 'volume name or server path' }, { k: 'target', label: 'path in the task' }, { k: 'driver', label: 'volume driver (optional)' }, { k: 'readonly', label: 'read-only', check: true }])}
@@ -210,7 +210,7 @@
           const r = await withDbConfirm((confirmDb) => (id ? API.put(`/swarm/services/${id}`, { form: { ...form, confirmDb }, version: d.version }) : API.post('/swarm/services', { form: { ...form, confirmDb } })));
           if (!r) { save.disabled = false; return; }
           m.close();
-          showToast(id ? 'Saved — Swarm updates the tasks' : `Service ${form.name} created`);
+          showToast(id ? 'Saved - Swarm updates the tasks' : `Service ${form.name} created`);
           watch(id || r.id, id ? `Update ${form.name || f.name}` : `Start ${form.name}`, onDone);
         } catch (e2) { err.innerHTML = `<div class="insight-card danger" style="margin-top:10px"><div>${esc(e2.message)}</div></div>`; save.disabled = false; }
       };
@@ -236,20 +236,20 @@
       onSave: async (ov) => { await API.post(`/swarm/services/${s.id}/image`, { image: ov.querySelector('[data-img]').value.trim() }); watch(s.id, `Update ${s.name}`, done); } });
   }
   async function logsDialog(s) {
-    const m = showModal(`Logs · ${esc(s.name)}`, '<div data-lv></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const m = showModal(`Logs, ${esc(s.name)}`, '<div data-lv></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     LogViewer.mount(m.overlay.querySelector('[data-lv]'), { key: 'swarm-service', fileName: `${s.name}-logs`, height: '60vh', live: true, poll: 5000, liveDefault: false,
-      desc: 'docker service logs — every task in one place; the source is task @ server.', empty: 'No log lines yet.',
+      desc: 'docker service logs - every task in one place; the source is task @ server.', empty: 'No log lines yet.',
       load: async (limit) => { const r = await API.get(`/swarm/services/${s.id}/logs?tail=${limit}`); return { rows: r.rows }; } });
   }
   async function tasksDialog(s) {
-    const m = showModal(`Tasks · ${esc(s.name)}`, '<div data-t class="text-sm text-muted">Loading…</div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const m = showModal(`Tasks, ${esc(s.name)}`, '<div data-t class="text-sm text-muted">Loading...</div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     try {
       const { tasks } = await API.get(`/swarm/services/${s.id}/tasks`);
-      m.overlay.querySelector('[data-t]').innerHTML = `<div class="ui-sub" style="margin-bottom:6px">Where each task ran, and when and why it stopped. Swarm keeps a few old tasks per slot (Cluster settings → Task history).</div>` + UI.table([{ label: 'Task' }, { label: 'Server' }, { label: 'State' }, { label: 'Why' }, { label: 'Image' }, { label: 'When' }, { label: '', align: 'right' }],
+      m.overlay.querySelector('[data-t]').innerHTML = `<div class="ui-sub" style="margin-bottom:6px">Where each task ran, and when and why it stopped. Swarm keeps a few old tasks per slot (Cluster settings > Task history).</div>` + UI.table([{ label: 'Task' }, { label: 'Server' }, { label: 'State' }, { label: 'Why' }, { label: 'Image' }, { label: 'When' }, { label: '', align: 'right' }],
         tasks.map(t => ({ cells: [`${esc(s.name)}${t.slot ? '.' + t.slot : ''}<div class="ui-sub td-mono">${esc(t.id.slice(0, 12))}</div>`, esc(t.node), `${UI.pill(t.state === 'running' ? 'ok' : ['failed', 'rejected'].includes(t.state) ? 'bad' : ['shutdown', 'complete'].includes(t.state) ? 'off' : 'warn', esc(t.state))}<div class="ui-sub">wanted: ${esc(t.desired)}</div>`,
-          `<span class="text-sm">${esc(t.error || t.message)}${t.exitCode ? ` · exit code ${t.exitCode}${t.exitCode === 137 ? ' (killed: memory limit or stop timeout)' : ''}` : ''}</span>`, `<span class="td-mono text-sm">${esc(t.image)}</span>`, `<span class="ui-sub" title="${esc(formatTime(t.updatedAt))}">${esc(timeAgo(t.updatedAt))}</span>`,
+          `<span class="text-sm">${esc(t.error || t.message)}${t.exitCode ? `, exit code ${t.exitCode}${t.exitCode === 137 ? ' (killed: memory limit or stop timeout)' : ''}` : ''}</span>`, `<span class="td-mono text-sm">${esc(t.image)}</span>`, `<span class="ui-sub" title="${esc(formatTime(t.updatedAt))}">${esc(timeAgo(t.updatedAt))}</span>`,
           `<span style="white-space:nowrap">${t.state === 'running' && t.containerId ? UI.btn('Terminal', `data-term="${esc(t.id)}"`) : ''} ${UI.btn('Inspect', `data-insp="${esc(t.id)}"`)}</span>`] })), { minWidth: 900 });
       const el = m.overlay.querySelector('[data-t]');
       el.querySelectorAll('[data-term]').forEach(b => b.onclick = () => { const t = tasks.find(x => x.id === b.dataset.term); SwarmUI.terminal({ containerId: t.containerId, serverId: t.serverId, node: t.node, title: `${s.name}${t.slot ? '.' + t.slot : ''} @ ${t.node}` }); });
@@ -257,7 +257,7 @@
     } catch (e) { m.overlay.querySelector('[data-t]').innerHTML = UI.errorState(e, { compact: true }); }
   }
   function graphsDialog(s) {
-    const m = showModal(`Graphs · ${esc(s.name)}`, `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><select class="select" data-h style="width:auto"><option value="1">Last hour</option><option value="6" selected>Last 6 hours</option><option value="24">Last 24 hours</option><option value="48">Last 48 hours</option></select><span class="ui-sub">All running tasks summed, every 2 minutes. DockGate records while the server in use is a manager of this swarm.</span></div>
+    const m = showModal(`Graphs, ${esc(s.name)}`, `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><select class="select" data-h style="width:auto"><option value="1">Last hour</option><option value="6" selected>Last 6 hours</option><option value="24">Last 24 hours</option><option value="48">Last 48 hours</option></select><span class="ui-sub">All running tasks summed, every 2 minutes. DockGate records while the server in use is a manager of this swarm.</span></div>
       <div class="ui-label">CPU</div><div style="height:180px"><canvas data-cpu></canvas></div>
       <div class="ui-label" style="margin-top:12px">Memory</div><div style="height:180px"><canvas data-mem></canvas></div>
       <div data-empty class="ui-sub" style="margin-top:8px"></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
@@ -269,7 +269,7 @@
       let r; try { r = await API.get(`/swarm/services/${s.id}/history?hours=${m.overlay.querySelector('[data-h]').value}`); } catch (e) { m.overlay.querySelector('[data-empty]').textContent = e.message; return; }
       charts.forEach(c => c.destroy()); charts = [];
       const labels = r.samples.map(x => new Date(x.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-      m.overlay.querySelector('[data-empty]').textContent = r.samples.length ? `${r.samples.length} samples` : 'No samples yet — the first one is taken within 2 minutes after DockGate starts.';
+      m.overlay.querySelector('[data-empty]').textContent = r.samples.length ? `${r.samples.length} samples` : 'No samples yet - the first one is taken within 2 minutes after DockGate starts.';
       const opts = (fmt) => ({ responsive: true, maintainAspectRatio: false, animation: { duration: 0 }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmt(c.parsed.y) } } },
         scales: { x: { ticks: { color: tick, maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } }, y: { beginAtZero: true, grid: { color: grid }, ticks: { color: tick, font: { size: 10 }, callback: fmt } } },
         elements: { point: { radius: 0 }, line: { tension: 0.25, borderWidth: 2 } } });
@@ -282,13 +282,13 @@
   function trafficDialog(s) {
     const ing = s.ports.filter(p => p.mode === 'ingress'), host = s.ports.filter(p => p.mode === 'host');
     const running = s.tasks.filter(t => t.state === 'running');
-    showModal(`Traffic · ${esc(s.name)}`, `
-      <p class="text-sm"><b>Inside the cluster</b> other services reach it by name <span class="td-mono">${esc(s.name)}</span>${s.endpointMode === 'vip' ? ` — one virtual IP${s.vips.length ? ` (${s.vips.map(esc).join(', ')})` : ''}; Swarm spreads connections over the ${running.length} running task${running.length === 1 ? '' : 's'}.` : ' — DNS round robin: the name returns every task\'s address and the client picks one.'}</p>
-      ${ing.length ? `<p class="text-sm"><b>Ingress ports</b> ${ing.map(p => `<span class="td-mono">${p.published}→${p.target}/${p.protocol}</span>`).join(', ')}: every server in the cluster answers on the port (routing mesh) and passes the connection to a task, possibly on another server. The app sees an internal address as the client, not the visitor's IP.</p>` : ''}
-      ${host.length ? `<p class="text-sm"><b>Host ports</b> ${host.map(p => `<span class="td-mono">${p.published || '?'}→${p.target}/${p.protocol}</span>`).join(', ')}: only the servers that run a task answer, and the app sees the real client IP. Put a load balancer or DNS in front of those servers.</p>` : ''}
+    showModal(`Traffic, ${esc(s.name)}`, `
+      <p class="text-sm"><b>Inside the cluster</b> other services reach it by name <span class="td-mono">${esc(s.name)}</span>${s.endpointMode === 'vip' ? ` - one virtual IP${s.vips.length ? ` (${s.vips.map(esc).join(', ')})` : ''}; Swarm spreads connections over the ${running.length} running task${running.length === 1 ? '' : 's'}.` : ' - DNS round robin: the name returns every task\'s address and the client picks one.'}</p>
+      ${ing.length ? `<p class="text-sm"><b>Ingress ports</b> ${ing.map(p => `<span class="td-mono">${p.published} -> ${p.target}/${p.protocol}</span>`).join(', ')}: every server in the cluster answers on the port (routing mesh) and passes the connection to a task, possibly on another server. The app sees an internal address as the client, not the visitor's IP.</p>` : ''}
+      ${host.length ? `<p class="text-sm"><b>Host ports</b> ${host.map(p => `<span class="td-mono">${p.published || '?'} -> ${p.target}/${p.protocol}</span>`).join(', ')}: only the servers that run a task answer, and the app sees the real client IP. Put a load balancer or DNS in front of those servers.</p>` : ''}
       ${!s.ports.length ? '<p class="text-sm">No published ports: only other services on the same overlay network can reach it.</p>' : ''}
       ${UI.table([{ label: 'Task' }, { label: 'Server' }, { label: 'State' }], s.tasks.map(t => ({ cells: [`${esc(s.name)}${t.slot ? '.' + t.slot : ''}`, esc(t.node), UI.pill(t.state === 'running' ? 'ok' : 'warn', esc(t.state))] })), { minWidth: 0 })}
-      <p class="ui-sub" style="margin-top:8px">Sticky sessions and weighted (canary) routing are not part of Swarm — put Traefik or Caddy in front for that.</p>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+      <p class="ui-sub" style="margin-top:8px">Sticky sessions and weighted (canary) routing are not part of Swarm - put Traefik or Caddy in front for that.</p>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
   }
 
   // One action on a service, from the list or the service page. load(kind) runs after it; kind 'removed' after Remove.
@@ -334,9 +334,9 @@
         const menu = [
           { label: 'Open', attrs: `data-open-svc="${s.id}"` },
           '-',
-          s.mode === 'replicated' ? { label: 'Scale…', attrs: `data-a="scale" data-id="${s.id}"` } : null,
-          s.newer && s.newer.status === 'update' ? { label: 'Update to newest…', attrs: `data-a="newest" data-id="${s.id}"` } : null,
-          { label: 'Update image…', attrs: `data-a="image" data-id="${s.id}"` },
+          s.mode === 'replicated' ? { label: 'Scale...', attrs: `data-a="scale" data-id="${s.id}"` } : null,
+          s.newer && s.newer.status === 'update' ? { label: 'Update to newest...', attrs: `data-a="newest" data-id="${s.id}"` } : null,
+          { label: 'Update image...', attrs: `data-a="image" data-id="${s.id}"` },
           s.hasPrevious ? { label: 'Roll back to previous', attrs: `data-a="rollback" data-id="${s.id}"` } : null,
           { label: 'Restart (one by one)', attrs: `data-a="restart" data-id="${s.id}"` },
           '-',
@@ -344,33 +344,33 @@
           { label: 'Tasks', attrs: `data-a="tasks" data-id="${s.id}"` },
           { label: 'Traffic', attrs: `data-a="traffic" data-id="${s.id}"` },
           { label: 'Graphs', attrs: `data-a="graphs" data-id="${s.id}"` },
-          { label: 'Settings…', attrs: `data-a="settings" data-id="${s.id}"` },
+          { label: 'Settings...', attrs: `data-a="settings" data-id="${s.id}"` },
           { label: 'Inspect (JSON)', attrs: `data-a="inspect" data-id="${s.id}"` },
           '-',
-          { label: 'Remove…', attrs: `data-a="remove" data-id="${s.id}"` },
+          { label: 'Remove...', attrs: `data-a="remove" data-id="${s.id}"` },
         ];
         return { cells: [
           `<a href="#" class="td-name" data-open-svc="${s.id}" title="Open the service: tasks, logs, terminal, files, settings"><b>${esc(s.name)}</b></a>${s.stack ? ` ${UI.chip(`stack ${esc(s.stack)}`)}` : ''}${auto[s.id] ? ` <span title="Autoscale ${auto[s.id].enabled ? 'on' : 'paused'}: ${auto[s.id].min}–${auto[s.id].max} replicas by CPU">${UI.pill(auto[s.id].enabled ? 'info' : 'off', `auto ${auto[s.id].min}–${auto[s.id].max}`)}</span>` : ''}${s.database ? ' <span class="ui-sub">database</span>' : ''}`,
           `<span class="td-mono text-sm">${esc(s.image)}</span>${s.newer ? (s.newer.status === 'update' ? `<div>${UI.pill('info', 'newer image')}${s.newer.version ? ` <span class="ui-sub">${esc(s.newer.version)}</span>` : ''}</div>` : s.newer.status === 'error' ? `<div class="ui-sub" title="${esc(s.newer.error || '')}">check failed</div>` : '') : ''}`,
           `<span class="text-sm">${esc(s.mode)}</span>`,
-          `<b style="color:${s.running < s.desired ? 'var(--warning,#d97706)' : 'inherit'}">${s.running}/${s.desired}</b><div style="margin-top:3px">${s.tasks.slice(0, 24).map(t => `<span class="svc-sq ${esc(t.state)}" title="${esc(`${s.name}${t.slot ? '.' + t.slot : ''} · ${t.state}${t.node ? ' · ' + t.node : ''}${t.error ? ' · ' + t.error : ''}`)}"></span>`).join('')}</div>`,
-          (() => { const x = st.services[s.id]; return x ? `<span class="text-sm">${x.cpu}%</span> · <span class="text-sm">${formatBytes(x.memBytes)}</span><div class="ui-sub">${x.tasks} task${x.tasks === 1 ? '' : 's'} measured</div>` : '<span class="ui-sub">—</span>'; })(),
-          s.ports.length ? s.ports.map(p => `<span class="td-mono text-sm">${p.published || ''}${p.published ? '→' : ''}${p.target}/${p.protocol}</span>${p.mode === 'host' ? ' <span class="ui-sub">host</span>' : ''}`).join('<br>') : '<span class="ui-sub">—</span>',
-          `${upd ? UI.pill(upd[0], upd[1]) : '<span class="ui-sub">—</span>'}${s.update && s.update.message && s.update.state !== 'completed' ? `<div class="ui-sub" style="max-width:240px;white-space:normal">${esc(s.update.message)}</div>` : ''}${s.problem ? `<div class="text-sm" style="color:var(--danger,#dc2626);max-width:280px;white-space:normal">${esc(s.problem)}</div>` : ''}`,
+          `<b style="color:${s.running < s.desired ? 'var(--warning,#d97706)' : 'inherit'}">${s.running}/${s.desired}</b><div style="margin-top:3px">${s.tasks.slice(0, 24).map(t => `<span class="svc-sq ${esc(t.state)}" title="${esc(`${s.name}${t.slot ? '.' + t.slot : ''}, ${t.state}${t.node ? ', ' + t.node : ''}${t.error ? ', ' + t.error : ''}`)}"></span>`).join('')}</div>`,
+          (() => { const x = st.services[s.id]; return x ? `<span class="text-sm">${x.cpu}%</span>, <span class="text-sm">${formatBytes(x.memBytes)}</span><div class="ui-sub">${x.tasks} task${x.tasks === 1 ? '' : 's'} measured</div>` : '<span class="ui-sub">-</span>'; })(),
+          s.ports.length ? s.ports.map(p => `<span class="td-mono text-sm">${p.published || ''}${p.published ? ' -> ' : ''}${p.target}/${p.protocol}</span>${p.mode === 'host' ? ' <span class="ui-sub">host</span>' : ''}`).join('<br>') : '<span class="ui-sub">-</span>',
+          `${upd ? UI.pill(upd[0], upd[1]) : '<span class="ui-sub">-</span>'}${s.update && s.update.message && s.update.state !== 'completed' ? `<div class="ui-sub" style="max-width:240px;white-space:normal">${esc(s.update.message)}</div>` : ''}${s.problem ? `<div class="text-sm" style="color:var(--danger,#dc2626);max-width:280px;white-space:normal">${esc(s.problem)}</div>` : ''}`,
           UI.menu(menu),
         ] };
       });
-      content.innerHTML = `${UI.header('Services', `${data.length} service${data.length === 1 ? '' : 's'}. Updates replace tasks one at a time and go back by themselves when a new task fails (each service's update settings).`, `${UI.btn('Check for updates', 'data-check')} ${UI.primary('New service…', 'data-new')}`)}
-        ${UI.table([{ label: 'Service' }, { label: 'Image' }, { label: 'Mode' }, { label: 'Tasks' }, { label: 'CPU · Memory' }, { label: 'Ports' }, { label: 'Last update' }, { label: '', align: 'right' }], rowsHtml, { minWidth: 1060, empty: 'No services yet. Create one with New service…, or deploy a stack in Swarm → Stacks.' })}`;
+      content.innerHTML = `${UI.header('Services', `${data.length} service${data.length === 1 ? '' : 's'}. Updates replace tasks one at a time and go back by themselves when a new task fails (each service's update settings).`, `${UI.btn('Check for updates', 'data-check')} ${UI.primary('New service...', 'data-new')}`)}
+        ${UI.table([{ label: 'Service' }, { label: 'Image' }, { label: 'Mode' }, { label: 'Tasks' }, { label: 'CPU, Memory' }, { label: 'Ports' }, { label: 'Last update' }, { label: '', align: 'right' }], rowsHtml, { minWidth: 1060, empty: 'No services yet. Create one with New service..., or deploy a stack in Swarm > Stacks.' })}`;
       content.querySelector('[data-new]').onclick = () => openForm({ onDone: load });
       content.querySelector('[data-check]').onclick = async (e) => {
-        const b = e.currentTarget; b.disabled = true; b.textContent = 'Checking…';
+        const b = e.currentTarget; b.disabled = true; b.textContent = 'Checking...';
         try {
           const r = await API.post('/swarm/services/check-images', {});
           const n = r.services.filter(x => x.newer && x.newer.status === 'update').length;
           const f = r.services.filter(x => x.newer && x.newer.status === 'error').length;
           showToast(n ? `${n} service${n === 1 ? ' has' : 's have'} a newer image` : 'All service images are up to date', n ? 'info' : 'success');
-          if (f) showToast(`${f} could not be checked — hover "check failed" for the reason`, 'warning', 8000);
+          if (f) showToast(`${f} could not be checked - hover "check failed" for the reason`, 'warning', 8000);
           load();
         } catch (er) { showToast(er.message, 'error', 9000); b.disabled = false; b.textContent = 'Check for updates'; }
       };

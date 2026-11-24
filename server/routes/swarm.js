@@ -1,4 +1,4 @@
-// /api/swarm — Docker Swarm on the server in use (server/swarm.js).
+// /api/swarm - Docker Swarm on the server in use (server/swarm.js).
 const express = require('express');
 const router = express.Router();
 const swarm = require('../swarm');
@@ -139,7 +139,7 @@ router.post('/stacks/:name/move-back', ok(async (req) => {
   if (row && row.origin === 'container') return jobOf(await sy.startBackToContainer(req.params.name, { sourceIp: req.ip }));
   return jobOf(await stacks.startMoveBack(req.params.name, { sourceIp: req.ip }));
 }));
-// ---- Swarm → Firewall: published ports on every server (server/swarm-firewall.js) ----
+// ---- Swarm > Firewall: published ports on every server (server/swarm-firewall.js) ----
 router.get('/firewall', ok(() => require('../swarm-firewall').overview()));
 router.post('/firewall/apply', ok((req) => require('../swarm-firewall').apply(req.body || {}, { sourceIp: req.ip })));
 router.post('/firewall/sync', ok(() => require('../swarm-firewall').sync()));

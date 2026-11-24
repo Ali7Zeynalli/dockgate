@@ -1,9 +1,9 @@
-// Proxies & SSL → Certificates: why a certificate expired (or is about to), and the fix for whoever keeps it.
+// Proxies & SSL > Certificates: why a certificate expired (or is about to), and the fix for whoever keeps it.
 //
-// diagnose(fingerprint) runs the checks a renewal depends on — the domain's DNS, port 80 and the ACME challenge path
+// diagnose(fingerprint) runs the checks a renewal depends on - the domain's DNS, port 80 and the ACME challenge path
 // from outside (a real token, fetched by name), the renewer itself (certbot's method and timer, its container,
 // DockGate's last error, Caddy's / Traefik's logged errors, Let's Encrypt's rate limit) and whether the proxy serves
-// the newest file — and lists the fixes that apply. fix(fingerprint, action) runs one of them.
+// the newest file - and lists the fixes that apply. fix(fingerprint, action) runs one of them.
 const dns = require('dns').promises;
 const http = require('http');
 const https = require('https');
@@ -91,27 +91,27 @@ async function challengeTest(ctx, where, name) {
   if (w.code !== 0) return { ok: null, detail: `could not put a test file in ${dir} (${String(w.err || w.out || '').trim().slice(0, 120)})` };
   const r = await fetchLikeAcme(`http://${name}/.well-known/acme-challenge/${token}`);
   await exec(del).catch(() => {});
-  if (r.status === 200 && r.body.trim() === value) return { ok: true, detail: `http://${name}/.well-known/acme-challenge/… answers with the test file${r.url.startsWith('https') ? ' (after a redirect to https, which Let\'s Encrypt follows)' : ''}` };
-  if (!r.status) return { ok: false, detail: `http://${name}/ gives no answer (${r.error}): port 80 does not reach this server — a firewall, the router, or the DNS points elsewhere` };
-  return { ok: false, detail: `http://${name}/.well-known/acme-challenge/… answers ${r.status}${r.status === 200 ? ' with other content' : ''}, not the test file: another server or another site answers this name on port 80` };
+  if (r.status === 200 && r.body.trim() === value) return { ok: true, detail: `http://${name}/.well-known/acme-challenge/... answers with the test file${r.url.startsWith('https') ? ' (after a redirect to https, which Let\'s Encrypt follows)' : ''}` };
+  if (!r.status) return { ok: false, detail: `http://${name}/ gives no answer (${r.error}): port 80 does not reach this server - a firewall, the router, or the DNS points elsewhere` };
+  return { ok: false, detail: `http://${name}/.well-known/acme-challenge/... answers ${r.status}${r.status === 200 ? ' with other content' : ''}, not the test file: another server or another site answers this name on port 80` };
 }
 
 async function diagnose(fingerprint) {
   const ctx = PE.activeCtx();
   const ov = await PE.certOverview({ ctx });
-  const c = ov.certs.find(x => x.fingerprint === fingerprint); if (!c) throw err('Certificate not found — refresh the list', 404);
+  const c = ov.certs.find(x => x.fingerprint === fingerprint); if (!c) throw err('Certificate not found - refresh the list', 404);
   const names = c.names.filter(n => P.isDomain(n) && !n.startsWith('*.'));
   const wildcard = c.names.some(n => n.startsWith('*.'));
   const checks = []; const fixes = [];
   const add = (ok, title, detail) => checks.push({ ok, title, detail });
-  add(c.daysLeft < 0 ? false : c.daysLeft <= 14 ? null : true, c.daysLeft < 0 ? `Expired ${-c.daysLeft} days ago` : `Expires in ${c.daysLeft} days`, `${c.names.join(', ')} · ${c.selfSigned ? 'self-signed' : c.issuer} · kept by ${c.renewal}`);
+  add(c.daysLeft < 0 ? false : c.daysLeft <= 14 ? null : true, c.daysLeft < 0 ? `Expired ${-c.daysLeft} days ago` : `Expires in ${c.daysLeft} days`, `${c.names.join(', ')}, ${c.selfSigned ? 'self-signed' : c.issuer}, kept by ${c.renewal}`);
 
   // who renews it, and is it able to
   let cb = null; let rateLimited = false; let certbotTimer = null;
   if (c.internal) add(true, 'Internal certificate', `${c.renewal}: renewed by itself, not a public certificate`);
   else if (c.managedId) {
     const m = (ov.managed || []).find(x => x.id === c.managedId) || {};
-    add(m.auto ? true : null, m.auto ? 'DockGate renews it' : 'DockGate keeps it, automatic renewal is off', m.lastError ? `last try: ${m.lastError}` : m.lastTry ? `last try ${new Date(m.lastTry).toLocaleString()} — no error` : 'no renewal tried yet');
+    add(m.auto ? true : null, m.auto ? 'DockGate renews it' : 'DockGate keeps it, automatic renewal is off', m.lastError ? `last try: ${m.lastError}` : m.lastTry ? `last try ${new Date(m.lastTry).toLocaleString()} - no error` : 'no renewal tried yet');
     if (m.lastError && /too many|rateLimited|rate limit/i.test(m.lastError)) rateLimited = true;
   } else if (c.renewer === 'certbot') {
     const name = (c.paths.map(x => (x.match(/\/letsencrypt\/live\/([^/]+)\//) || [])[1]).find(Boolean)) || null;
@@ -124,7 +124,7 @@ async function diagnose(fingerprint) {
     }
     if (cb.found) {
       const holds80 = (await PX.scan()).ports.some(x => x.port === 80);
-      if (cb.authenticator === 'standalone') add(holds80 ? false : null, 'certbot method: standalone', holds80 ? 'certbot starts its own server on port 80 to answer the check, but a proxy holds port 80 — every renewal fails. Let DockGate renew it, or switch certbot to webroot.' : 'certbot needs port 80 free at renewal time');
+      if (cb.authenticator === 'standalone') add(holds80 ? false : null, 'certbot method: standalone', holds80 ? 'certbot starts its own server on port 80 to answer the check, but a proxy holds port 80 - every renewal fails. Let DockGate renew it, or switch certbot to webroot.' : 'certbot needs port 80 free at renewal time');
       else if (cb.authenticator === 'webroot') add(true, 'certbot method: webroot', `the check is answered from ${cb.webroot || '(no folder set)'}`);
       else if (/^dns/.test(cb.authenticator || '')) add(null, `certbot method: ${cb.authenticator}`, 'the check is a DNS record: its API credentials must still be valid');
       else if (cb.authenticator) add(null, `certbot method: ${cb.authenticator}`, 'certbot changes the web server config itself at renewal');
@@ -135,21 +135,21 @@ async function diagnose(fingerprint) {
     const e = (ov.errors || []).find(x => c.proxies.includes(x.proxy));
     add(e ? false : true, `${c.renewal}`, e ? e.lines.join('\n') : 'no certificate errors in its log');
     if (e && e.lines.some(l => /too many|rateLimited|rate limit/i.test(l))) rateLimited = true;
-  } else if (c.renewer === 'npm') add(null, 'Nginx Proxy Manager keeps it', 'renew it in Nginx Proxy Manager (SSL Certificates → ⋯ → Renew)');
+  } else if (c.renewer === 'npm') add(null, 'Nginx Proxy Manager keeps it', 'renew it in Nginx Proxy Manager (SSL Certificates -> ⋯ > Renew)');
   else add(false, 'Nobody renews it', 'a certificate file in the config: when it expires, nothing makes a new one');
-  if (rateLimited) add(false, "Let's Encrypt rate limit", "too many certificates for these names this week (5 per week): wait, then try again — another try now fails the same way");
+  if (rateLimited) add(false, "Let's Encrypt rate limit", "too many certificates for these names this week (5 per week): wait, then try again - another try now fails the same way");
   const dnsReady = !!PE.dnsChallenge(['*.x']);
   if (wildcard) add(dnsReady ? true : null, 'Wildcard name', dnsReady ? `${c.names.find(n => n.startsWith('*.'))}: DockGate answers its DNS check through Cloudflare` : `${c.names.find(n => n.startsWith('*.'))} needs a DNS check: set up Cloudflare under Let's Encrypt account to let DockGate renew it (or certbot / acme.sh with a DNS plugin)`);
 
-  // DNS of each name → this server?
+  // DNS of each name -> this server?
   const mine = await serverAddresses(ctx);
   for (const n of names.slice(0, 4)) {
     let ips = []; try { ips = (await dns.lookup(n, { all: true })).map(a => a.address); } catch (e) { add(false, `DNS of ${n}`, `${n} does not resolve (${e.code}): Let's Encrypt can not reach it`); continue; }
     const cf = ips.filter(isCloudflare);
-    if (cf.length) { add(null, `DNS of ${n}`, `${ips.join(', ')} — Cloudflare's proxy answers it. The check works only if Cloudflare passes http://${n}/.well-known/acme-challenge/ to this server (the test below shows it).`); continue; }
-    if (!mine.length) { add(null, `DNS of ${n}`, `${ips.join(', ')} (this server's addresses are not known here — the test below shows whether it is this server)`); continue; }
+    if (cf.length) { add(null, `DNS of ${n}`, `${ips.join(', ')} - Cloudflare's proxy answers it. The check works only if Cloudflare passes http://${n}/.well-known/acme-challenge/ to this server (the test below shows it).`); continue; }
+    if (!mine.length) { add(null, `DNS of ${n}`, `${ips.join(', ')} (this server's addresses are not known here - the test below shows whether it is this server)`); continue; }
     const hit = ips.some(ip => mine.includes(ip));
-    add(hit ? true : null, `DNS of ${n}`, hit ? `${ips.join(', ')} — this server` : `${ips.join(', ')}, and this server has ${mine.filter(x => !x.startsWith('127.') && x !== '::1').slice(0, 4).join(', ')}${ips.some(x => !isPrivate(x)) && mine.every(isPrivate) ? ' — fine if the first is the public address of this server behind a router' : ' — it may point to another server'}`);
+    add(hit ? true : null, `DNS of ${n}`, hit ? `${ips.join(', ')} - this server` : `${ips.join(', ')}, and this server has ${mine.filter(x => !x.startsWith('127.') && x !== '::1').slice(0, 4).join(', ')}${ips.some(x => !isPrivate(x)) && mine.every(isPrivate) ? ' - fine if the first is the public address of this server behind a router' : ' - it may point to another server'}`);
   }
 
   // the challenge path, the way Let's Encrypt asks it
@@ -162,7 +162,7 @@ async function diagnose(fingerprint) {
       if (text.includes(G.ACME_ROOT)) { where = { proxy: sf.p, root: G.ACME_ROOT }; how = `through ${sf.p.name}`; }
     }
     if (!where && cb && cb.authenticator === 'webroot' && cb.webroot && !c.certbotContainer) { where = { root: cb.webroot }; how = `from certbot's webroot ${cb.webroot}`; }
-    if (where) { const t = await challengeTest(ctx, where, n0); add(t.ok, `Challenge path (asked by name, ${how})`, t.detail + (t.ok === false && mine.length ? '. Asked from DockGate on this server: a router without "hairpin" can also cause this — Let\'s Encrypt asks from outside.' : '')); }
+    if (where) { const t = await challengeTest(ctx, where, n0); add(t.ok, `Challenge path (asked by name, ${how})`, t.detail + (t.ok === false && mine.length ? '. Asked from DockGate on this server: a router without "hairpin" can also cause this - Let\'s Encrypt asks from outside.' : '')); }
     else {
       const r = await fetchLikeAcme(`http://${n0}/.well-known/acme-challenge/dockgate-check`);
       add(r.status ? null : false, `Port 80 of ${n0}`, r.status ? `answers ${r.status} (DockGate could not put a test file here, so only the answer is checked)` : `no answer (${r.error}): port 80 does not reach it`);
@@ -170,7 +170,7 @@ async function diagnose(fingerprint) {
   }
 
   // served: a renewed file that the proxy does not load
-  if (c.served && c.served.stale) add(false, 'The proxy serves an older certificate', `${c.served.proxy} still serves the one that ends ${String(c.served.notAfter).slice(0, 10)}; the file is newer — a reload fixes it`);
+  if (c.served && c.served.stale) add(false, 'The proxy serves an older certificate', `${c.served.proxy} still serves the one that ends ${String(c.served.notAfter).slice(0, 10)}; the file is newer - a reload fixes it`);
 
   // the fixes that apply
   const canTakeOver = !c.managedId && !c.internal && (!wildcard || dnsReady) && ['certbot', 'acme.sh', 'none'].includes(c.renewer) && !!(n0 && await siteFor(c, n0));
@@ -183,7 +183,7 @@ async function diagnose(fingerprint) {
   if (c.renewer === 'caddy' && !c.internal) fixes.push({ id: 'caddy-reissue', label: 'Make Caddy get it again', desc: 'Moves Caddy\'s stored certificate aside (kept) and reloads Caddy, which then asks for a new one.' });
   if (c.renewer === 'traefik') fixes.push({ id: 'traefik-reissue', label: 'Make Traefik get it again', desc: 'Copies acme.json, takes this certificate out of it and restarts Traefik, which then asks for a new one.' });
   const firstBad = checks.find(x => x.ok === false && !/^Expire/.test(x.title));
-  return { fingerprint, names: c.names, daysLeft: c.daysLeft, renewal: c.renewal, verdict: firstBad ? `${firstBad.title}: ${firstBad.detail.split('\n')[0]}` : c.daysLeft < 0 ? 'Nothing found that blocks a renewal — renew it now.' : 'Nothing found that blocks a renewal.', checks, fixes };
+  return { fingerprint, names: c.names, daysLeft: c.daysLeft, renewal: c.renewal, verdict: firstBad ? `${firstBad.title}: ${firstBad.detail.split('\n')[0]}` : c.daysLeft < 0 ? 'Nothing found that blocks a renewal - renew it now.' : 'Nothing found that blocks a renewal.', checks, fixes };
 }
 
 const FIXES = ['reload', 'renew', 'putback', 'certbot-dry-run', 'certbot-timer', 'takeover', 'caddy-reissue', 'traefik-reissue'];
@@ -191,7 +191,7 @@ async function fix(fingerprint, action, user) {
   if (!FIXES.includes(action)) throw err('Unknown fix');
   const ctx = PE.activeCtx();
   const ov = await PE.certOverview({ ctx });
-  const c = ov.certs.find(x => x.fingerprint === fingerprint); if (!c) throw err('Certificate not found — refresh the list', 404);
+  const c = ov.certs.find(x => x.fingerprint === fingerprint); if (!c) throw err('Certificate not found - refresh the list', 404);
   const names = c.names.filter(n => P.isDomain(n) && !n.startsWith('*.'));
   const steps = []; const out = [];
   const reloadAll = async () => { for (const id of c.proxyIds || []) { try { const r = await PE.reloadProxy(id); steps.push({ t: `${(await PX.proxyById(id)).name}: ${r.ok ? 'checked and reloaded' : 'reload failed'}`, ok: r.ok }); if (!r.ok) out.push(r.output); } catch (e) { steps.push({ t: e.message, ok: false }); } } };
@@ -210,7 +210,7 @@ async function fix(fingerprint, action, user) {
     if (c.certbotContainer && !c.proxies.includes('host')) { const d = await PX.scan(); const h = (d.helpers || []).find(x => x.name === c.certbotContainer); if (!h || !h.running) throw err(`The certbot container ${c.certbotContainer} is not running`); r = await PX.execIn(ctx.c, h.cid, ['sh', '-c', cmd], { timeout: 180000, user: 'root' }); }
     else { if (!ctx.server) throw err('DockGate has no access to the host here (DG_HOST_ACCESS is off)'); r = await PX.hostExec(ctx.server, rootSh(cmd)); }
     const text = (r.out + r.err).trim(); const ok = r.code === 0 && /succeeded|Congratulations/i.test(text) && !/fail/i.test(text.split('\n').slice(-6).join('\n'));
-    return { ok, steps: [{ t: ok ? 'certbot test run: the renewal works (nothing was changed)' : 'certbot test run failed — the reason is below', ok }], output: text.slice(-6000) };
+    return { ok, steps: [{ t: ok ? 'certbot test run: the renewal works (nothing was changed)' : 'certbot test run failed - the reason is below', ok }], output: text.slice(-6000) };
   }
   if (action === 'certbot-timer') {
     if (!ctx.server) throw err('DockGate has no access to the host here (DG_HOST_ACCESS is off)');
@@ -218,7 +218,7 @@ async function fix(fingerprint, action, user) {
     const r = await PX.hostExec(ctx.server, rootSh(`systemctl enable --now ${unit} 2>&1 && systemctl is-active ${unit}`));
     const ok = r.code === 0;
     PX.invalidate();
-    return { ok, steps: [{ t: ok ? `${unit} is on: certbot renews by itself from now on` : `${unit} could not be turned on — the reason is below`, ok }], output: (r.out + r.err).trim() };
+    return { ok, steps: [{ t: ok ? `${unit} is on: certbot renews by itself from now on` : `${unit} could not be turned on - the reason is below`, ok }], output: (r.out + r.err).trim() };
   }
   if (action === 'takeover') {
     const sf = await siteFor(c, names[0]); if (!sf) throw err('No nginx or Apache site uses this certificate for its first name: DockGate can not answer the check for it');
@@ -238,7 +238,7 @@ async function fix(fingerprint, action, user) {
     await new Promise(r => setTimeout(r, 20000));
     const ls = await PE.run(ctx, p, `ls ${shq(dir)} 2>/dev/null`);
     const got = /\.crt/.test(ls.out);
-    steps.push(got ? { t: 'Caddy has a new certificate', ok: true } : { t: 'No new certificate yet — Caddy keeps trying; its log (Logs tab) says why', ok: true, warn: true });
+    steps.push(got ? { t: 'Caddy has a new certificate', ok: true } : { t: 'No new certificate yet - Caddy keeps trying; its log (Logs tab) says why', ok: true, warn: true });
     PX.invalidate(); return { ok: rl.code === 0, steps, output: (rl.out + rl.err).trim().slice(-3000) };
   }
   if (action === 'traefik-reissue') {

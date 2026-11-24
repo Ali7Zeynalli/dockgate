@@ -32,7 +32,7 @@ test('stopped: started on the second check (not the first)', async () => {
   const r = await keepAlive({ docker: d, project: 'p', service: 'web', state: st });
   assert.equal(r.action, 'start'); assert.deepEqual(d.done, [['start', 'a']]);
 });
-test('removed: made again from the kept config — same name and host port', async () => {
+test('removed: made again from the kept config - same name and host port', async () => {
   const st = {};
   await keepAlive({ docker: fake([{ id: 'a', name: 'p-web-1', state: 'running' }]), project: 'p', service: 'web', state: st });
   const gone = fake([]);

@@ -23,7 +23,7 @@ test('a new service gets safe defaults', () => {
   assert.deepEqual(spec.TaskTemplate.LogDriver, { Name: 'json-file', Options: { 'max-size': '10m', 'max-file': '3' } });
 });
 
-test('form → spec → form keeps the values; unknown spec fields survive an edit', () => {
+test('form -> spec -> form keeps the values; unknown spec fields survive an edit', () => {
   const f = S.newForm(); f.name = 'api'; f.general.image = 'whoami:1'; f.general.replicas = 3; f.general.command = '--port 8080';
   f.resources.memory = '64M'; f.resources.cpus = 0.5; f.placement.constraints = ['node.labels.db==true']; f.placement.spread = ['node.labels.zone'];
   f.env.env = ['A=1']; f.network.ports = [{ published: 80, target: 8080, protocol: 'tcp', mode: 'host' }]; f.mounts = [{ type: 'volume', source: 'data', target: '/data' }];

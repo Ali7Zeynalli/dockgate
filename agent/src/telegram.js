@@ -1,4 +1,4 @@
-// Telegram Bot sender — PORT of server/notifications/telegram.js with the DB stripped.
+// Telegram Bot sender - PORT of server/notifications/telegram.js with the DB stripped.
 // sendRequest / formatAlert / escapeHtml are copied verbatim; config comes from cfg.telegram;
 // notification-log inserts are replaced by console lines (the agent has no DB).
 const https = require('https');
@@ -56,7 +56,7 @@ function formatAlert(subject, details) {
   let msg = `🐳 <b>${escapeHtml(subject)}</b>\n`;
   if (details) {
     for (const [key, value] of Object.entries(details)) {
-      if (value !== undefined && value !== null && value !== '' && value !== '—') {
+      if (value !== undefined && value !== null && value !== '' && value !== '-') {
         msg += `\n<b>${escapeHtml(key)}:</b> <code>${escapeHtml(String(value))}</code>`;
       }
     }
@@ -73,7 +73,7 @@ function formatLogs(logs, max = 700) {
   if (!logs) return '';
   let t = String(logs).trim();
   if (!t) return '';
-  if (t.length > max) t = '…' + t.slice(-max);
+  if (t.length > max) t = '...' + t.slice(-max);
   return `\n\n📋 <b>Recent logs:</b>\n<pre>${escapeHtml(t)}</pre>`;
 }
 

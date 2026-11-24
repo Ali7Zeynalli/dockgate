@@ -1,6 +1,6 @@
-// Global Terminal Page — two tabs:
-//   🐳 Container — interactive shell (exec) into a running container (works local + remote daemon)
-//   💻 System    — a shell on the SERVER itself (the active one from the header): real SSH shell for a
+// Global Terminal Page - two tabs:
+//   🐳 Container - interactive shell (exec) into a running container (works local + remote daemon)
+//   💻 System    - a shell on the SERVER itself (the active one from the header): real SSH shell for a
 //                  remote host, or the DockGate container shell for Local. See server/host-terminal.js.
 Router.register('terminal', async (content, params) => {
   let activeTab = 'container';
@@ -32,8 +32,8 @@ Router.register('terminal', async (content, params) => {
 
   // ---- socket binding (per channel) ----
   const onData = ({ data }) => { if (term) term.write(data); };
-  const onEnd = () => { if (term) term.write('\r\n\x1b[33m— session ended (press Reconnect) —\x1b[0m\r\n'); };
-  const onErr = ({ error }) => { if (term) term.write(`\r\n\x1b[31m— terminal error: ${error || 'unknown'} —\x1b[0m\r\n`); };
+  const onEnd = () => { if (term) term.write('\r\n\x1b[33m- session ended (press Reconnect) -\x1b[0m\r\n'); };
+  const onErr = ({ error }) => { if (term) term.write(`\r\n\x1b[31m- terminal error: ${error || 'unknown'} -\x1b[0m\r\n`); };
   function unbindSocket() {
     socket.off('terminal:data', onData).off('terminal:end', onEnd).off('terminal:error', onErr).off('terminal:ready', onContainerReady);
     socket.off('hostterm:data', onData).off('hostterm:end', onEnd).off('hostterm:error', onErr).off('hostterm:ready', onSystemReady);
@@ -47,7 +47,7 @@ Router.register('terminal', async (content, params) => {
     if (!selectedContainerId || !term) return;
     const shell = document.getElementById('terminal-shell')?.value || '/bin/sh';
     term.reset();
-    term.write(`\x1b[36mConnecting to ${shell}…\x1b[0m\r\n`);
+    term.write(`\x1b[36mConnecting to ${shell}...\x1b[0m\r\n`);
     socket.emit('terminal:stop');
     socket.emit('terminal:start', { containerId: selectedContainerId, shell });
     setTimeout(handleResize, 100);
@@ -69,7 +69,7 @@ Router.register('terminal', async (content, params) => {
   function startSystemSession() {
     if (!term) return;
     term.reset();
-    term.write(`\x1b[36mConnecting to ${activeServer.label}…\x1b[0m\r\n`);
+    term.write(`\x1b[36mConnecting to ${activeServer.label}...\x1b[0m\r\n`);
     socket.emit('hostterm:stop');
     socket.emit('hostterm:start', { cols: term.cols, rows: term.rows });
     setTimeout(handleResize, 100);
@@ -125,7 +125,7 @@ Router.register('terminal', async (content, params) => {
       <div class="card mb-3" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:12px 18px">
         <label class="text-sm font-bold">Server:</label>
         <span class="badge ${activeServer.isLocal ? 'badge-created' : 'badge-running'}">${escapeHtml(activeServer.label)}</span>
-        <span class="text-xs text-muted">${activeServer.isLocal ? 'Shell inside the DockGate container (has the docker CLI). Switch to a remote server in the header for its SSH shell.' : 'Real SSH shell on this host — manage it directly (apt, systemctl, docker…).'}</span>
+        <span class="text-xs text-muted">${activeServer.isLocal ? 'Shell inside the DockGate container (has the docker CLI). Switch to a remote server in the header for its SSH shell.' : 'Real SSH shell on this host - manage it directly (apt, systemctl, docker...).'}</span>
         <div style="flex:1"></div>
         <button class="btn btn-primary" id="sys-connect">Connect</button>
         <button class="btn btn-secondary" id="sys-reconnect" style="display:none">${Icons.refresh} Reconnect</button>

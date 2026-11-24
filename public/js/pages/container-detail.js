@@ -30,7 +30,7 @@ Router.register('container-detail', async (content, params) => {
                 ${escapeHtml(name)}
                 <span class="badge badge-${state}"><span class="badge-dot"></span> ${state}</span>
               </div>
-              <div class="page-subtitle td-mono">${info.Id?.substring(0, 12) || ''} · ${escapeHtml(info.Config?.Image || '')}</div>
+              <div class="page-subtitle td-mono">${info.Id?.substring(0, 12) || ''}, ${escapeHtml(info.Config?.Image || '')}</div>
             </div>
           </div>
           <div class="page-actions">
@@ -43,7 +43,7 @@ Router.register('container-detail', async (content, params) => {
             ` : `
               <button class="btn btn-primary" data-action="start">${Icons.play} Start</button>
             `}
-            ${iu && ((iu.check && iu.check.status === 'update') || iu.stale) ? `<button class="btn btn-primary" id="image-update-btn" title="Pull the newer image of the same tag and recreate">${Icons.download} Update…</button>` : ''}
+            ${iu && ((iu.check && iu.check.status === 'update') || iu.stale) ? `<button class="btn btn-primary" id="image-update-btn" title="Pull the newer image of the same tag and recreate">${Icons.download} Update...</button>` : ''}
             ${state === 'running' && /(^|\/)(postgres|postgresql|postgis|timescaledb[\w-]*|pgvector|supabase\/postgres|bitnami\/postgresql[\w-]*|paradedb)(:|@|$)/i.test(String(info.Config?.Image || '')) ? `<button class="btn btn-secondary" id="open-db-btn" title="Tables, SQL, users and backups of this PostgreSQL">${Icons.layers} Open in Databases</button>` : ''}
             <button class="btn btn-secondary" id="update-btn" title="Edit CPU / memory / restart">${Icons.settings} Resources</button>
             <button class="btn btn-secondary" id="recreate-btn" title="Recreate with a new image">${Icons.restart} Recreate</button>
@@ -66,16 +66,16 @@ Router.register('container-detail', async (content, params) => {
       const backIcon = document.querySelector('#back-btn svg'); if (backIcon) backIcon.style.transform = 'rotate(180deg)'; // the arrow points back; the text stays readable
       document.getElementById('back-btn').addEventListener('click', () => Router.back('resources', { tab: 'containers' })); // where you came from
 
-      // Export filesystem → tar download (C5)
+      // Export filesystem -> tar download (C5)
       document.getElementById('export-btn')?.addEventListener('click', () => {
         const a = document.createElement('a');
         a.href = `/api/containers/${id}/export`;
         a.download = `${name}.tar`;
         document.body.appendChild(a); a.click(); a.remove();
-        showToast('Export started…', 'info');
+        showToast('Export started...', 'info');
       });
 
-      // Edit resources (C1) — live CPU / memory / restart-policy update
+      // Edit resources (C1) - live CPU / memory / restart-policy update
       document.getElementById('open-db-btn')?.addEventListener('click', () => Router.navigate('tools', { tab: 'databases', c: name }));
       document.getElementById('update-btn')?.addEventListener('click', () => {
         const hc = info.HostConfig || {};
@@ -98,7 +98,7 @@ Router.register('container-detail', async (content, params) => {
         ]);
       });
 
-      // Recreate with a new image (C2) — preserves config, removes the old container
+      // Recreate with a new image (C2) - preserves config, removes the old container
       document.getElementById('recreate-btn')?.addEventListener('click', () => {
         const curImg = info.Config?.Image || '';
         const body = `<div style="display:flex;flex-direction:column;gap:8px">
@@ -111,11 +111,11 @@ Router.register('container-detail', async (content, params) => {
         btn.className = 'btn btn-primary'; btn.textContent = 'Recreate';
         root.querySelector('#modal-footer').appendChild(btn);
         btn.addEventListener('click', async () => {
-          btn.disabled = true; btn.textContent = 'Recreating…';
+          btn.disabled = true; btn.textContent = 'Recreating...';
           try {
             const r = await API.post(`/containers/${id}/recreate`, { image: root.querySelector('#recr-img').value.trim() });
             showToast('Container recreated'); m.close();
-            Router.navigate('container-detail', { id: r.id }); // old id is gone → open the new one
+            Router.navigate('container-detail', { id: r.id }); // old id is gone -> open the new one
           } catch (e) { showToast(e.message, 'error', 9000); btn.disabled = false; btn.textContent = 'Recreate'; }
         });
       });
@@ -160,7 +160,7 @@ Router.register('container-detail', async (content, params) => {
             } });
             return;
           }
-          try { await API.post(`/containers/${id}/${action}`); showToast(`${action} → ${name}`); render(); }
+          try { await API.post(`/containers/${id}/${action}`); showToast(`${action} -> ${name}`); render(); }
           catch (err) { showToast(err.message, 'error'); }
         });
       });
@@ -220,7 +220,7 @@ Router.register('container-detail', async (content, params) => {
       </div>
       ${state.Health ? `
         <div class="mt-3">
-          <div class="detail-label mb-1">Healthcheck — <span class="badge badge-${state.Health.Status === 'healthy' ? 'running' : 'created'}">${escapeHtml(state.Health.Status || '')}</span> · failing streak: ${state.Health.FailingStreak || 0}</div>
+          <div class="detail-label mb-1">Healthcheck - <span class="badge badge-${state.Health.Status === 'healthy' ? 'running' : 'created'}">${escapeHtml(state.Health.Status || '')}</span>, failing streak: ${state.Health.FailingStreak || 0}</div>
           <div class="table-wrapper"><table><thead><tr><th>Time</th><th>Exit</th><th>Output</th></tr></thead>
             <tbody>${(state.Health.Log || []).slice(-5).reverse().map(l => `<tr><td class="text-xs text-muted" style="white-space:nowrap">${l.Start ? formatTime(l.Start) : ''}</td><td>${l.ExitCode}</td><td class="td-mono text-xs" style="white-space:pre-wrap;word-break:break-all;max-width:420px">${escapeHtml((l.Output || '').trim().slice(0, 300))}</td></tr>`).join('') || '<tr><td colspan="3" class="text-muted text-sm">No checks yet.</td></tr>'}</tbody>
           </table></div>
@@ -256,33 +256,33 @@ Router.register('container-detail', async (content, params) => {
   function imageUpdateBanner() {
     if (!iu) return '';
     const c = iu.check;
-    const checked = c && c.checked_at ? ` · checked ${escapeHtml(timeAgo(new Date(c.checked_at).toISOString()))}` : '';
+    const checked = c && c.checked_at ? `, checked ${escapeHtml(timeAgo(new Date(c.checked_at).toISOString()))}` : '';
     const running = (iu.history || []).find(r => r.status === 'running' && r.job_id);
     const last = (iu.history || []).find(r => r.status !== 'running');
     const rb = iu.rollback;
     let tone = 'info', text, btns = '';
     if (running) {
-      text = `<b>${running.kind === 'rollback' ? 'Roll back' : 'Update'} running</b> — ${escapeHtml(running.image)}`;
+      text = `<b>${running.kind === 'rollback' ? 'Roll back' : 'Update'} running</b> - ${escapeHtml(running.image)}`;
       btns = UI.btn('Open', `data-iu-open="${escapeHtml(running.job_id)}"`, 'btn-primary');
     } else if (iu.stale) {
-      text = `<b>Newer image already on the server</b> — <span class="td-mono">${escapeHtml(iu.image)}</span> ${ImageUpdate.ver(iu.current && iu.current.version, iu.imageId)} → ${ImageUpdate.ver(iu.stale.version, iu.stale.imageId)}. Its tag was pulled (another container using it was updated?), but this container still runs the older image.`;
-      btns = UI.btn(`${Icons.download} Update…`, 'data-iu-update', 'btn-primary');
+      text = `<b>Newer image already on the server</b> - <span class="td-mono">${escapeHtml(iu.image)}</span> ${ImageUpdate.ver(iu.current && iu.current.version, iu.imageId)} -> ${ImageUpdate.ver(iu.stale.version, iu.stale.imageId)}. Its tag was pulled (another container using it was updated?), but this container still runs the older image.`;
+      btns = UI.btn(`${Icons.download} Update...`, 'data-iu-update', 'btn-primary');
     } else if (c && c.status === 'update') {
-      text = `<b>Newer image available</b> — <span class="td-mono">${escapeHtml(iu.image)}</span> ${ImageUpdate.checkChange(c)}${c.remote_created ? ` <span class="ui-sub">(built ${escapeHtml(String(c.remote_created).slice(0, 10))})</span>` : ''}${checked}`;
-      btns = UI.btn(`${Icons.download} Update…`, 'data-iu-update', 'btn-primary');
+      text = `<b>Newer image available</b> - <span class="td-mono">${escapeHtml(iu.image)}</span> ${ImageUpdate.checkChange(c)}${c.remote_created ? ` <span class="ui-sub">(built ${escapeHtml(String(c.remote_created).slice(0, 10))})</span>` : ''}${checked}`;
+      btns = UI.btn(`${Icons.download} Update...`, 'data-iu-update', 'btn-primary');
     } else if (c && c.status === 'current') {
-      tone = 'ok'; text = `<b>Image up to date</b>${iu.current && iu.current.version ? ` — version ${escapeHtml(iu.current.version)}` : ''}${checked}`;
+      tone = 'ok'; text = `<b>Image up to date</b>${iu.current && iu.current.version ? ` - version ${escapeHtml(iu.current.version)}` : ''}${checked}`;
     } else if (c) {
-      tone = 'muted'; text = `<b>Newer image: not checked</b> — ${escapeHtml(c.error || 'unknown')}${checked}`;
+      tone = 'muted'; text = `<b>Newer image: not checked</b> - ${escapeHtml(c.error || 'unknown')}${checked}`;
     } else {
-      tone = 'muted'; text = '<b>Newer image: not checked yet</b> — Containers → Check for updates asks the registry.';
+      tone = 'muted'; text = '<b>Newer image: not checked yet</b> - Containers > Check for updates asks the registry.';
     }
     if (!running && rb) {
-      text += `<div class="ui-sub" style="margin-top:4px">Updated ${escapeHtml(timeAgo(new Date(rb.started_at).toISOString()))}: ${ImageUpdate.ver(rb.from_version, rb.from_image_id)} → ${ImageUpdate.ver(rb.to_version, rb.to_image_id)}.${rb.missing ? ' The previous image is no longer on the server, so it can not be rolled back.' : ''}</div>`;
-      if (!rb.missing) btns += ' ' + UI.btn('Roll back…', 'data-iu-rollback-now');
+      text += `<div class="ui-sub" style="margin-top:4px">Updated ${escapeHtml(timeAgo(new Date(rb.started_at).toISOString()))}: ${ImageUpdate.ver(rb.from_version, rb.from_image_id)} -> ${ImageUpdate.ver(rb.to_version, rb.to_image_id)}.${rb.missing ? ' The previous image is no longer on the server, so it can not be rolled back.' : ''}</div>`;
+      if (!rb.missing) btns += ' ' + UI.btn('Roll back...', 'data-iu-rollback-now');
     } else if (!running && last && last.status !== 'updated' && last.status !== 'no_change') {
       if (tone !== 'info') tone = 'warning';
-      text += `<div class="ui-sub" style="margin-top:4px">Last ${last.kind === 'rollback' ? 'roll back' : 'update'} ${escapeHtml(timeAgo(new Date(last.started_at).toISOString()))}: ${escapeHtml(last.status === 'rolled_back' ? 'failed, the previous image was put back' : 'failed')} — ${escapeHtml((last.error || '').slice(0, 140))}</div>`;
+      text += `<div class="ui-sub" style="margin-top:4px">Last ${last.kind === 'rollback' ? 'roll back' : 'update'} ${escapeHtml(timeAgo(new Date(last.started_at).toISOString()))}: ${escapeHtml(last.status === 'rolled_back' ? 'failed, the previous image was put back' : 'failed')} - ${escapeHtml((last.error || '').slice(0, 140))}</div>`;
     }
     btns += ' ' + UI.btn('History', 'data-iu-tab');
     return `<div class="insight-card ${tone === 'info' || tone === 'warning' ? tone : ''}" style="margin-bottom:14px;${tone === 'ok' ? 'border-left:3px solid var(--success,#16a34a);' : tone === 'muted' ? 'border-left:3px solid var(--border);' : ''}display:flex;align-items:center;gap:12px;flex-wrap:wrap">
@@ -296,14 +296,14 @@ Router.register('container-detail', async (content, params) => {
   }
 
   async function renderUpdates(el, info) {
-    el.innerHTML = '<div class="text-muted text-sm">Loading…</div>';
+    el.innerHTML = '<div class="text-muted text-sm">Loading...</div>';
     try {
       const q = new URLSearchParams({ name: iu ? iu.name : (info.Name || '').replace(/^\//, ''), limit: '50' });
       if (iu && iu.project && iu.service) { q.set('project', iu.project); q.set('service', iu.service); }
       const { rows } = await API.get(`/containers/image-updates/history?${q}`);
       if (!el.isConnected) return;
       el.innerHTML = `${imageUpdateBanner()}
-        <div class="ui-sub" style="margin-bottom:8px">Every image update and roll back of this container started from DockGate — kept by container name${iu && iu.project ? ' and compose service' : ''}, so it stays after the container is recreated. The last 50 are kept.</div>
+        <div class="ui-sub" style="margin-bottom:8px">Every image update and roll back of this container started from DockGate - kept by container name${iu && iu.project ? ' and compose service' : ''}, so it stays after the container is recreated. The last 50 are kept.</div>
         ${ImageUpdate.historyTable(rows, { rollbackId: iu && iu.rollback && !iu.rollback.missing ? iu.rollback.id : null, empty: 'No image updates of this container yet.' })}`;
       bindImageBanner(el, info);
       ImageUpdate.bindHistory(el, rows, afterImageJob, AFTER_CLOSE);
@@ -316,7 +316,7 @@ Router.register('container-detail', async (content, params) => {
       <div style="display:flex;flex-direction:column;gap:14px">
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div class="detail-label">Running processes</div><button class="btn btn-xs btn-secondary" id="proc-refresh">${Icons.refresh}</button></div>
-          <div class="table-wrapper" id="proc-table"><div class="text-muted text-sm" style="padding:12px">Loading…</div></div>
+          <div class="table-wrapper" id="proc-table"><div class="text-muted text-sm" style="padding:12px">Loading...</div></div>
         </div>
         <div>
           <div class="detail-label mb-1">Run a one-off command</div>
@@ -339,7 +339,7 @@ Router.register('container-detail', async (content, params) => {
       const cmd = document.getElementById('exec-cmd').value.trim();
       if (!cmd) return;
       const out = document.getElementById('exec-out');
-      out.style.display = 'block'; out.textContent = 'Running…';
+      out.style.display = 'block'; out.textContent = 'Running...';
       try { const r = await API.post(`/containers/${id}/exec`, { cmd }); out.textContent = (r.output || '(no output)') + `\n[exit ${r.exitCode}]`; }
       catch (e) { out.textContent = 'Error: ' + e.message; }
     };
@@ -448,8 +448,8 @@ Router.register('container-detail', async (content, params) => {
     };
     
     socket.on('terminal:data', onTermData);
-    const onTermEnd = () => term.write('\r\n\x1b[33m— session ended (Reconnect) —\x1b[0m\r\n');
-    const onTermError = ({ error }) => term.write(`\r\n\x1b[31m— terminal error: ${error || 'unknown'} —\x1b[0m\r\n`);
+    const onTermEnd = () => term.write('\r\n\x1b[33m- session ended (Reconnect) -\x1b[0m\r\n');
+    const onTermError = ({ error }) => term.write(`\r\n\x1b[31m- terminal error: ${error || 'unknown'} -\x1b[0m\r\n`);
     socket.on('terminal:end', onTermEnd);
     socket.on('terminal:error', onTermError);
 
@@ -537,8 +537,8 @@ Router.register('container-detail', async (content, params) => {
     const labels = [];
     const maxPoints = 60;
 
-    // Chart.js doesn't support CSS variables — read computed value
-    // Chart.js CSS dəyişənlərini dəstəkləmir — hesablanmış dəyəri oxu
+    // Chart.js doesn't support CSS variables - read computed value
+    // Chart.js CSS dəyişənlərini dəstəkləmir - hesablanmış dəyəri oxu
     const cs = getComputedStyle(document.documentElement);
     const gridColor = cs.getPropertyValue('--border').trim() || 'rgba(255,255,255,0.04)';
     const tickColor = cs.getPropertyValue('--text-muted').trim() || '#5a6478';
@@ -651,7 +651,7 @@ Router.register('container-detail', async (content, params) => {
                 <tr>
                   <td class="td-mono">${containerPort}</td>
                   <td><span class="badge badge-created">${protocol}</span></td>
-                  <td class="td-mono">${b.HostIp === '::' ? '0.0.0.0' : (b.HostIp || '0.0.0.0')}:${b.HostPort || '—'}</td>
+                  <td class="td-mono">${b.HostIp === '::' ? '0.0.0.0' : (b.HostIp || '0.0.0.0')}:${b.HostPort || '-'}</td>
                   <td>${b.HostPort ? `<a href="${dockerHostUrl(b.HostPort)}" target="_blank" class="btn btn-xs btn-secondary">${Icons.externalLink} Open</a>` : ''}</td>
                 </tr>
               `).join('');
@@ -685,7 +685,7 @@ Router.register('container-detail', async (content, params) => {
     `;
   }
 
-  // File browser (C3) — navigate the container fs, download files, upload a tar to extract
+  // File browser (C3) - navigate the container fs, download files, upload a tar to extract
   function renderFiles(el, info) {
     if (info.State?.Status !== 'running') {
       el.innerHTML = '<div class="empty-state" style="padding:30px"><p class="text-muted">The file browser needs a running container (it uses exec).</p></div>';
@@ -709,7 +709,7 @@ Router.register('container-detail', async (content, params) => {
       el.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
           <div class="text-sm" style="word-break:break-all">${crumb}</div>
-          <span>${FileEditUI.folderActions()} <button class="btn btn-xs btn-secondary" id="cp-up" title="Upload a .tar — extracted into the current folder">${Icons.arrowUp} Upload .tar here</button></span>
+          <span>${FileEditUI.folderActions()} <button class="btn btn-xs btn-secondary" id="cp-up" title="Upload a .tar - extracted into the current folder">${Icons.arrowUp} Upload .tar here</button></span>
         </div>
         <div class="table-wrapper" style="max-height:55vh;overflow:auto"><table><tbody>${rows || '<tr><td class="text-muted text-sm" style="padding:10px">Empty</td></tr>'}</tbody></table></div>
       </div>`;
@@ -724,7 +724,7 @@ Router.register('container-detail', async (content, params) => {
         const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.tar';
         inp.onchange = async () => {
           const f = inp.files && inp.files[0]; if (!f) return;
-          showToast(`Uploading ${f.name} → ${curPath}…`, 'info');
+          showToast(`Uploading ${f.name} -> ${curPath}...`, 'info');
           try {
             const r = await fetch(`/api/containers/${id}/upload?path=${encodeURIComponent(curPath)}`, { method: 'POST', headers: { 'Content-Type': 'application/x-tar' }, body: f });
             const d = await r.json().catch(() => ({}));
@@ -754,9 +754,9 @@ Router.register('container-detail', async (content, params) => {
             ${netList.map(([name, n]) => `
               <tr>
                 <td class="td-name">${escapeHtml(name)}</td>
-                <td class="td-mono">${n.IPAddress || '—'}</td>
-                <td class="td-mono">${n.Gateway || '—'}</td>
-                <td class="td-mono">${n.MacAddress || '—'}</td>
+                <td class="td-mono">${n.IPAddress || '-'}</td>
+                <td class="td-mono">${n.Gateway || '-'}</td>
+                <td class="td-mono">${n.MacAddress || '-'}</td>
                 <td style="text-align:right"><button class="btn btn-xs btn-secondary" data-netdisc="${escapeHtml(name)}">Disconnect</button></td>
               </tr>
             `).join('')}
@@ -764,7 +764,7 @@ Router.register('container-detail', async (content, params) => {
         </table>
       </div>
       <div class="mt-2" style="display:flex;gap:6px;align-items:center">
-        <select class="select" id="net-attach-sel" style="flex:1"><option value="">Connect to a network…</option>${candidates.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}</select>
+        <select class="select" id="net-attach-sel" style="flex:1"><option value="">Connect to a network...</option>${candidates.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}</select>
         <button class="btn btn-sm btn-primary" id="net-attach-btn">Connect</button>
       </div>
     `;
@@ -797,7 +797,7 @@ Router.register('container-detail', async (content, params) => {
         .then(() => showToast('JSON copied to clipboard'))
         .catch(() => showToast('Copy failed (clipboard needs HTTPS or localhost)', 'warning'));
     });
-    // Wire the search box (it was previously dead — no listener) to filter the JSON by line
+    // Wire the search box (it was previously dead - no listener) to filter the JSON by line
     const searchInput = document.getElementById('inspect-search');
     const jsonView = document.getElementById('json-view');
     searchInput?.addEventListener('input', () => {
@@ -827,7 +827,7 @@ Router.register('container-detail', async (content, params) => {
                 <tr>
                   <td><span class="badge badge-${a.action === 'start' ? 'running' : a.action === 'stop' ? 'stopped' : 'created'}">${escapeHtml(a.action)}</span></td>
                   <td class="text-sm text-muted" style="max-width:520px;white-space:normal;word-break:break-word">${escapeHtml(a.details || '')}</td>
-                  <td class="text-sm text-muted">${escapeHtml(a.source_ip || '—')}</td>
+                  <td class="text-sm text-muted">${escapeHtml(a.source_ip || '-')}</td>
                   <td class="text-sm text-muted" title="${escapeHtml(formatTime(a.created_at))}">${timeAgo(a.created_at)}</td>
                 </tr>
               `).join('')}

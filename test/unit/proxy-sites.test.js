@@ -1,5 +1,5 @@
 'use strict';
-// Proxies & SSL — where a new nginx site goes (a folder nginx really loads), the include DockGate adds when there is
+// Proxies & SSL - where a new nginx site goes (a folder nginx really loads), the include DockGate adds when there is
 // none, the listen port, Caddy JSON configs.
 const test = require('node:test');
 const assert = require('node:assert/strict');

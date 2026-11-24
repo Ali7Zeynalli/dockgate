@@ -11,7 +11,7 @@ const templates = require('./templates');
 const Docker = require('dockerode');
 
 (async () => {
-  console.log(`[agent] DockGate Observability Agent starting — host=${cfg.serverLabel} tz=${cfg.timezone} disk>${cfg.diskThresholdGb}GB`);
+  console.log(`[agent] DockGate Observability Agent starting - host=${cfg.serverLabel} tz=${cfg.timezone} disk>${cfg.diskThresholdGb}GB`);
 
   const docker = new Docker({ socketPath: cfg.socketPath });
   const storage = new Storage({ maxLogs: 10000 });
@@ -48,7 +48,7 @@ const Docker = require('dockerode');
   const pub = process.env.DG_PUBKEY ? Buffer.from(process.env.DG_PUBKEY, 'base64').toString('utf8') : '';
   const notify = async (text) => {
     if (telegram.isConfigured()) await telegram.sendMessage({ text: `<b>${cfg.serverLabel}</b>: ${text}` }).catch(() => {});
-    if (mailer.isConfigured()) await mailer.sendEmail({ subject: `DockGate agent — ${cfg.serverLabel}`, html: `<p>${text}</p>` }).catch(() => {});
+    if (mailer.isConfigured()) await mailer.sendEmail({ subject: `DockGate agent - ${cfg.serverLabel}`, html: `<p>${text}</p>` }).catch(() => {});
   };
   const control = new Controller(docker, { serverId: process.env.DG_SERVER_ID || '', publicKeyPem: pub, notify });
   control.start();

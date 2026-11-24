@@ -34,7 +34,7 @@ Router.register('networks', async (content) => {
           <b>${selectedIds.size} selected</b>
           <span style="flex:1"></span>
           <button class="btn btn-xs btn-ghost" id="bulk-clear">Clear selection</button>
-          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove…</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove...</button>
         </div>` : ''}
 
         <div class="table-wrapper">
@@ -49,15 +49,15 @@ Router.register('networks', async (content) => {
                 return `<tr class="${selectedIds.has(n.id) ? 'selected' : ''}">
                   <td>${canRemove ? `<div class="checkbox ${selectedIds.has(n.id) ? 'checked' : ''}" data-select="${n.id}"></div>` : ''}</td>
                   <td class="td-name">${escapeHtml(n.name)}${n.internal ? ' ' + UI.pill('info', 'internal') : ''}${['bridge', 'host', 'none'].includes(n.name) ? ' <span class="ui-sub">Docker default</span>' : n.builtIn ? ' <span class="ui-sub">made by Swarm</span>' : ''}</td>
-                  <td class="text-sm">${escapeHtml(n.driver)} · ${escapeHtml(n.scope)}</td>
-                  <td class="td-mono">${n.subnet || '—'}</td>
-                  <td class="td-mono">${n.gateway || '—'}</td>
-                  <td>${(usedBy[n.name] || []).length ? usedBy[n.name].slice(0, 4).map(x => UI.chip(escapeHtml(x))).join('') + (usedBy[n.name].length > 4 ? ` <span class="text-xs text-muted">+${usedBy[n.name].length - 4}</span>` : '') : n.containers ? UI.chip(String(n.containers)) : ''}${n.services ? ` ${UI.chip(`${n.services} Swarm service${n.services === 1 ? '' : 's'}`)}` : ''}${!(usedBy[n.name] || []).length && !n.containers && !n.services ? '<span class="text-muted">—</span>' : ''}</td>
+                  <td class="text-sm">${escapeHtml(n.driver)}, ${escapeHtml(n.scope)}</td>
+                  <td class="td-mono">${n.subnet || '-'}</td>
+                  <td class="td-mono">${n.gateway || '-'}</td>
+                  <td>${(usedBy[n.name] || []).length ? usedBy[n.name].slice(0, 4).map(x => UI.chip(escapeHtml(x))).join('') + (usedBy[n.name].length > 4 ? ` <span class="text-xs text-muted">+${usedBy[n.name].length - 4}</span>` : '') : n.containers ? UI.chip(String(n.containers)) : ''}${n.services ? ` ${UI.chip(`${n.services} Swarm service${n.services === 1 ? '' : 's'}`)}` : ''}${!(usedBy[n.name] || []).length && !n.containers && !n.services ? '<span class="text-muted">-</span>' : ''}</td>
                   <td><div class="td-actions" style="justify-content:flex-end">
                     ${UI.menu([
                       { label: `${Icons.eye} Inspect`, attrs: `data-inspect="${n.id}"` },
-                      { label: `${Icons.copy} Clone…`, attrs: `data-clone="${n.id}"` },
-                      ...(canRemove ? ['-', { label: `${Icons.trash} Remove…`, attrs: `data-remove="${n.id}" data-name="${escapeHtml(n.name)}"`, danger: true }] : []),
+                      { label: `${Icons.copy} Clone...`, attrs: `data-clone="${n.id}"` },
+                      ...(canRemove ? ['-', { label: `${Icons.trash} Remove...`, attrs: `data-remove="${n.id}" data-name="${escapeHtml(n.name)}"`, danger: true }] : []),
                     ])}
                   </div></td>
                 </tr>`;
@@ -70,7 +70,7 @@ Router.register('networks', async (content) => {
       document.getElementById('net-refresh')?.addEventListener('click', render);
       document.getElementById('net-new')?.addEventListener('click', () => openNetworkCreate());
 
-      // Clone — prefill the create form from an existing network's config (N4)
+      // Clone - prefill the create form from an existing network's config (N4)
       content.querySelectorAll('[data-clone]').forEach(btn => btn.addEventListener('click', async () => {
         try {
           const d = await API.get(`/networks/${btn.dataset.clone}`);
@@ -94,7 +94,7 @@ Router.register('networks', async (content) => {
         btn.addEventListener('click', () => openNetworkInspect(btn.dataset.inspect));
       });
 
-      // Selection — only removable networks can be selected
+      // Selection - only removable networks can be selected
       content.querySelectorAll('[data-select]').forEach(el => {
         el.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -133,10 +133,10 @@ Router.register('networks', async (content) => {
     return { subnet: '', gateway: '', iprange: '' };
   }
 
-  // Rich create form (N2) — also used by Clone (N4) with a prefilled config. Auto-suggests a free subnet.
+  // Rich create form (N2) - also used by Clone (N4) with a prefilled config. Auto-suggests a free subnet.
   async function openNetworkCreate(prefill = {}) {
     const drivers = ['bridge', 'macvlan', 'ipvlan', 'overlay'];
-    // Existing subnets → suggest a free one (the page list already carries each network's subnet)
+    // Existing subnets -> suggest a free one (the page list already carries each network's subnet)
     let used = [];
     try { used = (await API.get('/networks').catch(() => [])).map(n => n.subnet).filter(Boolean); } catch (e) {}
     const sug = suggestSubnet(used); // a clone's copied subnet would conflict, so always offer a fresh one
@@ -159,7 +159,7 @@ Router.register('networks', async (content) => {
         <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="nc-ipv6" ${prefill.ipv6 ? 'checked' : ''}> IPv6</label>
       </div>
       <div id="nc-overlay-note" class="text-xs text-muted" style="display:none">An <strong>overlay</strong> network spans multiple Docker hosts. Keep <strong>Attachable</strong> on if standalone containers should also use it.</div>
-      ${prefill._clone ? '<div class="text-xs text-muted">Cloning copies the config — pick a different subnet to avoid an overlap conflict.</div>' : ''}
+      ${prefill._clone ? '<div class="text-xs text-muted">Cloning copies the config - pick a different subnet to avoid an overlap conflict.</div>' : ''}
     </div>`;
     const m = showModal(prefill._clone ? 'Clone Network' : 'New Network', body, []);
     const root = m.overlay;
@@ -173,7 +173,7 @@ Router.register('networks', async (content) => {
     };
     driverSel.addEventListener('change', syncOverlay);
     syncOverlay();
-    // Suggest → pick the next free subnet (advances past the current one)
+    // Suggest -> pick the next free subnet (advances past the current one)
     root.querySelector('#nc-suggest')?.addEventListener('click', () => {
       const cur = root.querySelector('#nc-subnet').value.trim();
       const s = suggestSubnet(used, [cur]);
@@ -202,7 +202,7 @@ Router.register('networks', async (content) => {
         const ipr = root.querySelector('#nc-iprange').value.trim(); if (ipr) ipamCfg.IPRange = ipr;
         config.IPAM = { Config: [ipamCfg] };
       }
-      btn.disabled = true; btn.textContent = 'Creating…';
+      btn.disabled = true; btn.textContent = 'Creating...';
       try { await API.post('/networks', config); showToast(`Network "${name}" created`); m.close(); render(); }
       catch (e) { showToast(e.message, 'error', 9000); btn.disabled = false; btn.textContent = 'Create'; }
     });
@@ -224,16 +224,16 @@ Router.register('networks', async (content) => {
         <div class="detail-item"><div class="detail-label">Driver</div><div class="detail-value">${data.Driver}</div></div>
         <div class="detail-item"><div class="detail-label">Scope</div><div class="detail-value">${data.Scope}</div></div>
         <div class="detail-item"><div class="detail-label">Internal</div><div class="detail-value">${data.Internal ? 'Yes' : 'No'}</div></div>
-        <div class="detail-item"><div class="detail-label">Subnet</div><div class="detail-value td-mono">${ipam.Subnet || '—'}</div></div>
-        <div class="detail-item"><div class="detail-label">Gateway</div><div class="detail-value td-mono">${ipam.Gateway || '—'}</div></div>
+        <div class="detail-item"><div class="detail-label">Subnet</div><div class="detail-value td-mono">${ipam.Subnet || '-'}</div></div>
+        <div class="detail-item"><div class="detail-label">Gateway</div><div class="detail-value td-mono">${ipam.Gateway || '-'}</div></div>
       </div>
       <div class="mt-2"><div class="detail-label mb-1">Connected Containers</div>
         ${connected.length ? `<div class="table-wrapper"><table><thead><tr><th>Name</th><th>IPv4</th><th></th></tr></thead><tbody>
-          ${connected.map(([, c]) => `<tr><td class="td-mono">${escapeHtml(c.Name)}</td><td class="td-mono">${c.IPv4Address || '—'}</td><td style="text-align:right">${canAttach ? `<button class="btn btn-xs btn-secondary" data-disc="${escapeHtml(c.Name)}">Disconnect</button>` : ''}</td></tr>`).join('')}
+          ${connected.map(([, c]) => `<tr><td class="td-mono">${escapeHtml(c.Name)}</td><td class="td-mono">${c.IPv4Address || '-'}</td><td style="text-align:right">${canAttach ? `<button class="btn btn-xs btn-secondary" data-disc="${escapeHtml(c.Name)}">Disconnect</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>` : '<div class="text-muted text-sm">No containers connected.</div>'}
       </div>
       ${canAttach ? `<div class="mt-2" style="display:flex;gap:6px;align-items:center">
-        <select class="select" id="net-conn-sel" style="flex:1"><option value="">Connect a container…</option>${candidates.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}</select>
+        <select class="select" id="net-conn-sel" style="flex:1"><option value="">Connect a container...</option>${candidates.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}</select>
         <button class="btn btn-sm btn-primary" id="net-conn-btn">Connect</button>
       </div>` : ''}`;
     const m = showModal('Network: ' + escapeHtml(data.Name), body, [{ label: 'Close', className: 'btn btn-secondary' }]);

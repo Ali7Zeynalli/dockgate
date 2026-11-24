@@ -1,10 +1,10 @@
-// Swarm with several servers — phase 2: nodes.
+// Swarm with several servers - phase 2: nodes.
 //
 // Which DockGate server is which node: swarm_node_servers (written when DockGate creates or joins a node;
 // for nodes joined elsewhere it is found by asking each DockGate server for its node ID).
-// Joining servers (Create with several servers, Add servers…) is one job: checks → firewall rules on each
-// server, allowing the Swarm ports only from the other cluster servers → docker swarm join, one server at
-// a time → check each is Ready. If a step fails the job undoes what it did: joined servers leave, their
+// Joining servers (Create with several servers, Add servers...) is one job: checks -> firewall rules on each
+// server, allowing the Swarm ports only from the other cluster servers -> docker swarm join, one server at
+// a time -> check each is Ready. If a step fails the job undoes what it did: joined servers leave, their
 // nodes are removed, the firewall rules it added are deleted.
 // Node actions (pause / drain / activate, promote / demote, labels) have guards: no drain without another
 // server, the last manager is not demoted, the node DockGate talks to is not demoted or removed.
@@ -57,7 +57,7 @@ const label = (row) => (row ? row.name || row.id : '?');
 async function manager() {
   const st = await swarm.status();
   if (st.state !== 'active') throw bad(409, 'Swarm is not active on the server in use');
-  if (!st.manager) throw bad(409, 'The server in use is a worker — switch to a manager at the top');
+  if (!st.manager) throw bad(409, 'The server in use is a worker - switch to a manager at the top');
   const c = dockerService.docker;
   const sw = await c.swarmInspect();
   return { client: c, serverId: st.serverId, nodeId: st.nodeId, addr: st.nodeAddr, clusterId: sw.ID, swarm: sw, status: st };
@@ -65,8 +65,8 @@ async function manager() {
 
 // ---- node ↔ server mapping ----
 
-const deepCache = new Map(); // clusterId → time of the last full lookup
-/** Map node ID → server ID for the cluster. Unknown nodes are looked up by asking every DockGate server (every 2 min at most). */
+const deepCache = new Map(); // clusterId -> time of the last full lookup
+/** Map node ID -> server ID for the cluster. Unknown nodes are looked up by asking every DockGate server (every 2 min at most). */
 async function mapping(clusterId, nodes, { deep = true } = {}) {
   const m = new Map(q.all.all(clusterId).map(r => [r.node_id, r.server_id]));
   const missing = nodes.filter(n => !m.has(n.ID));
@@ -188,7 +188,7 @@ function nodeAudit(hostname) {
     .map(r => ({ action: r.action, details: (() => { try { return JSON.parse(r.details || '{}'); } catch (e) { return {}; } })(), at: r.created_at }));
 }
 
-/** DockGate servers that are not nodes of this cluster (for Add servers…). */
+/** DockGate servers that are not nodes of this cluster (for Add servers...). */
 async function candidates() {
   const mgr = await manager();
   const list = await mgr.client.listNodes();
@@ -201,8 +201,8 @@ async function candidates() {
 
 /**
  * Checks for servers that should join. servers: [{ id, role }]. ref: the manager's facts
- * ({ version, arch, addr, hostnames:[] }) — for "Create with several servers" the first server is the manager.
- * Returns [{ id, name, checks:[…], addresses:[…], suggested, facts }] and ok.
+ * ({ version, arch, addr, hostnames:[] }) - for "Create with several servers" the first server is the manager.
+ * Returns [{ id, name, checks:[...], addresses:[...], suggested, facts }] and ok.
  */
 async function checkServers(servers, ref) {
   const out = [];
@@ -216,7 +216,7 @@ async function checkServers(servers, ref) {
     if (!row) { push('server', 'Server', 'bad', 'This server is not in DockGate.'); continue; }
     let info;
     try { info = await withTimeout(clientFor(want.id).info(), 15000, label(row)); }
-    catch (e) { push('reach', 'Docker on the server', 'bad', `DockGate can not reach Docker on ${label(row)}: ${e.message}`, 'Check the server in Servers → Test.'); continue; }
+    catch (e) { push('reach', 'Docker on the server', 'bad', `DockGate can not reach Docker on ${label(row)}: ${e.message}`, 'Check the server in Servers > Test.'); continue; }
     const sw = info.Swarm || {};
     r.facts = { version: info.ServerVersion, arch: info.Architecture, hostname: info.Name };
     const mj = (v) => String(v || '').split('.').slice(0, 2).join('.');
@@ -237,7 +237,7 @@ async function checkServers(servers, ref) {
     r.suggested = pick ? pick.ip : null;
     if (r.suggested) taken.add(r.suggested);
     if (!r.addresses.length) push('address', 'Address', 'warn', 'DockGate could not read the server\'s addresses; enter the one Swarm should use.');
-    else push('address', 'Address', 'ok', `Suggested: ${r.suggested}${pick && pick.private ? ' (private network)' : ' (public — the overlay traffic should be encrypted)'}.`);
+    else push('address', 'Address', 'ok', `Suggested: ${r.suggested}${pick && pick.private ? ' (private network)' : ' (public - the overlay traffic should be encrypted)'}.`);
     if (want.id !== 'local') {
       const rc = require('./remote-compose');
       // clock: Swarm certificates and Raft need clocks within a few seconds
@@ -247,7 +247,7 @@ async function checkServers(servers, ref) {
         const [secs, sync] = String(res.stdout || '').trim().split('\n');
         const diff = Math.abs(Number(secs) * 1000 - (t0 + Date.now()) / 2) / 1000;
         if (!Number.isFinite(diff)) push('clock', 'Clock', 'info', 'The clock could not be read.');
-        else if (diff > 5 || /^(no|0)$/.test(String(sync).trim())) push('clock', 'Clock', 'warn', `The clock is ${diff > 5 ? `${Math.round(diff)}s off` : 'not synchronised (NTP)'}.`, 'Turn on time sync: Server Console → Setup → Time sync (chrony).');
+        else if (diff > 5 || /^(no|0)$/.test(String(sync).trim())) push('clock', 'Clock', 'warn', `The clock is ${diff > 5 ? `${Math.round(diff)}s off` : 'not synchronised (NTP)'}.`, 'Turn on time sync: Server Console > Setup > Time sync (chrony).');
         else push('clock', 'Clock', 'ok', `In sync${diff >= 1 ? ` (${diff.toFixed(1)}s)` : ''}.`);
       } catch (e) { push('clock', 'Clock', 'info', 'The clock could not be read over SSH.'); }
       // can it reach the manager's Swarm port?
@@ -257,14 +257,14 @@ async function checkServers(servers, ref) {
           const res = await rc.execRemote(row, `for p in 2377 7946; do (timeout 3 bash -c "</dev/tcp/${ref.addr}/$p" 2>/dev/null && echo "$p ok") || echo "$p fail"; done`);
           const okPorts = String(res.stdout || '');
           if (/2377 ok/.test(okPorts)) push('ports', 'Reaches the manager', 'ok', `${ref.addr}:2377 and :7946 answer.`.replace(':7946 answer', /7946 ok/.test(okPorts) ? ':7946 answer' : ' answers (7946 not yet)'));
-          else push('ports', 'Manager not reachable yet', 'warn', `${label(row)} can not open ${ref.addr}:2377 now. DockGate opens the manager's firewall for this server before joining; if a cloud firewall (Hetzner, AWS…) is in front, allow 2377/tcp, 7946/tcp+udp and ${ref.dataPort || 4789}/udp between the servers there.`);
+          else push('ports', 'Manager not reachable yet', 'warn', `${label(row)} can not open ${ref.addr}:2377 now. DockGate opens the manager's firewall for this server before joining; if a cloud firewall (Hetzner, AWS...) is in front, allow 2377/tcp, 7946/tcp+udp and ${ref.dataPort || 4789}/udp between the servers there.`);
         } catch (e) { push('ports', 'Reaches the manager', 'info', 'Could not test over SSH.'); }
       }
       // firewall on this server
       try {
         const fw = await require('./routes/firewall').firewallOf(row);
         r.facts.firewall = fw.managed ? fw.backend : 'none';
-        push('firewall', 'Firewall', fw.managed ? 'ok' : 'warn', fw.managed ? `${fw.backend === 'ufw' ? 'UFW' : 'firewalld'} is on: DockGate adds the Swarm ports for the other cluster servers only.` : 'No firewall is on: the Swarm ports would be open to the internet.', fw.managed ? null : 'Turn the firewall on in Server Console → Firewall (DockGate then adds the cluster rules).');
+        push('firewall', 'Firewall', fw.managed ? 'ok' : 'warn', fw.managed ? `${fw.backend === 'ufw' ? 'UFW' : 'firewalld'} is on: DockGate adds the Swarm ports for the other cluster servers only.` : 'No firewall is on: the Swarm ports would be open to the internet.', fw.managed ? null : 'Turn the firewall on in Server Console > Firewall (DockGate then adds the cluster rules).');
       } catch (e) { r.facts.firewall = 'unknown'; push('firewall', 'Firewall', 'info', 'The firewall could not be read; no rules will be added on this server.'); }
     } else {
       r.facts.firewall = 'local';
@@ -308,7 +308,7 @@ async function applyFirewall(serverId, rules, log, remove = false) {
   const row = serverRow(serverId);
   if (!row) return [];
   const fw = await require('./routes/firewall').firewallOf(row);
-  if (!fw.managed) { if (!remove) log(`  ${label(row)}: no firewall is on — nothing to add`); return []; }
+  if (!fw.managed) { if (!remove) log(`  ${label(row)}: no firewall is on - nothing to add`); return []; }
   const cmds = fwCommands(fw.backend, fw.zone, rules, remove);
   if (!cmds.length) return [];
   const { runOrThrow } = require('./security/route-helpers');
@@ -350,7 +350,7 @@ async function joinServers({ job, log, step, mgrClient, mgrServerId, servers, en
     // 1. firewall: every member allows the others (existing members only need the new addresses)
     step(job, 'firewall', 'running', 'Open the Swarm ports between the servers');
     for (const m of members) {
-      if (!m.serverId) { log(`  node ${m.ip}: not in DockGate — open its firewall yourself for ${newIps.join(', ')}`); continue; }
+      if (!m.serverId) { log(`  node ${m.ip}: not in DockGate - open its firewall yourself for ${newIps.join(', ')}`); continue; }
       const rules = await applyFirewall(m.serverId, rulesFor(newIps.filter(ip => ip !== m.ip), dataPort, encrypt), log);
       if (rules.length) { fwAdded.push({ serverId: m.serverId, nodeId: m.nodeId, rules }); storeFw(clusterId, m.nodeId, rules); }
     }
@@ -379,7 +379,7 @@ async function joinServers({ job, log, step, mgrClient, mgrServerId, servers, en
         if (n && n.Status.State === 'ready') { ready = true; log(`✓ ${label(row)} (${n.Description.Hostname}): ${n.Spec.Role}, ready, ${s.addr}`); }
         else await new Promise(r => setTimeout(r, 1000));
       }
-      if (!ready) throw new Error(`${label(row)} joined but did not become Ready — the servers probably can not reach each other on 7946 or the data port`);
+      if (!ready) throw new Error(`${label(row)} joined but did not become Ready - the servers probably can not reach each other on 7946 or the data port`);
       step(job, `join-${s.id}`, 'done');
     }
     // Stacks and new networks use encrypted overlays from now on when it was chosen here.
@@ -412,12 +412,12 @@ function validateServers(list) {
     const role = s.role === 'manager' ? 'manager' : 'worker';
     const addr = String(s.addr || '').trim();
     if (!swarm.isIPv4(addr)) throw bad(400, `Enter the address ${label(serverRow(id))} should use`);
-    if (list.filter(x => String(x.addr || '').trim() === addr).length > 1) throw bad(400, `${addr} is given for two servers — each server needs its own address`);
+    if (list.filter(x => String(x.addr || '').trim() === addr).length > 1) throw bad(400, `${addr} is given for two servers - each server needs its own address`);
     return { id, role, addr };
   });
 }
 
-/** Add servers to the running cluster (Add servers…). */
+/** Add servers to the running cluster (Add servers...). */
 async function startAddServers(body, { sourceIp } = {}) {
   const servers = validateServers(body.servers);
   const mgr = await manager();
@@ -446,8 +446,8 @@ async function startAddServers(body, { sourceIp } = {}) {
 async function startCreateCluster(body, { sourceIp } = {}) {
   const servers = validateServers(body.servers || []);
   const me = dockerService.getActiveServerId() || 'local';
-  if (servers.some(s => s.id === me)) throw bad(400, 'The server in use is the first manager — do not list it again');
-  if (body.advertiseAddr && servers.some(s => s.addr === body.advertiseAddr)) throw bad(400, `${body.advertiseAddr} is the first manager's address — each server needs its own`);
+  if (servers.some(s => s.id === me)) throw bad(400, 'The server in use is the first manager - do not list it again');
+  if (body.advertiseAddr && servers.some(s => s.addr === body.advertiseAddr)) throw bad(400, `${body.advertiseAddr} is the first manager's address - each server needs its own`);
   if (servers.length && !body.advertiseAddr) throw bad(400, 'With several servers, choose the address the first manager uses');
   return swarm.startInit(body, {
     sourceIp,
@@ -485,7 +485,7 @@ async function drainImpact(nodeId) {
     const name = s.Spec.Name;
     const pin = pinnedTo(s, list);
     if (s.Spec.Mode && s.Spec.Mode.Global) stuck.push({ service: name, why: 'global service: it simply stops on this server' });
-    else if (pin && pin.length === 1 && pin[0] === nodeId) stuck.push({ service: name, why: 'pinned to this server (placement rule) — it stops until the server is active again' });
+    else if (pin && pin.length === 1 && pin[0] === nodeId) stuck.push({ service: name, why: 'pinned to this server (placement rule) - it stops until the server is active again' });
     else if (!others.length) stuck.push({ service: name, why: 'no other active server' });
     else moves.push({ service: name, volume: hasVolume(s) });
   }
@@ -504,16 +504,16 @@ async function updateNode(nodeId, change, { sourceIp } = {}) {
     if (change.availability === 'drain' && !list.some(x => x.ID !== nodeId && x.Status.State === 'ready' && x.Spec.Availability === 'active')) {
       throw bad(400, 'No other active server: draining would stop every service (they would wait as Pending). Use Pause instead, or add a server first.');
     }
-    spec.Availability = change.availability; what.push(`availability ${n.Spec.Availability} → ${change.availability}`);
+    spec.Availability = change.availability; what.push(`availability ${n.Spec.Availability} -> ${change.availability}`);
   }
   if (change.role) {
     if (!['manager', 'worker'].includes(change.role)) throw bad(400, 'role must be manager or worker');
     const managers = list.filter(x => x.Spec.Role === 'manager');
     if (change.role === 'worker' && n.Spec.Role === 'manager') {
-      if (managers.length === 1) throw bad(400, 'This is the last manager — promote another server first');
-      if (nodeId === mgr.nodeId) throw bad(400, 'DockGate manages the cluster through this server — switch DockGate to another manager first (server picker at the top)');
+      if (managers.length === 1) throw bad(400, 'This is the last manager - promote another server first');
+      if (nodeId === mgr.nodeId) throw bad(400, 'DockGate manages the cluster through this server - switch DockGate to another manager first (server picker at the top)');
     }
-    spec.Role = change.role; what.push(`role ${n.Spec.Role} → ${change.role}`);
+    spec.Role = change.role; what.push(`role ${n.Spec.Role} -> ${change.role}`);
   }
   if (change.labels !== undefined) { spec.Labels = parseLabels(change.labels); what.push('labels'); }
   if (!what.length) throw bad(400, 'Nothing to change');
@@ -544,7 +544,7 @@ async function startRebalance({ sourceIp } = {}) {
           await new Promise(r => setTimeout(r, 1000));
           const x = await mgr.client.getService(s.ID).inspect();
           const us = x.UpdateStatus || {};
-          if (['completed', 'paused', 'rollback_completed', 'rollback_paused'].includes(us.State)) { log(`  ${s.Spec.Name}: ${us.State}${us.Message ? ` — ${us.Message}` : ''}`); break; }
+          if (['completed', 'paused', 'rollback_completed', 'rollback_paused'].includes(us.State)) { log(`  ${s.Spec.Name}: ${us.State}${us.Message ? ` - ${us.Message}` : ''}`); break; }
           if (i === 89) log(`  ${s.Spec.Name}: still updating, going on`);
         }
         step(job, `svc-${s.ID}`, 'done');
@@ -559,14 +559,14 @@ async function startRebalance({ sourceIp } = {}) {
   return job;
 }
 
-/** Remove a node: demote (manager) → drain → leave on the server → remove from the list → delete its firewall rules. */
+/** Remove a node: demote (manager) -> drain -> leave on the server -> remove from the list -> delete its firewall rules. */
 async function startRemoveNode(nodeId, { sourceIp } = {}) {
   const mgr = await manager();
   const list = await mgr.client.listNodes();
   const n = list.find(x => x.ID === nodeId);
   if (!n) throw bad(404, 'Node not found');
-  if (nodeId === mgr.nodeId) throw bad(400, 'DockGate manages the cluster through this node — switch to another manager first, or turn Swarm off in Cluster settings');
-  if (n.ManagerStatus && n.ManagerStatus.Leader) throw bad(400, 'This node is the leader — demote it first (leadership moves to another manager)');
+  if (nodeId === mgr.nodeId) throw bad(400, 'DockGate manages the cluster through this node - switch to another manager first, or turn Swarm off in Cluster settings');
+  if (n.ManagerStatus && n.ManagerStatus.Leader) throw bad(400, 'This node is the leader - demote it first (leadership moves to another manager)');
   if (swarm._jobs.busy()) throw bad(409, 'A Swarm job is already running');
   const map = await mapping(mgr.clusterId, list);
   const sid = map.get(nodeId) || null;
@@ -597,7 +597,7 @@ async function startRemoveNode(nodeId, { sourceIp } = {}) {
       if (sid) {
         step(job, 'leave', 'running', `${name} leaves the swarm`);
         try { await withTimeout(clientFor(sid).swarmLeave({ force: false }), 30000, name); log(`$ docker swarm leave   (on ${label(serverRow(sid))})`); }
-        catch (e) { log(`  could not leave on the server (${swarm.dockerMsg(e)}) — removing it from the list anyway`); }
+        catch (e) { log(`  could not leave on the server (${swarm.dockerMsg(e)}) - removing it from the list anyway`); }
         step(job, 'leave', 'done');
       } else log(`${name} is not in DockGate: it is removed from the list; run "docker swarm leave" on it yourself.`);
       step(job, 'remove', 'running', 'Remove it from the node list');
@@ -662,7 +662,7 @@ async function overviewExtras(ov) {
     const servers = new Map(allServers().map(s => [s.id, s]));
     for (const n of ov.nodes) { const sid = map.get(n.id); n.serverId = sid || null; n.serverName = sid && servers.get(sid) ? label(servers.get(sid)) : null; }
     const unknown = ov.nodes.filter(n => !n.serverId);
-    if (unknown.length) ov.warnings.push({ level: 'warn', text: `${unknown.length} node${unknown.length > 1 ? 's are' : ' is'} not in DockGate (${unknown.map(n => `${n.hostname} ${n.addr}`).join(', ')}): terminal, logs and firewall do not work there. Swarm → Nodes → Add to DockGate…`, action: 'nodes' });
+    if (unknown.length) ov.warnings.push({ level: 'warn', text: `${unknown.length} node${unknown.length > 1 ? 's are' : ' is'} not in DockGate (${unknown.map(n => `${n.hostname} ${n.addr}`).join(', ')}): terminal, logs and firewall do not work there. Swarm > Nodes > Add to DockGate...`, action: 'nodes' });
     const usable = ov.nodes.filter(n => n.state === 'ready' && n.availability === 'active');
     const counts = usable.map(n => n.tasks.filter(t => t.state === 'running').length);
     if (usable.length > 1 && Math.min(...counts) === 0 && Math.max(...counts) >= 2) ov.warnings.push({ level: 'warn', text: 'Tasks are not spread evenly: a server that came back gets no tasks by itself.', action: 'rebalance' });

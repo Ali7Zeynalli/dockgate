@@ -1,12 +1,12 @@
-// System → Help: the guide (guide/*.md) read inside DockGate. A small Markdown renderer (headings, lists, tables,
-// code, quotes, images, links — no HTML from the text is kept), the Help page (index, search, a page), and the
+// System > Help: the guide (guide/*.md) read inside DockGate. A small Markdown renderer (headings, lists, tables,
+// code, quotes, images, links - no HTML from the text is kept), the Help page (index, search, a page), and the
 // "?" button on each page that opens its guide in a side panel without leaving the page.
 window.Help = (() => {
   const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const slug = (h) => String(h).toLowerCase().replace(/<[^>]+>/g, '').replace(/[`*_~[\]()]/g, '').replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/\s/g, '-');
 
-  // ---- Markdown → HTML ----
-  /** links: (doc, anchor) → href for a guide page; the text is escaped first, so nothing in it becomes markup. */
+  // ---- Markdown > HTML ----
+  /** links: (doc, anchor) -> href for a guide page; the text is escaped first, so nothing in it becomes markup. */
   function inline(text, link) {
     const codes = [];
     let s = esc(text).replace(/`([^`]+)`/g, (m, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
@@ -89,7 +89,7 @@ window.Help = (() => {
       document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && panel.classList.contains('open')) close(); });
     }
     panel.classList.add('open');
-    const body = panel.querySelector('[data-hp-body]'); body.innerHTML = '<div class="ui-sub">Opening…</div>';
+    const body = panel.querySelector('[data-hp-body]'); body.innerHTML = '<div class="ui-sub">Opening...</div>';
     panel.querySelector('[data-hp-full]').href = `#/help?doc=${encodeURIComponent(doc)}${h ? `&h=${encodeURIComponent(h)}` : ''}`;
     panel.querySelector('[data-hp-full]').onclick = () => close();
     try {

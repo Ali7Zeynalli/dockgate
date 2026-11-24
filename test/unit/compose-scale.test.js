@@ -1,5 +1,5 @@
 'use strict';
-// Compose replicas without Swarm: the override file and the checks (server/compose-scale.js) — no Docker.
+// Compose replicas without Swarm: the override file and the checks (server/compose-scale.js) - no Docker.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs'); const os = require('os'); const path = require('path');
@@ -15,7 +15,7 @@ test('buildOverride writes replicas and aliases on the service networks, resets 
   assert.match(y, /      front:\n        aliases:\n          - old-web\n      back:\n        aliases:\n          - old-web\n/);
   assert.doesNotMatch(y.split('  web:')[0], /reset/, 'api gets no resets');
   assert.equal(S.buildOverride({}), '');
-  assert.equal(S.buildOverride({ api: {} }), '', 'nothing to say → no file');
+  assert.equal(S.buildOverride({ api: {} }), '', 'nothing to say -> no file');
 });
 
 test('names and numbers are checked before anything is written', () => {
@@ -78,8 +78,8 @@ test('Compose Auto Scaling suggestions: replicas from the real load, limits left
   const samples = Array.from({ length: 40 }, (_, i) => ({ t: t0 + i * 120000, replicas: 2, cpu: i >= 36 ? 95 : 60, mem: 40 }));
   const r = CA.suggestFrom(samples, { cpu: 0.5, mem: 256 * 1048576 }, Infinity, { current: 2 });
   assert.equal(r.enough, true);
-  assert.equal(r.values.min, 2);       // 1.2 replicas of load at 70 % → 2
-  assert.equal(r.values.max, 5);       // 1.9 at the 95th percentile → 3, × 1.5 → 5
+  assert.equal(r.values.min, 2);       // 1.2 replicas of load at 70 % -> 2
+  assert.equal(r.values.max, 5);       // 1.9 at the 95th percentile -> 3, × 1.5 -> 5
   assert.equal(r.values.memUp, null);  // memory flat
   assert.equal(CA.suggestFrom(samples, {}, 1, { current: 2 }).values.max, 3, 'capped by what fits');
   assert.equal(CA.suggestFrom(samples.slice(0, 10)).enough, false);

@@ -1,6 +1,6 @@
 // Pure helpers for the server-security features (Access & SSH, Users, Firewall): input validation,
 // parsing of the raw command output the security worker returns, and the derived state the UI shows.
-// No I/O here — everything is unit-tested in test/unit/security.test.js.
+// No I/O here - everything is unit-tested in test/unit/security.test.js.
 const crypto = require('crypto');
 const { isIpOrCidr } = require('../provision/catalog');
 
@@ -16,7 +16,7 @@ function validUsername(name) { return typeof name === 'string' && USERNAME_RE.te
 /** Validate a NEW username (not root / system / group names). Throws 400. */
 function assertNewUsername(name) {
   if (!validUsername(name)) throw httpError(400, 'Username: lowercase letters, digits, _ and - (max 32), starting with a letter or _');
-  if (RESERVED_USERS.has(name)) throw httpError(400, `"${name}" is a reserved system name — pick another`);
+  if (RESERVED_USERS.has(name)) throw httpError(400, `"${name}" is a reserved system name - pick another`);
 }
 
 const KEY_TYPES = new Set(['ssh-ed25519', 'ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521', 'sk-ssh-ed25519@openssh.com', 'sk-ecdsa-sha2-nistp256@openssh.com']);
@@ -29,7 +29,7 @@ function keyFingerprint(b64) {
 /**
  * Parse ONE OpenSSH public key line ("type base64 [comment]", optionally preceded by options).
  * Returns { type, b64, comment, fingerprint, line } with a normalised, shell-safe line, or null.
- * The blob must decode and start with its own type string — garbage and injection attempts are rejected.
+ * The blob must decode and start with its own type string - garbage and injection attempts are rejected.
  */
 function parsePublicKey(text) {
   const raw = String(text || '').trim();
@@ -46,7 +46,7 @@ function parsePublicKey(text) {
     // ed25519: the key itself must be exactly 32 bytes (a truncated key can never log in)
     if (type === 'ssh-ed25519' && (blob.readUInt32BE(4 + len) !== 32 || blob.length !== 4 + len + 4 + 32)) return null;
   } catch (e) { return null; }
-  // Comments are informational — keep a safe subset so the stored line can never break out.
+  // Comments are informational - keep a safe subset so the stored line can never break out.
   const comment = parts.slice(i + 2).join(' ').replace(/[^A-Za-z0-9 @._+:-]/g, '').slice(0, 80);
   return { type, b64, comment, fingerprint: keyFingerprint(b64), line: `${type} ${b64}${comment ? ' ' + comment : ''}`, options: i > 0 };
 }
@@ -54,7 +54,7 @@ function parsePublicKey(text) {
 /** Throws 400 unless the text is a valid public key. */
 function assertPublicKey(text) {
   const k = parsePublicKey(text);
-  if (!k) throw httpError(400, 'Paste a valid OpenSSH public key (ssh-ed25519 AAAA… / ssh-rsa AAAA…), one line');
+  if (!k) throw httpError(400, 'Paste a valid OpenSSH public key (ssh-ed25519 AAAA... / ssh-rsa AAAA...), one line');
   return k;
 }
 
@@ -122,7 +122,7 @@ const ROOT_LOGIN_VALUES = ['yes', 'prohibit-password', 'no'];
 
 /** Build DockGate's sshd drop-in from settings. Only keys present are written (the rest keep sshd defaults). */
 function buildAccessConf(s) {
-  const lines = ['# Managed by DockGate (Server Console → Access & SSH). Edit there, not by hand.',
+  const lines = ['# Managed by DockGate (Server Console > Access & SSH). Edit there, not by hand.',
     '# Loaded before the distro/cloud drop-ins, so these values win (sshd uses the first value it reads).'];
   if (s.ports && s.ports.length) for (const p of s.ports) lines.push(`Port ${assertPort(p)}`);
   if (s.rootLogin) { if (!ROOT_LOGIN_VALUES.includes(s.rootLogin)) throw httpError(400, 'Invalid root login value'); lines.push(`PermitRootLogin ${s.rootLogin}`); }
@@ -233,7 +233,7 @@ function usersState(sec, today = Math.floor(Date.now() / 86400000)) {
     const hasPassword = sh.first === '$';
     const locked = !!expired;
     const keys = parseAuthorizedKeys(sec['keys ' + name]).map(({ raw, ...k }) => k);
-    // Service accounts (nologin/false shell, no keys) are not people — keep them out of the list.
+    // Service accounts (nologin/false shell, no keys) are not people - keep them out of the list.
     if (uid !== 0 && /(nologin|\/false)$/.test(shell || '') && !keys.length) continue;
     users.push({
       name, uid, home, shell,
@@ -267,8 +267,8 @@ function parseUfwNumbered(out) {
 }
 
 /**
- * "8080" / "8080/tcp" / "9000:9010/udp" (UFW) / "9000-9010/udp" (firewalld) → { port, portEnd, proto }
- * (proto null = both). Non-port targets ("Anywhere", "OpenSSH") → null.
+ * "8080" / "8080/tcp" / "9000:9010/udp" (UFW) / "9000-9010/udp" (firewalld) -> { port, portEnd, proto }
+ * (proto null = both). Non-port targets ("Anywhere", "OpenSSH") -> null.
  */
 function ruleTarget(to) {
   const m = /^(\d+)(?:[:-](\d+))?(?:\/(tcp|udp))?$/.exec(String(to).trim());
@@ -285,10 +285,10 @@ const FWD_ZONE_RE = /^[A-Za-z0-9_-]{1,32}$/;
 const FWD_SERVICE_RE = /^[A-Za-z0-9_.+-]{1,64}$/;
 
 /**
- * `firewall-cmd --list-all` (one zone) + service→ports lines ("ssh 22/tcp") → UFW-shaped rules, so the
+ * `firewall-cmd --list-all` (one zone) + service -> ports lines ("ssh 22/tcp") > UFW-shaped rules, so the
  * port table, the open/close actions and the rule list work the same way for both firewalls.
  * Each rule: { n, to, action, dir:'IN', from, v6:false, note, kind:'service'|'port'|'rich', key }.
- * Deny rich rules come first — firewalld checks its deny rules before any allow.
+ * Deny rich rules come first - firewalld checks its deny rules before any allow.
  */
 function parseFirewalld(listAll, svcPorts) {
   const text = String(listAll || '');
@@ -387,7 +387,7 @@ function findAllow(rules, port, proto, dir) {
 
 /**
  * The "Listening ports" table: every listener with who uses it and where it is reachable from.
- * exposure: local (loopback) · bypass (container port while Docker isolation is off) · public · restricted · internal
+ * exposure: local (loopback), bypass (container port while Docker isolation is off), public, restricted, internal
  */
 function computePorts({ listeners, dockerPorts, ufw, isolation, sshPort }) {
   const rows = [];
@@ -422,7 +422,7 @@ function computePorts({ listeners, dockerPorts, ufw, isolation, sshPort }) {
   return rows.sort((a, b) => a.port - b.port || a.proto.localeCompare(b.proto));
 }
 
-/** Rule numbers (descending — numbers shift on delete) that allow port/proto [from src] for dir. */
+/** Rule numbers (descending - numbers shift on delete) that allow port/proto [from src] for dir. */
 function ruleNumbersFor(rules, { port, proto, dir, from }) {
   return rules.filter((r) => {
     if (r.action !== 'ALLOW' && r.action !== 'LIMIT') return false;
@@ -440,7 +440,7 @@ function validHost(h) {
   return s.length <= 253 && /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(s);
 }
 
-/** chrony.conf → active NTP sources + whether DockGate manages them. */
+/** chrony.conf -> active NTP sources + whether DockGate manages them. */
 function parseChronyConf(text) {
   const servers = [];
   for (const line of String(text || '').split('\n')) {

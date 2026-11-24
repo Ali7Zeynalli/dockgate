@@ -6,7 +6,7 @@ Router.register('containers', async (content) => {
   let currentFilter = view.get('filter', 'all');
   let currentSearch = view.get('search', '');
   let currentSort = view.get('sort', 'name');
-  let currentView = appSetting('defaultView', 'table') === 'card' ? 'card' : 'table'; // Settings → General → Container list
+  let currentView = appSetting('defaultView', 'table') === 'card' ? 'card' : 'table'; // Settings > General > Container list
   let selectedIds = new Set();
   let refreshTimer = null;
   let groupByProject = Store.get('groupByProject') ?? true; // Default to grouping
@@ -17,18 +17,18 @@ Router.register('containers', async (content) => {
   // The Swarm line under a container's name: task of a service (and stack), or a container moved to Swarm.
   const swarmChip = (c) => {
     const chip = swarmSvc(c)
-      ? `<span class="ui-chip" style="white-space:normal" title="Managed by Swarm: change it in Swarm → Services">⎈ Swarm task of ${escapeHtml(swarmSvc(c))}${swarmStack(c) ? ` · stack ${escapeHtml(swarmStack(c))}` : ''}</span>`
-      : c.movedToSwarm ? `<span class="ui-chip" style="white-space:normal" title="This container was moved to Swarm. It is kept, stopped; starting it would run the app twice. Move it back from Swarm → Stacks.">⎈ moved to Swarm · stack ${escapeHtml(c.movedToSwarm)}</span>` : '';
+      ? `<span class="ui-chip" style="white-space:normal" title="Managed by Swarm: change it in Swarm > Services">⎈ Swarm task of ${escapeHtml(swarmSvc(c))}${swarmStack(c) ? `, stack ${escapeHtml(swarmStack(c))}` : ''}</span>`
+      : c.movedToSwarm ? `<span class="ui-chip" style="white-space:normal" title="This container was moved to Swarm. It is kept, stopped; starting it would run the app twice. Move it back from Swarm > Stacks.">⎈ moved to Swarm, stack ${escapeHtml(c.movedToSwarm)}</span>` : '';
     return chip ? `<div style="margin-top:3px">${chip}</div>` : '';
   };
-  let stale = {}; // container ID → newer local image of its tag (pulled, container not recreated yet)
+  let stale = {}; // container ID -> newer local image of its tag (pulled, container not recreated yet)
   const hasUpdate = (c) => (updates.get(c.image) || {}).status === 'update' || !!stale[c.id];
   // "newer image" / "cannot check" next to the image, from the last newer-image check.
   const imageUpdatePill = (c) => {
-    if (stale[c.id]) return ` ${UI.pill('info', `newer image pulled${stale[c.id].version ? ` · ${escapeHtml(stale[c.id].version)}` : ''} · not recreated`)}`;
+    if (stale[c.id]) return ` ${UI.pill('info', `newer image pulled${stale[c.id].version ? `, ${escapeHtml(stale[c.id].version)}` : ''}, not recreated`)}`;
     const u = updates.get(c.image);
     if (!u) return '';
-    if (u.status === 'update') return ` ${UI.pill('info', u.remote_version ? (u.local_version === u.remote_version ? `newer build of ${escapeHtml(u.remote_version)}` : `newer image · ${escapeHtml(u.local_version || '?')} → ${escapeHtml(u.remote_version)}`) : 'newer image')}`;
+    if (u.status === 'update') return ` ${UI.pill('info', u.remote_version ? (u.local_version === u.remote_version ? `newer build of ${escapeHtml(u.remote_version)}` : `newer image, ${escapeHtml(u.local_version || '?')} -> ${escapeHtml(u.remote_version)}`) : 'newer image')}`;
     if (u.status === 'error') return ` <span class="ui-sub" title="${escapeHtml(u.error || '')}">update check failed</span>`;
     return '';
   };
@@ -39,8 +39,8 @@ Router.register('containers', async (content) => {
 
   async function render() {
     try {
-      // Use already fetched data for counts — avoid duplicate API call
-      // Artıq çəkilmiş datadan istifadə et — təkrar API çağırışından qaç
+      // Use already fetched data for counts - avoid duplicate API call
+      // Artıq çəkilmiş datadan istifadə et - təkrar API çağırışından qaç
       const [allContainers, upd] = await Promise.all([API.get('/containers'), API.get('/images/updates').catch(() => ({ results: [] }))]);
       if (!Router.isActiveNav(pageNavId)) return;
       // Newer-image check results by image reference (server/image-updates.js).
@@ -97,7 +97,7 @@ Router.register('containers', async (content) => {
       const viewIcon = (v, title, icon) => `<button class="btn btn-ghost btn-sm ${currentView === v ? 'active' : ''}" id="view-${v}" title="${title}" aria-pressed="${currentView === v}">${icon}</button>`;
 
       content.innerHTML = `
-        ${UI.header('Containers', `${containers.length === counts.all ? counts.all : `${containers.length} of ${counts.all}`} container${counts.all === 1 ? '' : 's'} on this server${withUpdate ? ` · <b>${withUpdate} with a newer image</b>` : ''}${lastCheck ? ` · images checked ${timeAgo(Math.floor(lastCheck / 1000))}` : ''}. Select several to start, stop or restart them together.`,
+        ${UI.header('Containers', `${containers.length === counts.all ? counts.all : `${containers.length} of ${counts.all}`} container${counts.all === 1 ? '' : 's'} on this server${withUpdate ? `, <b>${withUpdate} with a newer image</b>` : ''}${lastCheck ? `, images checked ${timeAgo(Math.floor(lastCheck / 1000))}` : ''}. Select several to start, stop or restart them together.`,
           `${viewIcon('table', 'Table view', Icons.layers)}${viewIcon('card', 'Card view', Icons.dashboard)}${viewIcon('topology', 'Topology view (read-only)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="6" r="2.3"/><circle cx="19" cy="6" r="2.3"/><circle cx="12" cy="18" r="2.3"/><path d="M7 7.4 10.6 15.8M17 7.4 13.4 15.8M7.3 6h9.4"/></svg>')}
            <button class="btn btn-secondary btn-sm" id="containers-refresh" title="Refresh">${Icons.refresh}</button>
            <button class="btn btn-secondary btn-sm" id="update-history" title="Image updates and roll backs started from DockGate on this server">Update history</button>
@@ -131,7 +131,7 @@ Router.register('containers', async (content) => {
           <button class="btn btn-xs btn-secondary" id="bulk-restart">${Icons.restart} Restart</button>
           <span class="ui-spacer" style="flex:1"></span>
           <button class="btn btn-xs btn-ghost" id="bulk-clear">Clear selection</button>
-          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove…</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove...</button>
         </div>` : ''}
 
         <div id="containers-content">
@@ -181,8 +181,8 @@ Router.register('containers', async (content) => {
         <td><span class="badge badge-${c.state}"><span class="badge-dot"></span> ${c.state}</span>${isUnhealthy(c) ? ' ' + UI.pill('bad', 'unhealthy') : ''}</td>
         <td class="text-sm">
           ${[...new Map(c.ports.filter(p => p.PublicPort).map(p => [`${p.PublicPort}:${p.PrivatePort}`, p])).values()].map(p =>
-            `<a href="${dockerHostUrl(p.PublicPort)}" target="_blank" style="margin-right:6px">${p.PublicPort}→${p.PrivatePort}</a>`
-          ).join('') || '<span class="text-muted">—</span>'}
+            `<a href="${dockerHostUrl(p.PublicPort)}" target="_blank" style="margin-right:6px">${p.PublicPort} -> ${p.PrivatePort}</a>`
+          ).join('') || '<span class="text-muted">-</span>'}
         </td>
         <td class="text-muted text-sm">${timeAgo(c.created)}</td>
         <td>
@@ -190,9 +190,9 @@ Router.register('containers', async (content) => {
             ${swarmSvc(c)
               ? `<button class="btn btn-xs btn-secondary" data-open-service="${escapeHtml(swarmSvc(c))}" title="Swarm runs this task: scale, update or restart the service">Open service</button>`
               : c.movedToSwarm
-              ? `<button class="btn btn-xs btn-secondary" data-open-stacks title="It runs on Swarm now: manage it, or move it back, in Swarm → Stacks">Open stack</button>`
+              ? `<button class="btn btn-xs btn-secondary" data-open-stacks title="It runs on Swarm now: manage it, or move it back, in Swarm > Stacks">Open stack</button>`
               : hasUpdate(c)
-              ? `<button class="btn btn-xs btn-secondary" data-update-image="${c.id}">${Icons.download} Update…</button>`
+              ? `<button class="btn btn-xs btn-secondary" data-update-image="${c.id}">${Icons.download} Update...</button>`
               : c.state === 'running'
               ? `<button class="btn btn-xs btn-secondary" data-action="logs" data-id="${c.id}">${Icons.logs} Logs</button>`
               : `<button class="btn btn-xs btn-secondary" data-action="start" data-id="${c.id}">${Icons.play} Start</button>`}
@@ -204,7 +204,7 @@ Router.register('containers', async (content) => {
               c.state === 'running' && !swarmSvc(c) ? { label: `${Icons.restart} Restart`, attrs: `data-action="restart" data-id="${c.id}"` } : null,
               c.state === 'running' && !swarmSvc(c) ? { label: `${Icons.stop} Stop`, attrs: `data-action="stop" data-id="${c.id}"` } : null,
               '-',
-              { label: `${Icons.trash} Remove…`, attrs: `data-action="remove" data-id="${c.id}"`, danger: true },
+              { label: `${Icons.trash} Remove...`, attrs: `data-action="remove" data-id="${c.id}"`, danger: true },
             ])}
           </div>
         </td>
@@ -280,7 +280,7 @@ Router.register('containers', async (content) => {
           `}
           <button class="btn btn-xs btn-secondary" data-action="logs" data-id="${c.id}">${Icons.logs} Logs</button>
           <div style="flex:1"></div>
-          ${UI.menu([{ label: `${Icons.eye} Open details`, attrs: `data-detail="${c.id}"` }, '-', { label: `${Icons.trash} Remove…`, attrs: `data-action="remove" data-id="${c.id}"`, danger: true }])}
+          ${UI.menu([{ label: `${Icons.eye} Open details`, attrs: `data-detail="${c.id}"` }, '-', { label: `${Icons.trash} Remove...`, attrs: `data-action="remove" data-id="${c.id}"`, danger: true }])}
         </div>
       </div>
     `).join('');
@@ -348,7 +348,7 @@ Router.register('containers', async (content) => {
   function topoShortImage(img) {
     let s = String(img || '').replace(/^sha256:/, '').replace(/@sha256:.*/, '');
     const parts = s.split('/'); s = parts[parts.length - 1];
-    return s.length > 26 ? s.slice(0, 25) + '…' : s;
+    return s.length > 26 ? s.slice(0, 25) + '...' : s;
   }
   function topoRole(c) {
     const img = (c.image || '').toLowerCase();
@@ -390,7 +390,7 @@ Router.register('containers', async (content) => {
     const canvasW = PADX * 2 + 3 * CARDW + 2 * COLGAP;
     const canvasH = bandTop + PADY;
 
-    // edges: prefer compose depends_on (directed), else app→data on a shared network
+    // edges: prefer compose depends_on (directed), else app -> data on a shared network
     const edges = [];
     keys.forEach(k => {
       const list = groups[k];
@@ -428,22 +428,22 @@ Router.register('containers', async (content) => {
     const nodeHtml = nodes.map(n => {
       const c = n.c, nets = topoCustomNets(c);
       const pubPorts = [...new Set((c.ports || []).filter(p => p.PublicPort).map(p => p.PublicPort))];
-      return `<div class="topo-node ${n.pub ? 'pub' : ''}" data-detail="${c.id}" title="${escapeHtml(c.name)} · ${escapeHtml(c.image)}" style="left:${n.x}px;top:${n.y}px;width:${CARDW}px;height:${CARDH}px">
+      return `<div class="topo-node ${n.pub ? 'pub' : ''}" data-detail="${c.id}" title="${escapeHtml(c.name)}, ${escapeHtml(c.image)}" style="left:${n.x}px;top:${n.y}px;width:${CARDW}px;height:${CARDH}px">
         <div class="topo-node-h"><span class="topo-dot ${escapeHtml(c.state)}"></span><span class="topo-name">${escapeHtml(c.composeService || c.name)}</span>${n.pub ? `<span class="topo-pub">🌐 :${pubPorts[0]}</span>` : ''}</div>
         <div class="topo-img">${escapeHtml(topoShortImage(c.image))}</div>
-        <div class="topo-meta">${escapeHtml(c.state)}${nets.length ? ' · ' + escapeHtml(nets.slice(0, 2).join(', ')) : ''}</div>
+        <div class="topo-meta">${escapeHtml(c.state)}${nets.length ? ', ' + escapeHtml(nets.slice(0, 2).join(', ')) : ''}</div>
       </div>`;
     }).join('');
     const zoneHtml = zones.map(z => `<div class="topo-zone-label" style="left:${z.x}px;top:${z.y}px">${escapeHtml(z.label)}</div>`).join('');
 
     return `
       <div class="topo-legend">
-        <span class="text-muted text-sm">Read-only topology — drawn live from running containers &amp; their Compose links.</span>
+        <span class="text-muted text-sm">Read-only topology - drawn live from running containers &amp; their Compose links.</span>
         <span style="flex:1"></span>
         <span class="topo-leg"><span class="topo-dot running"></span>running</span>
         <span class="topo-leg"><span class="topo-dot exited"></span>stopped</span>
         <span class="topo-leg"><span style="width:16px;border-top:2px dashed var(--success);display:inline-block"></span>published</span>
-        <span class="topo-leg text-muted">columns: edge · app · data</span>
+        <span class="topo-leg text-muted">columns: edge, app, data</span>
       </div>
       <div class="topo-scroll"><div class="topo-canvas" style="width:${canvasW}px;height:${canvasH}px">
         <svg class="topo-svg" width="${canvasW}" height="${canvasH}"><defs>
@@ -491,7 +491,7 @@ Router.register('containers', async (content) => {
     // Refresh
     document.getElementById('containers-refresh')?.addEventListener('click', render);
     document.getElementById('check-updates')?.addEventListener('click', async (e) => {
-      const b = e.currentTarget; b.disabled = true; b.textContent = 'Checking…';
+      const b = e.currentTarget; b.disabled = true; b.textContent = 'Checking...';
       try {
         const r = await API.post('/images/updates/check', {});
         const n = (r.results || []).filter(x => x.status === 'update').length, bad = (r.results || []).filter(x => x.status === 'error').length;
@@ -537,7 +537,7 @@ Router.register('containers', async (content) => {
 
         try {
           await API.post(`/containers/${id}/${action}`);
-          showToast(`${action} → ${name}`, 'success');
+          showToast(`${action} -> ${name}`, 'success');
           render();
         } catch (err) { showToast(err.message, 'error'); }
       });

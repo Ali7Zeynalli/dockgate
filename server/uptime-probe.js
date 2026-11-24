@@ -1,4 +1,4 @@
-// Uptime probes and rules (Observe → Uptime). No database here, so it can be unit tested.
+// Uptime probes and rules (Observe > Uptime). No database here, so it can be unit tested.
 //   probe(check)               one check: { ok, ms, status?, error?, cert? }
 //   evaluate(state, r, check, now)   the next state and the alerts that are due (down / up / slow / certificate)
 // Check types:
@@ -26,12 +26,12 @@ function safeLookup(host, opts, cb) {
   dns.lookup(host, opts, (err, address, family) => {
     if (err) return cb(err);
     const list = Array.isArray(address) ? address : [{ address, family }];
-    if (list.some(a => blockedAddress(a.address))) return cb(Object.assign(new Error(`${host} points to a cloud metadata address — not checked`), { code: 'EBLOCKED' }));
+    if (list.some(a => blockedAddress(a.address))) return cb(Object.assign(new Error(`${host} points to a cloud metadata address - not checked`), { code: 'EBLOCKED' }));
     cb(null, address, family);
   });
 }
 
-/** "200", "200-399", "200,301" → (code) => bool. */
+/** "200", "200-399", "200,301" -> (code) => bool. */
 function statusMatcher(spec) {
   const parts = String(spec || '200-399').split(',').map(s => s.trim()).filter(Boolean);
   const tests = parts.map(p => {
@@ -39,7 +39,7 @@ function statusMatcher(spec) {
     if (m) return (c) => c >= Number(m[1]) && c <= Number(m[2]);
     if (/^\d{3}$/.test(p)) return (c) => c === Number(p);
     if (/^\dxx$/i.test(p)) return (c) => Math.floor(c / 100) === Number(p[0]);
-    throw new Error(`Expected status: "${p}" — use 200, 200-399, 2xx or a list like 200,301`);
+    throw new Error(`Expected status: "${p}" - use 200, 200-399, 2xx or a list like 200,301`);
   });
   return (c) => tests.some(t => t(c));
 }
@@ -216,8 +216,8 @@ async function probe(check) {
 }
 
 /**
- * One result → the next state and the alerts due. state: { status: 'up'|'down'|'pending', fails, since,
- * slowStreak, slow, certSent: [days…], certBad }. Alerts: [{ type, data }].
+ * One result -> the next state and the alerts due. state: { status: 'up'|'down'|'pending', fails, since,
+ * slowStreak, slow, certSent: [days...], certBad }. Alerts: [{ type, data }].
  */
 function evaluate(state, r, check, now) {
   const st = { status: 'pending', fails: 0, since: now, slowStreak: 0, slow: false, certSent: [], certBad: false, ...(state || {}) };

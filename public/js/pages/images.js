@@ -44,9 +44,9 @@ Router.register('images', async (content) => {
       }
 
       content.innerHTML = `
-        ${UI.header('Images', `${allCount} image${allCount === 1 ? '' : 's'} · ${formatBytes(totalSize)} on this server.`,
+        ${UI.header('Images', `${allCount} image${allCount === 1 ? '' : 's'}, ${formatBytes(totalSize)} on this server.`,
           `<button class="btn btn-secondary btn-sm" id="images-refresh" title="Refresh">${Icons.refresh}</button>
-           ${counts.unused ? `<button class="btn btn-secondary btn-sm" id="remove-unused-btn" style="color:var(--danger)">${Icons.trash} Remove unused (${formatBytes(unusedSize)})…</button>` : ''}
+           ${counts.unused ? `<button class="btn btn-secondary btn-sm" id="remove-unused-btn" style="color:var(--danger)">${Icons.trash} Remove unused (${formatBytes(unusedSize)})...</button>` : ''}
            <button class="btn btn-secondary btn-sm" id="load-image-btn" title="Load an image from a .tar file">${Icons.layers} Load .tar</button>
            <button class="btn btn-primary btn-sm" id="pull-image-btn">${Icons.download} Pull image</button>`)}
         <div class="ui-toolbar">
@@ -62,8 +62,8 @@ Router.register('images', async (content) => {
           <b>${selectedIds.size} selected</b>
           <span style="flex:1"></span>
           <button class="btn btn-xs btn-ghost" id="bulk-clear">Clear selection</button>
-          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove…</button>
-          <button class="btn btn-xs btn-secondary" id="bulk-force-remove" style="color:var(--danger)">${Icons.trash} Force remove…</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove...</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-force-remove" style="color:var(--danger)">${Icons.trash} Force remove...</button>
         </div>` : ''}
 
         <div class="table-wrapper">
@@ -74,7 +74,7 @@ Router.register('images', async (content) => {
             </tr></thead>
             <tbody>
               ${images.map(img => {
-                // Split on the LAST colon so registry ports survive (e.g. localhost:5000/app:1.0 → repo, tag=1.0)
+                // Split on the LAST colon so registry ports survive (e.g. localhost:5000/app:1.0 -> repo, tag=1.0)
                 const full = img.repoTags[0] || '<none>:<none>';
                 const ci = full.lastIndexOf(':');
                 const repo = ci > 0 ? full.slice(0, ci) : full;
@@ -93,13 +93,13 @@ Router.register('images', async (content) => {
                       ${UI.menu([
                         { label: `${Icons.eye} Inspect`, attrs: `data-inspect="${img.id}"` },
                         { label: `${Icons.layers} Layers and history`, attrs: `data-layers="${img.id}"` },
-                        { label: `${Icons.tag} Tags…`, attrs: `data-tags="${img.id}"` },
+                        { label: `${Icons.tag} Tags...`, attrs: `data-tags="${img.id}"` },
                         repo !== '<none>' ? { label: `${Icons.download} Pull newer version`, attrs: `data-refresh="${escapeHtml(full)}"` } : null,
-                        repo !== '<none>' ? { label: `${Icons.arrowUp} Push to registry…`, attrs: `data-push="${escapeHtml(full)}" data-pushid="${img.id}"` } : null,
-                        { label: `${Icons.compose} Build from this (FROM)…`, attrs: `data-buildfrom="${escapeHtml(full)}"` },
+                        repo !== '<none>' ? { label: `${Icons.arrowUp} Push to registry...`, attrs: `data-push="${escapeHtml(full)}" data-pushid="${img.id}"` } : null,
+                        { label: `${Icons.compose} Build from this (FROM)...`, attrs: `data-buildfrom="${escapeHtml(full)}"` },
                         { label: `${Icons.download} Save as .tar`, attrs: `data-save="${img.id}"` },
                         '-',
-                        { label: `${Icons.trash} Remove…`, attrs: `data-remove="${img.id}" data-name="${escapeHtml(full)}"`, danger: true },
+                        { label: `${Icons.trash} Remove...`, attrs: `data-remove="${img.id}" data-name="${escapeHtml(full)}"`, danger: true },
                       ])}
                     </div>
                   </td>
@@ -112,10 +112,10 @@ Router.register('images', async (content) => {
 
       // Filter buttons
       content.querySelectorAll('[data-filter]').forEach(btn => btn.addEventListener('click', () => { currentFilter = btn.dataset.filter; view.set('filter', currentFilter); render(); }));
-      // Unused images: the same prune as Resources → Prune, offered where the images are.
+      // Unused images: the same prune as Resources > Prune, offered where the images are.
       document.getElementById('remove-unused-btn')?.addEventListener('click', () => {
         showDeleteConfirm('Remove unused images', { message: `${counts.unused} image${counts.unused === 1 ? '' : 's'} not used by any container (${formatBytes(unusedSize)}) will be deleted. Containers and volumes are not touched.`, phrase: 'delete', onConfirm: async () => {
-          try { const r = await API.post('/cleanup/images'); showToast(`Removed unused images${r.SpaceReclaimed ? ` · ${formatBytes(r.SpaceReclaimed)} freed` : ''}`); render(); }
+          try { const r = await API.post('/cleanup/images'); showToast(`Removed unused images${r.SpaceReclaimed ? `, ${formatBytes(r.SpaceReclaimed)} freed` : ''}`); render(); }
           catch (e) { showToast(e.message, 'error'); }
         } });
       });
@@ -138,7 +138,7 @@ Router.register('images', async (content) => {
         inp.onchange = async () => {
           const f = inp.files && inp.files[0];
           if (!f) return;
-          showToast(`Loading ${f.name}…`, 'info');
+          showToast(`Loading ${f.name}...`, 'info');
           try {
             const r = await fetch('/api/images/load', { method: 'POST', headers: { 'Content-Type': 'application/x-tar' }, body: f });
             const data = await r.json();
@@ -154,7 +154,7 @@ Router.register('images', async (content) => {
         const m = showModal('Pull Image',
           '<div class="input-group"><label>Image Name (e.g., nginx:latest)</label><input type="text" id="pull-image-input" placeholder="nginx:latest"></div>' +
           `<button type="button" class="btn btn-xs btn-secondary" id="pull-hub-btn">${Icons.search} Search Docker Hub</button>` +
-          '<div class="text-xs text-muted" style="margin-top:8px">Private image? Use the full reference (e.g. <code>ghcr.io/user/app:tag</code>) and add the registry under <strong>Registries</strong> first — the stored credential is attached automatically.</div>', [
+          '<div class="text-xs text-muted" style="margin-top:8px">Private image? Use the full reference (e.g. <code>ghcr.io/user/app:tag</code>) and add the registry under <strong>Registries</strong> first - the stored credential is attached automatically.</div>', [
           { label: 'Cancel', className: 'btn btn-secondary' },
           { label: 'Pull', className: 'btn btn-primary', onClick: async () => {
             const image = document.getElementById('pull-image-input')?.value;
@@ -164,7 +164,7 @@ Router.register('images', async (content) => {
             catch (err) { showToast(err.message, 'error'); }
           }},
         ]);
-        // Search Docker Hub → fill the image name field
+        // Search Docker Hub -> fill the image name field
         m.overlay.querySelector('#pull-hub-btn')?.addEventListener('click', () => openHubSearch(name => {
           m.overlay.querySelector('#pull-image-input').value = name;
         }));
@@ -208,18 +208,18 @@ Router.register('images', async (content) => {
       // Pull the newer image of a tag; containers on the previous image are listed with a safe Update each.
       content.querySelectorAll('[data-refresh]').forEach(btn => btn.addEventListener('click', async () => {
         const image = btn.dataset.refresh;
-        showToast(`Pulling ${image}…`, 'info');
+        showToast(`Pulling ${image}...`, 'info');
         let r;
         try { r = await API.post('/images/refresh', { image }); } catch (e) { return showToast(e.message, 'error'); }
         if (!r.changed) { showToast(`${image} is already the newest`); return render(); }
         const list = r.containers.length
-          ? `<div class="text-sm" style="margin:8px 0">These containers still run the previous image — a container keeps the image it was made from until it is recreated. <b>Update</b> recreates it with the new one, checks it, and puts the previous image back if it does not start:</div>`
+          ? `<div class="text-sm" style="margin:8px 0">These containers still run the previous image - a container keeps the image it was made from until it is recreated. <b>Update</b> recreates it with the new one, checks it, and puts the previous image back if it does not start:</div>`
             + UI.table([{ label: 'Container' }, { label: 'State' }, { label: '' }], r.containers.map(c => ({ cells: [`<b>${escapeHtml(c.name)}</b>${c.project ? `<div class="ui-sub">${escapeHtml(c.project)}</div>` : ''}`, escapeHtml(c.state), `<button class="btn btn-xs btn-primary" data-upd="${c.id}">Update</button>`] })), { minWidth: 0 })
           : '<div class="text-sm">No container uses the previous image.</div>';
-        const m = showModal(`${escapeHtml(image)}: newer image pulled`, `<div class="ui-sub td-mono">${escapeHtml(String(r.from || '').slice(7, 19))} → ${escapeHtml(String(r.to).slice(7, 19))}</div>${list}`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+        const m = showModal(`${escapeHtml(image)}: newer image pulled`, `<div class="ui-sub td-mono">${escapeHtml(String(r.from || '').slice(7, 19))} -> ${escapeHtml(String(r.to).slice(7, 19))}</div>${list}`, [{ label: 'Close', className: 'btn btn-secondary' }]);
         m.overlay.querySelectorAll('[data-upd]').forEach(b => b.onclick = async () => {
-          b.disabled = true; b.textContent = 'Updating…';
-          try { const j = await API.post(`/containers/${b.dataset.upd}/image-update`, {}); b.textContent = 'Started'; showToast('Update started — see Containers → Update history'); void j; } catch (e) { b.disabled = false; b.textContent = 'Update'; showToast(e.message, 'error'); }
+          b.disabled = true; b.textContent = 'Updating...';
+          try { const j = await API.post(`/containers/${b.dataset.upd}/image-update`, {}); b.textContent = 'Started'; showToast('Update started - see Containers > Update history'); void j; } catch (e) { b.disabled = false; b.textContent = 'Update'; showToast(e.message, 'error'); }
         });
         render();
       }));
@@ -229,31 +229,31 @@ Router.register('images', async (content) => {
             const hist = await API.get(`/images/${encodeURIComponent(btn.dataset.layers)}/history`);
             const rows = (hist || []).map(h => {
               const cmd = (h.CreatedBy || '').replace(/^\/bin\/sh -c (#\(nop\)\s*)?/, '').trim();
-              return `<tr><td class="text-xs text-muted" style="white-space:nowrap;vertical-align:top">${formatBytes(h.Size || 0)}</td><td class="td-mono text-xs" style="white-space:pre-wrap;word-break:break-all">${escapeHtml(cmd || '—')}</td></tr>`;
+              return `<tr><td class="text-xs text-muted" style="white-space:nowrap;vertical-align:top">${formatBytes(h.Size || 0)}</td><td class="td-mono text-xs" style="white-space:pre-wrap;word-break:break-all">${escapeHtml(cmd || '-')}</td></tr>`;
             }).join('');
             showModal('Image Layers', `<div class="table-wrapper" style="max-height:60vh;overflow:auto"><table><thead><tr><th>Size</th><th>Created By</th></tr></thead><tbody>${rows}</tbody></table></div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
           } catch (e) { showToast(e.message, 'error'); }
         });
       });
 
-      // Tags — add / untag (I4)
+      // Tags - add / untag (I4)
       content.querySelectorAll('[data-tags]').forEach(btn => {
         btn.addEventListener('click', () => openTagsModal(btn.dataset.tags));
       });
 
-      // Build from this image (I3) → hand off to the Builds page with an inline Dockerfile prefilled
+      // Build from this image (I3) -> hand off to the Builds page with an inline Dockerfile prefilled
       content.querySelectorAll('[data-buildfrom]').forEach(btn => btn.addEventListener('click', () => {
         sessionStorage.setItem('dgt_build_from', btn.dataset.buildfrom);
         Router.navigate('resources',{tab:'builds'});
       }));
 
-      // Save image → download tar (I2)
+      // Save image -> download tar (I2)
       content.querySelectorAll('[data-save]').forEach(btn => btn.addEventListener('click', () => {
         const a = document.createElement('a');
         a.href = `/api/images/${encodeURIComponent(btn.dataset.save)}/save`;
         a.download = 'image.tar';
         document.body.appendChild(a); a.click(); a.remove();
-        showToast('Saving image…', 'info');
+        showToast('Saving image...', 'info');
       }));
 
       // Selection
@@ -294,7 +294,7 @@ Router.register('images', async (content) => {
     } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
-  // Tag management — list current tags, add a new one, untag (I4)
+  // Tag management - list current tags, add a new one, untag (I4)
   async function openTagsModal(id) {
     let info;
     try { info = await API.get(`/images/${encodeURIComponent(id)}`); }
@@ -380,7 +380,7 @@ async function openPushModal(repoTag, imageId) {
         <input class="input" id="push-ref" value="${escapeHtml(repoTag)}" placeholder="ghcr.io/owner/app:tag" spellcheck="false">
       </div>
       <div id="push-reg" class="text-xs" style="min-height:16px"></div>
-      <div class="text-xs text-muted">The credential is matched automatically by registry host — add it under <strong>Deploy → Registries</strong> first, with <strong>write/push</strong> access. To push a local image, change the reference to a full registry path: DockGate re-tags it for you, then pushes.</div>
+      <div class="text-xs text-muted">The credential is matched automatically by registry host - add it under <strong>Deploy > Registries</strong> first, with <strong>write/push</strong> access. To push a local image, change the reference to a full registry path: DockGate re-tags it for you, then pushes.</div>
       <pre id="push-log" style="display:none;background:var(--bg-primary,#0d1117);border:1px solid var(--border);border-radius:8px;padding:10px;height:280px;overflow:auto;font-family:var(--font-mono,monospace);font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
       <div id="push-result" style="display:none"></div>
     </div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
@@ -394,7 +394,7 @@ async function openPushModal(repoTag, imageId) {
   const pre = m.overlay.querySelector('#push-log');
   const resultEl = m.overlay.querySelector('#push-result');
 
-  // Phase B — live "which registry will be used" hint for the current target reference.
+  // Phase B - live "which registry will be used" hint for the current target reference.
   let registries = [];
   const updateBadge = () => {
     const ref = refEl.value.trim();
@@ -403,7 +403,7 @@ async function openPushModal(repoTag, imageId) {
     const reg = matchRegistry(host, registries);
     regEl.innerHTML = reg
       ? `<span style="color:var(--success,#22c55e)">✓ Will authenticate as <strong>${escapeHtml(reg.name || reg.server_address)}</strong> (${escapeHtml(host)})</span>`
-      : `<span style="color:var(--warning,#f59e0b)">⚠ No stored credential for <strong>${escapeHtml(host)}</strong> — push is anonymous (fails for private). Add it under Deploy → Registries.</span>`;
+      : `<span style="color:var(--warning,#f59e0b)">⚠ No stored credential for <strong>${escapeHtml(host)}</strong> - push is anonymous (fails for private). Add it under Deploy > Registries.</span>`;
   };
   refEl.addEventListener('input', updateBadge);
   API.get('/registries').then(rows => { registries = rows || []; updateBadge(); }).catch(() => {});
@@ -415,18 +415,18 @@ async function openPushModal(repoTag, imageId) {
   const addEvent = (ev) => {
     if (!ev) return;
     if (ev.error) { plain.push('✖ ' + ev.error); }
-    else if (ev.aux) { auxResult = ev.aux; }              // structured final event — not all daemons emit it
+    else if (ev.aux) { auxResult = ev.aux; }              // structured final event - not all daemons emit it
     else if (ev.id) { if (!(ev.id in byId)) idOrder.push(ev.id); byId[ev.id] = ev.id.slice(0, 12) + ': ' + (ev.status || '') + (ev.progress ? ' ' + ev.progress : ''); }
     else if (ev.status) {
       plain.push(ev.status);
-      // Fallback when there's no aux event: the digest+size arrive as a status line "…: digest: sha256:… size: 1234".
+      // Fallback when there's no aux event: the digest+size arrive as a status line "...: digest: sha256:... size: 1234".
       const md = ev.status.match(/digest:\s*(sha256:[0-9a-f]+)\s+size:\s*(\d+)/i);
       if (md) { auxResult = auxResult || {}; if (!auxResult.Digest) auxResult.Digest = md[1]; if (!auxResult.Size) auxResult.Size = parseInt(md[2], 10); }
     }
     render();
   };
 
-  // Phase A — post-push result card: tag · digest (+copy) · compressed size · registry · view link.
+  // Phase A - post-push result card: tag, digest (+copy), compressed size, registry, view link.
   const showResult = (d) => {
     const ref = refEl.value.trim();
     const { host, repoPath } = parseImageRef(ref);
@@ -448,7 +448,7 @@ async function openPushModal(repoTag, imageId) {
     if (cp) cp.onclick = () => navigator.clipboard?.writeText(digest).then(() => showToast('Copied'));
   };
 
-  const onStarted = (d) => { plain.push('Pushing ' + d.repoTag + ' …'); render(); };
+  const onStarted = (d) => { plain.push('Pushing ' + d.repoTag + ' ...'); render(); };
   const onProgress = (ev) => addEvent(ev);
   const onDone = (d) => { plain.push('✔ Pushed ' + d.repoTag); render(); go.disabled = false; go.textContent = 'Push again'; showToast('Pushed ' + d.repoTag, 'success'); showResult(d); cleanup(); };
   const onErr = (d) => { plain.push('✖ ' + (d.error || 'Push failed')); render(); go.disabled = false; go.textContent = 'Retry'; showToast(d.error || 'Push failed', 'error', 8000); cleanup(); };
@@ -466,7 +466,7 @@ async function openPushModal(repoTag, imageId) {
   go.onclick = async () => {
     const targetRef = refEl.value.trim();
     if (!targetRef) return showToast('Target reference required', 'warning');
-    go.disabled = true; go.textContent = 'Pushing…';
+    go.disabled = true; go.textContent = 'Pushing...';
     // Re-tag first if pushing to a different reference than the image currently carries.
     if (targetRef !== repoTag) {
       try {

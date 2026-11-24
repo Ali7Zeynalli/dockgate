@@ -7,7 +7,7 @@ const { encrypt, decrypt } = require('../auth/secrets');
 const registryBrowse = require('../registry-browse');
 
 /**
- * Shape a registry row for the API — the stored password is NEVER returned, only whether one exists.
+ * Shape a registry row for the API - the stored password is NEVER returned, only whether one exists.
  * @param {object} r registries table row
  */
 function maskRegistry(r) {
@@ -18,12 +18,12 @@ function maskRegistry(r) {
     username: r.username,
     hasPassword: !!r.password,
     created_at: r.created_at,
-    last_test_status: r.last_test_status || null, // 'ok' | 'fail' | null — for the status pill
+    last_test_status: r.last_test_status || null, // 'ok' | 'fail' | null - for the status pill
     last_test_at: r.last_test_at || null,
   };
 }
 
-// GET / — list all stored registry credentials (passwords masked) + per-registry tracked-repo counts
+// GET / - list all stored registry credentials (passwords masked) + per-registry tracked-repo counts
 router.get('/', (req, res) => {
   try {
     const counts = {};
@@ -34,7 +34,7 @@ router.get('/', (req, res) => {
   }
 });
 
-// POST / — add a registry credential
+// POST / - add a registry credential
 // body: { name?, serverAddress, username, password }
 router.post('/', (req, res) => {
   try {
@@ -53,7 +53,7 @@ router.post('/', (req, res) => {
   }
 });
 
-// PUT /:id — edit an existing credential. An omitted/empty password keeps the current one.
+// PUT /:id - edit an existing credential. An omitted/empty password keeps the current one.
 // body: { name?, serverAddress?, username?, password? }
 router.put('/:id', (req, res) => {
   try {
@@ -63,7 +63,7 @@ router.put('/:id', (req, res) => {
     const { name, serverAddress, username, password } = req.body || {};
     const newAddr = serverAddress !== undefined ? serverAddress : existing.server_address;
 
-    // server_address is UNIQUE — block colliding with a different row
+    // server_address is UNIQUE - block colliding with a different row
     const clash = stmts.getRegistryByHost.get(newAddr);
     if (clash && String(clash.id) !== String(existing.id)) {
       return res.status(409).json({ error: `A credential for "${newAddr}" already exists` });
@@ -96,7 +96,7 @@ router.delete('/:id', (req, res) => {
   }
 });
 
-// POST /test — verify credentials against the registry without persisting.
+// POST /test - verify credentials against the registry without persisting.
 // body: { serverAddress, username, password }  OR  { id } to test a stored credential
 router.post('/test', async (req, res) => {
   try {
@@ -130,9 +130,9 @@ router.post('/test', async (req, res) => {
 
 // ── Browse / Inventory ─────────────────────────────────────────────────────────────────────────────
 // Tracked repositories per registry. These are populated automatically when an image is pushed
-// (see the image:push handler) and manually pinned here. Repo names only — no secrets stored.
+// (see the image:push handler) and manually pinned here. Repo names only - no secrets stored.
 
-// GET /:id/repos — the repos tracked under this registry (with last-pushed time).
+// GET /:id/repos - the repos tracked under this registry (with last-pushed time).
 router.get('/:id/repos', (req, res) => {
   try {
     if (!stmts.getRegistry.get(req.params.id)) return res.status(404).json({ error: 'Registry not found' });
@@ -142,7 +142,7 @@ router.get('/:id/repos', (req, res) => {
   }
 });
 
-// POST /:id/repos { repo } — pin a repository to track (e.g. "owner/app").
+// POST /:id/repos { repo } - pin a repository to track (e.g. "owner/app").
 router.post('/:id/repos', (req, res) => {
   try {
     if (!stmts.getRegistry.get(req.params.id)) return res.status(404).json({ error: 'Registry not found' });
@@ -155,7 +155,7 @@ router.post('/:id/repos', (req, res) => {
   }
 });
 
-// DELETE /:id/repos?repo=owner/app — untrack a repository (repo in the query, since DELETE has no body).
+// DELETE /:id/repos?repo=owner/app - untrack a repository (repo in the query, since DELETE has no body).
 router.delete('/:id/repos', (req, res) => {
   try {
     const repo = String(req.query.repo || (req.body || {}).repo || '').trim();
@@ -167,7 +167,7 @@ router.delete('/:id/repos', (req, res) => {
   }
 });
 
-// GET /:id/tags?repo=owner/app — list a repo's tags via the registry v2 API (token-dance auth).
+// GET /:id/tags?repo=owner/app - list a repo's tags via the registry v2 API (token-dance auth).
 router.get('/:id/tags', async (req, res) => {
   try {
     const reg = stmts.getRegistry.get(req.params.id);
@@ -181,7 +181,7 @@ router.get('/:id/tags', async (req, res) => {
   }
 });
 
-// GET /:id/manifest?repo=owner/app&ref=tag — digest + size for one tag (lazy, on expand).
+// GET /:id/manifest?repo=owner/app&ref=tag - digest + size for one tag (lazy, on expand).
 router.get('/:id/manifest', async (req, res) => {
   try {
     const reg = stmts.getRegistry.get(req.params.id);

@@ -1,5 +1,5 @@
 // Newer images for Swarm services. A service's image is pinned to a digest when it is created or updated
-// (nginx:1.27@sha256:…), so every node runs the same build. Here that digest is compared with the digest the
+// (nginx:1.27@sha256:...), so every node runs the same build. Here that digest is compared with the digest the
 // registry gives for the same tag now. Nothing is pulled or changed. "Update to newest" writes tag@newDigest,
 // so all nodes get exactly that build. Checked once a day with the container check, and on demand.
 const { db } = require('./db');
@@ -28,7 +28,7 @@ const upsert = db.prepare(`INSERT INTO swarm_image_updates (cluster_id, service_
   remote_created = excluded.remote_created, error = excluded.error, checked_at = excluded.checked_at`);
 const listFor = db.prepare('SELECT * FROM swarm_image_updates WHERE cluster_id = ?');
 
-/** "nginx:1.27@sha256:abc" → { tagRef: 'nginx:1.27', digest: 'sha256:abc' } */
+/** "nginx:1.27@sha256:abc" -> { tagRef: 'nginx:1.27', digest: 'sha256:abc' } */
 function splitImage(image) {
   const s = String(image || '');
   const i = s.indexOf('@');
@@ -107,8 +107,8 @@ async function checkAll() {
       const name = HM.serverLabel(srv);
       const list = fresh.map(r => `${r.service_name} (${r.image})`).join(', ');
       const sent = await HM.deliver('image_update', srv, `${name}: newer image${fresh.length > 1 ? 's' : ''} for Swarm services`,
-        `🔵 Swarm on ${name}: newer image${fresh.length > 1 ? 's' : ''} available\n${list}\nUpdate them from Swarm → Services.`,
-        `<p>Swarm on ${name.replace(/</g, '&lt;')}: a newer version of the same tag is in the registry for <b>${list.replace(/</g, '&lt;')}</b>.</p><p>Update them from DockGate → Swarm → Services.</p>`);
+        `🔵 Swarm on ${name}: newer image${fresh.length > 1 ? 's' : ''} available\n${list}\nUpdate them from Swarm > Services.`,
+        `<p>Swarm on ${name.replace(/</g, '&lt;')}: a newer version of the same tag is in the registry for <b>${list.replace(/</g, '&lt;')}</b>.</p><p>Update them from DockGate > Swarm > Services.</p>`);
       if (sent || !(stmts.getRule.get('image_update') || {}).enabled) announce(sw.Cluster.ID, fresh);
     } catch (e) { console.warn(`[swarm-images] ${srv.id}:`, e.message); }
   }

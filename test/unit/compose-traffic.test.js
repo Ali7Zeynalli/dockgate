@@ -1,5 +1,5 @@
 'use strict';
-// Proxies and replicas (server/compose-traffic.js) — pure parts, no Docker.
+// Proxies and replicas (server/compose-traffic.js) - pure parts, no Docker.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const T = require('../../server/compose-traffic');

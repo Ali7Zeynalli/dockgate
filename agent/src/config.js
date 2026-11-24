@@ -1,9 +1,9 @@
-// Single config source — REPLACES every DB read in the ported modules.
+// Single config source - REPLACES every DB read in the ported modules.
 // All values come from container ENV injected by DockGate at deploy time.
 // (Panel reads these from the smtp_config / notification_rules tables; the agent has no DB.)
 
 // Default notification rules, copied verbatim from server/db.js:189-196
-// (event_type → cooldown_minutes), all enabled by default.
+// (event_type -> cooldown_minutes), all enabled by default.
 const DEFAULT_RULES = {
   container_die:       { enabled: true, cooldown_minutes: 5,  description: 'Container stopped or died' },
   container_restart:   { enabled: true, cooldown_minutes: 5,  description: 'Container restarted' },
@@ -16,14 +16,14 @@ const DEFAULT_RULES = {
   container_unpause:   { enabled: true, cooldown_minutes: 5,  description: 'Container unpaused' },
 };
 
-// RULES_JSON env: { event_type: { enabled, cooldown_minutes } } — merged over the defaults.
-// Invalid / empty → defaults. Keeps the panel's per-rule toggles honored when re-pushed.
+// RULES_JSON env: { event_type: { enabled, cooldown_minutes } } - merged over the defaults.
+// Invalid / empty -> defaults. Keeps the panel's per-rule toggles honored when re-pushed.
 function parseRules(raw) {
   const merged = {};
   let overrides = {};
   if (raw) {
     try { overrides = JSON.parse(raw) || {}; }
-    catch (e) { console.warn('[agent] RULES_JSON invalid — using defaults'); overrides = {}; }
+    catch (e) { console.warn('[agent] RULES_JSON invalid - using defaults'); overrides = {}; }
   }
   for (const [key, def] of Object.entries(DEFAULT_RULES)) {
     const o = overrides[key] || {};
@@ -71,7 +71,7 @@ const cfg = {
   socketPath: env.DOCKER_SOCKET || '/var/run/docker.sock',
 };
 
-// Drop-in for stmts.getRule.get(eventType) → { enabled, cooldown_minutes }
+// Drop-in for stmts.getRule.get(eventType) -> { enabled, cooldown_minutes }
 function getRule(eventType) { return cfg.rules[eventType]; }
 
 module.exports = { cfg, getRule };

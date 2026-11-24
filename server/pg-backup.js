@@ -1,11 +1,11 @@
-// Tools → Databases → Backups: pg_dump / pg_dumpall of a Postgres container, kept next to it.
-//   SSH server  → files on that server in /var/backups/dockgate/postgres (sudo makes it once; else ~/dockgate-backups/postgres);
-//                 the dump runs there (docker exec … > file), nothing passes through DockGate.
-//   this machine → files in DockGate's data folder (data/backups/postgres), streamed from the container.
+// Tools > Databases > Backups: pg_dump / pg_dumpall of a Postgres container, kept next to it.
+//   SSH server  -> files on that server in /var/backups/dockgate/postgres (sudo makes it once; else ~/dockgate-backups/postgres);
+//                 the dump runs there (docker exec ... > file), nothing passes through DockGate.
+//   this machine -> files in DockGate's data folder (data/backups/postgres), streamed from the container.
 // File names: <container>-<database|all>-<YYYY-MM-DD-HHMMSS>.dump (custom format, one database)
-//             <container>-<database|all>-<…>.sql.gz (plain SQL; also what Scripts' "Database backup" block writes).
+//             <container>-<database|all>-<...>.sql.gz (plain SQL; also what Scripts' "Database backup" block writes).
 // Restore goes into a NEW database first (a .dump or a one-database .sql.gz); "swap" then puts it in place of
-// the old one, which is kept renamed. A whole-server backup (…-all-….sql.gz) is restored by hand (shown how).
+// the old one, which is kept renamed. A whole-server backup (...-all-....sql.gz) is restored by hand (shown how).
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
@@ -123,12 +123,12 @@ async function restore(name, { file, target, keepOwners = true }) {
   const d = await dir();
   if (!String(file).startsWith(name + '-')) throw err('Not a backup of this container');
   const info = describe(name, file);
-  if (!info.restorable) throw err('A whole-server backup (pg_dumpall) is restored by hand — see the guide', 400, { code: 'WHOLE' });
+  if (!info.restorable) throw err('A whole-server backup (pg_dumpall) is restored by hand - see the guide', 400, { code: 'WHOLE' });
   const db = String(target || '').trim();
   if (!/^[A-Za-z_][\w$-]{0,62}$/.test(db)) throw err('New database name: letters, digits, _ $ -');
   const f = fileIn(d, file);
   const exists = await S.json(t, t.dbname, `select json_build_object('n', count(*)) from pg_database where datname = ${P.lit(db)}`);
-  if (Number(exists.n)) throw err(`A database named ${db} exists — pick a new name`, 409);
+  if (Number(exists.n)) throw err(`A database named ${db} exists - pick a new name`, 409);
   const mk = await S.psql(t, ['-c', `CREATE DATABASE ${P.ident(db)}`], { readOnly: false });
   if (mk.code !== 0) throw err(String(mk.stderr).replace(/^psql:(\s*error:)?\s*/gm, '').trim(), 400);
   const tool = S.toolArgs(t, info.format === 'custom'
@@ -170,7 +170,7 @@ async function swap(name, { restored, into }) {
   return { database: b, kept: old };
 }
 
-/** A Scripts entry that backs this database up on a schedule (SSH servers): dump → delete old → disk check. */
+/** A Scripts entry that backs this database up on a schedule (SSH servers): dump -> delete old -> disk check. */
 function scheduleSpec(name, { database, keepDays = 7, user }) {
   const db = String(database || '').trim();
   return {

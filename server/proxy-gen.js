@@ -1,11 +1,11 @@
-// Proxies & SSL — the text DockGate writes into proxy configs (pure functions, no I/O):
-//   · a new site for nginx / Caddy / HAProxy / Apache, labels for Traefik and caddy-docker-proxy
-//   · load balancing: the servers and method of an nginx upstream, a Caddy reverse_proxy, an HAProxy backend
-//   · nginx: the ACME challenge location in a site, HTTPS added to a site, certificate paths swapped
-//   · removing a site DockGate made
+// Proxies & SSL - the text DockGate writes into proxy configs (pure functions, no I/O):
+//  , a new site for nginx / Caddy / HAProxy / Apache, labels for Traefik and caddy-docker-proxy
+//  , load balancing: the servers and method of an nginx upstream, a Caddy reverse_proxy, an HAProxy backend
+//  , nginx: the ACME challenge location in a site, HTTPS added to a site, certificate paths swapped
+//  , removing a site DockGate made
 // Blocks DockGate adds to a shared file (Caddyfile, haproxy.cfg) sit between "# dockgate:begin <domain>" and
 // "# dockgate:end <domain>"; files DockGate makes start with MARK.
-const MARK = '# Made by DockGate (Web → Proxies & SSL).';
+const MARK = '# Made by DockGate (Web > Proxies & SSL).';
 const ACME_ROOT = '/var/lib/dockgate-acme';
 const err = (m) => Object.assign(new Error(m), { statusCode: 400 });
 
@@ -22,7 +22,7 @@ function siteInput(o = {}) {
   for (const a of aliases) if (!DOMAIN_RE.test(a)) throw err(`Not a domain name: ${a}`);
   const targets = (Array.isArray(o.targets) ? o.targets : String(o.targets || '').split(/[\s,]+/)).map(t => String(t.addr || t).trim()).filter(Boolean);
   if (!targets.length) throw err('Choose the container (and port) the domain goes to');
-  for (const t of targets) { if (!TARGET_RE.test(t)) throw err(`Not host:port — ${t}`); const port = Number(t.split(':').pop()); if (port < 1 || port > 65535) throw err(`Bad port in ${t}`); }
+  for (const t of targets) { if (!TARGET_RE.test(t)) throw err(`Not host:port - ${t}`); const port = Number(t.split(':').pop()); if (port < 1 || port > 65535) throw err(`Bad port in ${t}`); }
   const https = ['letsencrypt', 'existing', 'auto', 'none'].includes(o.https) ? o.https : 'none';
   const lb = Object.prototype.hasOwnProperty.call(LB.nginx, o.lb) || o.lb === 'random' || o.lb === 'first' ? o.lb : 'round_robin';
   const FILE = /^\/[\w.@+\-/]{1,300}$/;
@@ -49,7 +49,7 @@ function nginxProxyBlock(s, up, ind) {
 function nginxSite(input, { certReady = true, resolve = false } = {}) {
   const s = siteInput(input);
   const up = s.targets.length > 1 || s.lb !== 'round_robin' ? `dg_${slug(s.domain)}` : s.targets[0];
-  const out = [`${MARK} Site ${s.domain} → ${s.targets.join(', ')}.`, '# DockGate keeps earlier versions of this file; edit it freely.'];
+  const out = [`${MARK} Site ${s.domain} -> ${s.targets.join(', ')}.`, '# DockGate keeps earlier versions of this file; edit it freely.'];
   const res = resolve && s.dockerDns; // container names through Docker's DNS, resolved while nginx runs
   if (up.startsWith('dg_')) out.push(`upstream ${up} {`, ...(LB.nginx[s.lb] ? [`  ${LB.nginx[s.lb]}`] : []), ...(res ? resolveHead(up, '  ') : []), ...s.targets.map(t => `  server ${t}${res && isHostName(t) ? ' resolve' : ''};`), '}');
   const head = (ssl) => [ssl ? `  listen ${s.httpsPort} ssl;` : `  listen ${s.httpPort};`, ...(s.ipv6 ? [ssl ? `  listen [::]:${s.httpsPort} ssl;` : `  listen [::]:${s.httpPort};`] : []), `  server_name ${s.names.join(' ')};`,
@@ -169,7 +169,7 @@ function nginxAddHttps(text, domain, certPath, keyPath, { redirect = true, httpP
 
 /** The statements inside an upstream block (comments dropped, one per `;`, on one line or many). */
 const upstreamStatements = (blockText) => blockText.slice(blockText.indexOf('{') + 1, blockText.lastIndexOf('}')).split('\n').map(l => l.replace(/#.*$/, '')).join(' ').split(';').map(x => x.trim().replace(/\s+/g, ' ')).filter(Boolean);
-/** nginx upstream → { name, method, servers: [{ addr, weight, backup, down, maxFails, failTimeout }] } */
+/** nginx upstream -> { name, method, servers: [{ addr, weight, backup, down, maxFails, failTimeout }] } */
 function nginxUpstreams(text) {
   return nginxBlocks(text, 'upstream').map(b => {
     const servers = []; let method = 'round_robin';
@@ -186,7 +186,7 @@ function nginxUpstreams(text) {
 function lbServers(list) {
   const servers = (list || []).map(x => ({ addr: String(x.addr || '').trim(), weight: Math.max(1, Math.min(100, Number(x.weight) || 1)), backup: !!x.backup, down: !!x.down, maxFails: x.maxFails ? String(Number(x.maxFails) || 1) : null, failTimeout: x.failTimeout && /^\d+[smh]?$/.test(x.failTimeout) ? x.failTimeout : null })).filter(x => x.addr);
   if (!servers.length) throw err('Keep at least one server');
-  for (const s of servers) if (!TARGET_RE.test(s.addr) && !/^unix:\//.test(s.addr)) throw err(`Not host:port — ${s.addr}`);
+  for (const s of servers) if (!TARGET_RE.test(s.addr) && !/^unix:\//.test(s.addr)) throw err(`Not host:port - ${s.addr}`);
   if (!servers.some(s => !s.backup && !s.down)) throw err('At least one server must take traffic (not backup, not down)');
   return servers;
 }
@@ -218,7 +218,7 @@ function nginxSetUpstream(text, name, { method = 'round_robin', servers, resolve
     ...list.map(s => `${ind}server ${s.addr}${s.weight > 1 ? ` weight=${s.weight}` : ''}${s.maxFails ? ` max_fails=${s.maxFails}` : ''}${s.failTimeout ? ` fail_timeout=${s.failTimeout}` : ''}${s.backup ? ' backup' : ''}${s.down ? ' down' : ''}${res && isHostName(s.addr) ? ' resolve' : ''};`), `${b.indent}}`];
   return text.slice(0, b.start) + lines.join('\n') + text.slice(b.end);
 }
-/** `set $v http://host:port; proxy_pass $v;` (DockGate's single-container form) → `proxy_pass http://host:port;` in the servers of `domain`. */
+/** `set $v http://host:port; proxy_pass $v;` (DockGate's single-container form) -> `proxy_pass http://host:port;` in the servers of `domain`. */
 function unsetUpstream(text, domain) {
   let out = text;
   for (const b of nginxBlocks(text, 'server').reverse()) {
@@ -263,13 +263,13 @@ function nginxSiteSettings(text, domain) {
     https: !!tls, http: !!http, redirect: !!http && /return\s+30[18]\s+https:\/\//.test(http.text),
   };
 }
-/** Write the form back: names, the single target, WebSockets, upload limit, http → https (when the site has both servers). */
+/** Write the form back: names, the single target, WebSockets, upload limit, http -> https (when the site has both servers). */
 function nginxApplySettings(text, domain, o = {}) {
   const cur = nginxSiteSettings(text, domain);
   const names = o.names ? [...new Set((Array.isArray(o.names) ? o.names : String(o.names).split(/[\s,]+/)).map(x => x.trim().toLowerCase()).filter(Boolean))] : cur.names;
   if (!names.length) throw err('Keep at least one name');
   for (const n of names) if (!DOMAIN_RE.test(n) && n !== 'localhost' && n !== '_') throw err(`Not a domain name: ${n}`);
-  if (o.target && !TARGET_RE.test(o.target)) throw err(`Not host:port — ${o.target}`);
+  if (o.target && !TARGET_RE.test(o.target)) throw err(`Not host:port - ${o.target}`);
   const maxBody = o.maxBody == null ? cur.maxBody : String(o.maxBody).trim();
   if (maxBody && !/^\d{1,5}[kmg]?$/i.test(maxBody)) throw err('Upload limit: a number with k, m or g (e.g. 50m)');
   let out = text;
@@ -295,7 +295,7 @@ function nginxApplySettings(text, domain, o = {}) {
     }
     if (o.redirect != null && cur.https && cur.http && !isSslServer(b.text)) {
       const others = serverNames(t).filter(n => !cur.names.includes(n) && !names.includes(n));
-      if (others.length && o.redirect !== cur.redirect) throw err(`The HTTP server of ${domain} is shared with ${others.join(', ')} — change the redirect in the editor`);
+      if (others.length && o.redirect !== cur.redirect) throw err(`The HTTP server of ${domain} is shared with ${others.join(', ')} - change the redirect in the editor`);
       const loc = nginxBlocks(t, 'location').find(l => l.args === '/');
       const lind = loc ? loc.indent : ind; // replacements start at the location's indent
       const redirect = `${lind}location / {\n${lind}  return 301 https://$host$request_uri;\n${lind}}`;
@@ -324,7 +324,7 @@ function caddyApplySettings(text, domain, o = {}) {
   const names = o.names ? [...new Set((Array.isArray(o.names) ? o.names : String(o.names).split(/[\s,]+/)).map(x => x.trim().toLowerCase()).filter(Boolean))] : cur.names;
   if (!names.length) throw err('Keep at least one name');
   for (const n of names) if (!DOMAIN_RE.test(n) && n !== 'localhost') throw err(`Not a domain name: ${n}`);
-  if (o.target && !TARGET_RE.test(o.target)) throw err(`Not host:port — ${o.target}`);
+  if (o.target && !TARGET_RE.test(o.target)) throw err(`Not host:port - ${o.target}`);
   const r = caddySiteRange(text, domain); const L = [...r.lines];
   L[r.start] = L[r.start].replace(/^(\s*).*?\{\s*$/, `$1${names.map(n => (cur.plainHttp ? `http://${n}` : n)).join(', ')} {`);
   let t = L.join('\n');
@@ -363,7 +363,7 @@ function caddySiteRange(text, domain) {
   }
   return null;
 }
-/** The reverse_proxy of a Caddy site → { targets, method } */
+/** The reverse_proxy of a Caddy site -> { targets, method } */
 function caddyLb(text, domain) {
   const r = caddySiteRange(text, domain); if (!r) return null;
   const block = r.lines.slice(r.start, r.end + 1).join('\n');
@@ -439,7 +439,7 @@ function apacheSite(input, { certReady = true, loadModules = false } = {}) {
   const proxy = (ind) => [`${ind}ProxyPreserveHost On`, `${ind}ProxyPass /.well-known/acme-challenge/ !`, `${ind}Alias /.well-known/acme-challenge/ ${ACME_ROOT}/.well-known/acme-challenge/`,
     ...(s.websocket && !bal ? [`${ind}RewriteEngine On`, `${ind}RewriteCond %{HTTP:Upgrade} =websocket [NC]`, `${ind}RewriteRule /(.*) ws://${s.targets[0]}/$1 [P,L]`] : []),
     `${ind}ProxyPass ${s.path} ${dest}`, `${ind}ProxyPassReverse ${s.path} ${dest}`, `${ind}RequestHeader set X-Forwarded-Proto expr=%{REQUEST_SCHEME}`];
-  const out = [`${MARK} Site ${s.domain} → ${s.targets.join(', ')}.`];
+  const out = [`${MARK} Site ${s.domain} -> ${s.targets.join(', ')}.`];
   if (loadModules) out.push(...APACHE_MODS.map(([m, f]) => `<IfModule !${m}>\n  LoadModule ${m} modules/${f}\n</IfModule>`));
   if (bal) out.push(`<Proxy balancer://${bal}>`, ...s.targets.map(t => `  BalancerMember http://${t}`), `  ProxySet lbmethod=${s.lb === 'least_conn' ? 'bybusyness' : 'byrequests'}`, '</Proxy>');
   const names = [`  ServerName ${s.domain}`, ...(s.aliases.length ? [`  ServerAlias ${s.aliases.join(' ')}`] : [])];
@@ -453,7 +453,7 @@ function apacheSite(input, { certReady = true, loadModules = false } = {}) {
 }
 
 // ---------- Apache: existing sites ----------
-/** <VirtualHost …> blocks: [{ start, end, text, addr, names, ssl }] */
+/** <VirtualHost ...> blocks: [{ start, end, text, addr, names, ssl }] */
 function apacheVhosts(text) {
   const out = []; const re = /^([ \t]*)<VirtualHost\s+([^>]*)>[\s\S]*?^[ \t]*<\/VirtualHost>[ \t]*$/gim; let m;
   while ((m = re.exec(text))) {
@@ -467,7 +467,7 @@ const apacheAcmeLines = (ind) => [`${ind}ProxyPass /.well-known/acme-challenge/ 
 /** The HTTP vhost of `domain` answers the certificate check (lines added after ServerName; ProxyPass ! must come first). */
 function apacheEnsureAcme(text, domain) {
   const v = apacheVhosts(text).find(x => x.names.includes(domain) && !x.ssl);
-  if (!v) throw err(`No HTTP (*:80) VirtualHost for ${domain} — the certificate check comes over HTTP`);
+  if (!v) throw err(`No HTTP (*:80) VirtualHost for ${domain} - the certificate check comes over HTTP`);
   if (v.text.includes(ACME_ROOT)) return { text, changed: false };
   const ind = v.indent + '  ';
   const t = v.text.replace(/^(\s*ServerName\s+[^\n]+\n)/im, `$1${apacheAcmeLines(ind).join('\n')}\n`);

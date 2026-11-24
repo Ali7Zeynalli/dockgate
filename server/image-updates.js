@@ -1,5 +1,5 @@
 // Newer-image check: for every image a container uses, ask its registry for the digest of the same tag and
-// compare it with the digests `docker pull` recorded locally (RepoDigests). Nothing is pulled or changed —
+// compare it with the digests `docker pull` recorded locally (RepoDigests). Nothing is pulled or changed -
 // the result only says "newer image", "up to date" or why it could not be checked. Runs once a day for
 // every server and on demand ("Check for updates") for the server in use.
 const { stmts, db } = require('./db');
@@ -16,7 +16,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS image_updates (
   notified_digest TEXT,
   PRIMARY KEY (server_id, image)
 )`);
-// Versions read from the image config (local image and the registry's newer one) so the UI can say "15.8 → 15.19".
+// Versions read from the image config (local image and the registry's newer one) so the UI can say "15.8 -> 15.19".
 for (const col of ['local_version TEXT', 'remote_version TEXT', 'remote_created TEXT', 'local_created TEXT']) {
   try { db.exec(`ALTER TABLE image_updates ADD COLUMN ${col}`); } catch (e) { /* already there */ }
 }
@@ -33,7 +33,7 @@ const dropOthers = (serverId, keep) => {
   for (const r of rows) if (!keep.has(r.image)) db.prepare('DELETE FROM image_updates WHERE server_id = ? AND image = ?').run(serverId, r.image);
 };
 
-/** "nginx:1.27" → { host: 'docker.io', repo: 'nginx', tag: '1.27' }. null for image IDs; pinned for @sha256 refs. */
+/** "nginx:1.27" -> { host: 'docker.io', repo: 'nginx', tag: '1.27' }. null for image IDs; pinned for @sha256 refs. */
 function parseRef(ref) {
   const s = String(ref || '').trim();
   if (!s || /^sha256:/.test(s) || /^[0-9a-f]{12,64}$/.test(s)) return null;
@@ -57,13 +57,13 @@ function registryFor(host) {
   return row || { server_address: host };
 }
 
-/** The digests of `repo` this image was pulled with (RepoDigests "repo@sha256:…"). */
+/** The digests of `repo` this image was pulled with (RepoDigests "repo@sha256:..."). */
 function localDigests(image, ref) {
   const want = new Set([ref.repo, `${ref.host}/${ref.repo}`, ref.host === 'docker.io' && !ref.repo.includes('/') ? `library/${ref.repo}` : null].filter(Boolean));
   return (image.RepoDigests || []).map(d => d.split('@')).filter(([r]) => want.has(r) || want.has(r.replace(/^docker\.io\//, ''))).map(([, d]) => d);
 }
 
-// Env names that carry a helper tool's version, not the image's own (gosu, pip, yarn …).
+// Env names that carry a helper tool's version, not the image's own (gosu, pip, yarn ...).
 const HELPER_ENV = /^(GOSU|PYTHON_PIP|PYTHON_SETUPTOOLS|PYTHON_GET_PIP|PIP|SETUPTOOLS|WHEEL|YARN|JSYAML|GPG|DOCKERIZE|TINI|SU_EXEC|NJS|PKG_RELEASE|DYNPKG_RELEASE|ACME|LUA)_VERSION$/;
 // Official images whose version variable is not named after the repo.
 const ENV_ALIAS = { postgres: 'PG', postgis: 'POSTGIS', mongo: 'MONGO', httpd: 'HTTPD', golang: 'GOLANG', rabbitmq: 'RABBITMQ', 'eclipse-temurin': 'JAVA', openjdk: 'JAVA', elasticsearch: 'ELASTIC', mariadb: 'MARIADB' };
@@ -110,8 +110,8 @@ function tagged(byTag, ref) {
 }
 
 /**
- * Containers that run an older image than their tag points at on this server — another container with the
- * same tag was updated, or the image was pulled by hand. Map container ID → { imageId, version, created }.
+ * Containers that run an older image than their tag points at on this server - another container with the
+ * same tag was updated, or the image was pulled by hand. Map container ID -> { imageId, version, created }.
  */
 async function staleContainers(docker) {
   const [containers, images] = await Promise.all([docker.listContainers({ all: true }), docker.listImages({ all: false })]);
@@ -119,7 +119,7 @@ async function staleContainers(docker) {
   const out = new Map();
   const facts = new Map();
   for (const c of containers) {
-    // Docker lists the image ID instead of the tag once the tag points at another image — read the tag
+    // Docker lists the image ID instead of the tag once the tag points at another image - read the tag
     // the container was created with from its config.
     let image = c.Image;
     if (!parseRef(image) && /^(sha256:)?[0-9a-f]{12,64}$/.test(String(image))) {
@@ -147,11 +147,11 @@ async function checkServer(serverId, docker, { fetchDigest = registry.getRemoteD
   const [containers, images] = await Promise.all([docker.listContainers({ all: true }), docker.listImages({ all: false })]);
   const byId = new Map(images.map(i => [i.Id, i]));
   const byTag = tagMap(images);
-  const refs = new Map(); // image ref → the image its tag points at here (falls back to the container's image)
+  const refs = new Map(); // image ref -> the image its tag points at here (falls back to the container's image)
   for (const c of containers) if (c.Image && !refs.has(c.Image)) refs.set(c.Image, tagged(byTag, c.Image) || byId.get(c.ImageID) || null);
   const now = Date.now();
-  const cache = new Map(); // host/repo:tag → digest | Error (same image on many containers)
-  const cfgCache = new Map(); // host/repo:tag → remote config | null
+  const cache = new Map(); // host/repo:tag -> digest | Error (same image on many containers)
+  const cfgCache = new Map(); // host/repo:tag -> remote config | null
   let platform = null;
   for (const [image, img] of refs) {
     const ref = parseRef(image);

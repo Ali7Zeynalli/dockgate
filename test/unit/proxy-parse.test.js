@@ -127,7 +127,7 @@ test('caddy-docker-proxy labels', () => {
   assert.deepEqual(P.caddyLabelSites({ caddy: 'app.example.test', 'caddy.reverse_proxy': '{{upstreams 3000}}' }), [{ domain: 'app.example.test', port: '3000' }]);
 });
 
-test('HAProxy: host ACLs → backends', () => {
+test('HAProxy: host ACLs -> backends', () => {
   const s = P.parseHaproxy(`frontend web
   bind *:443 ssl crt /etc/ssl/site.pem
   acl is_shop hdr(host) -i shop.example.test

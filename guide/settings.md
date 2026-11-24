@@ -1,6 +1,6 @@
 # Settings
 
-> **Where:** sidebar **System → Settings** (General, Security, Notifications, Software update). *System* (the Docker and OS of the server in use) moved to **Server → Status → System info**
+> **Where:** sidebar **System > Settings** (General, Security, Notifications, Software update). *System* (the Docker and OS of the server in use) moved to **Server > Status > System info**
 >
 > Changes save as soon as you make them. Settings are for the whole DockGate, unless a row says otherwise.
 
@@ -13,9 +13,9 @@
 | Row | Meaning |
 |---|---|
 | **Theme** | Light or dark |
-| **Container list** | How **Resources → Containers** opens: table or cards |
+| **Container list** | How **Resources > Containers** opens: table or cards |
 | **Timezone** | Used for dates on every page, in notifications and for schedule times. *Auto (browser)* follows your computer |
-| **Default shell** | The shell picked first in **Tools → Terminal** and the quick terminal (`/bin/sh`, `/bin/bash`…). You can still change it there |
+| **Default shell** | The shell picked first in **Tools > Terminal** and the quick terminal (`/bin/sh`, `/bin/bash`...). You can still change it there |
 | **Log timestamps** | Show the time column in container logs. Time filters work either way |
 | **Start with Docker** | Start the DockGate container whenever Docker starts on this machine (restart policy `unless-stopped`). Off means you start it by hand after a reboot |
 
@@ -48,12 +48,12 @@ Which events send an alert. Each rule has an on/off switch and a **quiet period*
 | Containers | stopped / crashed / out of memory, restarted, unhealthy, started, paused, unpaused |
 | Docker | disk usage, build failed, newer image, image update failed, scheduled task failed |
 | Servers | down, back, disk, memory, CPU |
-| Compose | auto-heal restarted a container (or gave up), Auto Scaling changed a service or the server was full — see [Scaling & health](compose-scaling.md) |
+| Compose | auto-heal restarted a container (or gave up), Auto Scaling changed a service or the server was full - see [Scaling & health](compose-scaling.md) |
 | Swarm | service short of replicas, node down / back, update rolled back, quorum lost, autoscale changed a service |
 
-Server limits (CPU %, memory %, disk %) are **shared** by every server. A server can have its own in **Server → Status → Alerts**; the rule then shows *This server*.
+Server limits (CPU %, memory %, disk %) are **shared** by every server. A server can have its own in **Server > Status > Alerts**; the rule then shows *This server*.
 
-**See what was sent** opens **System → Activity → Notifications sent**. For alerts that keep coming when DockGate is offline, install the [Edge agent](servers.md#edge-agent).
+**See what was sent** opens **System > Activity > Notifications sent**. For alerts that keep coming when DockGate is offline, install the [Edge agent](servers.md#edge-agent).
 
 ---
 
@@ -83,10 +83,10 @@ The Docker engine and system DockGate is connected to (the server in use): Docke
 
 | Row | Meaning |
 |---|---|
-| **Admin password** | Needed to sign in. **Change…** keeps you signed in here and signs out every other browser and device |
-| **Sign out everywhere…** | Ends every DockGate session, this one too. Use it if you signed in on a machine you do not trust, or think a session was copied |
+| **Admin password** | Needed to sign in. **Change...** keeps you signed in here and signs out every other browser and device |
+| **Sign out everywhere...** | Ends every DockGate session, this one too. Use it if you signed in on a machine you do not trust, or think a session was copied |
 
-Forgot the password? See [Getting started → Forgot password](getting-started.md).
+Forgot the password? See [Getting started > Forgot password](getting-started.md).
 
 ## Errors and fixes
 

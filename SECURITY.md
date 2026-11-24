@@ -4,7 +4,7 @@ DockGate controls Docker and servers, so security problems matter. Thank you for
 
 ## Supported versions
 
-Only the **latest release** gets security fixes. Update with **Settings → Software update**, or:
+Only the **latest release** gets security fixes. Update with **Settings > Software update**, or:
 
 ```bash
 docker compose pull && docker compose up -d

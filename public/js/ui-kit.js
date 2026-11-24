@@ -1,6 +1,6 @@
 // Shared building blocks for the server pages, so every section looks and edits the same way:
-// page header (title · one line · actions), status line, standard table with row actions, settings rows
-// (label · description · value · Edit), pills, chips and one form dialog. Pages pass HTML strings in and
+// page header (title, one line, actions), status line, standard table with row actions, settings rows
+// (label, description, value, Edit), pills, chips and one form dialog. Pages pass HTML strings in and
 // attach their own listeners; the kit only renders.
 const UI = {
   esc: (s) => escapeHtml(String(s == null ? '' : s)),
@@ -21,12 +21,12 @@ const UI = {
     return `<div class="ui-ph"><div class="ui-ph-text">${title ? `<div class="ui-ph-title">${title}${q ? ` ${q}` : ''}</div>` : ''}${desc ? `<div class="ui-ph-desc">${desc}</div>` : ''}</div>${actions ? `<div class="ui-ph-actions">${actions}</div>` : ''}</div>`;
   },
 
-  /** One-line summary bar: [html, html, …] with optional actions on the right. */
+  /** One-line summary bar: [html, html, ...] with optional actions on the right. */
   statusLine(items, actions = '') {
     return `<div class="ui-status">${items.filter(Boolean).map(i => `<span>${i}</span>`).join('')}${actions ? `<span class="ui-status-actions">${actions}</span>` : ''}</div>`;
   },
 
-  /** level: ok · warn · bad · off · info */
+  /** level: ok, warn, bad, off, info */
   pill(level, text) { return `<span class="ui-pill ui-pill-${level}">${text}</span>`; },
 
   chip(text, { tone = '', title = '', remove = null, mono = false } = {}) {
@@ -38,7 +38,7 @@ const UI = {
   primary(label, attrs = '') { return `<button type="button" class="btn btn-sm btn-primary" ${attrs}>${label}</button>`; },
 
   /**
-   * Standard table. cols: [{ label, align, width }], rows: [{ cells: [html…], cls }], or html strings.
+   * Standard table. cols: [{ label, align, width }], rows: [{ cells: [html...], cls }], or html strings.
    * Row actions go in the last cell (right aligned) by convention.
    */
   table(cols, rows, { empty = 'Nothing here yet.', minWidth = 640 } = {}) {
@@ -48,7 +48,7 @@ const UI = {
     return `<div class="table-wrapper ui-table"><table style="min-width:${minWidth}px"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   },
 
-  /** Pager under a table: "26–50 of 340 · ‹ Prev · Page 2 of 14 · Next ›". Buttons carry data-page="n" (1-based). Empty when one page is enough. */
+  /** Pager under a table: "26–50 of 340, ‹ Prev, Page 2 of 14, Next ›". Buttons carry data-page="n" (1-based). Empty when one page is enough. */
   pager(page, total, per = 25) {
     const pages = Math.max(1, Math.ceil(total / per));
     if (total <= per) return '';
@@ -59,7 +59,7 @@ const UI = {
       + `<button type="button" class="btn btn-sm btn-secondary" data-page="${p + 1}" ${p >= pages ? 'disabled' : ''}>Next ›</button></span></div>`;
   },
 
-  /** Settings list: [{ label, desc, value, action }] — one row per setting with its own Edit. */
+  /** Settings list: [{ label, desc, value, action }] - one row per setting with its own Edit. */
   settings(rows) {
     return `<div class="ui-settings">${rows.map(r => `<div class="ui-set${r.cls ? ' ' + r.cls : ''}"><div class="ui-set-l"><b>${r.label}</b>${r.desc ? `<span>${r.desc}</span>` : ''}</div><div class="ui-set-v">${r.value == null ? '' : r.value}</div><div class="ui-set-a">${r.action || ''}</div></div>`).join('')}</div>`;
   },
@@ -110,7 +110,7 @@ const UI = {
       head = 'DockGate could not log in';
       cause = `${name} refused the SSH login. Check the user and the key or password in the server's Settings.`;
       acts.push(['settings', 'Open server Settings']);
-    } else if (/timed? ?out|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|unreachable|not found — check the server address/i.test(msg)) {
+    } else if (/timed? ?out|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|unreachable|not found - check the server address/i.test(msg)) {
       head = 'The server is not reachable';
       cause = `${name} did not answer. Check that it is running and that DockGate can reach it (address, port, firewall).`;
       acts.push(['servers', 'Switch server']);
@@ -128,7 +128,7 @@ const UI = {
   },
 
   /**
-   * Row "⋯" menu. items: [{ label, attrs, danger }] — each item is a real button carrying the page's own
+   * Row "⋯" menu. items: [{ label, attrs, danger }] - each item is a real button carrying the page's own
    * data-* attributes, so the page binds it like any other button. Destructive actions go last, in red.
    */
   menu(items, { label = 'More actions' } = {}) {
@@ -137,12 +137,12 @@ const UI = {
     return `<span class="ui-menu"><button type="button" class="btn btn-xs btn-secondary ui-menu-btn" aria-haspopup="menu" aria-expanded="false" aria-label="${UI.esc(label)}" title="${UI.esc(label)}">⋯</button><span class="ui-menu-pop" role="menu" hidden>${list.map(i => i === '-' ? '<span class="ui-menu-sep"></span>' : `<button type="button" role="menuitem" class="ui-menu-item${i.danger ? ' danger' : ''}" ${i.attrs || ''}>${i.label}</button>`).join('')}</span></span>`;
   },
 
-  /** Filter chips with counts: [[value, label, count]] → one pressed. Pages bind [data-chip]. */
+  /** Filter chips with counts: [[value, label, count]] -> one pressed. Pages bind [data-chip]. */
   chips(list, active, attr = 'data-chip') {
     return `<div class="ui-chips">${list.map(([v, l, n]) => `<button type="button" class="ui-fchip" ${attr}="${UI.esc(v)}" aria-pressed="${v === active}">${l}${n != null ? `<span>${n}</span>` : ''}</button>`).join('')}</div>`;
   },
 
-  /** Segmented control: [[value, label]] → one pressed. Pages bind [data-seg]. */
+  /** Segmented control: [[value, label]] -> one pressed. Pages bind [data-seg]. */
   seg(list, active, attr = 'data-seg') {
     return `<span class="ui-seg">${list.map(([v, l]) => `<button type="button" ${attr}="${UI.esc(v)}" aria-pressed="${v === active}">${l}</button>`).join('')}</span>`;
   },
@@ -188,13 +188,13 @@ document.addEventListener('click', (e) => {
   else if (act === 'settings' && srv.id) Router.navigate('server-console', { id: srv.id, tab: 'settings' });
 });
 
-/** Release-note text → HTML: escaped first, then **bold**, `code` and [text](https://link). */
+/** Release-note text > HTML: escaped first, then **bold**, `code` and [text](https://link). */
 function mdInline(text) {
   return escapeHtml(String(text || ''))
     .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\[([^\]]+)\]\((https:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:…!?]|$)/g, '$1<i>$2</i>');
+    .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:...!?]|$)/g, '$1<i>$2</i>');
 }
 
 /** Line diff of two texts as HTML (removed lines red, added green, a few unchanged lines of context). */

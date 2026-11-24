@@ -1,11 +1,11 @@
-// Databases → who wrote a row, when, and how.
+// Databases -> who wrote a row, when, and how.
 //   rowInfo(name, db, s, t, pk)       without any setup: the row's last transaction (xmin) and its commit time
 //                                     (when track_commit_timestamp is on), plus the edits made from DockGate
 //   status / enable / disable          change tracking for a table (opt-in): a trigger writes every INSERT, UPDATE and
-//                                     DELETE — the database user, the application_name, the client address, the time,
-//                                     the old and new values — into dockgate_audit.changes (kept N days, default 90)
-//   rowHistory(…, pk)                  the tracked changes of one row; tableLog(…) of the table (filter by kind / user)
-//   restore(…, changeId)               put a row back as it was before an UPDATE, or bring back a deleted row
+//                                     DELETE - the database user, the application_name, the client address, the time,
+//                                     the old and new values - into dockgate_audit.changes (kept N days, default 90)
+//   rowHistory(..., pk)                  the tracked changes of one row; tableLog(...) of the table (filter by kind / user)
+//   restore(..., changeId)               put a row back as it was before an UPDATE, or bring back a deleted row
 // The trigger function is SECURITY DEFINER, so the app's users need no rights on dockgate_audit.
 const S = require('./pg-studio');
 const P = require('./pg-sql');
@@ -120,7 +120,7 @@ async function rowInfo(name, dbname, schema, table, pk, container) {
   const info = await S.json(t, dbname, `select json_build_object('xmin', (select xmin::text from ${P.qname(st.schema, st.name)} where ${where}),
     'committed', case when current_setting('track_commit_timestamp') = 'on' then (select pg_xact_commit_timestamp(xmin) from ${P.qname(st.schema, st.name)} where ${where}) end,
     'commitTimes', current_setting('track_commit_timestamp') = 'on')`);
-  // edits from DockGate (its own audit log): who in DockGate is "the admin" — so the time, the address and what changed
+  // edits from DockGate (its own audit log): who in DockGate is "the admin" - so the time, the address and what changed
   const key = JSON.stringify(Object.fromEntries(st.pk.map(k => [k, String(pk[k])])));
   const mine = localDb.prepare(`SELECT action, details, created_at, source_ip FROM activity WHERE resource_type = 'database' AND resource_name = ? AND action IN ('db_changes', 'db_row_update', 'db_row_insert', 'db_row_delete', 'db_restore_row') ORDER BY id DESC LIMIT 500`).all(`${container}/${dbname}`)
     .map(r => ({ ...r, d: (() => { try { return JSON.parse(r.details || '{}'); } catch (e) { return {}; } })() }))

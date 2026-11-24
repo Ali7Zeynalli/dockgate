@@ -1,4 +1,4 @@
-// Server Console → Settings (DigitalOcean / Hetzner "Settings" style): one row per setting with its own
+// Server Console > Settings (DigitalOcean / Hetzner "Settings" style): one row per setting with its own
 // Edit, a connection test, Docker access for the SSH user, the pinned host key, and a Danger zone that
 // removes the server from DockGate. Replaces the old "Edit server" modal on the Servers list.
 
@@ -15,25 +15,25 @@ async function renderServerSettings(serverId, container) {
   container.innerHTML = `<div class="ui-page">
     ${UI.header('Settings', 'How DockGate knows and reaches this server.')}
     ${UI.settings([
-      { label: 'Name', desc: 'Shown everywhere in DockGate. The ID stays the same.', value: `${escapeHtml(s.name || '—')} <div class="ui-sub td-mono">${escapeHtml(s.id)}</div>`, action: UI.btn('Edit', 'data-edit="name"') },
-      { label: 'Description', desc: 'A note for you.', value: escapeHtml(s.description || '—'), action: UI.btn('Edit', 'data-edit="desc"') },
+      { label: 'Name', desc: 'Shown everywhere in DockGate. The ID stays the same.', value: `${escapeHtml(s.name || '-')} <div class="ui-sub td-mono">${escapeHtml(s.id)}</div>`, action: UI.btn('Edit', 'data-edit="name"') },
+      { label: 'Description', desc: 'A note for you.', value: escapeHtml(s.description || '-'), action: UI.btn('Edit', 'data-edit="desc"') },
       { label: 'Connection', desc: 'Where DockGate connects over SSH.', value: `<span class="td-mono">${escapeHtml(s.username)}@${escapeHtml(s.host)}:${s.port || 22}</span>`, action: UI.btn('Edit', 'data-edit="conn"') },
       { label: 'Login', desc: 'How DockGate authenticates.', value: `${auth}${s.username === 'root' ? ' ' + UI.pill('warn', 'root') : ''}`, action: UI.btn('Change', 'data-edit="auth"') },
-      { label: 'Connection test', desc: 'Logs in now and checks Docker.', value: '<span class="ui-sub" data-testout>—</span>', action: UI.btn('Test', 'data-test') },
-      { label: 'Docker access', desc: 'Adds the SSH user to the docker group (sudo usermod -aG docker). Needs passwordless sudo.', value: '', action: UI.btn('Grant…', 'data-grant') },
-      { label: 'Host key', desc: 'The server identity, pinned on first connect. A different key is refused.', value: s.hostKey ? `<span class="td-mono text-xs">${escapeHtml(s.hostKey)}</span>${s.hostKeyAt ? `<div class="ui-sub">pinned ${escapeHtml(String(s.hostKeyAt).slice(0, 16))}</div>` : ''}` : '<span class="ui-sub">not pinned yet — pinned on the next connection</span>', action: s.hostKey ? UI.btn('Re-trust…', 'data-retrust', 'btn-danger') : '' },
+      { label: 'Connection test', desc: 'Logs in now and checks Docker.', value: '<span class="ui-sub" data-testout>-</span>', action: UI.btn('Test', 'data-test') },
+      { label: 'Docker access', desc: 'Adds the SSH user to the docker group (sudo usermod -aG docker). Needs passwordless sudo.', value: '', action: UI.btn('Grant...', 'data-grant') },
+      { label: 'Host key', desc: 'The server identity, pinned on first connect. A different key is refused.', value: s.hostKey ? `<span class="td-mono text-xs">${escapeHtml(s.hostKey)}</span>${s.hostKeyAt ? `<div class="ui-sub">pinned ${escapeHtml(String(s.hostKeyAt).slice(0, 16))}</div>` : ''}` : '<span class="ui-sub">not pinned yet - pinned on the next connection</span>', action: s.hostKey ? UI.btn('Re-trust...', 'data-retrust', 'btn-danger') : '' },
       { label: 'Access password', desc: 'A second password before anyone switches to this server in DockGate.', value: s.hasAccessPassword ? UI.pill('ok', 'On') : UI.pill('off', 'Off'), action: UI.btn('Edit', 'data-edit="access"') },
       { label: 'Alerts', desc: 'Telegram / email notifications for this server.', value: s.notifications_enabled === 0 ? UI.pill('off', 'Muted') : UI.pill('ok', 'On'), action: UI.btn(s.notifications_enabled === 0 ? 'Turn on' : 'Mute', 'data-alerts') },
     ])}
-    <div class="ui-settings ui-danger-zone">${UI.settings([{ cls: 'ui-danger', label: 'Remove server from DockGate', desc: 'DockGate forgets this server, its SSH key file and history. Nothing on the server is changed.', value: '', action: UI.btn('Remove…', 'data-remove', 'btn-danger') }]).replace(/^<div class="ui-settings">|<\/div>$/g, '')}</div>
+    <div class="ui-settings ui-danger-zone">${UI.settings([{ cls: 'ui-danger', label: 'Remove server from DockGate', desc: 'DockGate forgets this server, its SSH key file and history. Nothing on the server is changed.', value: '', action: UI.btn('Remove...', 'data-remove', 'btn-danger') }]).replace(/^<div class="ui-settings">|<\/div>$/g, '')}</div>
   </div>`;
 
   const q = (sel) => container.querySelector(sel);
   q('[data-test]').onclick = async (e) => {
-    const out = q('[data-testout]'); e.target.disabled = true; out.textContent = 'Testing…';
+    const out = q('[data-testout]'); e.target.disabled = true; out.textContent = 'Testing...';
     try {
       const r = await API.post('/servers/test', { id: serverId });
-      out.innerHTML = r.success ? (r.docker === false ? UI.pill('warn', 'SSH OK · no Docker') : UI.pill('ok', `SSH OK · Docker ${escapeHtml(r.version)}`)) : `<span style="color:var(--danger)">${escapeHtml(sshErrorHint(r.error || 'failed'))}</span>`;
+      out.innerHTML = r.success ? (r.docker === false ? UI.pill('warn', 'SSH OK, no Docker') : UI.pill('ok', `SSH OK, Docker ${escapeHtml(r.version)}`)) : `<span style="color:var(--danger)">${escapeHtml(sshErrorHint(r.error || 'failed'))}</span>`;
     } catch (er) { out.innerHTML = `<span style="color:var(--danger)">${escapeHtml(er.message)}</span>`; }
     finally { e.target.disabled = false; }
   };
@@ -58,7 +58,7 @@ async function renderServerSettings(serverId, container) {
     conn: () => UI.dialog({
       title: 'Connection',
       body: `<div class="ui-row"><div class="ui-field" style="flex:1;min-width:200px"><label for="ss-host">Host or IP</label><input class="input" id="ss-host" value="${escapeHtml(s.host)}"></div><div class="ui-field"><label for="ss-port">Port</label><input class="input" id="ss-port" type="number" value="${s.port || 22}" style="width:90px"></div><div class="ui-field"><label for="ss-user">User</label><input class="input" id="ss-user" value="${escapeHtml(s.username)}" style="width:130px"></div></div>
-        <div class="ui-sub">Pointing DockGate at a different machine? Its host key will not match the pinned one — use Re-trust afterwards.</div>`,
+        <div class="ui-sub">Pointing DockGate at a different machine? Its host key will not match the pinned one - use Re-trust afterwards.</div>`,
       onSave: (ov) => { const host = ov.querySelector('#ss-host').value.trim(), username = ov.querySelector('#ss-user').value.trim(); if (!host || !username) throw new Error('Host and user are required'); return save({ host, username, port: Number(ov.querySelector('#ss-port').value) || 22 }, 'Connection saved'); },
     }),
     auth: () => {
@@ -79,7 +79,7 @@ async function renderServerSettings(serverId, container) {
           if (mode === 'key') { body.privateKey = ov.querySelector('#ss-key').value; body.passphrase = ov.querySelector('#ss-pp').value || undefined; if (!body.privateKey.trim()) throw new Error('Paste the private key'); }
           else { body.password = ov.querySelector('#ss-pw').value; if (!body.password) throw new Error('Enter the password'); }
           const t = await API.post('/servers/test', body);
-          if (!t.success) throw new Error(`Login test failed — nothing saved. ${sshErrorHint(t.error || '')}`);
+          if (!t.success) throw new Error(`Login test failed - nothing saved. ${sshErrorHint(t.error || '')}`);
           return save(body, 'Login saved');
         },
       });

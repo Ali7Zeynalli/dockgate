@@ -1,21 +1,21 @@
 // One log viewer for every log in DockGate (container logs, host logs, events, audit, notifications, build and
 // deploy output, setup runs, fail2ban bans, service journals). Same toolbar everywhere:
-//   search (highlights, regex, match case, ↑/↓ or Enter to jump) · level chips with counts · source · time range ·
-//   how many of the newest lines to load (1,000 … 10,000, remembered per place) · Live/Pause · Wrap · Copy · Download
+//   search (highlights, regex, match case, ↑/↓ or Enter to jump), level chips with counts, source, time range ·
+//   how many of the newest lines to load (1,000 ... 10,000, remembered per place), Live/Pause, Wrap, Copy, Download
 // A per-minute histogram (red = errors) zooms to a minute on click; a line opens its details. Only the visible rows
 // are drawn, so 10,000 lines scroll as smoothly as 100.
 //
-// LogViewer.mount(el, opts) → { reload(), push(textOrRows), setText(text), setRows(rows), destroy() }
+// LogViewer.mount(el, opts) -> { reload(), push(textOrRows), setText(text), setRows(rows), destroy() }
 //   opts.key        remembers the load limit / wrap per place (localStorage, best effort)
-//   opts.title, opts.desc, opts.retention   header texts ("keeps the last 10,000", "the server keeps it" …)
+//   opts.title, opts.desc, opts.retention   header texts ("keeps the last 10,000", "the server keeps it" ...)
 //   opts.limits     [1000, 2000, 5000, 8000, 10000] (default) or null when the place has no limit to choose
 //   opts.load       async (limit) => ({ rows } | { text, format? })   rows: [{ t, l, src, msg, meta }]
-//   opts.format     how text lines are read: 'auto' (default) · 'docker' · 'plain'
+//   opts.format     how text lines are read: 'auto' (default), 'docker', 'plain'
 //   opts.tools      extra toolbar HTML (e.g. a source picker); opts.onTools(el, viewer) wires it
-//   opts.live       true → shows Live/Pause; lines arrive through push()
-//   opts.poll       ms → reload() every ms while Live is on (for places without a stream)
-//   opts.liveDefault false → starts Paused (e.g. host logs: polling 10,000 lines over SSH is opt-in)
-//   opts.showTime   false hides the time column (Settings → Log timestamps); times still drive the filters
+//   opts.live       true -> shows Live/Pause; lines arrive through push()
+//   opts.poll       ms -> reload() every ms while Live is on (for places without a stream)
+//   opts.liveDefault false -> starts Paused (e.g. host logs: polling 10,000 lines over SSH is opt-in)
+//   opts.showTime   false hides the time column (Settings > Log timestamps); times still drive the filters
 //   opts.height     list height (default 60vh); opts.compact hides the histogram
 //   opts.empty      text when there is nothing to show
 const LogViewer = (() => {
@@ -33,13 +33,13 @@ const LogViewer = (() => {
   function levelOf(s) {
     const own = /"(?:level|severity|lvl|log\.level)"\s*:\s*"([a-zA-Z]+)"/.exec(s) || /(?:^|\s)(?:level|lvl|severity)=["']?([a-zA-Z]+)\b/.exec(s);
     if (own && OWN_LEVEL[own[1].toLowerCase()]) return OWN_LEVEL[own[1].toLowerCase()];
-    if (/^(E|ERR!?):? /.test(s) || /\bnpm ERR!/.test(s)) return 'E'; // apt "E: …", npm "ERR!"
+    if (/^(E|ERR!?):? /.test(s) || /\bnpm ERR!/.test(s)) return 'E'; // apt "E: ...", npm "ERR!"
     if (/\b(fatal|panic|emerg|alert|crit(ical)?|err(or)?|exception|traceback|fail(ed|ure)?|denied|refused|oom|killed|segfault)\b|\bE\d{4}\b|level=(error|fatal)|"level":"(error|fatal)"|\[(error|err)\]/i.test(s)) return 'E';
     if (/\b(warn(ing)?|deprecated|retry(ing)?|timeout|timed out|slow|invalid user|preauth)\b|level=warn|"level":"warn"|\[warn\]/i.test(s)) return 'W';
     if (/\b(debug|trace|verbose)\b|level=debug|"level":"debug"|\[debug\]/i.test(s)) return 'D';
     return 'I';
   }
-  /** One text line → { t, l, src, msg }. Understands Docker timestamps, journald short-iso, syslog, fail2ban. */
+  /** One text line -> { t, l, src, msg }. Understands Docker timestamps, journald short-iso, syslog, fail2ban. */
   function parseLine(line, format) {
     let t = null, src = '', msg = line, m;
     if ((m = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)?)\s+(.*)$/.exec(line))) { // Docker / journald short-iso
@@ -67,11 +67,11 @@ const LogViewer = (() => {
       wrap: !!saved.wrap, live: (opts.live || opts.poll) ? opts.liveDefault !== false : false, limit: limits ? (limits.includes(saved.limit) ? saved.limit : (opts.defaultLimit || limits[0])) : null };
     let rows = [], view = [], matches = [], timer = null, loading = false, destroyed = false;
     el.classList.add('lv');
-    el.classList.toggle('lv-notime', opts.showTime === false); // Settings → Log timestamps (times still drive filters)
+    el.classList.toggle('lv-notime', opts.showTime === false); // Settings > Log timestamps (times still drive filters)
     el.innerHTML = `
       ${opts.title || opts.retention ? `<div class="lv-head"><div><b>${esc(opts.title || '')}</b>${opts.desc ? `<div class="ui-sub">${esc(opts.desc)}</div>` : ''}</div>${opts.retention ? `<span class="lv-ret" title="How much of this log is kept">${esc(opts.retention)}</span>` : ''}</div>` : ''}
       <div class="lv-tools">
-        <div class="lv-search"><input data-q placeholder="Search…  (Enter = next match)" aria-label="Search the log"><button type="button" data-rx aria-pressed="false" title="Regular expression">.*</button><button type="button" data-cs aria-pressed="false" title="Match case">Aa</button></div>
+        <div class="lv-search"><input data-q placeholder="Search...  (Enter = next match)" aria-label="Search the log"><button type="button" data-rx aria-pressed="false" title="Regular expression">.*</button><button type="button" data-cs aria-pressed="false" title="Match case">Aa</button></div>
         <span class="lv-levels" data-levels></span>
         ${opts.tools || ''}
         <select class="select" data-src aria-label="Source"></select>
@@ -118,9 +118,9 @@ const LogViewer = (() => {
       $('[data-range]').style.display = hasTime() ? '' : 'none';
       drawHist(); draw(!keepScroll);
       const shown = view.length.toLocaleString(), total = rows.length.toLocaleString();
-      $('[data-status]').innerHTML = loading ? 'Loading…' : (view.length === rows.length ? `<b>${total}</b> line${rows.length === 1 ? '' : 's'}` : `<b>${shown}</b> of <b>${total}</b> lines`)
-        + (st.limit && rows.length >= st.limit ? ` · the newest ${st.limit.toLocaleString()} loaded` : '')
-        + (m === 'bad' ? ' · <span class="lv-e">invalid regex</span>' : m ? ` · <b>${matches.length.toLocaleString()}</b> match${matches.length === 1 ? '' : 'es'}` : '');
+      $('[data-status]').innerHTML = loading ? 'Loading...' : (view.length === rows.length ? `<b>${total}</b> line${rows.length === 1 ? '' : 's'}` : `<b>${shown}</b> of <b>${total}</b> lines`)
+        + (st.limit && rows.length >= st.limit ? `, the newest ${st.limit.toLocaleString()} loaded` : '')
+        + (m === 'bad' ? ', <span class="lv-e">invalid regex</span>' : m ? `, <b>${matches.length.toLocaleString()}</b> match${matches.length === 1 ? '' : 'es'}` : '');
     }
     function drawHist() {
       const h = $('[data-hist]'); if (!h) return;
@@ -131,10 +131,10 @@ const LogViewer = (() => {
       const b = Array.from({ length: N }, () => ({ E: 0, W: 0, O: 0, m: null }));
       for (const r of tr) { const i = Math.min(N - 1, Math.floor((r.t - t0) / w)); const x = b[i]; if (x.m == null) x.m = Math.floor(r.t / 60000); if (r.l === 'E') x.E++; else if (r.l === 'W') x.W++; else x.O++; }
       const max = Math.max(1, ...b.map(x => x.E + x.W + x.O)), long = t1 - t0 > 86400000;
-      h.innerHTML = b.map((x, i) => `<div data-b="${i}" class="${st.minute != null && x.m === st.minute ? 'lv-sel' : ''}" title="${esc(fmtT(t0 + i * w, true))} · ${x.E} errors, ${x.W} warnings, ${x.O} other" style="height:${((x.E + x.W + x.O) / max) * 100}%"><span style="flex:${x.O}" class="lv-bo"></span><span style="flex:${x.W}" class="lv-bw"></span><span style="flex:${x.E}" class="lv-be"></span></div>`).join('');
+      h.innerHTML = b.map((x, i) => `<div data-b="${i}" class="${st.minute != null && x.m === st.minute ? 'lv-sel' : ''}" title="${esc(fmtT(t0 + i * w, true))}, ${x.E} errors, ${x.W} warnings, ${x.O} other" style="height:${((x.E + x.W + x.O) / max) * 100}%"><span style="flex:${x.O}" class="lv-bo"></span><span style="flex:${x.W}" class="lv-bw"></span><span style="flex:${x.E}" class="lv-be"></span></div>`).join('');
       h._b = b;
       $('[data-hfrom]').textContent = fmtT(t0, long); $('[data-hto]').textContent = fmtT(t1, long);
-      $('[data-hsel]').innerHTML = st.minute != null ? `showing ${esc(fmtT(st.minute * 60000, true))} · <a href="#" data-hclr>show all</a>` : '';
+      $('[data-hsel]').innerHTML = st.minute != null ? `showing ${esc(fmtT(st.minute * 60000, true))}, <a href="#" data-hclr>show all</a>` : '';
     }
     function hl(s) {
       const m = matcher(), e = esc(s);
@@ -148,7 +148,7 @@ const LogViewer = (() => {
       if (st.wrap) { // wrapped lines have different heights: draw the newest 1,500 directly
         const part = view.slice(-1500);
         spacer.style.height = 'auto';
-        spacer.innerHTML = (view.length > part.length ? `<div class="lv-more">${(view.length - part.length).toLocaleString()} older lines hidden in Wrap view — search or filter to narrow down</div>` : '') + part.map((r, k) => rowHtml(r, view.length - part.length + k, null)).join('');
+        spacer.innerHTML = (view.length > part.length ? `<div class="lv-more">${(view.length - part.length).toLocaleString()} older lines hidden in Wrap view - search or filter to narrow down</div>` : '') + part.map((r, k) => rowHtml(r, view.length - part.length + k, null)).join('');
         if (toBottom && st.live) list.scrollTop = list.scrollHeight;
         return;
       }
@@ -158,7 +158,7 @@ const LogViewer = (() => {
       const a = Math.max(0, Math.floor(top / ROW) - 8), z = Math.min(view.length, Math.ceil((top + hgt) / ROW) + 8);
       let html = '';
       for (let i = a; i < z; i++) html += rowHtml(view[i], i, i * ROW);
-      spacer.innerHTML = view.length ? html : `<div class="lv-empty">${loading ? 'Loading…' : esc(rows.length ? 'Nothing matches the filters.' : (opts.empty || 'No log lines.'))}</div>`;
+      spacer.innerHTML = view.length ? html : `<div class="lv-empty">${loading ? 'Loading...' : esc(rows.length ? 'Nothing matches the filters.' : (opts.empty || 'No log lines.'))}</div>`;
     }
     function rowHtml(r, i, top) {
       return `<div class="lv-row ${r.l === 'E' ? 'lv-re' : r.l === 'W' ? 'lv-rw' : ''} ${i === st.cur ? 'lv-cur' : ''}" data-i="${i}" ${top != null ? `style="top:${top}px"` : ''}>`
@@ -210,7 +210,7 @@ const LogViewer = (() => {
     el.querySelector('.lv-histax')?.addEventListener('click', (e) => { if (e.target.closest('[data-hclr]')) { e.preventDefault(); st.minute = null; apply(); } });
     list.addEventListener('scroll', () => { if (!st.wrap) draw(false); const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - ROW * 2; if (!atBottom && st.live && (opts.live || opts.poll) && document.activeElement === list) setLive(false); });
     list.addEventListener('click', (e) => { const r = e.target.closest('[data-i]'); if (!r) return; const x = view[Number(r.dataset.i)]; if (!x) return;
-      $('[data-dtitle]').textContent = `${LV[x.l]}${x.src ? ' · ' + x.src : ''}`;
+      $('[data-dtitle]').textContent = `${LV[x.l]}${x.src ? ', ' + x.src : ''}`;
       $('[data-dmeta]').innerHTML = `${x.t != null ? `<dt>Time</dt><dd>${esc(new Date(x.t).toLocaleString())}</dd>` : ''}<dt>Level</dt><dd class="lv-${LVC[x.l]}">${LV[x.l]}</dd>${x.src ? `<dt>Source</dt><dd>${esc(x.src)}</dd>` : ''}${x.meta ? Object.entries(x.meta).filter(([, v]) => v != null && v !== '').map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('') : ''}`;
       const j = x.msg.match(/\{[\s\S]*\}$/); let body = x.msg;
       if (j) { try { body = x.msg.slice(0, j.index) + '\n\n' + JSON.stringify(JSON.parse(j[0]), null, 2); } catch (e2) { /* not JSON */ } }
@@ -232,7 +232,7 @@ const LogViewer = (() => {
         const add = typeof data === 'string' ? toRows({ text: data }) : toRows({ rows: [].concat(data) });
         if (!add.length) return;
         rows.push(...add); if (st.limit && rows.length > st.limit) rows.splice(0, rows.length - st.limit);
-        if (!st.live && (opts.live || opts.poll)) { $('[data-status]').innerHTML = `Paused · <b>${rows.length.toLocaleString()}</b> lines (new ones are kept)`; return; }
+        if (!st.live && (opts.live || opts.poll)) { $('[data-status]').innerHTML = `Paused, <b>${rows.length.toLocaleString()}</b> lines (new ones are kept)`; return; }
         if (!api._raf) api._raf = requestAnimationFrame(() => { api._raf = null; apply(); });
       },
       setText(text, format) { rows = toRows({ text, format }); if (st.limit) rows = rows.slice(-st.limit); apply(); },

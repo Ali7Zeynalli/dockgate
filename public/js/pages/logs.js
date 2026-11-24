@@ -1,4 +1,4 @@
-// Observe → Logs: one container live, all containers at once, the server's own logs, Log Doctor.
+// Observe > Logs: one container live, all containers at once, the server's own logs, Log Doctor.
 // The first three use the shared LogViewer (public/js/log-viewer.js): search, levels, histogram, up to 10,000 lines.
 
 Router.register('logs', async (content, params = {}) => {
@@ -49,7 +49,7 @@ Router.register('logs', async (content, params = {}) => {
     try { services = (await API.get('/swarm/services')).services; } catch (e) { viewRoot.innerHTML = UI.errorState(e, { compact: true }); return; }
     if (!Router.isActiveNav(pageNavId) || currentMode !== 'swarm') return;
     const pre = services.find(x => x.name === params.service || x.id === params.service);
-    const tools = `<select class="select" data-svc aria-label="Service" style="max-width:260px"><option value="">Choose a service…</option>${services.map(x => `<option value="${escapeHtml(x.id)}" ${pre && pre.id === x.id ? 'selected' : ''}>${escapeHtml(x.name)} (${x.running}/${x.desired})</option>`).join('')}</select>`;
+    const tools = `<select class="select" data-svc aria-label="Service" style="max-width:260px"><option value="">Choose a service...</option>${services.map(x => `<option value="${escapeHtml(x.id)}" ${pre && pre.id === x.id ? 'selected' : ''}>${escapeHtml(x.name)} (${x.running}/${x.desired})</option>`).join('')}</select>`;
     viewRoot.innerHTML = '<div data-lvroot></div>';
     let sel;
     LogViewer.mount(viewRoot.querySelector('[data-lvroot]'), {
@@ -75,7 +75,7 @@ Router.register('logs', async (content, params = {}) => {
     const sorted = [...containers].sort((a, b) => (b.state === 'running') - (a.state === 'running') || String(a.name).localeCompare(String(b.name)));
     const pre = sorted.find(c => preselectContainer && (c.name === preselectContainer || c.id === preselectContainer || c.id.startsWith(preselectContainer)));
     const tools = `<select class="select" data-cid aria-label="Container" style="max-width:240px">
-        <option value="">Choose a container…</option>
+        <option value="">Choose a container...</option>
         ${sorted.map(c => `<option value="${escapeHtml(c.id)}" ${pre && pre.id === c.id ? 'selected' : ''}>${escapeHtml(c.name)}${c.state === 'running' ? '' : ` (${escapeHtml(c.state)})`}</option>`).join('')}
       </select>
       <select class="select" data-period aria-label="Read from Docker" title="Which part of the container's log to read from Docker">
@@ -125,11 +125,11 @@ Router.register('logs', async (content, params = {}) => {
   }
 
   // =========================================================================
-  // 2. Host logs: the same view as Server Console → Logs (one implementation)
+  // 2. Host logs: the same view as Server Console > Logs (one implementation)
   // =========================================================================
   async function renderHostLogsView() {
     if (window._activeLogStreamTeardown) { window._activeLogStreamTeardown(); window._activeLogStreamTeardown = null; }
-    const link = serverId !== 'local' ? ` · the same view as <a href="#" data-console>Server Console → Logs</a>` : '';
+    const link = serverId !== 'local' ? `, the same view as <a href="#" data-console>Server Console > Logs</a>` : '';
     viewRoot.innerHTML = `<p class="ui-sub" style="margin:0 0 8px">${escapeHtml(activeServer.name || serverId)}${link}</p><div data-hlroot></div>`;
     viewRoot.querySelector('[data-console]')?.addEventListener('click', (e) => { e.preventDefault(); Router.navigate('server-console', { id: serverId, tab: 'logs' }); });
     renderHostLogs(serverId, viewRoot.querySelector('[data-hlroot]'), { header: false });
@@ -160,7 +160,7 @@ Router.register('logs', async (content, params = {}) => {
           <div style="display:flex;align-items:center;gap:14px;">
             <div style="text-align:right;">
               <div style="font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:0.5px;">SERVER HEALTH SCORE</div>
-              <div id="doctor-score-val" style="font-size:28px;font-weight:800;color:#10b981;">—/100</div>
+              <div id="doctor-score-val" style="font-size:28px;font-weight:800;color:#10b981;">-/100</div>
             </div>
             <button class="btn btn-secondary btn-sm" id="doctor-rescan-btn" style="padding:6px 14px;">🔄 Re-Scan</button>
           </div>
@@ -169,7 +169,7 @@ Router.register('logs', async (content, params = {}) => {
         <!-- Issue Cards Container -->
         <div id="doctor-issues-list" style="display:flex;flex-direction:column;gap:12px;">
           <div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">
-            Scanning log buffers for anomalies…
+            Scanning log buffers for anomalies...
           </div>
         </div>
       </div>
@@ -180,7 +180,7 @@ Router.register('logs', async (content, params = {}) => {
     const issuesList = viewRoot.querySelector('#doctor-issues-list');
 
     async function runScan() {
-      scoreVal.textContent = '…';
+      scoreVal.textContent = '...';
       try {
         const doc = await API.get(`/monitoring/${serverId}/doctor`);
         if (!document.body.contains(scoreVal)) return;
@@ -221,8 +221,7 @@ Router.register('logs', async (content, params = {}) => {
                 </div>
                 ${iss.action ? `
                   <button class="btn btn-primary btn-sm" onclick="Router.navigate('${iss.action.page}', { tab: '${iss.action.tab || ''}' })" style="align-self:center;white-space:nowrap;font-size:12px;padding:6px 14px;">
-                    ${escapeHtml(iss.action.label)} →
-                  </button>
+                    ${escapeHtml(iss.action.label)} ->                   </button>
                 ` : ''}
               </div>
             `;

@@ -56,7 +56,7 @@ test('check, compare, connect, pull, undo', { skip: !hasGit }, async () => {
   assert.equal(git(d, 'rev-parse', '--abbrev-ref', '@{u}').trim(), 'origin/main');
   assert.equal(git(d, 'status', '--porcelain').trim(), '?? notes.txt', '.dockgate files are excluded');
 
-  // a new commit arrives → git pull works in the folder
+  // a new commit arrives -> git pull works in the folder
   const src = path.join(root, 'shop-src'); w(src, 'app.txt', 'v3\n'); git(src, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'v3'); git(src, 'push', '-q', url.replace('file://', ''), 'HEAD:main');
   git(d, 'pull', '-q'); assert.equal(r(d, 'app.txt'), 'v3\n');
 

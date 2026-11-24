@@ -29,7 +29,7 @@ const Store = {
   },
 };
 
-// What a list page shows — filter, search, sort — kept for this browser tab, so going back to the page
+// What a list page shows - filter, search, sort - kept for this browser tab, so going back to the page
 // (Back, the sidebar, after opening an item) shows it as you left it. sessionStorage: cleared when the
 // tab closes; a blocked storage just means the defaults.
 Store.view = (page) => ({

@@ -17,7 +17,7 @@ describe('Agent Observability - Centralized Log Storage & Classification', () =>
 
     // stderr alone is a warning (postgres, nginx write normal lines there); words or a 5xx status make an error
     const errors = storage.getLogs({ level: 'error' });
-    assert.equal(errors.returned, 1, 'HTTP 500 … Error is an error');
+    assert.equal(errors.returned, 1, 'HTTP 500 ... Error is an error');
 
     const warnings = storage.getLogs({ level: 'warn' });
     assert.equal(warnings.returned, 2, 'the Deprecated line and the plain stderr line');

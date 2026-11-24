@@ -1,5 +1,5 @@
 'use strict';
-// Server Console → Cron: schedules (next runs, words), crontab parsing and editing, the scripts DockGate runs on a
+// Server Console > Cron: schedules (next runs, words), crontab parsing and editing, the scripts DockGate runs on a
 // server (with crontab / sudo shims, so nothing on this machine changes), the dg-cron wrapper and the alerts.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -65,7 +65,7 @@ if [ "$1" = "-l" ]; then [ -f "$f" ] && cat "$f" || { echo "no crontab for $u" >
 if [ "$1" = "-" ]; then cat > "$f"; exit 0; fi
 exit 2
 `, { mode: 0o755 });
-// sudo -n …: run it as is; "install -o root …" and /etc paths are mapped under BASE
+// sudo -n ...: run it as is; "install -o root ..." and /etc paths are mapped under BASE
 fs.writeFileSync(path.join(BIN, 'sudo'), `#!/bin/bash
 [ "$1" = "-n" ] && shift
 if [ "$1" = "install" ]; then shift; args=(); while [ $# -gt 0 ]; do case "$1" in -o|-g|-m) shift 2;; -D) shift;; *) args+=("$1"); shift;; esac; done; mkdir -p "$(dirname "${BASE}\${args[1]}")"; cp "\${args[0]}" "${BASE}\${args[1]}" && chmod 755 "${BASE}\${args[1]}"; exit $?; fi
@@ -126,7 +126,7 @@ test('read and change crontabs on a server; turned off / deleted jobs; the wrapp
 });
 
 test('parsing systemd timers, cron log lines and the wrapper state', () => {
-  const t = cron.parseTimers('Id=apt-daily.timer\nUnit=apt-daily.service\nActiveState=active\nNextElapseUSecRealtime=Mon 2026-11-16 18:12:00 UTC\nLastTriggerUSec=Mon 2026-11-16 06:02:00 UTC\nTimersCalendar={ OnCalendar=*-*-* 06,18:00:00 ; next_elapse=… }\n\nId=old.timer\nActiveState=inactive\n');
+  const t = cron.parseTimers('Id=apt-daily.timer\nUnit=apt-daily.service\nActiveState=active\nNextElapseUSecRealtime=Mon 2026-11-16 18:12:00 UTC\nLastTriggerUSec=Mon 2026-11-16 06:02:00 UTC\nTimersCalendar={ OnCalendar=*-*-* 06,18:00:00 ; next_elapse=... }\n\nId=old.timer\nActiveState=inactive\n');
   assert.equal(t.length, 1); assert.equal(t[0].calendar, '*-*-* 06,18:00:00'); assert.equal(iso(t[0].next), '2026-11-16T18:12');
   const runs = cron.parseRuns('1794830400.123 host CRON[123]: (root) CMD (/opt/b.sh)\n');
   assert.equal(runs.get('root\u0000/opt/b.sh'), 1794830400123);

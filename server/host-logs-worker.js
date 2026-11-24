@@ -1,4 +1,4 @@
-// Isolated host-logs worker — connects over ssh2, runs the (server-built, allowlisted) log command from
+// Isolated host-logs worker - connects over ssh2, runs the (server-built, allowlisted) log command from
 // cfg.cmd, and writes the output to stdout. Forked like host-stats-worker so its connection never
 // contends with the main-process EventMonitor connections to the same host.
 delete process.env.SSH_AUTH_SOCK;

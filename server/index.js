@@ -20,21 +20,21 @@ const { attachHostTerminal } = require('./host-terminal');
 
 const PORT = process.env.PORT || 7077;
 
-// Which reverse proxies may set X-Forwarded-For (TRUST_PROXY env, default: none) — the login rate limit
+// Which reverse proxies may set X-Forwarded-For (TRUST_PROXY env, default: none) - the login rate limit
 // and the audit source IP rely on it, so trusting every hop would let any client spoof its IP.
 const trustProxy = require('./trust-proxy');
 app.set('trust proxy', trustProxy.setting);
-if (trustProxy.setting === true) console.warn('[security] TRUST_PROXY=true — every X-Forwarded-For hop is trusted. Only safe when DockGate is reachable ONLY through your proxy.');
+if (trustProxy.setting === true) console.warn('[security] TRUST_PROXY=true - every X-Forwarded-For hop is trusted. Only safe when DockGate is reachable ONLY through your proxy.');
 
 // Middleware
 // Body parsing: 5MB protects every endpoint (SSH key uploads, normal API payloads). The folder-deploy
 // upload sends files as base64 JSON, so THAT route family gets 600MB. The UI uploads file-by-file, so
 // total project size can reach 1GB (UPLOAD_MAX_BYTES in compose.js); a single file is JSON/V8-capped
-// near ~384MB (base64 ≈ ×1.34 → ~512MB string max). A global 5MB parser would otherwise reject it first.
+// near ~384MB (base64 ≈ ×1.34 -> ~512MB string max). A global 5MB parser would otherwise reject it first.
 const jsonSmall = express.json({ limit: '5mb', verify: (req, _res, buf) => { if (req.url.startsWith('/api/hooks/') || req.url.startsWith('/api/compose/webhook/')) req.rawBody = buf; } }); // webhooks are signed over the raw body
 const jsonLarge = express.json({ limit: '600mb' });
-// covers /deploy-folder (single-shot) and /deploy-folder-file (per-file upload — one big binary file can still be ~67MB as base64)
-const jsonImport = express.json({ limit: '100mb' }); // Databases → Import CSV sends the rows as JSON
+// covers /deploy-folder (single-shot) and /deploy-folder-file (per-file upload - one big binary file can still be ~67MB as base64)
+const jsonImport = express.json({ limit: '100mb' }); // Databases > Import CSV sends the rows as JSON
 app.use((req, res, next) => (req.path.startsWith('/api/compose/deploy-folder') ? jsonLarge : /^\/api\/databases\/[^/]+\/db\/[^/]+\/import$/.test(req.path) ? jsonImport : jsonSmall)(req, res, next));
 
 // Cache-busting: index.html-dəki hər asset URL-i ?v=<versiya> ilə möhürlənir (__V__ placeholder),
@@ -53,7 +53,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // renders the login/setup screen when /api/auth/status reports unauthenticated. Registered BEFORE the
 // business routes so requireAuth runs first for them.
 const { requireAuth, checkOrigin } = require('./auth/middleware');
-app.use('/api', checkOrigin);                    // CSRF defense-in-depth: cross-origin state change → 403
+app.use('/api', checkOrigin);                    // CSRF defense-in-depth: cross-origin state change -> 403
 app.use('/api/auth', require('./routes/auth'));  // open: login / logout / status / setup
 // Open webhooks, each checked against its own secret (they can not carry a session): deploy recipes, and the
 // Compose Git webhook (?key=), which until now sat behind the session gate and so could not be called.
@@ -71,7 +71,7 @@ app.use('/api/networks', require('./routes/networks'));
 app.use('/api/compose', require('./routes/compose'));
 app.use('/api/git-connect', require('./routes/git-connect'));
 app.use('/api/proxies', require('./routes/proxies'));
-app.use('/api/help', require('./routes/help')); // System → Help: the guide inside DockGate
+app.use('/api/help', require('./routes/help')); // System > Help: the guide inside DockGate
 app.use('/api/swarm', require('./routes/swarm')); // Docker Swarm on the server in use
 app.use('/api/files', require('./routes/files'));
 app.use('/api/system', require('./routes/system'));
@@ -79,20 +79,20 @@ app.use('/api/cleanup', require('./routes/cleanup'));
 app.use('/api/servers', require('./routes/servers'));
 app.use('/api/firewall-lists', require('./routes/ip-lists')); // IP lists used as firewall port sources
 app.use('/api/servers', require('./routes/firewall')); // Firewall: inbound/outbound rules, defaults, Docker isolation
-app.use('/api/servers', require('./routes/security')); // Access & SSH · Users · Firewall · deploy user · reboot
-app.use('/api/servers', require('./routes/cron')); // Server Console → Cron
-app.use('/api/servers', require('./routes/sysconf')); // Server Console → System
-app.use('/api/servers', require('./routes/scripts')); // Server Console → Scripts
+app.use('/api/servers', require('./routes/security')); // Access & SSH, Users, Firewall, deploy user, reboot
+app.use('/api/servers', require('./routes/cron')); // Server Console > Cron
+app.use('/api/servers', require('./routes/sysconf')); // Server Console > System
+app.use('/api/servers', require('./routes/scripts')); // Server Console > Scripts
 app.use('/api/registries', require('./routes/registries'));
 app.use('/api/ssh-keys', require('./routes/ssh-keys'));
 app.use('/api/agent', require('./routes/agent'));
 app.use('/api/monitoring', require('./routes/monitoring'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/meta', require('./routes/settings'));
-app.use('/api/schedules', require('./routes/schedules')); // Tools → Schedules
-app.use('/api/uptime', require('./routes/uptime')); // Observe → Uptime
-app.use('/api/databases', require('./routes/databases')); // Tools → Databases (PostgreSQL)
-app.use('/api/tasks', require('./routes/tasks')); // Deploy → Tasks (Makefile, scripts, recipes)
+app.use('/api/schedules', require('./routes/schedules')); // Tools > Schedules
+app.use('/api/uptime', require('./routes/uptime')); // Observe > Uptime
+app.use('/api/databases', require('./routes/databases')); // Tools > Databases (PostgreSQL)
+app.use('/api/tasks', require('./routes/tasks')); // Deploy > Tasks (Makefile, scripts, recipes)
 
 // Startup-da saxlanmış aktiv server-i bərpa et (yalnız "local" olmadıqda)
 try {
@@ -109,7 +109,7 @@ try {
 // Dashboard summary endpoint / Dashboard məlumat endpoint-i
 app.get('/api/dashboard', async (req, res) => {
   try {
-    // Faza 1: Əsas məlumatlar paralel (size:false — sürətli) / Phase 1: Core data in parallel (no size — fast)
+    // Faza 1: Əsas məlumatlar paralel (size:false - sürətli) / Phase 1: Core data in parallel (no size - fast)
     const [containers, images, volumes, networks, systemInfo, diskUsage, composeProjects] = await Promise.all([
       dockerService.listContainers(true),
       dockerService.listImages(),
@@ -163,14 +163,14 @@ app.get('/api/dashboard', async (req, res) => {
 
     if (running.length > 0) {
       const [statsResults, inspectResults] = await Promise.all([
-        // CPU/RAM stats — top 10 / CPU/RAM statistikası — ilk 10
+        // CPU/RAM stats - top 10 / CPU/RAM statistikası - ilk 10
         Promise.all(running.slice(0, 10).map(async (c) => {
           try {
             const stats = await dockerService.getContainerStats(c.id);
             return { name: c.name, id: c.shortId, ...stats };
           } catch(e) { return null; }
         })),
-        // Health inspect — top 20 / Sağlamlıq yoxlaması — ilk 20
+        // Health inspect - top 20 / Sağlamlıq yoxlaması - ilk 20
         Promise.all(running.slice(0, 20).map(async (c) => {
           try {
             const info = await dockerService.inspectContainer(c.id);
@@ -197,7 +197,7 @@ app.get('/api/dashboard', async (req, res) => {
       }
     }
 
-    // Port map — all exposed ports / Port xəritəsi — bütün açıq portlar
+    // Port map - all exposed ports / Port xəritəsi - bütün açıq portlar
     const portMap = [];
     for (const c of containers) {
       for (const p of (c.ports || [])) {
@@ -278,7 +278,7 @@ app.get('*', (req, res) => {
 });
 app.all('/api/*', (req, res) => res.status(404).json({ error: `No API at ${req.method} ${req.path}` }));
 
-// Error handler — turn an oversized body (and other thrown errors) into a clean JSON response
+// Error handler - turn an oversized body (and other thrown errors) into a clean JSON response
 // instead of Express's default HTML stack. Must come after the routes.
 app.use((err, req, res, next) => {
   if (err && (err.status === 413 || err.type === 'entity.too.large')) {
@@ -289,7 +289,7 @@ app.use((err, req, res, next) => {
 });
 
 // ============ WEBSOCKET ============
-// Handshake auth — same session cookie as the REST gate. An unauthenticated client cannot open ANY
+// Handshake auth - same session cookie as the REST gate. An unauthenticated client cannot open ANY
 // live stream (build / logs / stats / events / terminal / host shell).
 io.use((socket, next) => {
   const { verifyToken, readSessionToken } = require('./auth/session');
@@ -302,7 +302,7 @@ io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   socket.use(require('./auth/server-gate').socketGate(socket)); // a locked server opens no stream
 
-  // System (host) terminal — shell on the active server (remote SSH host or local container). See host-terminal.js.
+  // System (host) terminal - shell on the active server (remote SSH host or local container). See host-terminal.js.
   attachHostTerminal(socket, { dockerService, stmts, logAction });
 
   // ---- Docker Image Push streaming (live console; credential auto-matched by registry host) ----
@@ -312,10 +312,10 @@ io.on('connection', (socket) => {
       const server = dockerService.getActiveServerId();
       socket.emit('image:push:started', { repoTag });
       const output = await dockerService.pushImageStream(repoTag, (event) => socket.emit('image:push:progress', event));
-      // The daemon's final 'aux' event carries the pushed manifest's Tag/Digest/Size — surface it.
+      // The daemon's final 'aux' event carries the pushed manifest's Tag/Digest/Size - surface it.
       const aux = (output || []).map(o => o && o.aux).filter(Boolean).pop() || null;
       logAction({ socket, server, resourceType: 'image', resourceName: repoTag, action: 'push' });
-      // Auto-track the pushed repo under its DockGate-managed registry (populates the Browse view —
+      // Auto-track the pushed repo under its DockGate-managed registry (populates the Browse view -
       // the cheap path that works for every provider, including those that block /v2/_catalog).
       try {
         const host = dockerService.registryHostOf(repoTag);
@@ -338,7 +338,7 @@ io.on('connection', (socket) => {
 
   // ---- Docker Image Build streaming ----
   let buildStream = null;
-  let activeBuildInfo = null; // {id, tag, server} — so build:cancel can write a meaningful audit entry
+  let activeBuildInfo = null; // {id, tag, server} - so build:cancel can write a meaningful audit entry
   socket.on('build:start', async ({ buildId, contextType, contextValue, gitToken, tag, dockerfile, nocache, pull, buildargs }) => {
     try {
       const crypto = require('crypto');
@@ -352,13 +352,13 @@ io.on('connection', (socket) => {
       // Insert build record into DB / DB-yə build qeydini əlavə et
       stmts.insertBuild.run(id, tag || 'untagged', dockerfile || 'Dockerfile', contextValue || '', JSON.stringify(buildargs || {}), nocache ? 1 : 0, pull ? 1 : 0, 'building');
       socket.emit('build:started', { buildId: id });
-      // Audit the INITIATION too (not just the outcome) — a cancelled/never-finishing build must leave a trace
+      // Audit the INITIATION too (not just the outcome) - a cancelled/never-finishing build must leave a trace
       logAction({ socket, server: buildServer, resourceType: 'build', resourceName: tag || 'untagged', action: 'build_start', details: { buildId: id, contextType: contextType || 'url' } });
       activeBuildInfo = { id, tag: tag || 'untagged', server: buildServer };
 
-      // 'inline' → build from a Dockerfile typed in the UI (a generated single-file tar context);
-      // 'url' (default) → a Git repo / remote tarball that dockerode fetches.
-      // gitToken (private repo): URL-in userinfo hissəsinə daxil edilir — daemon git clone-u
+      // 'inline' -> build from a Dockerfile typed in the UI (a generated single-file tar context);
+      // 'url' (default) -> a Git repo / remote tarball that dockerode fetches.
+      // gitToken (private repo): URL-in userinfo hissəsinə daxil edilir - daemon git clone-u
       // onunla edir. DB-yə YALNIZ təmiz URL yazılır (yuxarıda), token heç yerdə saxlanmır/loglanmır.
       let context;
       if (contextType === 'inline') {
@@ -376,7 +376,7 @@ io.on('connection', (socket) => {
 
       let fullLog = '';
       let imageId = null;
-      let buildError = null; // structured error — scanning the log text for 'ERROR:' was fragile
+      let buildError = null; // structured error - scanning the log text for 'ERROR:' was fragile
 
       stream.on('data', (chunk) => {
         try {
@@ -390,7 +390,7 @@ io.on('connection', (socket) => {
             } else if (json.status) {
               logLine = json.status + (json.progress ? ' ' + json.progress : '') + '\n';
             } else if (json.error || json.errorDetail) {
-              // Docker build error field — we determine the status from this (not from the log text)
+              // Docker build error field - we determine the status from this (not from the log text)
               buildError = json.error || json.errorDetail?.message || 'Build failed';
               logLine = 'ERROR: ' + buildError + '\n';
             } else if (json.aux && json.aux.ID) {
@@ -449,7 +449,7 @@ io.on('connection', (socket) => {
       try { buildStream.destroy(); } catch(e) {}
       buildStream = null;
       socket.emit('build:cancelled');
-      // Audit the cancellation — destroying an active build is a state-changing operation
+      // Audit the cancellation - destroying an active build is a state-changing operation
       if (activeBuildInfo) {
         logAction({ socket, server: activeBuildInfo.server, resourceType: 'build', resourceName: activeBuildInfo.tag, action: 'build_cancel', details: { buildId: activeBuildInfo.id } });
         activeBuildInfo = null;
@@ -459,7 +459,7 @@ io.on('connection', (socket) => {
 
   // Container log streaming
   let logStream = null;
-  // since / until: unix seconds (Observe → Logs time range). With a range the whole range is sent
+  // since / until: unix seconds (Observe > Logs time range). With a range the whole range is sent
   // (Docker applies tail to it too, capped at 20 000 lines); with an end time there is nothing to follow.
   socket.on('logs:subscribe', async ({ containerId, tail = 100, timestamps = false, since, until }) => {
     if (logStream) { try { logStream.destroy(); } catch(e){} logStream = null; }
@@ -518,7 +518,7 @@ io.on('connection', (socket) => {
       // Destroy previous stream if exists / Əvvəlki stream varsa sil
       if (eventStream) { try { eventStream.destroy(); } catch(e){} eventStream = null; }
 
-      // payload: { filters?, since? } — since (unix saniyə) Docker-a keçmiş hadisələri replay etdirir,
+      // payload: { filters?, since? } - since (unix saniyə) Docker-a keçmiş hadisələri replay etdirir,
       // sonra axın canlı davam edir. since yoxdursa yalnız yeni hadisələr gəlir (köhnə davranış).
       const { filters, since } = payload || {};
       const opts = (filters && Object.keys(filters).length > 0) ? { filters } : {};
@@ -554,7 +554,7 @@ io.on('connection', (socket) => {
     if (eventStream) { try { eventStream.destroy(); } catch(e){} eventStream = null; }
   });
 
-  // Container terminal (exec) — slot-aware to support split screen / dual terminals
+  // Container terminal (exec) - slot-aware to support split screen / dual terminals
   const termStreams = new Map(); // slot -> { stream, exec }
 
   socket.on('terminal:start', async ({ containerId, shell = '/bin/sh', slot = 0, serverId = null }) => {
@@ -588,7 +588,7 @@ io.on('connection', (socket) => {
 
       termStreams.set(slot, { stream, exec });
 
-      // Audit — interactive shell access into the container (session level; keystrokes are not logged)
+      // Audit - interactive shell access into the container (session level; keystrokes are not logged)
       logAction({ socket, resourceId: containerId, resourceType: 'container', resourceName: containerId.substring(0, 12), action: 'terminal_open', details: { shell, slot, ...(serverId ? { serverId } : {}) } });
       socket.emit('terminal:ready', { containerId, slot });
     } catch (err) {
@@ -612,7 +612,7 @@ io.on('connection', (socket) => {
     const s = termStreams.get(slot);
     if (s?.exec && cols && rows) {
       // dockerode returns a promise: a resize before the exec has started (or after it ended) rejects with
-      // "exec process is not started" — catch it, or the unhandled rejection stops DockGate.
+      // "exec process is not started" - catch it, or the unhandled rejection stops DockGate.
       try { Promise.resolve(s.exec.resize({ h: rows, w: cols })).catch(() => {}); } catch(e) {}
     }
   });
@@ -656,21 +656,21 @@ function formatBytes(bytes, decimals = 2) {
 server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   console.log(`\n  🐳 DockGate Control Panel`);
   console.log(`  ────────────────────────`);
-  console.log(`  → http://localhost:${PORT}`);
-  console.log(`  → Listening on port ${PORT}\n`);
+  console.log(`  -> http://localhost:${PORT}`);
+  console.log(`  > Listening on port ${PORT}\n`);
 
   // Start one event monitor per registered server (local + every SSH host).
   // Notifications fire from any server regardless of which one is active in the UI.
   monitorManager.startAll();
   // Server health: reachability, disk, memory and CPU alerts for every server, checked once a minute.
   if (process.env.NODE_ENV !== 'test') require('./notifications/health-monitor').start();
-  if (process.env.NODE_ENV !== 'test') require('./uptime').start(); // Observe → Uptime checks
-  if (process.env.NODE_ENV !== 'test') require('./task-recipes').start(); // Deploy → Tasks: scheduled recipes
+  if (process.env.NODE_ENV !== 'test') require('./uptime').start(); // Observe > Uptime checks
+  if (process.env.NODE_ENV !== 'test') require('./task-recipes').start(); // Deploy > Tasks: scheduled recipes
   if (process.env.NODE_ENV !== 'test') require('./proxy-edit').start(); // Proxies & SSL: renew DockGate's Let's Encrypt certificates
   if (process.env.NODE_ENV !== 'test') require('./cron-monitor').start(); // cron jobs failed / did not run
   if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
   if (process.env.NODE_ENV !== 'test') { require('./swarm-monitor').start(); require('./swarm-stacks').startBridgeKeeper(); require('./agent/control').start(); require('./compose-heal').start(); require('./compose-autoscale').start(); require('./swarm-firewall').start(); require('./compose-keep').start(); }
-  if (process.env.NODE_ENV !== 'test') require('./swarm-services').startSampler(); // Swarm → Services → Graphs (every 2 min, 48 h)
+  if (process.env.NODE_ENV !== 'test') require('./swarm-services').startSampler(); // Swarm > Services > Graphs (every 2 min, 48 h)
   if (process.env.NODE_ENV !== 'test') require('./swarm-autoscale').start(); // autoscale rules, every minute
   if (process.env.NODE_ENV !== 'test') require('./swarm-backup').start(); // nightly Swarm backup (data/swarm-backups, last 7) // Swarm alerts: services short, nodes down, rolled back updates, quorum
   // Newer-image check for every server: 10 minutes after start, then once a day. New updates are announced
@@ -688,8 +688,8 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
             const name = HM.serverLabel(srv);
             const list = fresh.map(r => r.image).join(', ');
             const sent = await HM.deliver('image_update', srv, `${name}: newer image${fresh.length > 1 ? 's' : ''} available`,
-              `🔵 ${name}: newer image${fresh.length > 1 ? 's' : ''} available\n${list}\nUpdate them from Resources → Containers.`,
-              `<p>A newer version of the same tag is in the registry for: <b>${list.replace(/</g, '&lt;')}</b> on ${name.replace(/</g, '&lt;')}.</p><p>Update them from DockGate → Resources → Containers.</p>`);
+              `🔵 ${name}: newer image${fresh.length > 1 ? 's' : ''} available\n${list}\nUpdate them from Resources > Containers.`,
+              `<p>A newer version of the same tag is in the registry for: <b>${list.replace(/</g, '&lt;')}</b> on ${name.replace(/</g, '&lt;')}.</p><p>Update them from DockGate > Resources > Containers.</p>`);
             if (sent || !stmts.getRule.get('image_update')?.enabled) IU.announce(srv.id, fresh);
           }
         } catch (e) { console.warn(`[image-updates] ${srv.id}:`, e.message); }
@@ -706,15 +706,15 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => { try { require('./ssh-pool').drainAll(); } catch (e) {} process.exit(0); });
 }
 
-// Periodic DB retention — trim old records every 6 hours
-// Dövri DB saxlama — hər 6 saatda köhnə qeydləri sil
+// Periodic DB retention - trim old records every 6 hours
+// Dövri DB saxlama - hər 6 saatda köhnə qeydləri sil
 setInterval(() => {
   try { stmts.trimActivity.run(); } catch(e) {}
   try { stmts.trimBuilds.run(); } catch(e) {}
   try { stmts.trimNotificationLogs.run(); } catch(e) {}
 }, 6 * 60 * 60 * 1000);
 
-// Background local host metrics sampler — one sample a minute, kept 48 hours (Monitoring → Last 48 hours).
+// Background local host metrics sampler - one sample a minute, kept 48 hours (Monitoring > Last 48 hours).
 // The Live view reads the machine directly, so it does not depend on this.
 const hostStats = require('./host-stats');
 setInterval(async () => {
@@ -727,5 +727,5 @@ setInterval(async () => {
     stmts.insertHostMetric.run('local', s.cpu ?? null, memPct, rootDisk ? rootDisk.usePct : null, swapPct,
       s.load ? s.load.load1 : null, s.net ? Math.round(s.net.rxBytesSec) : null, s.net ? Math.round(s.net.txBytesSec) : null, s.load ? s.load.procsRunning : null);
     stmts.trimHostMetricsAge.run('local', 'local');
-  } catch (e) { /* best-effort — never crash the main process */ }
+  } catch (e) { /* best-effort - never crash the main process */ }
 }, 60000);

@@ -7,7 +7,7 @@ const { healDecision } = require('../agent/src/control/heal-decision');
 require('./compose-scale'); // the compose_scaling table it reads
 
 const TICK_MS = 30000;
-const memory = new Map(); // container id → { fails, restarts, stopped }
+const memory = new Map(); // container id -> { fails, restarts, stopped }
 let timer = null, busy = false;
 
 function clientFor(serverId) {
@@ -48,10 +48,10 @@ async function tick() {
           await c.getContainer(x.Id).restart({ t: 10 }).catch(() => {});
           h.restarts = [...h.restarts.filter(t => Date.now() - t < 3600000), Date.now()]; h.fails = 0;
           try { require('./audit').logAction({ sourceIp: 'auto-heal', server: r.server_id, resourceType: 'compose', resourceId: r.project, resourceName: name, action: 'compose_heal_restart', details: { restartsLastHour: h.restarts.length } }); } catch (e) { /* best effort */ }
-          await notify(r.server_id, `${name} restarted`, `🩺 ${name} was unhealthy — DockGate restarted it (${h.restarts.length} in the last hour).`);
+          await notify(r.server_id, `${name} restarted`, `🩺 ${name} was unhealthy - DockGate restarted it (${h.restarts.length} in the last hour).`);
         } else if (d !== 'wait' && !h.stopped) {
           h.stopped = true;
-          await notify(r.server_id, `${name} stays unhealthy`, `🛑 ${name} is still unhealthy after ${r.heal_per_hour || 3} restarts in an hour — DockGate stopped restarting it. Look at its logs.`);
+          await notify(r.server_id, `${name} stays unhealthy`, `🛑 ${name} is still unhealthy after ${r.heal_per_hour || 3} restarts in an hour - DockGate stopped restarting it. Look at its logs.`);
         }
       }
     }

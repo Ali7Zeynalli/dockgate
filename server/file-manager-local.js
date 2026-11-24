@@ -1,4 +1,4 @@
-// Local file manager — the same operations as file-manager.js (SFTP), on the machine DockGate runs on, but
+// Local file manager - the same operations as file-manager.js (SFTP), on the machine DockGate runs on, but
 // only inside FILES_ROOT (default /host). DockGate runs as root in its container, so it never browses the
 // whole host: you share a folder on purpose, e.g. `- /srv:/host/srv` under the DockGate service's volumes.
 // Every path is resolved with realpath and must stay inside FILES_ROOT, so a symlink cannot lead outside.
@@ -135,7 +135,7 @@ async function writeFileText(_s, p, content, opts = {}) {
   const file = safe(p, { mustExist: false });
   let st = null; try { st = fs.statSync(file); } catch (e) { /* a new file */ }
   if (st && opts.baseMtime && !opts.force && Number(opts.baseMtime) !== Math.floor(st.mtimeMs / 1000)) {
-    throw Object.assign(new Error(`${file} changed after you opened it — reload it, or save anyway`), { statusCode: 409, code: 'CHANGED' });
+    throw Object.assign(new Error(`${file} changed after you opened it - reload it, or save anyway`), { statusCode: 409, code: 'CHANGED' });
   }
   const tmp = path.join(path.dirname(file), `.${path.basename(file)}.dg-${require('crypto').randomBytes(5).toString('hex')}`);
   try {

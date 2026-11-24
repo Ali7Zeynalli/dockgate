@@ -1,4 +1,4 @@
-// Docker Swarm on the server in use — phase 1: one server.
+// Docker Swarm on the server in use - phase 1: one server.
 //
 // status()     what the Docker daemon says about Swarm (inactive / active / locked / error), manager or worker
 // checks()     what is looked at before "Create Swarm": Docker version, already in a swarm, live-restore,
@@ -6,7 +6,7 @@
 //              the firewall note, compose projects that keep running
 // startInit()  a job (live log, can be reopened): swarm init with the chosen options, verify the node is
 //              Ready, keep the autolock key (encrypted); if the check after init fails, leave again
-// overview()   nodes, services, tasks per node, warnings, last Swarm events — read from the manager
+// overview()   nodes, services, tasks per node, warnings, last Swarm events - read from the manager
 // settings(), unlock(), leave()
 //
 // Compose projects are not touched in this phase: `docker swarm init` does not stop or change containers.
@@ -30,7 +30,7 @@ function dial(c, path, method = 'GET', options = {}) {
     c.modem.dial({ path, method, options, statusCodes: { 200: true, 204: true, 400: 'bad parameter', 403: 'forbidden', 500: 'server error', 503: 'node is not part of a swarm' } }, (err, data) => (err ? reject(err) : resolve(data)));
   });
 }
-/** Docker's own message from a dockerode error ("(HTTP code 400) … - <message>"). */
+/** Docker's own message from a dockerode error ("(HTTP code 400) ... - <message>"). */
 function dockerMsg(e) {
   if (!e) return '';
   if (e.json && e.json.message) return String(e.json.message);
@@ -87,7 +87,7 @@ async function addressCandidates(forServer) {
   const out = [];
   const add = (ip, iface) => { if (isIPv4(ip) && !ip.startsWith('127.') && !out.some(a => a.ip === ip)) out.push({ ip, iface: iface || '', private: isPrivate(ip) }); };
   if (sid === 'local') {
-    // DockGate in a container sees its own interfaces, not the host's — then Docker chooses (or says which to pick).
+    // DockGate in a container sees its own interfaces, not the host's - then Docker chooses (or says which to pick).
     if (!fs.existsSync('/.dockerenv')) for (const [name, list] of Object.entries(os.networkInterfaces())) for (const a of list || []) if (a.family === 'IPv4' && !a.internal) add(a.address, name);
   } else {
     const rc = require('./remote-compose');
@@ -101,7 +101,7 @@ async function addressCandidates(forServer) {
       else { try { const r = await dns.lookup(srv.host, { family: 4 }); add(r.address, `SSH address (${srv.host})`); } catch (e) { /* unresolved */ } }
     }
   }
-  // Interfaces Docker makes (docker0, br-…, veth) are not addresses to advertise.
+  // Interfaces Docker makes (docker0, br-..., veth) are not addresses to advertise.
   return out.filter(a => !/^(docker|br-|veth|virbr|cni|flannel|cali|tun|wg)/.test(a.iface) || a.iface.startsWith('SSH'));
 }
 
@@ -123,7 +123,7 @@ async function checks({ pool, multi = false } = {}) {
   const st = sw.LocalNodeState || 'inactive';
   if (st === 'inactive') push('state', 'Not in a swarm yet', 'ok', 'This server is not part of a swarm.');
   else push('state', 'Already in a swarm', 'bad', `This server is ${st === 'active' ? (sw.ControlAvailable ? 'a manager' : 'a worker') : st} in a swarm${sw.Cluster ? ` (cluster ${String(sw.Cluster.ID).slice(0, 12)})` : ''}.`,
-    st === 'active' ? 'Open Swarm → Overview, or leave the swarm in Cluster settings first.' : 'Leave the swarm first: docker swarm leave --force');
+    st === 'active' ? 'Open Swarm > Overview, or leave the swarm in Cluster settings first.' : 'Leave the swarm first: docker swarm leave --force');
 
   if (info.LiveRestoreEnabled) {
     push('live-restore', 'live-restore is on', 'bad', 'Docker does not allow Swarm while "live-restore" is on in /etc/docker/daemon.json.',
@@ -159,12 +159,12 @@ async function checks({ pool, multi = false } = {}) {
   } else push('pool', 'Overlay address pool', 'ok', `${want} does not overlap this server's networks.`);
 
   if (multi) push('firewall', 'Firewall', 'info', 'Several servers: DockGate opens 2377/tcp, 7946/tcp+udp and the data port (udp) on each server for the other cluster servers only.');
-  else push('firewall', 'Firewall', 'info', 'One server: no ports are opened. Docker listens on 2377/tcp for Swarm management (mutual TLS; joining needs a token). Keep it closed to the internet in the server\'s firewall (Server Console → Firewall) — with UFW\'s default "deny incoming" it is.');
+  else push('firewall', 'Firewall', 'info', 'One server: no ports are opened. Docker listens on 2377/tcp for Swarm management (mutual TLS; joining needs a token). Keep it closed to the internet in the server\'s firewall (Server Console > Firewall) - with UFW\'s default "deny incoming" it is.');
 
   try {
     const projects = await dockerService.listComposeProjects();
     push('compose', 'Compose projects keep running', 'info', projects.length
-      ? `${projects.length} compose project${projects.length > 1 ? 's' : ''} (${projects.slice(0, 5).map(p => p.name).join(', ')}${projects.length > 5 ? ', …' : ''}) ${projects.length > 1 ? 'keep' : 'keeps'} running as they are. Moving them to Swarm is a separate, later step.`
+      ? `${projects.length} compose project${projects.length > 1 ? 's' : ''} (${projects.slice(0, 5).map(p => p.name).join(', ')}${projects.length > 5 ? ', ...' : ''}) ${projects.length > 1 ? 'keep' : 'keeps'} running as they are. Moving them to Swarm is a separate, later step.`
       : 'No compose projects on this server.');
   } catch (e) { /* ignore */ }
 
@@ -282,7 +282,7 @@ async function startInit(body, { sourceIp, join } = {}) {
         if (key) {
           stmts.setSetting.run(`swarm_unlock_key:${sid}`, encrypt(key));
           job.result = { ...(job.result || {}), unlockKey: key };
-          log('The unlock key is stored in DockGate (encrypted). Keep a copy somewhere safe too — it is shown once at the end.');
+          log('The unlock key is stored in DockGate (encrypted). Keep a copy somewhere safe too - it is shown once at the end.');
         }
         step(job, 'key', 'done');
       }
@@ -404,11 +404,11 @@ async function overview() {
   if (st.error) warnings.push({ level: 'bad', text: `Swarm reports an error: ${st.error}` });
   if (managers.length && reachable <= managers.length / 2) warnings.push({ level: 'bad', text: 'Most managers can not be reached: the cluster can not be changed until they are back.' });
   if (nodeList.length > 1 && managers.length === 1) warnings.push({ level: 'warn', text: 'One manager for several servers: if it is lost, the cluster can not be changed.' });
-  if (managers.length === 2) warnings.push({ level: 'warn', text: 'Two managers tolerate no loss — use 1 or 3.' });
+  if (managers.length === 2) warnings.push({ level: 'warn', text: 'Two managers tolerate no loss - use 1 or 3.' });
   if (running < desired) warnings.push({ level: 'warn', text: `${desired - running} task${desired - running > 1 ? 's are' : ' is'} not running.` });
   try {
     const projects = (await dockerService.listComposeProjects()).filter(p => p.total > 0);
-    if (projects.length) warnings.push({ level: 'info', text: `${projects.length} compose project${projects.length > 1 ? 's run' : ' runs'} outside Swarm (${projects.slice(0, 4).map(p => p.name).join(', ')}${projects.length > 4 ? ', …' : ''}). They keep running as they are; Swarm → Migrate moves them when you choose.`, action: 'migrate' });
+    if (projects.length) warnings.push({ level: 'info', text: `${projects.length} compose project${projects.length > 1 ? 's run' : ' runs'} outside Swarm (${projects.slice(0, 4).map(p => p.name).join(', ')}${projects.length > 4 ? ', ...' : ''}). They keep running as they are; Swarm > Migrate moves them when you choose.`, action: 'migrate' });
   } catch (e) { /* ignore */ }
   return {
     status: st,
@@ -511,7 +511,7 @@ async function rotateCA() {
   const st = await status();
   if (st.state !== 'active' || !st.manager) throw Object.assign(new Error('Swarm must be active and this server a manager'), { statusCode: 409 });
   const sw = await c.swarmInspect();
-  if (sw.RootRotationInProgress) throw Object.assign(new Error('A root CA rotation is already in progress — wait until every server has its new certificate'), { statusCode: 409 });
+  if (sw.RootRotationInProgress) throw Object.assign(new Error('A root CA rotation is already in progress - wait until every server has its new certificate'), { statusCode: 409 });
   const spec = JSON.parse(JSON.stringify(sw.Spec || {}));
   spec.CAConfig = { ...(spec.CAConfig || {}), ForceRotate: ((spec.CAConfig && spec.CAConfig.ForceRotate) || 0) + 1 };
   try { await dial(c, '/swarm/update?', 'POST', { _query: { version: sw.Version.Index }, _body: spec }); }
@@ -528,7 +528,7 @@ async function rotateUnlockKey() {
   catch (e) { throw Object.assign(new Error(dockerMsg(e) || 'Rotate failed'), { statusCode: 400 }); }
   const k = await dial(c, '/swarm/unlockkey').catch(() => null);
   const key = k && (k.UnlockKey || (typeof k === 'string' ? JSON.parse(k).UnlockKey : null));
-  if (!key) throw Object.assign(new Error('The key was rotated but could not be read back — see docker swarm unlock-key on the manager'), { statusCode: 500 });
+  if (!key) throw Object.assign(new Error('The key was rotated but could not be read back - see docker swarm unlock-key on the manager'), { statusCode: 500 });
   stmts.setSetting.run(`swarm_unlock_key:${serverId()}`, encrypt(key));
   return { key };
 }
@@ -552,7 +552,7 @@ function storedUnlockKey() {
 /** Unlock a locked swarm with the given key, or the stored one. */
 async function unlock(key) {
   const k = String(key || '').trim() || storedUnlockKey();
-  if (!k) throw Object.assign(new Error('No unlock key stored — enter it'), { statusCode: 400 });
+  if (!k) throw Object.assign(new Error('No unlock key stored - enter it'), { statusCode: 400 });
   try { await dial(client(), '/swarm/unlock', 'POST', { UnlockKey: k }); }
   catch (e) { throw Object.assign(new Error(dockerMsg(e) || 'Unlock failed'), { statusCode: 400 }); }
   if (key) stmts.setSetting.run(`swarm_unlock_key:${serverId()}`, encrypt(k)); // a key typed in works: keep it
@@ -568,12 +568,12 @@ async function leave() {
   try { services = (await c.listServices()).length; } catch (e) { /* worker */ }
   if (st.manager) {
     const nodes = await c.listNodes().catch(() => []);
-    if (nodes.length > 1) throw Object.assign(new Error(`The swarm has ${nodes.length} servers — remove the others first (Swarm → Nodes → Remove), then turn Swarm off here`), { statusCode: 400 });
+    if (nodes.length > 1) throw Object.assign(new Error(`The swarm has ${nodes.length} servers - remove the others first (Swarm > Nodes > Remove), then turn Swarm off here`), { statusCode: 400 });
   }
   // Projects moved to Swarm are down in Compose: removing the swarm would leave them stopped everywhere.
   const { db } = require('./db');
   const moved = db.prepare('SELECT name FROM swarm_stacks WHERE server_id = ?').all(serverId()).map(r => r.name);
-  if (moved.length) throw Object.assign(new Error(`${moved.join(', ')} run${moved.length === 1 ? 's' : ''} on Swarm — move ${moved.length === 1 ? 'it' : 'them'} back to Compose first (Swarm → Stacks), or remove ${moved.length === 1 ? 'it' : 'them'} there`), { statusCode: 409 });
+  if (moved.length) throw Object.assign(new Error(`${moved.join(', ')} run${moved.length === 1 ? 's' : ''} on Swarm - move ${moved.length === 1 ? 'it' : 'them'} back to Compose first (Swarm > Stacks), or remove ${moved.length === 1 ? 'it' : 'them'} there`), { statusCode: 409 });
   await c.swarmLeave({ force: true });
   stmts.setSetting.run(`swarm_unlock_key:${serverId()}`, '');
   if (st.clusterId) db.prepare('DELETE FROM swarm_node_servers WHERE cluster_id = ?').run(st.clusterId);

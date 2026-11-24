@@ -4,7 +4,7 @@ const dockerService = require('../docker');
 const { logAction } = require('../audit');
 
 // ---- Newer-image check (server/image-updates.js) ----
-// GET /api/images/updates — last results for the server in use; POST /api/images/updates/check runs it now.
+// GET /api/images/updates - last results for the server in use; POST /api/images/updates/check runs it now.
 // "stale": containers whose tag already points at a newer local image (not recreated yet), by container ID.
 router.get('/updates', async (req, res) => {
   try {
@@ -30,13 +30,13 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /updates — tags that have a newer image in their registry (the daily check, server/image-updates.js)
+// GET /updates - tags that have a newer image in their registry (the daily check, server/image-updates.js)
 router.get('/updates', (req, res) => {
   try { res.json(require('../image-updates').resultsFor(dockerService.getActiveServerId() || 'local').filter(r => r.status === 'update').map(r => ({ image: r.image, localVersion: r.local_version, remoteVersion: r.remote_version }))); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /refresh { image } — pull the newer image of a tag. Containers keep the image they were made from until they
+// POST /refresh { image } - pull the newer image of a tag. Containers keep the image they were made from until they
 // are recreated, so the answer lists the ones still on the previous image (each can be updated safely from there).
 router.post('/refresh', async (req, res) => {
   try {
@@ -55,7 +55,7 @@ router.post('/refresh', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /search?q= — proxy Docker Hub image search (browser CORS blocks calling Hub directly).
+// GET /search?q= - proxy Docker Hub image search (browser CORS blocks calling Hub directly).
 // Defined before "/:id" so "search" isn't captured as an image id. Returns normalized results.
 router.get('/search', async (req, res) => {
   try {
@@ -86,7 +86,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// GET /:id/history — image layer history (each layer's command + size)
+// GET /:id/history - image layer history (each layer's command + size)
 router.get('/:id/history', async (req, res) => {
   try {
     res.json(await dockerService.imageHistory(req.params.id));
@@ -95,7 +95,7 @@ router.get('/:id/history', async (req, res) => {
   }
 });
 
-// GET /:id/save — download the image as a tar (docker save) — I2
+// GET /:id/save - download the image as a tar (docker save) - I2
 router.get('/:id/save', async (req, res) => {
   try {
     logAction({ req, resourceType: 'image', resourceName: req.params.id.substring(0, 40), action: 'save' });
@@ -121,7 +121,7 @@ router.post('/pull', async (req, res) => {
   }
 });
 
-// POST /load — load images from an uploaded tar (docker load) — I2.
+// POST /load - load images from an uploaded tar (docker load) - I2.
 // The body is the raw tar stream (Content-Type isn't application/json, so it bypasses express.json).
 router.post('/load', async (req, res) => {
   try {
@@ -133,7 +133,7 @@ router.post('/load', async (req, res) => {
   }
 });
 
-// POST /untag — remove a specific repo:tag reference (handles namespaced tags with slashes,
+// POST /untag - remove a specific repo:tag reference (handles namespaced tags with slashes,
 // which a DELETE /:id path can't carry). Removes just the tag if the image has others.
 router.post('/untag', async (req, res) => {
   try {
@@ -158,7 +158,7 @@ router.post('/:id/tag', async (req, res) => {
   }
 });
 
-// POST /push — push a local image to its registry. The credential is auto-matched by registry host
+// POST /push - push a local image to its registry. The credential is auto-matched by registry host
 // (see docker.pushImage). repoTag is taken from the body so registry/owner slashes are preserved.
 // body: { repoTag }  e.g. "ghcr.io/owner/app:1.0"
 router.post('/push', async (req, res) => {

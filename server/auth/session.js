@@ -1,4 +1,4 @@
-// Stateless session tokens for the admin login — an HMAC-signed cookie, no external dependency.
+// Stateless session tokens for the admin login - an HMAC-signed cookie, no external dependency.
 // Token format:  base64url(JSON{uid,exp}) "." base64url(HMAC-SHA256(payload))
 // The signing secret is taken from env DG_SESSION_SECRET, else a random one is generated once and
 // persisted in the settings table (key: session_secret) so tokens survive restarts.
@@ -13,7 +13,7 @@ let _secret = null;
 function getSecret() {
   if (_secret) return _secret;
   if (process.env.DG_SESSION_SECRET) { _secret = String(process.env.DG_SESSION_SECRET); return _secret; }
-  // late require — avoid load-order coupling with db.js
+  // late require - avoid load-order coupling with db.js
   const { stmts } = require('../db');
   let s = stmts.getSetting.get('session_secret')?.value;
   if (!s) {
@@ -35,7 +35,7 @@ function safeEqual(a, b) {
 }
 
 // Session version: stamped into every token. Bumping it (password change, "sign out everywhere")
-// invalidates every token issued before — stateless tokens are otherwise valid until they expire.
+// invalidates every token issued before - stateless tokens are otherwise valid until they expire.
 // Tokens from before this existed carry no version and count as version 0 (no mass logout on upgrade).
 function currentVersion() {
   try { return Number(require('../db').stmts.getSetting.get('session_version')?.value || 0) || 0; } catch (e) { return 0; }

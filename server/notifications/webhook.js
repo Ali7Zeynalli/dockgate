@@ -1,4 +1,4 @@
-// Webhook channel — a third channel next to email and Telegram. One URL; the body is shaped for the chosen
+// Webhook channel - a third channel next to email and Telegram. One URL; the body is shaped for the chosen
 // service: Slack, Discord, Microsoft Teams, ntfy, or plain JSON for your own system. The URL is a secret
 // (it is the credential for Slack/Discord/Teams), so it is stored encrypted like the Telegram token.
 const { stmts } = require('../db');

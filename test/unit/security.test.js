@@ -11,7 +11,7 @@ const plans = require('../../server/security/plans');
 const hostkey = require('../../server/ssh-hostkey');
 const { utils } = require('ssh2');
 
-// ssh2's ed25519 generator occasionally emits a truncated public key (~1/200) — tests use valid ones only.
+// ssh2's ed25519 generator occasionally emits a truncated public key (~1/200) - tests use valid ones only.
 function validPair(comment) {
   for (;;) { const k = utils.generateKeyPairSync('ed25519', comment ? { comment } : undefined); if (!(utils.parseKey(k.public) instanceof Error)) return k; }
 }
@@ -19,7 +19,7 @@ const pub = validPair('me@laptop').public;
 const blobOf = () => utils.parseKey(validPair().public).getPublicSSH();
 
 // ---------------------------------------------------------------- validation
-test('security: usernames — only safe Linux names, system names reserved', () => {
+test('security: usernames - only safe Linux names, system names reserved', () => {
   for (const ok of ['deploy', 'alice', '_svc', 'a-b_c1']) assert.ok(P.validUsername(ok), ok);
   for (const bad of ['', 'Root', '1abc', 'a b', 'a;rm', '$(id)', 'x'.repeat(33), '../etc']) assert.ok(!P.validUsername(bad), bad);
   assert.throws(() => P.assertNewUsername('root'), e => e.statusCode === 400);
@@ -27,7 +27,7 @@ test('security: usernames — only safe Linux names, system names reserved', () 
   assert.doesNotThrow(() => P.assertNewUsername('deploy'));
 });
 
-test('security: public keys — valid keys parse with an OpenSSH fingerprint; garbage and injection are rejected', () => {
+test('security: public keys - valid keys parse with an OpenSSH fingerprint; garbage and injection are rejected', () => {
   const k = P.parsePublicKey(pub);
   assert.equal(k.type, 'ssh-ed25519');
   assert.match(k.fingerprint, /^SHA256:[A-Za-z0-9+/]{43}$/);
@@ -59,7 +59,7 @@ test('security: sshd -T parsing and the access view', () => {
   assert.equal(a.rootLogin, 'prohibit-password', 'without-password is normalised');
   assert.equal(a.passwordAuth, true);
   assert.equal(a.deadTimeoutMin, 10, 'ClientAlive = dead-connection detection, not an idle limit');
-  assert.equal(a.idleTimeoutMin, 0, 'no ChannelTimeout → no idle limit');
+  assert.equal(a.idleTimeoutMin, 0, 'no ChannelTimeout -> no idle limit');
   assert.equal(a.includesDropins, true);
   assert.equal(a.rebootRequired, true);
   assert.equal(a.isRoot, true);
@@ -80,7 +80,7 @@ test('security: the sshd drop-in round-trips and rejects bad values', () => {
 });
 
 // ---------------------------------------------------------------- users
-test('security: users view — human accounts, sudo/docker/locked, keys; service accounts hidden', () => {
+test('security: users view - human accounts, sudo/docker/locked, keys; service accounts hidden', () => {
   const today = 20000;
   const out = [
     '@@passwd', 'root:x:0:0:root:/root:/bin/bash', 'ubuntu:x:1000:1000::/home/ubuntu:/bin/bash', 'deploy:x:1001:1001::/home/deploy:/bin/bash', 'old:x:1002:1002::/home/old:/bin/bash', 'nixbld1:x:30001:30000::/var/empty:/sbin/nologin', 'www-data:x:33:33::/var/www:/usr/sbin/nologin',
@@ -138,7 +138,7 @@ test('security: ufw status numbered parsing (IN / FWD / v6 / restricted source)'
   assert.equal(P.parseUfwNumbered('Status: inactive').active, false);
 });
 
-test('security: listening ports — docker bypass vs isolation, loopback, restricted, ssh', () => {
+test('security: listening ports - docker bypass vs isolation, loopback, restricted, ssh', () => {
   const listeners = P.parseSs([
     'tcp LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))',
     'tcp LISTEN 0 4096 0.0.0.0:5432 0.0.0.0:* users:(("docker-proxy",pid=2,fd=4))',
@@ -179,7 +179,7 @@ test('plans: user content travels base64-encoded, never as raw text in the comma
   assert.ok(plan.steps[plan.steps.length - 1].test, 'last step proves a NEW login');
 });
 
-test('plans: access change = validate → arm rollback → apply → test new login → commit', () => {
+test('plans: access change = validate -> arm rollback -> apply -> test new login -> commit', () => {
   const plan = plans.accessPlan({ id: 'abc', content: 'PasswordAuthentication no\n', test: { username: 'deploy' } });
   const labels = plan.steps.map(s => s.label);
   assert.match(labels[0], /validate/i);
@@ -232,7 +232,7 @@ test('ssh-hostkey: fingerprints, strict verifier and known_hosts line', () => {
   assert.equal(hostkey.keyTypeLabel('ssh-ed25519'), 'ED25519');
   assert.equal(hostkey.strictVerifier(fp)(blob), true);
   assert.equal(hostkey.strictVerifier('SHA256:other')(blob), false);
-  assert.equal(hostkey.strictVerifier(null)(blob), true, 'nothing pinned yet → accept');
+  assert.equal(hostkey.strictVerifier(null)(blob), true, 'nothing pinned yet -> accept');
   assert.equal(hostkey.knownHostsLine({ host: 'h', port: 22, host_key_blob: blob.toString('base64') }), `h ssh-ed25519 ${blob.toString('base64')}`);
   assert.match(hostkey.knownHostsLine({ host: 'h', port: 2222, host_key_blob: blob.toString('base64') }), /^\[h\]:2222 /);
   assert.ok(hostkey.isHostKeyError(new Error('Host denied (verification failed)')));
@@ -250,7 +250,7 @@ test('ssh-hostkey: main-process verifier pins on first use, then refuses a diffe
   assert.equal(verify(a), true, 'same key again');
   assert.equal(verify(b), false, 'different key refused');
   stmts.clearServerHostKey.run('pin-test');
-  assert.equal(verify(b), true, 're-trust → the new key is pinned');
+  assert.equal(verify(b), true, 're-trust -> the new key is pinned');
 });
 
 test('security: a truncated ed25519 public key (ssh2 generator bug) is rejected', () => {
@@ -270,7 +270,7 @@ test('security: generateKey only returns pairs whose public key really matches t
   }
 });
 
-test('security: hardening drop-in — grace time, empty passwords, real idle limit (ChannelTimeout)', () => {
+test('security: hardening drop-in - grace time, empty passwords, real idle limit (ChannelTimeout)', () => {
   const conf = P.buildAccessConf({ maxAuthTries: 3, loginGraceTime: 30, permitEmptyPasswords: false, clientAliveInterval: 300, clientAliveCountMax: 2, idleTimeoutMin: 15, x11: false });
   assert.match(conf, /^LoginGraceTime 30$/m);
   assert.match(conf, /^PermitEmptyPasswords no$/m);
@@ -294,7 +294,7 @@ test('time sync: host validation and chrony.conf parsing', () => {
   assert.equal(P.parseChronyConf('pool ntp.ubuntu.com iburst').managed, false);
 });
 
-test('plans: NTP change = backup → write → validate (chronyd -p) → restart, restore on failure', () => {
+test('plans: NTP change = backup -> write -> validate (chronyd -p) -> restart, restore on failure', () => {
   const plan = plans.ntpPlan({ servers: [{ type: 'pool', host: 'pool.ntp.org' }] });
   const labels = plan.steps.map(s => s.label);
   assert.match(labels[0], /Back up/);
@@ -329,7 +329,7 @@ const FWD_LIST = `public (active)
 \trule port port="3306" protocol="tcp" reject`;
 const FWD_SVC = 'dhcpv6-client 546/udp\nssh 22/tcp';
 
-test('firewalld: --list-all → zone + UFW-shaped rules (deny first, services resolved to ports)', () => {
+test('firewalld: --list-all -> zone + UFW-shaped rules (deny first, services resolved to ports)', () => {
   const f = P.parseFirewalld(FWD_LIST, FWD_SVC);
   assert.equal(f.zone, 'public');
   assert.equal(f.active, true);
@@ -356,7 +356,7 @@ test('firewall: port ranges count as open, but only single-port rules are delete
   assert.deepEqual(P.ruleNumbersFor(ufw.rules, { port: 9005, proto: 'tcp', dir: 'IN' }), []);
 });
 
-test('firewalld: exposure — services/ports/rich rules, container ports always bypass', () => {
+test('firewalld: exposure - services/ports/rich rules, container ports always bypass', () => {
   const f = P.parseFirewalld(FWD_LIST, FWD_SVC);
   const listeners = [
     { port: 22, proto: 'tcp', bind: '0.0.0.0', process: 'sshd' },
@@ -375,7 +375,7 @@ test('firewalld: exposure — services/ports/rich rules, container ports always 
   assert.equal(by(8081).exposure, 'bypass');
 });
 
-test('firewalld: commands — permanent + reload, rich rules for sources/deny, quoted removal', () => {
+test('firewalld: commands - permanent + reload, rich rules for sources/deny, quoted removal', () => {
   assert.equal(plans.fwdAddCmd({ zone: 'public', port: 8443, proto: 'tcp', from: 'any', action: 'allow' }),
     '{{S}}firewall-cmd --permanent --zone=public --add-port=8443/tcp >/dev/null && {{S}}firewall-cmd --reload >/dev/null');
   assert.match(plans.fwdAddCmd({ zone: 'public', port: 5432, proto: 'tcp', from: '10.0.0.0/24', action: 'allow' }),
@@ -403,13 +403,13 @@ test('services: without systemd, state comes from a probe (or "unknown") and act
   assert.match(ssh.verbs.enable, /else \{ echo "This server does not run systemd/);
   assert.match(ssh.verbs.enabled, /else echo unknown; fi$/);
   const au = catalog.serviceFor('unattended-upgrades', 'ubuntu');
-  assert.match(au.verbs.status, /else echo unknown; fi$/, 'no probe → unknown, not "inactive"');
+  assert.match(au.verbs.status, /else echo unknown; fi$/, 'no probe -> unknown, not "inactive"');
   assert.match(au.verbs.start, /sudo service apt-daily-upgrade start/, '.timer suffix dropped for `service`');
   const alpine = catalog.serviceFor('docker', 'alpine');
   assert.equal(alpine.verbs.status, 'rc-service docker status >/dev/null 2>&1 && echo active || echo inactive', 'openrc unchanged');
 });
 
-test('plans: dnf-automatic — validated choices, backup + restore, timer follows the switch', () => {
+test('plans: dnf-automatic - validated choices, backup + restore, timer follows the switch', () => {
   const on = plans.dnfAutomaticPlan({ enabled: true, upgradeType: 'security', reboot: 'when-needed' });
   const all = on.steps.map(s => s.cmd).join('\n');
   assert.match(all, /cp -p \/etc\/dnf\/automatic\.conf \/etc\/dnf\/automatic\.conf\.dockgate-prev/);

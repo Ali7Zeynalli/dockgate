@@ -1,5 +1,5 @@
 'use strict';
-// Move to Swarm: privileged → cap_add hints, and macvlan networks in the stack file (server/swarm-stacks.js). No Docker.
+// Move to Swarm: privileged -> cap_add hints, and macvlan networks in the stack file (server/swarm-stacks.js). No Docker.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs'); const os = require('os'); const path = require('path');

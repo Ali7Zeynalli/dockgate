@@ -11,7 +11,7 @@ const SP = ctx.SP;
 test('simple cron lines come back the same and read in words', () => {
   for (const [cron, mode, words] of [
     ['15 3 * * *', 'daily', 'Every day at 03:15'],
-    ['0 */6 * * *', 'hours', 'Every 6 hours at :00 (00:00, 06:00, …)'],
+    ['0 */6 * * *', 'hours', 'Every 6 hours at :00 (00:00, 06:00, ...)'],
     ['5 * * * *', 'hours', 'Every hour at :05'],
     ['30 22 * * 1,3,5', 'weekly', 'Every Monday, Wednesday, Friday at 22:30'],
     ['0 4 * * 0', 'weekly', 'Every Sunday at 04:00'],

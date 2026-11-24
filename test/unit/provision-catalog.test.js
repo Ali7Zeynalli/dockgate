@@ -39,7 +39,7 @@ test('catalog: buildPlanForDistro returns concrete commands; throws on unknown d
 });
 
 test('catalog: ssh-hardening is now SAFE (no requiresKey, low risk); firewall stays high risk', () => {
-  assert.ok(!cat.byId['ssh-hardening'].requiresKey, 'no key requirement — safe hardening cannot lock you out');
+  assert.ok(!cat.byId['ssh-hardening'].requiresKey, 'no key requirement - safe hardening cannot lock you out');
   assert.equal(cat.byId['ssh-hardening'].risk, 'low');
   assert.equal(cat.byId['firewall'].risk, 'high');
 });
@@ -69,10 +69,10 @@ test('catalog: swap + docker-group are OPTIONAL (do not nag as missing); docker 
 
 test('catalog: System update is alwaysRun (an action, detect is `false` so it never reports "installed")', () => {
   assert.ok(cat.byId.update.alwaysRun, 'update marked alwaysRun');
-  assert.equal(cat.byId.update.distro.debian.detect, 'false', 'detect always fails → never skipped, never "present"');
+  assert.equal(cat.byId.update.distro.debian.detect, 'false', 'detect always fails -> never skipped, never "present"');
 });
 
-test('catalog: ssh-hardening is SAFE — no PasswordAuthentication/PermitRootLogin disable; sets MaxAuthTries', () => {
+test('catalog: ssh-hardening is SAFE - no PasswordAuthentication/PermitRootLogin disable; sets MaxAuthTries', () => {
   for (const fam of ['debian', 'rhel']) {
     const inst = cat.byId['ssh-hardening'].distro[fam].install;
     assert.ok(!/PasswordAuthentication\s+no/i.test(inst), `${fam}: must NOT disable password auth (lockout)`);

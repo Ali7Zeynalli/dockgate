@@ -1,8 +1,8 @@
 // Cron, without I/O (unit tested): read crontab text into jobs, write it back, the next run times of a schedule
 // and the schedule in words.
-//   parseCrontab(text, { system })   → { lines: [{ raw, kind: 'job'|'env'|'comment'|'blank', job? }] }
+//   parseCrontab(text, { system })   -> { lines: [{ raw, kind: 'job'|'env'|'comment'|'blank', job? }] }
 //       system: /etc/crontab and /etc/cron.d files have a user field after the schedule
-//   jobs(parsed)                      → [{ index, schedule, user?, command, enabled, meta }]
+//   jobs(parsed)                      -> [{ index, schedule, user?, command, enabled, meta }]
 //   nextRuns(schedule, fromMs, offsetMin, n)   next n run times (ms), offsetMin = server UTC offset in minutes
 //   describe(schedule)                "Every day at 03:30"
 //   buildLine(entry, { system })      one crontab line (plus its "# dockgate:" meta line)
@@ -33,13 +33,13 @@ function field(spec, idx) {
   return out;
 }
 
-/** "30 3 * * *" or "@daily" → { min, hour, dom, mon, dow, domStar, dowStar, reboot } — throws on a bad schedule. */
+/** "30 3 * * *" or "@daily" -> { min, hour, dom, mon, dow, domStar, dowStar, reboot } - throws on a bad schedule. */
 function parseSchedule(s) {
   const t = String(s || '').trim().toLowerCase();
   if (t === '@reboot') return { reboot: true };
   const exp = MACROS[t] || t;
   const p = exp.split(/\s+/);
-  if (p.length !== 5) throw new Error('A schedule has 5 fields: minute hour day-of-month month day-of-week (or @daily, @hourly…)');
+  if (p.length !== 5) throw new Error('A schedule has 5 fields: minute hour day-of-month month day-of-week (or @daily, @hourly...)');
   return { min: field(p[0], 0), hour: field(p[1], 1), dom: field(p[2], 2), mon: field(p[3], 3), dow: field(p[4], 4), domStar: p[2] === '*', dowStar: p[4] === '*' };
 }
 function matches(c, d) { // d: Date in "server local" terms via UTC getters
@@ -143,7 +143,7 @@ function jobs(parsed) {
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,40}$/;
 const USER_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
-/** entry { schedule, command, user?, enabled, meta? } → [metaLine?, jobLine]. Throws on bad input. */
+/** entry { schedule, command, user?, enabled, meta? } -> [metaLine?, jobLine]. Throws on bad input. */
 function buildLines(entry, { system = false } = {}) {
   parseSchedule(entry.schedule);
   const cmd = String(entry.command || '').trim();
@@ -164,7 +164,7 @@ function apply(text, op, { system = false } = {}) {
   const parsed = parseCrontab(text, { system });
   const L = parsed.lines.map(l => l.raw);
   const target = op.action === 'add' ? null : parsed.lines[op.index];
-  if (op.action !== 'add' && (!target || target.kind !== 'job' || target.raw !== op.raw)) throw Object.assign(new Error('The crontab changed after it was read — reload and try again'), { statusCode: 409, code: 'CHANGED' });
+  if (op.action !== 'add' && (!target || target.kind !== 'job' || target.raw !== op.raw)) throw Object.assign(new Error('The crontab changed after it was read - reload and try again'), { statusCode: 409, code: 'CHANGED' });
   const hasMeta = op.action !== 'add' && op.index > 0 && META.test((L[op.index - 1] || '').trim());
   const start = hasMeta ? op.index - 1 : op.index;
   if (op.action === 'add') { if (L.length && L[L.length - 1].trim() !== '') L.push(''); L.push(...buildLines(op.entry, { system })); }

@@ -1,5 +1,5 @@
 // Central audit log helper.
-// Records every mutation performed on DockGate to the `activity` table — with the context of which
+// Records every mutation performed on DockGate to the `activity` table - with the context of which
 // host (server) and where from (source_ip). Since there is no auth, this is a "what was done + from where"
 // audit, not a "who did it" one.
 //
@@ -8,7 +8,7 @@
 
 const { stmts } = require('./db');
 
-// Source IP from req — req.ip already applies the TRUST_PROXY setting (server/trust-proxy.js). The raw
+// Source IP from req - req.ip already applies the TRUST_PROXY setting (server/trust-proxy.js). The raw
 // X-Forwarded-For header is never read directly: any client can send one.
 function ipFromReq(req) {
   if (!req) return null;
@@ -22,7 +22,7 @@ function ipFromSocket(socket) {
 }
 
 /**
- * Write an audit record. Never throws — logging must not break the main operation.
+ * Write an audit record. Never throws - logging must not break the main operation.
  * If `server` is not provided, the active Docker server is picked up automatically (correct for resource operations).
  * Control-plane operations (server management, settings, self-update) must explicitly pass `server:'local'`.
  */
@@ -41,7 +41,7 @@ function logAction({
     if (!action) return;
     let srv = server;
     if (srv === undefined) {
-      // late require — avoid circular dependency
+      // late require - avoid circular dependency
       try { srv = require('./docker').getActiveServerId() || 'local'; }
       catch (e) { srv = 'local'; }
     }

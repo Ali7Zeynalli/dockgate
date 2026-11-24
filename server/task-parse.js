@@ -1,11 +1,11 @@
-// Deploy → Tasks: read the task files of a project (pure, unit tested). Nothing here runs a tool: the files are
-// parsed as text, because listing targets with the tool itself can run code (make evaluates $(shell …)).
-//   makefile(text)    { targets: [{ name, desc, deps }], vars: [{ name, value, op }] }  — "## text" or "# text" above = description
-//   justfile(text)    { recipes: [{ name, desc, params: [{ name, value }] }] }          — "_name" and [private] are hidden
-//   taskfile(text)    { tasks: [{ name, desc }] }                                       — Taskfile.yml (go-task)
+// Deploy > Tasks: read the task files of a project (pure, unit tested). Nothing here runs a tool: the files are
+// parsed as text, because listing targets with the tool itself can run code (make evaluates $(shell ...)).
+//   makefile(text)    { targets: [{ name, desc, deps }], vars: [{ name, value, op }] }  - "## text" or "# text" above = description
+//   justfile(text)    { recipes: [{ name, desc, params: [{ name, value }] }] }          - "_name" and [private] are hidden
+//   taskfile(text)    { tasks: [{ name, desc }] }                                       - Taskfile.yml (go-task)
 //   packageJson(text) { scripts: [{ name, cmd }] }
 //   shellDesc(head)   the first comment lines after the shebang
-//   discover(out)     the sections printed by DISCOVER_SH → { files, tasks: [...], git, tools }
+//   discover(out)     the sections printed by DISCOVER_SH -> { files, tasks: [...], git, tools }
 //   command(task, { vars, args, dry, pm })   the shell line that runs (or dry-runs) a task
 
 const shq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";

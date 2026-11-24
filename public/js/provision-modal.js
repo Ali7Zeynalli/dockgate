@@ -1,6 +1,6 @@
-// Provisioning panel + overview — render INTO a container (the per-server console's tabs), not a modal.
+// Provisioning panel + overview - render INTO a container (the per-server console's tabs), not a modal.
 // On open they LIVE-SCAN the server (read-only detect) so you see what's installed before acting.
-// Globals: renderProvisionPanel(serverId, container) · renderConsoleOverview(serverId, container, onSetup).
+// Globals: renderProvisionPanel(serverId, container), renderConsoleOverview(serverId, container, onSetup).
 const PV_ICON = { verified: '✓', installed: '✓', present: '✓', failed: '✗', skipped: '⊘', unknown: '○' };
 const PV_STATE = (scanItems) => {
   const present = {};
@@ -8,17 +8,17 @@ const PV_STATE = (scanItems) => {
   return (id) => { const s = present[id]; return s ? (s.na ? 'na' : (s.present ? 'present' : 'missing')) : 'unknown'; };
 };
 
-// ---------- Setup tab — components table (AWS Systems Manager / Azure Machine Configuration style) ----------
+// ---------- Setup tab - components table (AWS Systems Manager / Azure Machine Configuration style) ----------
 // Live scan = what is installed now; matrix = the last result DockGate recorded per component (errors);
 // runs = history. "Run setup" shows the plan first; the run streams step by step (GitHub Actions style).
 const PV_PRESETS = [
   ['just-docker', 'Just Docker', 'Docker Engine + Compose and log limits'],
-  ['secure-baseline', 'Secure baseline', 'update · firewall · SSH hardening · fail2ban · Docker · deploy user'],
+  ['secure-baseline', 'Secure baseline', 'update, firewall, SSH hardening, fail2ban, Docker, deploy user'],
   ['full', 'Full', 'Everything in the list'],
   ['custom', 'Custom', 'Pick components'],
 ];
 async function renderProvisionPanel(serverId, container, opts = {}) {
-  container.innerHTML = `<div class="text-sm text-muted">Scanning <b>${escapeHtml(serverId)}</b> over SSH — checking what is installed…</div><div class="skeleton" style="height:16px;width:60%;margin-top:10px"></div>`;
+  container.innerHTML = `<div class="text-sm text-muted">Scanning <b>${escapeHtml(serverId)}</b> over SSH - checking what is installed...</div><div class="skeleton" style="height:16px;width:60%;margin-top:10px"></div>`;
   let catalog, scan, matrix = [], runs = [];
   try {
     [catalog, scan, matrix, runs] = await Promise.all([
@@ -27,7 +27,7 @@ async function renderProvisionPanel(serverId, container, opts = {}) {
       API.get(`/servers/${serverId}/provision/runs`).then(r => r.runs || []).catch(() => []),
     ]);
   } catch (e) {
-    return secError(container, 'Scan failed — the server may be unreachable, or the login cannot be used for the scan', e, () => renderProvisionPanel(serverId, container));
+    return secError(container, 'Scan failed - the server may be unreachable, or the login cannot be used for the scan', e, () => renderProvisionPanel(serverId, container));
   }
   renderProvisionForm(serverId, catalog, scan, container, { matrix, runs, preset: opts.preset });
 }
@@ -53,8 +53,8 @@ function renderProvisionForm(serverId, catalog, scan, container, { matrix = [], 
   const groupLabel = (g) => ({ base: 'Base', security: 'Security', system: 'System' }[g] || (g ? g[0].toUpperCase() + g.slice(1) : 'Other'));
   const ord = ['base', 'security', 'system'];
   const sorted = items.slice().sort((a, b) => (ord.indexOf(a.group) - ord.indexOf(b.group)) || (a.seq - b.seq));
-  const fmtWhen = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '—');
-  const dur = (a, b) => { if (!a || !b) return '—'; const s = Math.max(0, (new Date(b.replace(' ', 'T') + 'Z') - new Date(a.replace(' ', 'T') + 'Z')) / 1000); return s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`; };
+  const fmtWhen = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '-');
+  const dur = (a, b) => { if (!a || !b) return '-'; const s = Math.max(0, (new Date(b.replace(' ', 'T') + 'Z') - new Date(a.replace(' ', 'T') + 'Z')) / 1000); return s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`; };
 
   const draw = () => {
     const sel = selected(), todo = todoOf(sel);
@@ -67,21 +67,21 @@ function renderProvisionForm(serverId, catalog, scan, container, { matrix = [], 
         counts.failed ? UI.pill('bad', `${counts.failed} failed`) : '',
         counts.na ? `<span class="text-muted">${counts.na} not available on this OS</span>` : '',
       ])}
-      ${UI.header('Setup', 'What is installed on this server. Each component is checked before it is installed and verified after.', `${UI.btn('Scan again', 'data-rescan', 'btn-ghost')}<button type="button" class="btn btn-sm btn-primary" data-run ${todo.length ? '' : 'disabled'}>${todo.length ? `Run setup (${todo.length})…` : 'Nothing to install'}</button>`)}
+      ${UI.header('Setup', 'What is installed on this server. Each component is checked before it is installed and verified after.', `${UI.btn('Scan again', 'data-rescan', 'btn-ghost')}<button type="button" class="btn btn-sm btn-primary" data-run ${todo.length ? '' : 'disabled'}>${todo.length ? `Run setup (${todo.length})...` : 'Nothing to install'}</button>`)}
       <div class="ui-field" style="margin-bottom:10px"><span class="ui-label">Preset</span>
         <div class="ui-seg">${PV_PRESETS.map(([v, l]) => `<button type="button" data-preset="${v}" aria-pressed="${preset === v}">${l}</button>`).join('')}</div>
-        <span class="ui-help">${escapeHtml(PV_PRESETS.find(x => x[0] === preset)[2])} · ${sel.length} selected · <b>${todo.length} will run</b>${todo.length ? ': ' + todo.map(it => escapeHtml(it.label)).join(', ') : ''}${preset === 'custom' ? '' : ' · tick or untick a row to make your own list'} · click a row to see what it changes</span></div>
+        <span class="ui-help">${escapeHtml(PV_PRESETS.find(x => x[0] === preset)[2])}, ${sel.length} selected, <b>${todo.length} will run</b>${todo.length ? ': ' + todo.map(it => escapeHtml(it.label)).join(', ') : ''}${preset === 'custom' ? '' : ', tick or untick a row to make your own list'}, click a row to see what it changes</span></div>
       <div class="pv-table">${UI.table([{ label: '', width: '34px' }, { label: 'Component' }, { label: 'Status' }, { label: 'This run' }, { label: 'Details' }, { label: 'Last run' }, { label: '', align: 'right' }], sorted.flatMap(it => {
         const [lv, txt, key] = statusOf(it), m = last[it.id];
         const on = sel.includes(it.id), isOpen = openRows.has(it.id), ch = it.changes || {};
         const runs = on && ['missing', 'failed', 'optional', 'action'].includes(key);
-        const run = key === 'na' ? '<span class="ui-sub">—</span>' : !on ? '<span class="ui-sub">Not selected</span>'
-          : runs ? `<span class="pv-run">${key === 'action' ? 'Will run' : key === 'failed' ? 'Will retry' : 'Will install'}</span>` : '<span class="ui-sub">Skip · installed</span>';
+        const run = key === 'na' ? '<span class="ui-sub">-</span>' : !on ? '<span class="ui-sub">Not selected</span>'
+          : runs ? `<span class="pv-run">${key === 'action' ? 'Will run' : key === 'failed' ? 'Will retry' : 'Will install'}</span>` : '<span class="ui-sub">Skip, installed</span>';
         const detail = key === 'failed' && m && (m.error || m.reason) ? `<span style="color:var(--danger)">${escapeHtml(String(m.error || m.reason).split('\n').slice(-1)[0].slice(0, 140))}</span>`
           : key === 'na' ? escapeHtml((scan.items.find(x => x.id === it.id) || {}).reason || 'not on this OS') : escapeHtml(ch.short || it.description || '');
         const row = `<tr class="pv-row${on ? ' ui-row-selected' : ''}${isOpen ? ' pv-open' : ''}" data-row="${escapeHtml(it.id)}" aria-expanded="${isOpen}">
           <td><input type="checkbox" data-comp="${escapeHtml(it.id)}" aria-label="Include ${escapeHtml(it.label)}" ${on ? 'checked' : ''} ${key === 'na' ? 'disabled' : ''} style="accent-color:var(--accent)"></td>
-          <td><span class="pv-chev" aria-hidden="true">›</span> <b>${escapeHtml(it.label)}</b> <span class="ui-sub">· ${groupLabel(it.group)}</span>${it.risk === 'high' ? '<div class="ui-sub" style="color:var(--warning);padding-left:16px">risky · tested with a new SSH login</div>' : ''}</td>
+          <td><span class="pv-chev" aria-hidden="true">›</span> <b>${escapeHtml(it.label)}</b> <span class="ui-sub">· ${groupLabel(it.group)}</span>${it.risk === 'high' ? '<div class="ui-sub" style="color:var(--warning);padding-left:16px">risky, tested with a new SSH login</div>' : ''}</td>
           <td>${UI.pill(lv, txt)}</td><td>${run}</td>
           <td><span class="ui-sub">${detail}</span></td>
           <td><span class="ui-sub">${fmtWhen(m && m.lastAt)}</span></td>
@@ -94,14 +94,14 @@ function renderProvisionForm(serverId, catalog, scan, container, { matrix = [], 
             <div><div class="pv-k">Installs</div>${list(ch.installs, 'no packages')}</div>
             <div><div class="pv-k">Writes</div>${list(ch.writes, 'no files')}</div>
             <div><div class="pv-k">Sets</div>${list(ch.sets, 'nothing else')}</div>
-            <div><div class="pv-k">Change it later in</div><span class="text-sm">${escapeHtml(ch.editIn || '—')}</span></div>
+            <div><div class="pv-k">Change it later in</div><span class="text-sm">${escapeHtml(ch.editIn || '-')}</span></div>
           </div></div></td></tr>`];
       }), { minWidth: 880 })}</div>
       ${UI.header('Run history', 'Every setup run with its full log.')}
       ${UI.table([{ label: 'Started' }, { label: 'Preset' }, { label: 'Result' }, { label: 'Duration' }, { label: '', align: 'right' }], runs.map(r => ({ cells: [
         `<span class="ui-sub">${fmtWhen(r.started_at)}</span>`,
         escapeHtml((PV_PRESETS.find(x => x[0] === r.preset) || [0, r.preset])[1]),
-        `${UI.pill(...({ running: ['info', 'Running'], done: ['ok', 'Succeeded'], partial: ['bad', 'Failed'], error: ['bad', 'Error'], cancelled: ['warn', 'Cancelled'] }[r.status] || ['off', escapeHtml(r.status)]))} <span class="ui-sub">${r.item_ok || 0} ok · ${r.item_failed || 0} failed</span>`,
+        `${UI.pill(...({ running: ['info', 'Running'], done: ['ok', 'Succeeded'], partial: ['bad', 'Failed'], error: ['bad', 'Error'], cancelled: ['warn', 'Cancelled'] }[r.status] || ['off', escapeHtml(r.status)]))} <span class="ui-sub">${r.item_ok || 0} ok, ${r.item_failed || 0} failed</span>`,
         `<span class="ui-sub">${dur(r.started_at, r.finished_at)}</span>`,
         UI.btn('View log', `data-log="${escapeHtml(r.id)}"`),
       ] })), { minWidth: 600, empty: 'No runs yet.' })}`;
@@ -151,10 +151,10 @@ async function openRunLog(runId) {
   try { d = await API.get(`/servers/provision/runs/${encodeURIComponent(runId)}`); }
   catch (e) { return showToast(e.message, 'error', 8000); }
   const ic = { verified: ['ok', 'Verified'], present: ['ok', 'Already there'], installed: ['ok', 'Installed'], failed: ['bad', 'Failed'], skipped: ['off', 'Skipped'] };
-  const m = showModal(`Setup run · ${escapeHtml(String(d.run.started_at || '').slice(0, 16))}`, `
+  const m = showModal(`Setup run, ${escapeHtml(String(d.run.started_at || '').slice(0, 16))}`, `
     ${UI.table([{ label: 'Component' }, { label: 'Result' }, { label: 'Time' }], (d.items || []).map(i => ({ cells: [
       `<b>${escapeHtml(i.label || i.item_id)}</b>${i.error ? `<div class="ui-sub" style="color:var(--danger)">${escapeHtml(String(i.error).slice(0, 200))}</div>` : ''}`,
-      UI.pill(...(ic[i.state] || ['off', i.state])), `<span class="ui-sub">${i.duration_ms ? (i.duration_ms / 1000).toFixed(1) + ' s' : '—'}</span>`,
+      UI.pill(...(ic[i.state] || ['off', i.state])), `<span class="ui-sub">${i.duration_ms ? (i.duration_ms / 1000).toFixed(1) + ' s' : '-'}</span>`,
     ] })), { minWidth: 420, empty: 'No components recorded.' })}
     <details style="margin-top:10px" data-runlog><summary class="text-sm" style="cursor:pointer;font-weight:600">Full log</summary><div data-lv style="margin-top:8px"></div></details>`, []);
   m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
@@ -168,7 +168,7 @@ async function openRunLog(runId) {
   m.overlay.querySelector('.modal-footer').append(c);
 }
 
-// ---------- Overview tab — server summary (OS, setup state, Docker). Live metrics live in Monitoring,
+// ---------- Overview tab - server summary (OS, setup state, Docker). Live metrics live in Monitoring,
 // the full component list in Setup; security recommendations are rendered below by server-security.js.
 async function renderConsoleOverview(serverId, container, onSetup) {
   container.innerHTML = '<div class="skeleton" style="height:90px;width:100%"></div>';
@@ -185,12 +185,12 @@ async function renderConsoleOverview(serverId, container, onSetup) {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
       <div class="card" style="padding:14px 16px;display:grid;gap:8px">
         <div class="flex justify-between items-center"><b>Setup</b>${ready ? UI.pill('ok', 'Ready') : UI.pill('warn', 'Needs setup')}</div>
-        <div class="ui-sub">${scan.distro ? 'OS ' + escapeHtml(scan.distro) + ' · ' : ''}${installed} installed${missing.length ? ` · ${missing.length} missing: ${escapeHtml(missing.map(m => m.label).join(', '))}` : ''}</div>
-        <div>${UI.btn(missing.length ? `Set up ${missing.length} missing →` : 'Open Setup', 'data-setup', missing.length ? 'btn-primary' : 'btn-secondary')}</div>
+        <div class="ui-sub">${scan.distro ? 'OS ' + escapeHtml(scan.distro) + ', ' : ''}${installed} installed${missing.length ? `, ${missing.length} missing: ${escapeHtml(missing.map(m => m.label).join(', '))}` : ''}</div>
+        <div>${UI.btn(missing.length ? `Set up ${missing.length} missing -> ` : 'Open Setup', 'data-setup', missing.length ? 'btn-primary' : 'btn-secondary')}</div>
       </div>
       <div class="card" style="padding:14px 16px;display:grid;gap:8px">
         <div class="flex justify-between items-center"><b>Docker</b><span data-dstate></span></div>
-        <div data-docker class="ui-sub">loading…</div>
+        <div data-docker class="ui-sub">loading...</div>
         <div>${UI.btn('Open Monitoring', 'data-mon')}</div>
       </div>
     </div>`;
@@ -206,7 +206,7 @@ async function renderConsoleOverview(serverId, container, onSetup) {
     try {
       const d = await API.get(`/servers/${serverId}/docker/summary`);
       if (!document.body.contains(el)) return;
-      el.innerHTML = `${d.running} of ${d.containers} containers running · ${d.images} images · ${d.volumes} volumes · ${d.networks} networks`;
+      el.innerHTML = `${d.running} of ${d.containers} containers running, ${d.images} images, ${d.volumes} volumes, ${d.networks} networks`;
       container.querySelector('[data-dstate]').innerHTML = UI.pill('ok', 'Reachable');
     } catch (e) { if (document.body.contains(el)) { el.textContent = 'Docker is not reachable on this server.'; container.querySelector('[data-dstate]').innerHTML = UI.pill('warn', 'Not reachable'); } }
   };
@@ -214,10 +214,10 @@ async function renderConsoleOverview(serverId, container, onSetup) {
   timer = setInterval(refresh, 30000);
 }
 
-// ---------- Run progress — steps like a CI job, log underneath ----------
+// ---------- Run progress - steps like a CI job, log underneath ----------
 function streamProvisionJob(serverId, jobId, container) {
   container.innerHTML = `
-    ${UI.header(`<span id="pv-title">Setting up ${escapeHtml(serverId)}…</span>`, 'Runs on the server even if you leave this page.', `<button class="btn btn-sm btn-secondary" id="pv-cancel">Cancel after this step</button><button class="btn btn-sm btn-primary" id="pv-rescan" style="display:none">Back to components</button>`)}
+    ${UI.header(`<span id="pv-title">Setting up ${escapeHtml(serverId)}...</span>`, 'Runs on the server even if you leave this page.', `<button class="btn btn-sm btn-secondary" id="pv-cancel">Cancel after this step</button><button class="btn btn-sm btn-primary" id="pv-rescan" style="display:none">Back to components</button>`)}
     <div class="card ui-steps" style="padding:0" id="pv-steps"></div>
     <details class="card" style="margin-top:12px"><summary class="text-sm" style="cursor:pointer;font-weight:600">Full log</summary>
       <pre id="pv-log" style="white-space:pre-wrap;background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);padding:10px;border-radius:8px;max-height:38vh;overflow:auto;font-size:12px;margin-top:8px"></pre>
@@ -229,7 +229,7 @@ function streamProvisionJob(serverId, jobId, container) {
   rescan.addEventListener('click', () => renderProvisionPanel(serverId, container));
   const cancelBtn = container.querySelector('#pv-cancel');
   cancelBtn.addEventListener('click', () => showConfirm('Cancel setup', 'The component that is installing now finishes first (stopping a package manager halfway can break it); nothing after it runs.', async () => {
-    try { await API.post(`/servers/provision/job/${jobId}/cancel`); cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling…'; }
+    try { await API.post(`/servers/provision/job/${jobId}/cancel`); cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling...'; }
     catch (e) { showToast(e.message, 'error', 6000); }
   }, true));
   const sm = {
@@ -237,7 +237,7 @@ function streamProvisionJob(serverId, jobId, container) {
     failed: ['✕', 'var(--danger)', 'failed'], skipped: ['⊘', 'var(--text-muted)', 'skipped'],
   };
   const step = (label, state, running) => {
-    const [ic, c, txt] = sm[state] || [running ? '●' : '○', running ? 'var(--accent)' : 'var(--text-muted)', running ? 'running…' : (state || '')];
+    const [ic, c, txt] = sm[state] || [running ? '●' : '○', running ? 'var(--accent)' : 'var(--text-muted)', running ? 'running...' : (state || '')];
     return `<div><span style="color:${c};text-align:center">${ic}</span><span>${escapeHtml(label)}</span><span class="ui-sub">${txt}</span></div>`;
   };
   let timer = null;
@@ -245,12 +245,12 @@ function streamProvisionJob(serverId, jobId, container) {
     if (!document.body.contains(stepsEl)) { clearInterval(timer); return; }
     let job;
     try { job = await API.get(`/servers/provision/job/${jobId}`); }
-    catch (e) { clearInterval(timer); if (document.body.contains(stepsEl)) { titleEl.textContent = 'Run finished — see Run history'; rescan.style.display = ''; cancelBtn.style.display = 'none'; } return; }
+    catch (e) { clearInterval(timer); if (document.body.contains(stepsEl)) { titleEl.textContent = 'Run finished - see Run history'; rescan.style.display = ''; cancelBtn.style.display = 'none'; } return; }
     logEl.textContent = job.log || '';
     logEl.scrollTop = logEl.scrollHeight;
     const rows = (job.items || []).map(i => step(i.label || i.id, i.state, false));
     if (job.status === 'running' && job.phase && !(job.items || []).some(i => i.id === job.phase)) rows.push(step(job.phase, null, true));
-    stepsEl.innerHTML = rows.join('') || '<div><span></span><span class="ui-sub">Starting…</span><span></span></div>';
+    stepsEl.innerHTML = rows.join('') || '<div><span></span><span class="ui-sub">Starting...</span><span></span></div>';
     if (job.status && job.status !== 'running') {
       clearInterval(timer);
       rescan.style.display = '';
@@ -258,7 +258,7 @@ function streamProvisionJob(serverId, jobId, container) {
       if (job.rebootRequired && !container.querySelector('#pv-reboot')) {
         const rb = document.createElement('div');
         rb.id = 'pv-reboot'; rb.className = 'insight-card warning'; rb.style.cssText = 'justify-content:space-between;margin-bottom:12px';
-        rb.innerHTML = '<span>Updates need a reboot to take effect.</span><button class="btn btn-sm btn-secondary">Reboot server…</button>';
+        rb.innerHTML = '<span>Updates need a reboot to take effect.</span><button class="btn btn-sm btn-secondary">Reboot server...</button>';
         rb.querySelector('button').addEventListener('click', () => showConfirm('Reboot server', 'The server restarts now and is unreachable for a minute or two.', async () => {
           try { await API.post(`/servers/${serverId}/reboot`, { confirm: true }); showToast('Reboot started', 'info', 6000); } catch (e) { showToast(e.message, 'error', 8000); }
         }, true));
@@ -266,10 +266,10 @@ function streamProvisionJob(serverId, jobId, container) {
       }
       const ok = (job.items || []).filter(i => ['verified', 'present', 'installed'].includes(i.state)).length;
       const failed = (job.items || []).filter(i => i.state === 'failed').length;
-      titleEl.textContent = `Setup ${job.status} — ${ok} ok, ${failed} failed`;
+      titleEl.textContent = `Setup ${job.status} - ${ok} ok, ${failed} failed`;
       showToast(`Setup ${job.status}: ${ok} ok, ${failed} failed`, failed ? 'warning' : 'success', 8000);
     } else {
-      titleEl.textContent = `Setting up ${serverId}… (${(job.items || []).length} done)`;
+      titleEl.textContent = `Setting up ${serverId}... (${(job.items || []).length} done)`;
     }
   };
   poll();

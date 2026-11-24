@@ -23,7 +23,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Docker's own build history — image layer history / Docker-in öz build tarixçəsi — image-lərin history-si
+// Docker's own build history - image layer history / Docker-in öz build tarixçəsi - image-lərin history-si
 router.get('/docker-history', async (req, res) => {
   try {
     const images = await dockerService.listImages();
@@ -33,7 +33,7 @@ router.get('/docker-history', async (req, res) => {
     const hiddenRows = stmts.getHiddenBuilds.all();
     const hiddenSet = new Set(hiddenRows.map(r => r.image_id));
 
-    // Get history for each image — PARALLEL (was serial await before, slow with many images)
+    // Get history for each image - PARALLEL (was serial await before, slow with many images)
     const candidates = images.slice(0, 30).filter(img =>
       !hiddenSet.has(img.id) &&
       img.repoTags && img.repoTags[0] !== '<none>:<none>'
@@ -123,17 +123,17 @@ router.delete('/', async (req, res) => {
   }
 });
 
-// ============ BUILD CACHE — grouped by image / image-ə görə qruplaşdırılmış ============
+// ============ BUILD CACHE - grouped by image / image-ə görə qruplaşdırılmış ============
 
 router.get('/cache', async (req, res) => {
   try {
     const df = await dockerService.getDiskUsage();
     const cacheItems = df.BuildCache || [];
 
-    // Get images — to link cache items to images / Image-ləri al — cache-i image-lərə bağlamaq üçün
+    // Get images - to link cache items to images / Image-ləri al - cache-i image-lərə bağlamaq üçün
     const images = await dockerService.listImages();
 
-    // Group cache by image — each BuildCache item has image/layer info in Description
+    // Group cache by image - each BuildCache item has image/layer info in Description
     // Group cache by image / Cache-i image-lərə görə qruplaşdır
     const groups = {};
 
@@ -149,15 +149,15 @@ router.get('/cache', async (req, res) => {
       const execMatch = desc.match(/mount \/ from exec \/bin\/sh -c (.+)/i);
 
       if (pullMatch) {
-        // "pulled from docker.io/library/node:20-alpine..." → node:20-alpine
+        // "pulled from docker.io/library/node:20-alpine..." -> node:20-alpine
         const fullName = pullMatch[1].split('@')[0];
         const parts = fullName.split('/');
         groupKey = parts[parts.length - 1] || fullName;
       } else if (localMatch) {
         groupKey = localMatch[1] || 'local context';
       } else if (desc.includes('WORKDIR') || desc.includes('COPY') || desc.includes('RUN') || desc.includes('ADD')) {
-        // Dockerfile commands — assign to nearest image
-        // Dockerfile commands — assign to nearest image
+        // Dockerfile commands - assign to nearest image
+        // Dockerfile commands - assign to nearest image
         groupKey = 'dockerfile-commands';
       } else if (item.Type === 'source.local') {
         groupKey = 'local context';
@@ -219,7 +219,7 @@ router.get('/cache', async (req, res) => {
 
 router.post('/cache/prune', async (req, res) => {
   try {
-    // pruneBuildCache uses the Docker Engine API (pruneBuilder) → works on the active host (local or remote SSH)
+    // pruneBuildCache uses the Docker Engine API (pruneBuilder) -> works on the active host (local or remote SSH)
     const result = await dockerService.pruneBuildCache();
     logAction({ req, resourceType: 'system', resourceName: 'build-cache', action: 'prune_build_cache', details: result });
     res.json(result);
@@ -232,7 +232,7 @@ router.post('/cache/prune', async (req, res) => {
 
 router.get('/builders', async (req, res) => {
   try {
-    // buildx ls is a host CLI — local daemon only. If a remote host is active, return the default builder.
+    // buildx ls is a host CLI - local daemon only. If a remote host is active, return the default builder.
     if (!dockerService.isLocalActive()) {
       return res.json([{ name: 'default', driver: 'docker', status: 'remote', isDefault: true }]);
     }

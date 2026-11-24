@@ -3,12 +3,12 @@ Router.register('dashboard', async (content) => {
   let refreshTimer = null;
   let healthChart = null;
   let hostNode = null;       // the live <div id="dash-host"> + its running 5s monitor, kept across 30s refreshes
-  let hostForServer = null;  // which server hostNode monitors — only remount fresh when this actually changes
+  let hostForServer = null;  // which server hostNode monitors - only remount fresh when this actually changes
 
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
 
-  // All servers at a glance (only when there is more than one): state, CPU · memory · disk, open the console.
+  // All servers at a glance (only when there is more than one): state, CPU, memory, disk, open the console.
   function fleetCards(servers, ov, activeId) {
     if (servers.length < 2) return '';
     const cards = servers.map(sv => {
@@ -22,7 +22,7 @@ Router.register('dashboard', async (content) => {
       const go = sv.id === 'local' ? '' : `onclick="Router.navigate('server-console',{id:'${escapeHtml(sv.id)}',tab:'overview'})" style="cursor:pointer" title="Open the console"`;
       return `<div class="card" ${go}>
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${escapeHtml(sv.name || sv.id)}${sv.hasAccessPassword ? ' <span title="An access password is needed to switch to this server">🔒</span>' : ''}${sv.id === activeId ? ' <span class="ui-sub">in use</span>' : ''}</b>${state}</div>
-        ${last ? `<div class="ui-sub" style="margin-top:6px">CPU ${Math.round(last.cpu || 0)}% · memory ${Math.round(last.mem || 0)}% · disk ${Math.round(last.disk || 0)}%</div>
+        ${last ? `<div class="ui-sub" style="margin-top:6px">CPU ${Math.round(last.cpu || 0)}%, memory ${Math.round(last.mem || 0)}%, disk ${Math.round(last.disk || 0)}%</div>
         <div class="disk-bar" style="height:5px;margin:6px 0 0"><div class="disk-bar-fill ${dcls}" style="width:${Math.min(100, last.disk || 0)}%"></div></div>` : `<div class="ui-sub" style="margin-top:6px">${sv.id === 'local' ? 'The machine DockGate runs on. Its Docker summary is below.' : 'No metrics recorded yet.'}</div>`}
         ${setup ? `<div class="ui-sub" style="margin-top:6px">${setup}</div>` : ''}
       </div>`;
@@ -38,14 +38,14 @@ Router.register('dashboard', async (content) => {
     const rows = [];
     for (const sv of d.servers) {
       const who = `<b>${escapeHtml(sv.name)}</b>`;
-      if (sv.locked) { rows.push({ sv, kind: 'locked', cells: [who, UI.pill('off', 'locked'), '<span class="ui-sub">Needs its access password — switch to it to see inside</span>', ''] }); continue; }
+      if (sv.locked) { rows.push({ sv, kind: 'locked', cells: [who, UI.pill('off', 'locked'), '<span class="ui-sub">Needs its access password - switch to it to see inside</span>', ''] }); continue; }
       if (!sv.reachable) rows.push({ sv, kind: 'down', cells: [who, UI.pill('bad', 'not reachable'), `<span class="ui-sub">${escapeHtml(sv.error || '')}</span>`, ''] });
       sv.problems.forEach(p => rows.push({ sv, kind: 'ctr', target: p.name, cells: [who, UI.pill(p.problem === 'unhealthy' || p.problem === 'restarting' ? 'warn' : 'bad', escapeHtml(p.problem)), `<span class="td-mono">${escapeHtml(p.name)}</span>${p.project ? ` <span class="ui-sub">· ${escapeHtml(p.project)}</span>` : ''}<div class="ui-sub">${escapeHtml(p.status)}</div>`] }));
-      sv.updates.forEach(u => rows.push({ sv, kind: 'upd', target: u.containers[0] || null, cells: [who, UI.pill('info', 'newer image'), `<span class="td-mono">${escapeHtml(u.image)}</span>${u.from || u.to ? ` <span class="ui-sub">${escapeHtml(u.from || '?')} → ${escapeHtml(u.to || 'newer')}</span>` : ''}<div class="ui-sub">${u.containers.length ? `used by ${escapeHtml(u.containers.join(', '))}` : 'no container uses it now'}</div>`] }));
-      sv.jobs.forEach(j => rows.push({ sv, kind: j.source === 'Cron' ? 'cron' : j.source === 'Deploy recipe' ? 'recipe' : 'task', target: j.note, cells: [who, UI.pill('bad', 'failed'), `${escapeHtml(j.source)} · <b>${escapeHtml(j.name)}</b>${j.note ? ` <span class="ui-sub">· ${escapeHtml(j.note.slice(0, 120))}</span>` : ''}${j.at ? `<div class="ui-sub">${formatTime(new Date(j.at).toISOString())}</div>` : ''}`] }));
+      sv.updates.forEach(u => rows.push({ sv, kind: 'upd', target: u.containers[0] || null, cells: [who, UI.pill('info', 'newer image'), `<span class="td-mono">${escapeHtml(u.image)}</span>${u.from || u.to ? ` <span class="ui-sub">${escapeHtml(u.from || '?')} -> ${escapeHtml(u.to || 'newer')}</span>` : ''}<div class="ui-sub">${u.containers.length ? `used by ${escapeHtml(u.containers.join(', '))}` : 'no container uses it now'}</div>`] }));
+      sv.jobs.forEach(j => rows.push({ sv, kind: j.source === 'Cron' ? 'cron' : j.source === 'Deploy recipe' ? 'recipe' : 'task', target: j.note, cells: [who, UI.pill('bad', 'failed'), `${escapeHtml(j.source)}, <b>${escapeHtml(j.name)}</b>${j.note ? ` <span class="ui-sub">· ${escapeHtml(j.note.slice(0, 120))}</span>` : ''}${j.at ? `<div class="ui-sub">${formatTime(new Date(j.at).toISOString())}</div>` : ''}`] }));
     }
     const t = d.totals;
-    const summary = [t.problems && `${t.problems} container${t.problems === 1 ? '' : 's'} in trouble`, t.updates && `${t.updates} newer image${t.updates === 1 ? '' : 's'}`, t.jobs && `${t.jobs} failed job${t.jobs === 1 ? '' : 's'}`, t.unreachable && `${t.unreachable} not reachable`].filter(Boolean).join(' · ');
+    const summary = [t.problems && `${t.problems} container${t.problems === 1 ? '' : 's'} in trouble`, t.updates && `${t.updates} newer image${t.updates === 1 ? '' : 's'}`, t.jobs && `${t.jobs} failed job${t.jobs === 1 ? '' : 's'}`, t.unreachable && `${t.unreachable} not reachable`].filter(Boolean).join(', ');
     box.innerHTML = rows.length ? `${UI.header('Needs attention on all servers', summary + '. Open goes to that server.')}${UI.table([{ label: 'Server' }, { label: '' }, { label: 'What' }, { label: '', align: 'right' }],
       rows.map((r, i) => ({ cells: [...r.cells.slice(0, 3), r.kind === 'down' ? '' : UI.btn('Open', `data-attn="${i}"`)] })), { minWidth: 760 })}`
       : `<div class="ui-sub">✓ Nothing needs attention on any server: no container in trouble, no newer image, no failed scheduled job.</div>`;
@@ -61,15 +61,15 @@ Router.register('dashboard', async (content) => {
     }));
   }
 
-  // Observe → Uptime at a glance: "Sites · 11/12 up" (red when one is down).
+  // Observe > Uptime at a glance: "Sites, 11/12 up" (red when one is down).
   function uptimeButton(list) {
     if (!Array.isArray(list) || !list.length) return '';
     const on = list.filter(c => c.enabled);
     const down = on.filter(c => c.state && c.state.status === 'down');
     const up = on.filter(c => c.state && c.state.status === 'up').length;
     const tone = down.length ? 'color:var(--danger);border-color:var(--danger)' : '';
-    const text = down.length ? `Sites · ${down.length} down (${escapeHtml(down[0].name)}${down.length > 1 ? '…' : ''})` : `Sites · ${up}/${on.length} up`;
-    return `<button class="btn btn-secondary btn-sm" onclick="Router.navigate('observe', {tab:'uptime'})" title="Open Observe → Uptime" style="${tone}">● ${text}</button>`;
+    const text = down.length ? `Sites, ${down.length} down (${escapeHtml(down[0].name)}${down.length > 1 ? '...' : ''})` : `Sites, ${up}/${on.length} up`;
+    return `<button class="btn btn-secondary btn-sm" onclick="Router.navigate('observe', {tab:'uptime'})" title="Open Observe > Uptime" style="${tone}">● ${text}</button>`;
   }
 
   async function render() {
@@ -101,11 +101,11 @@ Router.register('dashboard', async (content) => {
         ${UI.header('Dashboard', (srvData.servers || []).length > 1 ? `All servers first, then the Docker host you are working on (${escapeHtml(activeSrv?.name || activeId)}).` : `Docker on ${isRemote ? escapeHtml(activeSrv?.name || activeId) : 'this machine'}.`,
           `${swarmSum && swarmSum.active && swarmSum.manager ? (() => {
               const bad = swarmSum.quorumLost || swarmSum.running < swarmSum.desired || swarmSum.ready < swarmSum.nodes;
-              const text = swarmSum.quorumLost ? 'Swarm · no leader' : `Swarm · ${swarmSum.running}/${swarmSum.desired} tasks${swarmSum.nodes > 1 ? ` · ${swarmSum.ready}/${swarmSum.nodes} servers` : ''}`;
+              const text = swarmSum.quorumLost ? 'Swarm, no leader' : `Swarm, ${swarmSum.running}/${swarmSum.desired} tasks${swarmSum.nodes > 1 ? `, ${swarmSum.ready}/${swarmSum.nodes} servers` : ''}`;
               return `<button class="btn btn-secondary btn-sm" onclick="Router.navigate('swarm', {tab:'swarm-overview'})" title="Open Swarm" style="${bad ? 'color:var(--warning,#d97706);border-color:var(--warning,#d97706)' : ''}">${Icons.layers} ${text}</button>`;
             })() : ''}
            ${uptimeButton(uptime)}
-           <button class="btn btn-secondary btn-sm" onclick="Router.navigate('resources', {tab:'prune'})">${Icons.cleanup} Prune…</button>
+           <button class="btn btn-secondary btn-sm" onclick="Router.navigate('resources', {tab:'prune'})">${Icons.cleanup} Prune...</button>
            <button class="btn btn-secondary btn-sm" id="dash-refresh" title="Refresh">${Icons.refresh}</button>`)}
 
         ${fleetCards(srvData.servers || [], (fleetOv && fleetOv.servers) || {}, activeId)}
@@ -404,27 +404,27 @@ Router.register('dashboard', async (content) => {
         if (!v || !Router.isActiveNav(pageNavId)) return;
         v.textContent = regs.length;
         const ok = regs.filter(r => r.last_test_status === 'ok').length;
-        if (l) l.textContent = ok ? `Registries · ${ok} connected` : 'Registries';
+        if (l) l.textContent = ok ? `Registries, ${ok} connected` : 'Registries';
       }).catch(() => {});
 
       // Embed the active REMOTE server's host metrics (CPU/RAM/disk/trend/ports/procs). renderHostMonitoring
       // owns its own 5s in-place poll, so we mount it ONCE and PRESERVE the live node across the 30s dashboard
       // refresh instead of tearing it down + re-mounting (which flashed the whole section back to skeletons /
-      // "connecting…" and rebuilt the chart every 30s). We only mount fresh when there's no live node yet or
+      // "connecting..." and rebuilt the chart every 30s). We only mount fresh when there's no live node yet or
       // the active server changed; otherwise we reattach the still-polling node. Local host metrics need the
       // /proc mount (deferred), so skipped.
       attention(); // not awaited: it asks every server
       const dashHost = document.getElementById('dash-host');
       if (dashHost && typeof renderHostMonitoring === 'function') { // local too: the machine DockGate runs on
         if (hostNode && hostForServer === activeId) {
-          dashHost.replaceWith(hostNode);            // reattach the live monitor — no teardown, no skeleton flash
+          dashHost.replaceWith(hostNode);            // reattach the live monitor - no teardown, no skeleton flash
         } else {
-          renderHostMonitoring(activeId, dashHost, { live: true });  // first mount / server changed → fresh live monitor (rolling 15 min, like Monitoring → Live)
+          renderHostMonitoring(activeId, dashHost, { live: true });  // first mount / server changed -> fresh live monitor (rolling 15 min, like Monitoring > Live)
           hostNode = dashHost;
           hostForServer = activeId;
         }
       } else {
-        hostNode = null; hostForServer = null;       // no remote host section → drop the ref; old monitor self-terminates
+        hostNode = null; hostForServer = null;       // no remote host section -> drop the ref; old monitor self-terminates
       }
 
       // Quick Actions / Sürətli əməliyyatlar

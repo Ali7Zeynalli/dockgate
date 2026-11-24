@@ -1,9 +1,9 @@
-// Databases → Data: a table as a spreadsheet. Click a cell to select it, Enter / double-click / typing edits it in
+// Databases > Data: a table as a spreadsheet. Click a cell to select it, Enter / double-click / typing edits it in
 // place (lists for enums and booleans, a date box for dates, a JSON / long-text editor, a picker for foreign keys);
 // changes wait in yellow until "Save" writes them all in ONE transaction (with a check that nobody changed those
-// rows meanwhile) — or 🧪 Test does it and rolls back. Paste cells from Excel; add, copy and delete rows; open a row
+// rows meanwhile) - or 🧪 Test does it and rolls back. Paste cells from Excel; add, copy and delete rows; open a row
 // as a card with the rows it points to and the rows pointing at it.
-// DataEditor.mount(el, { dbBase, schema, table, info, grid, openTable, toggleWrite, alive, kindName }) → { destroy, dirty }
+// DataEditor.mount(el, { dbBase, schema, table, info, grid, openTable, toggleWrite, alive, kindName }) -> { destroy, dirty }
 const DataEditor = (() => {
   const esc = (s) => escapeHtml(String(s == null ? '' : s));
   const NULLV = '<span class="dbg-null">NULL</span>';
@@ -13,7 +13,7 @@ const DataEditor = (() => {
     : /^(json|jsonb|xml)$/.test(c.base) || c.category === 'A' || (v != null && (v.length > 120 || v.includes('\n'))) ? 'long' : c.fk ? 'fk' : 'text';
 
   async function mount(el, ctx) {
-    const g = ctx.grid; // { offset, limit, sort, filters, where } — kept by the page
+    const g = ctx.grid; // { offset, limit, sort, filters, where } - kept by the page
     const st = { d: null, sel: null, editing: null, edits: new Map(), news: [], dels: new Set(), checked: new Set(), failed: null };
     let alive = true;
     const dirty = () => st.edits.size + st.news.length + st.dels.size;
@@ -55,7 +55,7 @@ const DataEditor = (() => {
       const c = st.d.columns[ci]; const v = valueAt(rid, ci);
       const changed = rid[0] === 'e' && st.edits.has(Number(rid.slice(1))) && Object.prototype.hasOwnProperty.call(st.edits.get(Number(rid.slice(1))), c.name);
       const sel = st.sel && st.sel.rid === rid && st.sel.ci === ci;
-      const shown = v === undefined ? '<span class="dbg-null">default</span>' : v === null ? NULLV : esc(String(v).length > 200 ? String(v).slice(0, 200) + '…' : v);
+      const shown = v === undefined ? '<span class="dbg-null">default</span>' : v === null ? NULLV : esc(String(v).length > 200 ? String(v).slice(0, 200) + '...' : v);
       const fk = c.fk && v != null && v !== undefined && v !== '' ? ` <button type="button" class="dbg-fk" data-fkgo="${ci}" data-fkv="${esc(v)}" title="Open ${esc(c.fk.schema)}.${esc(c.fk.table)} where ${esc(c.fk.column)} = ${esc(v)}">↗</button>` : '';
       return `<td class="${changed ? 'dbg-chg' : ''} ${sel ? 'dbg-sel' : ''}" data-rid="${rid}" data-c="${ci}" title="${v == null ? (v === null ? 'NULL' : 'default') : esc(String(v).slice(0, 500))}">${shown}${fk}</td>`;
     }
@@ -79,24 +79,24 @@ const DataEditor = (() => {
           .dbg-grid:focus{outline:none} .dbg-pend{display:flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid rgba(234,179,8,.6);background:rgba(234,179,8,.08);border-radius:8px;margin-bottom:8px}
         </style>
         <div class="dbg-bar">
-          <b style="font-size:15px">${esc(ctx.schema)}.${esc(ctx.table)}</b> <span class="ui-sub">${esc((ctx.kindName || {})[d.kind] || '')}${d.estimate >= 0 ? ` · ≈ ${d.estimate.toLocaleString()} rows` : ''}</span>
+          <b style="font-size:15px">${esc(ctx.schema)}.${esc(ctx.table)}</b> <span class="ui-sub">${esc((ctx.kindName || {})[d.kind] || '')}${d.estimate >= 0 ? `, ≈ ${d.estimate.toLocaleString()} rows` : ''}</span>
           <span style="flex:1"></span>
           ${UI.btn('🕘 Changes', 'data-history title="Who changed this table, when, and how"')} ${UI.btn('Count rows', 'data-count')} ${UI.btn('↻', 'data-reload title="Reload (drops changes not saved)"')}
-          ${UI.menu([{ label: 'Export CSV', attrs: 'data-export="csv"' }, { label: 'Export JSON lines', attrs: 'data-export="json"' }, ...(editable() ? ['-', { label: 'Import CSV…', attrs: 'data-import' }, { label: 'Change many rows…', attrs: 'data-bulk' }, { label: 'Find and replace…', attrs: 'data-replace' }] : [])], { label: 'Export / import' })}
-          ${editable() ? `${UI.btn('+ Row', 'data-add')} ${UI.btn('Copy row', 'data-dup title="Copy the ticked row (or the selected one) as a new row"')} ${UI.btn('Delete', 'data-delsel title="Mark the ticked rows for deletion"', 'btn-danger')}` : `<span class="ui-sub" title="Rows are changed by primary key">${d.kind === 'r' || d.kind === 'p' ? 'no primary key — edit with SQL' : 'not editable'}</span>`}
+          ${UI.menu([{ label: 'Export CSV', attrs: 'data-export="csv"' }, { label: 'Export JSON lines', attrs: 'data-export="json"' }, ...(editable() ? ['-', { label: 'Import CSV...', attrs: 'data-import' }, { label: 'Change many rows...', attrs: 'data-bulk' }, { label: 'Find and replace...', attrs: 'data-replace' }] : [])], { label: 'Export / import' })}
+          ${editable() ? `${UI.btn('+ Row', 'data-add')} ${UI.btn('Copy row', 'data-dup title="Copy the ticked row (or the selected one) as a new row"')} ${UI.btn('Delete', 'data-delsel title="Mark the ticked rows for deletion"', 'btn-danger')}` : `<span class="ui-sub" title="Rows are changed by primary key">${d.kind === 'r' || d.kind === 'p' ? 'no primary key - edit with SQL' : 'not editable'}</span>`}
         </div>
-        ${n ? `<div class="dbg-pend"><b>${n} change${n === 1 ? '' : 's'} not saved</b><span class="ui-sub">${st.edits.size ? `${st.edits.size} edited` : ''}${st.news.length ? ` · ${st.news.length} new` : ''}${st.dels.size ? ` · ${st.dels.size} to delete` : ''}</span><span style="flex:1"></span>
-          ${UI.btn('Review…', 'data-review')} ${UI.btn('🧪 Test', 'data-test title="Do it all in a transaction and roll it back"')} ${UI.btn('Discard', 'data-discard')} ${w ? UI.primary(`Save ${n}`, 'data-save') : UI.btn('Allow changes to save…', 'data-allow', 'btn-primary')}</div>` : ''}
+        ${n ? `<div class="dbg-pend"><b>${n} change${n === 1 ? '' : 's'} not saved</b><span class="ui-sub">${st.edits.size ? `${st.edits.size} edited` : ''}${st.news.length ? `, ${st.news.length} new` : ''}${st.dels.size ? `, ${st.dels.size} to delete` : ''}</span><span style="flex:1"></span>
+          ${UI.btn('Review...', 'data-review')} ${UI.btn('🧪 Test', 'data-test title="Do it all in a transaction and roll it back"')} ${UI.btn('Discard', 'data-discard')} ${w ? UI.primary(`Save ${n}`, 'data-save') : UI.btn('Allow changes to save...', 'data-allow', 'btn-primary')}</div>` : ''}
         <div class="dbg-bar">
           ${g.filters.map((f, i) => UI.chip(`${esc(f.col)} ${esc((OPS.find(o => o[0] === f.op) || [f.op, f.op])[1])} ${f.op === 'null' || f.op === 'notnull' ? '' : esc(f.value)}`, { remove: i })).join('')}
-          <select class="input" data-fcol style="width:auto;max-width:170px;padding:3px 6px;font-size:12px"><option value="">+ Filter…</option>${d.columns.map(c => `<option>${esc(c.name)}</option>`).join('')}</select>
+          <select class="input" data-fcol style="width:auto;max-width:170px;padding:3px 6px;font-size:12px"><option value="">+ Filter...</option>${d.columns.map(c => `<option>${esc(c.name)}</option>`).join('')}</select>
           <span data-fmore style="display:none;gap:6px;align-items:center"><select class="input" data-fop style="width:auto;padding:3px 6px;font-size:12px">${OPS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><input class="input td-mono" data-fval style="width:160px;padding:3px 8px;font-size:12px" placeholder="value"> ${UI.btn('Add', 'data-fadd')}</span>
-          <input class="input td-mono" data-where style="flex:1;min-width:160px;padding:3px 8px;font-size:12px" placeholder="WHERE … (any condition, Enter)" value="${esc(g.where)}">
+          <input class="input td-mono" data-where style="flex:1;min-width:160px;padding:3px 8px;font-size:12px" placeholder="WHERE ... (any condition, Enter)" value="${esc(g.where)}">
         </div>
-        <div class="dbg-grid" tabindex="0" data-gridbox><table><thead><tr><th class="dbg-rh" style="cursor:default">${editable() ? '<input type="checkbox" data-chkall>' : ''}</th>${d.columns.map(c => `<th data-sort="${esc(c.name)}" title="${esc(c.type)}${c.notnull ? ' · NOT NULL' : ''}${c.default ? ' · default ' + c.default : ''}${c.fk ? ` · → ${c.fk.schema}.${c.fk.table}(${c.fk.column})` : ''}">${d.pk.includes(c.name) ? '🔑 ' : c.fk ? '↗ ' : ''}${esc(c.name)}${sortOf(c.name)}<small>${esc(c.type)}</small></th>`).join('')}</tr></thead>
+        <div class="dbg-grid" tabindex="0" data-gridbox><table><thead><tr><th class="dbg-rh" style="cursor:default">${editable() ? '<input type="checkbox" data-chkall>' : ''}</th>${d.columns.map(c => `<th data-sort="${esc(c.name)}" title="${esc(c.type)}${c.notnull ? ', NOT NULL' : ''}${c.default ? ', default ' + c.default : ''}${c.fk ? `, -> ${c.fk.schema}.${c.fk.table}(${c.fk.column})` : ''}">${d.pk.includes(c.name) ? '🔑 ' : c.fk ? '↗ ' : ''}${esc(c.name)}${sortOf(c.name)}<small>${esc(c.type)}</small></th>`).join('')}</tr></thead>
           <tbody>${st.news.map((x, i) => rowHtml('n' + i)).join('')}${d.rows.map((r, i) => rowHtml('e' + i)).join('') || (st.news.length ? '' : `<tr><td colspan="${d.columns.length + 1}" class="ui-sub" style="font-family:inherit;padding:14px">No rows${g.filters.length || g.where ? ' match the filter' : ''}.</td></tr>`)}</tbody></table></div>
         <div class="dbg-bar" style="margin-top:8px">
-          <span class="ui-sub">Rows ${d.rows.length ? `${g.offset + 1}–${g.offset + d.rows.length}` : '0'} · ${editable() ? 'click a cell, then type, Enter or double-click to edit · Tab / arrows move · paste cells from Excel · Ctrl+0 = NULL' : 'double-click a cell to see it'}</span><span style="flex:1"></span>
+          <span class="ui-sub">Rows ${d.rows.length ? `${g.offset + 1}–${g.offset + d.rows.length}` : '0'}, ${editable() ? 'click a cell, then type, Enter or double-click to edit, Tab / arrows move, paste cells from Excel, Ctrl+0 = NULL' : 'double-click a cell to see it'}</span><span style="flex:1"></span>
           <select class="input" data-limit style="width:auto;padding:3px 6px;font-size:12px">${[50, 100, 200, 500].map(x => `<option ${x === g.limit ? 'selected' : ''}>${x}</option>`).join('')}</select>
           ${UI.btn('‹ Prev', `data-prev ${g.offset <= 0 ? 'disabled' : ''}`)} ${UI.btn('Next ›', `data-next ${d.rows.length < g.limit ? 'disabled' : ''}`)}
         </div>`;
@@ -234,7 +234,7 @@ const DataEditor = (() => {
       UI.dialog({ title: `${esc(c.name)} <span class="ui-sub">${esc(c.type)}</span>`, saveLabel: 'Keep', wide: true,
         body: `<textarea class="input td-mono" id="le-v" rows="14" spellcheck="false" style="white-space:pre">${esc(v == null ? '' : (isJson ? (() => { try { return JSON.stringify(JSON.parse(v), null, 2); } catch (e) { return v; } })() : v))}</textarea>
           <div style="display:flex;gap:10px;align-items:center;margin-top:8px">${isJson ? UI.btn('Format JSON', 'data-jfmt') : ''}<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="le-null" ${v === null ? 'checked' : ''} ${c.notnull ? 'disabled' : ''}> NULL</label><span class="ui-sub" data-jmsg></span></div>
-          <div class="ui-sub" style="margin-top:6px">"Keep" puts the value in the grid — Save there writes it.</div>`,
+          <div class="ui-sub" style="margin-top:6px">"Keep" puts the value in the grid - Save there writes it.</div>`,
         onOpen: (ov) => {
           const ta = ov.querySelector('#le-v'), msg = ov.querySelector('[data-jmsg]');
           const check = () => { if (!isJson) return true; try { JSON.parse(ta.value); msg.textContent = '✓ valid JSON'; msg.style.color = 'var(--success)'; return true; } catch (e) { msg.textContent = e.message; msg.style.color = 'var(--danger)'; return false; } };
@@ -262,14 +262,14 @@ const DataEditor = (() => {
       const values = {};
       st.d.columns.forEach((c, ci) => { if (isAuto(c) || c.generated) return; const v = valueAt(rid, ci); if (v !== undefined) values[c.name] = v; });
       st.d.pk.forEach(k => { const c = st.d.columns[colIdx(k)]; if (!isAuto(c)) values[k] = ''; });
-      addRow(values); showToast('Copied as a new row — give it a new key if it needs one', 'info');
+      addRow(values); showToast('Copied as a new row - give it a new key if it needs one', 'info');
     }
     function markDelete() {
       const rids = [...st.checked];
       if (!rids.length) return showToast('Tick the rows to delete first', 'warning');
       rids.forEach(rid => { if (rid[0] === 'n') st.news[Number(rid.slice(1))] = null; else st.dels.add(Number(rid.slice(1))); });
       st.news = st.news.filter(Boolean); st.checked.clear(); draw();
-      showToast(`${rids.length} row(s) marked — Save deletes them`, 'info');
+      showToast(`${rids.length} row(s) marked - Save deletes them`, 'info');
     }
     function paste(e) {
       if (st.editing || !st.sel || !editable()) return;
@@ -281,7 +281,7 @@ const DataEditor = (() => {
       for (let i = 0; i < need; i++) st.news.push({ values: {}, defaults: new Set(st.d.columns.filter(c => isAuto(c) || c.default).map(c => c.name)) });
       rows = order(); let count = 0;
       grid.forEach((cells, i) => cells.forEach((v, j) => { const ci = st.sel.ci + j; const rid = rows[r0 + i]; if (ci < st.d.columns.length && rid && canEditCell(rid, ci)) { setValue(rid, ci, v === '' && !st.d.columns[ci].notnull && rid[0] === 'e' && valueAt(rid, ci) === null ? null : v); count++; } }));
-      draw(); showToast(`${count} cell(s) pasted — Save writes them`, 'info');
+      draw(); showToast(`${count} cell(s) pasted - Save writes them`, 'info');
     }
 
     // ---- save ----
@@ -298,7 +298,7 @@ const DataEditor = (() => {
       if (!test && st.dels.size) { const ok = await new Promise(res => showConfirm('Save changes', `This deletes <b>${st.dels.size}</b> row(s) and saves the other changes in one transaction. Go on?`, () => res(true), true)); if (!ok) return; }
       try {
         const r = await API.post(`${ctx.dbBase()}/changes`, { schema: ctx.schema, table: ctx.table, changes, test });
-        if (test) { showToast(`🧪 All ${changes.length} change(s) would succeed — rolled back, nothing saved`, 'success', 6000); return; }
+        if (test) { showToast(`🧪 All ${changes.length} change(s) would succeed - rolled back, nothing saved`, 'success', 6000); return; }
         showToast(`Saved: ${[r.update && `${r.update} edited`, r.insert && `${r.insert} added`, r.delete && `${r.delete} deleted`].filter(Boolean).join(', ')}`);
         load();
       } catch (e) {
@@ -328,7 +328,7 @@ const DataEditor = (() => {
         ov.querySelector('[data-ct]').innerHTML = `${esc(ctx.schema)}.${esc(ctx.table)} <span class="ui-sub">${isNew ? 'new row' : d.pk.map(k => `${esc(k)} = ${esc(valueAt(r, colIdx(k)))}`).join(', ')}</span>`;
         ov.querySelector('[data-cb]').innerHTML = `<div style="display:grid;grid-template-columns:minmax(140px,220px) minmax(0,1fr);gap:8px 14px;align-items:start">${d.columns.map((c, ci) => {
           const v = valueAt(r, ci); const kind = editorKind(c, v == null ? null : String(v));
-          const lab = `<div><div class="td-mono" style="font-weight:600">${d.pk.includes(c.name) ? '🔑 ' : ''}${esc(c.name)}</div><div class="ui-sub" style="font-size:11px">${esc(c.type)}${c.notnull ? ' · required' : ''}</div></div>`;
+          const lab = `<div><div class="td-mono" style="font-weight:600">${d.pk.includes(c.name) ? '🔑 ' : ''}${esc(c.name)}</div><div class="ui-sub" style="font-size:11px">${esc(c.type)}${c.notnull ? ', required' : ''}</div></div>`;
           let field;
           const dis = !can || c.generated ? 'disabled' : '';
           if (kind === 'enum' || kind === 'bool') field = `<select class="input" data-cf="${ci}" ${dis}>${c.notnull ? '' : `<option value="\u0000" ${v === null ? 'selected' : ''}>NULL</option>`}${(kind === 'enum' ? c.enum : ['true', 'false']).map(o => `<option ${String(v) === o || (kind === 'bool' && v != null && String(v)[0] === o[0]) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
@@ -337,7 +337,7 @@ const DataEditor = (() => {
           const extra = `${!c.notnull && can && !c.generated ? `<label style="display:flex;gap:4px;align-items:center;font-weight:400;font-size:12px"><input type="checkbox" data-cnull="${ci}" ${v === null ? 'checked' : ''}> NULL</label>` : ''}${c.fk && v != null && v !== undefined && v !== '' ? `<span class="ui-sub" data-fklabel="${ci}"></span> ${UI.btn('Open ↗', `data-cfk="${ci}"`)}` : ''}`;
           return `${lab}<div><div>${field}</div>${extra ? `<div style="display:flex;gap:8px;align-items:center;margin-top:4px">${extra}</div>` : ''}</div>`;
         }).join('')}</div><div data-refs style="margin-top:14px"></div>`;
-        ov.querySelector('[data-cf]').innerHTML = `<span class="ui-sub" style="margin-right:auto">${can ? 'Changes go to the grid as not saved — Save writes them all in one transaction.' : (editable() ? 'Marked for deletion.' : 'Read-only table.')}</span>${UI.btn('Close', 'data-cclose2')} ${can ? UI.primary('Keep changes', 'data-ckeep') : ''}`;
+        ov.querySelector('[data-cf]').innerHTML = `<span class="ui-sub" style="margin-right:auto">${can ? 'Changes go to the grid as not saved - Save writes them all in one transaction.' : (editable() ? 'Marked for deletion.' : 'Read-only table.')}</span>${UI.btn('Close', 'data-cclose2')} ${can ? UI.primary('Keep changes', 'data-ckeep') : ''}`;
         ov.querySelector('[data-cclose2]').onclick = close;
         ov.querySelector('[data-cprev]').disabled = pos <= 0; ov.querySelector('[data-cnext]').disabled = pos >= rows.length - 1;
         const keep = ov.querySelector('[data-ckeep]');
@@ -350,13 +350,13 @@ const DataEditor = (() => {
             if (cur === undefined && nv === '') return; // a default left as it is
             if (nv !== (cur == null ? (cur === null ? null : '') : String(cur))) setValue(r, ci, nv);
           });
-          st.failed = null; close(); draw(); if (dirty()) showToast(`${dirty()} change(s) waiting — Save writes them`, 'info');
+          st.failed = null; close(); draw(); if (dirty()) showToast(`${dirty()} change(s) waiting - Save writes them`, 'info');
         };
         ov.querySelectorAll('[data-cfk]').forEach(b => b.onclick = () => { const c = d.columns[Number(b.dataset.cfk)]; const v = valueAt(r, Number(b.dataset.cfk)); close(); guardLeave(() => ctx.openTable(c.fk.schema, c.fk.table, [{ col: c.fk.column, op: '=', value: v }])); });
         // labels of the rows foreign keys point to, and the rows pointing here
         d.columns.forEach(async (c, ci) => {
           const span = ov.querySelector(`[data-fklabel="${ci}"]`); if (!span) return;
-          try { const x = await API.get(`${ctx.dbBase()}/fk-lookup?schema=${encodeURIComponent(c.fk.schema)}&table=${encodeURIComponent(c.fk.table)}&column=${encodeURIComponent(c.fk.column)}&key=${encodeURIComponent(valueAt(r, ci))}`); const o = x.options[0]; span.innerHTML = o ? (o.label ? `→ ${esc(o.label)}` : '→ exists') : '<span style="color:var(--danger)">→ no such row</span>'; } catch (e) {}
+          try { const x = await API.get(`${ctx.dbBase()}/fk-lookup?schema=${encodeURIComponent(c.fk.schema)}&table=${encodeURIComponent(c.fk.table)}&column=${encodeURIComponent(c.fk.column)}&key=${encodeURIComponent(valueAt(r, ci))}`); const o = x.options[0]; span.innerHTML = o ? (o.label ? ` -> ${esc(o.label)}` : ' -> exists') : '<span style="color:var(--danger)"> -> no such row</span>'; } catch (e) {}
         });
         const refsBox = ov.querySelector('[data-refs]');
         if (!isNew && d.pk.length) {
@@ -401,9 +401,9 @@ const DataEditor = (() => {
         body: `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><input type="file" id="im-file" accept=".csv,.tsv,.txt,text/csv">
             <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="im-head" checked> The first line names the columns</label>
             <select class="input" id="im-delim" style="width:auto"><option value="auto">Separator: auto</option><option value=",">,</option><option value=";">;</option><option value="\t">Tab</option><option value="|">|</option></select></div>
-          <div data-impre style="margin-top:10px"><div class="ui-sub">Pick a file (up to 80 MB). Each CSV column is matched to a table column by name — change it in the list above it, or skip it.</div></div>
+          <div data-impre style="margin-top:10px"><div class="ui-sub">Pick a file (up to 80 MB). Each CSV column is matched to a table column by name - change it in the list above it, or skip it.</div></div>
           <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:10px">
-            <select class="input" id="im-mode" style="width:auto"><option value="insert">Add every row</option>${d.pk.length ? '<option value="skip">Add — skip rows whose key exists</option><option value="upsert">Add — update rows whose key exists</option>' : ''}</select>
+            <select class="input" id="im-mode" style="width:auto"><option value="insert">Add every row</option>${d.pk.length ? '<option value="skip">Add - skip rows whose key exists</option><option value="upsert">Add - update rows whose key exists</option>' : ''}</select>
             <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="im-null" checked> An empty cell is NULL</label>
             ${UI.btn('🧪 Test', 'data-imtest title="Import inside a transaction and roll it back"')}<span class="ui-sub" data-immsg></span></div>
           <div class="ui-sub" style="margin-top:6px">All rows go in one transaction: if one fails (a missing value, a duplicate key, a wrong type), nothing is imported.</div>`,
@@ -415,11 +415,11 @@ const DataEditor = (() => {
             const names = header ? data[0] : data[0].map((_, i) => `column ${i + 1}`);
             const norm = (x) => String(x).trim().toLowerCase().replace(/[\s-]+/g, '_');
             const auto = names.map(nm => (writable().find(c => norm(c.name) === norm(nm)) || {}).name || '');
-            box.innerHTML = `<div class="ui-sub" style="margin-bottom:6px">${rows.length.toLocaleString()} rows · ${names.length} columns</div><div class="dbg-grid" style="max-height:300px"><table><thead><tr>${names.map((nm, i) => `<th style="cursor:default"><select class="input" data-map="${i}" style="padding:2px 4px;font-size:12px;min-width:110px"><option value="">— skip —</option>${writable().map(c => `<option ${c.name === auto[i] ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select><small>${esc(nm)}</small></th>`).join('')}</tr></thead><tbody>${rows.slice(0, 8).map(r => `<tr>${names.map((_, i) => `<td>${r[i] == null ? '' : esc(String(r[i]).slice(0, 80))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+            box.innerHTML = `<div class="ui-sub" style="margin-bottom:6px">${rows.length.toLocaleString()} rows, ${names.length} columns</div><div class="dbg-grid" style="max-height:300px"><table><thead><tr>${names.map((nm, i) => `<th style="cursor:default"><select class="input" data-map="${i}" style="padding:2px 4px;font-size:12px;min-width:110px"><option value="">- skip -</option>${writable().map(c => `<option ${c.name === auto[i] ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select><small>${esc(nm)}</small></th>`).join('')}</tr></thead><tbody>${rows.slice(0, 8).map(r => `<tr>${names.map((_, i) => `<td>${r[i] == null ? '' : esc(String(r[i]).slice(0, 80))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
           };
           const read = () => {
             const f = ov.querySelector('#im-file').files[0]; if (!f) return;
-            if (f.size > 80 * 1024 * 1024) { box.innerHTML = '<div class="text-danger">The file is larger than 80 MB — split it, or load it with psql.</div>'; return; }
+            if (f.size > 80 * 1024 * 1024) { box.innerHTML = '<div class="text-danger">The file is larger than 80 MB - split it, or load it with psql.</div>'; return; }
             const fr = new FileReader();
             fr.onload = () => {
               let text = String(fr.result).replace(/^﻿/, '');
@@ -432,7 +432,7 @@ const DataEditor = (() => {
           };
           ov.querySelector('#im-file').onchange = read; ov.querySelector('#im-delim').onchange = read;
           ov.querySelector('#im-head').onchange = (e) => { header = e.target.checked; draw2(); };
-          ov.querySelector('[data-imtest]').onclick = (e) => runWithResult(e.target, async () => { const msg = ov.querySelector('[data-immsg]'); try { const r = await send(ov, true); msg.style.color = 'var(--success)'; msg.textContent = `🧪 ${r.written.toLocaleString()} of ${r.rows.toLocaleString()} rows would be written${r.skipped ? `, ${r.skipped.toLocaleString()} skipped` : ''} — rolled back`; } catch (er) { msg.style.color = 'var(--danger)'; msg.textContent = er.message; } });
+          ov.querySelector('[data-imtest]').onclick = (e) => runWithResult(e.target, async () => { const msg = ov.querySelector('[data-immsg]'); try { const r = await send(ov, true); msg.style.color = 'var(--success)'; msg.textContent = `🧪 ${r.written.toLocaleString()} of ${r.rows.toLocaleString()} rows would be written${r.skipped ? `, ${r.skipped.toLocaleString()} skipped` : ''} - rolled back`; } catch (er) { msg.style.color = 'var(--danger)'; msg.textContent = er.message; } });
         },
         onSave: async (ov) => {
           if (!ctx.info().allowWrite) throw new Error('Turn on "Allow changes" to import (🧪 Test works without it)');
@@ -454,16 +454,16 @@ const DataEditor = (() => {
       const opts = writable().map(c => `<option>${esc(c.name)}</option>`).join('');
       const setRow = () => `<div data-brow style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><select class="input" data-bcol style="width:auto">${opts}</select><span>=</span><input class="input td-mono" data-bval placeholder="value"><label style="display:flex;gap:4px;align-items:center;font-weight:400"><input type="checkbox" data-bnull> NULL</label></div>`;
       UI.dialog({ title: `Change many rows of ${esc(ctx.schema)}.${esc(ctx.table)}`, saveLabel: 'Run', danger: true, wide: true,
-        body: `<div class="text-sm" style="margin-bottom:8px">Rows: ${ft ? `those matching <span class="td-mono">${esc(ft)}</span> (the filter of the Data tab)` : '<b style="color:var(--danger)">every row</b> — no filter is set in the Data tab'}</div>
+        body: `<div class="text-sm" style="margin-bottom:8px">Rows: ${ft ? `those matching <span class="td-mono">${esc(ft)}</span> (the filter of the Data tab)` : '<b style="color:var(--danger)">every row</b> - no filter is set in the Data tab'}</div>
           ${ft ? '' : '<label style="display:flex;gap:6px;align-items:center;font-weight:400;margin-bottom:8px"><input type="checkbox" id="bk-all"> Yes, every row of the table</label>'}
           <select class="input" id="bk-op" style="width:auto;margin-bottom:8px"><option value="update">Set columns</option><option value="delete">Delete the rows</option></select>
           <div data-bset>${setRow()}</div><button type="button" class="btn btn-xs btn-ghost" data-badd>+ another column</button>
-          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">${UI.btn('🧪 Test — how many rows', 'data-btest')}<span class="ui-sub" data-bmsg></span></div>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">${UI.btn('🧪 Test - how many rows', 'data-btest')}<span class="ui-sub" data-bmsg></span></div>
           <div class="ui-sub" style="margin-top:6px">One statement in one transaction. Test runs it and rolls back, so you see how many rows it changes.</div>`,
         onOpen: (ov) => {
           ov.querySelector('[data-badd]').onclick = () => ov.querySelector('[data-bset]').insertAdjacentHTML('beforeend', setRow());
           ov.querySelector('#bk-op').onchange = (e) => { const del = e.target.value === 'delete'; ov.querySelector('[data-bset]').style.display = del ? 'none' : ''; ov.querySelector('[data-badd]').style.display = del ? 'none' : ''; };
-          ov.querySelector('[data-btest]').onclick = (e) => runWithResult(e.target, async () => { const msg = ov.querySelector('[data-bmsg]'); try { const r = await send(ov, true); msg.style.color = 'var(--success)'; msg.textContent = `🧪 ${r.rows.toLocaleString()} rows would be ${r.op === 'delete' ? 'deleted' : 'changed'} — rolled back`; } catch (er) { msg.style.color = 'var(--danger)'; msg.textContent = er.message; } });
+          ov.querySelector('[data-btest]').onclick = (e) => runWithResult(e.target, async () => { const msg = ov.querySelector('[data-bmsg]'); try { const r = await send(ov, true); msg.style.color = 'var(--success)'; msg.textContent = `🧪 ${r.rows.toLocaleString()} rows would be ${r.op === 'delete' ? 'deleted' : 'changed'} - rolled back`; } catch (er) { msg.style.color = 'var(--danger)'; msg.textContent = er.message; } });
         },
         onSave: async (ov) => {
           if (!ctx.info().allowWrite) throw new Error('Turn on "Allow changes" first (🧪 Test works without it)');
@@ -495,10 +495,10 @@ const DataEditor = (() => {
         onOpen: (ov) => {
           const out = ov.querySelector('[data-frout]');
           ov.querySelector('[data-frprev]').onclick = (e) => runWithResult(e.target, async () => {
-            try { const r = await send(ov, { preview: true }); out.innerHTML = `<div class="text-sm" style="margin-bottom:6px"><b>${r.rows.toLocaleString()}</b> row(s) contain it${r.rows > 10 ? ' — the first 10:' : ':'}</div>${r.samples.length ? `<table style="width:100%;font-size:12.5px;border-collapse:collapse">${r.samples.map(x => `<tr style="border-top:1px solid var(--border)"><td class="td-mono" style="padding:4px 8px 4px 0;color:var(--danger)">${esc(x.before)}</td><td>→</td><td class="td-mono" style="padding:4px 8px;color:var(--success)">${esc(x.after)}</td></tr>`).join('')}</table>` : ''}`; }
+            try { const r = await send(ov, { preview: true }); out.innerHTML = `<div class="text-sm" style="margin-bottom:6px"><b>${r.rows.toLocaleString()}</b> row(s) contain it${r.rows > 10 ? ' - the first 10:' : ':'}</div>${r.samples.length ? `<table style="width:100%;font-size:12.5px;border-collapse:collapse">${r.samples.map(x => `<tr style="border-top:1px solid var(--border)"><td class="td-mono" style="padding:4px 8px 4px 0;color:var(--danger)">${esc(x.before)}</td><td> -> </td><td class="td-mono" style="padding:4px 8px;color:var(--success)">${esc(x.after)}</td></tr>`).join('')}</table>` : ''}`; }
             catch (er) { out.innerHTML = `<div class="text-danger">${esc(er.message)}</div>`; }
           });
-          ov.querySelector('[data-frtest]').onclick = (e) => runWithResult(e.target, async () => { try { const r = await send(ov, { test: true }); out.innerHTML = `<div style="color:var(--success)">🧪 ${r.rows.toLocaleString()} row(s) would change — rolled back</div>`; } catch (er) { out.innerHTML = `<div class="text-danger">${esc(er.message)}</div>`; } });
+          ov.querySelector('[data-frtest]').onclick = (e) => runWithResult(e.target, async () => { try { const r = await send(ov, { test: true }); out.innerHTML = `<div style="color:var(--success)">🧪 ${r.rows.toLocaleString()} row(s) would change - rolled back</div>`; } catch (er) { out.innerHTML = `<div class="text-danger">${esc(er.message)}</div>`; } });
         },
         onSave: async (ov) => {
           if (!ctx.info().allowWrite) throw new Error('Turn on "Allow changes" first (Preview and 🧪 Test work without it)');
@@ -520,34 +520,34 @@ const DataEditor = (() => {
     const fmtV = (v) => v === null || v === undefined ? NULLV : `<span class="td-mono">${esc(typeof v === 'object' ? JSON.stringify(v) : String(v)).slice(0, 300)}</span>`;
     function diffHtml(ch) {
       const cols = ch.op === 'U' ? (ch.changed || []) : Object.keys(ch.op === 'D' ? ch.old || {} : ch.new || {});
-      return `<table style="width:100%;font-size:12.5px;border-collapse:collapse">${cols.map(c => `<tr style="border-top:1px solid var(--border)"><td class="td-mono" style="padding:4px 8px 4px 0;vertical-align:top;white-space:nowrap">${esc(c)}</td>${ch.op === 'U' ? `<td style="padding:4px 8px;vertical-align:top;color:var(--danger)">${fmtV((ch.old || {})[c])}</td><td style="padding:4px 0">→</td><td style="padding:4px 8px;vertical-align:top;color:var(--success)">${fmtV((ch.new || {})[c])}</td>` : `<td style="padding:4px 8px" colspan="3">${fmtV((ch.op === 'D' ? ch.old : ch.new)[c])}</td>`}</tr>`).join('')}</table>`;
+      return `<table style="width:100%;font-size:12.5px;border-collapse:collapse">${cols.map(c => `<tr style="border-top:1px solid var(--border)"><td class="td-mono" style="padding:4px 8px 4px 0;vertical-align:top;white-space:nowrap">${esc(c)}</td>${ch.op === 'U' ? `<td style="padding:4px 8px;vertical-align:top;color:var(--danger)">${fmtV((ch.old || {})[c])}</td><td style="padding:4px 0"> -> </td><td style="padding:4px 8px;vertical-align:top;color:var(--success)">${fmtV((ch.new || {})[c])}</td>` : `<td style="padding:4px 8px" colspan="3">${fmtV((ch.op === 'D' ? ch.old : ch.new)[c])}</td>`}</tr>`).join('')}</table>`;
     }
     const whoLine = (ch) => `<b>${esc(ch.user)}</b>${ch.app ? ` <span class="ui-sub">via</span> ${esc(ch.app)}` : ''}${ch.client ? ` <span class="ui-sub">from</span> <span class="td-mono">${esc(ch.client)}</span>` : ` <span class="ui-sub">(local socket)</span>`}`;
     async function restoreChange(ch, after) {
       const what = ch.op === 'D' ? 'bring the deleted row back' : ch.op === 'U' ? 'put the whole row back as it was before this change' : 'remove the row this insert added';
       if (!ctx.info().allowWrite) return showToast('Turn on "Allow changes" first', 'warning');
       showConfirm('Restore', `This will <b>${what}</b> (key ${esc(JSON.stringify(ch.key))}). The restore is itself recorded. Go on?`, async () => {
-        try { const r = await API.post(`${H()}/restore`, { schema: ctx.schema, table: ctx.table, id: ch.id }); showToast(`Done — ${r.restored}`); if (after) after(); guardLeave(load); } catch (e) { showToast(e.message, 'error', 10000); }
+        try { const r = await API.post(`${H()}/restore`, { schema: ctx.schema, table: ctx.table, id: ch.id }); showToast(`Done - ${r.restored}`); if (after) after(); guardLeave(load); } catch (e) { showToast(e.message, 'error', 10000); }
       }, true);
     }
     async function enableTracking(after) {
-      if (!ctx.info().allowWrite) return showToast('Turn on "Allow changes" first — tracking adds a trigger to the table', 'warning', 6000);
+      if (!ctx.info().allowWrite) return showToast('Turn on "Allow changes" first - tracking adds a trigger to the table', 'warning', 6000);
       UI.dialog({ title: `Track changes of ${esc(ctx.schema)}.${esc(ctx.table)}`, saveLabel: 'Turn on',
-        body: `<div class="text-sm" style="margin-bottom:8px">From now on every INSERT, UPDATE and DELETE of this table — from your app, from psql, from DockGate — is written down: <b>which database user</b>, <b>which application</b> (its application_name), <b>from which address</b>, <b>when</b>, and the <b>old and new values</b>. Changes made before this are not known.</div>
+        body: `<div class="text-sm" style="margin-bottom:8px">From now on every INSERT, UPDATE and DELETE of this table - from your app, from psql, from DockGate - is written down: <b>which database user</b>, <b>which application</b> (its application_name), <b>from which address</b>, <b>when</b>, and the <b>old and new values</b>. Changes made before this are not known.</div>
           <div class="ui-sub" style="margin-bottom:8px">DockGate adds the schema <span class="td-mono">dockgate_audit</span> (a table of changes and one trigger function) and a trigger on this table. Each change costs one extra insert; on a table with very many writes, that adds up. Turning it off removes the trigger.</div>
           <label class="ui-field"><span class="ui-label">Keep changes for (days)</span><input class="input" type="number" id="tr-days" value="90" min="1" max="3650"></label>`,
         onSave: async (ov2) => { await API.post(`${H()}/enable`, { schema: ctx.schema, table: ctx.table, keepDays: Number(ov2.querySelector('#tr-days').value) }); showToast('Tracking is on'); if (after) after(); } });
     }
     async function whoWrote(box, pk, still, closeCard) {
-      const sec = document.createElement('div'); sec.style.marginTop = '16px'; sec.innerHTML = '<div class="ui-label" style="margin-bottom:6px">Who wrote it</div><div class="ui-sub">Loading…</div>'; box.after(sec);
+      const sec = document.createElement('div'); sec.style.marginTop = '16px'; sec.innerHTML = '<div class="ui-label" style="margin-bottom:6px">Who wrote it</div><div class="ui-sub">Loading...</div>'; box.after(sec);
       let x; try { x = await API.post(`${H()}/row`, { schema: ctx.schema, table: ctx.table, pk }); } catch (e) { sec.innerHTML = `<div class="ui-label">Who wrote it</div><div class="text-danger text-sm">${esc(e.message)}</div>`; return; }
       if (!still()) return;
       const last = x.history[0];
       const head = `<div class="ui-label" style="margin-bottom:6px">Who wrote it</div>
-        <div class="text-sm" style="margin-bottom:8px">${last ? `Last ${OPN[last.op][1]} <b>${when(last.at)}</b> by ${whoLine(last)}` : x.committed ? `Last written <b>${when(x.committed)}</b> (transaction ${esc(x.xmin)})` : `Last written in transaction <span class="td-mono">${esc(x.xmin)}</span> <span class="ui-sub">— the time is not recorded (track_commit_timestamp is off)</span>`}</div>`;
-      const tracked = x.tracked ? `<div class="ui-sub" style="margin-bottom:6px">Change tracking is on for this table${x.since ? ` since ${when(x.since)}` : ''} · kept ${x.keepDays} days</div>${x.history.length ? x.history.map((h, i) => `<details style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:6px"><summary style="cursor:pointer;font-size:12.5px">${UI.pill(OPN[h.op][0], OPN[h.op][1])} ${when(h.at)} · ${whoLine(h)}${h.op === 'U' ? ` · <span class="td-mono">${esc((h.changed || []).join(', '))}</span>` : ''}</summary><div style="margin-top:6px">${diffHtml(h)}</div>${h.op !== 'I' ? `<div style="margin-top:6px">${UI.btn(h.op === 'U' ? 'Put the row back as before this' : 'Bring it back', `data-hrest="${i}"`)}</div>` : ''}</details>`).join('') : '<div class="ui-sub">No change of this row since tracking began.</div>'}`
-        : `<div class="ui-sub" style="margin-bottom:6px">PostgreSQL does not keep who changed a row. ${UI.btn('Track changes of this table…', 'data-htrack')} records it from now on — the user, the application, the address, old and new values.</div>`;
-      const mine = x.dockgate.length ? `<div class="ui-label" style="margin:10px 0 4px">Edits made from DockGate</div>${x.dockgate.map(m => `<div class="ui-sub" style="font-size:12px">${esc(m.at)} UTC · ${esc(m.action.replace('db_', '').replace(/_/g, ' '))}${m.columns ? ` · <span class="td-mono">${esc(m.columns.join(', '))}</span>` : ''}${m.from ? ` · from ${esc(m.from)}` : ''}</div>`).join('')}` : '';
+        <div class="text-sm" style="margin-bottom:8px">${last ? `Last ${OPN[last.op][1]} <b>${when(last.at)}</b> by ${whoLine(last)}` : x.committed ? `Last written <b>${when(x.committed)}</b> (transaction ${esc(x.xmin)})` : `Last written in transaction <span class="td-mono">${esc(x.xmin)}</span> <span class="ui-sub">- the time is not recorded (track_commit_timestamp is off)</span>`}</div>`;
+      const tracked = x.tracked ? `<div class="ui-sub" style="margin-bottom:6px">Change tracking is on for this table${x.since ? ` since ${when(x.since)}` : ''}, kept ${x.keepDays} days</div>${x.history.length ? x.history.map((h, i) => `<details style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:6px"><summary style="cursor:pointer;font-size:12.5px">${UI.pill(OPN[h.op][0], OPN[h.op][1])} ${when(h.at)}, ${whoLine(h)}${h.op === 'U' ? `, <span class="td-mono">${esc((h.changed || []).join(', '))}</span>` : ''}</summary><div style="margin-top:6px">${diffHtml(h)}</div>${h.op !== 'I' ? `<div style="margin-top:6px">${UI.btn(h.op === 'U' ? 'Put the row back as before this' : 'Bring it back', `data-hrest="${i}"`)}</div>` : ''}</details>`).join('') : '<div class="ui-sub">No change of this row since tracking began.</div>'}`
+        : `<div class="ui-sub" style="margin-bottom:6px">PostgreSQL does not keep who changed a row. ${UI.btn('Track changes of this table...', 'data-htrack')} records it from now on - the user, the application, the address, old and new values.</div>`;
+      const mine = x.dockgate.length ? `<div class="ui-label" style="margin:10px 0 4px">Edits made from DockGate</div>${x.dockgate.map(m => `<div class="ui-sub" style="font-size:12px">${esc(m.at)} UTC, ${esc(m.action.replace('db_', '').replace(/_/g, ' '))}${m.columns ? `, <span class="td-mono">${esc(m.columns.join(', '))}</span>` : ''}${m.from ? `, from ${esc(m.from)}` : ''}</div>`).join('')}` : '';
       sec.innerHTML = head + tracked + mine;
       sec.querySelectorAll('[data-hrest]').forEach(b => b.onclick = () => restoreChange(x.history[Number(b.dataset.hrest)], closeCard));
       const tr = sec.querySelector('[data-htrack]'); if (tr) tr.onclick = () => enableTracking(() => { sec.remove(); whoWrote(box, pk, still, closeCard); });
@@ -563,13 +563,13 @@ const DataEditor = (() => {
       const render = async () => {
         let x; try { x = await API.post(`${H()}/log`, { schema: ctx.schema, table: ctx.table, ...f }); } catch (e) { body.innerHTML = `<div class="text-danger">${esc(e.message)}</div>`; return; }
         const s = x.status;
-        const top = s.tracked ? `<div class="dbg-bar">${UI.pill('ok', '● Tracking on')} <span class="ui-sub">since ${when(s.since)} · kept ${s.keepDays} days · ${Number(s.count).toLocaleString()} changes kept</span><span style="flex:1"></span>${UI.btn('Turn off…', 'data-hoff')}</div>`
-          : `<div class="card" style="padding:12px;margin-bottom:10px"><b>Change tracking is off for this table.</b><div class="ui-sub" style="margin:4px 0 8px">PostgreSQL does not keep who changed a row. Turn it on to record every change from now on: the database user, the application, the address, the time, old and new values — and to bring rows back.${s.count ? ` ${Number(s.count).toLocaleString()} earlier changes are still kept.` : ''}</div>${UI.btn('Track changes…', 'data-hon', 'btn-primary')}${s.commitTimes ? '' : '<div class="ui-sub" style="margin-top:6px">Commit times are not recorded on this server (track_commit_timestamp is off), so without tracking only the transaction of the last change is known.</div>'}</div>`;
+        const top = s.tracked ? `<div class="dbg-bar">${UI.pill('ok', '● Tracking on')} <span class="ui-sub">since ${when(s.since)}, kept ${s.keepDays} days, ${Number(s.count).toLocaleString()} changes kept</span><span style="flex:1"></span>${UI.btn('Turn off...', 'data-hoff')}</div>`
+          : `<div class="card" style="padding:12px;margin-bottom:10px"><b>Change tracking is off for this table.</b><div class="ui-sub" style="margin:4px 0 8px">PostgreSQL does not keep who changed a row. Turn it on to record every change from now on: the database user, the application, the address, the time, old and new values - and to bring rows back.${s.count ? ` ${Number(s.count).toLocaleString()} earlier changes are still kept.` : ''}</div>${UI.btn('Track changes...', 'data-hon', 'btn-primary')}${s.commitTimes ? '' : '<div class="ui-sub" style="margin-top:6px">Commit times are not recorded on this server (track_commit_timestamp is off), so without tracking only the transaction of the last change is known.</div>'}</div>`;
         body.innerHTML = `${top}
           <div class="dbg-bar"><select class="input" data-hop style="width:auto;padding:3px 6px;font-size:12px"><option value="">All changes</option><option value="I" ${f.op === 'I' ? 'selected' : ''}>Added</option><option value="U" ${f.op === 'U' ? 'selected' : ''}>Changed</option><option value="D" ${f.op === 'D' ? 'selected' : ''}>Deleted</option></select>
             <select class="input" data-huser style="width:auto;padding:3px 6px;font-size:12px"><option value="">Any user</option>${(x.users || []).map(u => `<option ${u === f.user ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select>
-            <input class="input" data-hq placeholder="A value in the row…" value="${esc(f.q)}" style="max-width:220px;padding:3px 8px;font-size:12px"></div>
-          ${x.changes.length ? x.changes.map((h, i) => `<details style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:6px"><summary style="cursor:pointer;font-size:12.5px">${UI.pill(OPN[h.op][0], OPN[h.op][1])} <span class="td-mono">${esc(Object.entries(h.key || {}).map(([k, v]) => `${k}=${v}`).join(', '))}</span> · ${when(h.at)} · ${whoLine(h)}${h.op === 'U' ? ` · <span class="td-mono">${esc((h.changed || []).join(', '))}</span>` : ''}</summary><div style="margin-top:6px">${diffHtml(h)}</div>${h.op !== 'I' ? `<div style="margin-top:6px">${UI.btn(h.op === 'U' ? 'Put the row back as before this' : 'Bring the row back', `data-lrest="${i}"`)}</div>` : ''}</details>`).join('') : `<div class="ui-sub">${s.schema ? 'No changes match.' : ''}</div>`}`;
+            <input class="input" data-hq placeholder="A value in the row..." value="${esc(f.q)}" style="max-width:220px;padding:3px 8px;font-size:12px"></div>
+          ${x.changes.length ? x.changes.map((h, i) => `<details style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:6px"><summary style="cursor:pointer;font-size:12.5px">${UI.pill(OPN[h.op][0], OPN[h.op][1])} <span class="td-mono">${esc(Object.entries(h.key || {}).map(([k, v]) => `${k}=${v}`).join(', '))}</span>, ${when(h.at)}, ${whoLine(h)}${h.op === 'U' ? `, <span class="td-mono">${esc((h.changed || []).join(', '))}</span>` : ''}</summary><div style="margin-top:6px">${diffHtml(h)}</div>${h.op !== 'I' ? `<div style="margin-top:6px">${UI.btn(h.op === 'U' ? 'Put the row back as before this' : 'Bring the row back', `data-lrest="${i}"`)}</div>` : ''}</details>`).join('') : `<div class="ui-sub">${s.schema ? 'No changes match.' : ''}</div>`}`;
         const on = body.querySelector('[data-hon]'); if (on) on.onclick = () => enableTracking(render);
         const off = body.querySelector('[data-hoff]'); if (off) off.onclick = () => UI.dialog({ title: 'Turn tracking off', saveLabel: 'Turn off', danger: true, body: `<div class="text-sm">The trigger is removed; new changes are no longer recorded.</div><label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:8px"><input type="checkbox" id="h-drop"> Also delete the ${Number(s.count).toLocaleString()} changes kept</label>`,
           onSave: async (ov2) => { await API.post(`${H()}/disable`, { schema: ctx.schema, table: ctx.table, dropLog: ov2.querySelector('#h-drop').checked }); showToast('Tracking is off'); render(); } });

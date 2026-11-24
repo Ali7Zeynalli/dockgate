@@ -1,15 +1,15 @@
 // Per-server access password (the 2nd gate on top of the DockGate login), enforced for every way into a server.
 //
 // A server with an access password is unlocked per DockGate session (not for everyone): this browser session typed
-// the password, so this session may use it — for 12 hours, until it signs out, or until DockGate restarts. Another
+// the password, so this session may use it - for 12 hours, until it signs out, or until DockGate restarts. Another
 // session, a new login or a restart asks again. Checked on:
-//   - every API that works on the server in use (containers, compose, proxies, files, …);
-//   - /api/servers/<id>/… (Server Console: security, cron, system, scripts, firewall, …);
+//   - every API that works on the server in use (containers, compose, proxies, files, ...);
+//   - /api/servers/<id>/... (Server Console: security, cron, system, scripts, firewall, ...);
 //   - live streams over the websocket (terminals, logs, stats, events, builds, pushes).
 const { readSessionToken } = require('./session');
 
 const TTL_MS = 12 * 3600 * 1000;
-const unlocked = new Map(); // session key → Map(serverId → unlockedAt)
+const unlocked = new Map(); // session key > Map(serverId -> unlockedAt)
 
 /** A session's key: the signature part of its token (the token itself is never kept). */
 function keyOf(token) { if (!token || typeof token !== 'string') return null; const i = token.lastIndexOf('.'); return i < 0 ? null : token.slice(i + 1); }

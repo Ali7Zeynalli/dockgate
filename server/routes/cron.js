@@ -1,4 +1,4 @@
-// Server Console → Cron API (server/cron.js). Mounted under /api/servers (behind requireAuth).
+// Server Console > Cron API (server/cron.js). Mounted under /api/servers (behind requireAuth).
 const express = require('express');
 const router = express.Router();
 const { stmts } = require('../db');
@@ -15,7 +15,7 @@ const send = (fn) => async (req, res) => {
   try { res.json(await fn(req)); } catch (e) { res.status(e.statusCode || (/^[A-Z]/.test(e.message) ? 400 : 500)).json({ error: e.message, code: e.code }); }
 };
 
-// Everything scheduled on the server (DockGate's tasks, deploy recipes, cron, timers) — Local too.
+// Everything scheduled on the server (DockGate's tasks, deploy recipes, cron, timers) - Local too.
 router.get('/:id/scheduled', send(async (req) => {
   const id = req.params.id;
   if (id !== 'local' && !stmts.getServer.get(id)) throw Object.assign(new Error('Server not found'), { statusCode: 404 });

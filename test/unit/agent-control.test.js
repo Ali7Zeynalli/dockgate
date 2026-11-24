@@ -1,6 +1,6 @@
 'use strict';
 // Agent command channel, DockGate side: what it signs is what the agent's own check takes (server/agent/keys.js
-// with agent/src/control/verify.js) — no Docker.
+// with agent/src/control/verify.js) - no Docker.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs'); const os = require('os'); const path = require('path');

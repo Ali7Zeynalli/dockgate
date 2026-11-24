@@ -8,7 +8,7 @@ const path = require('path');
 const capList = (l) => [...new Set((l || []).map(c => String(c).toUpperCase().replace(/^CAP_/, '')))].sort();
 const kindOf = (v) => (!v || v === 'default' || v === 'docker-default' ? 'default' : v === 'unconfined' || v === 'disabled' ? 'unconfined' : 'custom');
 
-/** security_opt entries → { noNewPrivileges, seccomp: { kind, value }, apparmor: { kind, value } } */
+/** security_opt entries -> { noNewPrivileges, seccomp: { kind, value }, apparmor: { kind, value } } */
 function parseSecurityOpt(list) {
   const out = { noNewPrivileges: false, seccomp: { kind: 'default', value: null }, apparmor: { kind: 'default', value: null } };
   for (const o of list || []) {
@@ -21,7 +21,7 @@ function parseSecurityOpt(list) {
 }
 
 /**
- * The profile of a compose service, or (onSwarm) of a service in a stack file — both in compose format. In Compose a
+ * The profile of a compose service, or (onSwarm) of a service in a stack file - both in compose format. In Compose a
  * port is open on its host_ip (0.0.0.0 without one; `docker compose config` writes mode: ingress anyway); on Swarm
  * an ingress port answers on every server.
  */
@@ -66,12 +66,12 @@ function portsOfServiceSpec(svc) {
 }
 
 const isRoot = (u) => !u || /^(root|0)(:.*)?$/.test(u);
-// Weaker: a port tied to one address now open on all of them. 0.0.0.0 → every server is how Swarm ingress works:
-// a change (the other servers of the cluster answer too; Swarm → Firewall decides who reaches them), not weaker.
+// Weaker: a port tied to one address now open on all of them. 0.0.0.0 -> every server is how Swarm ingress works:
+// a change (the other servers of the cluster answer too; Swarm > Firewall decides who reaches them), not weaker.
 const specific = (ip) => ip !== '0.0.0.0' && ip !== 'every server' && ip !== '::';
 const wider = (a, b) => a !== b && specific(a) && !specific(b);
 
-/** Field-by-field comparison → [{ field, before, after, verdict: 'same'|'changed'|'weaker', why }] */
+/** Field-by-field comparison -> [{ field, before, after, verdict: 'same'|'changed'|'weaker', why }] */
 function compareProfiles(a, b) {
   const rows = [];
   const row = (field, before, after, verdict, why) => rows.push({ field, before, after, verdict, why: why || '' });
@@ -86,8 +86,8 @@ function compareProfiles(a, b) {
   }
   // privileged had every capability: the ones cap_add gives instead are not more than before
   const lost = a.capDrop.filter(c => !b.capDrop.includes(c)), gained = a.privileged ? [] : b.capAdd.filter(c => !a.capAdd.includes(c));
-  row('dropped capabilities', a.capDrop.join(', ') || '—', b.capDrop.join(', ') || '—', lost.length ? 'weaker' : a.capDrop.join() === b.capDrop.join() ? 'same' : 'changed', lost.length ? `it would keep ${lost.join(', ')}` : '');
-  row('added capabilities', a.capAdd.join(', ') || '—', b.capAdd.join(', ') || '—', gained.length ? 'weaker' : a.capAdd.join() === b.capAdd.join() ? 'same' : 'changed', gained.length ? `it would also get ${gained.join(', ')}` : '');
+  row('dropped capabilities', a.capDrop.join(', ') || '-', b.capDrop.join(', ') || '-', lost.length ? 'weaker' : a.capDrop.join() === b.capDrop.join() ? 'same' : 'changed', lost.length ? `it would keep ${lost.join(', ')}` : '');
+  row('added capabilities', a.capAdd.join(', ') || '-', b.capAdd.join(', ') || '-', gained.length ? 'weaker' : a.capAdd.join() === b.capAdd.join() ? 'same' : 'changed', gained.length ? `it would also get ${gained.join(', ')}` : '');
   row('privileged', yes(a.privileged), yes(b.privileged), a.privileged === b.privileged ? 'same' : b.privileged ? 'weaker' : 'changed');
   row('host PID namespace', yes(a.pidHost), yes(b.pidHost), a.pidHost === b.pidHost ? 'same' : b.pidHost ? 'weaker' : 'changed', !b.pidHost && a.pidHost ? 'it no longer sees the server\'s processes (more isolated; check the app still works)' : '');
   row('host IPC namespace', yes(a.ipcHost), yes(b.ipcHost), a.ipcHost === b.ipcHost ? 'same' : b.ipcHost ? 'weaker' : 'changed', !b.ipcHost && a.ipcHost ? 'more isolated; check the app still works' : '');
@@ -95,14 +95,14 @@ function compareProfiles(a, b) {
   const mb = Object.fromEntries(b.mounts.map(m => [m.target, m]));
   const rwNow = a.mounts.filter(m => !m.rw && mb[m.target] && mb[m.target].rw).map(m => m.target);
   const newMounts = b.mounts.filter(m => !a.mounts.some(x => x.target === m.target)).map(m => m.target);
-  row('mounts', a.mounts.map(m => `${m.target}${m.rw ? '' : ' (ro)'}`).join(', ') || '—', b.mounts.map(m => `${m.target}${m.rw ? '' : ' (ro)'}`).join(', ') || '—',
+  row('mounts', a.mounts.map(m => `${m.target}${m.rw ? '' : ' (ro)'}`).join(', ') || '-', b.mounts.map(m => `${m.target}${m.rw ? '' : ' (ro)'}`).join(', ') || '-',
     rwNow.length ? 'weaker' : newMounts.length ? 'changed' : 'same', rwNow.length ? `writable now: ${rwNow.join(', ')}` : newMounts.length ? `new: ${newMounts.join(', ')}` : '');
   const key = (p) => `${p.port}/${p.proto}`;
   const pa = Object.fromEntries(a.ports.map(p => [key(p), p.ip])), pb = Object.fromEntries(b.ports.map(p => [key(p), p.ip]));
   const opened = Object.keys(pb).filter(k => !(k in pa)), widened = Object.keys(pb).filter(k => k in pa && wider(pa[k], pb[k]));
-  const fmt = (m) => Object.entries(m).map(([k, ip]) => `${ip}:${k}`).join(', ') || '—';
+  const fmt = (m) => Object.entries(m).map(([k, ip]) => `${ip}:${k}`).join(', ') || '-';
   row('published ports', fmt(pa), fmt(pb), opened.length || widened.length ? 'weaker' : JSON.stringify(pa) === JSON.stringify(pb) ? 'same' : 'changed',
-    [opened.length ? `newly open: ${opened.join(', ')}` : '', widened.length ? `reachable more widely: ${widened.map(k => `${k} (${pa[k]} → ${pb[k]})`).join(', ')}` : '',
+    [opened.length ? `newly open: ${opened.join(', ')}` : '', widened.length ? `reachable more widely: ${widened.map(k => `${k} (${pa[k]} -> ${pb[k]})`).join(', ')}` : '',
       Object.keys(pb).some(k => pa[k] === '0.0.0.0' && pb[k] === 'every server') ? 'Swarm ingress: every server of the cluster answers on it' : ''].filter(Boolean).join('; '));
   return rows;
 }

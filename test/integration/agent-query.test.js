@@ -1,4 +1,4 @@
-// DockGate asks the on-host Edge agent over SSH (docker exec … wget). execRemote resolves { code, stdout, stderr };
+// DockGate asks the on-host Edge agent over SSH (docker exec ... wget). execRemote resolves { code, stdout, stderr };
 // reading that as a string threw, so every remote agent query failed and pages silently fell back to Docker.
 const os = require('node:os'), fs = require('node:fs'), path = require('node:path');
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dockgate-agentq-test-'));

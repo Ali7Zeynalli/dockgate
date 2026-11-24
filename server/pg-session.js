@@ -1,4 +1,4 @@
-// SQL Workbench sessions: one psql per editor tab that stays open (docker exec -i … psql), so a transaction,
+// SQL Workbench sessions: one psql per editor tab that stays open (docker exec -i ... psql), so a transaction,
 // SET, temp tables and cursors live from one Run to the next.
 //   run(key, t, db, { sql, mode })   mode 'run' | 'test' (inside a transaction that is always rolled back)
 //   tx(key, 'commit' | 'rollback')   end the open transaction
@@ -6,7 +6,7 @@
 //   more(key, result, offset)        further rows of a result kept in memory (up to MAX_KEEP rows)
 //   close(key)                       end the session; idle ones end after IDLE_MS (an open transaction rolls back)
 // Each statement is sent with markers around it (\echo); psql's own :ERROR and :ROW_COUNT say how it ended.
-// Statements are checked first: no psql commands (\…), nothing left open (a quote, $…$ body, parenthesis).
+// Statements are checked first: no psql commands (\...), nothing left open (a quote, $...$ body, parenthesis).
 const crypto = require('crypto');
 const S = require('./pg-studio');
 const P = require('./pg-sql');
@@ -46,7 +46,7 @@ class Session {
     return new Promise((resolve, reject) => {
       const lines = []; let bytes = 0, truncated = false, started = false;
       const errStart = this.errBuf.length;
-      const timer = setTimeout(() => { reject(err('No answer from psql — the session was closed', 504, { code: 'TIMEOUT' })); this.close(); }, this.timeoutMs + 30000);
+      const timer = setTimeout(() => { reject(err('No answer from psql - the session was closed', 504, { code: 'TIMEOUT' })); this.close(); }, this.timeoutMs + 30000);
       const w = {
         reject: (e) => { clearTimeout(timer); reject(e); },
         onLine: (l) => { if (!started || !keep) return; if (truncated) return; bytes += l.length + 1; if (bytes > MAX_BYTES) { truncated = true; return; } lines.push(l); },
@@ -96,13 +96,13 @@ async function open(key, t, db, { timeoutMs = 30000 } = {}) {
 async function get(key, t, db, opts) {
   let s = sessions.get(key);
   if (s && (s.dead || s.t.id !== t.id || s.db !== db || s.timeoutMs !== (opts.timeoutMs || 30000))) {
-    if (s.txState !== 'idle' && !s.dead && s.t.id === t.id && s.db === db) throw err('A transaction is open in this tab — Commit or Roll back before changing the database or the time limit', 409, { code: 'TX_OPEN' });
+    if (s.txState !== 'idle' && !s.dead && s.t.id === t.id && s.db === db) throw err('A transaction is open in this tab - Commit or Roll back before changing the database or the time limit', 409, { code: 'TX_OPEN' });
     s.close(); s = null;
   }
   return s || open(key, t, db, opts);
 }
 
-/** Run statements in the tab's session. mode 'test': inside BEGIN … ROLLBACK (or a savepoint in an open transaction). */
+/** Run statements in the tab's session. mode 'test': inside BEGIN ... ROLLBACK (or a savepoint in an open transaction). */
 async function run(key, t, db, { sql: text, mode = 'run', confirm = false, timeoutMs = 30000, params = null }) {
   // :name placeholders: ask for their values first, then put them in as quoted literals (numbers as they are)
   const ph = P.params(text, params || {});
@@ -114,20 +114,20 @@ async function run(key, t, db, { sql: text, mode = 'run', confirm = false, timeo
   if (!stmts.length) throw err('Nothing to run');
   if (stmts.length > 200) throw err('At most 200 statements at once');
   const open1 = P.incomplete(sql); if (open1) throw err(`The text is not complete: ${open1}`, 400, { code: 'INCOMPLETE' });
-  for (const st of stmts) if (P.hasMeta(st.sql)) throw err('psql commands (a backslash outside quotes) are not run here — write SQL', 400);
+  for (const st of stmts) if (P.hasMeta(st.sql)) throw err('psql commands (a backslash outside quotes) are not run here - write SQL', 400);
   const kinds = stmts.map(st => P.kind(st.sql));
   const test = mode === 'test';
-  if (test) { const bad = stmts.find(st => NO_TEST.test(P.kind(st.sql).first + ' ' + st.sql.replace(/^[\s(]+/, '').slice(0, 60))); if (bad) throw err(`A test run can not hold "${bad.sql.slice(0, 60)}" — it ends the transaction or can not run in one. Use Run.`, 400, { code: 'NO_TEST' }); }
+  if (test) { const bad = stmts.find(st => NO_TEST.test(P.kind(st.sql).first + ' ' + st.sql.replace(/^[\s(]+/, '').slice(0, 60))); if (bad) throw err(`A test run can not hold "${bad.sql.slice(0, 60)}" - it ends the transaction or can not run in one. Use Run.`, 400, { code: 'NO_TEST' }); }
   const writes = kinds.some(k => k.write && !['BEGIN', 'START', 'COMMIT', 'END', 'ROLLBACK', 'ABORT', 'SAVEPOINT', 'RELEASE'].includes(k.first));
   if (!test && writes && !t.allowWrite) throw err('This connection is read-only. Turn on "Allow changes", or use Test run (it rolls back).', 403, { code: 'READ_ONLY' });
   if (!test) {
     const danger = kinds.map((k, i) => k.danger ? { statement: i + 1, sql: stmts[i].sql.slice(0, 200), why: k.danger } : null).filter(Boolean);
     if (danger.length && !confirm) throw err('Some statements need a confirm', 409, { code: 'NEEDS_CONFIRM', danger });
-    if (writes && t.production && !confirm) throw err('This is marked as production — confirm to run statements that change data', 409, { code: 'NEEDS_CONFIRM', danger: [{ statement: 0, why: 'production database' }] });
+    if (writes && t.production && !confirm) throw err('This is marked as production - confirm to run statements that change data', 409, { code: 'NEEDS_CONFIRM', danger: [{ statement: 0, why: 'production database' }] });
   }
   const s = await get(key, t, db, { timeoutMs });
-  if (s.busy) throw err('This tab is still running a query — Cancel it first', 409, { code: 'BUSY' });
-  if (test && s.txState === 'aborted') throw err('The open transaction failed — Roll back first', 409, { code: 'TX_ABORTED' });
+  if (s.busy) throw err('This tab is still running a query - Cancel it first', 409, { code: 'BUSY' });
+  if (test && s.txState === 'aborted') throw err('The open transaction failed - Roll back first', 409, { code: 'TX_ABORTED' });
   s.busy = true; s.lastUsed = Date.now();
   const t0 = Date.now();
   const results = []; let error = null; const notices = [];
@@ -170,7 +170,7 @@ async function run(key, t, db, { sql: text, mode = 'run', confirm = false, timeo
 async function tx(key, action) {
   const s = sessions.get(key);
   if (!s || s.dead) return { tx: 'idle', ended: true };
-  if (s.busy) throw err('A query is running — Cancel it first', 409, { code: 'BUSY' });
+  if (s.busy) throw err('A query is running - Cancel it first', 409, { code: 'BUSY' });
   s.busy = true;
   try { const r = await s.exec1(action === 'commit' ? 'COMMIT' : 'ROLLBACK', { keep: false }); await s.probeTx(); return { tx: s.txState, ok: !r.error, message: r.error ? cleanMsg(r.stderr) : null }; }
   finally { s.busy = false; s.lastUsed = Date.now(); }
@@ -186,7 +186,7 @@ async function cancel(key) {
 function more(key, index, offset = SHOW_ROWS, limit = SHOW_ROWS) {
   const s = sessions.get(key);
   const r = s && s.results[Number(index)];
-  if (!r || r.kind !== 'rows') throw err('That result is gone — run the query again', 410, { code: 'GONE' });
+  if (!r || r.kind !== 'rows') throw err('That result is gone - run the query again', 410, { code: 'GONE' });
   const o = Math.max(0, parseInt(offset, 10) || 0), l = Math.max(1, Math.min(5000, parseInt(limit, 10) || SHOW_ROWS));
   return { rows: r.rows.slice(o, o + l), offset: o, more: r.rows.length > o + l, total: r.total };
 }

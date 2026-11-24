@@ -59,7 +59,7 @@ async function rollout(project, service, opts = {}) {
   const log = opts.log || (() => {});
   if (!h.validateProjectName(project)) throw bad('Invalid project name');
   S.checkName(service, 'Service');
-  if (h.busy(project)) throw bad('A deploy of this project is running — try again when it ends', 409);
+  if (h.busy(project)) throw bad('A deploy of this project is running - try again when it ends', 409);
   const can = await canRoll(project, service);
   if (!can.ok) throw bad(`${service} can not be updated without downtime: ${can.why}`, 409);
   const c = require('./docker').docker;
@@ -79,7 +79,7 @@ async function rollout(project, service, opts = {}) {
       const made = (await S.replicasOf(c, project, service)).find(x => !before.has(x.id));
       if (!made) throw new Error('compose made no new replica');
       fresh.push(made.id);
-      log(`  ${made.name}: started, waiting until it is ready…`);
+      log(`  ${made.name}: started, waiting until it is ready...`);
       const how = await waitReady(c, made.id, log);
       log(`  ${made.name}: ${how === 'healthy' ? 'healthy' : 'running steadily'}`);
       await reload();
@@ -93,9 +93,9 @@ async function rollout(project, service, opts = {}) {
     }
   } catch (e) {
     const last = fresh[fresh.length - 1];
-    if (last) { log(`✗ ${e.message} — removing the new replica`); await T.drainAndStop(c, [last], log).catch(() => {}); await reload().catch(() => {}); }
+    if (last) { log(`✗ ${e.message} - removing the new replica`); await T.drainAndStop(c, [last], log).catch(() => {}); await reload().catch(() => {}); }
     const replaced = Math.max(0, fresh.length - 1);
-    const msg = replaced ? `${service}: ${e.message} after ${replaced} of ${old.length} replicas were updated — the others still run the previous version` : `${service}: ${e.message} — nothing was changed, the previous replicas keep running`;
+    const msg = replaced ? `${service}: ${e.message} after ${replaced} of ${old.length} replicas were updated - the others still run the previous version` : `${service}: ${e.message} - nothing was changed, the previous replicas keep running`;
     if (opts.record !== false) h.recordDeploy({ project, kind: 'rollout', status: 'error', error: msg, sourceIp: opts.sourceIp, startedAt: started, finishedAt: Date.now(), details: { service, replicas: old.length, replaced } });
     throw Object.assign(bad(msg, 500), { replaced, kept: !replaced });
   }

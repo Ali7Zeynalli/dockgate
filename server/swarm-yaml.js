@@ -1,4 +1,4 @@
-// Stacks from a stack file kept in DockGate — phase GC.
+// Stacks from a stack file kept in DockGate - phase GC.
 //   New stack:   paste a stack file (or start from an app template) with optional KEY=VALUE variables;
 //                DockGate checks it with `docker stack config`, deploys it and keeps it for Redeploy / Edit.
 //   Take over:   a stack deployed outside DockGate gets a stack file written from its running services, so
@@ -49,7 +49,7 @@ function toYaml(v, indent = 0) {
 }
 const dump = (obj) => toYaml(obj).replace(/^\n/, '') + '\n';
 
-/** KEY=VALUE lines → { KEY: VALUE } (comments and blank lines skipped). */
+/** KEY=VALUE lines -> { KEY: VALUE } (comments and blank lines skipped). */
 function parseEnv(text) {
   const out = {};
   for (const line of String(text || '').split('\n')) {
@@ -176,7 +176,7 @@ async function yamlFromContainer(id) {
   const c = dockerService.docker;
   const ct = await c.getContainer(id).inspect().catch(() => { throw bad(404, 'Container not found'); });
   const labels = ct.Config.Labels || {};
-  if (labels['com.docker.compose.project']) throw bad(400, 'This container belongs to a compose project — move the project with Migrate');
+  if (labels['com.docker.compose.project']) throw bad(400, 'This container belongs to a compose project - move the project with Migrate');
   if (labels['com.docker.swarm.service.id']) throw bad(400, 'This container is already a Swarm task');
   const notes = [];
   let image = ct.Config.Image;
@@ -213,7 +213,7 @@ async function yamlFromContainer(id) {
       const k = m.Name.length > 40 && /^[0-9a-f]+$/.test(m.Name) ? `data_${m.Name.slice(0, 8)}` : m.Name.replace(/[^A-Za-z0-9_.-]/g, '_');
       volumes[k] = { external: true, name: m.Name };
       mounts.push({ type: 'volume', source: k, target: m.Destination, read_only: m.RW === false ? true : undefined });
-      if (/^[0-9a-f]{64}$/.test(m.Name)) notes.push({ level: 'info', text: `${m.Destination}: an anonymous volume — used by its ID, so the data stays` });
+      if (/^[0-9a-f]{64}$/.test(m.Name)) notes.push({ level: 'info', text: `${m.Destination}: an anonymous volume - used by its ID, so the data stays` });
     } else if (m.Type === 'bind') mounts.push({ type: 'bind', source: m.Source, target: m.Destination, read_only: m.RW === false ? true : undefined });
     else if (m.Type === 'tmpfs') mounts.push({ type: 'tmpfs', target: m.Destination });
   }
@@ -223,7 +223,7 @@ async function yamlFromContainer(id) {
   if ((hcfg.Devices || []).length) notes.push({ level: 'bad', text: 'devices: Swarm services can not use host devices' });
   if (hcfg.NetworkMode === 'host') notes.push({ level: 'bad', text: 'network host: not possible on Swarm' });
   const userNets = Object.keys((ct.NetworkSettings || {}).Networks || {}).filter(n => !['bridge', 'host', 'none'].includes(n));
-  if (userNets.length) notes.push({ level: 'warn', text: `networks ${userNets.join(', ')}: bridge networks do not exist on Swarm — the service gets the stack network; services it talks to must be on Swarm too` });
+  if (userNets.length) notes.push({ level: 'warn', text: `networks ${userNets.join(', ')}: bridge networks do not exist on Swarm - the service gets the stack network; services it talks to must be on Swarm too` });
   if ((hcfg.CapAdd || []).length) svc.cap_add = hcfg.CapAdd;
   const rp = hcfg.RestartPolicy || {};
   const d = { replicas: 1, restart_policy: { condition: rp.Name === 'no' ? 'none' : rp.Name === 'on-failure' ? 'on-failure' : 'any', delay: '5s' }, update_config: { order: 'stop-first', failure_action: 'rollback' } };
@@ -250,10 +250,10 @@ async function startDeploy(body, { sourceIp } = {}) {
   const sid = I.serverId();
   const row = I.q.get.get(sid, name);
   if (body.create && (row || (await dockerService.docker.listServices({ filters: JSON.stringify({ label: [`com.docker.stack.namespace=${name}`] }) })).length)) throw bad(409, `A stack named ${name} already exists`);
-  if (!body.create && row && row.origin === 'compose') throw bad(400, 'This stack is deployed from its compose files — use Redeploy');
+  if (!body.create && row && row.origin === 'compose') throw bad(400, 'This stack is deployed from its compose files - use Redeploy');
   if (body.create) {
     const projects = await dockerService.listComposeProjects().catch(() => []);
-    if (projects.some(p => p.name === name)) throw bad(409, `A compose project named ${name} runs on this server — choose another name, or move that project with Migrate`);
+    if (projects.some(p => p.name === name)) throw bad(409, `A compose project named ${name} runs on this server - choose another name, or move that project with Migrate`);
   }
   const yaml = String(body.yaml || '');
   if (!yaml.trim()) throw bad(400, 'The stack file is empty');
@@ -275,7 +275,7 @@ async function startDeploy(body, { sourceIp } = {}) {
       step(job, 'verify', 'done');
       I.q.endDeploy.run('done', null, null, Date.now(), id);
       logAction({ sourceIp, server: sid, resourceType: 'swarm-stack', resourceName: name, action: body.create ? 'swarm_stack_deploy' : 'swarm_stack_redeploy', details: { hash } });
-      log('✓ Deployed. DockGate keeps the stack file: Stacks → Edit stack file… changes it.');
+      log('✓ Deployed. DockGate keeps the stack file: Stacks > Edit stack file... changes it.');
       I.finish(job);
     } catch (e) {
       log('✗ ' + e.message);
@@ -312,9 +312,9 @@ async function startConvert(body, { sourceIp } = {}) {
   if (!NAME.test(name)) throw bad(400, 'Name: lower-case letters, digits, - or _');
   const sid = I.serverId();
   if (I.q.get.get(sid, name) || (await c.listServices({ filters: JSON.stringify({ label: [`com.docker.stack.namespace=${name}`] }) })).length) throw bad(409, `A stack named ${name} already exists`);
-  if ((await dockerService.listComposeProjects().catch(() => [])).some(p => p.name === name)) throw bad(409, `A compose project named ${name} runs on this server — choose another name`);
+  if ((await dockerService.listComposeProjects().catch(() => [])).some(p => p.name === name)) throw bad(409, `A compose project named ${name} runs on this server - choose another name`);
   const ct = await c.getContainer(String(body.containerId || '')).inspect().catch(() => { throw bad(404, 'Container not found'); });
-  if (isOwn(ct.Config.Labels || {}, ct.Config.Image, ct.Name)) throw bad(409, `${ct.Name.replace(/^\//, '')} is part of DockGate (the Edge agent or DockGate itself) — it stays a container on its server`);
+  if (isOwn(ct.Config.Labels || {}, ct.Config.Image, ct.Name)) throw bad(409, `${ct.Name.replace(/^\//, '')} is part of DockGate (the Edge agent or DockGate itself) - it stays a container on its server`);
   const yaml = String(body.yaml || '');
   const vars = parseEnv(body.env);
   await I.context();
@@ -353,7 +353,7 @@ async function startConvert(body, { sourceIp } = {}) {
           if (ct.State.Running) await c.getContainer(ct.Id).start().catch(er => { if (er.statusCode !== 304) throw er; });
           step(job, 'back', 'done');
           log(`↩ ${cname} runs again`);
-        } catch (u) { step(job, 'back', 'failed'); log(`✗ starting ${cname} again failed: ${u.message} — start it yourself`); }
+        } catch (u) { step(job, 'back', 'failed'); log(`✗ starting ${cname} again failed: ${u.message} - start it yourself`); }
       }
       I.q.endDeploy.run(stopped ? 'rolled_back' : 'failed', e.message, null, Date.now(), id);
       I.finish(job, e);
@@ -370,7 +370,7 @@ async function startBackToContainer(name, { sourceIp } = {}) {
   if (!row || row.origin !== 'container' || !row.from_container) throw bad(404, 'This stack was not made from a container');
   const from = JSON.parse(row.from_container);
   const ct = await c.getContainer(from.id).inspect().catch(() => null);
-  if (!ct) throw bad(404, `The container ${from.name} is gone — remove the stack instead, or keep it on Swarm`);
+  if (!ct) throw bad(404, `The container ${from.name} is gone - remove the stack instead, or keep it on Swarm`);
   const { job, log, step } = I.newJob('move-back', name);
   (async () => {
     const id = I.q.addDeploy.run(sid, name, 'move-back', null, null, sourceIp || null, Date.now()).lastInsertRowid;

@@ -1,7 +1,7 @@
 // Uptime from other servers: the same check run on a server DockGate manages, over its SSH login, with the
 // tools a server has (curl, nc / bash, openssl, getent). With several places a check is down only when every
 // place fails, so one place with a network problem does not raise an alert.
-//   probeOn(server, check)  → { ok, ms, status?, error? }
+//   probeOn(server, check)  -> { ok, ms, status?, error? }
 //   merge(results)          one result from several places: { ok, ms, status, error, cert, places }
 const remoteExec = require('./remote-compose');
 const { statusMatcher, parseHostPort } = require('./uptime-probe');
@@ -66,7 +66,7 @@ async function probeOn(server, check) {
   } catch (e) { return { ok: false, ms: 0, error: `SSH: ${e.message}`, ssh: true }; }
 }
 
-/** Several places → one result: ok when any place is ok; the error names each place. */
+/** Several places -> one result: ok when any place is ok; the error names each place. */
 function merge(results) {
   const places = {};
   for (const [id, label, r] of results) places[id] = { label, ok: !!r.ok, ms: r.ms || 0, status: r.status || null, error: r.ok ? null : r.error || 'failed' };
@@ -75,7 +75,7 @@ function merge(results) {
   const cert = (results.find(([id, , r]) => id === 'dockgate' && r.cert) || [])[2];
   return {
     ok: okOnes.length > 0, ms: first.ms || 0, status: first.status || null, detail: first.detail,
-    error: okOnes.length ? null : results.map(([, label, r]) => `${label}: ${r.error || 'failed'}`).join(' · '),
+    error: okOnes.length ? null : results.map(([, label, r]) => `${label}: ${r.error || 'failed'}`).join(', '),
     cert: cert ? cert.cert : undefined, places,
     partial: okOnes.length > 0 && okOnes.length < results.length,
   };

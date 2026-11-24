@@ -50,7 +50,7 @@ test('a backup script runs its steps in order with the right arguments', async (
 
 test('a failing step stops the script; "go on" continues and the script still reports the failure', async () => {
   let r = await run({ name: 'x', steps: [{ type: 'copy_remote', src: '/tmp/', dest: '/tmp/x/' }, { type: 'container_action', container: 'web', action: 'restart' }] }, { FAIL_RSYNC: '1' });
-  assert.equal(r.code, 1); assert.match(r.out, /step 1 failed — stopping/); assert.equal(r.calls.length, 1, 'step 2 did not run');
+  assert.equal(r.code, 1); assert.match(r.out, /step 1 failed - stopping/); assert.equal(r.calls.length, 1, 'step 2 did not run');
   r = await run({ name: 'x', steps: [{ type: 'copy_remote', src: '/tmp/', dest: '/tmp/x/', onFail: 'continue' }, { type: 'container_action', container: 'web', action: 'restart' }] }, { FAIL_RSYNC: '1' });
   assert.equal(r.code, 1); assert.match(r.out, /going on/); assert.equal(r.calls[1], 'docker [restart] [web]'); assert.match(r.out, /Done with 1 failed step/);
   // a failure in the middle of a step stops that step (set -e in a standalone subshell)
@@ -103,18 +103,18 @@ test('system update: apt with security updates, then a reboot only when the syst
 });
 
 test('self-repair: a fix runs only when a check failed; a working fix counts as fixed, a failing one is reported', async () => {
-  // service watchdog: running → nothing; stopped → restarted
+  // service watchdog: running -> nothing; stopped -> restarted
   let r = await run(B.fromTemplate('service-watchdog', { name: 'nginx' }));
   assert.equal(r.code, 0, r.out); assert.match(r.out, /skipped \(nothing failed\)/); assert.ok(!r.calls.some(c => /\[restart\]/.test(c)));
   r = await run(B.fromTemplate('service-watchdog', { name: 'nginx' }), { SVC_STATE: 'failed' });
   assert.ok(r.calls.includes('systemctl [restart] [nginx]'), r.calls.join('\n'));
-  // restart-if-down: site down → restart + wait healthy; the last check still fails → the run fails (reported)
+  // restart-if-down: site down -> restart + wait healthy; the last check still fails -> the run fails (reported)
   r = await run(B.fromTemplate('restart-if-down', { container: 'web', url: 'https://example.com/health' }), { HTTP_CODE: '502' });
   assert.ok(r.calls.includes('docker [restart] [web]')); assert.match(r.out, /web: healthy/); assert.match(r.out, /✓ fixed/);
   assert.equal(r.code, 1, 'the site still does not answer after the restart');
   r = await run(B.fromTemplate('restart-if-down', { container: 'web', url: 'https://example.com/health' }), { HTTP_CODE: '200' });
   assert.equal(r.code, 0); assert.ok(!r.calls.some(c => c.startsWith('docker')));
-  // a fix that works → the run ends OK
+  // a fix that works -> the run ends OK
   r = await run({ name: 'x', steps: [{ type: 'http_check', url: 'https://e.example/', onFail: 'continue' }, { type: 'container_action', container: 'web', action: 'restart', when: 'if_failed' }] }, { HTTP_CODE: '500' });
   assert.equal(r.code, 0, r.out); assert.match(r.out, /✓ fixed/); assert.match(r.out, /✓ Done/);
   // wait_healthy gives up after its timeout

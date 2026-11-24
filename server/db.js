@@ -121,7 +121,7 @@ db.exec(`
   );
 
   -- Repositories tracked per registry for the Browse/Inventory view. Populated automatically when an
-  -- image is pushed (auto-track) and manually when the user pins a repo. No secrets here — just names.
+  -- image is pushed (auto-track) and manually when the user pins a repo. No secrets here - just names.
   CREATE TABLE IF NOT EXISTS tracked_repos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     registry_id INTEGER NOT NULL,
@@ -221,7 +221,7 @@ db.exec(`
 `);
 
 // Idempotent additive migrations
-// "duplicate column" is expected on repeat boots — silenced; other errors are logged
+// "duplicate column" is expected on repeat boots - silenced; other errors are logged
 // so that genuine corruption / locked-DB problems aren't hidden silently.
 function migrate(sql) {
   try { db.exec(sql); }
@@ -238,14 +238,14 @@ migrate('ALTER TABLE build_history ADD COLUMN nocache INTEGER DEFAULT 0');
 migrate('ALTER TABLE build_history ADD COLUMN pull INTEGER DEFAULT 0');
 migrate('ALTER TABLE notification_log ADD COLUMN channel TEXT DEFAULT "email"');
 migrate('ALTER TABLE servers ADD COLUMN password TEXT');
-migrate('ALTER TABLE servers ADD COLUMN passphrase TEXT'); // SSH key passphrase — support for encrypted private keys
+migrate('ALTER TABLE servers ADD COLUMN passphrase TEXT'); // SSH key passphrase - support for encrypted private keys
 migrate('ALTER TABLE servers ADD COLUMN name TEXT');       // optional friendly display name (the id stays the immutable key)
-migrate('ALTER TABLE servers ADD COLUMN access_pass TEXT'); // optional per-server access password (stored as salt:scryptHash) — a 2nd gate required to switch to this server
+migrate('ALTER TABLE servers ADD COLUMN access_pass TEXT'); // optional per-server access password (stored as salt:scryptHash) - a 2nd gate required to switch to this server
 migrate('ALTER TABLE servers ADD COLUMN notifications_enabled INTEGER DEFAULT 1'); // per-server alert notification toggle (1 = on, 0 = muted)
-migrate('ALTER TABLE servers ADD COLUMN host_key TEXT');      // pinned SSH host key fingerprint (SHA256:…) — trust-on-first-use, then enforced
+migrate('ALTER TABLE servers ADD COLUMN host_key TEXT');      // pinned SSH host key fingerprint (SHA256:...) - trust-on-first-use, then enforced
 migrate('ALTER TABLE servers ADD COLUMN host_key_blob TEXT'); // pinned host key, base64 wire format (for a known_hosts line used by the docker/ssh CLI)
 migrate('ALTER TABLE servers ADD COLUMN host_key_at DATETIME'); // when the host key was pinned
-// SSH key pairs DockGate generated for server users (deploy user / Users → Add key). The private key file
+// SSH key pairs DockGate generated for server users (deploy user / Users > Add key). The private key file
 // lives in data/ssh-keys (0600); the row lets the UI mark the key as DockGate's and offer its download.
 migrate(`CREATE TABLE IF NOT EXISTS generated_keys (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -258,7 +258,7 @@ migrate(`CREATE TABLE IF NOT EXISTS generated_keys (
 migrate('CREATE INDEX IF NOT EXISTS idx_generated_keys_server ON generated_keys (server_id, username)');
 migrate('ALTER TABLE activity ADD COLUMN server TEXT');     // audit: which host the action was performed on (multi-host context)
 migrate('ALTER TABLE activity ADD COLUMN source_ip TEXT');  // audit: where from (the only "who" signal, since there's no auth)
-migrate('ALTER TABLE registries ADD COLUMN last_test_status TEXT');  // 'ok' | 'fail' — cached Test-login result for the status pill
+migrate('ALTER TABLE registries ADD COLUMN last_test_status TEXT');  // 'ok' | 'fail' - cached Test-login result for the status pill
 migrate('ALTER TABLE registries ADD COLUMN last_test_at DATETIME');  // when the cached test ran
 
 // Default notification rules / Defolt bildiriş qaydaları
@@ -330,7 +330,7 @@ insertHealthRule.run('swarm_autoscale', 'Swarm autoscale changed a service', 0, 
 insertHealthRule.run('compose_heal', 'Auto-heal restarted a Compose container', 0, 1, '{}');
 insertHealthRule.run('compose_autoscale', 'Auto Scaling changed a Compose service, or the server was full', 0, 1, '{}');
 // "Newer image available" is opt-in: it was just inserted by defaultRules (enabled = 1) on databases that
-// did not have it yet — turn it off once, then leave it to the user.
+// did not have it yet - turn it off once, then leave it to the user.
 try {
   const seen = db.prepare("SELECT value FROM settings WHERE key = 'image_update_rule_init'").get();
   if (!seen) {
@@ -339,7 +339,7 @@ try {
   }
 } catch (e) { /* best effort */ }
 // The old "Disk usage exceeds threshold" rule measures how much space Docker uses (GB), not how full the
-// disk is — name it for what it does and store its limit (was a fixed 50 GB in code).
+// disk is - name it for what it does and store its limit (was a fixed 50 GB in code).
 try {
   db.prepare("UPDATE notification_rules SET description = 'Docker uses a lot of disk space' WHERE event_type = 'disk_threshold' AND description = 'Disk usage exceeds threshold'").run();
   db.prepare("UPDATE notification_rules SET params = ? WHERE event_type = 'disk_threshold' AND params IS NULL").run(JSON.stringify({ gb: 50 }));
@@ -354,12 +354,12 @@ migrate('CREATE INDEX IF NOT EXISTS idx_prov_runs_server ON provision_runs (serv
 migrate('CREATE INDEX IF NOT EXISTS idx_prov_items_run ON provision_items (run_id)');
 migrate('CREATE INDEX IF NOT EXISTS idx_prov_items_server_item ON provision_items (server_id, item_id, id)');
 migrate('CREATE INDEX IF NOT EXISTS idx_host_metrics_server ON host_metrics (server_id, id)');
-// Retention — keep the last 200 provision runs; drop items whose run was trimmed
+// Retention - keep the last 200 provision runs; drop items whose run was trimmed
 migrate('DELETE FROM provision_runs WHERE id NOT IN (SELECT id FROM provision_runs ORDER BY started_at DESC LIMIT 200)');
 migrate('DELETE FROM provision_items WHERE run_id NOT IN (SELECT id FROM provision_runs)');
 
-// Retention — keep only last 1000 activity records and 100 builds
-// Saxlama — yalnız son 1000 fəaliyyət qeydi və 100 build saxla
+// Retention - keep only last 1000 activity records and 100 builds
+// Saxlama - yalnız son 1000 fəaliyyət qeydi və 100 build saxla
 migrate('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 10000)');
 migrate('DELETE FROM build_history WHERE id NOT IN (SELECT id FROM build_history ORDER BY started_at DESC LIMIT 100)');
 
@@ -371,7 +371,7 @@ const defaultSettings = {
   sidebarCollapsed: 'false',
   logTimestamps: 'false',
   terminalShell: '/bin/sh',
-  timezone: 'auto', // display timezone — 'auto' = browser/host; otherwise an IANA zone (e.g. Asia/Baku)
+  timezone: 'auto', // display timezone - 'auto' = browser/host; otherwise an IANA zone (e.g. Asia/Baku)
   active_server: 'local',
   // App Templates catalog source. Empty = the default community catalog (500+ apps, auto-loaded by
   // the backend); a URL = custom catalog; the sentinel 'bundled' = the offline ~15 set only.
@@ -408,10 +408,10 @@ const stmts = {
   // Activity
   getActivity: db.prepare('SELECT * FROM activity ORDER BY created_at DESC LIMIT ?'),
   logActivity: db.prepare('INSERT INTO activity (resource_id, resource_type, resource_name, action, details) VALUES (?, ?, ?, ?, ?)'),
-  // Audit — with server + source_ip (used by logAction() in server/audit.js)
+  // Audit - with server + source_ip (used by logAction() in server/audit.js)
   logActivityFull: db.prepare('INSERT INTO activity (resource_id, resource_type, resource_name, action, details, server, source_ip) VALUES (?, ?, ?, ?, ?, ?, ?)'),
   clearActivity: db.prepare('DELETE FROM activity'),
-  // Retention — keep only last N records / Saxlama — yalnız son N qeydi saxla
+  // Retention - keep only last N records / Saxlama - yalnız son N qeydi saxla
   trimActivity: db.prepare('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY created_at DESC LIMIT 10000)'),
   trimBuilds: db.prepare('DELETE FROM build_history WHERE id NOT IN (SELECT id FROM build_history ORDER BY started_at DESC LIMIT 100)'),
 
@@ -420,7 +420,7 @@ const stmts = {
   getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
   setSetting: db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'),
 
-  // Build History — store build records / Build tarixçəsini saxlamaq üçün
+  // Build History - store build records / Build tarixçəsini saxlamaq üçün
   getBuilds: db.prepare('SELECT * FROM build_history ORDER BY started_at DESC LIMIT ?'),
   getBuild: db.prepare('SELECT * FROM build_history WHERE id = ?'),
   insertBuild: db.prepare('INSERT INTO build_history (id, image_tag, dockerfile, context_url, build_args, nocache, pull, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
@@ -429,7 +429,7 @@ const stmts = {
   deleteBuild: db.prepare('DELETE FROM build_history WHERE id = ?'),
   clearBuilds: db.prepare('DELETE FROM build_history'),
 
-  // Hidden Docker Builds — images hidden from build history / Build history-dən gizlədilmiş image-lər
+  // Hidden Docker Builds - images hidden from build history / Build history-dən gizlədilmiş image-lər
   getHiddenBuilds: db.prepare('SELECT image_id FROM hidden_docker_builds'),
   hideBuild: db.prepare('INSERT OR IGNORE INTO hidden_docker_builds (image_id) VALUES (?)'),
   unhideBuild: db.prepare('DELETE FROM hidden_docker_builds WHERE image_id = ?'),
@@ -480,7 +480,7 @@ const stmts = {
   deleteGeneratedKeysForServer: db.prepare('DELETE FROM generated_keys WHERE server_id = ?'),
   deleteServer: db.prepare('DELETE FROM servers WHERE id = ?'),
 
-  // Registries (private image registry credentials — used to authenticate pull/push)
+  // Registries (private image registry credentials - used to authenticate pull/push)
   getRegistries: db.prepare('SELECT * FROM registries ORDER BY server_address'),
   getRegistry: db.prepare('SELECT * FROM registries WHERE id = ?'),
   getRegistryByHost: db.prepare('SELECT * FROM registries WHERE server_address = ?'),
@@ -489,7 +489,7 @@ const stmts = {
   deleteRegistry: db.prepare('DELETE FROM registries WHERE id = ?'),
   updateRegistryTest: db.prepare('UPDATE registries SET last_test_status = ?, last_test_at = CURRENT_TIMESTAMP WHERE id = ?'),
 
-  // Tracked repositories per registry (Browse/Inventory — auto-tracked on push + user-pinned)
+  // Tracked repositories per registry (Browse/Inventory - auto-tracked on push + user-pinned)
   getTrackedRepos: db.prepare('SELECT * FROM tracked_repos WHERE registry_id = ? ORDER BY repo'),
   countTrackedByRegistry: db.prepare('SELECT registry_id, COUNT(*) AS n FROM tracked_repos GROUP BY registry_id'),
   insertTrackedRepo: db.prepare('INSERT OR IGNORE INTO tracked_repos (registry_id, repo, last_pushed_at) VALUES (?, ?, ?)'),
@@ -497,7 +497,7 @@ const stmts = {
   deleteTrackedRepo: db.prepare('DELETE FROM tracked_repos WHERE registry_id = ? AND repo = ?'),
   deleteTrackedReposByRegistry: db.prepare('DELETE FROM tracked_repos WHERE registry_id = ?'),
 
-  // SSH keys (named, reusable — git deploy keys / machine-user keys). private_key is AES-encrypted.
+  // SSH keys (named, reusable - git deploy keys / machine-user keys). private_key is AES-encrypted.
   getSshKeys: db.prepare('SELECT * FROM ssh_keys ORDER BY created_at DESC'),
   getSshKey: db.prepare('SELECT * FROM ssh_keys WHERE id = ?'),
   insertSshKey: db.prepare('INSERT INTO ssh_keys (name, description, key_type, private_key, public_key, fingerprint) VALUES (?, ?, ?, ?, ?, ?)'),
@@ -512,18 +512,18 @@ const stmts = {
   getProvisionRun: db.prepare('SELECT * FROM provision_runs WHERE id = ?'),
   insertProvisionItem: db.prepare('INSERT INTO provision_items (run_id, server_id, item_id, seq, label, state, detect_cmd, install_cmd, verify_cmd, log, duration_ms, error, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
   getProvisionItems: db.prepare('SELECT * FROM provision_items WHERE run_id = ? ORDER BY seq'),
-  // Matrix — the latest recorded state of each item_id for a server (newest row per item).
+  // Matrix - the latest recorded state of each item_id for a server (newest row per item).
   getLatestItemsPerServer: db.prepare('SELECT pi.* FROM provision_items pi WHERE pi.server_id = ? AND pi.id = (SELECT MAX(pi2.id) FROM provision_items pi2 WHERE pi2.server_id = pi.server_id AND pi2.item_id = pi.item_id)'),
   trimProvisionRuns: db.prepare('DELETE FROM provision_runs WHERE id NOT IN (SELECT id FROM provision_runs ORDER BY started_at DESC LIMIT 200)'),
 
-  // Host metrics (time-series — opportunistic samples taken whenever /host/stats is fetched)
+  // Host metrics (time-series - opportunistic samples taken whenever /host/stats is fetched)
   insertHostMetric: db.prepare('INSERT INTO host_metrics (server_id, cpu, mem_pct, disk_pct, swap_pct, load1, net_rx, net_tx, procs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
   getHostMetrics: db.prepare('SELECT ts, cpu, mem_pct, disk_pct, swap_pct, load1, net_rx, net_tx, procs FROM host_metrics WHERE server_id = ? ORDER BY id DESC LIMIT ?'),
   trimHostMetrics: db.prepare('DELETE FROM host_metrics WHERE server_id = ? AND id NOT IN (SELECT id FROM host_metrics WHERE server_id = ? ORDER BY id DESC LIMIT ?)'),
   deleteHostMetrics: db.prepare('DELETE FROM host_metrics WHERE server_id = ?'),
   // Monitoring keeps 48 hours per server (one sample a minute); a row cap guards against a wrong clock.
   trimHostMetricsAge: db.prepare("DELETE FROM host_metrics WHERE server_id = ? AND (ts < datetime('now', '-48 hours') OR id NOT IN (SELECT id FROM host_metrics WHERE server_id = ? ORDER BY id DESC LIMIT 6000))"),
-  // Last 48 hours in 5-minute buckets: average + peak per metric (Monitoring → Last 48 hours).
+  // Last 48 hours in 5-minute buckets: average + peak per metric (Monitoring > Last 48 hours).
   getHostHistory: db.prepare(`SELECT CAST(strftime('%s', ts) AS INTEGER) / 300 * 300 AS b, COUNT(*) AS n,
     AVG(cpu) AS cpu, MAX(cpu) AS cpu_max, AVG(mem_pct) AS mem, MAX(mem_pct) AS mem_max, AVG(disk_pct) AS disk, MAX(disk_pct) AS disk_max,
     AVG(net_rx) AS rx, MAX(net_rx) AS rx_max, AVG(net_tx) AS tx, MAX(net_tx) AS tx_max, AVG(load1) AS load1, MAX(load1) AS load1_max
@@ -537,7 +537,7 @@ const stmts = {
     ON CONFLICT(server_id) DO UPDATE SET tg_token=@tg_token, tg_chat_id=@tg_chat_id, smtp_host=@smtp_host, smtp_port=@smtp_port, smtp_user=@smtp_user, smtp_pass=@smtp_pass, smtp_from=@smtp_from, smtp_to=@smtp_to, updated_at=CURRENT_TIMESTAMP`),
   deleteServerChannel: db.prepare('DELETE FROM server_channels WHERE server_id = ?'),
 
-  // Edge-notifier deploy jobs (install / update / remove / install-all) — re-openable progress.
+  // Edge-notifier deploy jobs (install / update / remove / install-all) - re-openable progress.
   insertAgentJob: db.prepare('INSERT INTO agent_jobs (id, kind, server_id, status, total, source_ip) VALUES (?, ?, ?, ?, ?, ?)'),
   updateAgentJobProgress: db.prepare('UPDATE agent_jobs SET ok = ?, failed = ?, phase = ? WHERE id = ?'),
   finishAgentJob: db.prepare('UPDATE agent_jobs SET status = ?, ok = ?, failed = ?, error = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?'),
@@ -548,7 +548,7 @@ const stmts = {
   trimAgentJobs: db.prepare('DELETE FROM agent_jobs WHERE id NOT IN (SELECT id FROM agent_jobs ORDER BY started_at DESC LIMIT 200)'),
 };
 
-// One-time at-rest encryption of stored secrets (idempotent — already-encrypted rows are skipped, so
+// One-time at-rest encryption of stored secrets (idempotent - already-encrypted rows are skipped, so
 // this is safe to run on every boot). Late require to avoid load-order coupling.
 try {
   const { encrypt, isEncrypted } = require('./auth/secrets');

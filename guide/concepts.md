@@ -7,7 +7,7 @@ A short tour of the ideas behind every page. Read it once; the rest of the docs 
 DockGate manages one or more **servers**:
 
 - **Local** is the host DockGate runs on. DockGate talks to its Docker through the socket mounted into the DockGate container.
-- **Remote servers** are reached over **SSH**. Nothing has to be installed on them except Docker, and DockGate can install that too (**Server → Software → Setup**).
+- **Remote servers** are reached over **SSH**. Nothing has to be installed on them except Docker, and DockGate can install that too (**Server > Software > Setup**).
 
 The **server in use** is picked with **SERVERS ▾** in the top bar. Resources, Deploy, Observe, Tools and Swarm all show that server. Switching is instant; nothing is copied between servers.
 
@@ -17,11 +17,11 @@ DockGate pins each server's **SSH host key** on first connection and refuses to 
 
 | | What it is | Where in DockGate |
 |---|---|---|
-| **Container** | One running app, from an image | Resources → Containers |
-| **Compose stack** | Several containers from one `docker-compose.yml`, on **one** server | Deploy → Projects |
+| **Container** | One running app, from an image | Resources > Containers |
+| **Compose stack** | Several containers from one `docker-compose.yml`, on **one** server | Deploy > Projects |
 | **Swarm service / stack** | An app run by Docker Swarm as several tasks, over **one or more** servers, with rolling updates and roll back | Swarm |
 
-You can start with Compose and move a project to Swarm later (**Move to Swarm…**), and back.
+You can start with Compose and move a project to Swarm later (**Move to Swarm...**), and back.
 
 ## Jobs
 
@@ -32,11 +32,11 @@ Long work runs as a **job** on the server side: deploys, builds, image updates, 
 - **Undo on failure**: a failed Swarm setup, move or image update puts things back as they were.
 - **Lockout guard**: SSH and firewall changes on the Server pages are tested with a new login and rolled back if it fails.
 - **Confirmations**: anything that deletes data asks you to type the name.
-- **Audit log**: every change, with the server and the IP address it came from (**System → Activity → Audit log**).
+- **Audit log**: every change, with the server and the IP address it came from (**System > Activity > Audit log**).
 
 ## Monitoring and alerts
 
-DockGate watches Docker events on every server, checks server health every minute and Swarm every 30 seconds. Alerts go to **Telegram**, **email** or a **webhook** (**Settings → Notifications**). The optional **Edge agent** runs on each server, connects out only, and keeps sending alerts when DockGate is offline.
+DockGate watches Docker events on every server, checks server health every minute and Swarm every 30 seconds. Alerts go to **Telegram**, **email** or a **webhook** (**Settings > Notifications**). The optional **Edge agent** runs on each server, connects out only, and keeps sending alerts when DockGate is offline.
 
 ## Data
 

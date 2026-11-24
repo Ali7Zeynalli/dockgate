@@ -1,11 +1,11 @@
-// Fail2ban — pure helpers (no I/O): durations, the ban-time growth fail2ban really uses, DockGate's
+// Fail2ban - pure helpers (no I/O): durations, the ban-time growth fail2ban really uses, DockGate's
 // managed config files, parsing of fail2ban-client output, and detection of settings that cannot work.
 //
 // Facts this file relies on (fail2ban 0.11 / 1.0, server/jail.py + server/database.py):
 //  - bantime.increment, default formula:  max(bantime, bantime * 2^count * factor), capped at maxtime,
-//    where count = previous bans of that IP (1st ban → count 0 → plain bantime).
+//    where count = previous bans of that IP (1st ban -> count 0 -> plain bantime).
 //  - The ban history used for that ("bips") is purged once a ban is older than
-//    dbpurgeage + 3 × its bantime — so a 24h ban is remembered for about dbpurgeage + 3 days.
+//    dbpurgeage + 3 × its bantime - so a 24h ban is remembered for about dbpurgeage + 3 days.
 //  - recidive reads fail2ban's OWN log ("Ban <ip>" lines), by default /var/log/fail2ban.log.
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
 const isIpOrCidr = (v) => require('../provision/catalog').isIpOrCidr(v); // lazy: catalog requires this module
@@ -26,7 +26,7 @@ const DEFAULTS = {
 
 // ---------------------------------------------------------------- durations
 const UNIT = { s: 1, m: 60, h: 3600, d: 86400, w: 604800 };
-/** fail2ban duration ("1d", "24h", "1d12h", "600") → seconds, or null when invalid. */
+/** fail2ban duration ("1d", "24h", "1d12h", "600") -> seconds, or null when invalid. */
 function toSeconds(v) {
   const s = String(v == null ? '' : v).trim().toLowerCase();
   if (!s) return null;
@@ -36,9 +36,9 @@ function toSeconds(v) {
   for (const m of s.matchAll(/(\d+)([smhdw])/g)) total += Number(m[1]) * UNIT[m[2]];
   return total;
 }
-/** Seconds → short human text ("24h", "4d", "1w 2d"). */
+/** Seconds -> short human text ("24h", "4d", "1w 2d"). */
 function human(sec) {
-  if (sec == null) return '—';
+  if (sec == null) return '-';
   if (sec < 0) return 'permanent';
   const d = Math.floor(sec / 86400), h = Math.round((sec % 86400) / 3600);
   if (d >= 1) return h ? `${d}d ${h}h` : `${d}d`;
@@ -52,7 +52,7 @@ function assertDuration(v, label) {
   return String(v).trim().toLowerCase();
 }
 
-/** The ban length of the 1st…nth ban of the same IP (seconds), as fail2ban computes it. */
+/** The ban length of the 1st...nth ban of the same IP (seconds), as fail2ban computes it. */
 function banSequence({ bantime, increment, factor, maxtime }, n = 6) {
   const b = toSeconds(bantime), max = toSeconds(maxtime);
   const f = Number(factor) || 1;
@@ -92,7 +92,7 @@ function normalizeSettings(input) {
       maxretry: int(rec.maxretry, 1, 50, 'recidive max bans'),
       findtime: assertDuration(rec.findtime, 'recidive window'),
       bantime: assertDuration(rec.bantime, 'recidive ban time'),
-      // Longer recidive bans for IPs that come back (off by default). Older clients send nothing → defaults.
+      // Longer recidive bans for IPs that come back (off by default). Older clients send nothing -> defaults.
       increment: !!rec.increment,
       factor: rec.factor == null ? DEFAULTS.recidive.factor : (() => { const f = Number(rec.factor); if (!(f >= 0.5 && f <= 10)) throw httpError(400, 'recidive growth factor must be 0.5–10'); return f; })(),
       maxtime: assertDuration(rec.maxtime == null ? DEFAULTS.recidive.maxtime : rec.maxtime, 'recidive longest ban'),
@@ -111,7 +111,7 @@ function normalizeSettings(input) {
   return out;
 }
 
-// Keys DockGate writes itself, per section — an "other option" may not set them (use the form instead).
+// Keys DockGate writes itself, per section - an "other option" may not set them (use the form instead).
 const MANAGED_KEYS = {
   DEFAULT: ['ignoreip'],
   sshd: ['enabled', 'backend', 'port', 'mode', 'maxretry', 'findtime', 'bantime', 'bantime.increment', 'bantime.factor', 'bantime.maxtime'],
@@ -128,7 +128,7 @@ function normalizeExtra(input) {
       const m = /^([A-Za-z][\w.]*)\s*=\s*(.*)$/.exec(line);
       if (!m || /[\r\n]/.test(line) || line.length > 300) throw httpError(400, `Other options [${sec}]: write one "option = value" per line ("${line.slice(0, 40)}")`);
       const key = m[1].toLowerCase();
-      if (MANAGED_KEYS[sec].includes(key)) throw httpError(400, `Other options [${sec}]: ${m[1]} is set with DockGate's own field — change it there`);
+      if (MANAGED_KEYS[sec].includes(key)) throw httpError(400, `Other options [${sec}]: ${m[1]} is set with DockGate's own field - change it there`);
       const norm = `${m[1]} = ${m[2].trim()}`;
       if (out[sec].some(x => x.split('=')[0].trim().toLowerCase() === key)) throw httpError(400, `Other options [${sec}]: ${m[1]} is written twice`);
       out[sec].push(norm);
@@ -140,7 +140,7 @@ function normalizeExtra(input) {
 
 /** /etc/fail2ban/jail.d/dockgate.conf from settings. `sshPort` keeps the jail on sshd's real port. */
 function buildJailConf(s, sshPort) {
-  const L = ['# Managed by DockGate (Server Console → Fail2ban → Configuration: Settings or Files).',
+  const L = ['# Managed by DockGate (Server Console > Fail2ban > Configuration: Settings or Files).',
     '# /etc/fail2ban/jail.local and jail.d/*.local are read after this file and override it.', ''];
   const ex = s.extra || {};
   L.push('[DEFAULT]', `ignoreip = ${['127.0.0.1/8', '::1', ...s.ignoreip].join(' ')}`, ...(ex.DEFAULT || []), '');
@@ -151,7 +151,7 @@ function buildJailConf(s, sshPort) {
   L.push(...(ex.sshd || []), '');
   L.push('[recidive]', `enabled = ${s.recidive.enabled ? 'true' : 'false'}`);
   if (s.recidive.enabled) {
-    // recidive reads fail2ban's own log FILE — never the journal (fail2ban does not log there by default).
+    // recidive reads fail2ban's own log FILE - never the journal (fail2ban does not log there by default).
     L.push('backend = auto', `logpath = ${LOG_FILE}`, `maxretry = ${s.recidive.maxretry}`, `findtime = ${s.recidive.findtime}`, `bantime = ${s.recidive.bantime}`);
     // Always explicit, so a bantime.* line under [DEFAULT] in another file cannot change recidive behind DockGate's back.
     L.push(`bantime.increment = ${s.recidive.increment ? 'true' : 'false'}`);
@@ -161,13 +161,13 @@ function buildJailConf(s, sshPort) {
   return L.join('\n') + '\n';
 }
 
-/** /etc/fail2ban/fail2ban.d/dockgate.conf — daemon settings the jails depend on. */
+/** /etc/fail2ban/fail2ban.d/dockgate.conf - daemon settings the jails depend on. */
 function buildDaemonConf(s) {
   return ['# Managed by DockGate. fail2ban.local (if present) is read after this file and overrides it.',
     '[Definition]', `logtarget = ${LOG_FILE}`, `dbpurgeage = ${s.dbpurgeage}`, ''].join('\n');
 }
 
-/** Read DockGate's jail file back into settings (unknown → defaults). */
+/** Read DockGate's jail file back into settings (unknown -> defaults). */
 function parseJailConf(text) {
   const s = JSON.parse(JSON.stringify(DEFAULTS));
   if (!text || !String(text).trim()) return null;
@@ -210,12 +210,12 @@ function parseDaemonConf(text) {
 }
 
 // ---------------------------------------------------------------- runtime parsing
-/** `fail2ban-client status` → jail names. */
+/** `fail2ban-client status` -> jail names. */
 function parseJailList(out) {
   const m = /Jail list:\s*(.*)$/m.exec(String(out || ''));
   return m ? m[1].split(',').map(s => s.trim()).filter(Boolean) : [];
 }
-/** `fail2ban-client status <jail>` → counters. */
+/** `fail2ban-client status <jail>` -> counters. */
 function parseJailStatus(out) {
   const n = (re) => { const m = re.exec(String(out || '')); return m ? Number(m[1]) : 0; };
   return {
@@ -223,7 +223,7 @@ function parseJailStatus(out) {
     currentlyBanned: n(/Currently banned:\s*(\d+)/), totalBanned: n(/Total banned:\s*(\d+)/),
   };
 }
-/** `fail2ban-client get <jail> banip --with-time` → [{ ip, bannedAt, until }]. Falls back to a plain IP list. */
+/** `fail2ban-client get <jail> banip --with-time` -> [{ ip, bannedAt, until }]. Falls back to a plain IP list. */
 function parseBanList(out) {
   const res = [];
   for (const line of String(out || '').split('\n')) {
@@ -233,7 +233,7 @@ function parseBanList(out) {
   }
   return res;
 }
-/** "Ban"/"Unban" lines from fail2ban.log → history (newest first). */
+/** "Ban"/"Unban" lines from fail2ban.log -> history (newest first). */
 function parseHistory(out) {
   const res = [];
   for (const line of String(out || '').split('\n')) {
@@ -254,7 +254,7 @@ function parseKv(out) {
 
 
 // ---------------------------------------------------------------- where a jail option comes from
-/** "file|jail|key = value" lines (READ_FAIL2BAN @@f2bsrc) → [{ file, jail, key, value }]. */
+/** "file|jail|key = value" lines (READ_FAIL2BAN @@f2bsrc) -> [{ file, jail, key, value }]. */
 function parseSources(out) {
   const res = [];
   for (const line of String(out || '').split('\n')) {
@@ -264,7 +264,7 @@ function parseSources(out) {
   return res;
 }
 /**
- * fail2ban reads jail.conf, jail.d/*.conf (sorted), jail.local, jail.d/*.local (sorted) — and the same order for
+ * fail2ban reads jail.conf, jail.d/*.conf (sorted), jail.local, jail.d/*.local (sorted) - and the same order for
  * fail2ban.conf / fail2ban.d / fail2ban.local; a later file wins. True when `file` is read after DockGate's own.
  */
 function readAfterDockgate(file) {
@@ -274,7 +274,7 @@ function readAfterDockgate(file) {
   return (dir === '/etc/fail2ban/jail.d/' || dir === '/etc/fail2ban/fail2ban.d/') && base.endsWith('.conf') && base > 'dockgate.conf';
 }
 const isDaemonFile = (file) => /\/fail2ban\.(local|conf)$|\/fail2ban\.d\//.test(file);
-/** Files read after DockGate's that set one of `keys` for `jail` — they override DockGate's value. */
+/** Files read after DockGate's that set one of `keys` for `jail` - they override DockGate's value. */
 function overridesOf(sources, jail, keys) {
   return (sources || []).filter(x => x.jail === jail && keys.includes(x.key) && readAfterDockgate(x.file));
 }
@@ -302,7 +302,7 @@ function effectiveOf(ctx) {
     recidive: { maxretry: pick(rc.maxretry, s.recidive.maxretry), findtime: pick(rc.findtime, toSeconds(s.recidive.findtime)) },
   };
 }
-/** Seconds the first `n` sshd bans of one IP take, back to back — recidive needs maxretry bans inside its window. */
+/** Seconds the first `n` sshd bans of one IP take, back to back - recidive needs maxretry bans inside its window. */
 function recidiveNeeds(sshd, maxretry) {
   const seq = banSequence(sshd, maxretry);
   return seq.slice(0, Math.max(0, maxretry - 1)).reduce((a, b) => a + b, 0);
@@ -322,19 +322,19 @@ function coveredBy(ip, list) {
   });
 }
 
-/** Which file sets each option fail2ban runs: { 'sshd.maxretry': '/etc/fail2ban/jail.d/dockgate.conf', … } (last in read order wins). */
+/** Which file sets each option fail2ban runs: { 'sshd.maxretry': '/etc/fail2ban/jail.d/dockgate.conf', ... } (last in read order wins). */
 function originsOf(sources) {
   const o = {};
   for (const x of sources || []) if (['sshd', 'recidive', 'DEFAULT', 'Definition'].includes(x.jail)) o[`${x.jail}.${x.key}`] = x.file;
   return o;
 }
-/** Configuration → Files: what a file is and whether DockGate lets you edit it. */
+/** Configuration > Files: what a file is and whether DockGate lets you edit it. */
 function fileRole(path) {
   const base = path.slice(path.lastIndexOf('/') + 1);
-  if (path === JAIL_FILE) return { role: 'dockgate', editable: true, note: "DockGate's jail settings — the same values as the Settings tab" };
+  if (path === JAIL_FILE) return { role: 'dockgate', editable: true, note: "DockGate's jail settings - the same values as the Settings tab" };
   if (path === DAEMON_FILE) return { role: 'dockgate', editable: true, note: "DockGate's history and log settings" };
-  if (/^(defaults-|00-)/.test(base)) return { role: 'distro', editable: false, note: 'shipped with the fail2ban package — DockGate does not change it' };
-  return { role: 'yours', editable: true, note: readAfterDockgate(path) ? "yours — read after DockGate's file, so it wins where both set an option" : "yours — read before DockGate's file" };
+  if (/^(defaults-|00-)/.test(base)) return { role: 'distro', editable: false, note: 'shipped with the fail2ban package - DockGate does not change it' };
+  return { role: 'yours', editable: true, note: readAfterDockgate(path) ? "yours - read after DockGate's file, so it wins where both set an option" : "yours - read before DockGate's file" };
 }
 /** Sections in a jail file (lower-case names kept as written). */
 const sectionNames = (text) => [...String(text).matchAll(/^\s*\[([^\]]+)\]/gm)].map(m => m[1].trim());
@@ -385,7 +385,7 @@ const WHY_NOT = {
 /**
  * Moving fail2ban's sshd / recidive / allowlist / history settings out of other files into DockGate's own.
  * Values DockGate manages are carried over (when valid); a recidive that could never trigger is corrected;
- * DockGate's own IP is added to the allowlist. Returns the new settings and every file before → after.
+ * DockGate's own IP is added to the allowlist. Returns the new settings and every file before -> after.
  */
 function planTakeover({ settings, sources, texts, dockgateIp, sshPort }) {
   const files = overridingFiles(sources);
@@ -406,7 +406,7 @@ function planTakeover({ settings, sources, texts, dockgateIp, sshPort }) {
     } else if (x.jail === 'DEFAULT' && x.key === 'ignoreip') {
       const ips = x.value.split(/[\s,]+/).filter(v => v && !LOCALHOST.includes(v));
       if (ips.length) tryApply(n => { for (const ip of ips) if (!n.ignoreip.includes(ip)) n.ignoreip.push(ip); }, { ...item, value: ips.join(' ') });
-      else removed.push({ ...item, reason: "only localhost, which DockGate's allowlist always contains — this line was hiding DockGate's allowlist" });
+      else removed.push({ ...item, reason: "only localhost, which DockGate's allowlist always contains - this line was hiding DockGate's allowlist" });
     } else if (x.key === 'enabled' && x.jail === 'sshd') {
       removed.push({ ...item, reason: "the sshd jail is always on in DockGate's file" });
     } else if (x.jail === 'Definition' && x.key === 'dbpurgeage') {
@@ -414,7 +414,7 @@ function planTakeover({ settings, sources, texts, dockgateIp, sshPort }) {
     } else if (x.jail === 'DEFAULT') {
       kept.push(item); // other [DEFAULT] options stay where they are (they also apply to the user's other jails)
     } else if ((x.jail === 'sshd' || x.jail === 'recidive') && !WHY_NOT[x.key]) {
-      // An option DockGate has no field for (bantime.rndtime, …) moves into DockGate's file as an "other option".
+      // An option DockGate has no field for (bantime.rndtime, ...) moves into DockGate's file as an "other option".
       tryApply(n => { n.extra = n.extra || { DEFAULT: [], sshd: [], recidive: [] }; n.extra[x.jail] = (n.extra[x.jail] || []).filter(l => l.split('=')[0].trim().toLowerCase() !== x.key).concat(`${x.key} = ${x.value}`); }, { ...item, other: true });
     } else {
       removed.push({ ...item, reason: WHY_NOT[x.key] || 'DockGate does not manage this option' });
@@ -422,7 +422,7 @@ function planTakeover({ settings, sources, texts, dockgateIp, sshPort }) {
   }
   if (dockgateIp && !coveredBy(dockgateIp, cur.ignoreip) && cur.ignoreip.length < 50) {
     cur.ignoreip.push(dockgateIp);
-    corrected.push({ what: 'Allowlist', from: '—', to: `+ ${dockgateIp}`, why: "DockGate's own address, so fail2ban never bans the connection that manages it" });
+    corrected.push({ what: 'Allowlist', from: '-', to: `+ ${dockgateIp}`, why: "DockGate's own address, so fail2ban never bans the connection that manages it" });
   }
   if (cur.recidive.enabled) {
     const need = recidiveNeeds(cur.sshd, cur.recidive.maxretry);
@@ -432,7 +432,7 @@ function planTakeover({ settings, sources, texts, dockgateIp, sshPort }) {
       const need2 = recidiveNeeds(cur.sshd, cur.recidive.maxretry);
       if (need2 >= toSeconds(cur.recidive.findtime)) cur.recidive.findtime = `${Math.ceil(need2 * 1.5 / 86400)}d`;
       cur = normalizeSettings(cur);
-      corrected.push({ what: 'recidive', from, to: `${cur.recidive.maxretry} bans within ${cur.recidive.findtime}`, why: `${from.split(' ')[0]} sshd bans of one IP take at least ${human(need)} — each ban must end before the next — so it could never trigger` });
+      corrected.push({ what: 'recidive', from, to: `${cur.recidive.maxretry} bans within ${cur.recidive.findtime}`, why: `${from.split(' ')[0]} sshd bans of one IP take at least ${human(need)} - each ban must end before the next - so it could never trigger` });
     }
   }
   return {
@@ -444,7 +444,7 @@ function planTakeover({ settings, sources, texts, dockgateIp, sshPort }) {
 
 // ---------------------------------------------------------------- problems
 /**
- * Settings that look right but cannot do what they say — computed from the EFFECTIVE runtime values.
+ * Settings that look right but cannot do what they say - computed from the EFFECTIVE runtime values.
  * ctx: { settings, runtime: { dbpurgeage (s), jails:[names], recidiveLogpath, jailOpts:{sshd,recidive} }, sshPort, jailPort,
  *        jailLocal (files), dockgateIp, banned:[ip], managed, jailFileText (DockGate's jail file), sources (parseSources), active }
  */
@@ -455,13 +455,13 @@ function detectProblems(ctx) {
   const later = (jail, keys) => overridesOf(ctx.sources, jail, keys);
   const takeoverFix = (list) => (list.length ? 'takeover' : undefined);
   if (ctx.dockgateIp && (ctx.banned || []).includes(ctx.dockgateIp)) {
-    p.push({ level: 'crit', text: `DockGate's own IP (${ctx.dockgateIp}) is banned — unban it, or add it to the whitelist.` });
+    p.push({ level: 'crit', text: `DockGate's own IP (${ctx.dockgateIp}) is banned - unban it, or add it to the whitelist.` });
   }
   if (ctx.jailPort && ctx.sshPort && !String(ctx.jailPort).split(/[,\s]+/).some(x => x === String(ctx.sshPort) || (x === 'ssh' && Number(ctx.sshPort) === 22))) {
     const o = later('sshd', ['port']);
     p.push(o.length
-      ? { level: 'crit', text: `The sshd jail bans port ${ctx.jailPort}, but SSH listens on ${ctx.sshPort} — banned IPs can still reach SSH. Cause: ${named(o)} under [sshd], read after DockGate's file. Move the settings to DockGate to fix it.`, fix: 'takeover' }
-      : { level: 'crit', text: `The sshd jail bans port ${ctx.jailPort}, but SSH listens on ${ctx.sshPort} — banned IPs can still reach SSH. Save the settings to fix it.`, fix: 'save' });
+      ? { level: 'crit', text: `The sshd jail bans port ${ctx.jailPort}, but SSH listens on ${ctx.sshPort} - banned IPs can still reach SSH. Cause: ${named(o)} under [sshd], read after DockGate's file. Move the settings to DockGate to fix it.`, fix: 'takeover' }
+      : { level: 'crit', text: `The sshd jail bans port ${ctx.jailPort}, but SSH listens on ${ctx.sshPort} - banned IPs can still reach SSH. Save the settings to fix it.`, fix: 'save' });
   }
   // The allowlist fail2ban really uses: a [DEFAULT] ignoreip in a later file replaces DockGate's.
   const runIgnore = rt.ignoreip;
@@ -473,7 +473,7 @@ function detectProblems(ctx) {
     }
   }
   if (ctx.dockgateIp && Array.isArray(runIgnore) && !(ctx.banned || []).includes(ctx.dockgateIp) && !coveredBy(ctx.dockgateIp, runIgnore) && !(s && coveredBy(ctx.dockgateIp, s.ignoreip))) {
-    p.push({ level: 'warn', text: `DockGate's address (${ctx.dockgateIp}) is not in the allowlist. If its key login fails a few times, fail2ban bans DockGate itself — for up to the longest ban.`, fix: 'allowdg' });
+    p.push({ level: 'warn', text: `DockGate's address (${ctx.dockgateIp}) is not in the allowlist. If its key login fails a few times, fail2ban bans DockGate itself - for up to the longest ban.`, fix: 'allowdg' });
   }
   if (s && s.sshd.increment) {
     const seq = banSequence(s.sshd, 3);
@@ -492,13 +492,13 @@ function detectProblems(ctx) {
 
   const recRunning = rt.jails && rt.jails.includes('recidive');
   if (s && (s.recidive.enabled || recRunning)) {
-    // Checked with the values fail2ban runs with — another file may have changed them.
+    // Checked with the values fail2ban runs with - another file may have changed them.
     const eff = effectiveOf(ctx);
     const needed = recidiveNeeds(eff.sshd, eff.recidive.maxretry);
     if ((recRunning || s.recidive.enabled) && needed >= eff.recidive.findtime) {
       const fromRun = rt.jailOpts && rt.jailOpts.recidive && (eff.recidive.maxretry !== s.recidive.maxretry || eff.recidive.findtime !== toSeconds(s.recidive.findtime));
       const o = later('recidive', ['maxretry', 'findtime']);
-      p.push({ level: 'crit', text: `recidive can never trigger: ${eff.recidive.maxretry} sshd bans of one IP take at least ${human(needed)} (each ban must expire first), but its window is ${human(eff.recidive.findtime)}${fromRun ? ' — these are the values fail2ban runs with' + (o.length ? `, from ${named(o)}` : '') : ''}. ${o.length ? 'Move the settings to DockGate: it carries your values over and corrects this one.' : `Make the window longer than ${human(needed)} or lower "bans before".`}`, fix: o.length ? 'takeover' : 'save' });
+      p.push({ level: 'crit', text: `recidive can never trigger: ${eff.recidive.maxretry} sshd bans of one IP take at least ${human(needed)} (each ban must expire first), but its window is ${human(eff.recidive.findtime)}${fromRun ? ' - these are the values fail2ban runs with' + (o.length ? `, from ${named(o)}` : '') : ''}. ${o.length ? 'Move the settings to DockGate: it carries your values over and corrects this one.' : `Make the window longer than ${human(needed)} or lower "bans before".`}`, fix: o.length ? 'takeover' : 'save' });
     }
   }
   if (s && s.recidive.enabled) {
@@ -535,13 +535,13 @@ function detectProblems(ctx) {
       const shown = diff.map(k => `${k} ${k === 'maxretry' ? got[k] : human(got[k])} (DockGate's file: ${k === 'maxretry' ? w[k] : human(w[k])})`).join(', ');
       const o = later(jail, diff);
       p.push(o.length
-        ? { level: 'warn', text: `${jail} runs with ${shown}: ${named(o)}, and that file wins over DockGate's. Configuration → Settings shows both, row by row. Move the settings to DockGate to use one set of values.`, fix: takeoverFix(o) }
-        : { level: 'warn', text: `${jail} runs with ${shown} — fail2ban was not reloaded after DockGate's file changed. Fix now writes it again and reloads (bans are kept).`, fix: 'save' });
+        ? { level: 'warn', text: `${jail} runs with ${shown}: ${named(o)}, and that file wins over DockGate's. Configuration > Settings shows both, row by row. Move the settings to DockGate to use one set of values.`, fix: takeoverFix(o) }
+        : { level: 'warn', text: `${jail} runs with ${shown} - fail2ban was not reloaded after DockGate's file changed. Fix now writes it again and reloads (bans are kept).`, fix: 'save' });
     }
   }
   if (ctx.jailLocal && !p.some(x => x.fix === 'takeover')) {
     const files = typeof ctx.jailLocal === 'string' ? ctx.jailLocal.trim().split(/\s+/) : ['/etc/fail2ban/jail.local'];
-    p.push({ level: 'info', text: `${files.join(', ')} also set${files.length > 1 ? '' : 's'} sshd/recidive options — read after DockGate's file, so ${files.length > 1 ? 'they win' : 'it wins'} where both set the same option.`, fix: 'takeover' });
+    p.push({ level: 'info', text: `${files.join(', ')} also set${files.length > 1 ? '' : 's'} sshd/recidive options - read after DockGate's file, so ${files.length > 1 ? 'they win' : 'it wins'} where both set the same option.`, fix: 'takeover' });
   }
   return p;
 }

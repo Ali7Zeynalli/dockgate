@@ -1,10 +1,10 @@
-// Tools → Databases → Design: changes to a table's structure as a list of operations, turned into SQL here
+// Tools > Databases > Design: changes to a table's structure as a list of operations, turned into SQL here
 // (names quoted, types and expressions checked), shown before anything runs, then run together in ONE transaction
-// — "test" runs them and rolls back, so a failing change (a type that does not fit the data, a duplicate key for a
-// new unique index …) is seen before it is made. CREATE / DROP INDEX CONCURRENTLY can not run in a transaction:
+// - "test" runs them and rolls back, so a failing change (a type that does not fit the data, a duplicate key for a
+// new unique index ...) is seen before it is made. CREATE / DROP INDEX CONCURRENTLY can not run in a transaction:
 // they run one by one after the rest (and without CONCURRENTLY in a test).
-//   build(ops, { schema, table, structure })  → [{ sql, label, concurrent }]
-//   preview(name, db, body) → { statements }      apply(name, db, { schema, table, ops, test }) → { ok, test, statements }
+//   build(ops, { schema, table, structure })  -> [{ sql, label, concurrent }]
+//   preview(name, db, body) -> { statements }      apply(name, db, { schema, table, ops, test }) -> { ok, test, statements }
 const P = require('./pg-sql');
 
 const err = (msg, statusCode = 400, extra) => Object.assign(new Error(msg), { statusCode }, extra || {});
@@ -17,7 +17,7 @@ const ACTIONS = ['NO ACTION', 'RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT'];
 const METHODS = ['btree', 'hash', 'gin', 'gist', 'brin', 'spgist'];
 
 function name(n, what = 'name') { const s = String(n == null ? '' : n).trim(); if (!NAME_RE.test(s)) throw err(`A ${what} is needed (at most 63 characters)`); return s; }
-function type(t) { const s = String(t || '').trim().replace(/\s+/g, ' '); if (!TYPE_RE.test(s)) throw err(`"${s || '(empty)'}" is not a type DockGate can use — e.g. text, integer, numeric(12,2), timestamptz, varchar(100), uuid, jsonb, text[]`); return s; }
+function type(t) { const s = String(t || '').trim().replace(/\s+/g, ' '); if (!TYPE_RE.test(s)) throw err(`"${s || '(empty)'}" is not a type DockGate can use - e.g. text, integer, numeric(12,2), timestamptz, varchar(100), uuid, jsonb, text[]`); return s; }
 /** A default / USING / CHECK expression: anything but a second statement. */
 function expr(e, what) {
   const s = String(e == null ? '' : e).trim();
@@ -37,7 +37,7 @@ function colDef(c) {
   return s;
 }
 
-/** Operations → statements. structure: the table as pg-studio.structure returns it (needed for changes to an existing table). */
+/** Operations -> statements. structure: the table as pg-studio.structure returns it (needed for changes to an existing table). */
 function build(ops, { schema, table, structure } = {}) {
   if (!Array.isArray(ops) || !ops.length) throw err('No changes');
   if (ops.length > 200) throw err('At most 200 changes at once');
@@ -78,7 +78,7 @@ function build(ops, { schema, table, structure } = {}) {
         if (op.notnull === false) add(`ALTER TABLE ${q} ALTER COLUMN ${cq} DROP NOT NULL`, `${c}: null allowed`);
         if (op.comment !== undefined) add(`COMMENT ON COLUMN ${q}.${cq} IS ${op.comment ? lit(op.comment) : 'NULL'}`, `${c}: comment`);
         if (op.rename && op.rename !== c && have.has(op.rename) && !ops.some(o => o.op === 'alterColumn' && o.name === op.rename && o.rename && o.rename !== op.rename) && !ops.some(o => o.op === 'dropColumn' && o.name === op.rename)) throw err(`There is already a column ${op.rename}`);
-        if (op.rename && op.rename !== c) add(`ALTER TABLE ${q} RENAME COLUMN ${cq} TO ${id(name(op.rename, 'new column name'))}`, `${c} → ${op.rename}`);
+        if (op.rename && op.rename !== c) add(`ALTER TABLE ${q} RENAME COLUMN ${cq} TO ${id(name(op.rename, 'new column name'))}`, `${c} -> ${op.rename}`);
         break;
       }
       case 'dropColumn': add(`ALTER TABLE ${q} DROP COLUMN ${id(mustHave(name(op.name, 'column')))}${op.cascade ? ' CASCADE' : ''}`, `drop column ${op.name}`); break;
@@ -98,7 +98,7 @@ function build(ops, { schema, table, structure } = {}) {
         const upd = ACTIONS.includes(String(op.onUpdate || '').toUpperCase()) ? String(op.onUpdate).toUpperCase() : 'NO ACTION';
         const ref = P.qname(name(op.refSchema || schema, 'schema'), name(op.refTable, 'referenced table'));
         if ((op.columns || []).length !== (op.refColumns || []).length) throw err('Foreign key: as many referenced columns as columns');
-        add(`ALTER TABLE ${q} ADD ${op.name ? `CONSTRAINT ${id(name(op.name))} ` : ''}FOREIGN KEY (${cols(op.columns, 'Foreign key')}) REFERENCES ${ref} (${cols(op.refColumns, 'Referenced')})${del !== 'NO ACTION' ? ` ON DELETE ${del}` : ''}${upd !== 'NO ACTION' ? ` ON UPDATE ${upd}` : ''}${op.notValid ? ' NOT VALID' : ''}`, `foreign key → ${op.refTable}`);
+        add(`ALTER TABLE ${q} ADD ${op.name ? `CONSTRAINT ${id(name(op.name))} ` : ''}FOREIGN KEY (${cols(op.columns, 'Foreign key')}) REFERENCES ${ref} (${cols(op.refColumns, 'Referenced')})${del !== 'NO ACTION' ? ` ON DELETE ${del}` : ''}${upd !== 'NO ACTION' ? ` ON UPDATE ${upd}` : ''}${op.notValid ? ' NOT VALID' : ''}`, `foreign key -> ${op.refTable}`);
         break;
       }
       case 'dropConstraint': add(`ALTER TABLE ${q} DROP CONSTRAINT ${id(name(op.name, 'constraint'))}${op.cascade ? ' CASCADE' : ''}`, `drop ${op.name}`); break;
@@ -133,7 +133,7 @@ async function apply(name0, dbname, body = {}) {
   const t = await S.resolve(name0);
   const test = !!body.test;
   if (!test && !t.allowWrite) throw err('This connection is read-only. Turn on "Allow changes" first, or Test the changes (rolled back).', 403, { code: 'READ_ONLY' });
-  if (!test && t.production && !body.confirm) throw err('This is marked as production — confirm to change the structure', 409, { code: 'NEEDS_CONFIRM' });
+  if (!test && t.production && !body.confirm) throw err('This is marked as production - confirm to change the structure', 409, { code: 'NEEDS_CONFIRM' });
   const stmts = await plan(name0, dbname, body);
   const inTx = stmts.map(s => (test && s.concurrent ? { ...s, sql: s.sql.replace(/ CONCURRENTLY /, ' ') } : s)).filter(s => test || !s.concurrent);
   const after = test ? [] : stmts.filter(s => s.concurrent);
@@ -144,7 +144,7 @@ async function apply(name0, dbname, body = {}) {
   const r = await S.psql(t, args, { db: dbname || t.dbname, readOnly: false, timeoutMs: 300000 });
   const at = [...String(r.stdout || '').matchAll(/dg:at:(\d+)/g)].map(m => Number(m[1])).pop();
   const clean = (e) => String(e || '').replace(/^psql:(\s*error:)?\s*/gm, '').replace(/^<?stdin>?:\d+:\s*/gm, '').trim();
-  if (r.code !== 0) throw err(`${at != null ? `Change ${at + 1} (${inTx[at].label}): ` : ''}${clean(r.stderr) || 'failed'} — nothing was changed.`, 400, { code: 'FAILED', at, statement: at != null ? inTx[at].sql : null });
+  if (r.code !== 0) throw err(`${at != null ? `Change ${at + 1} (${inTx[at].label}): ` : ''}${clean(r.stderr) || 'failed'} - nothing was changed.`, 400, { code: 'FAILED', at, statement: at != null ? inTx[at].sql : null });
   for (const s of after) { // CONCURRENTLY, outside the transaction
     const x = await S.psql(t, ['-q', '-c', s.sql], { db: dbname || t.dbname, readOnly: false, timeoutMs: 3600000 });
     if (x.code !== 0) throw err(`The other changes are made; ${s.label} failed: ${clean(x.stderr)}`, 400, { code: 'PARTIAL', statement: s.sql });

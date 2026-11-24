@@ -14,7 +14,7 @@ DockGate is for **one admin** who runs their own servers. Changes that add user 
 
 You need Docker (with the Compose plugin) or Node.js 20+ (the image uses Node 22).
 
-**With Docker** — builds from your checkout and mounts `server/` and `public/`, so a restart picks up your changes:
+**With Docker** - builds from your checkout and mounts `server/` and `public/`, so a restart picks up your changes:
 
 ```bash
 git clone https://github.com/Ali7Zeynalli/dockgate.git
@@ -82,4 +82,4 @@ Merging is done by the maintainer.
 
 ## License
 
-By contributing you agree that your work is released under the [MIT License](LICENSE) of this project. The original author attribution — **Ali Zeynalli** — must be kept in all copies and derivative works.
+By contributing you agree that your work is released under the [MIT License](LICENSE) of this project. The original author attribution - **Ali Zeynalli** - must be kept in all copies and derivative works.

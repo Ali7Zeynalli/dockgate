@@ -5,7 +5,7 @@ const hs = require('../../server/host-stats');
 test('parseCpu: busy% from two /proc/stat samples', () => {
   const s1 = 'cpu  100 0 50 1000 0 0 0 0\ncpu0 50 0 25 500 0 0 0 0';
   const s2 = 'cpu  150 0 70 1200 0 0 0 0\ncpu0 75 0 35 600 0 0 0 0';
-  const r = hs.parseCpu(s1, s2); // total Δ=270, idle Δ=200 → busy ≈ 25.9%
+  const r = hs.parseCpu(s1, s2); // total Δ=270, idle Δ=200 -> busy ≈ 25.9%
   assert.ok(r.cpuPercent > 25 && r.cpuPercent < 27, `got ${r.cpuPercent}`);
 });
 
