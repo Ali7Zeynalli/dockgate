@@ -95,7 +95,7 @@ router.post('/power', async (req, res) => {
   try {
     const { serverId, action } = req.body || {};
     if (!validateId(serverId)) return res.status(400).json({ error: 'valid serverId required' });
-    if (action !== 'start' && action !== 'stop') return res.status(400).json({ error: "action must be 'start' or 'stop'" });
+    if (!['start', 'stop', 'restart'].includes(action)) return res.status(400).json({ error: "action must be 'start', 'stop' or 'restart'" });
     await deployer.powerOne(serverId, action);
     logAction({ req, server: serverId, resourceType: 'agent', resourceName: serverId, action: `agent_${action}` });
     res.json({ ok: true });

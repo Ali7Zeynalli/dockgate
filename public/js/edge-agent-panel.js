@@ -23,7 +23,9 @@
       ? `${UI.btn('Install', `data-act="install" data-sid="${sid}"`, 'btn-primary')}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="0"`)}`
       : `${UI.btn(state === 'running' ? 'Stop' : 'Start', `data-act="${state === 'running' ? 'stop' : 'start'}" data-sid="${sid}"`)}${UI.btn('Channel', `data-act="channel" data-sid="${sid}" data-installed="1"`)}${UI.btn('Update', `data-act="update" data-sid="${sid}"`, st.updateAvailable ? 'btn-primary' : '')}${UI.btn('Remove', `data-act="remove" data-sid="${sid}"`, 'btn-danger')}`;
     const ver = installed ? `<span class="ui-sub">v${escapeHtml(st.version || '?')}${st.build ? ` · <span class="td-mono">${escapeHtml(st.build.slice(0, 7))}</span>` : ''}</span>${st.updateAvailable ? ` ${UI.pill('warn', 'Update available')}` : ` ${UI.pill('ok', 'Up to date')}`}` : '<span class="ui-sub">—</span>';
-    return [`<b>${escapeHtml(s.name || s.id)}</b>${s.name ? `<div class="ui-sub td-mono">${sid}</div>` : ''}`, `<span class="td-mono text-xs">${escapeHtml(s.host || '')}</span>`, UI.pill(...pillOf), ver, actions];
+    const sick = state === 'running' && st.health === 'unhealthy';
+    const stateCell = sick ? `${UI.pill('bad', 'Unhealthy')}<div class="ui-sub" style="white-space:normal;max-width:280px">${escapeHtml(st.problem || '')}</div><div style="margin-top:4px">${UI.btn('Restart', `data-act="restart" data-sid="${sid}"`, 'btn-primary')}</div>` : UI.pill(...pillOf);
+    return [`<b>${escapeHtml(s.name || s.id)}</b>${s.name ? `<div class="ui-sub td-mono">${sid}</div>` : ''}`, `<span class="td-mono text-xs">${escapeHtml(s.host || '')}</span>`, stateCell, ver, actions];
   }
 
   // Live deploy-log modal. Polls the job; stops cleanly when the job ends or the modal is closed.
@@ -250,9 +252,9 @@
                   },
                 });
                 return;
-              } else if (act === 'start' || act === 'stop') {
+              } else if (act === 'start' || act === 'stop' || act === 'restart') {
                 await API.post('/agent/power', { serverId: sid, action: act });
-                showToast('Agent ' + (act === 'stop' ? 'stopped' : 'started')); load();
+                showToast('Agent ' + (act === 'stop' ? 'stopped' : act === 'restart' ? 'restarted' : 'started')); load();
               } else if (act === 'channel') {
                 channelModal(sid, load, btn.dataset.installed === '1');
               }

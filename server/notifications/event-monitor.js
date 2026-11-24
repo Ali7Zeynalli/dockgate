@@ -7,6 +7,25 @@ const mailer = require('./mailer');
 const telegram = require('./telegram');
 const webhook = require('./webhook');
 const templates = require('./templates');
+const { backoff, fmtFor } = require('./backoff');
+// The containers that stay unhealthy, kept in the database so a restart of DockGate does not start the alerts over.
+// (made on first use; without the database — a test's stub — it is kept in memory)
+let ubQ = null;
+function ubq() {
+  if (ubQ) return ubQ;
+  const { db } = require('../db');
+  if (!db || !db.exec) { const m = new Map(); ubQ = { get: { get: (k) => m.get(k) }, put: { run: (k, n, last, since) => m.set(k, { key: k, n, last, since }) }, del: { run: (k) => m.delete(k) }, keys: { all: () => [...m.keys()].map(key => ({ key })) } }; return ubQ; }
+  db.exec('CREATE TABLE IF NOT EXISTS unhealthy_backoff (key TEXT PRIMARY KEY, n INTEGER, last INTEGER, since INTEGER)');
+  ubQ = { get: db.prepare('SELECT * FROM unhealthy_backoff WHERE key = ?'), put: db.prepare('INSERT INTO unhealthy_backoff (key, n, last, since) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET n = excluded.n, last = excluded.last, since = excluded.since'),
+    del: db.prepare('DELETE FROM unhealthy_backoff WHERE key = ?'), keys: db.prepare('SELECT key FROM unhealthy_backoff') };
+  return ubQ;
+}
+const unhealthyStore = { get: (k) => ubq().get.get(k) || undefined, set: (k, v) => ubq().put.run(k, v.n, v.last, v.since), delete: (k) => ubq().del.run(k), keys: () => ubq().keys.all().map(r => r.key) };
+/** DockGate's own Edge agent can not reach Docker's socket: say why and what to do. */
+function agentSocketHint(name, logs) {
+  if (!/^dockgate-agent$/.test(name) || !/ECONNREFUSED[^\n]*docker\.sock|docker\.sock[^\n]*ECONNREFUSED/i.test(String(logs || ''))) return '';
+  return "The Edge agent can not reach Docker's socket — Docker was most likely restarted while the agent kept running, so its mount points to the old socket. An updated agent restarts itself after 2 minutes; this one needs a restart: Servers → Edge agent → Restart (or `docker restart dockgate-agent` on the server).";
+}
 
 // A `docker restart` emits die→…→restart. Hold a "Stopped/Crashed" alert this long so a following
 // `restart` event can cancel it — otherwise a restart looks like Stop-then-Restart (two alerts).
@@ -28,6 +47,7 @@ class EventMonitor {
     this.diskCheckTimer = null;
     this.healthCheckTimer = null;
     this.stopped = false;
+    this.unhealthy = backoff(unhealthyStore); // containers that stay unhealthy: alerts thin out (backoff.js)
   }
 
   start() {
@@ -229,11 +249,13 @@ class EventMonitor {
       } catch(e) {}
 
       const logs = await this._tailLogs(event.Actor?.ID);
+      const hint = agentSocketHint(name, logs);
       await this._sendNotification('container_unhealthy', name, {
         subject: `${prefix}Container Unhealthy: ${name}`,
-        html: templates.containerUnhealthyTemplate({ containerName: name, containerId: id, image, time, failingStreak, lastOutput, server: this.serverId, logs }),
-        telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: image, 'Failing Streak': failingStreak, Time: time }) + telegram.formatLogs(logs),
+        html: templates.containerUnhealthyTemplate({ containerName: name, containerId: id, image, time, failingStreak, lastOutput: [hint, lastOutput].filter(Boolean).join('\n\n'), server: this.serverId, logs }),
+        telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: image, 'Failing Streak': failingStreak, Time: time, ...(hint ? { 'What to do': hint } : {}) }) + telegram.formatLogs(logs),
       });
+      this.unhealthy.sent(`${this.serverId}:${name}`); // the periodic sweep then waits before telling again
     }
 
     // Container started — debounced, because a `docker restart` also fires start (die→…→start→restart);
@@ -281,14 +303,18 @@ class EventMonitor {
 
     try {
       const containers = await this.docker.listContainers({ filters: { health: ['unhealthy'] } });
+      // healthy again (or gone): their next problem is told at once
+      this.unhealthy.keepOnly(containers.map(c => `${this.serverId}:${(c.Names?.[0] || '').replace(/^\//, '') || c.Id?.substring(0, 12)}`), `${this.serverId}:`);
       if (containers.length === 0) return;
 
       const prefix = this._prefix();
       const serverDetail = this._serverDetail();
 
+      const ukey = (n) => `${this.serverId}:${n}`;
       for (const c of containers) {
         const name = (c.Names?.[0] || '').replace(/^\//, '') || c.Id?.substring(0, 12);
-        if (this._isThrottled('container_unhealthy', name)) continue;
+        const bo = this.unhealthy.check(ukey(name), Date.now(), (Number(rule.cooldown_minutes) || 0) * 60000);
+        if (!bo.due) continue;
 
         let failingStreak = '—', lastOutput = '';
         try {
@@ -302,6 +328,8 @@ class EventMonitor {
         } catch(e) {}
 
         const logs = await this._tailLogs(c.Id);
+        const hint = agentSocketHint(name, logs);
+        const again = bo.n > 1 ? `Alert #${bo.n} — unhealthy for ${fmtFor(Date.now() - bo.since)}; the next one in ${fmtFor(bo.next)} if it stays so.` : '';
         await this._sendNotification('container_unhealthy', name, {
           subject: `${prefix}Container Unhealthy: ${name}`,
           html: templates.containerUnhealthyTemplate({
@@ -310,13 +338,14 @@ class EventMonitor {
             image: c.Image || '',
             time: fmtTime(Date.now()),
             failingStreak,
-            lastOutput,
+            lastOutput: [hint, again, lastOutput].filter(Boolean).join('\n\n'),
             server: this.serverId,
             logs,
           }),
-          telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: c.Image, 'Failing Streak': failingStreak }) + telegram.formatLogs(logs),
-        });
-        break; // one notification per cycle, cooldown handles others
+          telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: c.Image, 'Failing Streak': failingStreak, ...(again ? { Alert: again } : {}), ...(hint ? { 'What to do': hint } : {}) }) + telegram.formatLogs(logs),
+        }, { bypassCooldown: true });
+        this.unhealthy.sent(ukey(name));
+        break; // one notification per cycle
       }
     } catch(e) {
       // Daemon unreachable — silent
@@ -332,11 +361,11 @@ class EventMonitor {
     return !s || s.notifications_enabled !== 0;
   }
 
-  async _sendNotification(eventType, resourceKey, { subject, html, telegramText }) {
+  async _sendNotification(eventType, resourceKey, { subject, html, telegramText }, { bypassCooldown = false } = {}) {
     if (!this.isNotificationEnabled()) return;
     const rule = stmts.getRule.get(eventType);
     if (!rule || !rule.enabled) return;
-    if (this._isThrottled(eventType, resourceKey)) return;
+    if (!bypassCooldown && this._isThrottled(eventType, resourceKey)) return; // the unhealthy sweep keeps its own pace (backoff.js)
 
     let sent = false;
 

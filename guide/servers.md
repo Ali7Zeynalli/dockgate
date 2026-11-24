@@ -64,8 +64,11 @@ A small, **outbound-only** container on each server. It collects metrics and log
 | **Update all servers (N)** | When a newer agent is available. The new image is on the server before the old agent stops; if the new one does not start, the previous one is put back. Your containers keep running |
 | **Channel override** | Per server: send that server's alerts to another Telegram chat, email or webhook. Empty fields use the global channel |
 | **Remove** | Removes the agent from the server |
+| **Restart** | Shown when the agent is **unhealthy**, with the reason. A fresh start mounts Docker's socket again |
 
 It also keeps the **Scaling & health** rules of Compose stacks (replicas, auto-heal) while DockGate is offline. It has no port for this either: DockGate signs each rule and command with a key only it holds — see [How DockGate commands the agent, safely](agent-security.md).
+
+**When Docker restarts under it.** If Docker is restarted while the agent keeps running (an upgrade with `live-restore`), the agent's mount of `/var/run/docker.sock` points to the old socket: `connect ECONNREFUSED /var/run/docker.sock`. The agent (1.4.1 and newer) then exits after 2 minutes, and Docker starts it again with the new socket. Older agents stay unhealthy until restarted.
 
 Installs and updates run as **agent jobs** with a log; closing the window does not stop them. Without a notification channel the agent installs in *metrics-only* mode: set up a channel in **Settings → Notifications** first.
 
@@ -90,4 +93,6 @@ Installs and updates run as **agent jobs** with a log; closing the window does n
 | *No notification channel is set up yet, so the agent installs in metrics-only mode.* | No channel | Set up Telegram, email or a webhook first |
 | The Edge agent's memory looks high (e.g. 26 %) | The percentage is of the agent's **own limit of 96 MB** (and 0.25 CPU), not of the server — about 25 MB. It can not use more than its limit | Nothing to do |
 | Edge agent: **Moved to Swarm** | The agent container was moved to Swarm (docker run → Swarm, before DockGate kept its own containers out). DockGate can not find, update or command it that way | **Update** — DockGate removes that Swarm service and runs the agent as a container on the server again |
+| *Container Unhealthy* `dockgate-agent`, logs `failed to connect: connect ECONNREFUSED /var/run/docker.sock` | Docker was restarted while the agent kept running; the agent's socket mount points to the old socket | **Restart** on the Edge agent page (or `docker restart dockgate-agent` on the server), then **Update all servers**: agent 1.4.1 restarts itself after 2 minutes |
+| The same *Container Unhealthy* alert again and again | A container that stays unhealthy | DockGate (and the agent) tell at once, then after 1 h, 6 h and once a day while it stays unhealthy; the alert says which one it is (#2, #3…) |
 | Many *High Error Spike* alerts from Caddy (`"level":"warn"`, `aborting with incomplete response`) | Agents older than 1.1.1 counted Caddy's warnings as errors. The line itself usually means a visitor closed the page before the answer ended | **Update all servers** on the Edge agent page |

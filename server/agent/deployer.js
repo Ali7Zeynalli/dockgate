@@ -350,12 +350,15 @@ async function removeOne(serverId, log) {
 }
 
 async function powerOne(serverId, action) {
-  if (action !== 'start' && action !== 'stop') throw new Error('action must be start | stop');
+  if (!['start', 'stop', 'restart'].includes(action)) throw new Error('action must be start | stop | restart');
   const client = clientFor(serverId);
   const list = await client.listContainers({ all: true, filters: { label: LABEL_FILTER } });
   if (!list.length) throw new Error('agent is not installed on this host');
   const cont = client.getContainer(list[0].Id);
-  if (action === 'stop') {
+  if (action === 'restart') { // a fresh start: Docker mounts its socket again (the fix for a dead socket mount)
+    await cont.restart({ t: 5 });
+    try { monitorManager.stopMonitor(serverId); } catch (e) {}
+  } else if (action === 'stop') {
     await cont.stop({ t: 5 });
     try { monitorManager.startMonitor(serverId); } catch (e) {}   // host unwatched → resume central
   } else {
@@ -382,7 +385,18 @@ async function statusOne(serverId) {
     const version = c.Labels?.['dockgate.version'] || null, build = c.Labels?.['dockgate.build'] || null;
     // An agent without a build label predates build tags (1.0.0): it is older than any current build.
     const updateAvailable = REGISTRY_IMAGE ? (c.Image !== IMAGE_REF) : build !== AGENT_BUILD;
-    return { installed: true, running, state: running ? 'running' : 'stopped', version, build, updateAvailable, control: require('./control').statusOf(serverId) };
+    // unhealthy: why, from its last log lines — most often Docker was restarted and the agent's socket mount went dead
+    let health = running ? ((/\((unhealthy|healthy|health: starting)\)/.exec(c.Status || '') || [])[1] || null) : null, problem = null;
+    if (health === 'unhealthy') {
+      try {
+        const raw = await client.getContainer(c.Id).logs({ stdout: true, stderr: true, tail: 20 });
+        const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw || '');
+        problem = /ECONNREFUSED[^\n]*docker\.sock/i.test(text)
+          ? "The agent can not reach Docker's socket — Docker was most likely restarted while the agent kept running. Restart the agent (a newer agent does it by itself after 2 minutes)."
+          : 'The agent reports a problem — see its logs.';
+      } catch (e) { problem = 'The agent reports a problem.'; }
+    }
+    return { installed: true, running, state: running ? 'running' : 'stopped', health, problem, version, build, updateAvailable, control: require('./control').statusOf(serverId) };
   } catch (e) {
     return { installed: false, running: false, state: 'unreachable', version: null, error: e.message };
   }
