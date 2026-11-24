@@ -2,6 +2,33 @@
 
 ---
 
+## [2.89.0] - 2026-11-24
+
+### Added
+- **Server Console → Security → Honeypot.** A fake SSH server on port 22, for a server whose real SSH has moved to another port.
+  - Every address that connects to port 22 is banned on every port of the server: the host's ports and the ports Docker publishes (`DOCKER-USER`). It is banned before it finds the real SSH.
+  - It records the user names and passwords tried. Every login is refused, and there is no shell.
+  - A connection is written down when it opens, so port scanners that never speak SSH are banned too.
+  - The page shows connections and addresses (24 hours and in all), the user names, passwords, addresses and SSH programs seen most, and the latest login attempts. Bans are in the Fail2ban tab, where an address can be let back in.
+- **Turning it on checks first:**
+  - the real SSH is not on 22, and DockGate connects on the new port;
+  - port 22 is free;
+  - Docker and fail2ban are there.
+- **Then one job does the rest:**
+  - builds a small image on the server (`node:22-alpine` + the honeypot, about 2 MB on top of the base);
+  - starts it locked down: unprivileged user, read-only, no capabilities, 96 MB, 0.25 CPU;
+  - adds `ipset` for fast bans and a fail2ban jail (one connection = banned for one day, a week or 30 days);
+  - tests port 22.
+  - A failed step removes everything again.
+- **Never banned:** loopback, private networks, fail2ban's allowlist (DockGate's address), and the addresses you add.
+- **Settings… and Turn off…** Turning it off removes the container, its image and its jail, and you choose whether its log stays.
+- **Access & SSH** does not move the real SSH back to 22 while the honeypot is on.
+
+### Changed
+- Security jobs get their instructions on stdin instead of on the command line. A long job no longer hits the command-line limit, and a server's password is no longer visible in the process list.
+
+---
+
 ## [2.88.5] - 2026-11-24
 
 ### Fixed

@@ -148,6 +148,7 @@ router.post('/:id/access', send(async (req) => {
   } else if (setting === 'sshPort') {
     const to = P.assertPort(value);
     if (to === state.sshPort) throw P.httpError(400, `SSH already listens on ${to}`);
+    if (to === 22) { const hp = await honeypotOf(row).catch(() => null); if (hp && (hp.running || hp.jailFile)) throw P.httpError(400, 'The SSH honeypot uses port 22 — turn it off first (Security → Honeypot)'); }
     next.ports = [to];
     portChange = { from: state.sshPort, to };
     testPort = to;
@@ -639,6 +640,42 @@ router.post('/:id/reboot', send(async (req) => {
   await runOrThrow(row, { steps: [{ label: 'Reboot', cmd: plans.REBOOT }] }, 'Reboot');
   audit(req, row, 'reboot', {});
   return { success: true };
+}));
+
+// ---------------------------------------------------------------- honeypot (server/honeypot.js)
+const HP = require('../honeypot');
+async function honeypotOf(row) { return HP.parseStatus(await runner.read(cfgOf(row), HP.READ), { serverPort: row.port || 22 }); }
+
+router.get('/:id/honeypot', send(async (req) => {
+  const row = loadServer(req);
+  return { ...(await honeypotOf(row)), bantimes: HP.BANTIMES, dockgatePort: row.port || 22 };
+}));
+// Turn on, or apply new settings. body { bantime: '1d'|'7d'|'30d', allow: [ip | cidr] }
+router.post('/:id/honeypot', send(async (req) => {
+  const row = loadServer(req);
+  const b = req.body || {};
+  const cur = await honeypotOf(row);
+  const blocking = cur.checks.filter(c => c.ok === false);
+  if (blocking.length) throw P.httpError(400, `Not ready: ${blocking.map(c => `${c.label} — ${c.fix}`).join('; ')}`);
+  const files = HP.contextFiles();
+  const plan = HP.installPlan({ tag: HP.imageTag(files), tarGz: await HP.contextTarGz(files), bantime: b.bantime || '30d', allow: b.allow || [] });
+  const title = cur.on ? 'Honeypot settings' : 'Turn on the SSH honeypot';
+  const jobId = runner.startPlan(cfgOf(row), plan, {
+    title, successText: 'The honeypot answers on port 22. Every address that connects there is banned on every port.',
+    onSuccess: () => audit(req, row, cur.on ? 'honeypot-settings' : 'honeypot-on', { bantime: b.bantime || '30d', allow: (b.allow || []).length }),
+    onFailure: () => audit(req, row, 'honeypot-on-failed', {}),
+  });
+  return { jobId };
+}));
+// body { keepLog: true|false }
+router.post('/:id/honeypot/off', send(async (req) => {
+  const row = loadServer(req);
+  const keepLog = (req.body || {}).keepLog !== false;
+  const jobId = runner.startPlan(cfgOf(row), HP.removePlan({ keepLog }), {
+    title: 'Turn off the SSH honeypot', successText: 'The honeypot is off. Addresses it banned stay banned until their time runs out (Fail2ban tab: unban).',
+    onSuccess: () => audit(req, row, 'honeypot-off', { keepLog }),
+  });
+  return { jobId };
 }));
 
 module.exports = router;

@@ -15,7 +15,8 @@ delete process.env.SSH_AUTH_SOCK;
 const { Client } = require('ssh2');
 const { workerConnectOpts } = require('../ssh-connect');
 
-const cfg = JSON.parse(process.argv[2] || '{}');
+// The job comes on stdin (a plan can be larger than one command-line argument may be; nor is a password visible in ps)
+const cfg = JSON.parse(process.argv[2] || require('fs').readFileSync(0, 'utf8') || '{}');
 const emit = (o) => process.stdout.write(JSON.stringify(o) + '\n');
 let prefix = 'sudo -n ';
 const sub = (cmd) => String(cmd).split('{{S}}').join(prefix);
