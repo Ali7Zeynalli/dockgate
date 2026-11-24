@@ -50,6 +50,41 @@ Router.register('compose', async (content, params = {}) => {
     m.overlay.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { m.close(); window.GitConnect.open({ project: b.dataset.pick }, { onDone: () => Router.navigate('deploy', { tab: 'compose', project: b.dataset.pick }) }); });
   }
 
+  // Git → Access…: how DockGate reaches the repository of this stack (server/git-access.js).
+  async function openGitAccess(project) {
+    let cur, keys = [];
+    try { cur = await API.get(`/compose/${encodeURIComponent(project)}/git-access`); } catch (e) { return showToast(e.message, 'error', 8000); }
+    try { keys = await API.get('/ssh-keys'); } catch (e) { /* none */ }
+    if (cur.managed && (cur.ownKey || cur.ownToken)) return showModal(`Git access — ${escapeHtml(project)}`, `<p class="text-sm">DockGate cloned this stack and uses the ${cur.ownKey ? 'SSH key' : 'access token'} it was cloned with.</p>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const opt = (v, l, d) => `<label class="ui-choice-opt" style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px"><input type="radio" name="ga-m" value="${v}" ${cur.method === v ? 'checked' : ''}> <span><b>${l}</b><div class="ui-sub">${d}</div></span></label>`;
+    UI.dialog({ title: `Git access — ${escapeHtml(project)}`, saveLabel: 'Save', wide: true,
+      body: `<div class="ui-sub" style="margin-bottom:8px">Repository <span class="td-mono">${escapeHtml(cur.repoUrl || '—')}</span>${cur.branch ? ` · branch <span class="td-mono">${escapeHtml(cur.branch)}</span>` : ''}. Used by Pull, Sync and Pull every stack.</div>
+        ${opt('server', "The server's own git setup", "The SSH user's key or credential helper on the server — what you set up there yourself. Works for public repositories.")}
+        ${opt('token', 'Access token (HTTPS)', 'A GitHub / GitLab / Bitbucket token with read access to the repository. Stored encrypted in DockGate; never written into the repository.')}
+        <div data-ga="token" style="margin:0 0 10px 26px"><input class="input" type="password" id="ga-token" autocomplete="off" placeholder="${cur.hasToken ? '•••••••• saved — type to replace' : 'ghp_… / glpat-…'}"></div>
+        ${opt('key', 'SSH key', 'One of Servers → SSH keys. Add its public key to the repository\'s Deploy keys (read access is enough).')}
+        <div data-ga="key" style="margin:0 0 10px 26px">${keys.length ? `<select class="select" id="ga-key">${keys.map(k => `<option value="${escapeHtml(k.id)}" ${String(cur.keyId) === String(k.id) ? 'selected' : ''}>${escapeHtml(k.name || k.id)}</option>`).join('')}</select>` : '<span class="ui-sub">No SSH keys yet — create one in Servers → SSH keys.</span>'}</div>
+        <div style="display:flex;gap:8px;align-items:center">${UI.btn('Test', 'data-ga-test')}<span class="text-sm" id="ga-res"></span></div>`,
+      onOpen: (ov) => {
+        const sync = () => { const m = (ov.querySelector('input[name=ga-m]:checked') || {}).value; ov.querySelectorAll('[data-ga]').forEach(x => { x.style.display = x.dataset.ga === m ? '' : 'none'; }); };
+        ov.querySelectorAll('input[name=ga-m]').forEach(r => r.addEventListener('change', sync)); sync();
+        ov.querySelector('[data-ga-test]').onclick = async () => {
+          const res = ov.querySelector('#ga-res'); res.textContent = 'Asking the repository…'; res.style.color = '';
+          const m = (ov.querySelector('input[name=ga-m]:checked') || {}).value;
+          try {
+            const r = await API.post(`/compose/${encodeURIComponent(project)}/git-access/test`, { method: m, token: (ov.querySelector('#ga-token') || {}).value || '', keyId: (ov.querySelector('#ga-key') || {}).value || '' });
+            res.style.color = r.ok ? 'var(--success)' : 'var(--danger)'; res.style.whiteSpace = 'pre-wrap';
+            res.textContent = r.ok ? `✓ Reachable — ${r.branches} branch(es)` : `✗ ${r.error}`;
+          } catch (e) { res.style.color = 'var(--danger)'; res.textContent = e.message; }
+        };
+      },
+      onSave: async (ov) => {
+        const m = (ov.querySelector('input[name=ga-m]:checked') || {}).value;
+        await API.put(`/compose/${encodeURIComponent(project)}/git-access`, { method: m, token: (ov.querySelector('#ga-token') || {}).value || '', keyId: (ov.querySelector('#ga-key') || {}).value || '' });
+        showToast(m === 'server' ? "Saved — the server's own git setup is used" : 'Saved — Pull and Sync use it from now on', 'success');
+      } });
+  }
+
   // The handlers of the stack buttons (data-* attributes) — used by the list and by a project's page.
   function wireActions(projects, root = content) {
       // Global Git header action handlers
@@ -79,7 +114,8 @@ Router.register('compose', async (content, params = {}) => {
                   <strong>${escapeHtml(x.project)}</strong>
                   <span class="badge badge-stopped">Failed</span>
                 </div>
-                <div class="text-xs text-muted" style="margin-top:4px;word-break:break-all">${escapeHtml(x.error || 'Unknown error')}</div>
+                <div class="text-xs text-muted" style="margin-top:4px;word-break:break-word;white-space:pre-wrap">${escapeHtml(x.error || 'Unknown error')}</div>
+                <div style="margin-top:6px">${UI.btn('Access…', `data-pa-access="${escapeHtml(x.project)}"`)}</div>
               </div>`;
             }
             if (x.upToDate) {
@@ -114,13 +150,15 @@ Router.register('compose', async (content, params = {}) => {
 
           const body = `
             <div class="text-sm" style="margin-bottom:10px">
+              Every Git stack of this server was pulled (Git ▾ → Pull all). To pull one stack, use <b>Pull</b> on its page.<br>
               Pulled <strong>${successCount}/${results.length}</strong> project(s) —
               <strong>${updatedCount}</strong> updated, <strong>${successCount - updatedCount}</strong> already up to date.
             </div>
             <div style="max-height:400px;overflow:auto">${cards}</div>
             <div class="text-xs text-muted" style="margin-top:10px">All code pulled to server directories. Containers are untouched. Click <strong>⚡ Deploy All Now</strong> to build and restart.</div>
           `;
-          const pm = showModal('Global Git Pull Results', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+          const pm = showModal(`Pull all Git stacks on this server — ${results.length}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+          pm.overlay.querySelectorAll('[data-pa-access]').forEach(b => b.onclick = () => openGitAccess(b.dataset.paAccess));
           const go = document.createElement('button');
           go.className = 'btn btn-primary';
           go.innerHTML = '⚡ Deploy All Now';
@@ -178,6 +216,7 @@ Router.register('compose', async (content, params = {}) => {
       });
 
 
+      root.querySelectorAll('[data-git-access]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openGitAccess(btn.dataset.gitAccess); }));
       // Direct Git Pull action handler
       root.querySelectorAll('[data-git-pull]').forEach(btn => btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -341,14 +380,16 @@ Router.register('compose', async (content, params = {}) => {
 
   // A project's own page (Deploy → Compose stacks → a stack): Overview · Services · Files · Deploys · Automation · Settings.
   // The buttons carry the same data-* attributes as the list, so wireActions() handles them.
+  let projSeq = 0; // a newer render of the page makes an older one stop (else its buttons got two handlers: two dialogs, two pulls)
   async function renderProject(name) {
+    const my = ++projSeq; const stale = () => my !== projSeq || !Router.isActiveNav(pageNavId);
     const tab = params.ptab || 'overview';
     const enc = encodeURIComponent(name);
     let list = [], data = { services: [] }, git = { gitManaged: false };
     try {
       [list, data, git] = await Promise.all([API.get('/compose'), API.get(`/compose/${enc}`).catch(() => ({ services: [] })), API.get(`/compose/${enc}/git`).catch(() => ({ gitManaged: false }))]);
     } catch (e) { content.innerHTML = UI.errorState(e); return; }
-    if (!Router.isActiveNav(pageNavId)) return;
+    if (stale()) return;
     const p = (list || []).find(x => x.name === name);
     if (!p) { content.innerHTML = `<div class="card" style="padding:20px"><b>No stack called ${escapeHtml(name)} on this server.</b><div style="margin-top:10px">${UI.btn('Back to the stacks', 'data-cp-back')}</div></div>`; content.querySelector('[data-cp-back]').onclick = () => Router.navigate('deploy', { tab: 'compose' }); return; }
     const isGit = !!(git.gitManaged || p.isGit || p.deploySource === 'git');
@@ -390,9 +431,10 @@ Router.register('compose', async (content, params = {}) => {
     if (tab === 'overview') {
       let last = null;
       try { last = ((await API.get(`/compose/${enc}/deploys`)).deploys || [])[0] || null; } catch (e) { /* none */ }
+      if (stale()) return;
       const gitCard = isGit
         ? card('Git', `${row('Repository', `<span class="td-mono">${escapeHtml(git.repoUrl || (p.gitInfo && p.gitInfo.repoUrl) || '—')}</span>`)}${row('Branch', escapeHtml(git.branch || '—'))}${row('Commit', `<span class="td-mono">${escapeHtml((git.deployedCommit || '').slice(0, 7) || '—')}</span>`)}
-            <div style="display:flex;gap:6px;margin-top:8px">${UI.btn('Pull (files only)', `data-git-pull="${n}"`)} ${UI.btn('Sync and deploy', `data-git-sync="${n}"`, 'btn-primary')}</div>`)
+            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${UI.btn('Pull (files only)', `data-git-pull="${n}"`)} ${UI.btn('Sync and deploy', `data-git-sync="${n}"`, 'btn-primary')} ${UI.btn('Access…', `data-git-access="${n}" title="How DockGate reaches the repository: the server's own git setup, an access token or an SSH key"`)}</div>`)
         : card('Git', `<div class="ui-sub">This stack's files are not a Git checkout. Connect it to a repository to pull new code, deploy on every push and keep a history of commits.</div><div style="margin-top:8px">${UI.btn('Connect to Git…', `data-git-connect="${n}"`, 'btn-primary')}</div>`);
       body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">
         ${card('Stack', `${row('Source', escapeHtml(srcLabel))}${row('State', state)}${row('Folder', pathv(wd))}${row('Compose files', pathv(p.configFiles || data.configFiles))}${row('Server', escapeHtml(srv.name || srv.id || 'Local'))}`)}
@@ -411,7 +453,7 @@ Router.register('compose', async (content, params = {}) => {
     } else if (tab === 'files') {
       let own = true;
       try { await API.get(`/compose/${enc}/dir?sub=`); } catch (e) { own = false; }
-      if (!Router.isActiveNav(pageNavId)) return;
+      if (stale()) return;
       if (!own && wd) {
         body.innerHTML = `<div class="ui-sub" style="margin-bottom:8px">This stack was not deployed by DockGate — its folder on the server, <span class="td-mono">${escapeHtml(wd)}</span>:</div><div class="card" style="padding:0;overflow:hidden"><div id="cp-fb" style="min-height:420px"></div></div><div style="margin-top:10px;display:flex;gap:6px">${UI.btn('Terminal in this folder', `data-term="${n}" data-cwd="${escapeHtml(wd)}"`)}</div>`;
         FileBrowser.mount(body.querySelector('#cp-fb'), { compact: true, startPath: wd });
@@ -443,7 +485,7 @@ Router.register('compose', async (content, params = {}) => {
         API.get('/schedules').then(r => (r.schedules || []).filter(x => x.kind === 'git_sync' && (x.server_id || 'local') === (srv.id || 'local'))).catch(() => []),
         wd ? API.get(`/tasks/recipes?dir=${encodeURIComponent(wd)}`).then(r => r.recipes || []).catch(() => []) : Promise.resolve(null),
       ]);
-      if (!Router.isActiveNav(pageNavId)) return;
+      if (stale()) return;
       const hook = managed && git.webhookSecret ? `${location.origin}/api/compose/webhook/${enc}?key=${git.webhookSecret}` : '';
       const hooked = (rec || []).find(r => r.hook);
       body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px">
@@ -533,8 +575,8 @@ Router.register('compose', async (content, params = {}) => {
                Git${gitProjects.length ? ` (${gitProjects.length})` : ''} ▾
              </button>
              <div class="row-menu-pop" style="min-width:260px">
-               <button class="rmi" id="global-git-sync-all">Sync and deploy all Git stacks</button>
-               <button class="rmi" id="global-git-pull-all">Pull all (files only, no restart)</button>
+               <button class="rmi" id="global-git-sync-all">Sync and deploy every Git stack</button>
+               <button class="rmi" id="global-git-pull-all">Pull every Git stack (files only, no restart)</button>
                <div style="border-top:1px solid var(--border);margin:4px 0"></div>
                <button class="rmi" id="global-git-manage-btn">Manage Git repositories…</button>
                <button class="rmi" id="global-git-pull-custom">Pull and deploy a server path…</button>
