@@ -1,5 +1,5 @@
 // Swap on an SSH server: a swap file made, resized or removed, and vm.swappiness kept in DockGate's own sysctl file.
-// Used by Setup (the "Swap file" component) and by Server Console → System → Disks. Each script runs as root in one
+// Used by Setup (the "Swap file" component) and by Server Console > System > Disks. Each script runs as root in one
 // piece (`echo <base64> | base64 -d | sudo sh`), so it can stop with a clear reason at any point and clean up after
 // itself: a swap file the kernel did not accept is never left on the disk or in /etc/fstab.
 const DEFAULT_MB = 4096;
@@ -20,12 +20,12 @@ function checkPath(p) {
 }
 function checkSize(mb) {
   const n = Number(mb);
-  if (!Number.isInteger(n) || n < 256 || n > 65536) throw bad('Swap size: 256 MB – 64 GB');
+  if (!Number.isInteger(n) || n < 256 || n > 65536) throw bad('Swap size: 256 MB - 64 GB');
   return n;
 }
 function checkSwappiness(v) {
   const n = Number(v);
-  if (!Number.isInteger(n) || n < 0 || n > 200) throw bad('Swappiness: 0 – 200');
+  if (!Number.isInteger(n) || n < 0 || n > 200) throw bad('Swappiness: 0 - 200');
   return n;
 }
 
@@ -91,7 +91,7 @@ echo "Swap removed: $P"`;
 function swappinessScript(value, { keepSet = false } = {}) {
   const v = checkSwappiness(value);
   const F = SYSCTL_FILE;
-  const write = `[ -f ${F} ] || printf '# Managed by DockGate (Server Console → System → Kernel)\\n' > ${F}
+  const write = `[ -f ${F} ] || printf '# Managed by DockGate (Server Console > System > Kernel)\\n' > ${F}
 sed -i '/^[[:space:]]*vm\\.swappiness[[:space:]]*=/d' ${F}
 echo 'vm.swappiness = ${v}' >> ${F}
 sysctl -w vm.swappiness=${v} >/dev/null`;
@@ -104,7 +104,7 @@ function setupInstall(sudo = 'sudo ') {
   return `${asRoot(createScript('/swapfile', DEFAULT_MB), sudo)} && ${asRoot(swappinessScript(10, { keepSet: true }), sudo)}`;
 }
 
-/** /proc/swaps → [{ path, type, sizeMb, usedMb, prio }]. */
+/** /proc/swaps -> [{ path, type, sizeMb, usedMb, prio }]. */
 function parseSwaps(text) {
   return String(text || '').split('\n').slice(1).map(l => l.trim().split(/\s+/)).filter(p => p.length >= 4 && p[0].startsWith('/'))
     .map(p => ({ path: p[0], type: p[1], sizeMb: Math.round(Number(p[2]) / 1024), usedMb: Math.round(Number(p[3]) / 1024), prio: Number(p[4]) }));

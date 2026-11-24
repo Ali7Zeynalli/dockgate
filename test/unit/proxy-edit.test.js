@@ -1,5 +1,5 @@
 'use strict';
-// Proxies & SSL — the safe change path (server/proxy-edit.js) run for real in a shell: a stand-in `nginx` (its check
+// Proxies & SSL - the safe change path (server/proxy-edit.js) run for real in a shell: a stand-in `nginx` (its check
 // fails on a line "BROKEN", its reload is logged) and a stand-in `curl` (answers from a status file per scheme) on
 // PATH, a host proxy whose files are in a temp folder. Covers: a good change, a failed check, a site that stops
 // answering, asking each site only the way it is served, a file that can not be put back, renewal that is only
@@ -97,7 +97,7 @@ test('each site is asked only the way it is served (no other site\'s HTTPS answe
   assert.doesNotMatch(calls(), /curl http http:\/\/tls/);
 });
 
-test('a file that can not be put back is said plainly — never "put back"', async () => {
+test('a file that can not be put back is said plainly - never "put back"', async () => {
   fs.writeFileSync(conf, 'server { listen 80; server_name a.example.test; }\n'); setStatus(200, 200);
   const orig = PX.hostExec;
   let wrote = 0;
@@ -139,11 +139,11 @@ test('certificate alerts: once per threshold, internal and test certificates ski
   const sent = []; const orig = HM.deliver;
   HM.deliver = async (type, s, subject) => { sent.push({ type, subject }); return true; };
   try {
-    const cert = (o) => ({ names: ['shop.example.test'], issuer: "Let's Encrypt R11", validTo: '2026-12-01T00:00:00Z', daysLeft: 10, renewal: 'certbot timer — on', renewer: 'certbot', auto: true, internal: false, staging: false, proxies: ['nginx'], served: null, fingerprint: 'AA', ...o });
+    const cert = (o) => ({ names: ['shop.example.test'], issuer: "Let's Encrypt R11", validTo: '2026-12-01T00:00:00Z', daysLeft: 10, renewal: 'certbot timer - on', renewer: 'certbot', auto: true, internal: false, staging: false, proxies: ['nginx'], served: null, fingerprint: 'AA', ...o });
     const snap = { certs: [cert({}), cert({ fingerprint: 'BB', internal: true, daysLeft: 0 }), cert({ fingerprint: 'CC', staging: true, daysLeft: 2 }), cert({ fingerprint: 'DD', daysLeft: 50, served: { stale: true, proxy: 'nginx', notAfter: '2026-11-25T00:00:00Z' } })], errors: [{ proxy: 'caddy', lines: ['{"level":"error","msg":"could not get certificate"}'] }] };
     await PE.certAlerts({ id: 'test-srv', name: 'Test' }, snap);
     assert.deepEqual(sent.map(x => x.type).sort(), ['cert_acme_error', 'cert_expiring', 'cert_not_loaded']);
-    assert.match(sent.find(x => x.type === 'cert_expiring').subject, /expires in 10 days — shop\.example\.test on Test/);
+    assert.match(sent.find(x => x.type === 'cert_expiring').subject, /expires in 10 days - shop\.example\.test on Test/);
     sent.length = 0;
     await PE.certAlerts({ id: 'test-srv', name: 'Test' }, snap); // same day, same thresholds: nothing again
     assert.equal(sent.length, 0);
@@ -157,7 +157,7 @@ test('expired certificates: an alert every day, with the reason and what was fix
   const D = require('../../server/cert-doctor');
   const sent = []; const orig = HM.deliver, oDiag = D.diagnose, oFix = D.fix; const fixed = [];
   HM.deliver = async (type, srv, subject, text) => { sent.push({ type, subject, text }); };
-  D.diagnose = async (fp) => ({ fingerprint: fp, verdict: 'x', checks: [{ ok: false, title: 'DNS of old.example.test', detail: '10.9.9.9 — not this server' }],
+  D.diagnose = async (fp) => ({ fingerprint: fp, verdict: 'x', checks: [{ ok: false, title: 'DNS of old.example.test', detail: '10.9.9.9 - not this server' }],
     fixes: [{ id: 'reload', label: 'Reload the proxy' }, { id: 'takeover', label: 'Let DockGate get and renew it' }] });
   D.fix = async (fp, id) => { fixed.push(id); return { ok: true, steps: [] }; };
   try {

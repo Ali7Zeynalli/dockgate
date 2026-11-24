@@ -1,11 +1,11 @@
-// Swarm backup and recovery — phase 7.
+// Swarm backup and recovery - phase 7.
 //
-// Backup (Cluster settings → Back up now, and once a night): one .tar file in data/swarm-backups/ with
+// Backup (Cluster settings > Back up now, and once a night): one .tar file in data/swarm-backups/ with
 //   cluster.json        what the cluster is: spec (no join tokens), nodes and their labels, services, overlay
-//                       networks, configs (with content), secrets (names only — Swarm never returns values),
+//                       networks, configs (with content), secrets (names only - Swarm never returns values),
 //                       DockGate's stacks
 //   swarm-dir.tar.gz    the manager's /var/lib/docker/swarm (Raft state), read through a helper container that is
-//                       never started — taken while Docker runs (Docker recommends stopping it for a perfectly
+//                       never started - taken while Docker runs (Docker recommends stopping it for a perfectly
 //                       consistent copy)
 //   unlock-key.enc      the autolock key, encrypted with this DockGate's key (only when autolock is on)
 //   RESTORE.txt         the steps to bring the cluster back on a new server
@@ -31,11 +31,10 @@ const bad = (code, m) => Object.assign(new Error(m), { statusCode: code });
 const FILE_RE = /^swarm-[a-z0-9]{1,25}-\d{8}-\d{6}\.tar$/;
 const stamp = (d = new Date()) => d.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
 
-const RESTORE_TXT = (info) => `DockGate Swarm backup — ${new Date().toISOString()}
-Cluster ${info.clusterId} · taken on ${info.server} (${info.nodeAddr})
+const RESTORE_TXT = (info) => `DockGate Swarm backup - ${new Date().toISOString()}
+Cluster ${info.clusterId}, taken on ${info.server} (${info.nodeAddr})
 
-Only needed when EVERY manager is lost. If one manager is still running, use DockGate → Swarm → Overview →
-Recover cluster instead.
+Only needed when EVERY manager is lost. If one manager is still running, use DockGate > Swarm > Overview > Recover cluster instead.
 
 Bring the cluster back on a new server (the same Docker version is best):
   1. sudo systemctl stop docker
@@ -44,9 +43,9 @@ Bring the cluster back on a new server (the same Docker version is best):
      (the archive holds the folder "swarm")
   4. sudo systemctl start docker
   5. docker swarm init --force-new-cluster --advertise-addr <this server's address>
-  6. If autolock was on: docker swarm unlock (the key is in unlock-key.enc — DockGate shows it in
-     Cluster settings → Show unlock key on the DockGate that made this backup)
-  7. Join the other servers again (Swarm → Add servers…); remove the old nodes in Swarm → Nodes.
+  6. If autolock was on: docker swarm unlock (the key is in unlock-key.enc - DockGate shows it in
+     Cluster settings > Show unlock key on the DockGate that made this backup)
+  7. Join the other servers again (Swarm > Add servers...); remove the old nodes in Swarm > Nodes.
 
 cluster.json describes services, networks, configs and nodes in plain JSON (secrets by name only).
 `;
@@ -197,7 +196,7 @@ async function startRecover({ confirm, sourceIp } = {}) {
   if (String(confirm || '') !== info.Name) throw bad(400, `Type the server name (${info.Name}) to confirm`);
   // Only when the cluster really has no leader: on a healthy cluster --force-new-cluster would throw managers out.
   const ri = await recoveryInfo();
-  if (!ri.lost) throw bad(409, 'The cluster has a leader — nothing to recover. Recover cluster is only for when most managers are lost.');
+  if (!ri.lost) throw bad(409, 'The cluster has a leader - nothing to recover. Recover cluster is only for when most managers are lost.');
   if (swarm._jobs.busy()) throw bad(409, 'A Swarm job is already running');
   const sid = dockerService.getActiveServerId() || 'local';
   const job = swarm._jobs.newJob('recover'); swarm._jobs.setCurrent(job);
@@ -206,7 +205,7 @@ async function startRecover({ confirm, sourceIp } = {}) {
     try {
       step(job, 'backup', 'running', 'Back up the swarm state first');
       const b = await backupWith(c, sid, { reason: 'before recover', sourceIp });
-      log(`Backup ${b.file} (${Math.round(b.size / 1024)} KB)${b.errors.length ? ` — without: ${b.errors.join('; ')}` : ''}`);
+      log(`Backup ${b.file} (${Math.round(b.size / 1024)} KB)${b.errors.length ? ` - without: ${b.errors.join('; ')}` : ''}`);
       step(job, 'backup', 'done');
       step(job, 'init', 'running', 'docker swarm init --force-new-cluster');
       const addr = sw.NodeAddr;
@@ -222,7 +221,7 @@ async function startRecover({ confirm, sourceIp } = {}) {
       const self = (await c.info()).Swarm.NodeID;
       for (const n of nodes.filter(x => x.ID !== self && x.Spec.Role === 'manager' && x.Status.State !== 'ready')) {
         // After --force-new-cluster the old managers are no longer Raft members, so demoting them fails
-        // ("can't find manager in raft memberlist") — remove them anyway.
+        // ("can't find manager in raft memberlist") - remove them anyway.
         try { const x = await c.getNode(n.ID).inspect(); await c.getNode(n.ID).update({ version: x.Version.Index, ...x.Spec, Role: 'worker' }); } catch (e) { /* see above */ }
         try {
           await c.getNode(n.ID).remove({ force: true });
@@ -231,7 +230,7 @@ async function startRecover({ confirm, sourceIp } = {}) {
       }
       step(job, 'clean', 'done');
       const workers = (await c.listNodes()).filter(n => n.Spec.Role === 'worker' && n.Status.State === 'ready');
-      log(workers.length >= 2 ? `Next: promote two workers (Swarm → Nodes) to have 3 managers again — ${workers.slice(0, 2).map(w => w.Description.Hostname).join(', ')}.` : 'Next: add servers as managers (Swarm → Add servers…) to have 3 managers again.');
+      log(workers.length >= 2 ? `Next: promote two workers (Swarm > Nodes) to have 3 managers again - ${workers.slice(0, 2).map(w => w.Description.Hostname).join(', ')}.` : 'Next: add servers as managers (Swarm > Add servers...) to have 3 managers again.');
       log('A lost manager that comes back must leave its old swarm (docker swarm leave --force) and join again.');
       job.status = 'done';
       logAction({ sourceIp, server: sid, resourceType: 'swarm', resourceName: info.Name, action: 'swarm_force_new_cluster', details: { backup: b.file } });
@@ -354,7 +353,7 @@ async function startRestore(file, opts = {}, { sourceIp } = {}) {
       const secId = new Map((await c.listSecrets()).map(x => [x.Spec.Name, x.ID]));
       for (const x of d.secrets || []) {
         if (secId.has(x.name)) continue;
-        if (values[x.name] === undefined || values[x.name] === '') { log(`  · secret ${x.name}: no value given — services that use it are skipped`); continue; }
+        if (values[x.name] === undefined || values[x.name] === '') { log(` , secret ${x.name}: no value given - services that use it are skipped`); continue; }
         try { const r = await c.createSecret({ Name: x.name, Labels: x.labels || {}, Data: Buffer.from(String(values[x.name])).toString('base64') }); secId.set(x.name, r.id || r.ID); log(`  + secret ${x.name}`); report.created.push(`secret ${x.name}`); }
         catch (e) { log(`  ✗ secret ${x.name}: ${swarm.dockerMsg(e)}`); report.failed.push(`secret ${x.name}`); }
       }
@@ -368,7 +367,7 @@ async function startRestore(file, opts = {}, { sourceIp } = {}) {
         if (want && !want.has(sp.Name)) { report.skipped.push(`${sp.Name} (not chosen)`); continue; }
         const cs = sp.TaskTemplate.ContainerSpec || {};
         const missing = (cs.Secrets || []).filter(x => !secId.has(x.SecretName)).map(x => x.SecretName);
-        if (missing.length) { log(`  · ${sp.Name}: skipped — secret ${missing.join(', ')} has no value`); report.skipped.push(`${sp.Name} (secret ${missing.join(', ')})`); continue; }
+        if (missing.length) { log(` , ${sp.Name}: skipped - secret ${missing.join(', ')} has no value`); report.skipped.push(`${sp.Name} (secret ${missing.join(', ')})`); continue; }
         for (const x of cs.Secrets || []) x.SecretID = secId.get(x.SecretName);
         cs.Configs = (cs.Configs || []).filter(x => cfgId.has(x.ConfigName)).map(x => ({ ...x, ConfigID: cfgId.get(x.ConfigName) }));
         sp.TaskTemplate.Networks = (sp.TaskTemplate.Networks || []).map(n => ({ ...n, Target: netId.get(oldNet.get(n.Target)) || (nets.some(x => x.Id === n.Target) ? n.Target : null) })).filter(n => n.Target);
@@ -401,7 +400,7 @@ async function startRestore(file, opts = {}, { sourceIp } = {}) {
       job.result = report;
       log(`\n${report.created.length} created, ${report.skipped.length} skipped, ${report.failed.length} failed.`);
       job.status = report.failed.length ? 'error' : 'done';
-      if (report.failed.length) job.error = `${report.failed.length} could not be created — see the log`;
+      if (report.failed.length) job.error = `${report.failed.length} could not be created - see the log`;
       logAction({ sourceIp, server: sid, resourceType: 'swarm', resourceName: file, action: 'swarm_restore', details: report });
     } catch (e) {
       job.steps.forEach(x => { if (x.status === 'running') x.status = 'failed'; });

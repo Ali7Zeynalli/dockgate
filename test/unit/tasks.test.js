@@ -1,5 +1,5 @@
 'use strict';
-// Deploy → Tasks. task-parse.js is pure; tasks.js runs against "a server" that is this machine (bash).
+// Deploy > Tasks. task-parse.js is pure; tasks.js runs against "a server" that is this machine (bash).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs'); const os = require('os'); const path = require('path');
@@ -115,8 +115,8 @@ test('Recipes: git pull, a check that fails, recovery back to the commit before;
   // passing deploy (no check) + a task step with variables + docker-free compose check skipped
   const good = R.save('srv-t', APP, { name: 'Deploy ok', steps: [{ type: 'git_pull' }, { type: 'task', source: 'make', name: 'up' }, { type: 'wait', seconds: 1 }], settings: { notify: { fail: false } } });
   r = await wait((await R.run(good.id, { trigger: 'webhook:github', git: { sha: 'abc123', branch: 'main', message: 'v2', author: 'ann' } })).id);
-  assert.equal(r.status, 'ok'); assert.match(r.text, /Triggered by webhook:github — ann: main abc123/); assert.match(r.text, /✓ Deployed/);
-  // schedule: due → runs once
+  assert.equal(r.status, 'ok'); assert.match(r.text, /Triggered by webhook:github - ann: main abc123/); assert.match(r.text, /✓ Deployed/);
+  // schedule: due -> runs once
   R.save('srv-t', APP, { name: 'Deploy ok', steps: good.steps, schedule: '* * * * *', settings: { notify: { fail: false } } }, good.id);
   require('../../server/db').db.prepare('UPDATE task_recipes SET last_sched = ? WHERE id = ?').run(Date.now() - 120000, good.id);
   R.tick();
@@ -125,7 +125,7 @@ test('Recipes: git pull, a check that fails, recovery back to the commit before;
   assert.equal(last.trigger, 'schedule'); await wait(last.id);
 });
 
-test('Webhooks: GitHub, GitLab, Bitbucket Cloud / Server, CI — signatures, payloads, branches, commit status', async () => {
+test('Webhooks: GitHub, GitLab, Bitbucket Cloud / Server, CI - signatures, payloads, branches, commit status', async () => {
   const H = require('../../server/task-hooks');
   const secret = 's3cr3t', raw = Buffer.from(JSON.stringify({ ref: 'refs/heads/main' }));
   const sig = 'sha256=' + require('crypto').createHmac('sha256', secret).update(raw).digest('hex');
@@ -184,7 +184,7 @@ test('Webhook route: a signed GitHub push runs the recipe; a wrong signature, an
     b = push('main'); r = await post(b, { 'x-github-event': 'push', 'x-hub-signature-256': sign(b) });
     assert.equal(r.status, 202); const { run } = await r.json(); assert.ok(run);
     for (let i = 0; i < 100 && TK.runLog(run).status === 'running'; i++) await new Promise(res => setTimeout(res, 100));
-    const log = TK.runLog(run); assert.equal(log.status, 'ok'); assert.match(log.text, /webhook:github — ann: main ffffffffff/);
+    const log = TK.runLog(run); assert.equal(log.status, 'ok'); assert.match(log.text, /webhook:github - ann: main ffffffffff/);
     // CI with the token
     r = await post(JSON.stringify({ branch: 'main', commit: 'ci1' }), { authorization: `Bearer ${secret}` });
     assert.equal(r.status, 202);
@@ -207,13 +207,13 @@ test('Queue: a push during a deploy waits (the newest wins, the older is marked 
   assert.equal(q2.replaced, true);
   assert.equal(R.list('srv-t', PROJ).find(x => x.id === rec.id).waiting.what, 'main bbb222 (bob)');
   const r1 = await waitDone(first.id);
-  assert.equal(r1.status, 'ok'); assert.match(r1.text, /⏳ Queued — webhook:github: main aaa111/); assert.match(r1.text, /⏳ Queued \(replaces the one that waited\)/);
+  assert.equal(r1.status, 'ok'); assert.match(r1.text, /⏳ Queued - webhook:github: main aaa111/); assert.match(r1.text, /⏳ Queued \(replaces the one that waited\)/);
   await new Promise(res => setTimeout(res, 300));
   const next = TK.runs('srv-t', PROJ)[0];
   assert.notEqual(next.id, first.id); assert.equal(next.trigger, 'webhook:github');
   assert.deepEqual(statuses.slice(0, 3), ['aaa111:pending', 'aaa111:skipped', 'bbb222:pending']);
   const r2 = await waitDone(next.id);
-  assert.match(r2.text, /bob\): main bbb222|— bob: main bbb222/); assert.ok(statuses.includes('bbb222:success'));
+  assert.match(r2.text, /bob\): main bbb222|- bob: main bbb222/); assert.ok(statuses.includes('bbb222:success'));
   assert.equal(R.sameCommitRecently(rec.id, 'bbb222'), true); assert.equal(R.sameCommitRecently(rec.id, 'zzz'), false);
   // manual "replace": the running one is cancelled, then the new one runs
   const a = await R.run(rec.id, { trigger: 'manual' });
@@ -253,7 +253,7 @@ test('Webhook guards: delivery seen before, same commit, CI force, rate limit, w
     // body over 1 MB
     const big = JSON.stringify({ ref: 'refs/heads/main', pad: 'x'.repeat(1100000) });
     assert.equal((await gh(big, 'd-big')).status, 413);
-    // wrong signatures: 20 → the address is blocked, even with a good one
+    // wrong signatures: 20 -> the address is blocked, even with a good one
     hooks._reset();
     for (let i = 0; i < 20; i++) { const x = await fetch(`${base}/${hookId}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': 'sha256=00' }, body: '{}' }); assert.equal(x.status, 401); }
     r = await gh(push('d'.repeat(40)), 'd-3'); assert.equal(r.status, 429); assert.ok(Number(r.headers.get('retry-after')) > 800);

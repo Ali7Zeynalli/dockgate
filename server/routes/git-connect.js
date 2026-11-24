@@ -1,6 +1,6 @@
 // Connect to Git (server/git-connect.js). Mounted at /api/git-connect.
 // A target is { project } (a Compose project: its folder and server from the deploy record, or its
-// containers' working folder) or { dir } on the server in use (Deploy → Tasks folders).
+// containers' working folder) or { dir } on the server in use (Deploy > Tasks folders).
 const express = require('express');
 const path = require('path');
 const router = express.Router();

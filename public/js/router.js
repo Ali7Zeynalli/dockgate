@@ -32,7 +32,7 @@ const Router = {
   },
 
   // Pages that moved keep their old links working: #/activity?tab=logs, #/infra?tab=registries, a bare
-  // #/containers, #/cleanup … are rewritten to the section that now holds them.
+  // #/containers, #/cleanup ... are rewritten to the section that now holds them.
   resolve(path, params = {}) {
     const p = { ...(params || {}) };
     const SECTION_OF = {
@@ -43,7 +43,7 @@ const Router = {
     };
     const TAB = { cleanup: 'prune' };
     const OWN = { databases: 1, uptime: 1 }; // pages of their own (no section)
-    // a tab opened in the section it used to be in → its new section
+    // a tab opened in the section it used to be in -> its new section
     if (p.tab && (OWN[p.tab] || (SECTION_OF[p.tab] && SECTION_OF[p.tab] !== path)) && ['activity', 'observe', 'tools', 'resources', 'deploy', 'settings'].includes(path)) {
       if (OWN[p.tab]) { const t = p.tab; delete p.tab; return { path: t, params: p }; }
       return { path: SECTION_OF[p.tab], params: { ...p, tab: TAB[p.tab] || p.tab } };
@@ -76,16 +76,16 @@ const Router = {
     } else if (extra[path]) el.innerHTML = crumb(...extra[path]);
     else el.textContent = (item && item.label) || this.titles[path] || path;
     if (typeof syncSidebarTabs === 'function') setTimeout(syncSidebarTabs, 0); // redirects use replaceState (no hashchange)
-    document.title = `${el.textContent.replace(/\s*\/\s*/g, ' / ')} · DockGate`;
+    document.title = `${el.textContent.replace(/\s*\/\s*/g, ' / ')}, DockGate`;
   },
   titles: { 'container-detail': 'Container', 'swarm-service': 'Service', 'swarm-node': 'Node', system: 'System' },
 
   async navigate(path, params = {}, opts = {}) {
     ({ path, params } = this.resolve(path, params));
-    // Increment navigation ID — invalidates any in-flight async from previous page
-    // Naviqasiya ID-ni artır — əvvəlki səhifənin davam edən async əməliyyatlarını ləğv edir
+    // Increment navigation ID - invalidates any in-flight async from previous page
+    // Naviqasiya ID-ni artır - əvvəlki səhifənin davam edən async əməliyyatlarını ləğv edir
     const navId = ++this._navId;
-    // Back / Forward: the URL already shows the page we return to — read its position before anything
+    // Back / Forward: the URL already shows the page we return to - read its position before anything
     // re-renders (the scroll listener would otherwise overwrite it). A click: save the page we leave.
     this._saveScroll(); // the page we leave, under its own URL
     const backTo = opts.fromHash ? this._readScroll(window.location.hash) : null;
@@ -121,7 +121,7 @@ const Router = {
     // Reflect the navigation in the URL hash so the browser Back/Forward buttons
     // work and a hard-refresh restores the exact page+params. Skip when THIS
     // navigation was itself triggered by a hash change (Back/Forward), to avoid a
-    // write→event loop. / Naviqasiyanı URL hash-də əks etdir ki, brauzerin Geri/İrəli
+    // write -> event loop. / Naviqasiyanı URL hash-də əks etdir ki, brauzerin Geri/İrəli
     // düymələri işləsin və refresh eyni səhifə+params bərpa etsin.
     if (!opts.fromHash) this._writeHash(path, params, opts.replace);
     this._curHash = window.location.hash;
@@ -161,7 +161,7 @@ const Router = {
   },
 
   // ──────────────────────────────────────────────────────────────────────────
-  // URL hash sync — browser history integration (Back/Forward + deep-link refresh)
+  // URL hash sync - browser history integration (Back/Forward + deep-link refresh)
   // Format: #/<path>?<querystring>  (params are flat string key/values)
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -190,14 +190,14 @@ const Router = {
     return qs ? `${base}?${qs}` : base;
   },
 
-  // Write the hash. `replace` → history.replaceState (no new entry, used on boot);
+  // Write the hash. `replace` -> history.replaceState (no new entry, used on boot);
   // otherwise an assignment pushes a new history entry so Back works.
   // Each history entry DockGate makes carries { dgIdx }: 1 for the first page of the visit, +1 per page.
   // Router.back() uses it to know whether there is an earlier DockGate page to go back to.
   _idx() { return (window.history.state && window.history.state.dgIdx) || 0; },
   _writeHash(path, params, replace) {
     const target = this._buildHash(path, params);
-    if ((window.location.hash || '') === target) return; // unchanged → no event
+    if ((window.location.hash || '') === target) return; // unchanged -> no event
     if (replace && window.history.replaceState) {
       window.history.replaceState({ dgIdx: this._idx() || 1 }, '', target); // does NOT fire hashchange
     } else {

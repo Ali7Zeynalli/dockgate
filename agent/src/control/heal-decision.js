@@ -1,4 +1,4 @@
-// When to restart an unhealthy container — one rule for the agent and DockGate (which requires this file).
+// When to restart an unhealthy container - one rule for the agent and DockGate (which requires this file).
 // history: { fails: consecutive failed checks, restarts: [timestamps], since: container start (ms) }
 // rule: { healPerHour (default 3), rollback: bool, recentImageUpdate: bool, startPeriodMs (default 60000), failsNeeded (default 3) }
 function healDecision(h, now, rule = {}) {

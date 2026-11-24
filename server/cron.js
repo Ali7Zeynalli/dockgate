@@ -1,4 +1,4 @@
-// Server Console → Cron: the scheduled jobs of a server, over its SSH login.
+// Server Console > Cron: the scheduled jobs of a server, over its SSH login.
 //   read(server)                  every source in one round trip: the SSH user's crontab, root's crontab (sudo),
 //                                 /etc/cron.d/dockgate (DockGate's own file), /etc/crontab, /etc/cron.d/*,
 //                                 cron.hourly/daily/weekly/monthly, systemd timers, whether cron runs, the clock
@@ -99,7 +99,7 @@ async function timerAction(server, unit, action) {
   let timer;
   const r = await Promise.race([
     remoteExec.execRemote(server, `${cmd} 2>&1`),
-    new Promise((_, rej) => { timer = setTimeout(() => rej(Object.assign(new Error(action === 'run' ? `${svc} is still running after 2 minutes — it goes on on the server; see its log` : 'No answer from the server'), { statusCode: 504 })), limit); }),
+    new Promise((_, rej) => { timer = setTimeout(() => rej(Object.assign(new Error(action === 'run' ? `${svc} is still running after 2 minutes - it goes on on the server; see its log` : 'No answer from the server'), { statusCode: 504 })), limit); }),
   ]).finally(() => clearTimeout(timer));
   const output = (String(r.stdout || '') + String(r.stderr || '')).trimEnd();
   const noSudo = /a password is required|sudo: .*(terminal|password)/i.test(output);
@@ -148,15 +148,15 @@ async function read(server) {
     sources.push({ id, label, editable: !!editable, system, note: note || null, text, jobs: C.jobs(parsed).map(j => decorate(j, user, id)) });
   };
   const u = rc(S.user);
-  add('user', `${sshUser} (SSH user) — crontab`, u.code === 0 ? u.text : '', { editable: true, user: sshUser, note: u.code !== 0 && !noCrontab(u.text) ? u.text.slice(0, 200) : null });
+  add('user', `${sshUser} (SSH user) - crontab`, u.code === 0 ? u.text : '', { editable: true, user: sshUser, note: u.code !== 0 && !noCrontab(u.text) ? u.text.slice(0, 200) : null });
   const sudo = String(S.sudo).trim() === 'yes' || sshUser === 'root';
   if (sshUser !== 'root') {
     const ro = rc(S.root);
-    add('root', 'root — crontab', ro.code === 0 ? ro.text : '', { editable: sudo, user: 'root', note: !sudo ? 'Needs passwordless sudo to read and change root\'s crontab' : ro.code !== 0 && !noCrontab(ro.text) ? ro.text.slice(0, 200) : null });
+    add('root', 'root - crontab', ro.code === 0 ? ro.text : '', { editable: sudo, user: 'root', note: !sudo ? 'Needs passwordless sudo to read and change root\'s crontab' : ro.code !== 0 && !noCrontab(ro.text) ? ro.text.slice(0, 200) : null });
   }
   const files = splitFiles(S.crond);
   const dg = files.find(f => f.path === DG_FILE);
-  add('dockgate', `${DG_FILE} — DockGate's file`, dg ? dg.text : '', { editable: sudo, system: true, user: 'root', note: !sudo ? 'Needs passwordless sudo' : null });
+  add('dockgate', `${DG_FILE} - DockGate's file`, dg ? dg.text : '', { editable: sudo, system: true, user: 'root', note: !sudo ? 'Needs passwordless sudo' : null });
   if (S.etccrontab) add('etc', '/etc/crontab (system)', S.etccrontab, { system: true, user: 'root' });
   for (const f of files.filter(f => f.path !== DG_FILE)) add(`file:${f.path}`, `${f.path} (package / system)`, f.text, { system: true, user: 'root' });
   const periodic = String(S.periodic || '').split('\n').filter(Boolean).map(l => { const [p, name] = l.split(' '); return { period: p, name }; });
@@ -168,7 +168,7 @@ async function read(server) {
 
 async function sourceText(server, source) {
   if (source === 'user') { const r = await remoteExec.execRemote(server, 'crontab -l 2>&1; echo "__RC__$?"'); const x = rc(r.stdout); return x.code === 0 ? x.text + (x.text ? '\n' : '') : (noCrontab(x.text) ? '' : Promise.reject(Object.assign(new Error(x.text), { statusCode: 500 }))); }
-  if (source === 'root') { const r = await remoteExec.execRemote(server, '[ "$(id -u)" = 0 ] && crontab -l 2>&1 || sudo -n crontab -l -u root 2>&1; echo "__RC__$?"'); const x = rc(r.stdout); if (x.code === 0) return x.text + (x.text ? '\n' : ''); if (noCrontab(x.text)) return ''; throw Object.assign(new Error(/password/i.test(x.text) ? 'sudo asks for a password — root\'s crontab needs passwordless sudo' : x.text.slice(0, 200)), { statusCode: 403 }); }
+  if (source === 'root') { const r = await remoteExec.execRemote(server, '[ "$(id -u)" = 0 ] && crontab -l 2>&1 || sudo -n crontab -l -u root 2>&1; echo "__RC__$?"'); const x = rc(r.stdout); if (x.code === 0) return x.text + (x.text ? '\n' : ''); if (noCrontab(x.text)) return ''; throw Object.assign(new Error(/password/i.test(x.text) ? 'sudo asks for a password - root\'s crontab needs passwordless sudo' : x.text.slice(0, 200)), { statusCode: 403 }); }
   if (source === 'dockgate') { const r = await remoteExec.execRemote(server, `cat ${DG_FILE} 2>/dev/null || sudo -n cat ${DG_FILE} 2>/dev/null; true`); return String(r.stdout || ''); }
   throw Object.assign(new Error('This source is read only'), { statusCode: 400 });
 }
@@ -211,9 +211,9 @@ async function ensureHelpers(server, source, meta) {
   if (r.code !== 0) throw Object.assign(new Error(`Could not set up the job's helpers: ${String(r.stdout || '').trim().slice(0, 200)}`), { statusCode: 500 });
 }
 
-/** Apply one change to an editable source. preview → { before, after } without writing. */
+/** Apply one change to an editable source. preview -> { before, after } without writing. */
 async function change(server, source, op, { preview = false, serverId } = {}) {
-  if (!SOURCES.includes(source)) throw Object.assign(new Error('This source is read only — open it in Files to edit it yourself'), { statusCode: 400 });
+  if (!SOURCES.includes(source)) throw Object.assign(new Error('This source is read only - open it in Files to edit it yourself'), { statusCode: 400 });
   const system = source === 'dockgate';
   const entry = op.entry ? { ...op.entry } : null;
   if (entry) {
@@ -242,7 +242,7 @@ async function runNow(server, source, command, user) {
   let timer;
   const r = await Promise.race([
     remoteExec.execRemote(server, `bash -c ${shq(script)}`),
-    new Promise((_, rej) => { timer = setTimeout(() => rej(Object.assign(new Error('Still running after 2 minutes — it goes on on the server; see its log'), { statusCode: 504 })), 120000); }),
+    new Promise((_, rej) => { timer = setTimeout(() => rej(Object.assign(new Error('Still running after 2 minutes - it goes on on the server; see its log'), { statusCode: 504 })), 120000); }),
   ]).finally(() => clearTimeout(timer));
   const out = String(r.stdout || '') + String(r.stderr || '');
   const m = /__DGRUN__(\d+) (\d+)\s*$/.exec(out);

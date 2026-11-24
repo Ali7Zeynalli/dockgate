@@ -1,15 +1,15 @@
-// API Client — HTTP + WebSocket
+// API Client - HTTP + WebSocket
 const API = {
   base: '/api',
 
-  // Shared response handling: a 401 on a non-auth call means the session expired → bounce to login.
+  // Shared response handling: a 401 on a non-auth call means the session expired -> bounce to login.
   async _res(res, path) {
     if (res.status === 401 && !String(path).startsWith('/auth') && typeof window.__authExpired === 'function') {
       window.__authExpired();
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
-      // the message as before; the HTTP status and the server's error code (EACCES, CHANGED…) ride along
+      // the message as before; the HTTP status and the server's error code (EACCES, CHANGED...) ride along
       throw Object.assign(new Error(err.error || res.statusText), { status: res.status, code: err.code, data: err });
     }
     return res.json();
@@ -75,7 +75,7 @@ async function bulkRun(items, fn, noun = 'Done') {
   const total = items.length;
   if (errors.length === 0) showToast(`${noun}: ${ok}/${total}`);
   else if (ok === 0) showToast(`${noun} failed (${total}): ${errors[0]}`, 'error', 8000);
-  else showToast(`${noun}: ${ok} OK, ${errors.length} failed — ${errors[0]}`, 'warning', 8000);
+  else showToast(`${noun}: ${ok} OK, ${errors.length} failed - ${errors[0]}`, 'warning', 8000);
   return { ok, failed: errors.length, errors, total };
 }
 
@@ -90,16 +90,16 @@ function isRemoteActive() {
 
 // Socket.IO connection
 const socket = io({ transports: ['websocket', 'polling'], withCredentials: true });
-// a live stream (terminal, logs, build…) to a server this session has not unlocked: ask for its access password;
+// a live stream (terminal, logs, build...) to a server this session has not unlocked: ask for its access password;
 // the stream is opened again by the page (reopen it) once unlocked
 socket.on('gate:locked', async ({ serverId, error }) => {
   if (typeof window.promptAccessPassword !== 'function') { if (typeof showToast === 'function') showToast(error, 'error'); return; }
   if (API._unlocking[serverId]) return;
-  API._unlocking[serverId] = (async () => { const pw = await window.promptAccessPassword(serverId); if (pw == null) return false; try { await API.post(`/servers/${encodeURIComponent(serverId)}/unlock`, { accessPassword: pw }); if (typeof showToast === 'function') showToast('Unlocked — open it again', 'success'); return true; } catch (e) { if (typeof showToast === 'function') showToast(e.message, 'error'); return false; } })().finally(() => setTimeout(() => { delete API._unlocking[serverId]; }, 0));
+  API._unlocking[serverId] = (async () => { const pw = await window.promptAccessPassword(serverId); if (pw == null) return false; try { await API.post(`/servers/${encodeURIComponent(serverId)}/unlock`, { accessPassword: pw }); if (typeof showToast === 'function') showToast('Unlocked - open it again', 'success'); return true; } catch (e) { if (typeof showToast === 'function') showToast(e.message, 'error'); return false; } })().finally(() => setTimeout(() => { delete API._unlocking[serverId]; }, 0));
 });
 
-// Handshake rejected (no/expired session) → just reflect "disconnected"; the REST 401 path drives
-// the login screen. Deliberately NO reload here — api.js runs before the auth gate, so reloading on
+// Handshake rejected (no/expired session) -> just reflect "disconnected"; the REST 401 path drives
+// the login screen. Deliberately NO reload here - api.js runs before the auth gate, so reloading on
 // the login screen would loop.
 socket.on('connect_error', () => {
   const el = document.getElementById('connection-status');
@@ -115,7 +115,7 @@ socket.on('connect', () => {
   if (text) text.textContent = 'Connected';
   // After a reconnect the server destroyed the old log/stats/event/terminal streams.
   // The active streaming page registers a re-subscribe callback here so its stream resumes
-  // instead of silently freezing. (On the very first connect no page is mounted yet → no-op.)
+  // instead of silently freezing. (On the very first connect no page is mounted yet -> no-op.)
   if (typeof window._activeResub === 'function') {
     try { window._activeResub(); } catch (e) { /* page may have navigated away */ }
   }
@@ -147,7 +147,7 @@ function showToast(message, type = 'success', duration = 4000) {
     info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
   };
 
-  // The icon SVG is static (safe for innerHTML), but message may be backend error text —
+  // The icon SVG is static (safe for innerHTML), but message may be backend error text -
   // if it contains < > & we set it via textContent so the toast isn't broken (XSS/format safety)
   toast.innerHTML = icons[type] || icons.info;
   const msgSpan = document.createElement('span');
@@ -205,7 +205,7 @@ function serverContextBanner() {
   const active = consoleSrv || ((typeof Store !== 'undefined') ? Store.get('activeServer') : null);
   const isRemote = active && active.id !== 'local' && active.type !== 'local';
   const who = isRemote
-    ? `🔐 On remote server: <strong>${escapeHtml(active.name || active.id)}</strong>${active.host ? ' · ' + escapeHtml(active.host) : ''}`
+    ? `🔐 On remote server: <strong>${escapeHtml(active.name || active.id)}</strong>${active.host ? ', ' + escapeHtml(active.host) : ''}`
     : '🖥 On Local Docker';
   return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;margin-bottom:10px;padding:7px 10px;border-radius:8px;background:${isRemote ? 'rgba(245,158,11,.12)' : 'var(--bg-primary)'};color:${isRemote ? 'var(--warning,#f59e0b)' : 'var(--text-muted)'};border:1px solid ${isRemote ? 'var(--warning,#f59e0b)' : 'var(--border)'}">${who}</div>`;
 }
@@ -218,12 +218,12 @@ function showConfirm(title, message, onConfirm, danger = false) {
 }
 
 // GitHub-style delete confirmation: the destructive button stays DISABLED until the user types the exact
-// confirmation phrase. A misclick can't delete the wrong thing — you must read and retype what's at stake.
-//   opts.message      — HTML describing what will be deleted (shown under the server-context banner)
-//   opts.phrase       — the exact text the user must type. For a single named resource pass its name/id
+// confirmation phrase. A misclick can't delete the wrong thing - you must read and retype what's at stake.
+//   opts.message      - HTML describing what will be deleted (shown under the server-context banner)
+//   opts.phrase       - the exact text the user must type. For a single named resource pass its name/id
 //                       (true GitHub feel); for bulk/prune/clear (no single name) pass the literal 'delete'.
-//   opts.confirmLabel — destructive button text (default 'Delete')
-//   opts.onConfirm    — runs once the typed phrase matches and the button (or Enter) is pressed
+//   opts.confirmLabel - destructive button text (default 'Delete')
+//   opts.onConfirm    - runs once the typed phrase matches and the button (or Enter) is pressed
 function showDeleteConfirm(title, opts = {}) {
   const { message = '', phrase = 'delete', confirmLabel = 'Delete', onConfirm = () => {} } = opts;
   const phraseStr = String(phrase).trim() || 'delete';
@@ -233,7 +233,7 @@ function showDeleteConfirm(title, opts = {}) {
     <label class="text-xs text-muted" style="display:block;margin-top:4px">Type <code style="background:var(--bg-primary);padding:1px 6px;border-radius:4px;border:1px solid var(--border);font-weight:600">${escapeHtml(phraseStr)}</code> to confirm:</label>
     <input class="input" id="dg-del-confirm" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${escapeHtml(phraseStr)}" style="width:100%;margin-top:6px" />
   `, [{ label: 'Cancel', className: 'btn btn-secondary' }]);
-  // Scope queries to THIS overlay — modals can stack and ids repeat.
+  // Scope queries to THIS overlay - modals can stack and ids repeat.
   const scope = m.overlay;
   const input = scope.querySelector('#dg-del-confirm');
   const footer = scope.querySelector('#modal-footer');
@@ -283,7 +283,7 @@ function parseTs(ts) {
 // Format an absolute date/time in the user's selected timezone.
 function formatTime(ts, opts = {}) {
   const d = parseTs(ts);
-  if (!d) return '—';
+  if (!d) return '-';
   const tz = getDisplayTimeZone();
   const fmtOpts = (tz && tz !== 'auto') ? { ...opts, timeZone: tz } : opts;
   return d.toLocaleString([], fmtOpts);
@@ -297,13 +297,13 @@ function timeAgo(timestamp) {
   if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
   if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
   if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
-  // Older than a week → absolute date in the selected timezone
+  // Older than a week -> absolute date in the selected timezone
   const tz = getDisplayTimeZone();
   const d = new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp);
   return d.toLocaleDateString([], (tz && tz !== 'auto') ? { timeZone: tz } : {});
 }
 
-// Escape for safe insertion into HTML — including " and ' so values placed inside quoted attributes
+// Escape for safe insertion into HTML - including " and ' so values placed inside quoted attributes
 // (e.g. data-* in template strings) can't break out. The DOM textContent trick escapes & < > but NOT
 // quotes, so we map all five explicitly.
 function escapeHtml(str) {
@@ -315,7 +315,7 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// Parse pasted .env text into [{key, val}] — skips blank lines and # comments, splits on the first '=',
+// Parse pasted .env text into [{key, val}] - skips blank lines and # comments, splits on the first '=',
 // strips an optional "export " prefix and surrounding quotes. Used by the Run modal / Compose editor.
 function parseDotEnv(text) {
   return String(text || '').split(/\r?\n/).map(line => {
@@ -334,14 +334,14 @@ function parseDotEnv(text) {
 }
 
 // Returns the correct host for a published port link.
-// Local active server → the host you reached DockGate on (window.location.hostname).
-// Remote SSH server → that server's host (the ports live on the remote machine, not localhost).
+// Local active server -> the host you reached DockGate on (window.location.hostname).
+// Remote SSH server -> that server's host (the ports live on the remote machine, not localhost).
 function dockerHostUrl(port) {
   let type, host;
   const active = (typeof Store !== 'undefined') ? Store.get('activeServer') : null;
   if (active) { type = active.type; host = active.host; }
   else {
-    // Hard-refresh fallback — if the switcher hasn't loaded yet, read from localStorage
+    // Hard-refresh fallback - if the switcher hasn't loaded yet, read from localStorage
     type = localStorage.getItem('dcc_active_type');
     host = localStorage.getItem('dcc_active_host');
   }
@@ -350,7 +350,7 @@ function dockerHostUrl(port) {
 }
 
 // A full re-render during auto-refresh loses focus/scroll. If a modal is open or
-// the user is typing in an input/search, skip this tick. True → skip the render.
+// the user is typing in an input/search, skip this tick. True -> skip the render.
 function shouldSkipAutoRefresh() {
   const modalOpen = document.querySelector('.modal-overlay');
   const ae = document.activeElement;

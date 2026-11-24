@@ -1,5 +1,5 @@
 'use strict';
-// Proxies & SSL → Certificates → "Why? · fix" (server/cert-doctor.js): the address checks and the fetch that asks
+// Proxies & SSL > Certificates -> "Why?, fix" (server/cert-doctor.js): the address checks and the fetch that asks
 // for the ACME challenge path the way Let's Encrypt does.
 const test = require('node:test');
 const assert = require('node:assert/strict');

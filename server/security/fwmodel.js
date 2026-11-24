@@ -1,6 +1,6 @@
 // Firewall rule model shared by UFW and firewalld, in the shape cloud firewalls use (Hetzner, GCP):
-// a rule = direction · action · protocol · port (or range) · a set of remote addresses (sources for
-// inbound, destinations for outbound) · description. On the server one rule is many firewall entries
+// a rule = direction, action, protocol, port (or range), a set of remote addresses (sources for
+// inbound, destinations for outbound), description. On the server one rule is many firewall entries
 // (one per address, v4 and v6 separately); this module groups them back into rules and turns an
 // edited rule into the exact commands that get the server there.
 //
@@ -12,7 +12,7 @@ const httpError = P.httpError;
 const PORT_RE = /^(\d{1,5})(?:[:-](\d{1,5}))?$/;
 
 // ---------------------------------------------------------------- validation
-/** '' → null (any port) · '443' · '8000-8100' (stored with '-'). */
+/** '' -> null (any port), '443', '8000-8100' (stored with '-'). */
 function normPort(v) {
   const s = String(v == null ? '' : v).trim();
   if (!s || s.toLowerCase() === 'any') return null;
@@ -42,7 +42,7 @@ const ruleKey = (r) => `${r.dir}|${r.action}|${r.proto || 'any'}|${r.port || 'an
 // ---------------------------------------------------------------- reading UFW
 const ADDR_ANY = /^Anywhere(?:\/(tcp|udp))?$/;
 const PORTTOK = /^(\d{1,5}(?::\d{1,5})?)(?:\/(tcp|udp))?$/;
-/** "Anywhere" · "443/tcp" · "1.2.3.4" · "1.2.3.4/tcp" · "10.0.0.0/8 8000:8100/tcp" → { addr, port, proto } | { bad } */
+/** "Anywhere", "443/tcp", "1.2.3.4", "1.2.3.4/tcp", "10.0.0.0/8 8000:8100/tcp" -> { addr, port, proto } | { bad } */
 function parseLoc(loc, v6) {
   const s = String(loc || '').replace(/\s*\(v6\)/g, '').trim();
   if (/ on \S+/.test(s)) return { bad: 'an interface-specific rule' };
@@ -66,7 +66,7 @@ function parseLoc(loc, v6) {
   return { addr, port, proto };
 }
 
-/** One `ufw status numbered` rule → its meaning, or { locked } when DockGate cannot edit it. */
+/** One `ufw status numbered` rule -> its meaning, or { locked } when DockGate cannot edit it. */
 function ufwSemantic(r) {
   const action = { ALLOW: 'allow', DENY: 'deny', REJECT: 'deny', LIMIT: 'limit' }[r.action];
   const route = r.dir === 'FWD';
@@ -108,7 +108,7 @@ function fwdSemantic(r) {
 
 /**
  * Group firewall entries into rules.
- *   backend: 'ufw' | 'firewalld' · rules: parsed rules · lists: IP lists · dockgateIp
+ *   backend: 'ufw' | 'firewalld', rules: parsed rules, lists: IP lists, dockgateIp
  * Returns { groups: [...], locked: [...entries DockGate cannot edit] }.
  */
 function groupRules({ backend, rules, lists, dockgateIp }) {
@@ -145,8 +145,8 @@ function familyOf(remotes) {
   return v4 && v6 ? 'IPv4 + IPv6' : (v6 ? 'IPv6 only' : 'IPv4 only');
 }
 
-// ---------------------------------------------------------------- display sources → remotes
-/** ['any4','any6','@cloudflare','1.2.3.4', 'any'(= both)] → [{ remote, tag }] (deduplicated, validated). */
+// ---------------------------------------------------------------- display sources -> remotes
+/** ['any4','any6','@cloudflare','1.2.3.4', 'any'(= both)] -> [{ remote, tag }] (deduplicated, validated). */
 function expandRemotes(sources, lists, dockgateIp) {
   const out = [], seen = new Set();
   const push = (remote, tag) => { if (!seen.has(remote)) { seen.add(remote); out.push({ remote, tag }); } };
@@ -216,7 +216,7 @@ function planChange({ backend, zone, old, want }) {
   if (backend === 'firewalld') {
     // a plain firewalld port is ONE entry for both families: removing one half would remove both
     const keptKeys = new Set(cur.filter(e => !remove.includes(e) && e.fwd).map(e => e.fwd.kind + '|' + e.fwd.key));
-    if (remove.some(e => e.fwd && keptKeys.has(e.fwd.kind + '|' + e.fwd.key))) throw httpError(400, 'On firewalld "Any IPv4" and "Any IPv6" of a port are one entry — keep or remove both');
+    if (remove.some(e => e.fwd && keptKeys.has(e.fwd.kind + '|' + e.fwd.key))) throw httpError(400, 'On firewalld "Any IPv4" and "Any IPv6" of a port are one entry - keep or remove both');
     return { add, remove, cmds: fwdCmds({ zone, want, add, remove }) };
   }
   const cmds = [
@@ -228,10 +228,10 @@ function planChange({ backend, zone, old, want }) {
 function fwdCmds({ zone, want, add, remove }) {
   const plans = require('./plans');
   const out = [];
-  if (want && want.dir === 'out') throw httpError(400, 'Outbound rules need UFW — firewalld filters incoming traffic here');
+  if (want && want.dir === 'out') throw httpError(400, 'Outbound rules need UFW - firewalld filters incoming traffic here');
   if (want && add.length) {
     const port = want.port, proto = want.proto;
-    if (!port) { if (add.some(a => a.remote === 'any4' || a.remote === 'any6')) throw httpError(400, 'Allowing every port from anyone is the zone default — change the default instead'); }
+    if (!port) { if (add.some(a => a.remote === 'any4' || a.remote === 'any6')) throw httpError(400, 'Allowing every port from anyone is the zone default - change the default instead'); }
     if (port && !proto) throw httpError(400, 'firewalld needs a protocol (TCP or UDP) for a port');
     const has4 = add.some(a => a.remote === 'any4'), has6 = add.some(a => a.remote === 'any6');
     const zoneArg = `--zone=${zone}`;

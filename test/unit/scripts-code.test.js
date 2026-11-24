@@ -1,5 +1,5 @@
 'use strict';
-// Server Console → Scripts: own code, scripts added from the server, the bash -n check, and a blocks script
+// Server Console > Scripts: own code, scripts added from the server, the bash -n check, and a blocks script
 // whose file was changed by hand (409 CHANGED). The "server" is this machine through shims (no sudo here).
 const test = require('node:test');
 const assert = require('node:assert/strict');

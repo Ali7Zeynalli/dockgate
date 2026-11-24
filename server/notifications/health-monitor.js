@@ -1,4 +1,4 @@
-// Server health monitor — once a minute every server is asked for one short snapshot (the same command the
+// Server health monitor - once a minute every server is asked for one short snapshot (the same command the
 // Monitoring page uses: CPU, memory, disks) over SSH; the local machine is read directly. A server that does
 // not answer for a few minutes raises "Server not reachable", and "reachable again" when it is back. Disk,
 // memory and CPU are compared with the rule limits (shared, or the server's own). Remote samples are also
@@ -17,12 +17,12 @@ const R = require('./alert-rules');
 
 const INTERVAL_MS = 60 * 1000;
 const CONCURRENCY = 3;
-const state = new Map();     // serverId → evaluate() state
-const lastSent = new Map();  // `${serverId}:${type}` → ms
+const state = new Map();     // serverId -> evaluate() state
+const lastSent = new Map();  // `${serverId}:${type}` -> ms
 let timer = null, running = false;
 
 const fmtDur = (ms) => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
-// Times in the timezone chosen in Settings → General (UTC when it is "auto" — the server cannot know the browser's).
+// Times in the timezone chosen in Settings > General (UTC when it is "auto" - the server cannot know the browser's).
 const hhmm = (ms) => {
   let tz = 'UTC';
   try { const v = stmts.getSetting.get('timezone')?.value; if (v && v !== 'auto') tz = v; } catch (e) { /* default */ }
@@ -30,7 +30,7 @@ const hhmm = (ms) => {
   catch (e) { return new Date(ms).toISOString().slice(11, 16) + ' UTC'; }
 };
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const pct = (v) => (v == null ? '—' : `${Math.round(v)}%`);
+const pct = (v) => (v == null ? '-' : `${Math.round(v)}%`);
 
 function serverLabel(s) { return s.id === 'local' ? 'This machine (DockGate host)' : (s.name || s.id); }
 
@@ -44,7 +44,7 @@ function notificationsOn(serverId) {
 function message(type, s, data) {
   const name = serverLabel(s);
   const where = s.host ? ` (${s.host}${s.port && s.port !== 22 ? ':' + s.port : ''})` : '';
-  const last = data.last ? `Last seen: CPU ${pct(data.last.cpu)} · memory ${pct(data.last.memPct)} · disk ${pct(data.last.diskPct)}` : '';
+  const last = data.last ? `Last seen: CPU ${pct(data.last.cpu)}, memory ${pct(data.last.memPct)}, disk ${pct(data.last.diskPct)}` : '';
   switch (type) {
     case 'server_down':
       return [`${name} is not reachable`,
@@ -52,14 +52,14 @@ function message(type, s, data) {
         `<p><b>${esc(name)}</b>${esc(where)} has not answered since ${hhmm(data.since)} (${fmtDur(Date.now() - data.since)}).</p><p>${esc(data.error || '')}</p><p>${esc(last)}</p>`];
     case 'server_up':
       return [`${name} is reachable again`,
-        `🟢 ${name} is reachable again\nIt was not reachable for ${fmtDur(data.until - data.since)} (${hhmm(data.since)} – ${hhmm(data.until)}).`,
-        `<p><b>${esc(name)}</b>${esc(where)} answers again. It was not reachable for ${fmtDur(data.until - data.since)} (${hhmm(data.since)} – ${hhmm(data.until)}).</p>`];
+        `🟢 ${name} is reachable again\nIt was not reachable for ${fmtDur(data.until - data.since)} (${hhmm(data.since)} - ${hhmm(data.until)}).`,
+        `<p><b>${esc(name)}</b>${esc(where)} answers again. It was not reachable for ${fmtDur(data.until - data.since)} (${hhmm(data.since)} - ${hhmm(data.until)}).</p>`];
     case 'host_disk': {
-      const d = data.disk; const gb = (b) => (b / 1073741824).toFixed(1); // df -PB1 → bytes
-      const size = d.size ? ` — ${gb(d.used)} GB of ${gb(d.size)} GB used` : '';
+      const d = data.disk; const gb = (b) => (b / 1073741824).toFixed(1); // df -PB1 -> bytes
+      const size = d.size ? ` - ${gb(d.used)} GB of ${gb(d.size)} GB used` : '';
       return [`${name}: disk ${d.mount} is ${d.usePct}% full`,
-        `🟠 ${name}: disk ${d.mount} is ${d.usePct}% full (limit ${data.limit}%)${size}\nFree space with Resources → Prune or remove old files.`,
-        `<p>Disk <code>${esc(d.mount)}</code> on <b>${esc(name)}</b> is <b>${d.usePct}%</b> full (limit ${data.limit}%)${esc(size)}.</p><p>DockGate → Resources → Prune shows what Docker can free.</p>`];
+        `🟠 ${name}: disk ${d.mount} is ${d.usePct}% full (limit ${data.limit}%)${size}\nFree space with Resources > Prune or remove old files.`,
+        `<p>Disk <code>${esc(d.mount)}</code> on <b>${esc(name)}</b> is <b>${d.usePct}%</b> full (limit ${data.limit}%)${esc(size)}.</p><p>DockGate > Resources > Prune shows what Docker can free.</p>`];
     }
     case 'host_mem':
       return [`${name}: memory above ${data.limit}%`,
@@ -94,7 +94,7 @@ function queueRetry(item) {
 async function flushRetries() {
   const items = retryQueue.splice(0, retryQueue.length);
   for (const it of items) {
-    const late = ` (sent late — first tried at ${hhmm(it.firstAt)})`;
+    const late = ` (sent late - first tried at ${hhmm(it.firstAt)})`;
     const [first, ...rest] = it.text.split('\n');
     const ok = await deliver(it.type, it.s, it.subject + late, [first + late, ...rest].join('\n'), it.body + `<p style="color:#888">${esc(late.trim())}</p>`, { always: true, retry: false });
     if (!ok && ++it.tries < RETRY_TRIES && anyChannel()) retryQueue.push(it);
@@ -117,7 +117,7 @@ async function deliver(type, s, subject, text, body, { always = false, retry = f
   if (!always && cd > 0 && lastSent.has(key) && Date.now() - lastSent.get(key) < cd * 60000) return false;
   let sent = false;
   try {
-    if (mailer.isConfigured()) { const r = await mailer.sendEmail({ subject: `DockGate: ${subject}`, html: `<div style="font-family:system-ui,sans-serif;font-size:14px">${body}<p style="color:#888;font-size:12px">Sent by DockGate · rule "${esc(rule ? rule.description : type)}"</p></div>`, eventType: type }); if (r && r.success) sent = true; }
+    if (mailer.isConfigured()) { const r = await mailer.sendEmail({ subject: `DockGate: ${subject}`, html: `<div style="font-family:system-ui,sans-serif;font-size:14px">${body}<p style="color:#888;font-size:12px">Sent by DockGate, rule "${esc(rule ? rule.description : type)}"</p></div>`, eventType: type }); if (r && r.success) sent = true; }
     if (telegram.isConfigured()) { const r = await telegram.sendMessage({ text, eventType: type }); if (r && r.success) sent = true; }
     if (webhook.isConfigured()) { const r = await webhook.sendMessage({ title: subject, text: text.split('\n').slice(1).join('\n'), eventType: type, server: s.id }); if (r && r.success) sent = true; }
   } catch (e) { console.warn('[alerts] send failed:', e.message); }
@@ -161,7 +161,7 @@ async function checkOne(s) {
   const rules = rulesFor(s.id);
   // Sampled even when every alert rule is off: the sample is also Monitoring's 48-hour history.
   const sample = await sampleServer(s).catch(e => (s.id === 'local' ? null : { ok: false, error: e.message }));
-  if (!sample) return; // local read failed (no /proc) — never report the DockGate host itself as down
+  if (!sample) return; // local read failed (no /proc) - never report the DockGate host itself as down
   const { state: next, alerts } = R.evaluate(state.get(s.id), sample, Date.now(), rules);
   state.set(s.id, next);
   for (const a of alerts) await send(a.type, s, a.data);

@@ -1,7 +1,7 @@
-// Image update — one place for the "newer image" flow used by Containers and the container detail page:
-// the confirm dialog (version before → after), the live job window (steps + log, can be closed and
+// Image update - one place for the "newer image" flow used by Containers and the container detail page:
+// the confirm dialog (version before -> after), the live job window (steps + log, can be closed and
 // reopened), the update history table, the stored log of a past run and the roll back.
-// Server side: server/image-update-runner.js (routes under /api/containers/…/image-update(s)).
+// Server side: server/image-update-runner.js (routes under /api/containers/.../image-update(s)).
 
 const ImageUpdate = (() => {
   const short = (id) => String(id || '').replace(/^sha256:/, '').slice(0, 12);
@@ -10,11 +10,11 @@ const ImageUpdate = (() => {
   const iso = (ms) => (ms ? new Date(Number(ms)).toISOString() : '');
   const major = (v) => { const m = String(v || '').match(/(\d+)/); return m ? Number(m[1]) : null; };
 
-  /** "15.8 → 15.19" for a newer-image check row (falls back to digests). */
+  /** "15.8 -> 15.19" for a newer-image check row (falls back to digests). */
   function checkChange(c) {
     if (!c) return '';
     if (c.local_version && c.local_version === c.remote_version) return `newer build of ${escapeHtml(c.remote_version)}`;
-    return `${ver(c.local_version, c.local_digest)} → ${ver(c.remote_version, c.remote_digest)}`;
+    return `${ver(c.local_version, c.local_digest)} -> ${ver(c.remote_version, c.remote_digest)}`;
   }
 
   function resultPill(r) {
@@ -22,7 +22,7 @@ const ImageUpdate = (() => {
       case 'running': return UI.pill('warn', 'Running');
       case 'updated': return UI.pill('ok', r.kind === 'rollback' ? 'Rolled back' : 'Updated');
       case 'no_change': return UI.pill('off', 'Already newest');
-      case 'rolled_back': return UI.pill('warn', 'Failed · previous image restored');
+      case 'rolled_back': return UI.pill('warn', 'Failed, previous image restored');
       default: return UI.pill('bad', 'Failed');
     }
   }
@@ -33,8 +33,8 @@ const ImageUpdate = (() => {
     const m = showModal(escapeHtml(title || 'Image update'), `
       <div id="iu-steps" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px"></div>
       <div id="iu-log"></div>
-      <div id="iu-status" style="margin-top:10px;font-size:13px;font-weight:600;color:var(--text-muted)">⏳ Working…</div>
-      <div class="ui-sub" style="margin-top:4px">Closing this window does not stop the update. Reopen it from the container's Updates tab or Containers → Update history.</div>`, []);
+      <div id="iu-status" style="margin-top:10px;font-size:13px;font-weight:600;color:var(--text-muted)">⏳ Working...</div>
+      <div class="ui-sub" style="margin-top:4px">Closing this window does not stop the update. Reopen it from the container's Updates tab or Containers > Update history.</div>`, []);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     const footer = m.overlay.querySelector('#modal-footer');
     const closeBtn = document.createElement('button');
@@ -44,7 +44,7 @@ const ImageUpdate = (() => {
     m.overlay.querySelector('.modal-close').onclick = close;
     m.overlay.onclick = (e) => { if (e.target === m.overlay) close(); };
     footer.appendChild(closeBtn);
-    const viewer = LogViewer.mount(m.overlay.querySelector('#iu-log'), { key: 'image-update', fileName: `image-update-${jobId}`, live: true, limits: null, compact: true, height: '300px', empty: 'Starting…' });
+    const viewer = LogViewer.mount(m.overlay.querySelector('#iu-log'), { key: 'image-update', fileName: `image-update-${jobId}`, live: true, limits: null, compact: true, height: '300px', empty: 'Starting...' });
     let sent = 0, finished = false, sawRunning = false, timer = null;
     const feed = (log, all) => { const lines = String(log || '').split('\n'); const upto = all ? lines.length : lines.length - 1; if (upto > sent) { viewer.push(lines.slice(sent, upto).join('\n')); sent = upto; } };
     const icon = { pending: '○', running: '⏳', done: '✓', failed: '✗' };
@@ -61,8 +61,8 @@ const ImageUpdate = (() => {
         if (j.status !== 'running' && !finished) {
           finished = true;
           const r = (j.result || {}).status;
-          const msg = { updated: j.kind === 'rollback' ? '✓ Rolled back' : '✓ Updated', no_change: '✓ Already the newest image — nothing changed',
-            rolled_back: `⚠ The new container failed (${j.error || ''}) — the previous image is running again`, failed: `✗ Failed: ${j.error || ''}` }[r] || '✗ Failed';
+          const msg = { updated: j.kind === 'rollback' ? '✓ Rolled back' : '✓ Updated', no_change: '✓ Already the newest image - nothing changed',
+            rolled_back: `⚠ The new container failed (${j.error || ''}) - the previous image is running again`, failed: `✗ Failed: ${j.error || ''}` }[r] || '✗ Failed';
           if (se) { se.style.color = r === 'updated' || r === 'no_change' ? '#16a34a' : r === 'rolled_back' ? '#d97706' : '#dc2626'; se.textContent = msg; }
           closeBtn.className = 'btn btn-primary';
           if (sawRunning) { showToast(msg.replace(/^[✓⚠✗] /, ''), r === 'updated' || r === 'no_change' ? 'success' : 'error', 9000); endedJob = j; if (onDone && !afterClose) onDone(j); }
@@ -79,7 +79,7 @@ const ImageUpdate = (() => {
   }
 
   // ---- confirm + start ----
-  /** ctx: { id, name, image, project, service, check } — check is the newer-image row (may be null). */
+  /** ctx: { id, name, image, project, service, check } - check is the newer-image row (may be null). */
   function confirmUpdate(ctx, onDone, jobOpts) {
     const c = ctx.check || {};
     const inStack = ctx.project && ctx.service;
@@ -89,8 +89,8 @@ const ImageUpdate = (() => {
         ? `recreates only service <b>${escapeHtml(ctx.service)}</b> of stack <b>${escapeHtml(ctx.project)}</b> (<span class="td-mono">docker compose up -d --no-deps ${escapeHtml(ctx.service)}</span>)`
         : 'recreates the container with the same settings (the old one is kept stopped until the new one runs)'} and watches the new container for a few seconds${' '}(and its healthcheck, if it has one).`;
     const protects = `If the new container stops, keeps restarting or turns unhealthy, the previous image is put back automatically. Volumes are not touched and ${inStack ? 'the compose file is not changed' : 'settings stay the same'}.`
-      + (majorJump ? `<div style="margin-top:6px;color:var(--danger,#dc2626)"><b>Major version change (${escapeHtml(c.local_version)} → ${escapeHtml(c.remote_version)}).</b> A database may convert its data files on the first start and the old version can not read them back — back up the volume first.</div>` : '');
-    const undo = 'Roll back from the container\'s Updates tab while the previous image is on the server (DockGate keeps the last one; a full image prune removes it). A roll back changes the image only — data a new version already converted stays converted.';
+      + (majorJump ? `<div style="margin-top:6px;color:var(--danger,#dc2626)"><b>Major version change (${escapeHtml(c.local_version)} -> ${escapeHtml(c.remote_version)}).</b> A database may convert its data files on the first start and the old version can not read them back - back up the volume first.</div>` : '');
+    const undo = 'Roll back from the container\'s Updates tab while the previous image is on the server (DockGate keeps the last one; a full image prune removes it). A roll back changes the image only - data a new version already converted stays converted.';
     secConfirm({ title: `Update ${ctx.name}`, change, protects, undo, confirmLabel: 'Pull and update', onConfirm: async () => {
       try {
         const r = await API.post(`/containers/${encodeURIComponent(ctx.id)}/image-update`, {});
@@ -101,9 +101,9 @@ const ImageUpdate = (() => {
 
   function confirmRollback(row, onDone, jobOpts) {
     secConfirm({ title: `Roll back ${row.container_name}`,
-      change: `<b>${escapeHtml(row.image)}</b> goes back to the image it ran before the update of ${escapeHtml(formatTime(iso(row.started_at)))}: ${ver(row.to_version, row.to_image_id)} → <b>${ver(row.from_version, row.from_image_id)}</b>. The tag on the server is pointed at that image and the ${row.project ? `service <b>${escapeHtml(row.service)}</b> is` : 'container is'} recreated.`,
-      protects: 'The same check runs as for an update: if the container does not stay up, the current image is put back. The compose file is not changed — the next Update pulls the newest image again.',
-      undo: 'Update again — the newer image is pulled from the registry.',
+      change: `<b>${escapeHtml(row.image)}</b> goes back to the image it ran before the update of ${escapeHtml(formatTime(iso(row.started_at)))}: ${ver(row.to_version, row.to_image_id)} -> <b>${ver(row.from_version, row.from_image_id)}</b>. The tag on the server is pointed at that image and the ${row.project ? `service <b>${escapeHtml(row.service)}</b> is` : 'container is'} recreated.`,
+      protects: 'The same check runs as for an update: if the container does not stay up, the current image is put back. The compose file is not changed - the next Update pulls the newest image again.',
+      undo: 'Update again - the newer image is pulled from the registry.',
       confirmLabel: 'Roll back', onConfirm: async () => {
         try {
           const r = await API.post(`/containers/image-updates/${row.id}/rollback`, {});
@@ -115,7 +115,7 @@ const ImageUpdate = (() => {
   async function showLog(id) {
     try {
       const r = await API.get(`/containers/image-updates/${id}/log`);
-      const m = showModal(`Update log · ${escapeHtml(r.container_name)}`, '<div id="iu-past-log"></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+      const m = showModal(`Update log, ${escapeHtml(r.container_name)}`, '<div id="iu-past-log"></div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
       m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
       const v = LogViewer.mount(m.overlay.querySelector('#iu-past-log'), { key: 'image-update', fileName: `image-update-${id}`, live: false, limits: null, compact: true, height: '380px', empty: 'No log stored.' });
       v.setText(r.log || '');
@@ -129,9 +129,9 @@ const ImageUpdate = (() => {
       `<span class="text-sm" title="${escapeHtml(formatTime(iso(r.started_at)))}">${escapeHtml(timeAgo(iso(r.started_at)))}</span><div class="ui-sub">${r.kind === 'rollback' ? 'Roll back' : 'Update'}</div>`,
       ...(container ? [`<b>${escapeHtml(r.container_name)}</b>${r.project ? `<div class="ui-sub">${escapeHtml(r.project)} / ${escapeHtml(r.service)}</div>` : ''}`] : []),
       `<span class="td-mono text-sm">${escapeHtml(r.image)}</span>`,
-      `<span class="text-sm">${ver(r.from_version, r.from_image_id)} → ${r.to_image_id || r.to_version ? ver(r.to_version, r.to_image_id) : '…'}</span>${r.to_digest ? `<div class="ui-sub td-mono" title="${escapeHtml(r.to_digest)}">${escapeHtml(short(r.from_digest))} → ${escapeHtml(short(r.to_digest))}</div>` : ''}`,
+      `<span class="text-sm">${ver(r.from_version, r.from_image_id)} -> ${r.to_image_id || r.to_version ? ver(r.to_version, r.to_image_id) : '...'}</span>${r.to_digest ? `<div class="ui-sub td-mono" title="${escapeHtml(r.to_digest)}">${escapeHtml(short(r.from_digest))} -> ${escapeHtml(short(r.to_digest))}</div>` : ''}`,
       `${resultPill(r)}${r.error ? `<div class="ui-sub" style="max-width:280px;white-space:normal">${escapeHtml(r.error.slice(0, 160))}</div>` : ''}`,
-      `<span class="ui-sub">${escapeHtml(r.source_ip || '—')}</span>`,
+      `<span class="ui-sub">${escapeHtml(r.source_ip || '-')}</span>`,
       (r.status === 'running' && r.job_id ? UI.btn('Open', `data-iu-job="${escapeHtml(r.job_id)}" data-iu-name="${escapeHtml(r.container_name)}"`, 'btn-primary') : UI.btn('Log', `data-iu-log="${r.id}"`))
         + (rollbackId === r.id ? ' ' + UI.btn('Roll back', `data-iu-rollback="${r.id}"`) : ''),
     ] })), { empty, minWidth: container ? 860 : 720 });
@@ -145,15 +145,15 @@ const ImageUpdate = (() => {
     }));
   }
 
-  /** Containers → Update history: every update on the server in use. */
+  /** Containers > Update history: every update on the server in use. */
   async function openHistory() {
-    const m = showModal('Image update history', '<div id="iu-hist" class="text-sm text-muted">Loading…</div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const m = showModal('Image update history', '<div id="iu-hist" class="text-sm text-muted">Loading...</div>', [{ label: 'Close', className: 'btn btn-secondary' }]);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     const load = async () => {
       const el = m.overlay.querySelector('#iu-hist'); if (!el) return;
       try {
         const { rows } = await API.get('/containers/image-updates/history?limit=200');
-        el.innerHTML = `<div class="ui-sub" style="margin-bottom:8px">Updates and roll backs started from DockGate on this server, newest first (the last 50 per container are kept). Roll back is offered on the container's page → Updates.</div>${historyTable(rows, { container: true })}`;
+        el.innerHTML = `<div class="ui-sub" style="margin-bottom:8px">Updates and roll backs started from DockGate on this server, newest first (the last 50 per container are kept). Roll back is offered on the container's page > Updates.</div>${historyTable(rows, { container: true })}`;
         bindHistory(el, rows, load);
       } catch (e) { el.innerHTML = UI.errorState(e, { compact: true }); }
     };

@@ -1,4 +1,4 @@
-// Isolated host-stats worker — connects over ssh2, runs the one-shot stats command, parses it with the
+// Isolated host-stats worker - connects over ssh2, runs the one-shot stats command, parses it with the
 // shared parsers, and writes the snapshot JSON to stdout. Forked (like grant-docker/provision workers)
 // so its connection never contends with the main-process EventMonitor connections to the same host.
 delete process.env.SSH_AUTH_SOCK;

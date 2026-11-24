@@ -2,12 +2,12 @@
 //
 // A rule per service:
 //   - min / max replicas, and how many replicas one change adds or removes (step);
-//   - add when CPU is at or above `cpuUp` — and/or memory at or above `memUp` — for `upMinutes`;
+//   - add when CPU is at or above `cpuUp` - and/or memory at or above `memUp` - for `upMinutes`;
 //     measured as the average of the replicas, or "every replica is busy" (the least busy one is over);
 //   - remove when CPU is at or below `cpuDown` and memory at or below `memDown` (both) for `downMinutes`;
 //   - wait `coolUpMinutes` after adding and `coolDownMinutes` after removing before the next change.
 // CPU per replica is the % of its CPU limit (or of one core without one); memory is the % of its memory
-// limit (no limit → memory is not used). Only the service under load changes; the others are left alone.
+// limit (no limit -> memory is not used). Only the service under load changes; the others are left alone.
 //
 // The engine runs on the manager the rule was saved on, whatever server is picked at the top. CPU and
 // memory come from `docker stats` on each node's DockGate server: tasks on nodes not in DockGate are left
@@ -178,7 +178,7 @@ function room(cap, cpuRes, memRes) {
 }
 
 
-// ---- suggestions from the last 48 hours (Services → Graphs samples, every 2 minutes) ----
+// ---- suggestions from the last 48 hours (Services > Graphs samples, every 2 minutes) ----
 const MBy = 1048576;
 const pct = (arr, p) => { if (!arr.length) return 0; const a = [...arr].sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.max(0, Math.ceil(p / 100 * a.length) - 1))]; };
 const up = (v, step) => Math.ceil(v / step - 1e-9) * step;
@@ -231,12 +231,12 @@ function suggestFrom(list, cap, thresholds = { cpuUp: 80, memUp: 70 }) {
     enough, hours, notes,
     values: { cpuLimit, cpuReserve, memLimit: memLimitMb, memReserve: memReserveMb, min, max, memOn: memSwing },
     why: {
-      cpuLimit: `${big.name} used up to ${cores(big.cpu95)} per replica (95% of the time) — ${cpuFloor ? 'the smallest sensible limit' : 'limit is 1.5×'}`,
-      cpuReserve: `usual use per replica: ${cores(big.cpu50)}${big.cpu50 < 0.05 ? ' — the smallest sensible guarantee' : ''}`,
-      memLimit: `peak ${mbs(bigMem.memMax)} per replica — ${memFloor ? 'the smallest sensible limit' : 'limit is 1.5×'}`,
-      memReserve: `usual memory per replica: ${mbs(bigMem.mem50)}${bigMem.mem50 < 32 * MBy ? ' — the smallest sensible guarantee' : ''}`,
+      cpuLimit: `${big.name} used up to ${cores(big.cpu95)} per replica (95% of the time) - ${cpuFloor ? 'the smallest sensible limit' : 'limit is 1.5×'}`,
+      cpuReserve: `usual use per replica: ${cores(big.cpu50)}${big.cpu50 < 0.05 ? ' - the smallest sensible guarantee' : ''}`,
+      memLimit: `peak ${mbs(bigMem.memMax)} per replica - ${memFloor ? 'the smallest sensible limit' : 'limit is 1.5×'}`,
+      memReserve: `usual memory per replica: ${mbs(bigMem.mem50)}${bigMem.mem50 < 32 * MBy ? ' - the smallest sensible guarantee' : ''}`,
       min: `the usual load fits in ${min} replica${min === 1 ? '' : 's'} at ${thresholds.cpuUp}% CPU`,
-      max: `the busiest moment needed ${need} — maximum is 1.5× that${notes.length && /fit on the servers/.test(notes[0]) ? ', cut to what fits' : ''}`,
+      max: `the busiest moment needed ${need} - maximum is 1.5× that${notes.length && /fit on the servers/.test(notes[0]) ? ', cut to what fits' : ''}`,
       memOn: memSwing ? `memory went from ${mbs(bigMem.mem50)} to ${mbs(bigMem.memMax)}: it rises with load` : 'memory stayed about the same: CPU alone is enough',
     },
     running,
@@ -257,8 +257,8 @@ async function suggest(serviceIds) {
 }
 
 // ---- the engine ----
-const buffers = new Map(); // `${cluster}:${service}` → samples, last hour
-const lastSeen = new Map(); // same key → last measure
+const buffers = new Map(); // `${cluster}:${service}` -> samples, last hour
+const lastSeen = new Map(); // same key -> last measure
 let timer = null, busy = false;
 
 async function scaleTo(c, svc, to) {
@@ -270,7 +270,7 @@ async function notify(row, svc, subject, text, html) {
   try { const HM = require('./notifications/health-monitor'); await HM.deliver('swarm_autoscale', serverRow(row.server_id), subject, text, html, { always: true }); } catch (e) { /* best effort */ }
 }
 function record(row, svc, now, from, to, reason, ok, dir) {
-  if (dir) q.last.run(now, ok ? `${from} → ${to}` : 'failed', reason, dir, row.cluster_id, row.service_id);
+  if (dir) q.last.run(now, ok ? `${from} -> ${to}` : 'failed', reason, dir, row.cluster_id, row.service_id);
   q.log.run(row.cluster_id, row.service_id, svc.Spec.Name, now, from, to, reason, ok ? 1 : 0);
   try { require('./audit').logAction({ sourceIp: 'autoscale', server: row.server_id, resourceType: 'swarm-service', resourceId: svc.ID, resourceName: svc.Spec.Name, action: 'swarm_autoscale', details: { from, to, reason, ok: !!ok } }); } catch (e) { /* best effort */ }
 }
@@ -291,7 +291,7 @@ async function tickRule(row, now) {
   // A replica added earlier that fits nowhere: say so once.
   if (m.pending && !(prev && prev.pending)) {
     record(row, svc, now, m.tasks, svc.Spec.Mode.Replicated.Replicas, `not placed: ${m.pending}`, 0, null);
-    await notify(row, svc, `${svc.Spec.Name}: a replica does not fit`, `🟠 ${svc.Spec.Name}: a new replica waits — ${m.pending}`, `<p><b>${svc.Spec.Name}</b>: a new replica waits.</p><p>${m.pending}</p>`);
+    await notify(row, svc, `${svc.Spec.Name}: a replica does not fit`, `🟠 ${svc.Spec.Name}: a new replica waits - ${m.pending}`, `<p><b>${svc.Spec.Name}</b>: a new replica waits.</p><p>${m.pending}</p>`);
   }
   const buf = (buffers.get(key) || []).filter(s => s.t > now - 3600000);
   if (m.cpu !== null) buf.push({ t: now, cpu: m.cpu, cpuMin: m.cpuMin, cpuMax: m.cpuMax, mem: m.mem, memMin: m.memMin, memMax: m.memMax });
@@ -302,11 +302,11 @@ async function tickRule(row, now) {
   if (d.action === 'up' && pendingPolicy() === 'skip' && m.pending) return; // the last one does not fit yet: do not ask for more
   let ok = 1, reason = d.reason;
   try { await scaleTo(c, svc, d.to); }
-  catch (e) { ok = 0; reason = `${d.reason} — scaling failed: ${String(e.message || e).slice(0, 200)}`; }
+  catch (e) { ok = 0; reason = `${d.reason} - scaling failed: ${String(e.message || e).slice(0, 200)}`; }
   record(row, svc, now, replicas, d.to, reason, ok, d.action);
   buffers.set(key, []); // measure the new number of replicas from scratch
   const verb = !ok ? '🔴 could not scale' : d.action === 'up' ? '🔼 scaled up' : '🔽 scaled down';
-  await notify(row, svc, `${svc.Spec.Name} ${ok ? `${replicas} → ${d.to} replicas` : 'autoscale failed'}`, `${verb}: ${svc.Spec.Name}\n${replicas} → ${d.to} replicas\n${reason}`, `<p><b>${verb}</b>: ${svc.Spec.Name}</p><p>${replicas} → ${d.to} replicas</p><p>${reason}</p>`);
+  await notify(row, svc, `${svc.Spec.Name} ${ok ? `${replicas} -> ${d.to} replicas` : 'autoscale failed'}`, `${verb}: ${svc.Spec.Name}\n${replicas} -> ${d.to} replicas\n${reason}`, `<p><b>${verb}</b>: ${svc.Spec.Name}</p><p>${replicas} -> ${d.to} replicas</p><p>${reason}</p>`);
 }
 
 async function tick(now = Date.now()) {
@@ -428,9 +428,9 @@ async function saveRules(serviceIds, body, { sourceIp } = {}) {
   const svcs = [];
   for (const id of ids) {
     const svc = await c.getService(id).inspect();
-    if (!svc.Spec.Mode.Replicated) throw bad(400, `${svc.Spec.Name} is global: it runs one task on every server — autoscale works for replicated services`);
+    if (!svc.Spec.Mode.Replicated) throw bad(400, `${svc.Spec.Name} is global: it runs one task on every server - autoscale works for replicated services`);
     const img = svc.Spec.TaskTemplate.ContainerSpec.Image || '';
-    if (isDb(img)) throw bad(400, `${svc.Spec.Name}: ${img.split(':')[0].split('@')[0]} looks like a database. More replicas would be separate databases, not copies — autoscale is not offered for it.`);
+    if (isDb(img)) throw bad(400, `${svc.Spec.Name}: ${img.split(':')[0].split('@')[0]} looks like a database. More replicas would be separate databases, not copies - autoscale is not offered for it.`);
     const lim = limitsOf(svc);
     if (r.memUp !== null && !lim.mem && !(res && res.memLimit)) throw bad(400, `${svc.Spec.Name} has no memory limit: set one (Each replica) so memory % can be measured`);
     svcs.push(svc);

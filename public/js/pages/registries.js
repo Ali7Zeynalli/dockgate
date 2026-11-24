@@ -1,4 +1,4 @@
-// Registries Page — manage private image-registry credentials (ghcr.io, GitLab, Docker Hub private, …).
+// Registries Page - manage private image-registry credentials (ghcr.io, GitLab, Docker Hub private, ...).
 // Stored credentials are auto-matched by registry host when pulling/pushing images, so private
 // images "just work" from the Run modal, Images pull, and Compose. Passwords are never shown back.
 async function renderRegistriesInto(content, { embedded = false } = {}) {
@@ -40,7 +40,7 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
           <td>
             <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
             <button class="btn btn-secondary btn-xs" data-test="${r.id}">${Icons.refresh} Test login</button>
-            ${UI.menu([{ label: 'Edit…', attrs: `data-edit="${r.id}"` }, '-', { label: `${Icons.trash} Remove…`, attrs: `data-del="${r.id}" data-addr="${escapeHtml(r.server_address)}"`, danger: true }])}
+            ${UI.menu([{ label: 'Edit...', attrs: `data-edit="${r.id}"` }, '-', { label: `${Icons.trash} Remove...`, attrs: `data-del="${r.id}" data-addr="${escapeHtml(r.server_address)}"`, danger: true }])}
             </div>
           </td>
         </tr>`).join('');
@@ -53,14 +53,14 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
   // Browse the repositories tracked under a registry (auto-tracked on push + user-pinned), and list a
   // repo's tags via the registry v2 API (digest/size fetched lazily per tag on click).
   function openBrowse(reg) {
-    const m = showModal(`Browse — ${escapeHtml(reg.name || reg.server_address)}`, `
+    const m = showModal(`Browse - ${escapeHtml(reg.name || reg.server_address)}`, `
       <div style="display:flex;flex-direction:column;gap:10px;min-width:520px">
-        <div class="text-xs text-muted">Repositories pushed through DockGate are tracked automatically. ${escapeHtml(regType(reg.server_address))} doesn't always allow listing the whole catalog, so DockGate tracks repos by name — add others below.</div>
+        <div class="text-xs text-muted">Repositories pushed through DockGate are tracked automatically. ${escapeHtml(regType(reg.server_address))} doesn't always allow listing the whole catalog, so DockGate tracks repos by name - add others below.</div>
         <div style="display:flex;gap:6px">
           <input class="input" id="brw-repo" placeholder="owner/app" spellcheck="false" style="flex:1">
           <button class="btn btn-secondary" id="brw-add">Track</button>
         </div>
-        <div id="brw-list"><div class="text-muted text-sm">Loading…</div></div>
+        <div id="brw-list"><div class="text-muted text-sm">Loading...</div></div>
       </div>`, [{ label: 'Close', className: 'btn btn-secondary' }]);
     const root = document.getElementById('modal-root');
     const listEl = root.querySelector('#brw-list');
@@ -103,7 +103,7 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
         const box = listEl.querySelector(`.brw-tags[data-tagsfor="${CSS.escape(repo)}"]`);
         if (!box) return;
         if (box.style.display !== 'none') { box.style.display = 'none'; return; }
-        box.style.display = 'block'; box.innerHTML = '<div class="text-muted text-xs">Loading tags…</div>';
+        box.style.display = 'block'; box.innerHTML = '<div class="text-muted text-xs">Loading tags...</div>';
         try {
           const data = await API.get(`/registries/${reg.id}/tags?repo=${encodeURIComponent(repo)}`);
           const tags = data.tags || [];
@@ -117,10 +117,10 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
       if (mBtn) {
         const repo = mBtn.dataset.manifest, ref = mBtn.dataset.ref;
         const info = listEl.querySelector(`[data-info="${CSS.escape(repo + '|' + ref)}"]`);
-        if (info) info.textContent = '…';
+        if (info) info.textContent = '...';
         try {
           const mi = await API.get(`/registries/${reg.id}/manifest?repo=${encodeURIComponent(repo)}&ref=${encodeURIComponent(ref)}`);
-          if (info) info.textContent = `${mi.size ? formatBytes(mi.size) : ''} ${mi.digest ? mi.digest.slice(0, 19) + '…' : ''}`.trim() || '—';
+          if (info) info.textContent = `${mi.size ? formatBytes(mi.size) : ''} ${mi.digest ? mi.digest.slice(0, 19) + '...' : ''}`.trim() || '-';
         } catch (err) { if (info) info.textContent = '✗ ' + err.message; }
       }
     });
@@ -128,7 +128,7 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
     loadRepos();
   }
 
-  // Add / edit form in a modal. `existing` (a registry row from the table) → edit mode.
+  // Add / edit form in a modal. `existing` (a registry row from the table) -> edit mode.
   function openForm(existing = null) {
     const isEdit = !!existing;
     const body = `
@@ -141,7 +141,7 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
           <label>Registry address *</label>
           <input class="input" id="reg-addr" list="reg-addr-list" placeholder="ghcr.io" value="${existing ? escapeHtml(existing.server_address) : ''}">
           <datalist id="reg-addr-list">${PRESETS.map(p => `<option value="${p}">`).join('')}</datalist>
-          <span class="text-xs text-muted">Host only — e.g. <code>ghcr.io</code>, <code>registry.gitlab.com</code>, <code>docker.io</code> for Docker Hub.<br>GitHub (<code>ghcr.io</code>): password = a Personal Access Token with <code>read:packages</code> (<code>write:packages</code> to push). Then pull using the full ref, e.g. <code>ghcr.io/user/image:tag</code> — the stored credential is attached automatically.</span>
+          <span class="text-xs text-muted">Host only - e.g. <code>ghcr.io</code>, <code>registry.gitlab.com</code>, <code>docker.io</code> for Docker Hub.<br>GitHub (<code>ghcr.io</code>): password = a Personal Access Token with <code>read:packages</code> (<code>write:packages</code> to push). Then pull using the full ref, e.g. <code>ghcr.io/user/image:tag</code> - the stored credential is attached automatically.</span>
         </div>
         <div class="input-group">
           <label>Username *</label>
@@ -169,13 +169,13 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
 
     const val = (id) => root.querySelector('#' + id).value.trim();
 
-    // Test login — uses the form values (or, in edit mode with a blank password, the stored one)
+    // Test login - uses the form values (or, in edit mode with a blank password, the stored one)
     root.querySelector('#reg-test').addEventListener('click', async () => {
       const result = root.querySelector('#reg-test-result');
       const addr = val('reg-addr'), user = val('reg-user'), pass = root.querySelector('#reg-pass').value;
-      result.textContent = 'Testing…'; result.style.color = 'var(--text-secondary)';
+      result.textContent = 'Testing...'; result.style.color = 'var(--text-secondary)';
       try {
-        // Edit mode + blank password → test the stored credential by id
+        // Edit mode + blank password -> test the stored credential by id
         const payload = (isEdit && !pass)
           ? { id: existing.id }
           : { serverAddress: addr, username: user, password: pass };
@@ -195,7 +195,7 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
       if (!user) { showToast('Username is required', 'warning'); return; }
       if (!isEdit && !pass) { showToast('Password is required', 'warning'); return; }
 
-      saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+      saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
       try {
         if (isEdit) {
           await API.put('/registries/' + existing.id, { name, serverAddress: addr, username: user, password: pass });
@@ -248,7 +248,7 @@ async function renderRegistriesInto(content, { embedded = false } = {}) {
     if (testBtn) {
       const id = testBtn.dataset.test;
       const original = testBtn.innerHTML;
-      testBtn.disabled = true; testBtn.textContent = 'Testing…';
+      testBtn.disabled = true; testBtn.textContent = 'Testing...';
       try {
         const res = await API.post('/registries/test', { id });
         showToast('✓ ' + (res.status || 'Login Succeeded'));

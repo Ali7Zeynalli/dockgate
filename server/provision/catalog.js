@@ -1,35 +1,35 @@
-// Provisioning check-matrix — the SINGLE source of truth for both the runner and the read-only
+// Provisioning check-matrix - the SINGLE source of truth for both the runner and the read-only
 // "how it works" explainer. Each item declares, per distro family, a detect / install / verify shell
 // command. Commands run over SSH as the connecting user; privileged steps use `sudo` (the runner gates
 // on sudo/root capability). detect exit 0 => already present => install is skipped (idempotent).
 //
-// SAFETY: commands here are the ONLY thing the runner may execute — the UI can never inject free shell
+// SAFETY: commands here are the ONLY thing the runner may execute - the UI can never inject free shell
 // (it only toggles item ids). Lockout-risky items (firewall, ssh-hardening) carry risk:'high' and are
 // guarded by the runner (key-present check, SSH-allow bundle, explicit confirm).
 
-// apt waits up to 5 min for the dpkg lock instead of failing — on a fresh cloud VPS, cloud-init and
+// apt waits up to 5 min for the dpkg lock instead of failing - on a fresh cloud VPS, cloud-init and
 // unattended-upgrades hold it for the first minutes. DEBIAN_FRONTEND keeps every install non-interactive.
 const APT = 'sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300';
 // Keep locally modified config files on upgrade instead of stopping at dpkg's "keep or replace?" prompt.
 const APT_KEEP_CONF = '-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold';
 // RHEL: EPEL via the epel-release package (Rocky/Alma/CentOS), or the upstream RPM on real RHEL.
 const EPEL = 'sudo dnf -y install epel-release || sudo dnf -y install "https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(rpm -E %rhel).noarch.rpm"';
-// Amazon Linux shares the rhel family but has no EPEL / get.docker.com support — steps branch on this.
+// Amazon Linux shares the rhel family but has no EPEL / get.docker.com support - steps branch on this.
 const IS_AMZN = '[ "$(. /etc/os-release; echo $ID)" = amzn ]';
 
 
-// Swap: a 4 GB /swapfile + swappiness 10 in DockGate's sysctl file (server/swap.js — the same scripts as System → Disks).
+// Swap: a 4 GB /swapfile + swappiness 10 in DockGate's sysctl file (server/swap.js - the same scripts as System > Disks).
 const SWAP = require('../swap');
 
-// Docker daemon.json: log rotation + live-restore. Fresh file → written; existing file → merged with
-// python3 (a backup is kept); no python3 → refuse rather than clobber the admin's config. live-restore is
+// Docker daemon.json: log rotation + live-restore. Fresh file -> written; existing file -> merged with
+// python3 (a backup is kept); no python3 -> refuse rather than clobber the admin's config. live-restore is
 // incompatible with swarm mode, so it is left out there. With no running containers dockerd restarts;
 // otherwise it reloads (the new defaults apply to containers created afterwards either way).
 const DOCKER_CFG_DETECT = 'sudo grep -q \'"max-size"\' /etc/docker/daemon.json 2>/dev/null';
 const DOCKER_CFG_INSTALL = 'LR=true; [ "$(sudo docker info --format \'{{.Swarm.LocalNodeState}}\' 2>/dev/null)" = active ] && LR=false; sudo mkdir -p /etc/docker && ' +
   'if [ ! -s /etc/docker/daemon.json ]; then printf \'{\\n  "log-driver": "json-file",\\n  "log-opts": { "max-size": "10m", "max-file": "3" },\\n  "live-restore": %s\\n}\\n\' "$LR" | sudo tee /etc/docker/daemon.json >/dev/null; ' +
   'elif command -v python3 >/dev/null; then sudo cp -p /etc/docker/daemon.json /etc/docker/daemon.json.dockgate.bak && sudo python3 -c "import json,sys;p=\'/etc/docker/daemon.json\';d=json.load(open(p));d.setdefault(\'log-driver\',\'json-file\');o=d.setdefault(\'log-opts\',{});o.setdefault(\'max-size\',\'10m\');o.setdefault(\'max-file\',\'3\');d.setdefault(\'live-restore\',sys.argv[1]==\'true\');json.dump(d,open(p,\'w\'),indent=2)" "$LR"; ' +
-  'else echo "/etc/docker/daemon.json already exists and python3 is missing — add log-opts by hand"; false; fi && ' +
+  'else echo "/etc/docker/daemon.json already exists and python3 is missing - add log-opts by hand"; false; fi && ' +
   'if [ -z "$(sudo docker ps -q 2>/dev/null)" ]; then sudo systemctl restart docker; else sudo systemctl reload docker; fi';
 
 
@@ -38,14 +38,14 @@ const SSH_DROPIN = '/etc/ssh/sshd_config.d/10-dockgate-access.conf';
 const SSH_LEGACY = '/etc/ssh/sshd_config.d/99-dockgate.conf';
 const SSH_HARDEN_DETECT = `sudo grep -qsi '^MaxAuthTries' ${SSH_DROPIN} ${SSH_LEGACY}`;
 const SSH_HARDEN_INSTALL = `F=${SSH_DROPIN}; L=${SSH_LEGACY}; sudo mkdir -p /etc/ssh/sshd_config.d && ` +
-  `{ sudo test -s $F || echo "# Managed by DockGate (Server Console → Access & SSH). Edit there, not by hand." | sudo tee $F >/dev/null; } && ` +
+  `{ sudo test -s $F || echo "# Managed by DockGate (Server Console > Access & SSH). Edit there, not by hand." | sudo tee $F >/dev/null; } && ` +
   `sudo cp -p $F $F.dockgate-prev && { sudo test -f $L && sudo cp -p $L $L.dockgate-prev; true; } && ` +
   'for kv in "MaxAuthTries 3" "LoginGraceTime 30" "PermitEmptyPasswords no" "X11Forwarding no" "ClientAliveInterval 300" "ClientAliveCountMax 2"; do ' +
   'k=$(echo "$kv" | cut -d" " -f1); sudo grep -qi "^$k " $F || echo "$kv" | sudo tee -a $F >/dev/null; done && sudo rm -f $L && ' +
-  `{ sudo sshd -t || { sudo mv -f $F.dockgate-prev $F; sudo test -f $L.dockgate-prev && sudo mv -f $L.dockgate-prev $L; echo "sshd rejected the config — restored"; false; }; } && ` +
+  `{ sudo sshd -t || { sudo mv -f $F.dockgate-prev $F; sudo test -f $L.dockgate-prev && sudo mv -f $L.dockgate-prev $L; echo "sshd rejected the config - restored"; false; }; } && ` +
   'sudo rm -f $F.dockgate-prev $L.dockgate-prev && (sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true)';
 
-// Fail2ban: DockGate's managed jail + daemon files (same builder as Server Console → Fail2ban), with the
+// Fail2ban: DockGate's managed jail + daemon files (same builder as Server Console > Fail2ban), with the
 // jail on the port sshd really uses, the log file recidive reads, then a clean (re)start.
 const F2B_WRITE = (() => {
   const F2B = require('../security/fail2ban');
@@ -61,30 +61,30 @@ const F2B_WRITE = (() => {
 
 // What each component does to the server, for the Setup table's expandable rows: a one-line summary
 // (`short`), what it installs, writes and sets, and where it is changed later. Kept next to ITEMS so the
-// text follows the commands above; per-distro differences are spelled out (Debian/Ubuntu · RHEL family).
+// text follows the commands above; per-distro differences are spelled out (Debian/Ubuntu, RHEL family).
 const CHANGES = {
-  update: { short: 'Package index + available upgrades', installs: ['Available package upgrades (apt upgrade · dnf upgrade · apk upgrade)'], writes: [], sets: [], editIn: 'Runs every time; nothing to change later.' },
+  update: { short: 'Package index + available upgrades', installs: ['Available package upgrades (apt upgrade, dnf upgrade, apk upgrade)'], writes: [], sets: [], editIn: 'Runs every time; nothing to change later.' },
   'base-utils': { short: 'curl, ca-certificates, gnupg, git', installs: ['curl', 'ca-certificates', 'gnupg (gnupg2 on RHEL)', 'git', 'sudo (RHEL)'], writes: [], sets: [], editIn: '' },
-  timesync: { short: 'Accurate clock (chrony)', installs: ['chrony'], writes: [], sets: ['chrony service enabled and started, with the distro\'s default time sources'], editIn: 'Server Console → Services → Time sync' },
-  firewall: { short: 'Deny incoming; allow SSH, 80, 443', installs: ['ufw (Debian/Ubuntu) · firewalld (RHEL)'], writes: ['Firewall rules'], sets: ['allow the SSH port DockGate is connected on (before enabling)', 'allow 80/tcp and 443/tcp', 'firewall enabled — everything else incoming is denied'], editIn: 'Server Console → Firewall' },
-  'ssh-hardening': { short: '3 auth tries, 30 s grace, idle drop ~10 min', installs: [], writes: ['/etc/ssh/sshd_config.d/10-dockgate-access.conf'], sets: ['MaxAuthTries 3', 'LoginGraceTime 30', 'PermitEmptyPasswords no', 'X11Forwarding no', 'ClientAliveInterval 300', 'ClientAliveCountMax 2', 'a value already set in the file is kept; checked with sshd -t, restored if rejected'], editIn: 'Server Console → Access & SSH' },
-  fail2ban: { short: 'Bans IPs after failed SSH logins', installs: ['fail2ban', 'python3-systemd (RHEL, from EPEL)'], writes: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/fail2ban.d/dockgate.conf'], sets: ['sshd: 3 failures within 1d → 24h ban, then 4d, 8d … up to 30d', 'recidive: 3 bans within 30d → 1w on every port', 'ban history kept 30d', "DockGate's own address in the allowlist"], editIn: 'Server Console → Fail2ban' },
-  'unattended-upgrades': { short: 'Security patches applied automatically', installs: ['unattended-upgrades (Debian/Ubuntu) · dnf-automatic (RHEL)'], writes: ['/etc/apt/apt.conf.d/20auto-upgrades (Debian/Ubuntu)', '/etc/dnf/automatic.conf (RHEL)'], sets: ['daily package list update and unattended upgrade (Debian/Ubuntu)', 'apply_updates = yes and the dnf-automatic timer on (RHEL)'], editIn: 'Server Console → Services → Auto updates' },
-  swap: { short: '4 GB swap file, swappiness 10', installs: [], writes: ['/swapfile', '/etc/fstab (one line)', '/etc/sysctl.d/99-dockgate.conf (one line)'], sets: ['4 GB, needs 5 GB free on the disk', 'vm.swappiness=10 (a value already set in Kernel is kept)', 'a server that already has swap is left as it is'], editIn: 'Server Console → System → Disks → Swap' },
-  docker: { short: 'Engine, CLI, containerd, buildx, compose v2', installs: ['Docker Engine, CLI, containerd, buildx, compose v2 plugin', 'from Docker\'s official repository (Amazon Linux: distro package + compose plugin)'], writes: ["Docker's package repository and signing key"], sets: ['docker service enabled and started'], editIn: 'Server Console → Services → Docker' },
-  'docker-config': { short: 'Logs 10 MB × 3 per container, live-restore', installs: [], writes: ['/etc/docker/daemon.json (merged into an existing file, a copy kept as daemon.json.dockgate.bak)'], sets: ['log-driver json-file', 'max-size 10m, max-file 3', 'live-restore true (false in swarm mode)', 'only containers created afterwards get the limits'], editIn: 'Server Console → Services → Docker' },
-  'deploy-user': { short: 'Non-root user with sudo, Docker and its own SSH key', installs: [], writes: ['/etc/sudoers.d/90-dockgate-<user>', '~<user>/.ssh/authorized_keys'], sets: ['user name asked when you run it (default "deploy")', 'passwordless sudo and the docker group', 'DockGate switches to this user after the key login is proven', 'password login stays on (turned off separately in Access & SSH)'], editIn: 'Server Console → Users & keys' },
-  'docker-group': { short: 'docker without sudo for the SSH user', installs: [], writes: [], sets: ['the SSH user is added to the docker group (root-equivalent)'], editIn: 'Server Console → Users & keys' },
+  timesync: { short: 'Accurate clock (chrony)', installs: ['chrony'], writes: [], sets: ['chrony service enabled and started, with the distro\'s default time sources'], editIn: 'Server Console > Services > Time sync' },
+  firewall: { short: 'Deny incoming; allow SSH, 80, 443', installs: ['ufw (Debian/Ubuntu), firewalld (RHEL)'], writes: ['Firewall rules'], sets: ['allow the SSH port DockGate is connected on (before enabling)', 'allow 80/tcp and 443/tcp', 'firewall enabled - everything else incoming is denied'], editIn: 'Server Console > Firewall' },
+  'ssh-hardening': { short: '3 auth tries, 30 s grace, idle drop ~10 min', installs: [], writes: ['/etc/ssh/sshd_config.d/10-dockgate-access.conf'], sets: ['MaxAuthTries 3', 'LoginGraceTime 30', 'PermitEmptyPasswords no', 'X11Forwarding no', 'ClientAliveInterval 300', 'ClientAliveCountMax 2', 'a value already set in the file is kept; checked with sshd -t, restored if rejected'], editIn: 'Server Console > Access & SSH' },
+  fail2ban: { short: 'Bans IPs after failed SSH logins', installs: ['fail2ban', 'python3-systemd (RHEL, from EPEL)'], writes: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/fail2ban.d/dockgate.conf'], sets: ['sshd: 3 failures within 1d -> 24h ban, then 4d, 8d ... up to 30d', 'recidive: 3 bans within 30d -> 1w on every port', 'ban history kept 30d', "DockGate's own address in the allowlist"], editIn: 'Server Console > Fail2ban' },
+  'unattended-upgrades': { short: 'Security patches applied automatically', installs: ['unattended-upgrades (Debian/Ubuntu), dnf-automatic (RHEL)'], writes: ['/etc/apt/apt.conf.d/20auto-upgrades (Debian/Ubuntu)', '/etc/dnf/automatic.conf (RHEL)'], sets: ['daily package list update and unattended upgrade (Debian/Ubuntu)', 'apply_updates = yes and the dnf-automatic timer on (RHEL)'], editIn: 'Server Console > Services > Auto updates' },
+  swap: { short: '4 GB swap file, swappiness 10', installs: [], writes: ['/swapfile', '/etc/fstab (one line)', '/etc/sysctl.d/99-dockgate.conf (one line)'], sets: ['4 GB, needs 5 GB free on the disk', 'vm.swappiness=10 (a value already set in Kernel is kept)', 'a server that already has swap is left as it is'], editIn: 'Server Console > System > Disks > Swap' },
+  docker: { short: 'Engine, CLI, containerd, buildx, compose v2', installs: ['Docker Engine, CLI, containerd, buildx, compose v2 plugin', 'from Docker\'s official repository (Amazon Linux: distro package + compose plugin)'], writes: ["Docker's package repository and signing key"], sets: ['docker service enabled and started'], editIn: 'Server Console > Services > Docker' },
+  'docker-config': { short: 'Logs 10 MB × 3 per container, live-restore', installs: [], writes: ['/etc/docker/daemon.json (merged into an existing file, a copy kept as daemon.json.dockgate.bak)'], sets: ['log-driver json-file', 'max-size 10m, max-file 3', 'live-restore true (false in swarm mode)', 'only containers created afterwards get the limits'], editIn: 'Server Console > Services > Docker' },
+  'deploy-user': { short: 'Non-root user with sudo, Docker and its own SSH key', installs: [], writes: ['/etc/sudoers.d/90-dockgate-<user>', '~<user>/.ssh/authorized_keys'], sets: ['user name asked when you run it (default "deploy")', 'passwordless sudo and the docker group', 'DockGate switches to this user after the key login is proven', 'password login stays on (turned off separately in Access & SSH)'], editIn: 'Server Console > Users & keys' },
+  'docker-group': { short: 'docker without sudo for the SSH user', installs: [], writes: [], sets: ['the SSH user is added to the docker group (root-equivalent)'], editIn: 'Server Console > Users & keys' },
 };
 
-// Canonical order (lower seq runs first): base → identity → perimeter → service.
+// Canonical order (lower seq runs first): base -> identity -> perimeter -> service.
 const ITEMS = [
   {
     id: 'update', seq: 10, label: 'System update', group: 'base', risk: 'low', needsSudo: true,
     // An ACTION, not a detectable component: you can't idempotently "detect" a fully-upgraded system,
     // so detect is `false` (always runs). The UI shows it as "runs every time", not "missing".
     alwaysRun: true,
-    description: 'Refresh the package index and apply available upgrades — closes known CVEs before anything else is installed.',
+    description: 'Refresh the package index and apply available upgrades - closes known CVEs before anything else is installed.',
     distro: {
       debian: { detect: 'false', install: `${APT} update && ${APT} -y ${APT_KEEP_CONF} upgrade`, verify: 'true' },
       rhel:   { detect: 'false', install: 'sudo dnf -y upgrade --refresh', verify: 'true' },
@@ -93,7 +93,7 @@ const ITEMS = [
   },
   {
     id: 'base-utils', seq: 20, label: 'Base utilities', group: 'base', risk: 'low', needsSudo: true,
-    description: 'curl, ca-certificates, gnupg, git — prerequisites for the Docker repo and most setup steps.',
+    description: 'curl, ca-certificates, gnupg, git - prerequisites for the Docker repo and most setup steps.',
     distro: {
       debian: { detect: 'command -v curl && command -v git && command -v gpg && command -v sudo', install: `${APT} update && ${APT} install -y curl ca-certificates gnupg git sudo`, verify: 'command -v curl && command -v git && command -v sudo' },
       rhel:   { detect: 'command -v curl && command -v git && command -v sudo', install: 'sudo dnf -y install curl ca-certificates gnupg2 git sudo', verify: 'command -v curl && command -v git' },
@@ -102,7 +102,7 @@ const ITEMS = [
   },
   {
     id: 'timesync', seq: 30, label: 'Time sync (chrony)', group: 'system', risk: 'low', needsSudo: true,
-    description: 'Accurate clock — TLS, logs and 2FA all depend on it.',
+    description: 'Accurate clock - TLS, logs and 2FA all depend on it.',
     distro: {
       debian: { detect: 'command -v chronyd || timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -qx yes', install: `${APT} install -y chrony && (sudo systemctl enable --now chrony 2>/dev/null || sudo systemctl enable --now chronyd)`, verify: 'timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -qx yes || systemctl is-active chronyd' },
       rhel:   { detect: 'command -v chronyd', install: 'sudo dnf -y install chrony && sudo systemctl enable --now chronyd', verify: 'systemctl is-active chronyd' },
@@ -113,7 +113,7 @@ const ITEMS = [
     id: 'firewall', seq: 40, label: 'Firewall (UFW)', group: 'security', risk: 'high', needsSudo: true,
     description: 'Default-deny incoming, allow only SSH + 80/443. The CURRENT SSH port is allowed BEFORE enabling, so you are not locked out.',
     distro: {
-      // Allow the port we're actually connected on (SSH_CONNECTION server port) before enabling — lockout guard.
+      // Allow the port we're actually connected on (SSH_CONNECTION server port) before enabling - lockout guard.
       debian: {
         detect: 'sudo ufw status 2>/dev/null | grep -qi "Status: active"',
         install: `${APT} install -y ufw && P=$(echo "$SSH_CONNECTION" | awk "{print \\$4}") && sudo ufw allow "\${P:-22}"/tcp && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw --force enable`,
@@ -121,7 +121,7 @@ const ITEMS = [
       },
       rhel: {
         detect: 'sudo firewall-cmd --state 2>/dev/null | grep -qx running',
-        // The port we're connected on is opened too (sshd may not be on 22) — otherwise enabling locks you out.
+        // The port we're connected on is opened too (sshd may not be on 22) - otherwise enabling locks you out.
         install: 'sudo dnf -y install firewalld && sudo systemctl enable --now firewalld && P=$(echo "$SSH_CONNECTION" | awk "{print \\$4}") && sudo firewall-cmd --permanent --add-port="${P:-22}"/tcp && sudo firewall-cmd --permanent --add-service=ssh && sudo firewall-cmd --permanent --add-service=http && sudo firewall-cmd --permanent --add-service=https && sudo firewall-cmd --reload',
         verify: 'sudo firewall-cmd --state | grep -qx running',
       },
@@ -129,11 +129,11 @@ const ITEMS = [
   },
   {
     id: 'ssh-hardening', seq: 50, label: 'SSH hardening', group: 'security', risk: 'low', needsSudo: true,
-    // SAFE hardening only — never disables password auth or root login (that is Access & SSH's job, with
+    // SAFE hardening only - never disables password auth or root login (that is Access & SSH's job, with
     // its lockout guards). Values go into DockGate's ONE managed sshd file (10-dockgate-access.conf, also
     // edited by Access & SSH); a key the admin already set there is kept. The old 99-dockgate.conf is
     // folded in and removed. `sshd -t` failure restores the previous files.
-    description: 'Safe SSH hardening — limit auth attempts (3), 30 s login grace time, no empty passwords, no X11 forwarding, drop dead connections after ~10 min. Does NOT disable password or root login, so it cannot lock you out. Written to the same file Access & SSH manages; values you already set there are kept.',
+    description: 'Safe SSH hardening - limit auth attempts (3), 30 s login grace time, no empty passwords, no X11 forwarding, drop dead connections after ~10 min. Does NOT disable password or root login, so it cannot lock you out. Written to the same file Access & SSH manages; values you already set there are kept.',
     distro: {
       debian: { detect: SSH_HARDEN_DETECT, install: SSH_HARDEN_INSTALL, verify: SSH_HARDEN_DETECT },
       rhel:   { detect: SSH_HARDEN_DETECT, install: SSH_HARDEN_INSTALL, verify: SSH_HARDEN_DETECT },
@@ -141,7 +141,7 @@ const ITEMS = [
   },
   {
     id: 'fail2ban', seq: 60, label: 'Fail2ban', group: 'security', risk: 'low', needsSudo: true,
-    description: 'Bans IPs after repeated failed SSH logins — reduces brute-force noise. Writes its own /etc/fail2ban/jail.d/dockgate.conf; an existing jail.local is left untouched.',
+    description: 'Bans IPs after repeated failed SSH logins - reduces brute-force noise. Writes its own /etc/fail2ban/jail.d/dockgate.conf; an existing jail.local is left untouched.',
     distro: {
       debian: { detect: 'systemctl is-active --quiet fail2ban', install: `${APT} install -y fail2ban python3-systemd && ${F2B_WRITE}`, verify: 'systemctl is-active --quiet fail2ban' },
       rhel:   { detect: 'systemctl is-active --quiet fail2ban', install: `if ${IS_AMZN}; then echo "fail2ban is not packaged for Amazon Linux"; false; fi && (${EPEL}) && sudo dnf -y install fail2ban python3-systemd && ${F2B_WRITE}`, verify: 'systemctl is-active --quiet fail2ban' },
@@ -157,7 +157,7 @@ const ITEMS = [
   },
   {
     id: 'swap', seq: 80, label: 'Swap file', group: 'system', risk: 'low', needsSudo: true, optional: true,
-    description: 'A 4 GB swap file + low swappiness — an OOM safety net for Docker builds and memory spikes. Refused (with the reason) when the disk lacks room or the server is a container VPS; a file the kernel does not take is removed again.',
+    description: 'A 4 GB swap file + low swappiness - an OOM safety net for Docker builds and memory spikes. Refused (with the reason) when the disk lacks room or the server is a container VPS; a file the kernel does not take is removed again.',
     distro: {
       debian: { detect: 'swapon --show | grep -q .', install: SWAP.setupInstall('sudo '), verify: 'swapon --show | grep -q .' },
       rhel:   { detect: 'swapon --show | grep -q .', install: SWAP.setupInstall('sudo '), verify: 'swapon --show | grep -q .' },
@@ -188,7 +188,7 @@ const ITEMS = [
     // Not a shell step: the provisioning runner hands it to the guarded deploy-user job (server/security),
     // which creates "deploy", tests a NEW key login and only then switches DockGate's connection.
     special: 'deploy-user',
-    description: 'Creates a non-root user "deploy" with passwordless sudo and Docker access, generates an SSH key for it, proves the key login works, then switches DockGate to that user. Password login is NOT turned off here — that is a separate, confirmed step in Access & SSH. (Use Overview → Create deploy user to pick another name or add your own key.)',
+    description: 'Creates a non-root user "deploy" with passwordless sudo and Docker access, generates an SSH key for it, proves the key login works, then switches DockGate to that user. Password login is NOT turned off here - that is a separate, confirmed step in Access & SSH. (Use Overview > Create deploy user to pick another name or add your own key.)',
     dependsOn: ['base-utils'],
     distro: {
       debian: { detect: "sudo sh -c 'ls /etc/sudoers.d/90-dockgate-*' >/dev/null 2>&1", install: 'true', verify: 'true' },
@@ -208,7 +208,7 @@ const ITEMS = [
   },
 ];
 
-// Preset → ordered item ids. 'custom' is supplied by the UI via the `only` list.
+// Preset -> ordered item ids. 'custom' is supplied by the UI via the `only` list.
 const PRESETS = {
   'just-docker': ['update', 'docker', 'docker-config', 'docker-group'],
   'secure-baseline': ['update', 'base-utils', 'firewall', 'ssh-hardening', 'fail2ban', 'docker', 'docker-config', 'deploy-user', 'docker-group'],
@@ -262,7 +262,7 @@ function buildPlanForDistro(itemIds, osId) {
 
 // Apply the lockout/risk guards on top of resolveItems. `hasKey` = the server uses key-based SSH.
 // Returns { itemIds, skipped }. Throws an error with statusCode 409 + .risks when high-risk items
-// (firewall, ssh-hardening) are requested without explicit confirmation. Pure — no DB/SSH.
+// (firewall, ssh-hardening) are requested without explicit confirmation. Pure - no DB/SSH.
 function guardedResolve({ hasKey, preset, only, confirm }) {
   let ids = resolveItems(preset, only);
   const skipped = [];
@@ -284,10 +284,10 @@ function guardedResolve({ hasKey, preset, only, confirm }) {
 }
 
 // ============================================================================
-// PHASE 5 — Service control (post-setup management). ADDITIVE: this does not touch
+// PHASE 5 - Service control (post-setup management). ADDITIVE: this does not touch
 // the ITEMS/PRESETS provisioning matrix above. Each manageable item declares, per distro
 // family, the systemd/openrc unit + an ALLOWLIST of editable config paths. The UI passes
-// only an itemId + an action id (and, for a write, a content blob) — NEVER free shell and
+// only an itemId + an action id (and, for a write, a content blob) - NEVER free shell and
 // NEVER a path. The concrete command is resolved HERE from catalog constants.
 // ============================================================================
 const SERVICE = {
@@ -342,9 +342,9 @@ const SERVICE_ACTIONS = ['start', 'stop', 'restart', 'enable', 'disable'];
 const DESTRUCTIVE = ['stop', 'restart', 'disable'];
 
 // Concrete action/status commands for a unit, per init system. unit comes from SERVICE (a catalog
-// constant), never from the request — so interpolation here cannot be an injection vector.
+// constant), never from the request - so interpolation here cannot be an injection vector.
 // Without systemd as PID 1 (some containers / WSL / sysvinit hosts) systemctl cannot answer, so the
-// state comes from `probe` (a process / tool check, catalog constant) — "unknown" when there is none —
+// state comes from `probe` (a process / tool check, catalog constant) - "unknown" when there is none -
 // and start/stop/restart go through `service`. Boot enable/disable needs systemd.
 const HAS_SYSTEMD = '[ -d /run/systemd/system ]';
 function serviceVerbs(manager, unit, reload, probe) {
@@ -363,7 +363,7 @@ function serviceVerbs(manager, unit, reload, probe) {
   const svc = unit.replace(/\.timer$/, '');
   const either = (sd, other) => `if ${HAS_SYSTEMD}; then ${sd}; else ${other}; fi`;
   const viaService = (verb) => `command -v service >/dev/null 2>&1 && sudo service ${svc} ${verb} || { echo "This server does not run systemd and has no 'service' command"; exit 1; }`;
-  const noBoot = `{ echo "This server does not run systemd — starting at boot cannot be changed here"; exit 1; }`;
+  const noBoot = `{ echo "This server does not run systemd - starting at boot cannot be changed here"; exit 1; }`;
   const restart = reload ? 'reload' : 'restart';
   return {
     start:   either(`sudo systemctl start ${unit}`, viaService('start')),
@@ -422,7 +422,7 @@ function isConfigPathAllowed(itemId, osId, path) {
 }
 
 // Guard for any server-mutating service operation. Throws 409 (+.risks) when confirmation is required
-// but not given, or 400 for an SSH-config write over a password login (lockout). Pure — no DB/SSH.
+// but not given, or 400 for an SSH-config write over a password login (lockout). Pure - no DB/SSH.
 function guardedServiceAction({ hasKey, itemId, osId, action, isConfigWrite, confirm }) {
   const item = byId[itemId];
   const def = SERVICE[itemId];
@@ -432,15 +432,15 @@ function guardedServiceAction({ hasKey, itemId, osId, action, isConfigWrite, con
   if (osId) { const svc = serviceFor(itemId, osId); if (svc.na) { const e = new Error(svc.reason); e.statusCode = 400; throw e; } }
   if (!isConfigWrite && !SERVICE_ACTIONS.includes(action)) { const e = new Error(`Unknown action: ${action}`); e.statusCode = 400; throw e; }
   const highRisk = (def.risk || item.risk) === 'high';
-  // SSH config edit over a password login would lock you out — refuse.
+  // SSH config edit over a password login would lock you out - refuse.
   if (isConfigWrite && def.requiresKeyForConfig && !hasKey) {
-    const e = new Error('Editing SSH config over a password login could lock you out — connect with an SSH key first');
+    const e = new Error('Editing SSH config over a password login could lock you out - connect with an SSH key first');
     e.statusCode = 400; throw e;
   }
   // Stopping or disabling the SSH daemon over a password login would lock you out (reload/restart keeps
   // the live connection, but stop/disable kills it). requiresKeyForConfig marks ssh-hardening as that lifeline.
   if (def.requiresKeyForConfig && !hasKey && (action === 'stop' || action === 'disable')) {
-    const e = new Error('Stopping or disabling SSH over a password login would lock you out — connect with an SSH key first');
+    const e = new Error('Stopping or disabling SSH over a password login would lock you out - connect with an SSH key first');
     e.statusCode = 400; throw e;
   }
   // Confirm gate: every config write, plus destructive actions on a high-risk service or on docker.
@@ -456,7 +456,7 @@ function guardedServiceAction({ hasKey, itemId, osId, action, isConfigWrite, con
 }
 
 // ============================================================================
-// PHASE 5b — service-specific RICH operations (parameterised): fail2ban ban/unban,
+// PHASE 5b - service-specific RICH operations (parameterised): fail2ban ban/unban,
 // ufw/firewalld add/remove port. The UI passes an opId + named params; the params are
 // strictly validated to a charset that CANNOT contain shell metacharacters before being
 // interpolated into the catalog command. The command itself is a catalog constant.
@@ -471,7 +471,7 @@ function isIpOrCidr(s) {
     if (m4[5] !== undefined && Number(m4[5]) > 32) return false;
     return true;
   }
-  // IPv6 [/CIDR] — hex + colon only (no shell metachars possible); CIDR ≤128. Light semantic check.
+  // IPv6 [/CIDR] - hex + colon only (no shell metachars possible); CIDR ≤128. Light semantic check.
   const m6 = /^([0-9a-fA-F:]{2,45})(?:\/(\d{1,3}))?$/.exec(s);
   if (m6 && s.includes(':')) {
     if (m6[2] !== undefined && Number(m6[2]) > 128) return false;

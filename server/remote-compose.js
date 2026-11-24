@@ -1,6 +1,6 @@
 // Remote-native compose (deploy target = the remote server itself). When a remote SSH server is active,
 // a project's files live ON THE REMOTE host (in a chosen folder) and `docker compose` runs there via SSH
-// exec — so bind-mounts/build-contexts resolve on the remote and the files persist where they run.
+// exec - so bind-mounts/build-contexts resolve on the remote and the files persist where they run.
 // Reuses the same ssh2 auth as host-terminal.js / file-manager.js.
 const fs = require('fs');
 const path = require('path');
@@ -179,11 +179,11 @@ async function uploadDirToRemote(server, localDir, remoteDir, onProgress) {
 
 // Run `docker compose` for a project in its remote folder. actionArgs is an array, e.g. ['up','-d'].
 // Uses a DockGate-owned, WRITABLE DOCKER_CONFIG so `--build` doesn't fail when the user's ~/.docker is
-// root-owned (e.g. a host previously used by Coolify/root → "buildx/.lock: permission denied"). Any
+// root-owned (e.g. a host previously used by Coolify/root -> "buildx/.lock: permission denied"). Any
 // existing registry auth (~/.docker/config.json) is copied in so private-image pulls still work.
 /**
- * The line of compose output that says why it failed ("pull access denied …", "env file … not found",
- * "no such service: …"), so the error message carries the reason and not only the exit code.
+ * The line of compose output that says why it failed ("pull access denied ...", "env file ... not found",
+ * "no such service: ..."), so the error message carries the reason and not only the exit code.
  */
 function composeReason(out) {
   const lines = String(out || '').replace(/\r/g, '\n').split('\n').map(l => l.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').trim()).filter(Boolean);
@@ -197,14 +197,14 @@ async function runComposeInRemoteDir(server, remoteDir, project, actionArgs, onD
   const prep = `mkdir -p ${cfg} && { cp -f "$HOME/.docker/config.json" ${cfg}/config.json 2>/dev/null; true; }`;
   const r = await execRemote(server, `cd ${shq(remoteDir)} && ${prep} && DOCKER_CONFIG=${cfg} docker ${args} 2>&1`, onData);
   if (r.code !== 0) {
-    // When streaming, the full output already reached the job log — keep the thrown error short to avoid duplicating it.
+    // When streaming, the full output already reached the job log - keep the thrown error short to avoid duplicating it.
     const e = new Error(onData ? ('compose exited with code ' + r.code + composeReason(r.stdout || r.stderr)) : (r.stdout || r.stderr || 'compose failed').trim());
     e.statusCode = 400; throw e;
   }
   return r.stdout || r.stderr || '';
 }
 
-// Recursively delete a remote directory. SAFETY: only deep, absolute paths (≥3 segments) — never '/',
+// Recursively delete a remote directory. SAFETY: only deep, absolute paths (≥3 segments) - never '/',
 // '/home', '/home/<user>', '/opt', etc. Always called with the path DockGate itself stored at deploy time.
 async function removeRemoteDir(server, remoteDir) {
   const p = String(remoteDir || '').replace(/\/+$/, '');
@@ -214,9 +214,9 @@ async function removeRemoteDir(server, remoteDir) {
   }
   const r = await execRemote(server, `rm -rf ${shq(p)}`);
   if (r.code === 0) return p;
-  // Some leftovers are root-owned: Docker bind-mount data dirs (postgres_data, caddy_data, …) created by
-  // containers running as root, which the SSH user can't remove. Fall back to a throwaway root container —
-  // the Docker daemon runs as root — to delete them. Mount the PARENT and remove the target inside it.
+  // Some leftovers are root-owned: Docker bind-mount data dirs (postgres_data, caddy_data, ...) created by
+  // containers running as root, which the SSH user can't remove. Fall back to a throwaway root container -
+  // the Docker daemon runs as root - to delete them. Mount the PARENT and remove the target inside it.
   const parent = p.replace(/\/[^/]+$/, '') || '/';
   const base = p.split('/').pop();
   const dr = await execRemote(server, `docker run --rm -v ${shq(parent)}:/t alpine rm -rf ${shq('/t/' + base)} 2>&1`);
@@ -247,7 +247,7 @@ async function persistGitSshConfig(server, repoRoot, keyId) {
 
 /**
  * Run a docker CLI command ON the remote host over the SSH session (works with password, key or key with
- * passphrase — the docker CLI's own ssh:// transport needs a key without passphrase). files: { name: text }
+ * passphrase - the docker CLI's own ssh:// transport needs a key without passphrase). files: { name: text }
  * are written with SFTP into a private temp folder first (never on the command line), and "@name" in args
  * is replaced by that file's path. vars: { KEY: value } are exported from a file for ${KEY} in a stack file.
  * registryJson: a Docker config.json used for this command only. Returns { code, out }.

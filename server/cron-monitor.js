@@ -1,7 +1,7 @@
-// Cron alerts: every 5 minutes, for the servers that have jobs with "notify" (Server Console → Cron), DockGate
+// Cron alerts: every 5 minutes, for the servers that have jobs with "notify" (Server Console > Cron), DockGate
 // reads how each job ended (the dg-cron wrapper records start, end and exit code) and sends:
-//   cron_failed   a job ended with an exit code other than 0 — with its last output lines
-//   cron_missed   a job did not start within 30 minutes of its time (cron stopped, the server was off…)
+//   cron_failed   a job ended with an exit code other than 0 - with its last output lines
+//   cron_missed   a job did not start within 30 minutes of its time (cron stopped, the server was off...)
 const { db, stmts } = require('./db');
 const C = require('./cron-parse');
 
@@ -61,12 +61,12 @@ async function send(server, a) {
   if (a.type === 'cron_failed') {
     const out = await lastOutput(server, j);
     const secs = a.data.end && a.data.start ? Math.round((a.data.end - a.data.start) / 1000) : null;
-    subject = `Cron job failed — ${j.meta.name} on ${where}`;
-    text = `🔴 Cron job failed — ${where}\n${j.meta.name} (${j.user}, ${when}) ended with exit ${a.data.code}${secs != null ? ` after ${secs} s` : ''}.${out ? `\n${out}` : ''}`;
+    subject = `Cron job failed - ${j.meta.name} on ${where}`;
+    text = `🔴 Cron job failed - ${where}\n${j.meta.name} (${j.user}, ${when}) ended with exit ${a.data.code}${secs != null ? ` after ${secs} s` : ''}.${out ? `\n${out}` : ''}`;
     body = `<p>Cron job <b>${esc(j.meta.name)}</b> on <b>${esc(where)}</b> (${esc(j.user)}, ${esc(when)}) ended with exit ${a.data.code}.</p>${out ? `<pre>${esc(out)}</pre>` : ''}`;
   } else {
-    subject = `Cron job did not run — ${j.meta.name} on ${where}`;
-    text = `🟠 Cron job did not run — ${where}\n${j.meta.name} (${j.user}, ${when}) was due at ${new Date(a.data.due).toISOString().slice(0, 16).replace('T', ' ')} UTC and has not started. Is cron running? Was the server off?`;
+    subject = `Cron job did not run - ${j.meta.name} on ${where}`;
+    text = `🟠 Cron job did not run - ${where}\n${j.meta.name} (${j.user}, ${when}) was due at ${new Date(a.data.due).toISOString().slice(0, 16).replace('T', ' ')} UTC and has not started. Is cron running? Was the server off?`;
     body = `<p>Cron job <b>${esc(j.meta.name)}</b> on <b>${esc(where)}</b> was due at ${esc(new Date(a.data.due).toISOString())} and has not started.</p>`;
   }
   await HM.deliver(a.type, { id: `cron:${server.id}:${j.meta.name}`, name: where }, subject, text, body, { always: true, retry: true });

@@ -1,4 +1,4 @@
-// Server-health alert rules — pure logic, no I/O, so it can be unit tested.
+// Server-health alert rules - pure logic, no I/O, so it can be unit tested.
 //
 // A rule has shared limits (notification_rules.params, JSON). A server can keep them ('default'), use its
 // own ('custom', alert_overrides.params) or turn the rule off ('off'). evaluate() takes one sample of a
@@ -82,7 +82,7 @@ function evaluate(state, sample, now, rules) {
   st.failSince = null; st.lastError = null;
   st.last = { cpu: sample.cpu, memPct: sample.memPct, diskPct: (fullestDisk(sample.disks) || {}).usePct };
 
-  // Disk: the fullest disk above the limit (one reading is enough — disks do not fill and empty in a minute).
+  // Disk: the fullest disk above the limit (one reading is enough - disks do not fill and empty in a minute).
   const d = fullestDisk(sample.disks);
   if (on('host_disk') && d && d.usePct >= Number(p('host_disk').percent)) {
     alerts.push({ type: 'host_disk', data: { disk: d, limit: Number(p('host_disk').percent) } });

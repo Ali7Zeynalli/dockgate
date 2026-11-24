@@ -1,5 +1,5 @@
 // Compose replicas without Swarm. DockGate never writes the user's compose files: its choices (replicas, and the
-// fixes a replica needs — a host port moved behind the proxy, container_name kept as an alias) go into an
+// fixes a replica needs - a host port moved behind the proxy, container_name kept as an alias) go into an
 // override file kept in a DockGate folder and appended to every compose command (routes/compose.js
 // resolveComposeFiles). Local: DATA_DIR/compose-overrides/<server>/<project>/docker-compose.dockgate.yml;
 // remote: ~/.dockgate/overrides/<project>/docker-compose.dockgate.yml (never in the project folder or a checkout).
@@ -90,7 +90,7 @@ function buildOverride(rules = {}) {
     if (body.length) lines.push(`  ${svc}:`, ...body);
   }
   const nets = externals.size ? `networks:\n${[...externals].map(n => `  ${n}:\n    external: true`).join('\n')}\n` : '';
-  return lines.length ? `# Written by DockGate — your compose files are not changed. Remove this file to go back.\nservices:\n${lines.join('\n')}\n${nets}` : '';
+  return lines.length ? `# Written by DockGate - your compose files are not changed. Remove this file to go back.\nservices:\n${lines.join('\n')}\n${nets}` : '';
 }
 
 /** Saved choices of a project: { service: { replicas, dropPorts, dropName, aliases } }. */
@@ -151,7 +151,7 @@ function overrideFor(serverId, project) {
   if ((serverId || 'local') === 'local' && !fs.existsSync(row.path)) return null;
   return row.path;
 }
-/** Forget a project's override and choices (Delete stack…, or "back to the files"). */
+/** Forget a project's override and choices (Delete stack..., or "back to the files"). */
 async function removeAll(r, serverId, project) {
   await writeOverride(r, serverId, project, '');
   q.delRules.run(serverId, project);
@@ -172,10 +172,10 @@ function checkScalable(s, name, version) {
   const isDb = require('./swarm-services').isDatabase;
   const limits = limitsOf(s);
   const out = { ok: true, fixes: [], needsReset: false, limits };
-  if (isDb(s.image)) return { ...out, ok: false, block: 'database: more replicas would be separate databases, not copies — it stays at 1' };
+  if (isDb(s.image)) return { ...out, ok: false, block: 'database: more replicas would be separate databases, not copies - it stays at 1' };
   const rw = (s.volumes || []).filter(v => (v.type === 'volume' || v.type === 'bind') && !v.read_only);
-  if (rw.length) return { ...out, ok: false, block: `writes to ${rw.map(v => v.target).join(', ')}: two replicas would write the same data — it stays at 1` };
-  if (s.network_mode === 'host') return { ...out, ok: false, block: 'network_mode: host — two replicas would take the same ports' };
+  if (rw.length) return { ...out, ok: false, block: `writes to ${rw.map(v => v.target).join(', ')}: two replicas would write the same data - it stays at 1` };
+  if (s.network_mode === 'host') return { ...out, ok: false, block: 'network_mode: host - two replicas would take the same ports' };
   if ((s.ports || []).some(p => p.published !== undefined && p.published !== '')) out.fixes.push('dropPorts');
   if (s.container_name) out.fixes.push('dropName');
   if (out.fixes.length) {
@@ -222,7 +222,7 @@ async function setReplicas(project, service, n, opts = {}) {
   const h = helpers();
   if (!h.validateProjectName(project)) throw bad('Invalid project name');
   checkName(service, 'Service'); checkReplicas(n);
-  if (h.busy(project)) throw bad('A deploy of this project is running — try again when it ends', 409);
+  if (h.busy(project)) throw bad('A deploy of this project is running - try again when it ends', 409);
   const log = opts.log || (() => {});
   const sid = serverIdNow();
   let r = await h.resolveComposeFiles(project);
@@ -254,19 +254,19 @@ async function setReplicas(project, service, n, opts = {}) {
   try {
     if (n < before.length && !recreate) {
       const going = before.slice(n).map(x => x.id); // the highest numbers go, as compose would choose
-      log(`Stopping ${going.length} replica${going.length === 1 ? '' : 's'} of ${service} gracefully…`);
+      log(`Stopping ${going.length} replica${going.length === 1 ? '' : 's'} of ${service} gracefully...`);
       await require('./compose-traffic').drainAndStop(c, going, log);
     }
     const args = ['up', '-d', '--no-deps', recreate ? '--force-recreate' : '--no-recreate', '--scale', `${service}=${n}`, service];
     log(`$ docker compose ${args.join(' ')}`);
     await h.runResolved(r, project, args, (d) => String(d).split('\n').filter(Boolean).forEach(l => log('  ' + l)));
   } catch (e) {
-    log(`✗ ${e.message} — putting the previous setting back`);
+    log(`✗ ${e.message} - putting the previous setting back`);
     await writeOverride(r, sid, project, previous || '');
     const back = await h.resolveComposeFiles(project);
     await h.runResolved(back, project, ['up', '-d', '--no-deps', '--no-recreate', service], null).catch(() => {});
     h.recordDeploy({ project, kind: 'scale', status: 'error', error: e.message, sourceIp: opts.sourceIp, startedAt: started, finishedAt: Date.now(), details: { service, from: before.length, to: n, rolledBack: true } });
-    throw Object.assign(bad(`${service} could not run ${n} replica${n === 1 ? '' : 's'}: ${String(e.message).slice(0, 300)} — the previous setting is back`, 500), { rolledBack: true });
+    throw Object.assign(bad(`${service} could not run ${n} replica${n === 1 ? '' : 's'}: ${String(e.message).slice(0, 300)} - the previous setting is back`, 500), { rolledBack: true });
   }
   saveRule(sid, project, service, rule);
   require('./agent/control').pushSoon(sid); // the agent keeps this number from now on
@@ -287,7 +287,7 @@ async function setLabels(project, service, labels, opts = {}) {
   if (!h.validateProjectName(project)) throw bad('Invalid project name');
   checkName(service, 'Service');
   const want = checkLabels(labels);
-  if (h.busy(project)) throw bad('A deploy of this project is running — try again when it ends', 409);
+  if (h.busy(project)) throw bad('A deploy of this project is running - try again when it ends', 409);
   const log = opts.log || (() => {});
   const sid = serverIdNow();
   let r = await h.resolveComposeFiles(project);
@@ -307,7 +307,7 @@ async function setLabels(project, service, labels, opts = {}) {
     await writeOverride(r, sid, project, previous || '');
     const back = await h.resolveComposeFiles(project);
     await h.runResolved(back, project, ['up', '-d', '--no-deps', service], null).catch(() => {});
-    throw Object.assign(bad(`${service} could not be re-created with the labels: ${String(e.message).slice(0, 300)} — the previous setting is back`, 500), { rolledBack: true });
+    throw Object.assign(bad(`${service} could not be re-created with the labels: ${String(e.message).slice(0, 300)} - the previous setting is back`, 500), { rolledBack: true });
   }
   db.prepare(`INSERT INTO compose_scaling (server_id, project, service, labels, updated_at) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(server_id, project, service) DO UPDATE SET labels = excluded.labels, updated_at = excluded.updated_at`).run(sid, project, service, JSON.stringify(want), Date.now());

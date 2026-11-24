@@ -1,17 +1,17 @@
-// Reading proxy configs (Web → Proxies & SSL): nginx -T, a Caddyfile, Traefik labels, haproxy.cfg, apachectl -S,
-// access log lines and certificates. Pure functions — the commands that produce the text are in proxies.js.
+// Reading proxy configs (Web > Proxies & SSL): nginx -T, a Caddyfile, Traefik labels, haproxy.cfg, apachectl -S,
+// access log lines and certificates. Pure functions - the commands that produce the text are in proxies.js.
 const crypto = require('crypto');
 
 /**
  * A site without a domain (reached by IP or port: `server_name _;`, `:8080 { }`, a PathPrefix rule) gets a label as
- * its name — "192.168.1.10", ":8080", ":80" — so it is listed too. → { label, port, ip }
+ * its name - "192.168.1.10", ":8080", ":80" - so it is listed too. -> { label, port, ip }
  */
 function namelessLabel(port, ip) { const p = Number(port) || 80; return { label: ip ? (p === 80 || p === 443 ? ip : `${ip}:${p}`) : `:${p}`, port: p, ip: ip || null }; }
 const isIp = (h) => /^\d+(\.\d+){3}$/.test(String(h || '')) || /^\[?[0-9a-f:]+\]?$/i.test(String(h || '')) && String(h).includes(':');
 const isDomain = (h) => /^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(h || '')) && !/^\d+(\.\d+){3}$/.test(h);
 
 // ---------- nginx ----------
-/** nginx -T output → { files: [{ path, text }], servers: [...], upstreams: { name: [addr] } }. */
+/** nginx -T output -> { files: [{ path, text }], servers: [...], upstreams: { name: [addr] } }. */
 function parseNginxT(out) {
   const text = String(out || '');
   const files = [];
@@ -30,7 +30,7 @@ function parseNginxT(out) {
       const names = d('server_name').flatMap(x => x.args).filter(n => n && n !== '_' && n !== '""');
       const ssl = listen.some(l => /\bssl\b|(^|:)443(\s|$)/.test(l));
       const ret = d('return').map(x => x.args.join(' '))[0] || '';
-      // proxy_pass $var: the value of `set $var …` in the location or the server (DockGate's own sites use this)
+      // proxy_pass $var: the value of `set $var ...` in the location or the server (DockGate's own sites use this)
       const viaSet = (pp, ...scopes) => { if (!pp || !pp.startsWith('$')) return pp; for (const sc of scopes) { const st = sc.find(x => x.name === 'set' && x.args[0] === pp); if (st && st.args[1]) return st.args[1]; } return pp; };
       const locs = block.children.filter(c => c.name === 'location').map(c => ({
         path: c.args.join(' '),
@@ -97,7 +97,7 @@ function globRe(glob) {
 }
 /**
  * The files nginx really loads, from the files of a folder (a stopped container's archive): nginx.conf first,
- * then what its include lines reach, in order — like `nginx -T` prints them. Without nginx.conf: the .conf files.
+ * then what its include lines reach, in order - like `nginx -T` prints them. Without nginx.conf: the .conf files.
  */
 function nginxReachable(files, mainPath = '/etc/nginx/nginx.conf') {
   const byPath = new Map(files.map(f => [f.path, f]));
@@ -115,7 +115,7 @@ function nginxReachable(files, mainPath = '/etc/nginx/nginx.conf') {
   visit(main, 0);
   return out;
 }
-/** nginx servers → one site per domain (the http server that only redirects is folded into the https one). */
+/** nginx servers -> one site per domain (the http server that only redirects is folded into the https one). */
 function nginxSites(parsed) {
   const by = new Map();
   for (const s of parsed.servers) for (const n of s.names) {
@@ -140,7 +140,7 @@ function nginxSites(parsed) {
   }
   return [...by.values()].map(x => ({ ...x, targets: upstreamOf(x.target, parsed.upstreams) }));
 }
-/** proxy_pass http://name:port/… → ['host:port', …] (an upstream name gives its servers). */
+/** proxy_pass http://name:port/... -> ['host:port', ...] (an upstream name gives its servers). */
 function upstreamOf(pp, upstreams = {}) {
   if (!pp) return [];
   const m = String(pp).match(/^(?:https?|grpcs?|uwsgi):\/\/([^/$]+)/i) || String(pp).match(/^([^/$\s]+)/);
@@ -151,7 +151,7 @@ function upstreamOf(pp, upstreams = {}) {
 }
 
 // ---------- Caddy ----------
-/** Caddyfile → sites [{ domain, targets, file root?, line }] (site blocks with reverse_proxy / root / redir). */
+/** Caddyfile -> sites [{ domain, targets, file root?, line }] (site blocks with reverse_proxy / root / redir). */
 function parseCaddyfile(text) {
   const lines = String(text || '').replace(/\r/g, '').split('\n');
   const sites = []; let depth = 0; let cur = null;
@@ -188,7 +188,7 @@ function parseCaddyfile(text) {
 }
 
 // ---------- Traefik (labels) ----------
-/** Container / service labels → sites [{ domain, router, port, tls, resolver, entrypoints }]. */
+/** Container / service labels -> sites [{ domain, router, port, tls, resolver, entrypoints }]. */
 function traefikSites(labels = {}) {
   if (String(labels['traefik.enable']).toLowerCase() === 'false') return [];
   const routers = {}; const ports = {};
@@ -246,7 +246,7 @@ function parseHaproxy(text) {
 }
 
 // ---------- Apache ----------
-/** apachectl -S → [{ domain, port, file, line }] */
+/** apachectl -S -> [{ domain, port, file, line }] */
 function parseApacheS(out) {
   const res = [];
   for (const line of String(out || '').split('\n')) {
@@ -259,7 +259,7 @@ function parseApacheS(out) {
 }
 
 // ---------- access logs ----------
-/** combined / common log format (with an optional host first) → { ip, time, method, path, status, bytes, ms, host }. */
+/** combined / common log format (with an optional host first) -> { ip, time, method, path, status, bytes, ms, host }. */
 function parseAccessLine(line) {
   const m = String(line).match(/^(?:(\S+)\s+)?(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)[^"]*"\s+(\d{3})\s+(\S+)(?:\s+"[^"]*"\s+"[^"]*")?(?:\s+(\S+))?/);
   if (!m) return null;
@@ -268,7 +268,7 @@ function parseAccessLine(line) {
   const rt = m[8] && /^\d+(\.\d+)?$/.test(m[8]) ? Math.round(Number(m[8]) * (m[8].includes('.') ? 1000 : 1)) : null;
   return { ip, host, time: m[3], method: m[4], path: m[5], status: Number(m[6]), bytes: m[7] === '-' ? 0 : Number(m[7]) || 0, ms: rt };
 }
-/** Caddy JSON access log line → same shape. */
+/** Caddy JSON access log line -> same shape. */
 function parseCaddyJsonLine(line) {
   try {
     const j = JSON.parse(line); if (!j.request) return null;
@@ -277,7 +277,7 @@ function parseCaddyJsonLine(line) {
 }
 
 // ---------- certificates ----------
-/** PEM text (the first certificate of a chain) → { names, issuer, validTo, daysLeft, selfSigned }. */
+/** PEM text (the first certificate of a chain) -> { names, issuer, validTo, daysLeft, selfSigned }. */
 function parseCertPem(pem) {
   const first = String(pem || '').match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/);
   if (!first) return null;
@@ -291,7 +291,7 @@ function parseCertPem(pem) {
     return { names, issuer: [o, icn].filter(Boolean).join(' ') || c.issuer, validTo: validTo.toISOString(), daysLeft: Math.floor((validTo - Date.now()) / 86400000), selfSigned: c.issuer === c.subject, fingerprint: c.fingerprint256 };
   } catch (e) { return null; }
 }
-/** Traefik acme.json → [{ names, pem, resolver }]. */
+/** Traefik acme.json -> [{ names, pem, resolver }]. */
 function traefikAcme(json) {
   const out = [];
   try {
@@ -356,7 +356,7 @@ function traefikFileSites(text) {
 
 /**
  * Every certificate file an nginx config names: in server blocks, at http level (inherited by every server) and in
- * included snippets (`include snippets/ssl.conf;`) — not only `ssl_certificate` written in the server block itself.
+ * included snippets (`include snippets/ssl.conf;`) - not only `ssl_certificate` written in the server block itself.
  * Paths with variables ($ssl_server_name) and `data:` certificates can not be read and are left out.
  */
 function nginxAllCerts(parsed) {
@@ -369,11 +369,11 @@ function nginxAllCerts(parsed) {
 }
 
 /**
- * Where a new nginx site file goes: a folder nginx really loads into its http block — `include <dir>/*.conf;` in
+ * Where a new nginx site file goes: a folder nginx really loads into its http block - `include <dir>/*.conf;` in
  * http { } of the main file, or at the top of a file included there (conf.d/default.conf including sites/*.conf).
  * The folder that already holds server blocks wins; then the usual names. Folders of modules, mime types, snippets
  * and includes inside server / location blocks are left out (a server block there would not load or would break).
- * → { dir, path(domain) } or null when nginx loads no folder of sites.
+ * -> { dir, path(domain) } or null when nginx loads no folder of sites.
  */
 function nginxSiteTarget(parsed) {
   const files = parsed.files || [];
@@ -402,7 +402,7 @@ function nginxSiteTarget(parsed) {
 
 /** Is this Caddy config JSON (caddy run --config caddy.json)? A Caddyfile's global options block also starts with "{". */
 function isCaddyJson(text) { try { const j = JSON.parse(String(text || '')); return !!(j && typeof j === 'object' && (j.apps || j.admin || j.logging)); } catch (e) { return false; } }
-/** Sites of a Caddy JSON config: apps.http.servers.*.routes[].match[].host → the reverse_proxy upstreams under them. */
+/** Sites of a Caddy JSON config: apps.http.servers.*.routes[].match[].host -> the reverse_proxy upstreams under them. */
 function parseCaddyJson(text) {
   let j; try { j = JSON.parse(String(text || '')); } catch (e) { return []; }
   const servers = (((j || {}).apps || {}).http || {}).servers || {};

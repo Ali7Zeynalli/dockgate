@@ -1,12 +1,12 @@
 /* ============================================
-   DOCKGATE CONTROL PANEL — DESIGN SYSTEM
+   DOCKGATE CONTROL PANEL - DESIGN SYSTEM
    ============================================ */
 
-/* Local font bundle (air-gap — no Google Fonts CDN required) */
+/* Local font bundle (air-gap - no Google Fonts CDN required) */
 @import url('/vendor/fonts/fonts.css');
 
 :root {
-  /* Background Colors — Slate (blue-grey) dark palette: softer than near-black, easy on the eyes, pairs with the blue accent */
+  /* Background Colors - Slate (blue-grey) dark palette: softer than near-black, easy on the eyes, pairs with the blue accent */
   --bg-primary: #0f172a;            /* main content (slate-900) */
   --bg-secondary: #131c30;
   --bg-card: #1e293b;               /* card surfaces (slate-800) */
@@ -104,19 +104,19 @@
 
 /* ============ LIGHT THEME ============ */
 [data-theme="light"] {
-  /* Background Colors — Slate (blue-grey) light palette: soft cool off-whites, no pure white, easier on the eyes */
-  --bg-primary: #e0e9f6;            /* page — soft SKY blue tint (more blue, less grey) */
+  /* Background Colors - Slate (blue-grey) light palette: soft cool off-whites, no pure white, easier on the eyes */
+  --bg-primary: #e0e9f6;            /* page - soft SKY blue tint (more blue, less grey) */
   --bg-secondary: #e8eff9;
-  --bg-card: #e8eff9;               /* card surfaces — blue-tinted */
+  --bg-card: #e8eff9;               /* card surfaces - blue-tinted */
   --bg-card-hover: #d9e4f4;
-  --bg-elevated: #eff4fc;           /* dropdowns/popovers — slightly lighter to pop above cards */
+  --bg-elevated: #eff4fc;           /* dropdowns/popovers - slightly lighter to pop above cards */
   --bg-modal: #eff4fc;
-  --bg-input: #ffffff;              /* small surface — white for clarity */
+  --bg-input: #ffffff;              /* small surface - white for clarity */
   --bg-sidebar: #ccdcf0;            /* a touch deeper blue than the page for subtle depth */
   --bg-header: rgba(206, 220, 240, 0.9);
 
   /* Text Colors */
-  --text-primary: #1e293b;          /* slate-800 — softer than near-black */
+  --text-primary: #1e293b;          /* slate-800 - softer than near-black */
   --text-secondary: #475569;        /* slate-600 */
   --text-muted: #64748b;            /* slate-500 */
   --text-inverse: #ffffff;
@@ -127,7 +127,7 @@
   --accent-dim: rgba(37, 99, 235, 0.1);
   --accent-glow: rgba(37, 99, 235, 0.2);
 
-  /* Borders — slate-tinted */
+  /* Borders - slate-tinted */
   --border: rgba(15, 23, 42, 0.1);
   --border-hover: rgba(15, 23, 42, 0.18);
   --border-active: rgba(37, 99, 235, 0.4);
@@ -139,7 +139,7 @@
   --shadow-glow: 0 0 24px rgba(37, 99, 235, 0.15);
 
   /* Glass */
-  --glass-bg: rgba(206, 220, 240, 0.92); /* sidebar + header use this — soft sky-blue panel (more blue, less grey) */
+  --glass-bg: rgba(206, 220, 240, 0.92); /* sidebar + header use this - soft sky-blue panel (more blue, less grey) */
   --glass-blur: blur(24px);
   --glass-border: rgba(0, 0, 0, 0.06);
 
@@ -151,7 +151,7 @@
   --hover-bg-mid: rgba(0, 0, 0, 0.04);
   --hover-bg-wash: rgba(0, 0, 0, 0.06);
 
-  /* Status — keep same hues, slightly darker for readability */
+  /* Status - keep same hues, slightly darker for readability */
   --status-running-bg: rgba(16, 185, 129, 0.1);
   --status-stopped-bg: rgba(239, 68, 68, 0.1);
   --status-restarting-bg: rgba(245, 158, 11, 0.1);

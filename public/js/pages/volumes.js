@@ -35,7 +35,7 @@ Router.register('volumes', async (content) => {
           <b>${selectedNames.size} selected</b>
           <span style="flex:1"></span>
           <button class="btn btn-xs btn-ghost" id="bulk-clear">Clear selection</button>
-          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove…</button>
+          <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove...</button>
         </div>` : ''}
 
         <div class="table-wrapper">
@@ -58,9 +58,9 @@ Router.register('volumes', async (content) => {
                   ${UI.menu([
                     { label: `${Icons.eye} Inspect`, attrs: `data-inspect="${escapeHtml(v.name)}"` },
                     { label: `${Icons.download} Back up (.tar.gz)`, attrs: `data-backup="${escapeHtml(v.name)}"` },
-                    { label: `${Icons.arrowUp} Restore from .tar.gz…`, attrs: `data-restore="${escapeHtml(v.name)}"` },
-                    { label: `${Icons.copy} Clone…`, attrs: `data-clone="${escapeHtml(v.name)}"` },
-                    ...(!v.inUse ? ['-', { label: `${Icons.trash} Remove…`, attrs: `data-remove="${escapeHtml(v.name)}"`, danger: true }] : []),
+                    { label: `${Icons.arrowUp} Restore from .tar.gz...`, attrs: `data-restore="${escapeHtml(v.name)}"` },
+                    { label: `${Icons.copy} Clone...`, attrs: `data-clone="${escapeHtml(v.name)}"` },
+                    ...(!v.inUse ? ['-', { label: `${Icons.trash} Remove...`, attrs: `data-remove="${escapeHtml(v.name)}"`, danger: true }] : []),
                   ])}
                 </div></td>
               </tr>`).join('')}
@@ -73,14 +73,14 @@ Router.register('volumes', async (content) => {
       content.querySelectorAll('[data-vfilter]').forEach(b => b.addEventListener('click', () => { volFilter = b.dataset.vfilter; view.set('filter', volFilter); render(); }));
       document.getElementById('vol-new')?.addEventListener('click', openVolumeCreate);
 
-      // Backup → download tar.gz (V1)
+      // Backup -> download tar.gz (V1)
       content.querySelectorAll('[data-backup]').forEach(btn => btn.addEventListener('click', () => {
         const name = btn.dataset.backup;
         const a = document.createElement('a');
         a.href = `/api/volumes/${encodeURIComponent(name)}/backup`;
         a.download = `${name}.tar.gz`;
         document.body.appendChild(a); a.click(); a.remove();
-        showToast('Backup started…', 'info');
+        showToast('Backup started...', 'info');
       }));
 
       // Browse files (V3)
@@ -94,7 +94,7 @@ Router.register('volumes', async (content) => {
         inp.onchange = async () => {
           const f = inp.files && inp.files[0];
           if (!f) return;
-          showToast(`Restoring into ${name}…`, 'info');
+          showToast(`Restoring into ${name}...`, 'info');
           try {
             const r = await fetch(`/api/volumes/${encodeURIComponent(name)}/restore`, { method: 'POST', headers: { 'Content-Type': 'application/gzip' }, body: f });
             const data = await r.json().catch(() => ({}));
@@ -117,7 +117,7 @@ Router.register('volumes', async (content) => {
         b.addEventListener('click', async () => {
           const dest = root.querySelector('#clone-dest').value.trim();
           if (!dest) { showToast('Name required', 'warning'); return; }
-          b.disabled = true; b.textContent = 'Cloning…';
+          b.disabled = true; b.textContent = 'Cloning...';
           try { await API.post(`/volumes/${encodeURIComponent(src)}/clone`, { dest }); showToast(`Cloned to "${dest}"`); m.close(); render(); }
           catch (e) { showToast(e.message, 'error', 9000); b.disabled = false; b.textContent = 'Clone'; }
         });
@@ -152,7 +152,7 @@ Router.register('volumes', async (content) => {
         });
       });
 
-      // Selection — only unused volumes can be selected
+      // Selection - only unused volumes can be selected
       content.querySelectorAll('[data-select]').forEach(el => {
         el.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -182,7 +182,7 @@ Router.register('volumes', async (content) => {
     } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
 
-  // File browser (V3) — navigate directories, download files, and edit / create / rename / delete (file-edit-ui.js).
+  // File browser (V3) - navigate directories, download files, and edit / create / rename / delete (file-edit-ui.js).
   async function openVolumeBrowser(name, path) {
     let data;
     try { data = await API.get(`/volumes/${encodeURIComponent(name)}/files?path=${encodeURIComponent(path || '')}`); }
@@ -200,7 +200,7 @@ Router.register('volumes', async (content) => {
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div class="text-sm" id="vb-crumb" style="word-break:break-all">${crumb}</div><span>${FileEditUI.folderActions()}</span></div>
       <div class="table-wrapper" style="max-height:50vh;overflow:auto"><table><tbody>${rows || '<tr><td class="text-muted text-sm" style="padding:10px">Empty</td></tr>'}</tbody></table></div>
     </div>`;
-    const m = showModal(`Files — ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
+    const m = showModal(`Files - ${escapeHtml(name)}`, body, [{ label: 'Close', className: 'btn btn-secondary' }]);
     const root = m.overlay;
     root.querySelectorAll('[data-dir]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); m.close(); openVolumeBrowser(name, a.dataset.dir); }));
     root.querySelectorAll('[data-nav]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); m.close(); openVolumeBrowser(name, a.dataset.nav); }));
@@ -212,7 +212,7 @@ Router.register('volumes', async (content) => {
     }));
   }
 
-  // Rich create form (V5) — name, driver, driver options & labels (comma KEY=val)
+  // Rich create form (V5) - name, driver, driver options & labels (comma KEY=val)
   function openVolumeCreate() {
     const body = `<div style="display:flex;flex-direction:column;gap:10px">
       <div class="input-group"><label>Name *</label><input class="input" id="vc-name" placeholder="my-volume"></div>
@@ -232,7 +232,7 @@ Router.register('volumes', async (content) => {
       const config = { Name: name, Driver: root.querySelector('#vc-driver').value.trim() || 'local' };
       const opts = kv(root.querySelector('#vc-opts').value); if (Object.keys(opts).length) config.DriverOpts = opts;
       const labels = kv(root.querySelector('#vc-labels').value); if (Object.keys(labels).length) config.Labels = labels;
-      btn.disabled = true; btn.textContent = 'Creating…';
+      btn.disabled = true; btn.textContent = 'Creating...';
       try { await API.post('/volumes', config); showToast(`Volume "${name}" created`); m.close(); render(); }
       catch (e) { showToast(e.message, 'error', 9000); btn.disabled = false; btn.textContent = 'Create'; }
     });

@@ -24,7 +24,7 @@ test('every sidebar entry and tab opens a registered page; every grouped item ex
   for (const g of navGroups) for (const k of g.items) { assert.ok(navItems[k], `${k} in a group`); assert.ok(Router.routes[k], `${k} has a page`); }
   for (const [k, v] of Object.entries(navItems)) if (v.tabs && !['settings', 'infra'].includes(k)) assert.ok(Router.routes[k], `section ${k} is registered`);
   for (const [k, v] of Object.entries(navItems)) for (const [t] of v.tabs || []) {
-    if (!['settings', 'infra'].includes(k)) assert.ok(Router.routes[t], `${k} → ${t} has a page`);
+    if (!['settings', 'infra'].includes(k)) assert.ok(Router.routes[t], `${k} -> ${t} has a page`);
     assert.ok(!seen.has(t), `tab ${t} only once`); seen.add(t);
   }
   assert.ok(Object.values(navItems).every(v => !v.tabs || v.tabs.length <= 10), 'at most 10 tabs');
@@ -44,7 +44,7 @@ test('old links lead to the new places', () => {
   assert.equal(r('tools', { tab: 'schedules' }), 'srv-automation:schedules');
   assert.equal(r('resources', { tab: 'builds' }), 'resources:builds');
   assert.equal(r('deploy', { tab: 'builds' }), 'resources:builds'); // Builds moved back to Resources (2.78)
-  assert.equal(r('deploy', { tab: 'registries' }), 'settings:registries'); // Registries → Settings → Registry logins
+  assert.equal(r('deploy', { tab: 'registries' }), 'settings:registries'); // Registries > Settings > Registry logins
   assert.equal(r('resources', { tab: 'cleanup' }), 'resources:prune');
   assert.equal(r('builds', {}), 'resources:builds');
   assert.equal(r('registries', {}), 'settings:registries');
@@ -59,6 +59,6 @@ test('old links lead to the new places', () => {
 test('every old Server Console tab has a new place in the sidebar', () => {
   const { navItems, SRV_OLD_TABS } = load();
   for (const t of ['overview', 'monitoring', 'setup', 'access', 'users', 'firewall', 'fail2ban', 'manage', 'cron', 'scripts', 'system', 'logs', 'settings']) {
-    const [sec, tab] = SRV_OLD_TABS[t]; assert.ok(navItems[sec] && navItems[sec].tabs.some(([x]) => x === tab), `${t} → ${sec}/${tab}`);
+    const [sec, tab] = SRV_OLD_TABS[t]; assert.ok(navItems[sec] && navItems[sec].tabs.some(([x]) => x === tab), `${t} -> ${sec}/${tab}`);
   }
 });

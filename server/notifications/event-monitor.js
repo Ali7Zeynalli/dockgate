@@ -1,4 +1,4 @@
-// Per-server Docker event monitor — watches one Docker daemon's events
+// Per-server Docker event monitor - watches one Docker daemon's events
 // Multiple instances run simultaneously (one per registered server) so notifications
 // arrive for incidents on any host, not just the active one.
 
@@ -9,7 +9,7 @@ const webhook = require('./webhook');
 const templates = require('./templates');
 const { backoff, fmtFor } = require('./backoff');
 // The containers that stay unhealthy, kept in the database so a restart of DockGate does not start the alerts over.
-// (made on first use; without the database — a test's stub — it is kept in memory)
+// (made on first use; without the database - a test's stub - it is kept in memory)
 let ubQ = null;
 function ubq() {
   if (ubQ) return ubQ;
@@ -24,25 +24,25 @@ const unhealthyStore = { get: (k) => ubq().get.get(k) || undefined, set: (k, v) 
 /** DockGate's own Edge agent can not reach Docker's socket: say why and what to do. */
 function agentSocketHint(name, logs) {
   if (!/^dockgate-agent$/.test(name) || !/ECONNREFUSED[^\n]*docker\.sock|docker\.sock[^\n]*ECONNREFUSED/i.test(String(logs || ''))) return '';
-  return "The Edge agent can not reach Docker's socket — Docker was most likely restarted while the agent kept running, so its mount points to the old socket. An updated agent restarts itself after 2 minutes; this one needs a restart: Servers → Edge agent → Restart (or `docker restart dockgate-agent` on the server).";
+  return "The Edge agent can not reach Docker's socket - Docker was most likely restarted while the agent kept running, so its mount points to the old socket. An updated agent restarts itself after 2 minutes; this one needs a restart: Servers > Edge agent > Restart (or `docker restart dockgate-agent` on the server).";
 }
 
-// A `docker restart` emits die→…→restart. Hold a "Stopped/Crashed" alert this long so a following
-// `restart` event can cancel it — otherwise a restart looks like Stop-then-Restart (two alerts).
+// A `docker restart` emits die -> ... -> restart. Hold a "Stopped/Crashed" alert this long so a following
+// `restart` event can cancel it - otherwise a restart looks like Stop-then-Restart (two alerts).
 const DIE_DEBOUNCE_MS = 3000;
 
 class EventMonitor {
   /**
-   * @param {string} serverId — 'local' or registered SSH server id
-   * @param {Docker} docker — dedicated dockerode client for this server
+   * @param {string} serverId - 'local' or registered SSH server id
+   * @param {Docker} docker - dedicated dockerode client for this server
    */
   constructor(serverId, docker) {
     this.serverId = serverId || 'local';
     this.docker = docker;
     this.stream = null;
-    this.cooldowns = new Map(); // (event_type + resourceKey) → last_sent timestamp
-    this.pendingDie = new Map(); // containerId → timer (debounced die alert, cancelled by a restart)
-    this.pendingStart = new Map(); // containerId → timer (debounced start alert, cancelled by a restart)
+    this.cooldowns = new Map(); // (event_type + resourceKey) -> last_sent timestamp
+    this.pendingDie = new Map(); // containerId -> timer (debounced die alert, cancelled by a restart)
+    this.pendingStart = new Map(); // containerId -> timer (debounced start alert, cancelled by a restart)
     this.reconnectTimer = null;
     this.diskCheckTimer = null;
     this.healthCheckTimer = null;
@@ -135,7 +135,7 @@ class EventMonitor {
     const rule = stmts.getRule.get(eventType);
     if (!rule) return false;
 
-    // cooldown_minutes === 0 means "no throttle — send every occurrence". (`|| 5` used to turn 0 back
+    // cooldown_minutes === 0 means "no throttle - send every occurrence". (`|| 5` used to turn 0 back
     // into 5, so consecutive events of the same type were silently dropped.)
     const cd = rule.cooldown_minutes == null ? 5 : Number(rule.cooldown_minutes);
     if (!(cd > 0)) return false;
@@ -146,7 +146,7 @@ class EventMonitor {
     this.cooldowns.set(this._cooldownKey(eventType, resourceKey), Date.now());
   }
 
-  // Tail recent container logs (the WHY behind a failure). Best-effort — returns '' on any error.
+  // Tail recent container logs (the WHY behind a failure). Best-effort - returns '' on any error.
   async _tailLogs(containerId, lines = 40) {
     if (!containerId) return '';
     try {
@@ -172,11 +172,11 @@ class EventMonitor {
     const prefix = this._prefix();
     const serverDetail = this._serverDetail();
 
-    // Container die — Docker emits a 'die' event on every exit (crash, manual stop, OOM).
+    // Container die - Docker emits a 'die' event on every exit (crash, manual stop, OOM).
     // We don't listen for 'stop' separately: it fires before 'die' and would double-count the same event.
     if (event.Type === 'container' && event.Action === 'die') {
       const exitCode = attrs.exitCode;
-      // "Unexpected" only for a non-zero exit code — exit 0 is a clean/intentional stop.
+      // "Unexpected" only for a non-zero exit code - exit 0 is a clean/intentional stop.
       const unexpected = exitCode !== undefined && exitCode !== '0' && exitCode !== 0;
       const cid = event.Actor?.ID;
 
@@ -198,14 +198,14 @@ class EventMonitor {
           eventType = 'container_die';
           payload = {
             subject: `${prefix}Container ${verb}: ${name}`,
-            html: templates.containerDieTemplate({ containerName: name, containerId: id, image, time, exitCode: exitCode ?? '—', unexpected, server: this.serverId, logs }),
-            telegramText: telegram.formatAlert(`${prefix}Container ${verb}`, { ...(serverDetail || {}), Container: name, Image: image, 'Exit Code': exitCode ?? '—', Time: time }) + telegram.formatLogs(logs),
+            html: templates.containerDieTemplate({ containerName: name, containerId: id, image, time, exitCode: exitCode ?? '-', unexpected, server: this.serverId, logs }),
+            telegramText: telegram.formatAlert(`${prefix}Container ${verb}`, { ...(serverDetail || {}), Container: name, Image: image, 'Exit Code': exitCode ?? '-', Time: time }) + telegram.formatLogs(logs),
           };
         }
         await this._sendNotification(eventType, name, payload);
       };
 
-      // Debounce: a `docker restart` fires die→…→restart (an unresponsive container is SIGKILLed=137).
+      // Debounce: a `docker restart` fires die -> ... -> restart (an unresponsive container is SIGKILLed=137).
       // Hold the alert; the restart handler cancels it so one restart isn't reported as Stop+Restart.
       if (cid) {
         if (this.pendingDie.has(cid)) clearTimeout(this.pendingDie.get(cid));
@@ -218,11 +218,11 @@ class EventMonitor {
     // Container restart
     if (event.Type === 'container' && event.Action === 'restart') {
       // Cancel the pending "Stopped/Crashed" + "Started" alerts from the die/start events that
-      // preceded this restart (a `docker restart` fires die→…→start→restart).
+      // preceded this restart (a `docker restart` fires die -> ... -> start -> restart).
       const rcid = event.Actor?.ID;
       if (rcid && this.pendingDie.has(rcid)) { clearTimeout(this.pendingDie.get(rcid)); this.pendingDie.delete(rcid); }
       if (rcid && this.pendingStart.has(rcid)) { clearTimeout(this.pendingStart.get(rcid)); this.pendingStart.delete(rcid); }
-      let restartCount = '—';
+      let restartCount = '-';
       try {
         const info = await this.docker.getContainer(event.Actor?.ID).inspect();
         restartCount = info.RestartCount || 0;
@@ -237,12 +237,12 @@ class EventMonitor {
 
     // Container unhealthy (event-based)
     if (event.Type === 'container' && event.Action === 'health_status: unhealthy') {
-      let failingStreak = '—', lastOutput = '';
+      let failingStreak = '-', lastOutput = '';
       try {
         const info = await this.docker.getContainer(event.Actor?.ID).inspect();
         const health = info.State?.Health;
         if (health) {
-          failingStreak = health.FailingStreak || '—';
+          failingStreak = health.FailingStreak || '-';
           const lastLog = health.Log?.[health.Log.length - 1];
           if (lastLog) lastOutput = lastLog.Output?.substring(0, 500) || '';
         }
@@ -258,7 +258,7 @@ class EventMonitor {
       this.unhealthy.sent(`${this.serverId}:${name}`); // the periodic sweep then waits before telling again
     }
 
-    // Container started — debounced, because a `docker restart` also fires start (die→…→start→restart);
+    // Container started - debounced, because a `docker restart` also fires start (die -> ... -> start -> restart);
     // the restart handler cancels it so a restart isn't reported as Started + Restarted.
     if (event.Type === 'container' && event.Action === 'start') {
       const scid = event.Actor?.ID;
@@ -316,12 +316,12 @@ class EventMonitor {
         const bo = this.unhealthy.check(ukey(name), Date.now(), (Number(rule.cooldown_minutes) || 0) * 60000);
         if (!bo.due) continue;
 
-        let failingStreak = '—', lastOutput = '';
+        let failingStreak = '-', lastOutput = '';
         try {
           const info = await this.docker.getContainer(c.Id).inspect();
           const health = info.State?.Health;
           if (health) {
-            failingStreak = health.FailingStreak || '—';
+            failingStreak = health.FailingStreak || '-';
             const lastLog = health.Log?.[health.Log.length - 1];
             if (lastLog) lastOutput = lastLog.Output?.substring(0, 500) || '';
           }
@@ -329,7 +329,7 @@ class EventMonitor {
 
         const logs = await this._tailLogs(c.Id);
         const hint = agentSocketHint(name, logs);
-        const again = bo.n > 1 ? `Alert #${bo.n} — unhealthy for ${fmtFor(Date.now() - bo.since)}; the next one in ${fmtFor(bo.next)} if it stays so.` : '';
+        const again = bo.n > 1 ? `Alert #${bo.n} - unhealthy for ${fmtFor(Date.now() - bo.since)}; the next one in ${fmtFor(bo.next)} if it stays so.` : '';
         await this._sendNotification('container_unhealthy', name, {
           subject: `${prefix}Container Unhealthy: ${name}`,
           html: templates.containerUnhealthyTemplate({
@@ -348,7 +348,7 @@ class EventMonitor {
         break; // one notification per cycle
       }
     } catch(e) {
-      // Daemon unreachable — silent
+      // Daemon unreachable - silent
     }
   }
 
@@ -385,7 +385,7 @@ class EventMonitor {
     if (sent) this._markSent(eventType, resourceKey);
   }
 
-  // Build failure trigger — called from local build handler in server/index.js
+  // Build failure trigger - called from local build handler in server/index.js
   // Builds happen on local Docker, so this is local-only by design
   async triggerBuildFailed({ imageTag, buildId, error, duration }) {
     if (!mailer.isConfigured() && !telegram.isConfigured() && !webhook.isConfigured()) return;
@@ -416,8 +416,8 @@ class EventMonitor {
       const totalUsed = imagesSize + containersSize + volumesSize + cacheSize;
 
       // thresholdGB is an ABSOLUTE size limit on what Docker uses (NOT a disk-fullness percentage).
-      // Previously the GB/50GB ratio was shown as a "percent" and was misleading — now it's in absolute GB.
-      const thresholdGB = Number(require('./alert-rules').parseJson(rule.params).gb) || 50; // rule limit (Settings → Notifications)
+      // Previously the GB/50GB ratio was shown as a "percent" and was misleading - now it's in absolute GB.
+      const thresholdGB = Number(require('./alert-rules').parseJson(rule.params).gb) || 50; // rule limit (Settings > Notifications)
       const usedGB = totalUsed / (1024 * 1024 * 1024);
 
       if (usedGB > thresholdGB) {
@@ -441,7 +441,7 @@ class EventMonitor {
         });
       }
     } catch(e) {
-      // Daemon unreachable — silent
+      // Daemon unreachable - silent
     }
   }
 }

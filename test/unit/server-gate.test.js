@@ -1,6 +1,6 @@
 'use strict';
 // A server's access password, per DockGate session (server/auth/server-gate.js): every way into a locked server
-// — the APIs of the server in use, /api/servers/<id>/…, websocket streams — needs this session to have typed it.
+// - the APIs of the server in use, /api/servers/<id>/..., websocket streams - needs this session to have typed it.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { stmts } = require('../../server/db');

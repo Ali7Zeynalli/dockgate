@@ -62,7 +62,7 @@ const FWD_FIXTURE = () => ({
 beforeEach(() => { ran.length = 0; started.length = 0; fixture = UFW_FIXTURE(); });
 const saveRule = (body) => request(app).post('/api/servers/srv/firewall/rule').send(body);
 
-test('unknown server → 404; the local server is refused', async () => {
+test('unknown server -> 404; the local server is refused', async () => {
   assert.strictEqual((await request(app).get('/api/servers/nope/firewall')).status, 404);
   stmts.insertServer.run('loc', 'local', 'localhost', 22, 'root', null, null, null, '', 'local', 0);
   assert.strictEqual((await request(app).get('/api/servers/loc/firewall')).status, 400);

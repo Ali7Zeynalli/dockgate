@@ -1,6 +1,6 @@
 // Build & push for Swarm: a service with `build:` runs on several servers only from an image in a registry. DockGate
 // builds it with Compose (the project's own build settings), tags it <registry>/<project>-<service>:<time> and pushes
-// it with the login stored in Deploy → Registries; the stack then uses that tag. The compose files are not changed.
+// it with the login stored in Deploy > Registries; the stack then uses that tag. The compose files are not changed.
 // On every Redeploy from the compose files it builds and pushes again, so the servers run what the files say now.
 const dockerService = require('./docker');
 const { stmts } = require('./db');
@@ -18,7 +18,7 @@ const tagNow = (d = new Date()) => d.toISOString().replace(/[-:]/g, '').replace(
 
 function registryById(id) {
   const r = stmts.getRegistry.get(Number(id));
-  if (!r) throw bad(404, 'That registry login is no longer in Deploy → Registries');
+  if (!r) throw bad(404, 'That registry login is no longer in Deploy > Registries');
   return r;
 }
 

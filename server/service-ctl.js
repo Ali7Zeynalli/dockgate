@@ -1,5 +1,5 @@
 // Spawns the isolated service-ctl worker for a one-shot op and resolves its JSON. Mirrors
-// host-stats.collectHostStats — the worker runs ssh2 in its own process so it never contends with the
+// host-stats.collectHostStats - the worker runs ssh2 in its own process so it never contends with the
 // main-process EventMonitor connections. cfg: { host,port,username,keyPath?,password?,passphrase? }.
 const { execFile } = require('child_process');
 const path = require('path');

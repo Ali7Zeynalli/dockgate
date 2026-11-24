@@ -1,5 +1,5 @@
-// A small .zip writer (deflate, CRC32 from zlib) and an .xlsx made of it — for Databases → Export without a
-// dependency. zip(entries) → Buffer; xlsx(sheets) → Buffer where sheets = [{ name, rows: [[cell…]…] }], the first
+// A small .zip writer (deflate, CRC32 from zlib) and an .xlsx made of it - for Databases > Export without a
+// dependency. zip(entries) > Buffer; xlsx(sheets) > Buffer where sheets = [{ name, rows: [[cell...]...] }], the first
 // row bold-less header; numbers stay numbers, everything else is an inline string.
 const zlib = require('zlib');
 

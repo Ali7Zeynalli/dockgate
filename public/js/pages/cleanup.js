@@ -1,4 +1,4 @@
-// Resources → Prune (was Activity → Cleanup). One table: each kind of unused data, what exactly would be
+// Resources > Prune (was Activity > Cleanup). One table: each kind of unused data, what exactly would be
 // removed and how much space it frees. Pick rows, then "Prune selected" asks once and runs them in order.
 // Volumes are never pre-selected because pruning them deletes data. Full system prune sits in a danger zone.
 async function renderCleanupInto(content, { embedded = false } = {}) {
@@ -36,7 +36,7 @@ async function renderCleanupInto(content, { embedded = false } = {}) {
       content.innerHTML = `
         ${UI.header('Prune', 'Free disk space by removing data nothing uses. Pick what to remove; nothing is deleted until you confirm.',
           `<button class="btn btn-secondary btn-sm" id="cleanup-refresh" title="Refresh">${Icons.refresh}</button>
-           <button class="btn btn-danger btn-sm" id="prune-selected" ${sel.length ? '' : 'disabled'}>${Icons.trash} Prune selected…</button>`)}
+           <button class="btn btn-danger btn-sm" id="prune-selected" ${sel.length ? '' : 'disabled'}>${Icons.trash} Prune selected...</button>`)}
         ${UI.table(
           [{ label: '', width: '40px' }, { label: 'What' }, { label: 'Will remove' }, { label: 'Frees', align: 'right' }],
           rows.map(r => ({
@@ -45,7 +45,7 @@ async function renderCleanupInto(content, { embedded = false } = {}) {
               `<input type="checkbox" data-pick="${r.id}" ${picked.has(r.id) ? 'checked' : ''} ${r.count ? '' : 'disabled'} aria-label="${r.title}" style="width:16px;height:16px">`,
               `<b>${r.title}</b>${r.count ? ` <span class="ui-sub">${r.count}</span>` : ''}${r.safe ? '' : ' ' + UI.pill('warn', 'deletes data')}`,
               r.count ? `${r.what}<div class="ui-sub">${r.note}</div>` : '<span class="text-muted">Nothing to remove</span>',
-              r.size ? `<span style="font-variant-numeric:tabular-nums">${formatBytes(r.size)}</span>` : '<span class="text-muted">—</span>',
+              r.size ? `<span style="font-variant-numeric:tabular-nums">${formatBytes(r.size)}</span>` : '<span class="text-muted">-</span>',
             ],
           })),
           { minWidth: 620 })}
@@ -60,7 +60,7 @@ async function renderCleanupInto(content, { embedded = false } = {}) {
             label: 'Full system prune',
             desc: 'Runs docker system prune: every stopped container, unused network and unused image, plus the build cache. Tick the box to also delete unused volumes and their data.',
             value: `<label style="display:flex;align-items:center;gap:6px;cursor:pointer" class="text-sm"><input type="checkbox" id="prune-volumes" style="width:15px;height:15px"> Include volumes</label>`,
-            action: `<button class="btn btn-xs btn-secondary" id="full-prune-btn" style="color:var(--danger)">${Icons.trash} Full prune…</button>`,
+            action: `<button class="btn btn-xs btn-secondary" id="full-prune-btn" style="color:var(--danger)">${Icons.trash} Full prune...</button>`,
           }])}
         </div>
       `;
@@ -72,7 +72,7 @@ async function renderCleanupInto(content, { embedded = false } = {}) {
       }));
 
       document.getElementById('prune-selected')?.addEventListener('click', () => {
-        const list = sel.map(r => `<li><b>${r.title}</b> (${r.count})${r.safe ? '' : ' — <span style="color:var(--danger)">deletes the data in them</span>'}</li>`).join('');
+        const list = sel.map(r => `<li><b>${r.title}</b> (${r.count})${r.safe ? '' : ' - <span style="color:var(--danger)">deletes the data in them</span>'}</li>`).join('');
         showDeleteConfirm('Prune selected', { message: `This removes:<ul style="margin:8px 0 0 18px">${list}</ul>${frees ? `<p style="margin-top:8px">Frees about <b>${formatBytes(frees)}</b>. Running containers are never touched.</p>` : ''}`, phrase: 'delete', onConfirm: async () => {
           let total = 0; const failed = [];
           for (const r of sel) {
@@ -81,8 +81,8 @@ async function renderCleanupInto(content, { embedded = false } = {}) {
               total += res.SpaceReclaimed || 0;
             } catch (e) { failed.push(`${r.title}: ${e.message}`); }
           }
-          if (failed.length) showToast(`Some steps failed — ${failed.join('; ')}`, 'error', 10000);
-          else showToast(`Pruned${total ? ` · ${formatBytes(total)} freed` : ''}`);
+          if (failed.length) showToast(`Some steps failed - ${failed.join('; ')}`, 'error', 10000);
+          else showToast(`Pruned${total ? `, ${formatBytes(total)} freed` : ''}`);
           picked = null;
           render();
         } });
@@ -92,7 +92,7 @@ async function renderCleanupInto(content, { embedded = false } = {}) {
         const includeVols = document.getElementById('prune-volumes').checked;
         showDeleteConfirm('Full system prune', { message: `Removes every stopped container, unused network, unused image and the build cache${includeVols ? ', <b>and every unused volume with its data</b>' : ''}. This cannot be undone.`, phrase: 'delete', onConfirm: async () => {
           try {
-            showToast('Running full system prune…', 'info');
+            showToast('Running full system prune...', 'info');
             await API.post(`/cleanup/system?volumes=${includeVols}`);
             showToast('System pruned');
             picked = null;

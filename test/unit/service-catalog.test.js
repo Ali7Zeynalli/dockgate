@@ -16,7 +16,7 @@ test('service: serviceFor resolves unit + verbs per distro; na where no variant;
   const ssh = cat.serviceFor('ssh-hardening', 'rocky');
   assert.equal(ssh.unit, 'sshd');
   assert.equal(ssh.reload, true);
-  assert.equal(sd(ssh.verbs.restart), 'sudo systemctl reload sshd', 'reload-mode service maps restart→reload');
+  assert.equal(sd(ssh.verbs.restart), 'sudo systemctl reload sshd', 'reload-mode service maps restart -> reload');
   assert.equal(ssh.validate, 'sudo sshd -t');
   assert.equal(ssh.requiresKeyForConfig, true);
 
@@ -34,7 +34,7 @@ test('service: openrc verbs on alpine (docker)', () => {
 
 test('service: serviceAction returns the fixed command; unknown action/item throws 400', () => {
   const sd = (cmd) => (/^if \[ -d \/run\/systemd\/system \]; then (.+?); else /.exec(cmd) || [])[1];
-  assert.equal(sd(cat.serviceAction('fail2ban', 'ubuntu', 'restart')), 'sudo systemctl reload fail2ban', 'fail2ban reloads — current bans are kept');
+  assert.equal(sd(cat.serviceAction('fail2ban', 'ubuntu', 'restart')), 'sudo systemctl reload fail2ban', 'fail2ban reloads - current bans are kept');
   assert.equal(sd(cat.serviceAction('ssh-hardening', 'ubuntu', 'restart')), 'sudo systemctl reload ssh');
   assert.throws(() => cat.serviceAction('docker', 'ubuntu', 'rm -rf /'), (e) => e.statusCode === 400);
   assert.throws(() => cat.serviceAction('update', 'ubuntu', 'restart'), (e) => e.statusCode === 400);
@@ -73,7 +73,7 @@ test('service.guardedServiceAction: stopping/disabling SSH over a password login
       `${action} ssh over password must 400`
     );
   }
-  // restart maps to reload for ssh (keeps the connection) → allowed with confirm even over a password login
+  // restart maps to reload for ssh (keeps the connection) -> allowed with confirm even over a password login
   assert.doesNotThrow(() => cat.guardedServiceAction({ hasKey: false, itemId: 'ssh-hardening', action: 'restart', confirm: true }));
   // with a key, stop/disable is allowed (still confirm-gated, which the caller satisfies here)
   assert.doesNotThrow(() => cat.guardedServiceAction({ hasKey: true, itemId: 'ssh-hardening', action: 'disable', confirm: true }));
@@ -104,13 +104,13 @@ test('service.validateParam: accepts valid, rejects shell-metachar / out-of-rang
 });
 
 test('service.buildServiceOp: builds validated command; rejects bad params (400) + confirm gate (409)', () => {
-  // fail2ban unban (no confirm) — valid
+  // fail2ban unban (no confirm) - valid
   const un = cat.buildServiceOp('fail2ban', 'ubuntu', 'unban', { jail: 'sshd', ip: '203.0.113.4' }, {});
   assert.equal(un.cmd, 'sudo fail2ban-client set sshd unbanip 203.0.113.4');
   // fail2ban ban requires confirm
   assert.throws(() => cat.buildServiceOp('fail2ban', 'ubuntu', 'ban', { jail: 'sshd', ip: '203.0.113.4' }, {}), (e) => e.statusCode === 409);
   assert.doesNotThrow(() => cat.buildServiceOp('fail2ban', 'ubuntu', 'ban', { jail: 'sshd', ip: '203.0.113.4' }, { confirm: true }));
-  // bad ip rejected (400) — never reaches the shell
+  // bad ip rejected (400) - never reaches the shell
   assert.throws(() => cat.buildServiceOp('fail2ban', 'ubuntu', 'ban', { jail: 'sshd', ip: '1;rm -rf /' }, { confirm: true }), (e) => e.statusCode === 400);
   // ufw allow (debian) valid; firewalld add (rhel) valid
   assert.equal(cat.buildServiceOp('firewall', 'ubuntu', 'allow', { port: '8080', proto: 'tcp' }, {}).cmd, 'sudo ufw allow 8080/tcp');
@@ -122,12 +122,12 @@ test('service.buildServiceOp: builds validated command; rejects bad params (400)
 });
 
 test('service.guardedServiceAction: destructive on high-risk/docker needs confirm; harmless restart does not', () => {
-  // high-risk firewall stop → confirm
+  // high-risk firewall stop -> confirm
   assert.throws(() => cat.guardedServiceAction({ hasKey: true, itemId: 'firewall', osId: 'ubuntu', action: 'stop', confirm: false }), (e) => e.statusCode === 409);
-  // docker restart → confirm (stops containers)
+  // docker restart -> confirm (stops containers)
   assert.throws(() => cat.guardedServiceAction({ hasKey: true, itemId: 'docker', osId: 'ubuntu', action: 'restart', confirm: false }), (e) => e.statusCode === 409);
-  // low-risk fail2ban restart → no confirm
+  // low-risk fail2ban restart -> no confirm
   assert.doesNotThrow(() => cat.guardedServiceAction({ hasKey: true, itemId: 'fail2ban', osId: 'ubuntu', action: 'restart', confirm: false }));
-  // non-destructive start even on high-risk firewall → no confirm
+  // non-destructive start even on high-risk firewall -> no confirm
   assert.doesNotThrow(() => cat.guardedServiceAction({ hasKey: true, itemId: 'firewall', osId: 'ubuntu', action: 'start', confirm: false }));
 });

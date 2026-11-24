@@ -1,4 +1,4 @@
-// Server Console → Scripts API (server/scripts.js, server/script-builder.js). Mounted under /api/servers.
+// Server Console > Scripts API (server/scripts.js, server/script-builder.js). Mounted under /api/servers.
 const express = require('express');
 const router = express.Router();
 const { stmts } = require('../db');
@@ -22,9 +22,9 @@ router.post('/:id/scripts/preview', send(async (req) => { serverOf(req); return 
 router.post('/:id/scripts/snippet', send(async (req) => { serverOf(req); return { text: B.snippet(req.body || {}) }; }));
 // Shell scripts on the server not in the list yet.
 router.get('/:id/scripts/discover', send(async (req) => ({ files: await S.discover(serverOf(req)) })));
-// body { path, name?, title? } — add a script that is on the server already (it stays where it is).
+// body { path, name?, title? } - add a script that is on the server already (it stays where it is).
 router.post('/:id/scripts/existing', send(async (req) => { const s = serverOf(req); const r = await S.addExisting(s, req.body || {}); audit(req, s, 'script_add_existing', { name: r.name, path: r.path }); return r; }));
-// body { name, title, code } — your own shell.
+// body { name, title, code } - your own shell.
 router.post('/:id/scripts/code', send(async (req) => { const s = serverOf(req); const r = await S.createCode(s, req.body || {}); audit(req, s, 'script_create', { name: r.name, path: r.path, kind: 'code' }); return r; }));
 router.post('/:id/scripts/:sid/to-code', send(async (req) => { const s = serverOf(req); const r = S.toCode(s, req.params.sid); audit(req, s, 'script_to_code', { name: r.name }); return r; }));
 router.put('/:id/scripts/:sid/title', send(async (req) => { const s = serverOf(req); return S.setTitle(s, req.params.sid, (req.body || {}).title); }));

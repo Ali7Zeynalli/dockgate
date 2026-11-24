@@ -18,7 +18,7 @@ const cfg = () => ({
   volumes: { appdata: { name: 'app_appdata' } },
 });
 
-test('restart → restart policy', () => {
+test('restart -> restart policy', () => {
   assert.deepEqual(S.restartPolicy('always'), { condition: 'any' });
   assert.deepEqual(S.restartPolicy('unless-stopped'), { condition: 'any' });
   assert.deepEqual(S.restartPolicy('no'), { condition: 'none' });
@@ -71,7 +71,7 @@ test('adapt: resource fields become deploy.resources; shm_size a /dev/shm tmpfs;
   assert.deepEqual(st.services.db.deploy.resources, { limits: { memory: '512M', cpus: '1.5', pids: 200 }, reservations: { memory: '128M' } });
   assert.ok(st.services.db.volumes.some(v => v.type === 'tmpfs' && v.target === '/dev/shm' && v.tmpfs.size === 268435456));
   for (const k of ['mem_limit', 'mem_reservation', 'cpus', 'pids_limit', 'shm_size']) assert.equal(st.services.db[k], undefined, k);
-  assert.deepEqual(st.services.worker.deploy.resources.limits, { memory: '64M', cpus: '0.5' }, 'quota/period → cpus; the deploy section keeps its memory');
+  assert.deepEqual(st.services.worker.deploy.resources.limits, { memory: '64M', cpus: '0.5' }, 'quota/period -> cpus; the deploy section keeps its memory');
 });
 
 test('adapt: links become aliases, volumes_from shares the mounts, fixed addresses go', () => {
@@ -86,7 +86,7 @@ test('adapt: links become aliases, volumes_from shares the mounts, fixed address
   assert.equal(st.services.worker.links, undefined); assert.equal(st.services.worker.volumes_from, undefined);
 });
 
-test('adapt: ports — 127.0.0.1 inside or host mode, an address → host mode, network_mode host → host network', () => {
+test('adapt: ports - 127.0.0.1 inside or host mode, an address -> host mode, network_mode host -> host network', () => {
   const c = cfg();
   c.services.web.ports.push({ mode: 'ingress', target: 9000, published: '9000', protocol: 'tcp', host_ip: '10.0.0.5' }, { mode: 'ingress', target: 80, published: '80', protocol: 'tcp' });
   let st = S.adapt(c, {}, { nodes: 1 });
@@ -107,7 +107,7 @@ test('resourcesOf, aliasesOf and portScope', () => {
   assert.equal(S.portScope({ host_ip: '0.0.0.0' }), 'any'); assert.equal(S.portScope({}), 'any'); assert.equal(S.portScope({ host_ip: '192.168.1.4' }), 'address');
 });
 
-test('startLevels orders services by depends_on; none or a loop → null', () => {
+test('startLevels orders services by depends_on; none or a loop -> null', () => {
   const st = (d) => ({ services: Object.fromEntries(Object.entries(d).map(([k, v]) => [k, { depends_on: v }])) });
   assert.deepEqual(S.startLevels(st({ db: [], cache: [], api: ['db', 'cache'], web: ['api'] })), [['db', 'cache'], ['api'], ['web']]);
   assert.equal(S.startLevels(st({ a: [], b: [] })), null);

@@ -1,5 +1,5 @@
 // Keep running: a Compose service that should always run. Its config is kept while a replica runs; if every replica
-// is stopped they are started again, if they were removed one is made again from the kept config — the same name,
+// is stopped they are started again, if they were removed one is made again from the kept config - the same name,
 // ports, environment, limits, networks and volumes. Used by the Edge agent and, without one, by DockGate.
 // Two checks in a row before acting, so a deploy or a restart in between is not mistaken for a loss.
 const ex = require('./executor');
@@ -47,7 +47,7 @@ async function keepAlive({ docker, project, service, target = 1, state, now = Da
   const number = Number((src.Config.Labels || {})['com.docker.compose.container-number']) || 1;
   try {
     const made = await ex.cloneReplica(docker, src, project, service, number, { keepPorts: true, name: String(src.Name || '').replace(/^\//, '') || undefined });
-    return { action: 'recreate', ok: true, container: made.name, reason: 'it was removed — made again from its kept config' };
+    return { action: 'recreate', ok: true, container: made.name, reason: 'it was removed - made again from its kept config' };
   } catch (e) { return { action: 'recreate', ok: false, reason: e.message.split('\n')[0] }; }
 }
 

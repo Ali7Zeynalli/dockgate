@@ -1,5 +1,5 @@
-// Tools → Databases: PostgreSQL in containers of the active server, reached with `docker exec … psql` inside the
-// container — no published port, no tunnel, the same way on the local machine and on SSH servers.
+// Tools > Databases: PostgreSQL in containers of the active server, reached with `docker exec ... psql` inside the
+// container - no published port, no tunnel, the same way on the local machine and on SSH servers.
 //   targets()                       the Postgres containers here, with their saved settings
 //   info(name)                      version, user, databases
 //   objects(name, db)               schemas, tables / views / sequences, functions
@@ -10,7 +10,7 @@
 //   updateRow / insertRow / deleteRows   by primary key only, each checked to touch exactly the rows meant
 //   exportTable(name, db, s, t, fmt, write)   CSV (COPY) or JSON lines, streamed
 // Safety: a connection is read-only until "Allow changes" (default_transaction_read_only=on for every session);
-// DROP, TRUNCATE, ALTER … DROP and DELETE / UPDATE without WHERE ask first; psql meta commands (\…) are refused;
+// DROP, TRUNCATE, ALTER ... DROP and DELETE / UPDATE without WHERE ask first; psql meta commands (\...) are refused;
 // every session has a statement timeout. Settings per server + container: pg_connections (password encrypted).
 const crypto = require('crypto');
 const { Writable } = require('stream');
@@ -65,7 +65,7 @@ async function resolve(name) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(n)) throw err('Unknown container', 404);
   let ins;
   try { ins = await dockerSvc().docker.getContainer(n).inspect(); } catch (e) { throw err(`Container ${n} not found on this server`, 404); }
-  if (!ins.State || !ins.State.Running) throw err(`${n} is not running — start it first`, 409, { code: 'NOT_RUNNING' });
+  if (!ins.State || !ins.State.Running) throw err(`${n} is not running - start it first`, 409, { code: 'NOT_RUNNING' });
   const d = defaultsFrom(envOf(ins));
   const s = q.get.get(serverId(), n);
   let password = d.password;
@@ -141,7 +141,7 @@ async function openPsql(t, dbname, { readOnly = true, timeoutMs = TIMEOUT_MS } =
   const cmd = ['psql', '-X', '-q', '-w', '-P', 'pager=off', '--csv', '-P', `null=${P.NULL_MARK}`, '-v', 'FETCH_COUNT=1000', '-U', t.user, '-d', dbname || t.dbname, ...(m.host ? ['-h', '127.0.0.1'] : [])];
   return openImpl(t.id, cmd, env, { user: m.osUser });
 }
-const how = new Map(); // container id → { host: true } / { osUser: 'postgres' } once the socket / peer login failed
+const how = new Map(); // container id -> { host: true } / { osUser: 'postgres' } once the socket / peer login failed
 
 /** Another client tool (pg_dump, pg_dumpall, pg_restore, psql for a restore) with the same login as psql. */
 const toolArgs = (t, argv) => { const m = how.get(t.id) || {}; return m.host ? [argv[0], '-h', '127.0.0.1', ...argv.slice(1)] : argv; };
@@ -151,7 +151,7 @@ async function psqlTool(t, argv, { onStdout, stdin, timeoutMs = 3600000 } = {}) 
   const m = how.get(t.id) || {};
   return execImpl(t.id, argv, env, { onStdout, stdin, timeoutMs, user: m.osUser, maxBytes: 1024 * 1024 });
 }
-/** "docker exec …" for a shell on the SSH server (PGPASSWORD comes from that shell's environment, not argv). */
+/** "docker exec ..." for a shell on the SSH server (PGPASSWORD comes from that shell's environment, not argv). */
 function dockerExecLine(t, { stdin = false } = {}) {
   const m = how.get(t.id) || {};
   const sq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
@@ -175,7 +175,7 @@ async function psql(t, extra, opts = {}) {
   const e1 = String(r.stderr || '');
   if (r.code !== 0 && !mode.host && /socket .*(No such file|failed)|could not connect to server: No such file/i.test(e1)) { mode = { ...mode, host: true }; r = await run(mode); if (r.code === 0) how.set(t.id, mode); }
   else if (r.code !== 0 && !mode.osUser && /Peer authentication failed/i.test(e1)) { mode = { ...mode, osUser: 'postgres' }; r = await run(mode); if (r.code === 0) how.set(t.id, mode); }
-  if (r.code === 127 || /executable file not found|psql: (command )?not found/i.test(String(r.stderr) + String(r.stdout))) throw err('psql is not in this container — it does not look like a PostgreSQL server image', 400, { code: 'NO_PSQL' });
+  if (r.code === 127 || /executable file not found|psql: (command )?not found/i.test(String(r.stderr) + String(r.stdout))) throw err('psql is not in this container - it does not look like a PostgreSQL server image', 400, { code: 'NO_PSQL' });
   return r;
 }
 const cleanErr = (s) => String(s || '').replace(/^psql:(\s*error:)?\s*/gm, '').replace(/^(\/dev\/stdin|<stdin>):\d+:\s*/gm, '').trim();
@@ -184,7 +184,7 @@ function failIfBad(r) {
   if (r.code !== 0) {
     const m = cleanErr(r.stderr) || 'psql failed';
     const auth = /password authentication failed|no password supplied|role .* does not exist/i.test(m);
-    throw err(auth ? `${m} — set the user / password under Connection` : m, auth ? 401 : 400, auth ? { code: 'AUTH' } : undefined);
+    throw err(auth ? `${m} - set the user / password under Connection` : m, auth ? 401 : 400, auth ? { code: 'AUTH' } : undefined);
   }
 }
 /** One query that returns one JSON value (catalog reads). */
@@ -231,7 +231,7 @@ async function objects(name, dbname) {
   )`);
 }
 
-/** Every table / view with its columns, and the functions — for completion in the SQL editor. */
+/** Every table / view with its columns, and the functions - for completion in the SQL editor. */
 async function schemaIndex(name, dbname) {
   const t = await resolve(name);
   return json(t, dbOf(t, dbname), `select json_build_object(
@@ -304,7 +304,7 @@ function whereOf(cols, { filters = [], where = '' } = {}) {
 async function rows(name, dbname, body = {}) {
   const t = await resolve(name); const dbn = dbOf(t, dbname);
   const st = await structureOf(t, dbn, body.schema, body.table);
-  if (st.kind === 'S') throw err('A sequence has no rows to show — see Structure');
+  if (st.kind === 'S') throw err('A sequence has no rows to show - see Structure');
   const cols = st.columns;
   const limit = Math.max(1, Math.min(PAGE_MAX, parseInt(body.limit, 10) || 100));
   const offset = Math.max(0, parseInt(body.offset, 10) || 0);
@@ -331,12 +331,12 @@ async function runSql(name, dbname, sql, { confirm = false } = {}) {
   if (!stmts.length) throw err('Nothing to run');
   if (stmts.length > 100) throw err('At most 100 statements at once');
   const kinds = stmts.map(s => P.kind(s.sql));
-  stmts.forEach((s) => { if (P.hasMeta(s.sql)) throw err('psql commands (a backslash outside quotes) are not run here — write SQL'); });
+  stmts.forEach((s) => { if (P.hasMeta(s.sql)) throw err('psql commands (a backslash outside quotes) are not run here - write SQL'); });
   const writes = kinds.some(k => k.write);
   if (writes && !t.allowWrite) throw err('This connection is read-only. Turn on "Allow changes" to run statements that change data.', 403, { code: 'READ_ONLY' });
   const danger = kinds.map((k, i) => k.danger ? { statement: i + 1, sql: stmts[i].sql.slice(0, 200), why: k.danger } : null).filter(Boolean);
   if (danger.length && !confirm) throw err('Some statements need a confirm', 409, { code: 'NEEDS_CONFIRM', danger });
-  if (writes && t.production && !confirm) throw err('This is marked as production — confirm to run statements that change data', 409, { code: 'NEEDS_CONFIRM', danger: [{ statement: 0, why: 'production database' }] });
+  if (writes && t.production && !confirm) throw err('This is marked as production - confirm to run statements that change data', 409, { code: 'NEEDS_CONFIRM', danger: [{ statement: 0, why: 'production database' }] });
   const mark = `\u241E${crypto.randomBytes(4).toString('hex')}:`;
   const args = ['--csv', '-P', `null=${P.NULL_MARK}`, '-v', 'FETCH_COUNT=500'];
   stmts.forEach((s, i) => { args.push('-c', `\\echo ${mark}${i}`, '-c', s.sql); });
@@ -374,7 +374,7 @@ async function editable(t, dbn, schema, table) {
   if (!t.allowWrite) throw err('This connection is read-only. Turn on "Allow changes" first.', 403, { code: 'READ_ONLY' });
   const st = await structureOf(t, dbn, schema, table);
   if (!(st.kind === 'r' || st.kind === 'p')) throw err('Only tables can be changed here');
-  if (!st.pk.length) throw err('This table has no primary key — change it with SQL', 400, { code: 'NO_PK' });
+  if (!st.pk.length) throw err('This table has no primary key - change it with SQL', 400, { code: 'NO_PK' });
   return st;
 }
 const keyWhere = (st, pk) => {
@@ -392,7 +392,7 @@ async function updateRow(name, dbname, { schema, table, pk, set }) {
   const t = await resolve(name); const dbn = dbOf(t, dbname); const st = await editable(t, dbn, schema, table);
   const cols = colSet(st, set); if (!cols.length) throw err('Nothing to change');
   const d = await write(t, dbn, `with u as (update ${P.qname(st.schema, st.name)} set ${cols.map(c => `${P.ident(c)} = ${P.lit(set[c])}`).join(', ')} where ${keyWhere(st, pk)} returning 1) select json_build_object('n', count(*)) from u`);
-  if (Number(d.n) !== 1) throw err('The row is not there any more — reload the table', 409, { code: 'GONE' });
+  if (Number(d.n) !== 1) throw err('The row is not there any more - reload the table', 409, { code: 'GONE' });
   return { updated: 1, sql: `UPDATE ${st.schema}.${st.name} SET ${cols.join(', ')} WHERE ${st.pk.join(', ')}` };
 }
 async function insertRow(name, dbname, { schema, table, values }) {
@@ -413,8 +413,8 @@ async function deleteRows(name, dbname, { schema, table, pks }) {
 
 /**
  * Many edits of one table in ONE transaction (a DO block): updates and deletes by primary key, each checked to
- * touch exactly one row — and, for an update, that the edited columns still hold what the editor loaded (someone
- * else may have changed them since: CONFLICT). test: the same inside BEGIN … ROLLBACK (also on a read-only connection).
+ * touch exactly one row - and, for an update, that the edited columns still hold what the editor loaded (someone
+ * else may have changed them since: CONFLICT). test: the same inside BEGIN ... ROLLBACK (also on a read-only connection).
  * changes: [{ op: 'update', pk, set, orig } | { op: 'insert', values } | { op: 'delete', pk }]
  */
 async function applyChanges(name, dbname, { schema, table, changes, test = false }) {
@@ -436,7 +436,7 @@ async function applyChanges(name, dbname, { schema, table, changes, test = false
       body.push(ks.length ? `INSERT INTO ${q} (${ks.map(P.ident).join(', ')}) VALUES (${ks.map(k => P.lit(ch.values[k])).join(', ')});` : `INSERT INTO ${q} DEFAULT VALUES;`);
       return;
     }
-    if (!st.pk.length) throw err('This table has no primary key — change it with SQL', 400, { code: 'NO_PK' });
+    if (!st.pk.length) throw err('This table has no primary key - change it with SQL', 400, { code: 'NO_PK' });
     const where = keyWhere(st, ch.pk);
     const check = `GET DIAGNOSTICS n = ROW_COUNT; IF n <> 1 THEN RAISE EXCEPTION 'DG-CONFLICT: %', ${P.lit(label(ch.pk))}; END IF;`;
     if (ch.op === 'delete') { body.push(`DELETE FROM ${q} WHERE ${where};`, check); return; }
@@ -455,9 +455,9 @@ async function applyChanges(name, dbname, { schema, table, changes, test = false
   if (r.code !== 0) {
     const at = ats.length ? ats[ats.length - 1] : null;
     const conflict = /DG-CONFLICT: ([^\n]*)/.exec(e);
-    if (conflict) throw err(`The row ${conflict[1]} was changed or deleted by someone else since you loaded it — nothing was saved. Reload and edit again.`, 409, { code: 'CONFLICT', at });
+    if (conflict) throw err(`The row ${conflict[1]} was changed or deleted by someone else since you loaded it - nothing was saved. Reload and edit again.`, 409, { code: 'CONFLICT', at });
     const lines = e.split('\n').filter(l => !/NOTICE:\s+dg:at:/.test(l) && !/^(CONTEXT|PL\/pgSQL|SQL statement)/.test(l.replace(/^psql:[^:]*:\s*/, '')));
-    throw err(`${at != null ? `Change ${at + 1}: ` : ''}${cleanErr(lines.join('\n'))} — nothing was saved.`, 400, { code: 'FAILED', at });
+    throw err(`${at != null ? `Change ${at + 1}: ` : ''}${cleanErr(lines.join('\n'))} - nothing was saved.`, 400, { code: 'FAILED', at });
   }
   const n = { update: 0, insert: 0, delete: 0 }; changes.forEach(c => { if (n[c.op] != null) n[c.op]++; });
   return { ok: true, test: !!test, ...n };

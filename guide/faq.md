@@ -7,7 +7,7 @@ A self-hosted control panel for Docker, Docker Compose and Docker Swarm, and for
 Yes. It is open source under the MIT license.
 
 **What do my servers need?**
-SSH access and a user with passwordless `sudo` for setup. Docker can be installed by DockGate (**Server → Software → Setup**). Nothing else runs on them unless you install the optional Edge agent.
+SSH access and a user with passwordless `sudo` for setup. Docker can be installed by DockGate (**Server > Software > Setup**). Nothing else runs on them unless you install the optional Edge agent.
 
 **Which systems are supported?**
 Ubuntu and Debian are the main targets; RHEL-type systems (Rocky, Alma) work too, with firewalld instead of UFW. DockGate itself runs anywhere Docker runs.
@@ -22,10 +22,10 @@ There is one admin account. Share access carefully: whoever signs in can control
 Keep port 7077 off the internet. The Docker socket gives root on the host. Use a VPN (WireGuard, NovusGate) or an SSH tunnel. If you must expose it, put it behind HTTPS and set `COOKIE_SECURE=true` and `TRUST_PROXY`.
 
 **Where is my data?**
-DockGate's own data (settings, logins, history) is in its data folder (`./data`). Your apps' data is in Docker volumes on each server. See [Getting started → Back up](getting-started.md).
+DockGate's own data (settings, logins, history) is in its data folder (`./data`). Your apps' data is in Docker volumes on each server. See [Getting started > Back up](getting-started.md).
 
 **How do I update DockGate?**
-**Settings → Software update → Update to vX Now**, or pull the new image and recreate the container. Your data stays.
+**Settings > Software update > Update to vX Now**, or pull the new image and recreate the container. Your data stays.
 
 **Do I need Swarm?**
 No. Compose on one server is enough for many setups. Swarm adds replicas, rolling updates with automatic roll back, secrets, autoscaling and more servers. It works on a single server too, and a Compose project can be moved to Swarm and back at any time.
@@ -34,7 +34,7 @@ No. Compose on one server is enough for many setups. Swarm adds replicas, rollin
 No, Swarm keeps the number of replicas you set. DockGate's [Auto Scaling](swarm-auto-scaling.md) adds and removes replicas by CPU and memory.
 
 **Does DockGate add servers when the cluster is full?**
-No. It tells you when a replica does not fit; adding a server is your call (**Swarm → Nodes → Add servers…**).
+No. It tells you when a replica does not fit; adding a server is your call (**Swarm > Nodes > Add servers...**).
 
 **What is the Edge agent, and do I need it?**
 A small container on each server that sends metrics, logs and alerts outward. Optional: without it DockGate reads everything over SSH. Install it when you want alerts while DockGate is offline, or when servers are behind NAT.

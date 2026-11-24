@@ -1,7 +1,7 @@
-// Docker event watcher — PORT of server/notifications/event-monitor.js for a single host.
+// Docker event watcher - PORT of server/notifications/event-monitor.js for a single host.
 // Talks to the LOCAL (read-only-mounted) socket; every stmts.* DB call is replaced by cfg/getRule;
 // this.serverId becomes cfg.serverLabel; the hardcoded 50GB disk threshold becomes cfg.diskThresholdGb;
-// timezone + intervals come from cfg. Classification logic (die→OOM/Crash/Stop, restart, unhealthy,
+// timezone + intervals come from cfg. Classification logic (die > OOM/Crash/Stop, restart, unhealthy,
 // periodic unhealthy + disk sweeps, cooldowns) is preserved exactly.
 
 const Docker = require('dockerode');
@@ -13,17 +13,17 @@ const { backoff, fmtFor } = require('./backoff');
 
 const LABEL = cfg.serverLabel;
 
-// A `docker restart` emits die→…→restart. Hold a "Stopped/Crashed" alert this long so a following
-// `restart` event can cancel it — otherwise a restart looks like Stop-then-Restart (two alerts).
+// A `docker restart` emits die -> ... -> restart. Hold a "Stopped/Crashed" alert this long so a following
+// `restart` event can cancel it - otherwise a restart looks like Stop-then-Restart (two alerts).
 const DIE_DEBOUNCE_MS = 3000;
 
 class Monitor {
   constructor() {
     this.docker = new Docker({ socketPath: cfg.socketPath });
     this.stream = null;
-    this.cooldowns = new Map(); // (label:event_type:resourceKey) → last_sent timestamp
-    this.pendingDie = new Map(); // containerId → timer (debounced die alert, cancelled by a restart)
-    this.pendingStart = new Map(); // containerId → timer (debounced start alert, cancelled by a restart)
+    this.cooldowns = new Map(); // (label:event_type:resourceKey) -> last_sent timestamp
+    this.pendingDie = new Map(); // containerId -> timer (debounced die alert, cancelled by a restart)
+    this.pendingStart = new Map(); // containerId -> timer (debounced start alert, cancelled by a restart)
     this.reconnectTimer = null;
     this.diskCheckTimer = null;
     this.healthCheckTimer = null;
@@ -109,7 +109,7 @@ class Monitor {
 
   /**
    * Docker's socket has not answered for cfg.intervals.socketGiveUpMs: exit, so Docker (restart: unless-stopped)
-   * starts the agent again — with a fresh mount of /var/run/docker.sock. When Docker itself restarted while the agent
+   * starts the agent again - with a fresh mount of /var/run/docker.sock. When Docker itself restarted while the agent
    * kept running (live-restore), the old mount points to a socket nobody listens on: ECONNREFUSED for ever, and
    * Docker never restarts a container only for being unhealthy. Returns true when it gave up.
    */
@@ -117,7 +117,7 @@ class Monitor {
     if (!/ECONNREFUSED|ENOENT|ECONNRESET|EPIPE/.test(String((err && (err.code || err.message)) || ''))) return false;
     if (!this.failSince) this.failSince = now;
     if (now - this.failSince < cfg.intervals.socketGiveUpMs) return false;
-    console.error(`[agent:${LABEL}] Docker's socket has not answered for ${Math.round((now - this.failSince) / 1000)} s — exiting so Docker starts the agent again with a fresh socket (Docker itself was probably restarted)`);
+    console.error(`[agent:${LABEL}] Docker's socket has not answered for ${Math.round((now - this.failSince) / 1000)} s - exiting so Docker starts the agent again with a fresh socket (Docker itself was probably restarted)`);
     this.stopped = true;
     this.exit(1);
     return true;
@@ -143,7 +143,7 @@ class Monitor {
     const rule = getRule(eventType);
     if (!rule) return false;
 
-    // cooldown_minutes === 0 means "no throttle — send every occurrence".
+    // cooldown_minutes === 0 means "no throttle - send every occurrence".
     const cd = rule.cooldown_minutes == null ? 5 : Number(rule.cooldown_minutes);
     if (!(cd > 0)) return false;
     return (Date.now() - lastSent) < cd * 60 * 1000;
@@ -153,7 +153,7 @@ class Monitor {
     this.cooldowns.set(this._cooldownKey(eventType, resourceKey), Date.now());
   }
 
-  // Tail recent container logs (the WHY behind a failure). Best-effort — returns '' on any error.
+  // Tail recent container logs (the WHY behind a failure). Best-effort - returns '' on any error.
   async _tailLogs(containerId, lines = 40) {
     if (!containerId) return '';
     try {
@@ -175,11 +175,11 @@ class Monitor {
     const prefix = this._prefix();
     const serverDetail = this._serverDetail();
 
-    // Container die — Docker emits 'die' on every exit (crash, manual stop, OOM).
+    // Container die - Docker emits 'die' on every exit (crash, manual stop, OOM).
     // We don't listen for 'stop' separately: it fires before 'die' and would double-count.
     if (event.Type === 'container' && event.Action === 'die') {
       const exitCode = attrs.exitCode;
-      // "Unexpected" only for a non-zero exit code — exit 0 is a clean/intentional stop.
+      // "Unexpected" only for a non-zero exit code - exit 0 is a clean/intentional stop.
       const unexpected = exitCode !== undefined && exitCode !== '0' && exitCode !== 0;
       const cid = event.Actor?.ID;
 
@@ -201,14 +201,14 @@ class Monitor {
           eventType = 'container_die';
           payload = {
             subject: `${prefix}Container ${verb}: ${name}`,
-            html: templates.containerDieTemplate({ containerName: name, containerId: id, image, time, exitCode: exitCode ?? '—', unexpected, server: LABEL, logs }),
-            telegramText: telegram.formatAlert(`${prefix}Container ${verb}`, { ...(serverDetail || {}), Container: name, Image: image, 'Exit Code': exitCode ?? '—', Time: time }) + telegram.formatLogs(logs),
+            html: templates.containerDieTemplate({ containerName: name, containerId: id, image, time, exitCode: exitCode ?? '-', unexpected, server: LABEL, logs }),
+            telegramText: telegram.formatAlert(`${prefix}Container ${verb}`, { ...(serverDetail || {}), Container: name, Image: image, 'Exit Code': exitCode ?? '-', Time: time }) + telegram.formatLogs(logs),
           };
         }
         await this._sendNotification(eventType, name, payload);
       };
 
-      // Debounce: a `docker restart` fires die→…→restart (an unresponsive container is SIGKILLed=137).
+      // Debounce: a `docker restart` fires die -> ... -> restart (an unresponsive container is SIGKILLed=137).
       // Hold the alert; the restart handler cancels it so one restart isn't reported as Stop+Restart.
       if (cid) {
         if (this.pendingDie.has(cid)) clearTimeout(this.pendingDie.get(cid));
@@ -221,11 +221,11 @@ class Monitor {
     // Container restart
     if (event.Type === 'container' && event.Action === 'restart') {
       // Cancel the pending "Stopped/Crashed" + "Started" alerts from the die/start events that
-      // preceded this restart (a `docker restart` fires die→…→start→restart).
+      // preceded this restart (a `docker restart` fires die -> ... -> start -> restart).
       const rcid = event.Actor?.ID;
       if (rcid && this.pendingDie.has(rcid)) { clearTimeout(this.pendingDie.get(rcid)); this.pendingDie.delete(rcid); }
       if (rcid && this.pendingStart.has(rcid)) { clearTimeout(this.pendingStart.get(rcid)); this.pendingStart.delete(rcid); }
-      let restartCount = '—';
+      let restartCount = '-';
       try {
         const info = await this.docker.getContainer(event.Actor?.ID).inspect();
         restartCount = info.RestartCount || 0;
@@ -240,12 +240,12 @@ class Monitor {
 
     // Container unhealthy (event-based)
     if (event.Type === 'container' && event.Action === 'health_status: unhealthy') {
-      let failingStreak = '—', lastOutput = '';
+      let failingStreak = '-', lastOutput = '';
       try {
         const info = await this.docker.getContainer(event.Actor?.ID).inspect();
         const health = info.State?.Health;
         if (health) {
-          failingStreak = health.FailingStreak || '—';
+          failingStreak = health.FailingStreak || '-';
           const lastLog = health.Log?.[health.Log.length - 1];
           if (lastLog) lastOutput = lastLog.Output?.substring(0, 500) || '';
         }
@@ -260,7 +260,7 @@ class Monitor {
       this.unhealthy.sent(name); // the periodic sweep then waits before telling again
     }
 
-    // Container started — debounced, because a `docker restart` also fires start (die→…→start→restart);
+    // Container started - debounced, because a `docker restart` also fires start (die -> ... -> start -> restart);
     // the restart handler cancels it so a restart isn't reported as Started + Restarted.
     if (event.Type === 'container' && event.Action === 'start') {
       const scid = event.Actor?.ID;
@@ -317,12 +317,12 @@ class Monitor {
         const bo = this.unhealthy.check(name, Date.now(), (Number(rule.cooldown_minutes) || 0) * 60000);
         if (!bo.due) continue;
 
-        let failingStreak = '—', lastOutput = '';
+        let failingStreak = '-', lastOutput = '';
         try {
           const info = await this.docker.getContainer(c.Id).inspect();
           const health = info.State?.Health;
           if (health) {
-            failingStreak = health.FailingStreak || '—';
+            failingStreak = health.FailingStreak || '-';
             const lastLog = health.Log?.[health.Log.length - 1];
             if (lastLog) lastOutput = lastLog.Output?.substring(0, 500) || '';
           }
@@ -341,13 +341,13 @@ class Monitor {
             server: LABEL,
             logs,
           }),
-          telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: c.Image, 'Failing Streak': failingStreak, ...(bo.n > 1 ? { Alert: `#${bo.n} — unhealthy for ${fmtFor(Date.now() - bo.since)}, next in ${fmtFor(bo.next)} if it stays so` } : {}) }) + telegram.formatLogs(logs),
+          telegramText: telegram.formatAlert(`${prefix}Container Unhealthy`, { ...(serverDetail || {}), Container: name, Image: c.Image, 'Failing Streak': failingStreak, ...(bo.n > 1 ? { Alert: `#${bo.n} - unhealthy for ${fmtFor(Date.now() - bo.since)}, next in ${fmtFor(bo.next)} if it stays so` } : {}) }) + telegram.formatLogs(logs),
         }, { bypassCooldown: true });
         this.unhealthy.sent(name);
         break; // one notification per cycle
       }
     } catch (e) {
-      // Daemon unreachable — silent
+      // Daemon unreachable - silent
     }
   }
 
@@ -412,7 +412,7 @@ class Monitor {
         });
       }
     } catch (e) {
-      // Daemon unreachable — silent
+      // Daemon unreachable - silent
     }
   }
 }
@@ -442,7 +442,7 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Format a time in the configured timezone (cfg.timezone). 'auto'/unset → container/UTC.
+// Format a time in the configured timezone (cfg.timezone). 'auto'/unset -> container/UTC.
 function fmtTime(date) {
   try {
     const tz = cfg.timezone;

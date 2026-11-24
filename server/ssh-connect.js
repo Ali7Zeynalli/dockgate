@@ -3,7 +3,7 @@
 //
 // cfg: { host, port, username, keyPath?, password?, passphrase?, hostKey? }
 //   keyPath   absolute path of the private key (wins over password)
-//   hostKey   pinned SHA256 fingerprint — when set, a different host key is refused
+//   hostKey   pinned SHA256 fingerprint - when set, a different host key is refused
 const fs = require('fs');
 const { strictVerifier } = require('./ssh-hostkey');
 

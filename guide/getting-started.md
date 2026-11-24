@@ -29,9 +29,9 @@ What the downloaded `docker-compose.yml` sets:
 | Line | Why |
 |---|---|
 | `image: ghcr.io/ali7zeynalli/dockgate:latest` | the published image |
-| `/var/run/docker.sock:/var/run/docker.sock` | manage Docker on this host — required |
-| `./data:/app/data` | database, keys, compose projects — required |
-| `# - /:/host:ro` | optional: uncomment so **Tools → Files** and Compose can read folders on the host |
+| `/var/run/docker.sock:/var/run/docker.sock` | manage Docker on this host - required |
+| `./data:/app/data` | database, keys, compose projects - required |
+| `# - /:/host:ro` | optional: uncomment so **Tools > Files** and Compose can read folders on the host |
 | `# - TRUST_PROXY=loopback` | optional: only behind a reverse proxy on the same host |
 | `# - DG_SETUP_TOKEN=change-me` | optional: always ask for this token at first setup |
 
@@ -42,7 +42,7 @@ The first visit opens **Welcome to DockGate**.
 ![First-run setup](images/setup.png)
 
 1. Type a password (at least **8 characters**) twice.
-2. **Setup token** — this field appears only when you connect from **outside your local network**, or when `DG_SETUP_TOKEN` is set. It stops a stranger from claiming a fresh install before you do. The token is in DockGate's log:
+2. **Setup token** - this field appears only when you connect from **outside your local network**, or when `DG_SETUP_TOKEN` is set. It stops a stranger from claiming a fresh install before you do. The token is in DockGate's log:
 
    ```bash
    docker logs dockgate-control-panel
@@ -51,7 +51,7 @@ The first visit opens **Welcome to DockGate**.
    ```
    ┌────────────────────────────────────────────────────────────┐
    │  DockGate first-run setup                                  │
-   │  Setup token: Xk3p…                                        │
+   │  Setup token: Xk3p...                                        │
    └────────────────────────────────────────────────────────────┘
    ```
 
@@ -63,14 +63,14 @@ DockGate has **one admin**. There are no other users or roles.
 
 ## 4. First steps
 
-- **Top bar → SERVERS ▾** — the server every page works on. *Local* is the host DockGate runs on. Add more in **Servers → Servers**; they are reached over SSH.
-- **Ctrl/Cmd + K** — search pages, containers, images, volumes, networks, stacks, servers and actions.
-- **Ctrl + `** — open a terminal.
-- **Settings → Notifications** — connect Telegram, email or a webhook so you hear about crashes and full disks.
+- **Top bar > SERVERS ▾** - the server every page works on. *Local* is the host DockGate runs on. Add more in **Servers > Servers**; they are reached over SSH.
+- **Ctrl/Cmd + K** - search pages, containers, images, volumes, networks, stacks, servers and actions.
+- **Ctrl + `** - open a terminal.
+- **Settings > Notifications** - connect Telegram, email or a webhook so you hear about crashes and full disks.
 
 ## 5. Update
 
-**From DockGate:** **Settings → Software update**.
+**From DockGate:** **Settings > Software update**.
 
 ![Software update](images/settings-update.png)
 
@@ -109,7 +109,7 @@ tar czf dockgate-backup-$(date +%F).tar.gz data/
 docker compose start
 ```
 
-**Volume data** (your apps' data) is not in `data/`. Back it up from **Resources → Volumes → Backup**, or on a schedule in **Server → Automation → Schedules**.
+**Volume data** (your apps' data) is not in `data/`. Back it up from **Resources > Volumes > Backup**, or on a schedule in **Server > Automation > Schedules**.
 
 **Restore:** put the `data/` folder back next to `docker-compose.yml` and run `docker compose up -d`.
 
@@ -119,9 +119,9 @@ docker compose start
 
 | You see | Why | What to do |
 |---|---|---|
-| `Setup token is missing or wrong — find it in the DockGate logs (docker logs <container>).` | You set up from outside the local network, or `DG_SETUP_TOKEN` is set | Run `docker logs dockgate-control-panel` and copy the token |
+| `Setup token is missing or wrong - find it in the DockGate logs (docker logs <container>).` | You set up from outside the local network, or `DG_SETUP_TOKEN` is set | Run `docker logs dockgate-control-panel` and copy the token |
 | `Password must be at least 8 characters` | Too short | Use 8 or more characters |
-| `Too many attempts — try again later` | More than 10 sign-in or setup tries from your IP in 15 minutes | Wait 15 minutes. Behind a reverse proxy, set `TRUST_PROXY` so DockGate sees each client's own IP |
+| `Too many attempts - try again later` | More than 10 sign-in or setup tries from your IP in 15 minutes | Wait 15 minutes. Behind a reverse proxy, set `TRUST_PROXY` so DockGate sees each client's own IP |
 | `Incorrect password` | Wrong password | Try again (counts toward the limit above) |
 | `Already configured` | Setup was done before | Sign in instead |
 | The container keeps restarting with `SQLITE_CANTOPEN` or `connect EACCES /var/run/docker.sock` | SELinux confines containers (openSUSE Leap 16 and similar) | See *SELinux* below |
@@ -154,4 +154,4 @@ docker exec dockgate-control-panel node -e "new (require('better-sqlite3'))('/ap
 docker restart dockgate-control-panel
 ```
 
-Until you set the new password, whoever opens the page first can set it — do this from your local network, or set `DG_SETUP_TOKEN` first.
+Until you set the new password, whoever opens the page first can set it - do this from your local network, or set `DG_SETUP_TOKEN` first.

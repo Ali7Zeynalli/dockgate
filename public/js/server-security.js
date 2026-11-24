@@ -1,7 +1,6 @@
-// Server security pages — Overview security status · Access & SSH · Users · Deploy-user wizard (Firewall: firewall-panel.js).
+// Server security pages - Overview security status, Access & SSH, Users, Deploy-user wizard (Firewall: firewall-panel.js).
 // Same style as service-manager.js / provision-modal.js (globals, API.*, design-system classes).
-// Every risky change goes through a confirm dialog and then a server-side "lifeline" job (validate →
-// arm rollback → apply → test a NEW SSH connection → commit), whose steps runLifelineJob() shows live.
+// Every risky change goes through a confirm dialog and then a server-side "lifeline" job (validate -> // arm rollback -> apply -> test a NEW SSH connection -> commit), whose steps runLifelineJob() shows live.
 // The safety rules (DockGate keeps its own user/key, last sudo user, SSH port) are enforced by the
 // backend (server/routes/security.js); the UI only explains them.
 
@@ -29,7 +28,7 @@ function runLifelineJob(serverId, jobId, title, { successText } = {}) {
     const stepsEl = m.overlay.querySelector('[data-steps]');
     const resEl = m.overlay.querySelector('[data-result]');
     const footer = m.overlay.querySelector('.modal-footer');
-    footer.innerHTML = '<span class="text-xs text-muted">Working… keep this window open or close it — the job keeps running.</span>';
+    footer.innerHTML = '<span class="text-xs text-muted">Working... keep this window open or close it - the job keeps running.</span>';
     const icon = (st) => st === 'done' ? '<span style="color:var(--success);font-weight:700">✓</span>'
       : st === 'running' ? '<span class="badge-dot" style="background:var(--accent);display:inline-block;width:8px;height:8px;border-radius:50%;animation:pulse 1.2s infinite"></span>'
       : st === 'failed' ? '<span style="color:var(--danger);font-weight:700">✗</span>' : '<span class="text-muted">○</span>';
@@ -42,7 +41,7 @@ function runLifelineJob(serverId, jobId, title, { successText } = {}) {
       const ok = job.status === 'done';
       const warns = (job.result && job.result.warnings) || [];
       const failedStep = job.steps.find(s => s.state === 'failed');
-      const rb = job.rolledBack === true ? ' The previous configuration was restored.' : (job.rolledBack === false ? ' Automatic restore did not confirm — the server restores it by itself within 120 s.' : '');
+      const rb = job.rolledBack === true ? ' The previous configuration was restored.' : (job.rolledBack === false ? ' Automatic restore did not confirm - the server restores it by itself within 120 s.' : '');
       resEl.innerHTML = ok
         ? `<div class="insight-card info" style="background:var(--success-bg);color:var(--success);border-left-color:var(--success)">${escapeHtml(job.successText || successText || 'Applied and verified with a new SSH connection.')}</div>${warns.map(w => `<div class="insight-card warning" style="margin-top:8px">${escapeHtml(w)}</div>`).join('')}`
         : `<div class="insight-card danger" style="display:block"><div style="font-weight:600">${escapeHtml(failedStep ? failedStep.label + ' failed.' : 'Failed.')}${escapeHtml(rb)}</div><pre style="white-space:pre-wrap;margin-top:6px;font-size:11px;max-height:160px;overflow:auto">${escapeHtml(String(job.error || '').slice(-1500))}</pre></div>`;
@@ -76,7 +75,7 @@ function confirmRetrust(serverId, onDone) {
     title: 'Re-trust host key',
     change: 'DockGate forgets the pinned host key and pins the key the server presents on the next connection.',
     protects: 'Only do this if you rebuilt or reinstalled the server, or rotated its host keys yourself. An unexpected change can mean someone is intercepting the connection.',
-    undo: 'Not needed — the new key is pinned automatically.',
+    undo: 'Not needed - the new key is pinned automatically.',
     danger: true, confirmLabel: 'Re-trust',
     onConfirm: async () => {
       try { await API.post(`/servers/${serverId}/access/retrust-host-key`, { confirm: true }); showToast('Host key will be re-pinned on the next connection'); onDone && onDone(); }
@@ -87,13 +86,13 @@ function confirmRetrust(serverId, onDone) {
 function addRetrustButton(serverId, card, onDone) {
   if (!card) return;
   const b = document.createElement('button');
-  b.className = 'btn btn-danger btn-sm'; b.style.marginTop = '10px'; b.style.marginLeft = '8px'; b.textContent = 'Re-trust host key…';
+  b.className = 'btn btn-danger btn-sm'; b.style.marginTop = '10px'; b.style.marginLeft = '8px'; b.textContent = 'Re-trust host key...';
   b.addEventListener('click', () => confirmRetrust(serverId, onDone));
   card.appendChild(b);
 }
 
 // ============================================================
-// Overview → Security posture card (rendered above the existing overview)
+// Overview > Security posture card (rendered above the existing overview)
 // ============================================================
 async function renderSecurityPosture(serverId, container, goTab) {
   container.innerHTML = `<div class="card"><div class="skeleton" style="width:100%;height:120px"></div></div>`;
@@ -113,7 +112,7 @@ async function renderSecurityPosture(serverId, container, goTab) {
     ${data.rebootRequired ? `
     <div class="card" style="border-left:3px solid var(--warning);margin-bottom:14px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap">
       <div style="min-width:0;flex:1"><div style="font-weight:700;font-size:15px">Reboot required</div><div class="text-sm text-muted" style="margin-top:4px">Installed updates (kernel or core libraries) take effect after a reboot. Running containers with a restart policy come back by themselves.</div></div>
-      <button class="btn btn-secondary" data-reboot>${Icons.restart || ''} Reboot server…</button>
+      <button class="btn btn-secondary" data-reboot>${Icons.restart || ''} Reboot server...</button>
     </div>` : ''}
     ${dep && dep.level !== 'ok' ? `
     <div class="card" style="border-left:3px solid var(--accent);margin-bottom:14px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap">
@@ -123,7 +122,7 @@ async function renderSecurityPosture(serverId, container, goTab) {
       </div>
       <button class="btn btn-primary" data-wizard>${Icons.key || ''} Create deploy user</button>
     </div>` : ''}
-    ${UI.header('Security recommendations', open ? `${open} to look at — most important first.` : 'Nothing to fix right now.', secPill(worst))}
+    ${UI.header('Security recommendations', open ? `${open} to look at - most important first.` : 'Nothing to fix right now.', secPill(worst))}
     <div class="ui-settings">${checks.map(c => `
       <div class="ui-set" style="grid-template-columns:auto minmax(0,1fr) auto">
         ${UI.pill(...pillOf[c.level])}
@@ -137,9 +136,9 @@ async function renderSecurityPosture(serverId, container, goTab) {
     title: 'Reboot server', danger: true, confirmLabel: 'Reboot',
     change: 'The server restarts now and is unreachable for a minute or two.',
     protects: 'Containers with a restart policy and enabled services start again by themselves. SSH and firewall settings are on disk and survive the reboot.',
-    undo: 'Not applicable — wait for the server to come back; DockGate reconnects automatically.',
+    undo: 'Not applicable - wait for the server to come back; DockGate reconnects automatically.',
     onConfirm: async () => {
-      try { await API.post(`/servers/${serverId}/reboot`, { confirm: true }); showToast('Reboot started — the server is back in a minute or two', 'info', 8000); }
+      try { await API.post(`/servers/${serverId}/reboot`, { confirm: true }); showToast('Reboot started - the server is back in a minute or two', 'info', 8000); }
       catch (e) { showToast(e.message, 'error', 8000); }
     },
   }));
@@ -168,8 +167,8 @@ function openDeployUserWizard(serverId, onDone) {
       <button class="tab-btn active" type="button" data-km="generate">Generate for me (ed25519)</button>
       <button class="tab-btn" type="button" data-km="paste">Use my public key</button>
     </div>
-    <div class="text-xs text-muted" data-kmhelp>DockGate generates the key pair and keeps the private key encrypted. You can download it later from Users → Keys.</div>
-    <textarea class="input" id="dw-pub" hidden spellcheck="false" placeholder="ssh-ed25519 AAAAC3Nz… you@laptop" style="width:100%;min-height:72px;margin-top:8px;font-family:var(--font-mono);font-size:12px"></textarea>
+    <div class="text-xs text-muted" data-kmhelp>DockGate generates the key pair and keeps the private key encrypted. You can download it later from Users > Keys.</div>
+    <textarea class="input" id="dw-pub" hidden spellcheck="false" placeholder="ssh-ed25519 AAAAC3Nz... you@laptop" style="width:100%;min-height:72px;margin-top:8px;font-family:var(--font-mono);font-size:12px"></textarea>
     <div data-err style="margin-top:10px"></div>`, []);
   const ov = m.overlay;
   let keyMode = 'generate';
@@ -180,7 +179,7 @@ function openDeployUserWizard(serverId, onDone) {
     ov.querySelector('#dw-pub').hidden = keyMode !== 'paste';
     ov.querySelector('[data-kmhelp]').textContent = keyMode === 'paste'
       ? 'Paste the public key from your own machine (~/.ssh/id_ed25519.pub). DockGate also adds its own key so it can keep managing the server.'
-      : 'DockGate generates the key pair and keeps the private key encrypted. You can download it later from Users → Keys.';
+      : 'DockGate generates the key pair and keeps the private key encrypted. You can download it later from Users > Keys.';
   });
   const footer = ov.querySelector('.modal-footer');
   const cancel = document.createElement('button'); cancel.className = 'btn btn-secondary'; cancel.textContent = 'Cancel'; cancel.onclick = () => m.close();
@@ -193,7 +192,7 @@ function openDeployUserWizard(serverId, onDone) {
     try {
       const { jobId } = await API.post(`/servers/${serverId}/deploy-user`, { username, keyMode, publicKey });
       m.close();
-      const job = await runLifelineJob(serverId, jobId, `Creating deploy user "${username}"`, { successText: `DockGate now connects as ${username} with an SSH key. Password login is still on — turn it off in Access & SSH when you are ready.` });
+      const job = await runLifelineJob(serverId, jobId, `Creating deploy user "${username}"`, { successText: `DockGate now connects as ${username} with an SSH key. Password login is still on - turn it off in Access & SSH when you are ready.` });
       if (job) { showToast(`Deploy user "${username}" ready`); onDone && onDone(); }
     } catch (e) {
       go.disabled = false;
@@ -219,7 +218,7 @@ async function renderAccessPanel(serverId, container) {
   const hk = a.hostKey || {};
   const rootTxt = { yes: 'Allowed', 'prohibit-password': 'Key only', no: 'Blocked' };
   const mins = (v) => (v ? `${v} min` : 'Off');
-  const lockHint = locked ? `<div class="ui-sub" style="color:var(--warning)">Needs a deploy user with a verified SSH key first — <a href="#" data-wizard>create one</a></div>` : '';
+  const lockHint = locked ? `<div class="ui-sub" style="color:var(--warning)">Needs a deploy user with a verified SSH key first - <a href="#" data-wizard>create one</a></div>` : '';
 
   container.innerHTML = `
     <div data-sshbar style="margin-bottom:12px"></div>
@@ -227,16 +226,16 @@ async function renderAccessPanel(serverId, container) {
     ${a.includesDropins === false ? '<div class="insight-card warning" style="margin-bottom:12px"><div>/etc/ssh/sshd_config does not include sshd_config.d/*.conf, so DockGate cannot change SSH settings. Add "Include /etc/ssh/sshd_config.d/*.conf" at the top of that file first.</div></div>' : ''}
     ${UI.header('Access & SSH', 'How people log in to this server. Every change tests a new SSH login and rolls back by itself if it fails.')}
     ${UI.settings([
-      { label: "DockGate's connection", desc: 'The user and login DockGate uses. Change it in Settings.', value: `${secMono(a.connection.user + '@' + a.connection.host + ':' + (a.connection.port || a.sshPort))}<div class="ui-sub">${a.connection.auth === 'key' ? 'SSH key · verified' : 'password'}</div>` },
-      { label: 'Root login', desc: 'Who can log in as root over SSH. Blocking it does not remove root — sudo still works.' + lockHint, value: `${UI.pill(a.rootLogin === 'yes' ? 'bad' : a.rootLogin === 'no' ? 'ok' : 'warn', rootTxt[a.rootLogin] || a.rootLogin)} <span class="ui-sub td-mono">PermitRootLogin ${escapeHtml(a.rootLogin)}</span>`, action: UI.btn('Edit', 'data-edit="root"') },
-      { label: 'Password login', desc: (a.passwordAuth ? 'Anyone can try passwords against this server.' : 'Only SSH keys can log in.') + ` Users with keys: ${a.keyHolders.length ? a.keyHolders.map(escapeHtml).join(', ') : 'none'}.` + (a.passwordAuth ? lockHint : ''), value: a.passwordAuth ? UI.pill('warn', 'Allowed') : UI.pill('ok', 'Disabled · keys only'), action: a.passwordAuth ? UI.btn('Disable…', `data-pw="off" ${locked ? 'disabled' : ''}`, 'btn-danger') : UI.btn('Re-enable…', 'data-pw="on"') },
+      { label: "DockGate's connection", desc: 'The user and login DockGate uses. Change it in Settings.', value: `${secMono(a.connection.user + '@' + a.connection.host + ':' + (a.connection.port || a.sshPort))}<div class="ui-sub">${a.connection.auth === 'key' ? 'SSH key, verified' : 'password'}</div>` },
+      { label: 'Root login', desc: 'Who can log in as root over SSH. Blocking it does not remove root - sudo still works.' + lockHint, value: `${UI.pill(a.rootLogin === 'yes' ? 'bad' : a.rootLogin === 'no' ? 'ok' : 'warn', rootTxt[a.rootLogin] || a.rootLogin)} <span class="ui-sub td-mono">PermitRootLogin ${escapeHtml(a.rootLogin)}</span>`, action: UI.btn('Edit', 'data-edit="root"') },
+      { label: 'Password login', desc: (a.passwordAuth ? 'Anyone can try passwords against this server.' : 'Only SSH keys can log in.') + ` Users with keys: ${a.keyHolders.length ? a.keyHolders.map(escapeHtml).join(', ') : 'none'}.` + (a.passwordAuth ? lockHint : ''), value: a.passwordAuth ? UI.pill('warn', 'Allowed') : UI.pill('ok', 'Disabled, keys only'), action: a.passwordAuth ? UI.btn('Disable...', `data-pw="off" ${locked ? 'disabled' : ''}`, 'btn-danger') : UI.btn('Re-enable...', 'data-pw="on"') },
       { label: 'SSH port', desc: 'The new port is opened in the firewall first; the old one closes after DockGate logs in on the new one.', value: `<span class="td-mono">${a.sshPort}</span>`, action: UI.btn('Edit', 'data-edit="port"') },
       { label: 'Login attempts per connection', desc: 'Wrong passwords or keys before the connection is dropped.', value: `${a.maxAuthTries}`, action: UI.btn('Edit', 'data-edit="maxAuthTries"') },
       { label: 'Time to log in', desc: 'Seconds a client gets to finish logging in.', value: `${a.loginGraceTime} s`, action: UI.btn('Edit', 'data-edit="loginGraceTime"') },
       { label: 'Dead connection timeout', desc: 'Drops a connection whose client stopped answering (network gone, laptop asleep). Does not log out an idle open terminal.', value: mins(a.deadTimeoutMin), action: UI.btn('Edit', 'data-edit="deadTimeoutMin"') },
-      { label: 'Idle session timeout', desc: a.supportsIdleTimeout ? 'Closes a session with no input or output for this long.' : `Needs OpenSSH 9.2+ — this server runs ${escapeHtml(a.sshVersion || 'an older version')}.`, value: mins(a.idleTimeoutMin), action: a.supportsIdleTimeout ? UI.btn('Edit', 'data-edit="idleTimeoutMin"') : '' },
+      { label: 'Idle session timeout', desc: a.supportsIdleTimeout ? 'Closes a session with no input or output for this long.' : `Needs OpenSSH 9.2+ - this server runs ${escapeHtml(a.sshVersion || 'an older version')}.`, value: mins(a.idleTimeoutMin), action: a.supportsIdleTimeout ? UI.btn('Edit', 'data-edit="idleTimeoutMin"') : '' },
       { label: 'X11 forwarding', desc: 'Not needed on servers.', value: a.x11 ? UI.pill('warn', 'On') : UI.pill('ok', 'Off'), action: UI.btn(a.x11 ? 'Turn off' : 'Turn on', 'data-x11') },
-      { label: 'Host key', desc: 'The server identity. DockGate refuses to connect if it changes.', value: hk.pinned ? `${secMono(hk.type + ' ' + hk.fingerprint)}<div class="ui-sub">pinned ${escapeHtml(hk.pinnedAt || '')}</div>` : '<span class="ui-sub">not pinned yet — pinned on the next connection</span>', action: hk.pinned ? UI.btn('Re-trust…', 'data-retrust', 'btn-danger') : '' },
+      { label: 'Host key', desc: 'The server identity. DockGate refuses to connect if it changes.', value: hk.pinned ? `${secMono(hk.type + ' ' + hk.fingerprint)}<div class="ui-sub">pinned ${escapeHtml(hk.pinnedAt || '')}</div>` : '<span class="ui-sub">not pinned yet - pinned on the next connection</span>', action: hk.pinned ? UI.btn('Re-trust...', 'data-retrust', 'btn-danger') : '' },
     ])}
     <div class="ui-sub" style="margin-top:8px">Written to <span class="td-mono">/etc/ssh/sshd_config.d/10-dockgate-access.conf</span>. The main sshd_config is never edited.</div>`;
 
@@ -304,12 +303,12 @@ async function renderUsersPanel(serverId, container) {
   container.innerHTML = `
     ${UI.header('Users', `Who can log in to this server: human accounts (UID ≥ 1000) and root. DockGate connects as <b>${escapeHtml(d.connectionUser)}</b>.`, UI.primary('Add user', 'data-add'))}
     ${UI.table([{ label: 'User' }, { label: 'Role' }, { label: 'Docker' }, { label: 'SSH keys' }, { label: 'Password login' }, { label: 'Last login' }, { label: '', align: 'right' }], d.users.map(u => ({ cls: u.locked ? 'ui-row-muted' : '', cells: [
-      `<b>${escapeHtml(u.name)}</b>${u.isConnection ? ' ' + UI.pill('info', 'DockGate') : ''}${u.locked ? ' ' + UI.pill('bad', 'locked') : ''}<div class="ui-sub td-mono">uid ${u.uid} · ${escapeHtml(u.home)}</div>`,
+      `<b>${escapeHtml(u.name)}</b>${u.isConnection ? ' ' + UI.pill('info', 'DockGate') : ''}${u.locked ? ' ' + UI.pill('bad', 'locked') : ''}<div class="ui-sub td-mono">uid ${u.uid}, ${escapeHtml(u.home)}</div>`,
       u.uid === 0 ? 'root' : (u.sudo ? 'Admin (sudo)' : 'Standard'),
       u.docker ? 'Yes' : '<span class="ui-sub">No</span>',
       u.keys.length ? `${u.keys.length}` : UI.pill('warn', 'none'),
       u.uid === 0 ? '<span class="ui-sub">see Access &amp; SSH</span>' : (d.passwordAuth && u.passwordLogin ? UI.pill('warn', 'allowed') : '<span class="ui-sub">off</span>'),
-      `<span class="ui-sub">${escapeHtml(u.lastLogin || '—')}</span>`,
+      `<span class="ui-sub">${escapeHtml(u.lastLogin || '-')}</span>`,
       `${UI.btn('Keys', `data-keys="${escapeHtml(u.name)}"`)}${u.uid === 0 ? '' : `${UI.btn('Edit', `data-edit="${escapeHtml(u.name)}"`)}${UI.btn(u.locked ? 'Unlock' : 'Lock', `data-lock="${escapeHtml(u.name)}" ${u.isConnection ? 'disabled title="DockGate connects as this user"' : ''}`)}${UI.btn('Delete', `data-del="${escapeHtml(u.name)}" ${u.isConnection ? 'disabled title="DockGate connects as this user"' : ''}`, 'btn-danger')}`}`,
     ] })), { minWidth: 820 })}
     ${UI.header('SSH keys', 'Public keys in each user\'s authorized_keys. Keys DockGate generated can be downloaded.', UI.primary('Add SSH key', 'data-addkey'))}
@@ -317,7 +316,7 @@ async function renderUsersPanel(serverId, container) {
       `<b>${escapeHtml(k.comment || '(no comment)')}</b>${k.dockgate ? ' ' + UI.pill('info', 'made by DockGate') : ''}${k.connectionKey ? ' ' + UI.pill('ok', 'DockGate logs in with it') : ''}`,
       escapeHtml(u.name), `<span class="ui-sub">${escapeHtml(k.type)}</span>`, `<span class="td-mono text-xs">${escapeHtml(k.fingerprint)}</span>`,
       `${k.dockgate ? UI.btn('Download', `data-dlkey="${escapeHtml(u.name)}:${i}"`) : ''}${UI.btn('Remove', `data-rmkey="${escapeHtml(u.name)}:${i}" ${k.connectionKey ? 'disabled title="DockGate connects with this key"' : ''}`, 'btn-danger')}`,
-    ] })), { minWidth: 720, empty: 'No SSH keys — nobody can log in with a key.' })}
+    ] })), { minWidth: 720, empty: 'No SSH keys - nobody can log in with a key.' })}
     <div class="ui-sub" style="margin-top:8px">Protected: the user DockGate connects as cannot be locked or deleted, the last sudo user keeps sudo, and the last key cannot be removed while password login is off.</div>`;
 
   const keyOf = (v) => { const [n, i] = v.split(':'); const u = d.users.find(x => x.name === n); return { u, k: u.keys[Number(i)] }; };
@@ -338,9 +337,9 @@ async function renderUsersPanel(serverId, container) {
       title: 'Add SSH key', saveLabel: 'Add key',
       body: `<div class="ui-field"><label for="ak-user">User</label><select class="select" id="ak-user">${d.users.filter(u => !u.locked).map(u => `<option ${u.isConnection ? 'selected' : ''}>${escapeHtml(u.name)}</option>`).join('')}</select></div>
         <div class="ui-field"><span class="ui-label">Key</span><div class="ui-seg"><button type="button" data-km="paste" aria-pressed="true">Paste a public key</button><button type="button" data-km="generate" aria-pressed="false">Generate a new key (ed25519)</button></div>
-        <textarea class="input" data-pub spellcheck="false" placeholder="ssh-ed25519 AAAAC3Nz… you@laptop" style="width:100%;min-height:72px;font-family:var(--font-mono);font-size:12px"></textarea>
+        <textarea class="input" data-pub spellcheck="false" placeholder="ssh-ed25519 AAAAC3Nz... you@laptop" style="width:100%;min-height:72px;font-family:var(--font-mono);font-size:12px"></textarea>
         <span class="ui-help" data-kmhelp>From ~/.ssh/id_ed25519.pub on your own machine.</span></div>`,
-      onOpen: (ov) => ov.querySelectorAll('[data-km]').forEach(b => b.onclick = () => { mode = b.dataset.km; ov.querySelectorAll('[data-km]').forEach(x => x.setAttribute('aria-pressed', x === b)); ov.querySelector('[data-pub]').hidden = mode !== 'paste'; ov.querySelector('[data-kmhelp]').textContent = mode === 'paste' ? 'From ~/.ssh/id_ed25519.pub on your own machine.' : 'DockGate generates the pair and keeps the private key encrypted — download it from this table.'; }),
+      onOpen: (ov) => ov.querySelectorAll('[data-km]').forEach(b => b.onclick = () => { mode = b.dataset.km; ov.querySelectorAll('[data-km]').forEach(x => x.setAttribute('aria-pressed', x === b)); ov.querySelector('[data-pub]').hidden = mode !== 'paste'; ov.querySelector('[data-kmhelp]').textContent = mode === 'paste' ? 'From ~/.ssh/id_ed25519.pub on your own machine.' : 'DockGate generates the pair and keeps the private key encrypted - download it from this table.'; }),
       onSave: async (ov) => { await API.post(`/servers/${serverId}/users/${encodeURIComponent(ov.querySelector('#ak-user').value)}/keys`, { mode, publicKey: ov.querySelector('[data-pub]').value.trim() }); showToast('Key added'); reload(); },
     });
   });
@@ -362,7 +361,7 @@ async function renderUsersPanel(serverId, container) {
   }));
   container.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
     const u = byName(b.dataset.del);
-    let removeHome = false; // read on change — the dialog is closed before onConfirm runs
+    let removeHome = false; // read on change - the dialog is closed before onConfirm runs
     const m = showDeleteConfirm(`Delete user ${escapeHtml(u.name)}`, {
       message: `<p class="text-sm" style="color:var(--text-secondary)">Removes the account, its SSH keys and sudo rights.</p><label class="flex items-center gap-1 text-sm" style="margin-top:8px"><input type="checkbox" id="del-home"> Also delete <span class="td-mono">${escapeHtml(u.home)}</span></label>`,
       phrase: u.name, confirmLabel: 'Delete user',
@@ -378,7 +377,7 @@ function userKeyModeHtml(id) {
       <button class="tab-btn" type="button" data-km="paste">Paste public key</button>
       <button class="tab-btn" type="button" data-km="none">No key</button>
     </div>
-    <textarea class="input" data-pub hidden spellcheck="false" placeholder="ssh-ed25519 AAAAC3Nz… you@laptop" style="width:100%;min-height:72px;font-family:var(--font-mono);font-size:12px"></textarea>`;
+    <textarea class="input" data-pub hidden spellcheck="false" placeholder="ssh-ed25519 AAAAC3Nz... you@laptop" style="width:100%;min-height:72px;font-family:var(--font-mono);font-size:12px"></textarea>`;
 }
 function wireKeyMode(ov, id) {
   let mode = 'generate';
@@ -394,7 +393,7 @@ function wireKeyMode(ov, id) {
 // Download a private key DockGate generated. The admin password is asked again: the file grants SSH access.
 function downloadPrivateKey(serverId, username, key) {
   const m = showModal('Download private key', `
-    <div class="text-sm text-muted" style="margin-bottom:10px">This file lets anyone who has it log in as <b>${escapeHtml(username)}</b>. Enter <b>your DockGate password</b> — the one you sign in to DockGate with, not the server's or this user's password.</div>
+    <div class="text-sm text-muted" style="margin-bottom:10px">This file lets anyone who has it log in as <b>${escapeHtml(username)}</b>. Enter <b>your DockGate password</b> - the one you sign in to DockGate with, not the server's or this user's password.</div>
     <input class="input" id="pk-pw" type="password" autocomplete="off" data-lpignore="true" placeholder="DockGate password" style="width:100%">
     <div class="ui-sub" style="margin-top:6px">If your browser filled this in, clear it and type it yourself: it may have filled a server's password.</div>
     <div data-err style="margin-top:8px"></div>`, []);
@@ -408,7 +407,7 @@ function downloadPrivateKey(serverId, username, key) {
       const url = URL.createObjectURL(new Blob([r.privateKey], { type: 'application/x-pem-file' }));
       const a = document.createElement('a'); a.href = url; a.download = r.filename; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      m.close(); showToast(`Saved ${r.filename} — keep it private (chmod 600)`);
+      m.close(); showToast(`Saved ${r.filename} - keep it private (chmod 600)`);
     } catch (e) { m.overlay.querySelector('[data-err]').innerHTML = `<div class="insight-card danger">${escapeHtml(e.message)}</div>`; }
   };
   ok.onclick = go;
@@ -443,7 +442,7 @@ function openAddUser(serverId, reload) {
 }
 
 function openUserPerms(serverId, u, reload) {
-  const m = showModal(`Permissions · ${escapeHtml(u.name)}`, `
+  const m = showModal(`Permissions, ${escapeHtml(u.name)}`, `
     <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Sudo</div><div class="settings-row-desc">Passwordless, via /etc/sudoers.d/90-dockgate-${escapeHtml(u.name)}</div></div><div class="toggle ${u.sudo ? 'active' : ''}" id="up-sudo" role="switch" tabindex="0"></div></div>
     <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Docker</div><div class="settings-row-desc">docker group membership</div></div><div class="toggle ${u.docker ? 'active' : ''}" id="up-docker" role="switch" tabindex="0"></div></div>
     <div data-err style="margin-top:10px"></div>`, []);
@@ -460,22 +459,22 @@ function openUserPerms(serverId, u, reload) {
 }
 
 function openUserKeys(serverId, u, d, reload) {
-  const m = showModal(`SSH keys · ${escapeHtml(u.name)}`, `
+  const m = showModal(`SSH keys, ${escapeHtml(u.name)}`, `
     <div class="text-xs text-muted" style="margin-bottom:8px">From <span class="td-mono">${escapeHtml(u.home)}/.ssh/authorized_keys</span></div>
     <div style="display:grid;gap:8px;margin-bottom:14px">${u.keys.length ? u.keys.map((k, i) => `
       <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
         <div style="min-width:0;flex:1">
           <div class="text-sm" style="font-weight:600">${escapeHtml(k.comment || k.type)}${k.dockgate ? ' <span class="badge" style="background:var(--accent-dim);color:var(--accent)">DockGate</span>' : ''}${k.connectionKey ? ' <span class="badge badge-running">in use</span>' : ''}</div>
-          <div class="text-xs text-muted td-mono" style="overflow-wrap:anywhere;margin-top:2px">${escapeHtml(k.type)} · ${escapeHtml(k.fingerprint)}</div>
+          <div class="text-xs text-muted td-mono" style="overflow-wrap:anywhere;margin-top:2px">${escapeHtml(k.type)}, ${escapeHtml(k.fingerprint)}</div>
         </div>
         <div class="flex gap-1" style="flex:none">${k.dockgate ? `<button class="btn btn-xs btn-secondary" data-dl="${i}">${Icons.download || ''} Private key</button>` : ''}<button class="btn btn-xs btn-danger" data-rm="${i}" ${k.connectionKey ? 'disabled title="DockGate connects with this key"' : ''}>Remove</button></div>
-      </div>`).join('') : '<div class="text-sm text-muted">No keys — this user cannot log in over SSH.</div>'}</div>
+      </div>`).join('') : '<div class="text-sm text-muted">No keys - this user cannot log in over SSH.</div>'}</div>
     <div style="font-weight:600;font-size:13px;margin-bottom:6px">Add a key</div>
     <div class="tab-bar" id="uk-km" style="margin-bottom:8px">
       <button class="tab-btn active" type="button" data-km="paste">Paste public key</button>
       <button class="tab-btn" type="button" data-km="generate">Generate (ed25519)</button>
     </div>
-    <textarea class="input" data-pub spellcheck="false" placeholder="ssh-ed25519 AAAAC3Nz… you@laptop" style="width:100%;min-height:64px;font-family:var(--font-mono);font-size:12px"></textarea>
+    <textarea class="input" data-pub spellcheck="false" placeholder="ssh-ed25519 AAAAC3Nz... you@laptop" style="width:100%;min-height:64px;font-family:var(--font-mono);font-size:12px"></textarea>
     <div data-err style="margin-top:10px"></div>`, []);
   const ov = m.overlay;
   let mode = 'paste';

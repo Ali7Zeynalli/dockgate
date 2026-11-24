@@ -1,5 +1,5 @@
-// App Templates (marketplace) — a catalog of ready-to-deploy apps in the Portainer "App Templates"
-// v2 format. Click Deploy → a container template prefills the Run modal; a stack template prefills the
+// App Templates (marketplace) - a catalog of ready-to-deploy apps in the Portainer "App Templates"
+// v2 format. Click Deploy -> a container template prefills the Run modal; a stack template prefills the
 // shared Compose editor. Source is the bundled catalog by default, or a configurable `template_url`.
 // Resolve the compose YAML for a stack template: inline `compose`/`stackfile`, else fetch the repository file.
 async function resolveStackYaml(t) {
@@ -26,13 +26,13 @@ async function resolveStackYaml(t) {
   }
   throw new Error('No compose content found for this template');
 }
-window.TemplatesUI = { resolveStackYaml }; // also used by Swarm → Stacks → New stack
+window.TemplatesUI = { resolveStackYaml }; // also used by Swarm > Stacks > New stack
 
 Router.register('templates', async (content) => {
   let all = [];      // every template from the catalog
   let source = '';   // 'bundled' | 'remote' | 'bundled-fallback'
 
-  // "80/tcp" or "8080:80/tcp" → { host, container, proto } for the Run modal.
+  // "80/tcp" or "8080:80/tcp" -> { host, container, proto } for the Run modal.
   function parsePort(p) {
     if (typeof p !== 'string') return null;
     const [hostCont, proto] = p.split('/');
@@ -63,7 +63,7 @@ Router.register('templates', async (content) => {
       if (t.type === 1) {
         openRunContainerModal(toRunPrefill(t));
       } else {
-        showToast('Loading compose definition…', 'info', 2000);
+        showToast('Loading compose definition...', 'info', 2000);
         const yaml = await resolveStackYaml(t);
         const slug = (t.title || 'stack').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
         // With Swarm on (a manager), choose: a Compose project here, or a Swarm stack.
@@ -81,13 +81,13 @@ Router.register('templates', async (content) => {
     }
   }
 
-  // Build the <img src> for a logo. `data:` URIs are already inline/same-origin → use as-is;
+  // Build the <img src> for a logo. `data:` URIs are already inline/same-origin -> use as-is;
   // http(s) logos go through our same-origin proxy so external CORP: same-origin can't block them.
   function logoSrc(logo) {
     if (!logo || typeof logo !== 'string') return null;
     if (/^data:/i.test(logo)) return escapeHtml(logo);
     let u;
-    try { u = new URL(logo); } catch { return null; }   // malformed host (e.g. "https://].io/…") → don't fire a doomed request
+    try { u = new URL(logo); } catch { return null; }   // malformed host (e.g. "https://].io/...") -> don't fire a doomed request
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
     return '/api/templates/logo?url=' + encodeURIComponent(logo);
   }
@@ -105,7 +105,7 @@ Router.register('templates', async (content) => {
           ${logo}
           <div style="min-width:0">
             <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.title || t.image || 'App')}</div>
-            <div class="text-xs text-muted">${isStack ? 'Stack' : 'Container'}${t.image ? ' · ' + escapeHtml(t.image) : ''}</div>
+            <div class="text-xs text-muted">${isStack ? 'Stack' : 'Container'}${t.image ? ', ' + escapeHtml(t.image) : ''}</div>
           </div>
         </div>
         <div class="text-sm text-muted tpl-desc" style="min-height:34px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(t.description || '')}</div>
@@ -113,7 +113,7 @@ Router.register('templates', async (content) => {
       </div>`;
   }
 
-  // Format a big count (Docker Hub pulls/stars) compactly: 1234567 → 1.2M.
+  // Format a big count (Docker Hub pulls/stars) compactly: 1234567 -> 1.2M.
   function fmtNum(n) {
     n = Number(n) || 0;
     if (n >= 1e9) return (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
@@ -122,11 +122,11 @@ Router.register('templates', async (content) => {
     return String(n);
   }
 
-  // App detail modal — full description, env vars, ports, volumes + Docker Hub popularity (pulls/stars).
+  // App detail modal - full description, env vars, ports, volumes + Docker Hub popularity (pulls/stars).
   function openTemplateDetail(t) {
     const isStack = t.type === 2 || t.type === 3;
     const cats = (t.categories || []).map(c => `<span class="badge badge-created" style="font-size:10px">${escapeHtml(c)}</span>`).join(' ');
-    const env = (t.env || []).map(e => `<li><code>${escapeHtml(e.name || '')}</code>${e.label ? ' — ' + escapeHtml(e.label) : ''}${e.default != null && e.default !== '' ? ' <span class="text-muted">= ' + escapeHtml(String(e.default)) + '</span>' : ''}</li>`).join('');
+    const env = (t.env || []).map(e => `<li><code>${escapeHtml(e.name || '')}</code>${e.label ? ' - ' + escapeHtml(e.label) : ''}${e.default != null && e.default !== '' ? ' <span class="text-muted">= ' + escapeHtml(String(e.default)) + '</span>' : ''}</li>`).join('');
     const ports = (t.ports || []).map(p => escapeHtml(typeof p === 'string' ? p : (p.host ? `${p.host}:${p.container}` : JSON.stringify(p)))).join(', ');
     const vols = (t.volumes || []).map(v => escapeHtml(typeof v === 'string' ? v : (v.container || v.bind || JSON.stringify(v)))).join(', ');
     const desc = t.note || t.description || '';
@@ -135,8 +135,8 @@ Router.register('templates', async (content) => {
         ${logoSrc(t.logo) ? `<img src="${logoSrc(t.logo)}" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:var(--bg-primary)" onerror="this.style.display='none'">` : ''}
         <div style="min-width:0">
           <div style="font-weight:700;font-size:16px">${escapeHtml(t.title || t.image || 'App')}</div>
-          <div class="text-xs text-muted">${isStack ? 'Stack' : 'Container'}${t.image ? ' · <code>' + escapeHtml(t.image) + '</code>' : ''}${t.platform ? ' · ' + escapeHtml(t.platform) : ''}</div>
-          <div id="tpl-hub" class="text-xs text-muted" style="margin-top:3px">Loading popularity…</div>
+          <div class="text-xs text-muted">${isStack ? 'Stack' : 'Container'}${t.image ? ', <code>' + escapeHtml(t.image) + '</code>' : ''}${t.platform ? ', ' + escapeHtml(t.platform) : ''}</div>
+          <div id="tpl-hub" class="text-xs text-muted" style="margin-top:3px">Loading popularity...</div>
         </div>
       </div>
       ${cats ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${cats}</div>` : ''}
@@ -150,11 +150,11 @@ Router.register('templates', async (content) => {
     dep.className = 'btn btn-primary'; dep.innerHTML = `${Icons.play} Deploy`;
     m.overlay.querySelector('#modal-footer').appendChild(dep);
     dep.addEventListener('click', () => { m.close(); deploy(t); });
-    // Docker Hub popularity (proxied server-side, cached). Non-Hub images → just hide the line.
+    // Docker Hub popularity (proxied server-side, cached). Non-Hub images -> just hide the line.
     if (t.image) {
       API.get(`/templates/hubstats?image=${encodeURIComponent(t.image)}`).then(s => {
         const el = m.overlay.querySelector('#tpl-hub'); if (!el) return;
-        if (s && s.available) el.innerHTML = `⭐ Docker Hub: <strong>${fmtNum(s.pulls)}</strong> pulls · <strong>${fmtNum(s.stars)}</strong> stars${s.url ? ` · <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">view</a>` : ''}`;
+        if (s && s.available) el.innerHTML = `⭐ Docker Hub: <strong>${fmtNum(s.pulls)}</strong> pulls, <strong>${fmtNum(s.stars)}</strong> stars${s.url ? `, <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">view</a>` : ''}`;
         else el.style.display = 'none';
       }).catch(() => { const el = m.overlay.querySelector('#tpl-hub'); if (el) el.style.display = 'none'; });
     } else { const el = m.overlay.querySelector('#tpl-hub'); if (el) el.style.display = 'none'; }
@@ -194,7 +194,7 @@ Router.register('templates', async (content) => {
     try { current = (await API.get('/meta/settings')).template_url || ''; } catch (e) {}
     const body = `
       <div style="display:flex;flex-direction:column;gap:10px">
-        <div class="text-sm text-muted">Pick a catalog or paste any Portainer-format <code>templates.json</code> URL. <strong>Blank = the default community catalog (500+ apps)</strong> — loads automatically. Choose <em>Bundled</em> to force the offline ~15 set.</div>
+        <div class="text-sm text-muted">Pick a catalog or paste any Portainer-format <code>templates.json</code> URL. <strong>Blank = the default community catalog (500+ apps)</strong> - loads automatically. Choose <em>Bundled</em> to force the offline ~15 set.</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${PRESETS.map(p => `<button type="button" class="btn btn-xs btn-secondary" data-preset="${escapeHtml(p.url)}">${escapeHtml(p.label)}</button>`).join('')}
         </div>
@@ -212,7 +212,7 @@ Router.register('templates', async (content) => {
     save.textContent = 'Save & reload';
     footer.appendChild(save);
     save.addEventListener('click', async () => {
-      save.disabled = true; save.textContent = 'Saving…';
+      save.disabled = true; save.textContent = 'Saving...';
       try {
         await API.post('/meta/settings', { template_url: root.querySelector('#tpl-url').value.trim() });
         m.close();
@@ -240,12 +240,12 @@ Router.register('templates', async (content) => {
     const freq = {}; all.forEach(t => (t.categories || []).forEach(c => { freq[c] = (freq[c] || 0) + 1; }));
     const topCats = Object.keys(freq).sort((a, b) => freq[b] - freq[a]).slice(0, 6);
     const srcLabel = source === 'remote' ? 'remote list'
-      : source === 'bundled-fallback' ? `bundled — remote failed: ${escapeHtml(data.error || '')}`
+      : source === 'bundled-fallback' ? `bundled - remote failed: ${escapeHtml(data.error || '')}`
       : 'bundled list';
     content.innerHTML = `
       ${UI.header('App templates', `${all.length} ready-made apps (source: ${srcLabel}). Open one to see its ports and settings before you deploy.`,
         `<button class="btn btn-secondary btn-sm" id="tpl-refresh" title="Reload the list">${Icons.refresh}</button>
-         <button class="btn btn-secondary btn-sm" id="tpl-source">${Icons.settings} Source…</button>`)}
+         <button class="btn btn-secondary btn-sm" id="tpl-source">${Icons.settings} Source...</button>`)}
       <div class="ui-toolbar">
         <div class="search-input">${Icons.search}<input id="tpl-search" placeholder="Search templates" aria-label="Search templates"></div>
         ${UI.chips([['', 'All'], ...topCats.map(c => [c, escapeHtml(c)])], '', 'data-tcat')}
@@ -270,7 +270,7 @@ Router.register('templates', async (content) => {
     document.getElementById('tpl-grid')?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-deploy]');
       if (btn) { const t = all[parseInt(btn.dataset.deploy, 10)]; if (t) deploy(t); return; }
-      // Anywhere else on the card → open the app detail view.
+      // Anywhere else on the card -> open the app detail view.
       const card = e.target.closest('[data-tpldetail]');
       if (card) { const t = all[parseInt(card.dataset.tpldetail, 10)]; if (t) openTemplateDetail(t); }
     });

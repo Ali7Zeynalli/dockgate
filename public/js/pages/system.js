@@ -1,4 +1,4 @@
-// System info — rendered as a tab inside Settings (Settings → System), not a sidebar page.
+// System info - rendered as a tab inside Settings (Settings > System), not a sidebar page.
 // Global so settings.js can call it: renderSystemInfo(tabContentEl).
 async function renderSystemInfo(content) {
     try {
@@ -26,7 +26,7 @@ async function renderSystemInfo(content) {
              <div class="detail-grid" style="grid-template-columns:1fr">
                <div class="detail-item"><div class="detail-label">Docker Root Dir</div><div class="detail-value mono text-sm">${info.DockerRootDir}</div></div>
                <div class="detail-item"><div class="detail-label">Runtimes</div><div class="detail-value text-sm">${Object.keys(info.Runtimes || {}).join(', ')}</div></div>
-               <div class="detail-item"><div class="detail-label">Plugins</div><div class="detail-value text-sm">Vol: ${info.Plugins?.Volume?.join(', ') || '—'}<br>Net: ${info.Plugins?.Network?.join(', ') || '—'}</div></div>
+               <div class="detail-item"><div class="detail-label">Plugins</div><div class="detail-value text-sm">Vol: ${info.Plugins?.Volume?.join(', ') || '-'}<br>Net: ${info.Plugins?.Network?.join(', ') || '-'}</div></div>
                <div class="detail-item"><div class="detail-label">Registries</div><div class="detail-value text-sm">${Object.keys(info.RegistryConfig?.IndexConfigs || {}).join(', ')}</div></div>
              </div>
           </div>

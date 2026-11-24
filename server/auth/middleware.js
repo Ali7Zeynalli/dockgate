@@ -25,7 +25,7 @@ function checkOrigin(req, res, next) {
       return res.status(403).json({ error: 'bad origin' });
     }
   }
-  // No Origin header (non-browser client) — allowed; the session cookie + SameSite still gate it.
+  // No Origin header (non-browser client) - allowed; the session cookie + SameSite still gate it.
   next();
 }
 

@@ -1,14 +1,14 @@
-// Shared Compose editor — YAML editor (2A) + guided "add service" builder (2B, row-based).
+// Shared Compose editor - YAML editor (2A) + guided "add service" builder (2B, row-based).
 // Used by the Compose page (New Project / Edit YAML) and the Templates page (deploy a stack template).
 // Global so any page can open it; on success it re-renders the Compose page via the router.
 //
-// @param {string|null} existing  an existing managed project name → edit mode (name readonly, YAML fetched)
-// @param {object} [opts]         { prefillYaml, prefillName } — used when deploying a template (new project)
+// @param {string|null} existing  an existing managed project name -> edit mode (name readonly, YAML fetched)
+// @param {object} [opts]         { prefillYaml, prefillName } - used when deploying a template (new project)
 async function openComposeEditor(existing, opts = {}) {
   let yaml = '';
   if (existing) {
     try { const f = await API.get(`/compose/${existing}/file`); yaml = f.yaml || ''; }
-    catch (e) { showToast('Not a DockGate-managed project — paste its YAML to adopt it', 'info', 7000); }
+    catch (e) { showToast('Not a DockGate-managed project - paste its YAML to adopt it', 'info', 7000); }
   } else if (opts.prefillYaml) {
     yaml = opts.prefillYaml; // deploying a stack template into a new project
   }
@@ -29,7 +29,7 @@ async function openComposeEditor(existing, opts = {}) {
   const intro = isNew ? `
     <div class="card" style="padding:9px 12px;background:var(--accent-dim);font-size:12px;line-height:1.55">
       Writes a <b>docker-compose.yml</b> from scratch and runs <code>docker compose up -d</code> on <b>${escapeHtml(hostLabel)}</b>.
-      Build it with the guided <b>+ Add a service</b> form below (it <b>appends to the YAML</b>) or type YAML directly — <b>the YAML box is what gets deployed.</b>
+      Build it with the guided <b>+ Add a service</b> form below (it <b>appends to the YAML</b>) or type YAML directly - <b>the YAML box is what gets deployed.</b>
       <span class="text-muted">Have an existing project? Use <b>Deploy from folder</b> or <b>Git</b> instead.</span>
     </div>` : '';
 
@@ -44,7 +44,7 @@ async function openComposeEditor(existing, opts = {}) {
       ${intro}
       <div class="input-group"><label>Project name *${isNew ? ' <span class="text-muted" style="font-weight:400">(the compose project / stack name)</span>' : ''}</label>
         <input class="input" id="cmp-name" placeholder="my-stack" value="${escapeHtml(prefillName)}" ${existing ? 'readonly' : ''}>
-        <span class="text-xs text-muted">Private images (e.g. <code>ghcr.io/...</code>) pull automatically if you've added the registry under <strong>Registries</strong> — no <code>docker login</code> needed.</span></div>
+        <span class="text-xs text-muted">Private images (e.g. <code>ghcr.io/...</code>) pull automatically if you've added the registry under <strong>Registries</strong> - no <code>docker login</code> needed.</span></div>
       <details class="card" style="padding:8px 12px">
         <summary style="cursor:pointer;font-weight:600">+ Add a service (guided)</summary>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
@@ -65,7 +65,7 @@ async function openComposeEditor(existing, opts = {}) {
             <button type="button" class="btn btn-xs btn-secondary" id="gs-add-env">+ Env</button>
           </div></div>
           <div id="gs-env-paste-wrap" style="display:none;margin-bottom:6px">
-            <textarea class="input" id="gs-env-paste" placeholder="Paste a .env — one KEY=VALUE per line" style="width:100%;min-height:70px;font-family:var(--font-mono);font-size:12px"></textarea>
+            <textarea class="input" id="gs-env-paste" placeholder="Paste a .env - one KEY=VALUE per line" style="width:100%;min-height:70px;font-family:var(--font-mono);font-size:12px"></textarea>
             <div style="margin-top:4px;display:flex;gap:6px"><button type="button" class="btn btn-xs btn-primary" id="gs-env-import">Import ↓</button><button type="button" class="btn btn-xs btn-secondary" id="gs-env-cancel">Cancel</button></div>
           </div>
           <div id="gs-envs"></div>
@@ -76,7 +76,7 @@ async function openComposeEditor(existing, opts = {}) {
           <datalist id="gs-env-keys"></datalist>
         </div>
       </details>
-      <div class="input-group"><label>docker-compose.yml${isNew ? ' <span class="text-muted" style="font-weight:400">— this is what gets deployed</span>' : ''}</label>
+      <div class="input-group"><label>docker-compose.yml${isNew ? ' <span class="text-muted" style="font-weight:400">- this is what gets deployed</span>' : ''}</label>
         <textarea id="cmp-yaml" class="input" spellcheck="false" style="font-family:var(--font-mono);min-height:260px;white-space:pre;overflow:auto" placeholder="${escapeHtml(ph)}">${escapeHtml(yaml)}</textarea></div>
     </div>`;
   const title = existing ? `Edit Compose: ${existing}` : (opts.prefillName ? `Deploy template: ${opts.prefillName}` : 'New Compose Project');
@@ -107,7 +107,7 @@ async function openComposeEditor(existing, opts = {}) {
   wire('gs-add-vol', 'gs-vols', volRow);
   wire('gs-add-env', 'gs-envs', envRow);
 
-  // Volume presets → prefilled volume row
+  // Volume presets -> prefilled volume row
   root.querySelectorAll('[data-gsvolp]').forEach(b => b.addEventListener('click', () => {
     const [h, c, mode] = b.dataset.gsvolp.split('|');
     addRow('gs-vols', volRow, el => {
@@ -117,7 +117,7 @@ async function openComposeEditor(existing, opts = {}) {
     });
   }));
 
-  // Paste .env → bulk env rows
+  // Paste .env -> bulk env rows
   const pasteWrap = root.querySelector('#gs-env-paste-wrap');
   root.querySelector('#gs-paste-env')?.addEventListener('click', () => {
     const open = pasteWrap.style.display === 'none';

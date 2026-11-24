@@ -1,4 +1,4 @@
-// Quick Terminal — Global floating & minimizable terminal overlay with Split-Screen (Dual Terminal) support
+// Quick Terminal - Global floating & minimizable terminal overlay with Split-Screen (Dual Terminal) support
 // Accessible from any page via the header shortcut or Ctrl+` (or Alt+T).
 // Supports side-by-side Container Exec & Host SSH terminal sessions concurrently.
 const QuickTerminal = (function() {
@@ -107,7 +107,7 @@ const QuickTerminal = (function() {
     if (p) {
       p.isConnected = false;
       updateStatusBadge();
-      if (p.term) p.term.write('\r\n\x1b[33m— container session ended (press Reconnect) —\x1b[0m\r\n');
+      if (p.term) p.term.write('\r\n\x1b[33m- container session ended (press Reconnect) -\x1b[0m\r\n');
     }
   };
   const onContainerError = (payload) => {
@@ -116,7 +116,7 @@ const QuickTerminal = (function() {
     if (p) {
       p.isConnected = false;
       updateStatusBadge();
-      if (p.term) p.term.write(`\r\n\x1b[31m— container error: ${payload.error || 'unknown'} —\x1b[0m\r\n`);
+      if (p.term) p.term.write(`\r\n\x1b[31m- container error: ${payload.error || 'unknown'} -\x1b[0m\r\n`);
     }
   };
   const onContainerReady = (payload) => {
@@ -140,7 +140,7 @@ const QuickTerminal = (function() {
     if (p) {
       p.isConnected = false;
       updateStatusBadge();
-      if (p.term) p.term.write('\r\n\x1b[33m— host session ended (press Reconnect) —\x1b[0m\r\n');
+      if (p.term) p.term.write('\r\n\x1b[33m- host session ended (press Reconnect) -\x1b[0m\r\n');
     }
   };
   const onHostError = (payload) => {
@@ -149,7 +149,7 @@ const QuickTerminal = (function() {
     if (p) {
       p.isConnected = false;
       updateStatusBadge();
-      if (p.term) p.term.write(`\r\n\x1b[31m— host error: ${payload.error || 'unknown'} —\x1b[0m\r\n`);
+      if (p.term) p.term.write(`\r\n\x1b[31m- host error: ${payload.error || 'unknown'} -\x1b[0m\r\n`);
     }
   };
   const onHostReady = (payload) => {
@@ -168,7 +168,7 @@ const QuickTerminal = (function() {
     if (!p.selectedContainerId || !p.term) return;
     const shell = document.getElementById(`qt-shell-${slot}`)?.value || '/bin/sh';
     p.term.reset();
-    p.term.write(`\x1b[36mConnecting to ${shell}…\x1b[0m\r\n`);
+    p.term.write(`\x1b[36mConnecting to ${shell}...\x1b[0m\r\n`);
     socket.emit('terminal:stop', { slot });
     socket.emit('terminal:start', { containerId: p.selectedContainerId, shell, slot });
     setTimeout(handleResize, 100);
@@ -191,7 +191,7 @@ const QuickTerminal = (function() {
     const p = panels[slot];
     if (!p.term) return;
     p.term.reset();
-    p.term.write(`\x1b[36mConnecting to ${activeServer.label}…\x1b[0m\r\n`);
+    p.term.write(`\x1b[36mConnecting to ${activeServer.label}...\x1b[0m\r\n`);
     socket.emit('hostterm:stop', { slot });
     socket.emit('hostterm:start', { cols: p.term.cols || 80, rows: p.term.rows || 24, slot });
     setTimeout(handleResize, 100);
@@ -265,7 +265,7 @@ const QuickTerminal = (function() {
       label = activeP.channel === 'system' ? `Host (${activeServer.id})` : 'Container';
       dotClass = 'qt-dot-connected';
     } else if (panels.some((p, i) => (i === 0 || isSplit) && p.channel)) {
-      label = 'Connecting…';
+      label = 'Connecting...';
       dotClass = 'qt-dot-connecting';
     }
 
@@ -594,7 +594,7 @@ const QuickTerminal = (function() {
       const area = document.getElementById('qt-terminal-area-0');
       if (area && !panels[0].term) {
         makeTerm(0, area);
-        panels[0].term.write('\x1b[36m— Select a container or switch to System shell to start —\x1b[0m\r\n');
+        panels[0].term.write('\x1b[36m- Select a container or switch to System shell to start -\x1b[0m\r\n');
       }
     }
 

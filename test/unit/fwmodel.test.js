@@ -18,7 +18,7 @@ test('fwmodel: ports and rules are validated', () => {
   assert.equal(FW.ruleKey(FW.normRule({ dir: 'out', action: 'deny', proto: 'tcp', port: 25 })), 'out|deny|tcp|25|h');
 });
 
-test('fwmodel: UFW lines → meaning (in, out, route marker, locked entries)', () => {
+test('fwmodel: UFW lines -> meaning (in, out, route marker, locked entries)', () => {
   const u = P.parseUfwNumbered([
     'Status: active',
     '[ 1] 22/tcp                     ALLOW IN    Anywhere',

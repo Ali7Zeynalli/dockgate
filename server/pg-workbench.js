@@ -1,4 +1,4 @@
-// SQL Workbench storage (DockGate's database): editor tabs, query history, saved queries — per server + container.
+// SQL Workbench storage (DockGate's database): editor tabs, query history, saved queries - per server + container.
 const { db } = require('./db');
 
 db.exec(`CREATE TABLE IF NOT EXISTS pg_wb_tabs (

@@ -1,4 +1,4 @@
-// Unit tests for the Swarm autoscale decision (server/swarm-autoscale.js) — pure, no Docker.
+// Unit tests for the Swarm autoscale decision (server/swarm-autoscale.js) - pure, no Docker.
 const { test } = require('node:test');
 const assert = require('node:assert');
 const A = require('../../server/swarm-autoscale');
@@ -77,7 +77,7 @@ test('room counts replicas that fit server by server', () => {
     { active: true, cpu: 4, mem: 8 * 2 ** 30, cpuReserved: 3, memReserved: 2 ** 30 },
     { active: true, cpu: 2, mem: 4 * 2 ** 30, cpuReserved: 0, memReserved: 3.5 * 2 ** 30 },
     { active: false, cpu: 8, mem: 16 * 2 ** 30, cpuReserved: 0, memReserved: 0 } ] };
-  assert.strictEqual(A.room(cap, 0.5, 256 * 2 ** 20), 2 + 2); // node 1: 1 CPU free → 2; node 2: 512 MB free → 2
+  assert.strictEqual(A.room(cap, 0.5, 256 * 2 ** 20), 2 + 2); // node 1: 1 CPU free -> 2; node 2: 512 MB free -> 2
   assert.strictEqual(A.room(cap, 0, 0), null);
 });
 
@@ -109,11 +109,11 @@ test('suggest sizes limits from real use and the range from the load', () => {
   assert.strictEqual(s.enough, true);
   assert.strictEqual(s.values.cpuLimit, 0.6); // 0.4 × 1.5
   assert.strictEqual(s.values.cpuReserve, 0.2);
-  assert.strictEqual(s.values.memLimit, 192); // 100 MB × 1.5 → 64 MB steps
-  assert.strictEqual(s.values.memReserve, 128); // 100 MB → 32 MB steps
+  assert.strictEqual(s.values.memLimit, 192); // 100 MB × 1.5 -> 64 MB steps
+  assert.strictEqual(s.values.memReserve, 128); // 100 MB -> 32 MB steps
   assert.strictEqual(s.values.memOn, false); // memory did not move
   assert.strictEqual(s.values.min, 1); // 0.4 CPU in all fits one replica at 80% of 0.6 = 0.48
-  assert.strictEqual(s.values.max, 3); // busy: 0.8 CPU → 2 replicas, × 1.5
+  assert.strictEqual(s.values.max, 3); // busy: 0.8 CPU -> 2 replicas, × 1.5
   assert.match(s.why.cpuLimit, /web used up to 0.4 CPU/);
 });
 

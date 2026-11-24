@@ -1,7 +1,7 @@
-// Databases → many rows at once, each in ONE transaction (or a Test that rolls back):
-//   importRows(…)    CSV rows into a table: insert, insert-or-update by primary key, or skip rows whose key exists
-//   bulkUpdate(…)    set columns (or delete) on every row matching the Data tab's filter
-//   findReplace(…)   replace a text in one column (part of the value or the whole value), with a preview
+// Databases -> many rows at once, each in ONE transaction (or a Test that rolls back):
+//   importRows(...)    CSV rows into a table: insert, insert-or-update by primary key, or skip rows whose key exists
+//   bulkUpdate(...)    set columns (or delete) on every row matching the Data tab's filter
+//   findReplace(...)   replace a text in one column (part of the value or the whole value), with a preview
 const S = require('./pg-studio');
 const P = require('./pg-sql');
 
@@ -17,12 +17,12 @@ async function prepare(name, dbname, schema, table, test) {
 }
 const cleanErr = (s) => String(s || '').split('\n').map(l => l.replace(/^psql:[^:]*:\d+:\s*/, '')).filter(l => l && !/^(CONTEXT|LINE \d+|\s+\^)/.test(l)).join('\n').trim();
 
-/** rows: [[…]] in the order of columns; mode: insert | upsert | skip; emptyNull: an empty cell is NULL. */
+/** rows: [[...]] in the order of columns; mode: insert | upsert | skip; emptyNull: an empty cell is NULL. */
 async function importRows(name, dbname, { schema, table, columns, rows, mode = 'insert', emptyNull = true, test = false }) {
   const { t, st, q } = await prepare(name, dbname, schema, table, test);
   const known = new Map(st.columns.map(c => [c.name, c]));
   if (!Array.isArray(columns) || !columns.length) throw err('Map at least one column');
-  columns.forEach(c => { if (!known.has(c)) throw err(`Unknown column: ${c}`); if (known.get(c).generated) throw err(`${c} is generated — it can not be imported`); });
+  columns.forEach(c => { if (!known.has(c)) throw err(`Unknown column: ${c}`); if (known.get(c).generated) throw err(`${c} is generated - it can not be imported`); });
   if (new Set(columns).size !== columns.length) throw err('A column is mapped twice');
   if (!Array.isArray(rows) || !rows.length) throw err('No rows to import');
   if (rows.length > 500000) throw err('At most 500 000 rows at once');
@@ -49,7 +49,7 @@ async function importRows(name, dbname, { schema, table, columns, rows, mode = '
     const m = /psql:[^:]*:(\d+):/.exec(e);
     let row = null;
     if (m) { const line = Number(m[1]); const lines = sqlText.split('\n'); let stmt = -1; for (let k = 0; k < line && k < lines.length; k++) if (lines[k].startsWith('INSERT INTO')) stmt++; if (stmt >= 0) row = stmt * BATCH + 1; }
-    throw err(`${cleanErr(e) || 'The import failed'}${row ? ` (in rows ${row}–${row + BATCH - 1})` : ''} — nothing was imported.`, 400, { code: 'FAILED' });
+    throw err(`${cleanErr(e) || 'The import failed'}${row ? ` (in rows ${row}–${row + BATCH - 1})` : ''} - nothing was imported.`, 400, { code: 'FAILED' });
   }
   const done = [...stdout.matchAll(/^INSERT 0 (\d+)$/gm)].reduce((a, x) => a + Number(x[1]), 0);
   return { rows: rows.length, written: done, skipped: rows.length - done, test: !!test, mode };
@@ -71,7 +71,7 @@ async function bulkUpdate(name, dbname, { schema, table, filters = [], where = '
   const sql = `with x as (${stmt} returning 1) select json_build_object('n', count(*)) from x`;
   const args = test ? ['-At', '-c', 'BEGIN', '-c', sql, '-c', 'ROLLBACK'] : ['-At', '-c', sql];
   const r = await S.psql(t, args, { db: dbname, readOnly: false, timeoutMs: 600000 });
-  if (r.code !== 0) throw err(`${cleanErr(r.stderr)} — nothing was changed.`, 400, { code: 'FAILED' });
+  if (r.code !== 0) throw err(`${cleanErr(r.stderr)} - nothing was changed.`, 400, { code: 'FAILED' });
   const line = String(r.stdout).split('\n').find(l => l.startsWith('{'));
   return { rows: line ? Number(JSON.parse(line).n) : 0, test: !!test, op };
 }
@@ -97,7 +97,7 @@ async function findReplace(name, dbname, { schema, table, column, find, replace 
   const sql = `with x as (update ${q} set ${col} = ${newVal}${cond} returning 1) select json_build_object('n', count(*)) from x`;
   const args = test ? ['-At', '-c', 'BEGIN', '-c', sql, '-c', 'ROLLBACK'] : ['-At', '-c', sql];
   const r = await S.psql(t, args, { db: dbname, readOnly: false, timeoutMs: 600000 });
-  if (r.code !== 0) throw err(`${cleanErr(r.stderr)} — nothing was changed.`, 400, { code: 'FAILED' });
+  if (r.code !== 0) throw err(`${cleanErr(r.stderr)} - nothing was changed.`, 400, { code: 'FAILED' });
   const line = String(r.stdout).split('\n').find(l => l.startsWith('{'));
   return { rows: line ? Number(JSON.parse(line).n) : 0, test: !!test };
 }

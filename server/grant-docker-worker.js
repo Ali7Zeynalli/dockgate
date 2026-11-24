@@ -1,8 +1,8 @@
-// Standalone worker — runs `sudo -n usermod -aG docker <user>` over an ISOLATED ssh2 connection.
+// Standalone worker - runs `sudo -n usermod -aG docker <user>` over an ISOLATED ssh2 connection.
 // Run in its own process (forked by routes/servers.js) so it never contends with the long-lived
 // EventMonitor ssh2 connections in the main server process (which made an in-process connection
 // stall during authentication). Config arrives as JSON in argv[2].
-// An inherited SSH_AUTH_SOCK makes ssh2 stall trying the (irrelevant) agent before our key — drop it
+// An inherited SSH_AUTH_SOCK makes ssh2 stall trying the (irrelevant) agent before our key - drop it
 // so auth uses ONLY the provided private key / password. (Production containers have no agent anyway.)
 delete process.env.SSH_AUTH_SOCK;
 
@@ -28,7 +28,7 @@ conn.on('ready', () => {
       .on('close', (code) => {
         conn.end();
         if (code === 0) { process.stdout.write(so); done = true; process.exit(0); } // stdout carries DG_ALREADY / DG_GRANTED
-        else fail(se.trim() || `usermod exited ${code} — passwordless sudo is required for "${user}"`);
+        else fail(se.trim() || `usermod exited ${code} - passwordless sudo is required for "${user}"`);
       })
       .stderr.on('data', d => { se += d.toString(); });
   });

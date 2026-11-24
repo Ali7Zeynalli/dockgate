@@ -1,14 +1,14 @@
 // SSH host key pinning (trust-on-first-use, then enforced).
 //
 // The first successful connection to a server records its host key fingerprint in the servers table.
-// Every later ssh2 connection — in the main process AND in the isolated worker processes — refuses to
+// Every later ssh2 connection - in the main process AND in the isolated worker processes - refuses to
 // talk to a host that presents a different key, so a man-in-the-middle cannot capture the stored
 // password / sudo commands. A rebuilt server legitimately changes its key: the admin re-trusts it in
-// Server Console → Access & SSH, which clears the pin (the next connection pins the new key).
+// Server Console > Access & SSH, which clears the pin (the next connection pins the new key).
 //
 // Workers have no DB access, so the parent passes the expected fingerprint in their config
 // (cfg.hostKey) and the worker only enforces it (strictVerifier). Pinning itself happens in the main
-// process (verifierFor) — on the connection test, the SSH pool, the terminal, the Docker client, etc.
+// process (verifierFor) - on the connection test, the SSH pool, the terminal, the Docker client, etc.
 const crypto = require('crypto');
 
 /** OpenSSH-style SHA256 fingerprint of a raw (wire format) host key. */
@@ -25,7 +25,7 @@ function keyType(keyBuf) {
   return 'unknown';
 }
 
-/** Short display name for a key type ("ssh-ed25519" → "ED25519"). */
+/** Short display name for a key type ("ssh-ed25519" -> "ED25519"). */
 function keyTypeLabel(type) {
   const t = String(type || '');
   if (t === 'ssh-ed25519') return 'ED25519';
@@ -35,11 +35,11 @@ function keyTypeLabel(type) {
 }
 
 /** Error raised (via ssh2) when the presented host key does not match the pinned one. */
-const MISMATCH_MESSAGE = 'Host key mismatch — this server presented a different SSH host key than the one DockGate pinned. If you rebuilt or reinstalled the server, re-trust it in Server Console → Access & SSH; otherwise do NOT connect (possible man-in-the-middle).';
+const MISMATCH_MESSAGE = 'Host key mismatch - this server presented a different SSH host key than the one DockGate pinned. If you rebuilt or reinstalled the server, re-trust it in Server Console > Access & SSH; otherwise do NOT connect (possible man-in-the-middle).';
 
 /**
  * ssh2 `hostVerifier` for the MAIN process. Pins on first use, enforces afterwards.
- * `server` may lack an id (connection test before the server is saved) → accept, nothing to pin to.
+ * `server` may lack an id (connection test before the server is saved) -> accept, nothing to pin to.
  * Returns the verifier function; `onMismatch` (optional) is called with the observed fingerprint.
  */
 function verifierFor(server, onMismatch) {
@@ -57,12 +57,12 @@ function verifierFor(server, onMismatch) {
     }
     if (row.host_key === fp) return true;
     if (typeof onMismatch === 'function') { try { onMismatch(fp, row.host_key); } catch (e) {} }
-    console.warn(`[ssh-hostkey] ${server.id}: host key mismatch (pinned ${row.host_key}, presented ${fp}) — connection refused`);
+    console.warn(`[ssh-hostkey] ${server.id}: host key mismatch (pinned ${row.host_key}, presented ${fp}) - connection refused`);
     return false;
   };
 }
 
-/** ssh2 `hostVerifier` for WORKER processes: enforce `expected` when set; no pin → accept. */
+/** ssh2 `hostVerifier` for WORKER processes: enforce `expected` when set; no pin -> accept. */
 function strictVerifier(expected) {
   return (key) => !expected || fingerprint(key) === expected;
 }

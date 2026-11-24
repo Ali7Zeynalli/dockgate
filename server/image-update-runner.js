@@ -1,16 +1,15 @@
 // Container image update with a record and a way back.
 //
-// Update:   pull the same tag → keep the old image (tagged dockgate-rollback/<name>:previous) → recreate the
-//           container → watch it for a short while (still running, healthy if it has a healthcheck) →
-//           if it fails, put the old image back automatically.
+// Update:   pull the same tag -> keep the old image (tagged dockgate-rollback/<name>:previous) -> recreate the
+//           container -> watch it for a short while (still running, healthy if it has a healthcheck) -> //           if it fails, put the old image back automatically.
 // Roll back: point the tag at the image the container had before an update, recreate, watch the same way.
 //
-// Compose services are recreated with `docker compose up -d --no-deps <service>` — the compose file is
+// Compose services are recreated with `docker compose up -d --no-deps <service>` - the compose file is
 // never edited: the tag on the server is moved back to the old image, so compose starts that one.
 // Standalone containers keep their old container (renamed and stopped) until the new one is up, so a failed
 // update restores the exact container that ran before.
 //
-// Every run is a row in image_update_history (who, when, which image, version and digest before → after,
+// Every run is a row in image_update_history (who, when, which image, version and digest before -> after,
 // result, log). It is keyed by server + container name (and compose project/service), not by container ID,
 // because the ID changes on every recreate.
 const crypto = require('crypto');
@@ -64,13 +63,13 @@ const HEALTH_MAX_MS = () => Math.max(WATCH_MS(), Number(process.env.IMAGE_UPDATE
 const jobs = new Map();
 const busy = new Set(); // server:name being changed
 
-let composeExec = null; // (project, args[], onData) → Promise, set by routes/compose.js
-let composeRecord = null; // records the run in the stack's deploy history (Deploy → Compose stacks)
+let composeExec = null; // (project, args[], onData) > Promise, set by routes/compose.js
+let composeRecord = null; // records the run in the stack's deploy history (Deploy > Compose stacks)
 function setComposeExec(fn, record) { composeExec = fn; composeRecord = record || null; }
 
 const COLS = `id, server_id, container_name, project, service, image, kind, status, from_image_id, to_image_id, from_digest, to_digest,
   from_version, to_version, from_created, to_created, old_container_id, new_container_id, error, source_ip, started_at, finished_at`;
-const jobOfRow = new Map(); // history id → job id while it runs
+const jobOfRow = new Map(); // history id -> job id while it runs
 
 /** History rows for a container (newest first), without the log. A running row carries its job_id. */
 function history({ serverId, name, project, service, limit = 50 }) {
@@ -97,7 +96,7 @@ function rollbackRepo(name) {
   return 'dockgate-rollback/' + (String(name).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+/, '').slice(0, 100) || 'container');
 }
 
-/** Split "host:5000/repo:tag" → { repo: "host:5000/repo", tag: "tag" }. */
+/** Split "host:5000/repo:tag" -> { repo: "host:5000/repo", tag: "tag" }. */
 function splitTag(ref) {
   const s = String(ref);
   const slash = s.lastIndexOf('/'), colon = s.lastIndexOf(':');
@@ -150,7 +149,7 @@ async function serviceContainers(client, project, service) {
 async function watch(client, ids, log) {
   const t0 = Date.now(), watchMs = WATCH_MS(), maxMs = HEALTH_MAX_MS();
   if (!watchMs) return;
-  log(`Watching ${ids.length > 1 ? `${ids.length} containers` : 'the new container'} for ${Math.round(watchMs / 1000)}s…`);
+  log(`Watching ${ids.length > 1 ? `${ids.length} containers` : 'the new container'} for ${Math.round(watchMs / 1000)}s...`);
   const restarts = new Map();
   for (;;) {
     let waitingHealth = false;
@@ -189,7 +188,7 @@ async function tailLog(client, id, log) {
 
 /**
  * Settings for the new container: what `docker inspect` shows minus what came from the OLD image. Inspect
- * merges the image's Env, Cmd, Labels … into the container config; copying those would pin the old image's
+ * merges the image's Env, Cmd, Labels ... into the container config; copying those would pin the old image's
  * values (e.g. PG_VERSION=15.8, an old CMD) onto the new one. Values the user set are kept.
  */
 function configFrom(info, image, oldImageConfig) {
@@ -226,7 +225,7 @@ function configFrom(info, image, oldImageConfig) {
 
 /**
  * Replace a standalone container with one built from `image` (same settings). The old container is
- * renamed and stopped first; returns { newId, undo, commit } — undo() restores the old container,
+ * renamed and stopped first; returns { newId, undo, commit } - undo() restores the old container,
  * commit() removes it.
  */
 async function swapContainer(client, info, image, log) {
@@ -276,7 +275,7 @@ async function notify(row) {
     const HM = require('./notifications/health-monitor');
     const srv = serverRow(row.server_id);
     const where = HM.serverLabel(srv);
-    const ver = (a, b) => (a || b) ? ` ${a || short(row.from_image_id)} → ${b || short(row.to_image_id)}` : '';
+    const ver = (a, b) => (a || b) ? ` ${a || short(row.from_image_id)} -> ${b || short(row.to_image_id)}` : '';
     const esc = (s) => String(s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     if (row.status === 'updated') {
       const what = row.kind === 'rollback' ? 'rolled back' : 'updated';
@@ -284,7 +283,7 @@ async function notify(row) {
         `🟢 ${row.container_name} ${what} on ${where}\n${row.image}${ver(row.from_version, row.to_version)}`,
         `<p><b>${esc(row.container_name)}</b> was ${what} on ${esc(where)}.</p><p>${esc(row.image)}${esc(ver(row.from_version, row.to_version))}</p>`);
     } else if (row.status === 'rolled_back' || row.status === 'failed') {
-      const what = row.status === 'rolled_back' ? 'update failed — the previous image is running again' : `${row.kind === 'rollback' ? 'roll back' : 'update'} failed`;
+      const what = row.status === 'rolled_back' ? 'update failed - the previous image is running again' : `${row.kind === 'rollback' ? 'roll back' : 'update'} failed`;
       await HM.deliver('image_update_failed', srv, `${row.container_name}: ${what}`,
         `🔴 ${row.container_name} on ${where}: ${what}\n${row.image}\n${row.error || ''}`,
         `<p><b>${esc(row.container_name)}</b> on ${esc(where)}: ${esc(what)}.</p><p>${esc(row.image)}</p><p>${esc(row.error || '')}</p>`);
@@ -337,12 +336,12 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
   const service = labels['com.docker.compose.service'] || null;
   const ref = info.Config.Image;
   const parsed = IU.parseRef(ref);
-  if (!parsed) throw Object.assign(new Error('This container was started from an image ID — there is no tag to update'), { statusCode: 400 });
-  if (parsed.pinned) throw Object.assign(new Error('This container is pinned to a digest (image@sha256:…) — change the pin to update it'), { statusCode: 400 });
+  if (!parsed) throw Object.assign(new Error('This container was started from an image ID - there is no tag to update'), { statusCode: 400 });
+  if (parsed.pinned) throw Object.assign(new Error('This container is pinned to a digest (image@sha256:...) - change the pin to update it'), { statusCode: 400 });
   if (project && service && !composeExec) throw Object.assign(new Error('Compose is not available'), { statusCode: 500 });
   if (kind === 'rollback') {
     try { await client.getImage(target.from_image_id).inspect(); }
-    catch (e) { throw Object.assign(new Error(`The previous image ${short(target.from_image_id)} is not on the server any more (removed by a prune?) — it can not be rolled back`), { statusCode: 409 }); }
+    catch (e) { throw Object.assign(new Error(`The previous image ${short(target.from_image_id)} is not on the server any more (removed by a prune?) - it can not be rolled back`), { statusCode: 409 }); }
   }
   const lock = `${serverId}:${project && service ? `${project}/${service}` : name}`;
   if (busy.has(lock)) throw Object.assign(new Error('An update of this container is already running'), { statusCode: 409 });
@@ -360,7 +359,7 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
   } catch (e) { busy.delete(lock); throw e; } // never leave the container locked when the job could not start
   const isCompose = !!(project && service);
 
-  const sameServer = () => { if ((dockerService.getActiveServerId() || 'local') !== serverId) throw new Error('The server in use was switched during the update — switch back to finish it'); };
+  const sameServer = () => { if ((dockerService.getActiveServerId() || 'local') !== serverId) throw new Error('The server in use was switched during the update - switch back to finish it'); };
   const retag = async (imageId) => { const { repo, tag } = splitTag(ref); await client.getImage(imageId).tag({ repo, tag }); log(`Tagged ${short(imageId)} as ${ref}`); };
   const composeUp = async () => { sameServer(); log(`$ docker compose up -d --no-deps ${service}`); await composeExec(project, ['up', '-d', '--no-deps', service], (c) => log(String(c).replace(/\n$/, ''))); };
   // Recreate with the image the tag points at now; returns { ids, undo, commit }.
@@ -388,11 +387,11 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
       };
       let old = await onOld();
       if (old.length) {
-        log(`${old.join(', ')} still run${old.length === 1 ? 's' : ''} the previous image — recreating`);
+        log(`${old.join(', ')} still run${old.length === 1 ? 's' : ''} the previous image - recreating`);
         sameServer(); log(`$ docker compose up -d --no-deps --force-recreate ${service}`);
         await composeExec(project, ['up', '-d', '--no-deps', '--force-recreate', service], (c) => log(String(c).replace(/\n$/, '')));
         old = await onOld();
-        if (old.length) throw Object.assign(new Error(`${old.join(', ')} still run${old.length === 1 ? 's' : ''} the previous image after a forced recreate — check that the compose file DockGate uses for this project defines ${service} with image ${ref}`), { kept: true });
+        if (old.length) throw Object.assign(new Error(`${old.join(', ')} still run${old.length === 1 ? 's' : ''} the previous image after a forced recreate - check that the compose file DockGate uses for this project defines ${service} with image ${ref}`), { kept: true });
       }
       const list = await serviceContainers(client, project, service);
       return { ids: list.filter(c => c.State === 'running').map(c => c.Id), all: list.map(c => c.Id) };
@@ -424,7 +423,7 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
           step(job, 'pull', 'done');
           toId = (await client.getImage(ref).inspect()).Id;
           if (toId === before.id) {
-            log('The registry has no newer image than the one this container runs — nothing to do.');
+            log('The registry has no newer image than the one this container runs - nothing to do.');
             result = { status: 'no_change', to: before, newId: info.Id };
             return;
           }
@@ -441,7 +440,7 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
         } finally { await untag('target'); }
       }
       const after = await imageFacts(client, toId, ref);
-      log(`${kind === 'update' ? 'Update' : 'Roll back'}: ${before.version || short(before.id)} → ${after.version || short(after.id)}`);
+      log(`${kind === 'update' ? 'Update' : 'Roll back'}: ${before.version || short(before.id)} -> ${after.version || short(after.id)}`);
       step(job, 'recreate', 'running', isCompose ? `Recreate service ${service}` : `Recreate ${name}`);
       let rc;
       try { rc = await recreate(toId); } catch (e) {
@@ -456,7 +455,7 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
         // The rolling update stopped at its first new replica: the old ones never stopped. Point the tag back.
         step(job, 'recreate', 'failed');
         await retag(before.id);
-        log(`✓ The previous image (${before.version || short(before.id)}) keeps running — nothing was stopped`);
+        log(`✓ The previous image (${before.version || short(before.id)}) keeps running - nothing was stopped`);
         result = { status: 'rolled_back', to: after, newId: null, error: e.message };
         return;
       }
@@ -464,7 +463,7 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
       step(job, 'watch', 'running', 'Check the new container');
       try {
         if (rc.ids.length) await watch(client, rc.ids, log);
-        else log('The container was not running before — it is left stopped.');
+        else log('The container was not running before - it is left stopped.');
         step(job, 'watch', 'done');
       } catch (e) {
         step(job, 'watch', 'failed');
@@ -505,7 +504,7 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
         if (now && now.digests) IU.refreshLocal(serverId, ref, { digests: now.digests, version: now.version, created: now.created });
       } catch (e) { /* next check fixes it */ }
       const row = getRow.get(rowId);
-      const ver = `${row.from_version || short(row.from_image_id)} → ${row.to_version || short(row.to_image_id)}`;
+      const ver = `${row.from_version || short(row.from_image_id)} -> ${row.to_version || short(row.to_image_id)}`;
       logAction({ sourceIp, server: serverId, resourceId: result.newId || info.Id, resourceType: 'container', resourceName: name,
         action: kind === 'update' ? 'image_update' : 'image_rollback',
         details: { status: result.status, image: ref, versions: ver, project, service, error: result.error || undefined } });
@@ -517,7 +516,7 @@ async function start({ containerId, kind = 'update', historyId = null, sourceIp 
       if (result.status !== 'no_change') notify(row);
       if (isCompose && composeRecord && result.status !== 'no_change') {
         composeRecord({ project, kind: kind === 'update' ? 'image update' : 'image rollback', status: result.status === 'updated' ? 'done' : 'error',
-          error: result.status === 'rolled_back' ? `${result.error} — the previous image was put back` : result.error, sourceIp, startedAt: job.startedAt, finishedAt: Date.now(),
+          error: result.status === 'rolled_back' ? `${result.error} - the previous image was put back` : result.error, sourceIp, startedAt: job.startedAt, finishedAt: Date.now(),
           details: { service, image: ref, from: row.from_version || short(row.from_image_id), to: row.to_version || short(row.to_image_id), result: result.status, historyId: rowId } }).catch(() => {});
       }
     }

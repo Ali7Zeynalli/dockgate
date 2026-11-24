@@ -1,5 +1,5 @@
 'use strict';
-// Proxies & SSL — a stopped proxy and the networks it joins: the archive tar reader / writer (server/tar-lite.js),
+// Proxies & SSL - a stopped proxy and the networks it joins: the archive tar reader / writer (server/tar-lite.js),
 // nginx's runtime name resolution (`resolve`, nginx ≥ 1.27.3) and joined networks kept in the Compose override.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -7,7 +7,7 @@ const T = require('../../server/tar-lite');
 const G = require('../../server/proxy-gen');
 const S = require('../../server/compose-scale');
 
-test('makeTar → parseTar gives the same file back (name, text, mode)', () => {
+test('makeTar -> parseTar gives the same file back (name, text, mode)', () => {
   const text = 'server { listen 80; }\n'.repeat(40); // more than one 512-byte block
   const [f] = T.parseTar(T.makeTar('shop.conf', text, 0o640));
   assert.equal(f.name, 'shop.conf'); assert.equal(f.type, 'file'); assert.equal(f.data.toString(), text); assert.equal(f.mode, 0o640);

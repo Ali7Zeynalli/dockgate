@@ -1,4 +1,4 @@
-// Tools → Databases API (server/pg-studio.js) — PostgreSQL in containers of the active server. Mounted at /api/databases.
+// Tools > Databases API (server/pg-studio.js) - PostgreSQL in containers of the active server. Mounted at /api/databases.
 const express = require('express');
 const router = express.Router();
 const { logAction } = require('../audit');
@@ -25,7 +25,7 @@ router.get('/:c/db/:db/objects', send(async (req) => S.objects(req.params.c, req
 router.get('/:c/db/:db/structure', send(async (req) => S.structure(req.params.c, req.params.db, req.query.schema, req.query.table)));
 // body { schema, table, limit, offset, sort: [{ col, dir }], filters: [{ col, op, value }], where }
 router.post('/:c/db/:db/rows', send(async (req) => S.rows(req.params.c, req.params.db, req.body || {})));
-// Export / import / test data for whole databases or ticked tables — pg-io.js
+// Export / import / test data for whole databases or ticked tables - pg-io.js
 const IO = require('../pg-io');
 const fileName = (req, ext) => `${req.params.db}${req.query.tables && String(req.query.tables).split(',').length === 1 ? '.' + String(req.query.tables).split('.').pop() : ''}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}.${ext}`.replace(/[^\w.-]+/g, '_');
 router.get('/:c/db/:db/dump', async (req, res) => {
@@ -63,7 +63,7 @@ router.post('/:c/db/:db/mock', send(async (req) => {
   if (!r.test) audit(req, 'db_mock_rows', { table: `${b.schema}.${b.table}`, rows: r.rows });
   return r;
 }));
-// Design: structure changes as operations → SQL (preview), run in one transaction (test: rolled back) — pg-ddl.js
+// Design: structure changes as operations > SQL (preview), run in one transaction (test: rolled back) - pg-ddl.js
 const D = require('../pg-ddl');
 router.post('/:c/db/:db/ddl/preview', send(async (req) => D.preview(req.params.c, req.params.db, req.body || {})));
 router.post('/:c/db/:db/ddl/apply', send(async (req) => {
@@ -83,7 +83,7 @@ router.post('/:c/db/:db/sql', send(async (req) => {
 router.post('/:c/db/:db/row/update', send(async (req) => { const r = await S.updateRow(req.params.c, req.params.db, req.body || {}); audit(req, 'db_row_update', { table: `${req.body.schema}.${req.body.table}`, key: req.body.pk, columns: Object.keys(req.body.set || {}) }); return r; }));
 router.post('/:c/db/:db/row/insert', send(async (req) => { const r = await S.insertRow(req.params.c, req.params.db, req.body || {}); audit(req, 'db_row_insert', { table: `${req.body.schema}.${req.body.table}`, key: r.key }); return r; }));
 router.post('/:c/db/:db/row/delete', send(async (req) => { const r = await S.deleteRows(req.params.c, req.params.db, req.body || {}); audit(req, 'db_row_delete', { table: `${req.body.schema}.${req.body.table}`, rows: r.deleted }); return r; }));
-// body { schema, table, changes: [...], test } — many edits in one transaction (see pg-studio.applyChanges)
+// body { schema, table, changes: [...], test } - many edits in one transaction (see pg-studio.applyChanges)
 router.post('/:c/db/:db/changes', send(async (req) => {
   const b = req.body || {};
   const r = await S.applyChanges(req.params.c, req.params.db, b);
@@ -102,13 +102,13 @@ router.post('/:c/db/:db/history/log', send(async (req) => { const b = req.body |
 router.post('/:c/db/:db/history/restore', send(async (req) => { const b = req.body || {}; const r = await H.restore(req.params.c, req.params.db, b.schema, b.table, b.id); audit(req, 'db_restore_row', { table: `${b.schema}.${b.table}`, key: r.key, change: b.id }); return r; }));
 // ---------- many rows at once (pg-bulk.js) ----------
 const BU = require('../pg-bulk');
-// body { schema, table, columns, rows, mode: insert | upsert | skip, emptyNull, test } (up to 100 MB — see index.js)
+// body { schema, table, columns, rows, mode: insert | upsert | skip, emptyNull, test } (up to 100 MB - see index.js)
 router.post('/:c/db/:db/import', send(async (req) => { const b = req.body || {}; const r = await BU.importRows(req.params.c, req.params.db, b); if (!r.test) audit(req, 'db_import', { table: `${b.schema}.${b.table}`, rows: r.rows, written: r.written, mode: r.mode }); return r; }));
 // body { schema, table, filters, where, set, op: update | delete, test, all }
 router.post('/:c/db/:db/bulk', send(async (req) => { const b = req.body || {}; const r = await BU.bulkUpdate(req.params.c, req.params.db, b); if (!r.test) audit(req, 'db_bulk_' + r.op, { table: `${b.schema}.${b.table}`, rows: r.rows, set: b.op === 'delete' ? undefined : Object.keys(b.set || {}), filters: b.filters, where: b.where || undefined }); return r; }));
 // body { schema, table, column, find, replace, matchCase, wholeValue, filters, where, preview, test }
 router.post('/:c/db/:db/replace', send(async (req) => { const b = req.body || {}; const r = await BU.findReplace(req.params.c, req.params.db, b); if (!r.test && !r.preview) audit(req, 'db_replace', { table: `${b.schema}.${b.table}`, column: b.column, find: String(b.find).slice(0, 100), replace: String(b.replace || '').slice(0, 100), rows: r.rows }); return r; }));
-// ?schema&table&format=csv|json — streamed download
+// ?schema&table&format=csv|json - streamed download
 router.get('/:c/db/:db/export', async (req, res) => {
   const fmt = req.query.format === 'json' ? 'json' : 'csv';
   const fname = `${req.query.schema}.${req.query.table}`.replace(/[^\w.-]+/g, '_');
@@ -133,7 +133,7 @@ const sessKey = (req) => {
 };
 // All tables with their columns (for completion in the editor).
 router.get('/:c/db/:db/schema-index', send(async (req) => S.schemaIndex(req.params.c, req.params.db)));
-// body { sql, mode: run | test, confirm, timeoutMs } — runs in the tab's own session
+// body { sql, mode: run | test, confirm, timeoutMs } - runs in the tab's own session
 router.post('/:c/db/:db/session/:sid/run', send(async (req) => {
   const b = req.body || {};
   const t = await S.resolve(req.params.c);
@@ -185,11 +185,11 @@ router.get('/:c/backups/:file/download', async (req, res) => {
 router.post('/:c/backups/restore', send(async (req) => { const r = await BK.restore(req.params.c, req.body || {}); audit(req, 'db_restore', { file: req.body.file, database: r.database }); return r; }));
 // body { restored, into }
 router.post('/:c/backups/swap', send(async (req) => { const r = await BK.swap(req.params.c, req.body || {}); audit(req, 'db_swap', { database: r.database, kept: r.kept }); return r; }));
-// body { database, keepDays, schedule } — a Scripts entry + a Cron job (SSH servers)
+// body { database, keepDays, schedule } - a Scripts entry + a Cron job (SSH servers)
 router.post('/:c/backups/schedule', send(async (req) => {
   const dockerSvc = require('../docker');
   const id = dockerSvc.getActiveServerId();
-  if (id === 'local') throw Object.assign(new Error('On this machine a scheduled backup is a task in Tools → Schedules: Add schedule → "Back up a database".'), { statusCode: 400 });
+  if (id === 'local') throw Object.assign(new Error('On this machine a scheduled backup is a task in Tools > Schedules: Add schedule -> "Back up a database".'), { statusCode: 400 });
   const server = require('../db').stmts.getServer.get(id);
   const t = await S.resolve(req.params.c);
   const b = req.body || {};

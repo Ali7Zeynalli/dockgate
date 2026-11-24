@@ -14,7 +14,7 @@ test('paths: SSH keys live under DATA_DIR; absolute paths pass through; legacy l
   assert.equal(fs.statSync(paths.SSH_KEYS_DIR).mode & 0o777, 0o700);
   assert.equal(paths.keyPath(null), null);
   assert.equal(paths.keyPath('/abs/k.pem'), '/abs/k.pem');
-  assert.equal(paths.keyPath('new.pem'), path.join(paths.SSH_KEYS_DIR, 'new.pem'), 'missing everywhere → new location');
+  assert.equal(paths.keyPath('new.pem'), path.join(paths.SSH_KEYS_DIR, 'new.pem'), 'missing everywhere -> new location');
   // a key written by an older version to <app>/data/ssh-keys is still found
   const name = `_legacy_test_${process.pid}.pem`;
   fs.mkdirSync(paths.LEGACY_SSH_KEYS_DIR, { recursive: true });

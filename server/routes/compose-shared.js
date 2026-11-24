@@ -8,7 +8,7 @@ const remoteCompose = require('../remote-compose');
 // Respects DATA_DIR (same as db.js) so tests/custom deploys use an isolated location.
 const COMPOSE_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data'), 'compose');
 
-// Validate compose project name — only safe characters (also prevents path traversal in COMPOSE_DIR)
+// Validate compose project name - only safe characters (also prevents path traversal in COMPOSE_DIR)
 function validateProjectName(name) {
   return /^[a-zA-Z0-9_-]+$/.test(name);
 }
@@ -28,14 +28,14 @@ function safeRelPath(p) {
 // Standard compose filenames docker compose auto-detects.
 const COMPOSE_FILENAMES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'];
 
-// The managed project's compose file — ANY of the standard names (.yml AND .yaml). A folder/git deploy
+// The managed project's compose file - ANY of the standard names (.yml AND .yaml). A folder/git deploy
 // may bring docker-compose.yaml, so nothing may hardcode docker-compose.yml.
 function findComposeFile(dir) {
   return COMPOSE_FILENAMES.find(n => fs.existsSync(path.join(dir, n))) || null;
 }
 
 // Find ALL compose files in a staged tree (recursive, NAME-AGNOSTIC): any *.yml/*.yaml whose top level
-// declares `services:`. Catches docker-compose.app.yml, stack.yml, infra/*.yml, etc. — not just the 4
+// declares `services:`. Catches docker-compose.app.yml, stack.yml, infra/*.yml, etc. - not just the 4
 // standard names. Returns POSIX-relative paths, shallowest first. Skips obvious junk dirs.
 function findComposeFiles(dir) {
   const out = [];
@@ -98,7 +98,7 @@ function safeProjectFile(project, relPath) {
     const realDir = fs.realpathSync(dir);
     const real = fs.realpathSync(abs);
     if (real !== realDir && !real.startsWith(realDir + path.sep)) return null;
-  } catch (e) { /* path may not exist yet (new file) — prefix check above already guards */ }
+  } catch (e) { /* path may not exist yet (new file) - prefix check above already guards */ }
   return abs;
 }
 

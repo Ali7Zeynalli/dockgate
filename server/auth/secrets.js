@@ -4,7 +4,7 @@
 //
 // Format:  enc:v1:<ivHex>:<tagHex>:<ciphertextHex>
 // Both functions are IDEMPOTENT: encrypt() leaves already-encrypted values untouched; decrypt()
-// passes plaintext (no enc: prefix) straight through — so a half-migrated DB never breaks.
+// passes plaintext (no enc: prefix) straight through - so a half-migrated DB never breaks.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');

@@ -1,6 +1,6 @@
-// The SERVER group of the sidebar: what was one "Server Console" page with 13 tabs is five sections — Status,
-// Security, System, Software, Automation — each working on the server picked in the top bar (as the Docker
-// pages do). Their tabs reuse the console panels as they were. Old links (#/server-console?id=…&tab=…) switch
+// The SERVER group of the sidebar: what was one "Server Console" page with 13 tabs is five sections - Status,
+// Security, System, Software, Automation - each working on the server picked in the top bar (as the Docker
+// pages do). Their tabs reuse the console panels as they were. Old links (#/server-console?id=...&tab=...) switch
 // to that server and open the tab's new place.
 const SRV_ICONS = {
   status: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>',
@@ -13,14 +13,14 @@ const SRV_ICONS = {
   activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
 };
 
-// old console tab → [section, tab]
+// old console tab -> [section, tab]
 const SRV_OLD_TABS = {
   overview: ['srv-status', 'srv-overview'], monitoring: ['srv-status', 'srv-monitoring'], logs: ['srv-status', 'srv-logs'], settings: ['srv-status', 'srv-connection'],
   access: ['srv-security', 'srv-access'], users: ['srv-security', 'srv-users'], firewall: ['srv-security', 'srv-firewall'], fail2ban: ['srv-security', 'srv-fail2ban'], honeypot: ['srv-security', 'srv-honeypot'],
   system: ['srv-system', 'srv-names'], setup: ['srv-software', 'srv-setup'], manage: ['srv-software', 'srv-services'], docker: ['srv-software', 'srv-docker'],
   cron: ['srv-automation', 'srv-cron'], scripts: ['srv-automation', 'srv-scripts'],
 };
-/** Open a server page by its old console tab name or its new tab name (used by the panels' "open …" links). */
+/** Open a server page by its old console tab name or its new tab name (used by the panels' "open ..." links). */
 function srvGo(tab, extra = {}) {
   const hit = SRV_OLD_TABS[tab] || (typeof navItems !== 'undefined' ? Object.entries(navItems).filter(([k]) => k.startsWith('srv-')).map(([k, v]) => (v.tabs.some(([t]) => t === tab) ? [k, tab] : null)).find(Boolean) : null);
   if (hit) Router.navigate(hit[0], { tab: hit[1], ...extra });
@@ -40,7 +40,7 @@ function srvPage(render, { anyServer = false } = {}) {
       let list = [];
       try { list = ((await API.get('/servers')).servers || []).filter(s => s.type !== 'local'); } catch (e) { /* the message alone */ }
       content.innerHTML = `<div class="card" style="padding:24px;max-width:680px"><b>This page works on a server reached over SSH.</b>
-        <div class="ui-sub" style="margin-top:6px">The top bar shows <b>${escapeHtml(a.name || 'Local')}</b>. ${list.length ? 'Pick a server:' : 'Add one in Servers → Add server.'}</div>
+        <div class="ui-sub" style="margin-top:6px">The top bar shows <b>${escapeHtml(a.name || 'Local')}</b>. ${list.length ? 'Pick a server:' : 'Add one in Servers > Add server.'}</div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">${list.map(s => UI.btn(escapeHtml(s.name || s.id), `data-srv-use="${escapeHtml(s.id)}"`, 'btn-primary')).join('')} ${UI.btn('Servers', 'data-srv-list')}</div></div>`;
       content.querySelectorAll('[data-srv-use]').forEach(b => b.onclick = async () => { try { if (await useServer(b.dataset.srvUse)) Router.navigate(Store.get('currentPage'), Store.get('currentParams') || {}); } catch (e) { showToast(e.message, 'error'); } });
       content.querySelector('[data-srv-list]').onclick = () => Router.navigate('infra', { tab: 'servers' });
@@ -100,7 +100,7 @@ const SRV_PAGES = {
 };
 Object.entries(SRV_PAGES).forEach(([k, fn]) => Router.register(k, fn));
 
-// Old #/server-console?id=…&tab=… links (bookmarks, other pages): use that server, open the tab's new place.
+// Old #/server-console?id=...&tab=... links (bookmarks, other pages): use that server, open the tab's new place.
 Router.register('server-console', async (content, params = {}) => {
   const navId = Router._navId;
   if (params.id && srvActive().id !== params.id) {

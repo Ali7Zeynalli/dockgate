@@ -1,7 +1,7 @@
 // DockGate SSH honeypot: listens where SSH used to be (port 22, mapped to 2222 in the container), records who
 // connects and what they try, and refuses every login. There is no shell, no command, no file: a client never gets
 // past authentication. Each event is one line in /log/honeypot.log, which fail2ban on the host reads to ban the
-// address on every port (DockGate → Server Console → Security → Honeypot).
+// address on every port (DockGate > Server Console > Security > Honeypot).
 //   <ISO time> <event> <ip> <json>      event: connect (TCP) | ident (SSH greeting) | auth (a login attempt) | close
 'use strict';
 const fs = require('fs');

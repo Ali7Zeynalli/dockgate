@@ -1,5 +1,5 @@
 /**
- * Servers route — SSH multi-host idarəetmə
+ * Servers route - SSH multi-host idarəetmə
  * Local + uzaq SSH server-lər arasında Docker daemon-larını idarə edir
  */
 const express = require('express');
@@ -30,16 +30,16 @@ const serviceCtl = require('../service-ctl');
 const paths = require('../paths');
 const SSH_KEYS_DIR = paths.ensureKeysDir();
 
-// ID validate — yalnız təhlükəsiz simvollar
+// ID validate - yalnız təhlükəsiz simvollar
 function validateId(id) {
   return /^[a-zA-Z0-9_-]{1,64}$/.test(id);
 }
 
 /**
- * Stage-2 köməkçisi: serverə SSH ilə girib `sudo -n usermod -aG docker <user>` işlədir —
+ * Stage-2 köməkçisi: serverə SSH ilə girib `sudo -n usermod -aG docker <user>` işlədir -
  * beləcə DockGate user-i docker socket-ə çata bilir. Passwordless sudo tələb olunur.
  * İZOLƏ child-process-də işləyir (grant-docker-worker.js): əsas serverdə eyni host-a açıq olan
- * EventMonitor ssh2 bağlantıları ilə konkurensiyada auth ilişirdi — ayrı proses bunu həll edir.
+ * EventMonitor ssh2 bağlantıları ilə konkurensiyada auth ilişirdi - ayrı proses bunu həll edir.
  * @param {object} server DB-dəki server sətri (host/port/username/key_path/password/passphrase)
  */
 function grantDockerAccess(server) {
@@ -56,7 +56,7 @@ function grantDockerAccess(server) {
   });
 }
 
-// GET /api/servers — bütün server-lər (local + ssh)
+// GET /api/servers - bütün server-lər (local + ssh)
 router.get('/', (req, res) => {
   try {
     const sshServers = stmts.getServers.all();
@@ -92,9 +92,9 @@ router.get('/', (req, res) => {
   }
 });
 
-// GET /api/servers/overview — batched per-server snapshot for the Servers list (DB-only, no SSH):
+// GET /api/servers/overview - batched per-server snapshot for the Servers list (DB-only, no SSH):
 // provisioning readiness (latest matrix) + the most recent stored host_metrics sample. Cheap + fast.
-// Dashboard → "Needs attention on all servers": newer images, containers in trouble, failed scheduled work.
+// Dashboard -> "Needs attention on all servers": newer images, containers in trouble, failed scheduled work.
 router.get('/attention', async (req, res) => {
   try {
     const gate = require('../auth/server-gate'); const key = gate.keyOfReq(req);
@@ -124,7 +124,7 @@ router.get('/overview', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/servers — yeni SSH server əlavə et
+// POST /api/servers - yeni SSH server əlavə et
 // body: { id, host, port, username, privateKey?, passphrase?, password?, description? }
 // Auth iyerarxiyası: privateKey > password > SSH agent
 router.post('/', (req, res) => {
@@ -148,8 +148,8 @@ router.post('/', (req, res) => {
       keyPath = keyFile;
     }
 
-    // password / passphrase — stored as plain text in the DB (protected by the data/ volume host filesystem)
-    // DockGate self-hosted istifadə üçündür — auth UI tərəfində yox
+    // password / passphrase - stored as plain text in the DB (protected by the data/ volume host filesystem)
+    // DockGate self-hosted istifadə üçündür - auth UI tərəfində yox
     const pwdToStore = password ? String(password) : null;
     // passphrase only makes sense with key auth (to unlock an encrypted private key)
     const passphraseToStore = (privateKey && passphrase) ? String(passphrase) : null;
@@ -182,7 +182,7 @@ router.post('/', (req, res) => {
   }
 });
 
-// POST /api/servers/:id/grant-docker — user-i remote-da docker qrupuna əlavə et (sudo usermod).
+// POST /api/servers/:id/grant-docker - user-i remote-da docker qrupuna əlavə et (sudo usermod).
 // Opt-in əməliyyat: SSH login işləməlidir, user-in passwordless sudo-su olmalıdır.
 router.post('/:id/grant-docker', async (req, res) => {
   try {
@@ -191,14 +191,14 @@ router.post('/:id/grant-docker', async (req, res) => {
     const r = await grantDockerAccess(server);
     logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'server', resourceName: req.params.id, action: 'grant-docker', details: { user: server.username, already: !!r.already } });
     res.json({ success: true, already: !!r.already, message: r.already
-      ? `"${server.username}" is already in the docker group — nothing to do.`
-      : `"${server.username}" added to the docker group — re-test the connection.` });
+      ? `"${server.username}" is already in the docker group - nothing to do.`
+      : `"${server.username}" added to the docker group - re-test the connection.` });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// PUT /api/servers/:id — edit an existing SSH server
+// PUT /api/servers/:id - edit an existing SSH server
 // body: { host?, port?, username?, privateKey?, passphrase?, password?, description?, notifications_enabled? }
 // Only the fields sent are changed (undefined = keep). An empty string for password/passphrase clears it.
 router.put('/:id', (req, res) => {
@@ -211,10 +211,10 @@ router.put('/:id', (req, res) => {
 
     const { host, port, username, privateKey, passphrase, password, description, name, accessPassword, currentAccessPassword, notifications_enabled } = req.body || {};
 
-    // Access password (the 2nd gate) — set / change / remove. Changing or removing an EXISTING one requires
+    // Access password (the 2nd gate) - set / change / remove. Changing or removing an EXISTING one requires
     // the current access password (so nobody can edit the server to strip its gate). Verify BEFORE any write.
     if (accessPassword !== undefined && existing.access_pass && !verifyServerAccessPass(existing, currentAccessPassword)) {
-      return res.status(403).json({ error: 'Current access password is incorrect — cannot change or remove this server\'s access password.' });
+      return res.status(403).json({ error: 'Current access password is incorrect - cannot change or remove this server\'s access password.' });
     }
 
     const newHost = host !== undefined ? host : existing.host;
@@ -226,7 +226,7 @@ router.put('/:id', (req, res) => {
       ? ((notifications_enabled === 0 || notifications_enabled === false) ? 0 : 1)
       : (existing.notifications_enabled !== undefined ? existing.notifications_enabled : 1);
 
-    // Key — if a new privateKey is provided, write it to file; otherwise keep the existing one
+    // Key - if a new privateKey is provided, write it to file; otherwise keep the existing one
     let keyPath = existing.key_path;
     if (privateKey) {
       const keyFile = `${id}.pem`;
@@ -239,7 +239,7 @@ router.put('/:id', (req, res) => {
     const newPassphrase = passphrase !== undefined ? (passphrase ? String(passphrase) : null) : existing.passphrase;
 
     stmts.updateServer.run(newHost, newPort, newUsername, keyPath, encrypt(newPassword), encrypt(newPassphrase), newDescription, newName, newNotificationsEnabled, id);
-    // A different host is a different machine — its host key must be pinned afresh.
+    // A different host is a different machine - its host key must be pinned afresh.
     if (newHost !== existing.host) stmts.clearServerHostKey.run(id);
     require('../ssh-pool').invalidate(id); // drop pooled SSH connections so the new host/credentials take effect
     // Apply the access-password change (verified above): empty string removes the gate, non-empty sets/changes it.
@@ -270,7 +270,7 @@ router.put('/:id', (req, res) => {
   }
 });
 
-// POST /api/servers/test — server-ə qoşulmanı yoxla (qeydiyyatdan əvvəl)
+// POST /api/servers/test - server-ə qoşulmanı yoxla (qeydiyyatdan əvvəl)
 // body: { id?, type?, host?, port?, username?, privateKey?, password?, passphrase? }
 router.post('/test', async (req, res) => {
   try {
@@ -312,7 +312,7 @@ router.post('/test', async (req, res) => {
   }
 });
 
-// POST /api/servers/active — aktiv server dəyiş
+// POST /api/servers/active - aktiv server dəyiş
 // body: { id }
 router.post('/active', async (req, res) => {
   try {
@@ -324,7 +324,7 @@ router.post('/active', async (req, res) => {
       const gate = require('../auth/server-gate'); const key = gate.keyOfReq(req);
       if (server && server.access_pass && accessPassword != null && verifyServerAccessPass(server, accessPassword)) gate.unlock(key, id); // unlocked for this session
       if (server && server.access_pass && !gate.isUnlocked(key, id)) {
-        // 403 (not 401): the DockGate session is valid — this is a per-server gate, not session expiry.
+        // 403 (not 401): the DockGate session is valid - this is a per-server gate, not session expiry.
         // A 401 would trip the client's auth-expired handler and bounce the user to the login screen.
         return res.status(403).json({
           error: accessPassword ? 'Access password is incorrect' : 'This server requires an access password to switch to it',
@@ -340,7 +340,7 @@ router.post('/active', async (req, res) => {
   }
 });
 
-// POST /api/servers/:id/unlock — type a server's access password for this session (the server in use does not change)
+// POST /api/servers/:id/unlock - type a server's access password for this session (the server in use does not change)
 router.post('/:id/unlock', (req, res) => {
   const server = stmts.getServer.get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Server not found' });
@@ -360,7 +360,7 @@ router.delete('/:id', (req, res) => {
     const server = stmts.getServer.get(id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    // Aktiv olan silinirsə — local-a keç
+    // Aktiv olan silinirsə - local-a keç
     const activeId = stmts.getSetting.get('active_server')?.value;
     if (activeId === id) {
       dockerService.setActiveServer('local');
@@ -374,7 +374,7 @@ router.delete('/:id', (req, res) => {
       }
     }
 
-    // Key pairs DockGate generated for this server's users (deploy user, Users → Add key)
+    // Key pairs DockGate generated for this server's users (deploy user, Users > Add key)
     for (const g of stmts.getGeneratedKeys.all(id)) {
       try { fs.unlinkSync(paths.keyPath(g.key_path)); } catch (e) {}
     }
@@ -401,7 +401,7 @@ function resolveKeyPath(server) {
   return paths.keyPath(server.key_path);
 }
 
-// GET /api/servers/provision/catalog — read-only reference (explainer + custom checklist).
+// GET /api/servers/provision/catalog - read-only reference (explainer + custom checklist).
 router.get('/provision/catalog', (req, res) => {
   res.json({
     presets: catalog.PRESETS,
@@ -419,14 +419,14 @@ router.get('/provision/catalog', (req, res) => {
   });
 });
 
-// GET /api/servers/provision/job/:id — live job poll (in-memory; finished jobs fall out after TTL).
+// GET /api/servers/provision/job/:id - live job poll (in-memory; finished jobs fall out after TTL).
 router.get('/provision/job/:id', (req, res) => {
   const job = provisionRunner.getJob(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found (it may have finished — see run history)' });
+  if (!job) return res.status(404).json({ error: 'Job not found (it may have finished - see run history)' });
   res.json({ id: job.id, serverId: job.serverId, status: job.status, phase: job.phase, distro: job.distro, log: job.log, items: job.items, error: job.error, rebootRequired: !!job.rebootRequired });
 });
 
-// POST /api/servers/provision/job/:id/cancel — stop a run before its next item (the current one finishes).
+// POST /api/servers/provision/job/:id/cancel - stop a run before its next item (the current one finishes).
 router.post('/provision/job/:id/cancel', (req, res) => {
   try {
     const r = provisionRunner.cancelJob(req.params.id);
@@ -435,7 +435,7 @@ router.post('/provision/job/:id/cancel', (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// GET /api/servers/provision/runs/:runId — one run + its items (re-openable after the job is gone).
+// GET /api/servers/provision/runs/:runId - one run + its items (re-openable after the job is gone).
 router.get('/provision/runs/:runId', (req, res) => {
   try {
     const run = stmts.getProvisionRun.get(req.params.runId);
@@ -444,7 +444,7 @@ router.get('/provision/runs/:runId', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/servers/:id/provision/scan — LIVE read-only probe: run each item's detect over SSH and
+// GET /api/servers/:id/provision/scan - LIVE read-only probe: run each item's detect over SSH and
 // report what's already installed (vs the matrix, which is DB history). Used when the Setup UI opens.
 router.get('/:id/provision/scan', async (req, res) => {
   try {
@@ -456,7 +456,7 @@ router.get('/:id/provision/scan', async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// GET /api/servers/:id/provision/matrix — every catalog item → its latest recorded state for this server.
+// GET /api/servers/:id/provision/matrix - every catalog item -> its latest recorded state for this server.
 router.get('/:id/provision/matrix', (req, res) => {
   try {
     const server = stmts.getServer.get(req.params.id);
@@ -475,7 +475,7 @@ router.get('/:id/provision/matrix', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/servers/:id/provision/runs — run history for a server.
+// GET /api/servers/:id/provision/runs - run history for a server.
 router.get('/:id/provision/runs', (req, res) => {
   try {
     if (!stmts.getServer.get(req.params.id)) return res.status(404).json({ error: 'Server not found' });
@@ -483,7 +483,7 @@ router.get('/:id/provision/runs', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/servers/:id/provision — start a run. body: { preset, only?, confirm? }
+// POST /api/servers/:id/provision - start a run. body: { preset, only?, confirm? }
 router.post('/:id/provision', (req, res) => {
   try {
     const server = stmts.getServer.get(req.params.id);
@@ -501,7 +501,7 @@ router.post('/:id/provision', (req, res) => {
   }
 });
 
-// GET /api/servers/:id/alerts — server-health rules as they apply to this server: shared limits, this
+// GET /api/servers/:id/alerts - server-health rules as they apply to this server: shared limits, this
 // server's own choice (default / custom / off) and what the health monitor saw last.
 router.get('/:id/alerts', (req, res) => {
   try {
@@ -538,7 +538,7 @@ router.put('/:id/alerts/:type', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/servers/:id/host/stats — one live snapshot: CPU/RAM/swap/disk/net/load/uptime/top procs/open ports.
+// GET /api/servers/:id/host/stats - one live snapshot: CPU/RAM/swap/disk/net/load/uptime/top procs/open ports.
 router.get('/:id/host/stats', async (req, res) => {
   try {
     // The machine DockGate runs on is read directly (Dashboard / Monitoring of "Local").
@@ -548,12 +548,12 @@ router.get('/:id/host/stats', async (req, res) => {
     if (server.type === 'local') return res.status(400).json({ error: 'Host stats target a remote SSH server' });
     const cfg = { ...server, keyPath: resolveKeyPath(server), password: decrypt(server.password), passphrase: decrypt(server.passphrase) };
     const s = await hostStats.collectHostStats(cfg);
-    // Not stored here: the health monitor stores one sample a minute (Monitoring → Last 48 hours).
+    // Not stored here: the health monitor stores one sample a minute (Monitoring > Last 48 hours).
     res.json(s);
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// GET /api/servers/:id/docker/summary — Docker resource counts for this server (console Overview).
+// GET /api/servers/:id/docker/summary - Docker resource counts for this server (console Overview).
 router.get('/:id/docker/summary', async (req, res) => {
   try {
     const server = stmts.getServer.get(req.params.id);
@@ -562,7 +562,7 @@ router.get('/:id/docker/summary', async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// GET /api/servers/:id/host/metrics?limit= — stored time-series samples (chronological) for trend charts.
+// GET /api/servers/:id/host/metrics?limit= - stored time-series samples (chronological) for trend charts.
 router.get('/:id/host/metrics', (req, res) => {
   try {
     if (req.params.id !== 'local' && !stmts.getServer.get(req.params.id)) return res.status(404).json({ error: 'Server not found' });
@@ -571,7 +571,7 @@ router.get('/:id/host/metrics', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/servers/:id/host/log-sources — discover the units + /var/log files available on the host.
+// GET /api/servers/:id/host/log-sources - discover the units + /var/log files available on the host.
 router.get('/:id/host/log-sources', async (req, res) => {
   try {
     let cfg;
@@ -586,8 +586,8 @@ router.get('/:id/host/log-sources', async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// GET /api/servers/:id/host/logs?source=|unit=|file=&lines= — last N lines of a host log.
-// source = curated quick-pick · unit = a systemd unit (journalctl -u) · file = a path under /var/log.
+// GET /api/servers/:id/host/logs?source=|unit=|file=&lines= - last N lines of a host log.
+// source = curated quick-pick, unit = a systemd unit (journalctl -u), file = a path under /var/log.
 router.get('/:id/host/logs', async (req, res) => {
   try {
     let cfg;
@@ -607,7 +607,7 @@ router.get('/:id/host/logs', async (req, res) => {
 });
 
 // ============ SERVICE MANAGEMENT (PHASE 5) ============
-// GET /api/servers/:id/services/status — live status of the manageable services on this host.
+// GET /api/servers/:id/services/status - live status of the manageable services on this host.
 router.get('/:id/services/status', async (req, res) => {
   try {
     const server = stmts.getServer.get(req.params.id);
@@ -618,7 +618,7 @@ router.get('/:id/services/status', async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// POST /api/servers/:id/services/:itemId/action — body { action, confirm? }. Lifecycle control:
+// POST /api/servers/:id/services/:itemId/action - body { action, confirm? }. Lifecycle control:
 // start/stop/restart/enable/disable. The concrete command is resolved from the catalog in the worker.
 router.post('/:id/services/:itemId/action', async (req, res) => {
   const itemId = req.params.itemId;
@@ -637,13 +637,13 @@ router.post('/:id/services/:itemId/action', async (req, res) => {
   } catch (err) {
     if (err.statusCode === 409) return res.status(409).json({ error: err.message, risks: err.risks || [] });
     if (err.statusCode === 400) return res.status(400).json({ error: err.message });
-    // SSH/worker failure — audit the attempt as failed.
+    // SSH/worker failure - audit the attempt as failed.
     logAction({ req, server: 'local', resourceId: req.params.id, resourceType: 'service', resourceName: itemId, action: 'service-' + (action || '?'), details: { itemId, failed: true, error: String(err.message).slice(0, 200) } });
     res.status(502).json({ error: err.message });
   }
 });
 
-// GET /api/servers/:id/services/:itemId/config?path= — read an allowlisted config file (the worker
+// GET /api/servers/:id/services/:itemId/config?path= - read an allowlisted config file (the worker
 // re-checks the path against the catalog allowlist for the detected distro).
 router.get('/:id/services/:itemId/config', async (req, res) => {
   try {
@@ -655,7 +655,7 @@ router.get('/:id/services/:itemId/config', async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// POST /api/servers/:id/services/:itemId/config — body { path, content, confirm }. Guarded write:
+// POST /api/servers/:id/services/:itemId/config - body { path, content, confirm }. Guarded write:
 // allowlist + backup + validate + auto-restore on failure + restart, all inside the worker. confirm
 // is mandatory; editing the SSH config over a password login is refused (lockout).
 router.post('/:id/services/:itemId/config', async (req, res) => {
@@ -681,7 +681,7 @@ router.post('/:id/services/:itemId/config', async (req, res) => {
   }
 });
 
-// GET /api/servers/:id/services/:itemId/ops — list current state for a service's rich ops
+// GET /api/servers/:id/services/:itemId/ops - list current state for a service's rich ops
 // (fail2ban jails + banned IPs / ufw rules). Read-only.
 router.get('/:id/services/:itemId/ops', async (req, res) => {
   try {
@@ -693,7 +693,7 @@ router.get('/:id/services/:itemId/ops', async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// POST /api/servers/:id/services/:itemId/op — body { opId, params, confirm }. Parameterised op
+// POST /api/servers/:id/services/:itemId/op - body { opId, params, confirm }. Parameterised op
 // (fail2ban ban/unban, ufw/firewalld allow/deny/delete). Params are validated here AND in the worker.
 router.post('/:id/services/:itemId/op', async (req, res) => {
   const itemId = req.params.itemId;

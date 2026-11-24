@@ -21,12 +21,12 @@ function loadBundled() {
   catch (e) { return { version: '2', templates: [] }; }
 }
 
-// GET /api/templates — return the catalog ({ version, templates[], source }).
+// GET /api/templates - return the catalog ({ version, templates[], source }).
 router.get('/', async (req, res) => {
   try {
     const setting = (stmts.getSetting.get('template_url')?.value || '').trim();
     if (setting === 'bundled') return res.json({ ...loadBundled(), source: 'bundled' });
-    // Empty/unset → the default community catalog (auto-load); any other value is a custom URL.
+    // Empty/unset -> the default community catalog (auto-load); any other value is a custom URL.
     const url = setting || DEFAULT_CATALOG;
 
     if (cache.data && cache.url === url && (Date.now() - cache.at) < TTL_MS) {
@@ -39,7 +39,7 @@ router.get('/', async (req, res) => {
       cache = { at: Date.now(), url, data };
       return res.json({ ...data, source: 'remote', url });
     } catch (e) {
-      // Remote unreachable / invalid → fall back to the bundled set and report why
+      // Remote unreachable / invalid -> fall back to the bundled set and report why
       return res.json({ ...loadBundled(), source: 'bundled-fallback', error: e.message });
     }
   } catch (err) {
@@ -47,9 +47,9 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/templates/stackfile?url=... — fetch a compose stackfile referenced by a stack template.
+// GET /api/templates/stackfile?url=... - fetch a compose stackfile referenced by a stack template.
 // Proxied server-side to avoid browser CORS. http(s) only, SSRF-guarded (no internal/metadata hosts;
-// redirects rejected — a public host could otherwise bounce into the private network). isBlockedLogoHost
+// redirects rejected - a public host could otherwise bounce into the private network). isBlockedLogoHost
 // is hoisted (function declaration below).
 router.get('/stackfile', async (req, res) => {
   try {
@@ -67,9 +67,9 @@ router.get('/stackfile', async (req, res) => {
   }
 });
 
-// GET /api/templates/hubstats?image=<image> — Docker Hub popularity (pull/star count) for a template's
-// image. Proxied server-side (CORS) and cached. Non-Docker-Hub registries (ghcr.io, quay.io…) → unavailable.
-const hubCache = new Map(); // repo → { at, data }
+// GET /api/templates/hubstats?image=<image> - Docker Hub popularity (pull/star count) for a template's
+// image. Proxied server-side (CORS) and cached. Non-Docker-Hub registries (ghcr.io, quay.io...) -> unavailable.
+const hubCache = new Map(); // repo -> { at, data }
 const HUB_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 // Resolve a docker image reference to a Docker Hub repo path ('library/<name>' for official), or null.
@@ -80,7 +80,7 @@ function hubRepoOf(image) {
   const lastColon = ref.lastIndexOf(':');
   if (lastColon > lastSlash) ref = ref.slice(0, lastColon); // drop :tag (but keep registry:port before a /)
   const firstSeg = ref.split('/')[0];
-  if (firstSeg.includes('.') || firstSeg.includes(':')) return null; // a registry host → not Docker Hub
+  if (firstSeg.includes('.') || firstSeg.includes(':')) return null; // a registry host -> not Docker Hub
   return ref.includes('/') ? ref : 'library/' + ref; // official images live under library/
 }
 
@@ -112,20 +112,20 @@ router.get('/hubstats', async (req, res) => {
   } catch (err) { res.json({ available: false, error: err.message }); }
 });
 
-// GET /api/templates/logo?url=<external image URL> — same-origin proxy for template logos.
+// GET /api/templates/logo?url=<external image URL> - same-origin proxy for template logos.
 // Template logos live on assorted external hosts; some respond with
 // `Cross-Origin-Resource-Policy: same-origin`, so the browser BLOCKS the <img> and logs a CORP
 // warning. Re-serving the bytes from our own origin removes the warning AND makes those blocked
 // logos render. The response is browser-cacheable (Cache-Control), so each logo hits the upstream
 // at most once per cache window.
 const LOGO_TTL_S = 24 * 60 * 60;          // browser cache lifetime (1 day)
-const LOGO_MAX_BYTES = 2 * 1024 * 1024;   // logos are tiny — reject anything over 2MB
+const LOGO_MAX_BYTES = 2 * 1024 * 1024;   // logos are tiny - reject anything over 2MB
 // Some logo hosts (Twitter/X CDN, a few app sites) 403 a bare server-side fetch that has no
 // browser User-Agent. Sending a real one recovers those logos; it does not affect well-behaved hosts.
 const LOGO_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 // Basic SSRF guard for a self-hosted panel: reject obvious internal / non-public targets.
-// Note: only the literal hostname is checked — a public host that redirects/resolves to an
+// Note: only the literal hostname is checked - a public host that redirects/resolves to an
 // internal IP is not caught (acceptable for an operator-only self-hosted tool).
 function isBlockedLogoHost(hostname) {
   const h = (hostname || '').toLowerCase();
@@ -164,7 +164,7 @@ router.get('/logo', async (req, res) => {
     res.setHeader('Cache-Control', `public, max-age=${LOGO_TTL_S}`);
     return res.send(buf);
   } catch (err) {
-    // Network/timeout/abort → 502; the <img> onerror handler then hides the broken logo cleanly.
+    // Network/timeout/abort -> 502; the <img> onerror handler then hides the broken logo cleanly.
     return res.status(502).send('logo proxy error');
   }
 });

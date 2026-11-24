@@ -13,10 +13,10 @@ const lim = { cpu: 1, mem: 512 * MB };
 const roomy = { cpu: 8, mem: 16 * GB, memAvail: 10 * GB, load: 2 };
 
 test('room on the server: by free memory and by CPU load, keeping some for the server', () => {
-  assert.equal(hostRoom(roomy, lim).fits, 4); // 0.8*8 - 2 = 4.4 cores → 4
-  assert.equal(hostRoom({ ...roomy, memAvail: 2.6 * GB }, lim).fits, 2); // 2.6 GB - 1.6 GB kept → 2 × 512 MB
+  assert.equal(hostRoom(roomy, lim).fits, 4); // 0.8*8 - 2 = 4.4 cores -> 4
+  assert.equal(hostRoom({ ...roomy, memAvail: 2.6 * GB }, lim).fits, 2); // 2.6 GB - 1.6 GB kept -> 2 × 512 MB
   assert.equal(hostRoom({ ...roomy, load: 7 }, lim).fits, 0);
-  assert.equal(hostRoom({ ...roomy, memAvail: null, load: null }, lim).fits, Infinity, 'unknown → not the reason to stop');
+  assert.equal(hostRoom({ ...roomy, memAvail: null, load: null }, lim).fits, Infinity, 'unknown -> not the reason to stop');
 });
 test('add only as far as there is room; "full" when there is none; removing is never held back', () => {
   assert.equal(decideHost(rule(), busy(90), 2, now, {}, roomy, lim, 30000).to, 3);

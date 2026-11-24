@@ -1,5 +1,5 @@
 'use strict';
-// Observe → Uptime: settings checks, probes against local servers (HTTP, HTTPS, TCP), the down / up / slow /
+// Observe > Uptime: settings checks, probes against local servers (HTTP, HTTPS, TCP), the down / up / slow /
 // certificate rules, results, incidents, uptime figures and alerts.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -146,7 +146,7 @@ test('checks run, results and incidents are kept, uptime is counted, alerts go o
 test('alert texts', () => {
   const U = require('../../server/uptime');
   const c = { id: 1, name: 'shop', target: 'https://shop.example.com' };
-  assert.match(U.message('site_down', c, { error: 'Timeout after 10 s', fails: 2 })[1], /🔴 Site down — shop\nTimeout after 10 s \(2 checks in a row\)/);
+  assert.match(U.message('site_down', c, { error: 'Timeout after 10 s', fails: 2 })[1], /🔴 Site down - shop\nTimeout after 10 s \(2 checks in a row\)/);
   assert.match(U.message('site_up', c, { since: 0, until: 14 * 60000, ms: 120, status: 200 })[1], /Down for 14 min/);
   assert.match(U.message('cert_expiring', c, { cert: { validTo: Date.parse('2026-12-01'), daysLeft: 9, issuer: "Let's Encrypt R11" } })[0], /9 days/);
   assert.match(U.message('cert_invalid', c, { cert: { daysLeft: -1, nameOk: true } })[1], /expired/);
@@ -180,7 +180,7 @@ test('link to Docker: state and last log lines in the down alert, restart, waiti
     assert.match(r.state.context.summary, /1\/2 running/);
     await new Promise(x => setTimeout(x, 20));
     assert.equal(sent[0].type, 'site_down');
-    assert.match(sent[0].text, /Linked Compose shop: 1\/2 running — shop-web-1 restarting/);
+    assert.match(sent[0].text, /Linked Compose shop: 1\/2 running - shop-web-1 restarting/);
     assert.match(sent[0].text, /ECONNREFUSED/);
     const rs = await L.restart(c.config.link);
     assert.deepEqual(rs.restarted, ['shop-web-1', 'shop-db-1']); assert.deepEqual(restarted, ['a1', 'b2']);
@@ -217,7 +217,7 @@ test('proxy suggestions: Traefik Host() and caddy labels, without checks that ex
   } finally { L._setClient(null); }
 });
 
-// The scripts other servers run (over SSH) — run here with bash, the same commands.
+// The scripts other servers run (over SSH) - run here with bash, the same commands.
 const runSh = (cmd) => new Promise((res) => require('child_process').execFile('bash', ['-c', cmd], { timeout: 30000, env: { ...process.env, http_proxy: '', https_proxy: '', HTTP_PROXY: '', HTTPS_PROXY: '', no_proxy: '*' } }, (e, so, se) => res(String(so) + String(se))));
 test('from other servers: the curl / nc / openssl / getent scripts and their answers', async () => {
   const R = require('../../server/uptime-remote');
@@ -246,7 +246,7 @@ test('several places: down only when every place fails', () => {
   let m = R.merge([['dockgate', 'DockGate', { ok: false, error: 'Timeout' }], ['s1', 'prod-2', { ok: true, ms: 80, status: 200 }]]);
   assert.equal(m.ok, true); assert.equal(m.partial, true); assert.equal(m.ms, 80); assert.equal(m.places.dockgate.error, 'Timeout');
   m = R.merge([['dockgate', 'DockGate', { ok: false, error: 'Timeout' }], ['s1', 'prod-2', { ok: false, error: 'HTTP 502' }]]);
-  assert.equal(m.ok, false); assert.equal(m.error, 'DockGate: Timeout · prod-2: HTTP 502');
+  assert.equal(m.ok, false); assert.equal(m.error, 'DockGate: Timeout, prod-2: HTTP 502');
   const U = require('../../server/uptime');
   assert.throws(() => U.normalizeFrom([]), /at least one/);
   assert.deepEqual(U.normalizeFrom(['dockgate', 'no-such-server', 'local']), ['dockgate']);

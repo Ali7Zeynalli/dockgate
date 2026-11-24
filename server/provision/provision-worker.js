@@ -1,19 +1,19 @@
-// Isolated provisioning worker (forked child process — same pattern as grant-docker-worker.js, so the
+// Isolated provisioning worker (forked child process - same pattern as grant-docker-worker.js, so the
 // long-lived ssh2 connection doesn't contend with the main process's EventMonitor connections to the
 // same host). Detects the distro, builds the concrete plan from the catalog, then runs each item's
-// detect → install → verify over ONE SSH connection, streaming progress to stdout as NDJSON.
+// detect -> install -> verify over ONE SSH connection, streaming progress to stdout as NDJSON.
 //
 // Input  (argv[2], JSON): { host, port, username, keyPath?, password?, passphrase?, itemIds:[...] }
-// Output (stdout, NDJSON): {type:'meta',distro,total} · {type:'log',line} · {type:'item',...} · {type:'done',ok,failed} · {type:'fatal',error}
+// Output (stdout, NDJSON): {type:'meta',distro,total}, {type:'log',line}, {type:'item',...}, {type:'done',ok,failed}, {type:'fatal',error}
 const { Client } = require('ssh2');
 const fs = require('fs');
 const catalog = require('./catalog');
 
-delete process.env.SSH_AUTH_SOCK; // auth strictly via the provided key/password — no agent fallback
+delete process.env.SSH_AUTH_SOCK; // auth strictly via the provided key/password - no agent fallback
 
-// Catalog commands are written with `sudo`. Logged in as root → drop it (minimal images often have no
-// sudo binary at all). Otherwise → `sudo -n`, so a password-protected sudo fails fast instead of hanging.
-// (Also used by service-ctl-worker — everything below the require.main check only runs as the worker.)
+// Catalog commands are written with `sudo`. Logged in as root -> drop it (minimal images often have no
+// sudo binary at all). Otherwise -> `sudo -n`, so a password-protected sudo fails fast instead of hanging.
+// (Also used by service-ctl-worker - everything below the require.main check only runs as the worker.)
 function adaptSudo(cmd, isRoot) {
   return isRoot ? cmd.replace(/\bsudo (-n )?/g, '') : cmd.replace(/\bsudo (?!-n )/g, 'sudo -n ');
 }
@@ -72,7 +72,7 @@ function run(conn, cmd) {
         }
       }
       if (cfg.mode !== 'scan') {
-        emit({ type: 'log', line: `▶ Pre-flight: ${isRoot ? 'root login' : 'passwordless sudo OK'} · ${distro}` });
+        emit({ type: 'log', line: `▶ Pre-flight: ${isRoot ? 'root login' : 'passwordless sudo OK'}, ${distro}` });
         const ci = await run(conn, 'if command -v cloud-init >/dev/null 2>&1; then timeout 600 cloud-init status --wait >/dev/null 2>&1; echo waited; fi');
         if (/waited/.test(ci.out || '')) emit({ type: 'log', line: '  ✓ cloud-init finished' });
       }
@@ -83,7 +83,7 @@ function run(conn, cmd) {
         step.verify = adaptSudo(step.verify, isRoot);
       }
 
-      // Scan mode — read-only: run each item's detect command only (no install/verify), report present/missing.
+      // Scan mode - read-only: run each item's detect command only (no install/verify), report present/missing.
       if (cfg.mode === 'scan') {
         for (const step of plan) {
           if (step.na) { emit({ type: 'scan-item', id: step.id, label: step.label, present: false, na: true, reason: step.reason }); continue; }
@@ -96,7 +96,7 @@ function run(conn, cmd) {
 
       let ok = 0, failed = 0;
       for (const step of plan) {
-        if (cancelRequested) { emit({ type: 'log', line: '■ Cancelled — stopped before the next item' }); emit({ type: 'cancelled' }); break; }
+        if (cancelRequested) { emit({ type: 'log', line: '■ Cancelled - stopped before the next item' }); emit({ type: 'cancelled' }); break; }
         const t0 = Date.now();
         if (step.na) { emit({ type: 'item', id: step.id, label: step.label, state: 'skipped', reason: step.reason, durationMs: 0 }); continue; }
 
@@ -104,11 +104,11 @@ function run(conn, cmd) {
         const det = await run(conn, step.detect);
         if (det.code === 0) {
           emit({ type: 'item', id: step.id, label: step.label, state: 'present', detect: step.detect, log: '✓ already present', durationMs: Date.now() - t0 });
-          emit({ type: 'log', line: `  ✓ already present — skipped` });
+          emit({ type: 'log', line: `  ✓ already present - skipped` });
           ok++; continue;
         }
 
-        emit({ type: 'log', line: `  installing…` });
+        emit({ type: 'log', line: `  installing...` });
         const ins = await run(conn, step.install + ' 2>&1');
         let state, error;
         if (ins.code !== 0) { state = 'failed'; error = String(ins.out || '').slice(-2000).trim(); failed++; }
@@ -118,10 +118,10 @@ function run(conn, cmd) {
           else { state = 'failed'; error = 'verify failed: ' + String(ver.out || '').slice(-500).trim(); failed++; }
         }
         emit({ type: 'item', id: step.id, label: step.label, state, detect: step.detect, install: step.install, verify: step.verify, log: String(ins.out || '').slice(-4000), error, durationMs: Date.now() - t0 });
-        emit({ type: 'log', line: state === 'verified' ? `  ✓ ${step.label}` : `  ✗ ${step.label}${error ? ' — ' + String(error).split('\n')[0] : ''}` });
+        emit({ type: 'log', line: state === 'verified' ? `  ✓ ${step.label}` : `  ✗ ${step.label}${error ? ' - ' + String(error).split('\n')[0] : ''}` });
       }
 
-      // Kernel / libc updates need a reboot to take effect — tell the UI (Debian flag file / RHEL tool).
+      // Kernel / libc updates need a reboot to take effect - tell the UI (Debian flag file / RHEL tool).
       const rb = await run(conn, adaptSudo('[ -f /var/run/reboot-required ] && echo REBOOT; command -v needs-restarting >/dev/null 2>&1 && { sudo needs-restarting -r >/dev/null 2>&1 || echo REBOOT; }; true', isRoot));
       if (/REBOOT/.test(rb.out || '')) emit({ type: 'reboot-required' });
       emit({ type: 'done', ok, failed });

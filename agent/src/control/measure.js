@@ -11,7 +11,7 @@ async function limitsOfContainer(docker, id) {
   return { cpu: Math.round(cpu * 1000) / 1000, mem: h.Memory || 0 };
 }
 
-/** One stats reading → { cpu: % of one core, mem: bytes } (page cache not counted, as `docker stats` does). */
+/** One stats reading -> { cpu: % of one core, mem: bytes } (page cache not counted, as `docker stats` does). */
 function readStats(st) {
   const c = st.cpu_stats || {}, p = st.precpu_stats || {};
   const cpuDelta = ((c.cpu_usage || {}).total_usage || 0) - ((p.cpu_usage || {}).total_usage || 0);

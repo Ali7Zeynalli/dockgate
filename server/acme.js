@@ -1,7 +1,7 @@
 // A small ACME client (RFC 8555) for Let's Encrypt and other ACME CAs, with Node's crypto only:
 // ES256 account key, http-01 challenges (or dns-01 through a DNS provider: wildcards), an EC P-256 certificate key and a CSR built here (DER).
 //   issue({ directory, email, accountKeyPem, domains, setChallenge(token, keyAuth), clearChallenge(token), log })
-//     → { certPem, keyPem, accountKeyPem, notAfter }
+//     -> { certPem, keyPem, accountKeyPem, notAfter }
 const crypto = require('crypto');
 
 const DIRECTORIES = {
@@ -87,13 +87,13 @@ class Acme {
 const dnsValue = (keyAuth) => b64u(crypto.createHash('sha256').update(keyAuth).digest());
 
 /**
- * dns (optional): { set(fqdn, value) → handle, clear(handle), wait(fqdn, value) } — answer with dns-01 (a TXT record
+ * dns (optional): { set(fqdn, value) -> handle, clear(handle), wait(fqdn, value) } - answer with dns-01 (a TXT record
  * _acme-challenge.<name>) instead of http-01. Needed for wildcard names.
  */
 async function issue({ directory, email, accountKeyPem, domains, setChallenge, clearChallenge = async () => {}, dns = null, log = () => {}, fetchImpl }) {
   const names = [...new Set(domains.map(d => String(d).toLowerCase()))];
   if (!names.length) throw new Error('No domain');
-  if (!dns && names.some(n => n.startsWith('*.'))) throw Object.assign(new Error('A wildcard certificate needs the DNS check — set up Cloudflare under Certificates → Let\'s Encrypt account, or list the names instead'), { statusCode: 400 });
+  if (!dns && names.some(n => n.startsWith('*.'))) throw Object.assign(new Error('A wildcard certificate needs the DNS check - set up Cloudflare under Certificates > Let\'s Encrypt account, or list the names instead'), { statusCode: 400 });
   const a = new Acme(directory, accountKeyPem, { log, fetchImpl });
   log(`Account at ${a.url}`); await a.account(email);
   const d = await a.dir();
@@ -121,7 +121,7 @@ async function issue({ directory, email, accountKeyPem, domains, setChallenge, c
       if (!ch) throw Object.assign(new Error(`${az.identifier.value}: the CA offers no HTTP check`), { statusCode: 502 });
       const keyAuth = `${ch.token}.${thumbprint(a.jwk)}`;
       await setChallenge(ch.token, keyAuth, az.identifier.value); tokens.push(ch.token);
-      log(`${az.identifier.value}: answering http://${az.identifier.value}/.well-known/acme-challenge/${ch.token.slice(0, 8)}…`);
+      log(`${az.identifier.value}: answering http://${az.identifier.value}/.well-known/acme-challenge/${ch.token.slice(0, 8)}...`);
       await a.post(ch.url, {});
       await a.poll(authUrl, b => b.status === 'valid');
       log(`${az.identifier.value}: checked`);

@@ -17,7 +17,7 @@ function makeTar(name, content, mode = 0o644) {
   return Buffer.concat([h, data, Buffer.alloc((512 - (data.length % 512)) % 512), Buffer.alloc(1024)]);
 }
 
-/** A tar archive → [{ name, type: 'file'|'dir'|'link'|'other', data, mode }] (names relative to the archive root). */
+/** A tar archive -> [{ name, type: 'file'|'dir'|'link'|'other', data, mode }] (names relative to the archive root). */
 function parseTar(buf) {
   const out = []; let i = 0; let longName = null;
   const str = (b) => b.toString('utf8').replace(/\0[\s\S]*$/, '');

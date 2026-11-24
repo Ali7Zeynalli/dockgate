@@ -1,14 +1,14 @@
-// Scheduled tasks (Tools → Schedules): jobs DockGate runs by itself on a chosen server.
-//   prune          — the same cleanup as Resources → Prune (stopped containers, unused images, unused
+// Scheduled tasks (Tools > Schedules): jobs DockGate runs by itself on a chosen server.
+//   prune          - the same cleanup as Resources > Prune (stopped containers, unused images, unused
 //                    networks, build cache). Unused volumes are never offered: deleting data on a timer is
 //                    too easy to regret.
-//   volume_backup  — tar.gz of a volume written to a folder on that server (default /var/backups/dockgate),
+//   volume_backup  - tar.gz of a volume written to a folder on that server (default /var/backups/dockgate),
 //                    the newest N kept.
-//   git_sync       — DockGate-managed Git stacks of that server: redeploy when the branch has a new commit.
-//   db_backup      — pg_dump / pg_dumpall of a PostgreSQL container, the same backup as Databases → Backups (kept
+//   git_sync       - DockGate-managed Git stacks of that server: redeploy when the branch has a new commit.
+//   db_backup      - pg_dump / pg_dumpall of a PostgreSQL container, the same backup as Databases > Backups (kept
 //                    where those are: DockGate's data folder for this machine, /var/backups/dockgate/postgres on an
 //                    SSH server), the newest N of that database kept.
-// Times are wall-clock times in the timezone from Settings → General (UTC when it is "auto").
+// Times are wall-clock times in the timezone from Settings > General (UTC when it is "auto").
 const { db, stmts } = require('./db');
 
 db.exec(`CREATE TABLE IF NOT EXISTS schedules (
@@ -18,7 +18,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS schedules (
   server_id TEXT NOT NULL,
   params TEXT,
   freq TEXT NOT NULL,          -- daily | weekly | hourly
-  at TEXT,                     -- HH:MM (daily, weekly) or :MM (hourly → minute only)
+  at TEXT,                     -- HH:MM (daily, weekly) or :MM (hourly -> minute only)
   weekday INTEGER,             -- 0 = Sunday (weekly)
   enabled INTEGER DEFAULT 1,
   next_run_at INTEGER,
@@ -139,7 +139,7 @@ async function runPrune(docker, p) {
   if (p.images) { const r = await docker.pruneImages({ filters: { dangling: { false: true } } }); freed += r.SpaceReclaimed || 0; parts.push(`${(r.ImagesDeleted || []).filter(x => x.Deleted).length} images`); }
   if (p.networks) { const r = await docker.pruneNetworks(); parts.push(`${(r.NetworksDeleted || []).length} networks`); }
   if (p.build_cache) { const r = await docker.pruneBuilder(); freed += r.SpaceReclaimed || 0; parts.push('build cache'); }
-  return { ok: true, message: `freed ${fmtBytes(freed)} · ${parts.join(', ')}` };
+  return { ok: true, message: `freed ${fmtBytes(freed)}, ${parts.join(', ')}` };
 }
 
 async function ensureImage(docker, image) {
@@ -163,7 +163,7 @@ async function runVolumeBackup(docker, p) {
     const logs = (await c.logs({ stdout: true, stderr: true })).toString('utf8').replace(/[\x00-\x08]/g, '').trim();
     if (r.StatusCode !== 0) return { ok: false, message: (logs.split('\n').pop() || `exit ${r.StatusCode}`).slice(0, 200) };
     const size = parseInt(logs.split('\n').pop(), 10);
-    return { ok: true, message: `${fmtBytes(size)} · ${p.dir}/${file} · keeps ${p.keep}` };
+    return { ok: true, message: `${fmtBytes(size)}, ${p.dir}/${file}, keeps ${p.keep}` };
   } finally { try { await c.remove({ force: true }); } catch (e) { /* gone */ } }
 }
 
@@ -173,11 +173,11 @@ async function runGitSync(serverId, p) {
   if (!r.length) return { ok: true, message: 'no DockGate-managed Git stacks on this server' };
   const failed = r.filter(x => x.status === 'error');
   const deployed = r.filter(x => x.status === 'deployed');
-  const msg = [deployed.length ? `deployed ${deployed.map(x => `${x.project} ${x.commit}`).join(', ')}` : '', r.filter(x => x.status === 'unchanged').length ? `${r.filter(x => x.status === 'unchanged').length} without a new commit` : '', failed.map(x => `${x.project}: ${x.message}`).join('; ')].filter(Boolean).join(' · ');
+  const msg = [deployed.length ? `deployed ${deployed.map(x => `${x.project} ${x.commit}`).join(', ')}` : '', r.filter(x => x.status === 'unchanged').length ? `${r.filter(x => x.status === 'unchanged').length} without a new commit` : '', failed.map(x => `${x.project}: ${x.message}`).join('; ')].filter(Boolean).join(', ');
   return { ok: !failed.length, message: msg || 'nothing to do' };
 }
 
-/** A database backup made the way Databases → Backups makes it, on that server; then only the newest `keep` stay. */
+/** A database backup made the way Databases > Backups makes it, on that server; then only the newest `keep` stay. */
 async function runDbBackup(serverId, p) {
   const PB = require('./pg-backup');
   return require('./docker').withServer(serverId, async () => {
@@ -187,7 +187,7 @@ async function runDbBackup(serverId, p) {
     const mine = (await PB.list(p.container)).files.filter(f => f.database === want && f.name.endsWith(ext));
     let removed = 0;
     for (const f of mine.slice(p.keep)) { try { await PB.remove(p.container, f.name); removed++; } catch (e) { /* the next run tries again */ } }
-    return { ok: true, message: `${fmtBytes(r.size)} · ${r.dir}/${r.file} · keeps ${p.keep}${removed ? ` · ${removed} older removed` : ''}` };
+    return { ok: true, message: `${fmtBytes(r.size)}, ${r.dir}/${r.file}, keeps ${p.keep}${removed ? `, ${removed} older removed` : ''}` };
   });
 }
 

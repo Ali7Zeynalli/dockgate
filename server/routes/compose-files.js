@@ -1,5 +1,5 @@
-// Compose project Files API — browse/edit ALL files of a managed project, not just the compose YAML
-// (Dockerfile, .dockerignore, .env, configs…). Local projects live in COMPOSE_DIR/<project>/ on DockGate;
+// Compose project Files API - browse/edit ALL files of a managed project, not just the compose YAML
+// (Dockerfile, .dockerignore, .env, configs...). Local projects live in COMPOSE_DIR/<project>/ on DockGate;
 // a project deployed to a remote folder is browsed over SFTP. Mounted inside the compose router.
 const express = require('express');
 const fs = require('fs');
@@ -13,7 +13,7 @@ const {
   remoteProjectCtx, safeRemoteProjectPath, isProtectedProjectFile, safeProjectFile, isBinaryFile,
 } = require('./compose-shared');
 
-// GET file tree (flat, sorted). Remote folder-deployed project → browse the REMOTE folder over SFTP;
+// GET file tree (flat, sorted). Remote folder-deployed project -> browse the REMOTE folder over SFTP;
 // otherwise the local managed dir. Skips .git internals + the git-secret file.
 router.get('/:project/tree', async (req, res) => {
   try {
@@ -71,7 +71,7 @@ router.get('/:project/dir', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET a single file's content (text). Binary/oversized → metadata only. Remote project → SFTP read.
+// GET a single file's content (text). Binary/oversized -> metadata only. Remote project > SFTP read.
 router.get('/:project/filecontent', async (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
@@ -91,7 +91,7 @@ router.get('/:project/filecontent', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// PUT a single file's content (create or overwrite). Remote project → SFTP write.
+// PUT a single file's content (create or overwrite). Remote project > SFTP write.
 router.put('/:project/filecontent', async (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });
@@ -114,7 +114,7 @@ router.put('/:project/filecontent', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE a single project file (not the compose file, not protected). Remote project → SFTP unlink.
+// DELETE a single project file (not the compose file, not protected). Remote project > SFTP unlink.
 router.delete('/:project/filecontent', async (req, res) => {
   try {
     if (!validateProjectName(req.params.project)) return res.status(400).json({ error: 'Invalid project name' });

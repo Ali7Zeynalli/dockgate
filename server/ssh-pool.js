@@ -1,23 +1,23 @@
-// Per-server SSH connection POOL — the FileZilla model: connect once, reuse the session for many ops,
+// Per-server SSH connection POOL - the FileZilla model: connect once, reuse the session for many ops,
 // keep it warm with keepalives, and reconnect when it dies. Replaces the old "new Client() per operation"
 // design (a full SSH handshake per list/mkdir/file). A bounded pool of K warm connections gives parallel
 // throughput while staying well under a typical sshd's MaxStartups/MaxSessions.
 //
 // A "lease" is one live ssh2 Client with its single SFTP channel already open. Callers borrow a lease
-// (acquire), use lease.sftp, and return it (release) — or destroy it on a transport error.
+// (acquire), use lease.sftp, and return it (release) - or destroy it on a transport error.
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('ssh2');
 const { decrypt } = require('./auth/secrets');
 
 const paths = require('./paths');
-const POOL_MAX = 8;               // max live connections per server (the real concurrency cap — a few, FileZilla-style)
+const POOL_MAX = 8;               // max live connections per server (the real concurrency cap - a few, FileZilla-style)
 const IDLE_TTL_MS = 60 * 1000;    // close a connection left idle this long
 const ACQUIRE_TIMEOUT_MS = 25000; // fail a borrow if no connection frees up in time (never hang forever)
 const CONNECT_OPTS = { readyTimeout: 20000, keepaliveInterval: 15000, keepaliveCountMax: 3 };
 
 // Build ssh2 connect options from a server row (same auth as host-terminal.js/docker.js). Throws (sync) on a
-// missing key file or a decrypt failure — callers wrap this so the throw rejects the borrower, never escapes.
+// missing key file or a decrypt failure - callers wrap this so the throw rejects the borrower, never escapes.
 function authFor(s) {
   const opts = { host: s.host, port: s.port || 22, username: s.username, ...CONNECT_OPTS, hostVerifier: require('./ssh-hostkey').verifierFor(s) };
   if (s.key_path) {
@@ -122,8 +122,8 @@ function destroyLease(lease) {
   if (p) { p.busy.delete(lease); serveWaiters(p); }
 }
 
-// A transport-level failure means the connection is dead → destroy the lease. Application errors (ENOENT,
-// permission, mkdir-already-exists, 409) leave the connection healthy → just release it. The lease.alive flag
+// A transport-level failure means the connection is dead -> destroy the lease. Application errors (ENOENT,
+// permission, mkdir-already-exists, 409) leave the connection healthy -> just release it. The lease.alive flag
 // (set by the conn/sftp listeners) is the real guard, so a misclassification here is still safe on next acquire.
 function isTransportError(e) {
   if (!e || e.name === 'AuthError') return false;
@@ -131,7 +131,7 @@ function isTransportError(e) {
 }
 
 // Drop-in replacement for the old file-manager withSftp: borrow a lease, run fn(sftp), return it. Retries ONCE
-// on a transport error with a fresh lease (safe only for idempotent metadata ops — NOT used by streaming ops).
+// on a transport error with a fresh lease (safe only for idempotent metadata ops - NOT used by streaming ops).
 async function withSftp(server, fn) {
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {

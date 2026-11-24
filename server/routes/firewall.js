@@ -1,6 +1,6 @@
-// Firewall routes (Server Console → Firewall), mounted under /api/servers.
+// Firewall routes (Server Console > Firewall), mounted under /api/servers.
 // Rules are shown and edited the way cloud firewalls do it: inbound and outbound tables, one rule =
-// direction · action · protocol · port · sources/destinations · description. The model lives in
+// direction, action, protocol, port, sources/destinations, description. The model lives in
 // security/fwmodel.js; this file reads the server, enforces the safety rules and runs the changes.
 // DockGate never lets a change cut its own SSH access: such changes run as a lifeline job (backup,
 // rollback armed, new SSH login tested, restored on failure).
@@ -92,7 +92,7 @@ async function firewallOf(row) {
     idle: idle.sort((a, b) => a.port - b.port), bypass,
     locked: locked.map(l => ({ n: l.n, reason: l.locked, to: l.raw.to, from: l.raw.from, action: l.raw.action, dir: l.raw.dir })),
     rules: raw, // as the firewall stores them (Advanced)
-    _groups: groups, // server side only — stripped before sending
+    _groups: groups, // server side only - stripped before sending
   };
 }
 // the client gets rules, not the raw entries behind them
@@ -111,8 +111,8 @@ async function healthOf(row) {
 function healthWarnings(before, after) {
   if (!before || !after) return [];
   const w = [];
-  if (before.f2bActive && !after.f2bActive) w.push('fail2ban stopped running after this change — start it in the Fail2ban tab.');
-  else if (after.f2bBanned < before.f2bBanned) w.push(`fail2ban now holds ${after.f2bBanned} ban(s), it had ${before.f2bBanned} — some bans may have been dropped. Check the Fail2ban tab.`);
+  if (before.f2bActive && !after.f2bActive) w.push('fail2ban stopped running after this change - start it in the Fail2ban tab.');
+  else if (after.f2bBanned < before.f2bBanned) w.push(`fail2ban now holds ${after.f2bBanned} ban(s), it had ${before.f2bBanned} - some bans may have been dropped. Check the Fail2ban tab.`);
   if (after.containers < before.containers) w.push(`${before.containers - after.containers} container(s) stopped running during this change.`);
   return w;
 }
@@ -123,47 +123,47 @@ async function runFirewallOp(row, plan, title) {
 }
 
 
-const requireUfw = (fw) => { if (!fw.ufwActive) throw P.httpError(400, fw.backend === 'firewalld' ? 'This works with UFW only — this server uses firewalld' : 'UFW is not active — turn the firewall on first'); };
-const requireManaged = (fw) => { if (!fw.managed) throw P.httpError(400, fw.firewalld ? "firewalld runs but its default zone couldn't be read" : 'The firewall is off — turn it on first'); };
+const requireUfw = (fw) => { if (!fw.ufwActive) throw P.httpError(400, fw.backend === 'firewalld' ? 'This works with UFW only - this server uses firewalld' : 'UFW is not active - turn the firewall on first'); };
+const requireManaged = (fw) => { if (!fw.managed) throw P.httpError(400, fw.firewalld ? "firewalld runs but its default zone couldn't be read" : 'The firewall is off - turn it on first'); };
 
 router.get('/:id/firewall', send(async (req) => publicView(await firewallOf(loadServer(req)))));
 
 /**
  * Create, edit or delete one rule.
  *   body: { original: <rule key>|null, rule: { dir, action, proto, port, containers, container, description },
- *           sources: ['any4','any6','@list','1.2.3.4',…] (empty = delete), dryRun }
+ *           sources: ['any4','any6','@list','1.2.3.4',...] (empty = delete), dryRun }
  */
 router.post('/:id/firewall/rule', send(async (req) => {
   const row = loadServer(req);
   const { original, rule, sources, dryRun } = req.body || {};
-  if (!Array.isArray(sources) || sources.length > 60) throw P.httpError(400, 'sources must be a list (at most 60 entries — use an IP list for more)');
+  if (!Array.isArray(sources) || sources.length > 60) throw P.httpError(400, 'sources must be a list (at most 60 entries - use an IP list for more)');
   const fw = await firewallOf(row);
   requireManaged(fw);
   const lists = IPL.all();
   const old = original ? fw._groups.find(g => g.key === original) : null;
-  if (original && !old) throw P.httpError(404, 'This rule changed on the server — refresh the page');
+  if (original && !old) throw P.httpError(404, 'This rule changed on the server - refresh the page');
   let want = null;
   if (sources.length) {
     want = FW.normRule(rule || {});
-    if (want.dir === 'out' && fw.backend !== 'ufw') throw P.httpError(400, 'Outbound rules need UFW — firewalld filters incoming traffic here');
+    if (want.dir === 'out' && fw.backend !== 'ufw') throw P.httpError(400, 'Outbound rules need UFW - firewalld filters incoming traffic here');
     if (want.dir === 'in' && want.container) {
-      if (!fw.dockerIsolation) throw P.httpError(400, 'Turn on Docker port isolation first — until then every container port is public');
+      if (!fw.dockerIsolation) throw P.httpError(400, 'Turn on Docker port isolation first - until then every container port is public');
     } else want.container = null;
-    if (want.dir === 'out' && want.containers && !fw.dockerIsolation) throw P.httpError(400, 'Rules for containers need Docker port isolation (Firewall → Docker ports) — without it container traffic skips UFW');
+    if (want.dir === 'out' && want.containers && !fw.dockerIsolation) throw P.httpError(400, 'Rules for containers need Docker port isolation (Firewall > Docker ports) - without it container traffic skips UFW');
     if (want.dir === 'in') want.containers = false;
     want.remotes = FW.expandRemotes(sources, lists, fw.dockgateIp);
     if (want.remotes.length > 1000) throw P.httpError(400, 'At most 1000 addresses per rule');
-    if (!fw.ipv6 && want.remotes.some(r => r.remote === 'any6' || (r.remote !== 'any4' && IPL.isV6(r.remote)))) throw P.httpError(400, 'UFW has IPv6 switched off on this server (IPV6=no in /etc/default/ufw) — IPv6 addresses cannot be added. Remove them, or turn IPv6 on in /etc/default/ufw and reload UFW.');
+    if (!fw.ipv6 && want.remotes.some(r => r.remote === 'any6' || (r.remote !== 'any4' && IPL.isV6(r.remote)))) throw P.httpError(400, 'UFW has IPv6 switched off on this server (IPV6=no in /etc/default/ufw) - IPv6 addresses cannot be added. Remove them, or turn IPv6 on in /etc/default/ufw and reload UFW.');
     want.key = FW.ruleKey(want);
     const clash = fw._groups.find(g => g.key === want.key && (!old || g.key !== old.key));
-    if (clash) throw P.httpError(400, 'A rule with this direction, action, protocol and port already exists — edit that rule instead');
+    if (clash) throw P.httpError(400, 'A rule with this direction, action, protocol and port already exists - edit that rule instead');
   } else if (!old) throw P.httpError(400, 'Add at least one source or destination');
   // SSH must stay reachable for DockGate after the change
   const touchesSsh = [old, want].some(g => g && g.dir === 'in' && !g.container && FW.coversPort(g, fw.sshPort, 'tcp'));
   if (touchesSsh) {
     const after = fw._groups.filter(g => !old || g.key !== old.key).concat(want ? [{ ...want, remotes: want.remotes.map(r => r.remote) }] : []);
-    if (!fw.dockgateIp && !after.some(g => g.dir === 'in' && !g.container && FW.coversPort(g, fw.sshPort, 'tcp') && g.remotes.includes('any4'))) throw P.httpError(400, "DockGate could not see its own IP on this server, so it cannot check that SSH stays reachable — keep Any IPv4 on the SSH port");
-    if (!FW.sshReachable(after, fw.sshPort, fw.dockgateIp, fw.defaults.incoming)) throw P.httpError(400, `After this change DockGate (${fw.dockgateIp}) could no longer reach SSH on port ${fw.sshPort} — keep DockGate's IP, a range that contains it, or Any IPv4`);
+    if (!fw.dockgateIp && !after.some(g => g.dir === 'in' && !g.container && FW.coversPort(g, fw.sshPort, 'tcp') && g.remotes.includes('any4'))) throw P.httpError(400, "DockGate could not see its own IP on this server, so it cannot check that SSH stays reachable - keep Any IPv4 on the SSH port");
+    if (!FW.sshReachable(after, fw.sshPort, fw.dockgateIp, fw.defaults.incoming)) throw P.httpError(400, `After this change DockGate (${fw.dockgateIp}) could no longer reach SSH on port ${fw.sshPort} - keep DockGate's IP, a range that contains it, or Any IPv4`);
   }
   const plan = FW.planChange({ backend: fw.backend, zone: fw.zone, old, want });
   const summary = {
@@ -200,7 +200,7 @@ router.post('/:id/firewall/default', send(async (req) => {
   if (!['incoming', 'outgoing'].includes(direction) || !['allow', 'deny'].includes(policy)) throw P.httpError(400, 'direction must be incoming or outgoing, policy allow or deny');
   const fw = await firewallOf(row);
   requireUfw(fw);
-  if (direction === 'incoming' && policy === 'deny' && !FW.sshReachable(fw._groups.map(g => ({ ...g })), fw.sshPort, fw.dockgateIp, 'deny')) throw P.httpError(400, `No rule lets DockGate reach SSH on port ${fw.sshPort} — add one before blocking incoming traffic`);
+  if (direction === 'incoming' && policy === 'deny' && !FW.sshReachable(fw._groups.map(g => ({ ...g })), fw.sshPort, fw.dockgateIp, 'deny')) throw P.httpError(400, `No rule lets DockGate reach SSH on port ${fw.sshPort} - add one before blocking incoming traffic`);
   if (fw.defaults[direction] === policy) return { success: true, unchanged: true };
   const warnings = await runFirewallOp(row, { steps: [{ label: `Default ${direction}: ${policy}`, cmd: `{{S}}ufw default ${policy} ${direction} >/dev/null` }] }, 'Firewall');
   audit(req, row, 'firewall-default', { direction, policy });
@@ -214,12 +214,12 @@ router.delete('/:id/firewall/rules/:n', send(async (req) => {
   const fw = await firewallOf(row);
   requireManaged(fw);
   const rule = fw.rules.find(r => r.n === n);
-  if (!rule) throw P.httpError(404, 'Rule not found — refresh the list');
+  if (!rule) throw P.httpError(404, 'Rule not found - refresh the list');
   let removeRules = [rule];
   if (fw.backend === 'firewalld') removeRules = fw.rules.filter(r => r.kind === rule.kind && r.key === rule.key);
   const remaining = fw.rules.filter(r => !removeRules.includes(r));
   const { groups } = FW.groupRules({ backend: fw.backend, rules: remaining, lists: IPL.all(), dockgateIp: fw.dockgateIp });
-  if (!FW.sshReachable(groups, fw.sshPort, fw.dockgateIp, fw.defaults.incoming)) throw P.httpError(400, 'This entry keeps SSH reachable for DockGate — it cannot be deleted');
+  if (!FW.sshReachable(groups, fw.sshPort, fw.dockgateIp, fw.defaults.incoming)) throw P.httpError(400, 'This entry keeps SSH reachable for DockGate - it cannot be deleted');
   const cmd = fw.backend === 'firewalld' ? plans.fwdRemoveCmd(fw.zone, removeRules) : plans.deleteRulesCmd([n]);
   const warnings = await runFirewallOp(row, { steps: [{ label: `Delete entry #${n}`, cmd }] }, 'Firewall');
   audit(req, row, 'firewall-entry-delete', { n, to: rule.to, action: rule.action, from: rule.from });
@@ -243,7 +243,7 @@ router.post('/:id/firewall/docker-isolation', send(async (req) => {
   const before = await healthOf(row);
   const jobId = runner.startPlan(cfgOf(row), plan, {
     title: enable ? 'Docker port isolation' : 'Turn off Docker port isolation',
-    successText: enable ? `Isolation is on. Public container ports: ${(req.body.keepPublic || []).join(', ') || 'none'}.` : 'Isolation is off — published container ports bypass UFW again.',
+    successText: enable ? `Isolation is on. Public container ports: ${(req.body.keepPublic || []).join(', ') || 'none'}.` : 'Isolation is off - published container ports bypass UFW again.',
     onSuccess: async () => {
       audit(req, row, 'firewall-docker-isolation', { enable, keepPublic: req.body.keepPublic || [] });
       return { warnings: healthWarnings(before, await healthOf(row)) };
@@ -258,7 +258,7 @@ router.post('/:id/firewall/ufw', send(async (req) => {
   const row = loadServer(req);
   requireConfirm(req.body);
   const fw = await firewallOf(row);
-  if (fw.firewalld) throw P.httpError(400, 'This server uses firewalld — UFW and firewalld must not run together. Manage firewalld in Setup → Firewall.');
+  if (fw.firewalld) throw P.httpError(400, 'This server uses firewalld - UFW and firewalld must not run together. Manage firewalld in Setup > Firewall.');
   if (req.body.enable === false) {
     if (!fw.ufwActive) return { success: true, unchanged: true };
     const warnings = await runFirewallOp(row, { steps: [{ label: 'Switch the firewall off', cmd: plans.UFW_DISABLE }] }, 'Firewall');
@@ -295,5 +295,5 @@ router.post('/:id/firewall/reload', send(async (req) => {
 
 module.exports = router;
 module.exports.firewallOf = firewallOf; // used by Swarm (server/swarm-cluster.js) to open the cluster ports
-module.exports.runFirewallOp = runFirewallOp; // used by Swarm → Firewall (server/swarm-firewall.js)
+module.exports.runFirewallOp = runFirewallOp; // used by Swarm > Firewall (server/swarm-firewall.js)
 module.exports._test = { parseDefaults, firewallOf };

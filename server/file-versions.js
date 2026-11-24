@@ -1,4 +1,4 @@
-// Earlier versions of files saved from the Files editor. Kept in DockGate's database (encrypted — config files hold
+// Earlier versions of files saved from the Files editor. Kept in DockGate's database (encrypted - config files hold
 // secrets), not next to the file: a copy like default.conf.bak inside nginx's sites-enabled/ would be loaded too.
 // The last 5 per file, up to 512 KB each.
 const { db } = require('./db');

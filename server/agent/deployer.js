@@ -1,5 +1,5 @@
 // Edge Observability Agent deployer. Pushes the outbound-only agent container onto a managed host
-// over a PER-HOST dockerode client (createSshClient) — never via setActiveServer, which would mutate
+// over a PER-HOST dockerode client (createSshClient) - never via setActiveServer, which would mutate
 // the module-global active daemon that the rest of the app shares. Channel creds are read from the
 // global smtp_config + the per-server override (server_channels), decrypted, and injected as env.
 // When an agent is installed/started on a host, the central EventMonitor for that host is stopped
@@ -108,7 +108,7 @@ function containerSpec(env, image = IMAGE_REF, labels = { version: AGENT_VERSION
       Memory: 96 * 1024 * 1024,   // 96 MB
       NanoCpus: 250000000,        // 0.25 CPU
       SecurityOpt: ['no-new-privileges'],
-      // NO PortBindings — outbound-only
+      // NO PortBindings - outbound-only
     },
   };
 }
@@ -143,7 +143,7 @@ function agentContextFiles(dir = AGENT_DIR) {
 function buildAgentImage(log, client = createLocalClient(), key = 'local') {
   if (building.has(key)) return building.get(key);
   const job = new Promise((resolve, reject) => {
-    log(key === 'local' ? `building ${IMAGE_REF} on DockGate's host (first time only, can take a few minutes) …\n` : `building ${IMAGE_REF} on the server itself (it pulls node:22-alpine and npm packages; a few minutes) …\n`);
+    log(key === 'local' ? `building ${IMAGE_REF} on DockGate's host (first time only, can take a few minutes) ...\n` : `building ${IMAGE_REF} on the server itself (it pulls node:22-alpine and npm packages; a few minutes) ...\n`);
     client.buildImage({ context: AGENT_DIR, src: agentContextFiles() }, { t: IMAGE_REF, labels: JSON.stringify({ 'dockgate.role': 'agent-image' }), rm: true, forcerm: true }, (err, stream) => {
       if (err) return reject(new Error('agent image build failed: ' + err.message));
       let failed = null;
@@ -163,14 +163,14 @@ function buildAgentImage(log, client = createLocalClient(), key = 'local') {
 
 async function hasImage(client, ref) { try { await client.getImage(ref).inspect(); return true; } catch (e) { return false; } }
 
-// CPU architecture of a daemon (docker info: x86_64 / aarch64 …) and of an image (amd64 / arm64 …), in one naming.
+// CPU architecture of a daemon (docker info: x86_64 / aarch64 ...) and of an image (amd64 / arm64 ...), in one naming.
 const ARCH = { x86_64: 'amd64', amd64: 'amd64', aarch64: 'arm64', arm64: 'arm64', armv7l: 'arm', armhf: 'arm', arm: 'arm', i386: '386', i686: '386', ppc64le: 'ppc64le', s390x: 's390x' };
 const archName = (a) => ARCH[String(a || '').toLowerCase()] || String(a || '').toLowerCase();
 async function daemonArch(client) { try { return archName((await client.info()).Architecture); } catch (e) { return ''; } }
 async function imageArch(client, ref) { try { return archName((await client.getImage(ref).inspect()).Architecture); } catch (e) { return null; } }
 
 async function copyImage(local, client, log) {
-  log(`copying ${IMAGE_REF} to the server …\n`);
+  log(`copying ${IMAGE_REF} to the server ...\n`);
   const tar = await new Promise((res, rej) => local.getImage(IMAGE_REF).get((err, stream) => (err ? rej(err) : res(stream))));
   await new Promise((res, rej) => {
     client.loadImage(tar, {}, (err, stream) => {
@@ -183,19 +183,19 @@ async function copyImage(local, client, log) {
 }
 
 // Make sure IMAGE_REF is on the target, built for the target's CPU.
-//   AGENT_IMAGE set: present → done (Update pulls again); else pull it from that registry (multi-arch is the registry's job).
+//   AGENT_IMAGE set: present -> done (Update pulls again); else pull it from that registry (multi-arch is the registry's job).
 //   default:
-//     - present and for the server's CPU → done; present for another CPU (copied by an earlier version) → removed, see below;
+//     - present and for the server's CPU -> done; present for another CPU (copied by an earlier version) -> removed, see below;
 //     - pull the multi-arch image CI published (GHCR); Docker takes the variant for the server's CPU;
 //     - no pull (no internet, package not public, CI not finished yet):
-//     - DockGate's host has the same CPU → build there once and copy it over (works without internet on the server);
-//     - another CPU (an ARM server managed from an x86 DockGate) → build on the server itself. Before, the x86 image was
+//     - DockGate's host has the same CPU -> build there once and copy it over (works without internet on the server);
+//     - another CPU (an ARM server managed from an x86 DockGate) -> build on the server itself. Before, the x86 image was
 //       copied there and the agent died with "exec format error";
-//     - the copy fails → build on the server as a last try.
+//     - the copy fails -> build on the server as a last try.
 async function ensureImage(client, log, forcePull, isLocal, key = 'local') {
   if (REGISTRY_IMAGE) {
     if (!forcePull && await hasImage(client, IMAGE_REF)) { log(`image present: ${IMAGE_REF}\n`); return; }
-    log(`pulling ${IMAGE_REF} …\n`);
+    log(`pulling ${IMAGE_REF} ...\n`);
     await pullOn(client, IMAGE_REF);
     log('pull complete\n');
     return;
@@ -210,7 +210,7 @@ async function ensureImage(client, log, forcePull, isLocal, key = 'local') {
   // 1. The published multi-arch image: the server's Docker picks the variant for its CPU. Nothing to build or copy.
   if (PULL_PUBLISHED) {
     try {
-      log(`pulling ${IMAGE_REF} …\n`);
+      log(`pulling ${IMAGE_REF} ...\n`);
       await pullOn(client, IMAGE_REF);
       const got = await imageArch(client, IMAGE_REF);
       if (got && (!target || got === target)) { log(`pulled the ${got} image\n`); return; }
@@ -283,7 +283,7 @@ async function removeExisting(client, log) {
 async function installOne(serverId, log, onPhase, kind = 'install') {
   const env = buildEnv(serverId);
   if (!envHasChannel(env)) {
-    log('⚠ No notification channel configured — agent will run in metrics-only mode (Telegram/SMTP can be added later via reconfigure)\n');
+    log('⚠ No notification channel configured - agent will run in metrics-only mode (Telegram/SMTP can be added later via reconfigure)\n');
   }
   const isLocal = serverId === 'local';
   const client = clientFor(serverId);
@@ -303,10 +303,10 @@ async function installOne(serverId, log, onPhase, kind = 'install') {
     const svcId = t.Labels['com.docker.swarm.service.id'], svcName = t.Labels['com.docker.swarm.service.name'] || svcId;
     try {
       await client.getService(svcId).remove();
-      log(`removed the Swarm service ${svcName} the agent had been moved to — it runs as a container again\n`);
+      log(`removed the Swarm service ${svcName} the agent had been moved to - it runs as a container again\n`);
       const ns = t.Labels['com.docker.stack.namespace'];
       if (ns) { try { require('../db').db.prepare('DELETE FROM swarm_stacks WHERE name = ?').run(ns); } catch (e) { /* not kept by DockGate */ } }
-    } catch (e) { throw new Error(`The agent runs as the Swarm service ${svcName}, and it could not be removed from this server (${e.message.split('\n')[0]}). Remove it in Swarm → Stacks (or on a manager: docker service rm ${svcName}), then Update again.`); }
+    } catch (e) { throw new Error(`The agent runs as the Swarm service ${svcName}, and it could not be removed from this server (${e.message.split('\n')[0]}). Remove it in Swarm > Stacks (or on a manager: docker service rm ${svcName}), then Update again.`); }
   }
   existing = existing.filter(c => !(c.Labels || {})['com.docker.swarm.service.id']);
   const backups = [];
@@ -360,10 +360,10 @@ async function powerOne(serverId, action) {
     try { monitorManager.stopMonitor(serverId); } catch (e) {}
   } else if (action === 'stop') {
     await cont.stop({ t: 5 });
-    try { monitorManager.startMonitor(serverId); } catch (e) {}   // host unwatched → resume central
+    try { monitorManager.startMonitor(serverId); } catch (e) {}   // host unwatched -> resume central
   } else {
     await cont.start();
-    try { monitorManager.stopMonitor(serverId); } catch (e) {}    // agent active → central off
+    try { monitorManager.stopMonitor(serverId); } catch (e) {}    // agent active -> central off
   }
 }
 
@@ -373,27 +373,27 @@ async function statusOne(serverId) {
   try {
     const list = await client.listContainers({ all: true, filters: { label: LABEL_FILTER } });
     if (!list.length) return { installed: false, running: false, state: 'absent', version: null };
-    // Moved to Swarm by mistake (docker run → Swarm, before DockGate kept its own containers out): its task is not
+    // Moved to Swarm by mistake (docker run > Swarm, before DockGate kept its own containers out): its task is not
     // the container DockGate finds, updates and commands. Update turns it back into one.
     const task = list.find(x => x.Labels && x.Labels['com.docker.swarm.service.id']);
     if (task && !list.some(x => x !== task && !(x.Labels || {})['com.docker.swarm.service.id'])) {
       return { installed: true, running: task.State === 'running', state: 'swarm', version: task.Labels['dockgate.version'] || null, build: task.Labels['dockgate.build'] || null, updateAvailable: true,
-        error: `The agent runs as the Swarm service ${task.Labels['com.docker.swarm.service.name'] || ''} — Update makes it a container on this server again` };
+        error: `The agent runs as the Swarm service ${task.Labels['com.docker.swarm.service.name'] || ''} - Update makes it a container on this server again` };
     }
     const c = list.find(x => !(x.Labels || {})['com.docker.swarm.service.id']) || list[0];
     const running = c.State === 'running';
     const version = c.Labels?.['dockgate.version'] || null, build = c.Labels?.['dockgate.build'] || null;
     // An agent without a build label predates build tags (1.0.0): it is older than any current build.
     const updateAvailable = REGISTRY_IMAGE ? (c.Image !== IMAGE_REF) : build !== AGENT_BUILD;
-    // unhealthy: why, from its last log lines — most often Docker was restarted and the agent's socket mount went dead
+    // unhealthy: why, from its last log lines - most often Docker was restarted and the agent's socket mount went dead
     let health = running ? ((/\((unhealthy|healthy|health: starting)\)/.exec(c.Status || '') || [])[1] || null) : null, problem = null;
     if (health === 'unhealthy') {
       try {
         const raw = await client.getContainer(c.Id).logs({ stdout: true, stderr: true, tail: 20 });
         const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw || '');
         problem = /ECONNREFUSED[^\n]*docker\.sock/i.test(text)
-          ? "The agent can not reach Docker's socket — Docker was most likely restarted while the agent kept running. Restart the agent (a newer agent does it by itself after 2 minutes)."
-          : 'The agent reports a problem — see its logs.';
+          ? "The agent can not reach Docker's socket - Docker was most likely restarted while the agent kept running. Restart the agent (a newer agent does it by itself after 2 minutes)."
+          : 'The agent reports a problem - see its logs.';
       } catch (e) { problem = 'The agent reports a problem.'; }
     }
     return { installed: true, running, state: running ? 'running' : 'stopped', health, problem, version, build, updateAvailable, control: require('./control').statusOf(serverId) };
@@ -417,7 +417,7 @@ function newJobId() { return 'aj_' + crypto.randomBytes(6).toString('hex'); }
 // row would say "running" for good and the Edge agent page would show it as running forever. Close those at start.
 try {
   db.prepare("UPDATE agent_jobs SET status = 'failed', error = 'DockGate restarted while this job ran', log = log || ?, finished_at = CURRENT_TIMESTAMP WHERE status = 'running'")
-    .run('\nERROR: DockGate restarted while this job ran. Check the server in Servers → Edge agent and run Update again.\n');
+    .run('\nERROR: DockGate restarted while this job ran. Check the server in Servers > Edge agent and run Update again.\n');
 } catch (e) { /* table missing in an old database: nothing to close */ }
 
 // kind: 'install' | 'update' | 'reconfigure' | 'install-all' | 'remove'

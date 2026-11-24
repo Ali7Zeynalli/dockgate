@@ -1,12 +1,12 @@
 'use strict';
-// Tools → Databases. pg-sql.js is pure (runs everywhere). pg-studio.js runs against a real PostgreSQL when one
-// is reachable (DG_TEST_PG=socketdir:port, default /var/tmp/dgpg:55432) — "docker exec" becomes a local psql.
+// Tools > Databases. pg-sql.js is pure (runs everywhere). pg-studio.js runs against a real PostgreSQL when one
+// is reachable (DG_TEST_PG=socketdir:port, default /var/tmp/dgpg:55432) - "docker exec" becomes a local psql.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('child_process');
 const P = require('../../server/pg-sql');
 
-test('split: top-level ; only — strings, $$ bodies, comments and quoted names kept whole', () => {
+test('split: top-level ; only - strings, $$ bodies, comments and quoted names kept whole', () => {
   const sql = `select 'a;b', "x;y" from t; -- c;d
   create function f() returns int as $body$ begin return 1; end; $body$ language plpgsql;
   /* a /* nested ; */ ; */ select E'it\\'s;' ; select $$;$$;  ;  -- only a comment`;
@@ -134,7 +134,7 @@ test('Databases against PostgreSQL: find, browse, edit by key, SQL with confirms
   S.saveSettings('shop-db-1', { allowWrite: false });
 });
 
-test('Admin and backups against PostgreSQL: roles, sessions, vacuum, backup → restore to a new database → swap', { skip }, async () => {
+test('Admin and backups against PostgreSQL: roles, sessions, vacuum, backup -> restore to a new database -> swap', { skip }, async () => {
   const S = setup();
   const A = require('../../server/pg-admin');
   const BK = require('../../server/pg-backup');
@@ -158,7 +158,7 @@ test('Admin and backups against PostgreSQL: roles, sessions, vacuum, backup → 
   // the login database itself can be swapped / dropped: DockGate stands in another database meanwhile
   execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'postgres', '-c', 'drop database if exists dgtest_tmp', '-c', 'create database dgtest_tmp'], { stdio: 'pipe' });
   await A.dropDatabase('shop-db-1', { database: 'dgtest_tmp', confirm: 'dgtest_tmp' });
-  // backups (this machine → DockGate's data folder)
+  // backups (this machine > DockGate's data folder)
   const b1 = await BK.create('shop-db-1', { database: 'dgtest', kind: 'custom' });
   assert.match(b1.file, /^shop-db-1-dgtest-\d{4}-\d\d-\d\d-\d{6}\.dump$/); assert.ok(b1.size > 100);
   const b2 = await BK.create('shop-db-1', { database: 'dgtest', kind: 'sql' });
@@ -300,7 +300,7 @@ test('Data editor against PostgreSQL: many edits in one transaction, conflicts, 
   // a failing change (Bob has orders) rolls back all of them
   await assert.rejects(S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes }), (e) => e.code === 'FAILED' && e.at === 2 && /foreign key/.test(e.message));
   assert.equal(pq('-c', 'select string_agg(name, \',\' order by id) from shop.cust'), 'Ann,Bob', 'nothing saved');
-  // someone else changed the row since it was loaded → conflict, nothing saved
+  // someone else changed the row since it was loaded -> conflict, nothing saved
   pq('-c', "update shop.cust set name = 'Ann B' where id = 1");
   await assert.rejects(S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'cust', changes: [changes[0], changes[1]] }), (e) => e.code === 'CONFLICT' && /id=1/.test(e.message));
   assert.equal(pq('-c', 'select count(*) from shop.cust'), '2');
@@ -328,10 +328,10 @@ test('Who wrote it, against PostgreSQL: tracking records the changes of the app 
   S.saveSettings('shop-db-1', { allowWrite: true });
   const st = await H.enable('shop-db-1', 'dgtest', 'shop', 'acct', { keepDays: 30 });
   assert.equal(st.tracked, true); assert.equal(st.keepDays, 30);
-  // the app (another role, its own application_name) changes rows — no rights on dockgate_audit needed
+  // the app (another role, its own application_name) changes rows - no rights on dockgate_audit needed
   const asApp = (sql) => execFileSync('psql', ['-X', '-h', PGHOST, '-p', PGPORT, '-U', 'app_user', '-d', 'dgtest', '-At', '-c', sql], { env: { ...process.env, PGAPPNAME: 'billing-api' } }).toString();
   asApp("update shop.acct set balance = 80 where id = 1");
-  asApp("update shop.acct set balance = 80 where id = 1"); // nothing changed → not logged
+  asApp("update shop.acct set balance = 80 where id = 1"); // nothing changed -> not logged
   asApp("insert into shop.acct values (3, 'cem', 10)");
   asApp('delete from shop.acct where id = 2');
   const info = await S.applyChanges('shop-db-1', 'dgtest', { schema: 'shop', table: 'acct', changes: [{ op: 'update', pk: { id: '1' }, set: { owner: 'Ann' }, orig: { owner: 'ann' } }] });
@@ -393,7 +393,7 @@ test('Many rows at once against PostgreSQL: import (insert / upsert / skip), bul
   S.saveSettings('shop-db-1', { allowWrite: false });
 });
 
-test('Design (pg-ddl): operations → quoted SQL; types and expressions checked', () => {
+test('Design (pg-ddl): operations -> quoted SQL; types and expressions checked', () => {
   const D = require('../../server/pg-ddl');
   const structure = { columns: [{ name: 'id' }, { name: 'Name' }, { name: 'price' }] };
   const b = (ops) => D.build(ops, { schema: 'shop', table: 'items', structure }).map(s => s.sql);
@@ -460,7 +460,7 @@ test('Export / import / test data against PostgreSQL: pg_dump of ticked tables, 
   let sql = ''; await IO.dump('shop-db-1', 'dgio', { tables: 'public.customers', what: 'both', rows: 'insert', clean: true }, (c) => { sql += c; });
   assert.match(sql, /CREATE TABLE public\.customers/); assert.match(sql, /DROP TABLE IF EXISTS public\.customers/); assert.match(sql, /INSERT INTO public\.customers \(id, name, email, born, vip, feel\) VALUES/);
   assert.doesNotMatch(sql, /CREATE TABLE public\.other/);
-  // zip of CSV and an xlsx — read back with Python's zipfile
+  // zip of CSV and an xlsx - read back with Python's zipfile
   const fs = require('fs'); const os = require('os'); const path = require('path');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dgio-'));
   fs.writeFileSync(path.join(dir, 'a.zip'), await IO.zipTables('shop-db-1', 'dgio', { tables: ['public.customers', 'public.other'], format: 'csv' }));
@@ -468,7 +468,7 @@ test('Export / import / test data against PostgreSQL: pg_dump of ticked tables, 
   const py = `import zipfile,sys\nz=zipfile.ZipFile(sys.argv[1]);print(sorted(z.namelist()));print(z.read('customers.csv').decode())\nx=zipfile.ZipFile(sys.argv[2]);assert x.testzip() is None;s=x.read('xl/worksheets/sheet1.xml').decode();print('B "q"' in s.replace('&quot;','"'), '<v>1</v>' in s, 'customers' in x.read('xl/workbook.xml').decode())`;
   const out = execFileSync('python3', ['-c', py, path.join(dir, 'a.zip'), path.join(dir, 'a.xlsx')]).toString();
   assert.match(out, /\['customers\.csv', 'other\.csv'\]/); assert.match(out, /id,name,email,born,vip,feel/); assert.match(out, /"B ""q"""/); assert.match(out, /True True True/);
-  // .sql import: read-only refused; then a file with an error in the middle, in one transaction → nothing stays
+  // .sql import: read-only refused; then a file with an error in the middle, in one transaction -> nothing stays
   const { Readable } = require('stream');
   S.saveSettings('shop-db-1', { allowWrite: false });
   await assert.rejects(IO.importSql('shop-db-1', 'dgio', Readable.from(['select 1;']), {}), /read-only/);

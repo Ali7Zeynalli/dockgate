@@ -5,7 +5,7 @@ const paths = require('./paths');
 const { decrypt } = require('./auth/secrets');
 
 // ============ DYNAMIC DOCKER CLIENT ============
-// Active Docker client — local socket default, SSH əlaqələrə switch oluna bilər
+// Active Docker client - local socket default, SSH əlaqələrə switch oluna bilər
 // _docker dəyişəni runtime-da setActiveServer() ilə dəyişir
 let _docker = new Docker({ socketPath: '/var/run/docker.sock' });
 let _activeServerId = 'local';
@@ -25,7 +25,7 @@ function createSshClient(server) {
   // Auth precedence: key > password > SSH agent.
   // IMPORTANT: docker-modem forwards only host/port/username/password to ssh2 at the top level.
   // privateKey/passphrase MUST live inside sshOptions or they are silently dropped, which makes
-  // ssh2 fall back to the (absent) agent → "All configured authentication methods failed".
+  // ssh2 fall back to the (absent) agent -> "All configured authentication methods failed".
   if (server.key_path) {
     const keyPath = paths.keyPath(server.key_path);
     if (!fs.existsSync(keyPath)) throw new Error(`SSH key not found: ${keyPath}`);
@@ -44,10 +44,10 @@ function createSshClient(server) {
 
 /**
  * Aktiv Docker client-i dəyiş.
- * @param {string} serverId — 'local' və ya servers cədvəlindəki id
+ * @param {string} serverId - 'local' və ya servers cədvəlindəki id
  */
 function setActiveServer(serverId) {
-  // Stmts-i late require et — circular dependency-dən qorunmaq üçün
+  // Stmts-i late require et - circular dependency-dən qorunmaq üçün
   const { stmts } = require('./db');
   if (!serverId || serverId === 'local') {
     _docker = createLocalClient();
@@ -58,7 +58,7 @@ function setActiveServer(serverId) {
     _docker = createSshClient(server);
     _activeServerId = serverId;
   }
-  // Cache-i təmizlə — yeni server-in datasını gətirməliyik
+  // Cache-i təmizlə - yeni server-in datasını gətirməliyik
   cache.clear();
   // DB-də saxla
   stmts.setSetting.run('active_server', _activeServerId);
@@ -71,7 +71,7 @@ function isLocalActive() { return getActiveServerId() === 'local'; }
 
 /**
  * Operations requiring the host CLI (compose, buildx, build-cache prune, self-update,
- * autostart) can only run against the local daemon — a remote SSH host has no access
+ * autostart) can only run against the local daemon - a remote SSH host has no access
  * to the panel's own container or host filesystem. If the active server isn't local,
  * throw a clear error instead of silently acting on the wrong host.
  */
@@ -83,9 +83,9 @@ function assertLocalActive(operation) {
   }
 }
 
-// docker dəyişəninə hər müraciətdə getter işləyir — dinamik client dönür
+// docker dəyişəninə hər müraciətdə getter işləyir - dinamik client dönür
 // withServer(id, fn): run fn with `docker` and getActiveServerId() pointing at another server, for that async call
-// chain only (a scheduled task must not depend on — or change — the server picked in the top bar).
+// chain only (a scheduled task must not depend on - or change - the server picked in the top bar).
 function withServer(serverId, fn) {
   const id = serverId || 'local';
   if (id === getActiveServerId()) return fn();
@@ -218,11 +218,11 @@ function listingFailure(output, exitCode, shown) {
   if (/dg-no-such-folder/.test(out)) return listErr(400, `The folder ${shown} does not exist`);
   if (/dg-no-access/.test(out)) return listErr(400, `The folder ${shown} can not be opened (permission denied)`);
   // OCI runtime: exec: "sh": executable file not found in $PATH (exit 126/127 when the shell is missing).
-  if (/exec: "?sh"?:|executable file not found|sh: not found/i.test(out) || exitCode === 126 || exitCode === 127) return listErr(400, 'The container has no shell (sh) — files can only be downloaded and uploaded');
+  if (/exec: "?sh"?:|executable file not found|sh: not found/i.test(out) || exitCode === 126 || exitCode === 127) return listErr(400, 'The container has no shell (sh) - files can only be downloaded and uploaded');
   return listErr(400, `Could not list ${shown}: ${out.trim().split('\n').slice(-2).join(' ').slice(0, 300) || `exit code ${exitCode}`}`);
 }
 
-/** C3 — list a directory inside a (running) container via exec. Returns { path, entries[] }. */
+/** C3 - list a directory inside a (running) container via exec. Returns { path, entries[] }. */
 async function containerListFiles(id, path) {
   const safe = safeFsPath(path);
   let r;
@@ -237,7 +237,7 @@ async function containerListFiles(id, path) {
   return { path: safe, entries: parseListing(r.output) };
 }
 
-/** C3 — stream a single file from a container as a download (binary-safe, via exec cat). */
+/** C3 - stream a single file from a container as a download (binary-safe, via exec cat). */
 async function containerDownloadFile(id, path, res) {
   const safe = safeFsPath(path);
   const exec = await docker.getContainer(id).exec({ Cmd: ['cat', safe], AttachStdout: true, AttachStderr: true, Tty: false });
@@ -251,7 +251,7 @@ async function containerDownloadFile(id, path, res) {
   stream.on('error', () => { try { res.destroy(); } catch (e) {} });
 }
 
-/** C3 — extract an uploaded tar into the container at `path` (docker cp in / putArchive). */
+/** C3 - extract an uploaded tar into the container at `path` (docker cp in / putArchive). */
 async function containerUpload(id, path, req) {
   await docker.getContainer(id).putArchive(req, { path: safeFsPath(path) });
   return { success: true };
@@ -272,7 +272,7 @@ async function commitContainer(id, { repo, tag, comment, author } = {}) {
 }
 
 /**
- * Recreate a container with (optionally) a new image, preserving its config — the "update" flow.
+ * Recreate a container with (optionally) a new image, preserving its config - the "update" flow.
  * Pulls/verifies the image FIRST so the old container is only removed once the new one can be built;
  * reconnects any secondary networks afterwards. Volume data persists (volumes are untouched).
  * @param {string} id
@@ -286,7 +286,7 @@ async function recreateContainer(id, newImage) {
   catch (e) { throw new Error(`Image not available: ${image}`); } // abort before touching the old container
   // The old container is renamed and stopped, not removed, until the new one has started; if creating or
   // starting the new one fails the old one is put back. Settings that came from the old image are not copied.
-  const { swapContainer } = require('./image-update-runner'); // late require — it requires this module
+  const { swapContainer } = require('./image-update-runner'); // late require - it requires this module
   const sw = await swapContainer(docker, info, image, () => {});
   await sw.commit();
   invalidateCache('');
@@ -306,7 +306,7 @@ function parseStats(stats) {
   const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * numCpus * 100 : 0;
 
   // Memory the way `docker stats` shows it: usage minus the page cache the kernel can drop (cgroup v2 inactive_file,
-  // v1 total_inactive_file, old daemons cache) — otherwise a container that reads files looks much fuller than it is.
+  // v1 total_inactive_file, old daemons cache) - otherwise a container that reads files looks much fuller than it is.
   const ms = stats.memory_stats || {}, mst = ms.stats || {};
   const reclaim = mst.inactive_file ?? mst.total_inactive_file ?? mst.cache ?? 0;
   const memUsage = Math.max(0, (ms.usage || 0) - (reclaim < (ms.usage || 0) ? reclaim : 0));
@@ -423,12 +423,12 @@ async function imageHistory(id) {
   return await docker.getImage(id).history();
 }
 
-/** I2 — save an image as a tar stream (docker save). The route pipes it to the client. */
+/** I2 - save an image as a tar stream (docker save). The route pipes it to the client. */
 async function imageSaveStream(id) {
   return await docker.getImage(id).get();
 }
 
-/** I2 — load images from a tar stream (docker load). Resolves with the load progress output. */
+/** I2 - load images from a tar stream (docker load). Resolves with the load progress output. */
 async function loadImage(stream) {
   return new Promise((resolve, reject) => {
     docker.loadImage(stream, (err, out) => {
@@ -445,7 +445,7 @@ async function loadImage(stream) {
  * Extract the registry host from an image reference.
  * Docker rule: the first slash-segment is a registry only if it contains '.' or ':' or is 'localhost';
  * otherwise the reference targets Docker Hub.
- * e.g. "ghcr.io/owner/app:1.0" → "ghcr.io"; "localhost:5000/app" → "localhost:5000"; "nginx:latest" → "docker.io".
+ * e.g. "ghcr.io/owner/app:1.0" -> "ghcr.io"; "localhost:5000/app" -> "localhost:5000"; "nginx:latest" -> "docker.io".
  * @param {string} repoTag
  * @returns {string} registry host
  */
@@ -467,7 +467,7 @@ function registryHostOf(repoTag) {
  * @returns {{username:string,password:string,serveraddress:string}|undefined}
  */
 function lookupAuthConfig(repoTag) {
-  const { stmts } = require('./db'); // late require — avoid circular dependency
+  const { stmts } = require('./db'); // late require - avoid circular dependency
   const host = registryHostOf(repoTag);
   const candidates = host === 'docker.io'
     ? ['docker.io', 'index.docker.io', 'https://index.docker.io/v1/', 'registry-1.docker.io']
@@ -576,7 +576,7 @@ async function removeImage(id, force = false) {
  * İstifadə: routes/builds.js, server/index.js (WebSocket)
  */
 /**
- * Build a minimal single-file tar (USTAR) containing just a Dockerfile — the build context for
+ * Build a minimal single-file tar (USTAR) containing just a Dockerfile - the build context for
  * an inline "build from this image" build (no Git/URL context needed). Avoids a tar dependency.
  */
 function makeDockerfileTar(content) {
@@ -598,13 +598,13 @@ function makeDockerfileTar(content) {
 }
 
 /**
- * Bütün saxlanan registry credential-larını X-Registry-Config xəritəsinə çevir —
+ * Bütün saxlanan registry credential-larını X-Registry-Config xəritəsinə çevir -
  * build zamanı private FROM image-ləri (məs. ghcr.io) çəkilə bilsin.
  * @returns {Object|undefined} { "<serveraddress>": {username,password} } və ya boşdursa undefined
  */
 function allRegistryAuthMap() {
   try {
-    const { stmts } = require('./db'); // late require — circular dependency-dən qaçmaq üçün
+    const { stmts } = require('./db'); // late require - circular dependency-dən qaçmaq üçün
     const rows = stmts.getRegistries.all();
     const map = {};
     for (const r of rows) {
@@ -628,7 +628,7 @@ async function buildImage(context, options = {}) {
     buildargs: options.buildargs || {},
     rm: true,
   };
-  // Saxlanan registry creds → daemon private base image-ləri (FROM ghcr.io/...) çəkə bilsin
+  // Saxlanan registry creds -> daemon private base image-ləri (FROM ghcr.io/...) çəkə bilsin
   const registryconfig = allRegistryAuthMap();
   if (registryconfig) buildOpts.registryconfig = registryconfig;
 
@@ -718,7 +718,7 @@ async function ensureHelperImage() {
 }
 
 /**
- * V1 — stream a gzipped tar of a volume's contents to an HTTP response.
+ * V1 - stream a gzipped tar of a volume's contents to an HTTP response.
  * A helper container mounts the volume read-only and runs `tar`; its stdout (the tar) is
  * de-multiplexed straight to the response, then the helper is removed.
  */
@@ -735,7 +735,7 @@ async function backupVolumeToResponse(volName, res) {
   res.setHeader('Content-Disposition', `attachment; filename="${volName}.tar.gz"`);
   const { Writable } = require('stream');
   const devnull = new Writable({ write(c, e, cb) { cb(); } });
-  docker.modem.demuxStream(stream, res, devnull); // stdout (tar) → res, stderr → discard
+  docker.modem.demuxStream(stream, res, devnull); // stdout (tar) -> res, stderr -> discard
   let removed = false;
   const cleanup = async () => { if (removed) return; removed = true; try { await helper.remove({ force: true }); } catch (e) {} };
   await helper.start();
@@ -745,7 +745,7 @@ async function backupVolumeToResponse(volName, res) {
 }
 
 /**
- * V2 — restore a volume from an uploaded gzipped tar (the inverse of backup).
+ * V2 - restore a volume from an uploaded gzipped tar (the inverse of backup).
  * A helper container extracts the upload (piped into its stdin) into the volume.
  * @param {string} volName
  * @param {import('stream').Readable} req the request body stream (the .tar.gz upload)
@@ -771,16 +771,16 @@ async function restoreVolumeFromRequest(volName, req) {
   const stream = await helper.attach({ stream: true, stdin: true, stdout: true, stderr: true, hijack: true });
   await helper.start();
   stream.write(first);
-  req.pipe(stream); // upload → container stdin; StdinOnce closes stdin when the upload ends
+  req.pipe(stream); // upload -> container stdin; StdinOnce closes stdin when the upload ends
   req.resume();
   const result = await helper.wait();
   try { await helper.remove({ force: true }); } catch (e) {}
   invalidateCache('');
-  if (result.StatusCode !== 0) throw Object.assign(new Error(`Restore failed (tar exited ${result.StatusCode}) — use a .tar.gz or .tar file`), { statusCode: 400 });
+  if (result.StatusCode !== 0) throw Object.assign(new Error(`Restore failed (tar exited ${result.StatusCode}) - use a .tar.gz or .tar file`), { statusCode: 400 });
   return { success: true };
 }
 
-// Confine a browse path to the volume mount — resolve '.'/'..' by segment so it can't escape /volume.
+// Confine a browse path to the volume mount - resolve '.'/'..' by segment so it can't escape /volume.
 function safeVolPath(p) {
   const parts = [];
   for (const seg of String(p || '').split('/')) {
@@ -792,7 +792,7 @@ function safeVolPath(p) {
 }
 
 /**
- * V3 — list a directory inside a volume (one helper container per request, read-only mount).
+ * V3 - list a directory inside a volume (one helper container per request, read-only mount).
  * Returns { path, entries:[{ type:'dir'|'file', size, name }] }.
  */
 async function listVolumeFiles(volName, path) {
@@ -814,7 +814,7 @@ async function listVolumeFiles(volName, path) {
   return { path: safe, entries };
 }
 
-/** V3 — stream a single file from a volume as a download (binary-safe). */
+/** V3 - stream a single file from a volume as a download (binary-safe). */
 async function downloadVolumeFile(volName, path, res) {
   await ensureHelperImage();
   const safe = safeVolPath(path);
@@ -839,15 +839,15 @@ async function downloadVolumeFile(volName, path, res) {
 }
 
 /**
- * V4 — clone a volume's contents into a new volume (a helper container `cp -a`s the data).
+ * V4 - clone a volume's contents into a new volume (a helper container `cp -a`s the data).
  */
 async function cloneVolume(srcName, destName) {
   const fail = (status, message) => Object.assign(new Error(message), { statusCode: status });
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/.test(String(destName || ''))) throw fail(400, 'Volume name: at least 2 characters — letters, digits, _ . or -, starting with a letter or digit');
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/.test(String(destName || ''))) throw fail(400, 'Volume name: at least 2 characters - letters, digits, _ . or -, starting with a letter or digit');
   // Docker's create returns the existing volume when the name is taken, so the copy would write into
   // another volume's data. Refuse instead.
   const exists = await docker.getVolume(destName).inspect().then(() => true, (e) => { if (e.statusCode === 404) return false; throw e; });
-  if (exists) throw fail(409, `A volume named ${destName} already exists — choose another name`);
+  if (exists) throw fail(409, `A volume named ${destName} already exists - choose another name`);
   await docker.getVolume(srcName).inspect().catch((e) => { throw e.statusCode === 404 ? fail(404, `Volume ${srcName} not found`) : e; });
   await ensureHelperImage();
   await docker.createVolume({ Name: destName });
@@ -863,7 +863,7 @@ async function cloneVolume(srcName, destName) {
     result = await helper.wait();
     if (result.StatusCode !== 0) {
       const out = String(await helper.logs({ stdout: true, stderr: true }).catch(() => '')).trim().split('\n').slice(-2).join(' ');
-      throw fail(500, `Copying the data failed${out ? `: ${out.slice(0, 300)}` : ` (exit code ${result.StatusCode})`} — the new volume was removed`);
+      throw fail(500, `Copying the data failed${out ? `: ${out.slice(0, 300)}` : ` (exit code ${result.StatusCode})`} - the new volume was removed`);
     }
   } catch (e) {
     try { await helper.remove({ force: true }); } catch (x) {}
@@ -887,7 +887,7 @@ async function listNetworks() {
   const [networks, ctrs, services] = await Promise.all([
     docker.listNetworks(),
     docker.listContainers({ all: true }).catch(() => []),
-    docker.listServices().catch(() => []), // not a swarm manager → none
+    docker.listServices().catch(() => []), // not a swarm manager -> none
   ]);
   const byNet = {};
   for (const c of ctrs) for (const [name, n] of Object.entries((c.NetworkSettings && c.NetworkSettings.Networks) || {})) {
@@ -1074,15 +1074,15 @@ async function pruneContainers() {
 }
 
 async function pruneImages(dangling = false) {
-  // dangling=false → bütün unused image-lər (tagged + dangling) silinir
-  // dangling=true  → yalnız dangling (untagged <none>) silinir
+  // dangling=false -> bütün unused image-lər (tagged + dangling) silinir
+  // dangling=true  -> yalnız dangling (untagged <none>) silinir
   const r = await docker.pruneImages({ filters: { dangling: [String(dangling)] } });
   invalidateCache('');
   return r;
 }
 
 async function pruneVolumes() {
-  // Docker 23+ default yalnız anonim volume-ları silir; all=true → named unused də silinir
+  // Docker 23+ default yalnız anonim volume-ları silir; all=true -> named unused də silinir
   const r = await docker.pruneVolumes({ filters: { all: ['true'] } });
   invalidateCache('');
   return r;
@@ -1103,13 +1103,13 @@ async function pruneBuildCache() {
   const reclaimed = r.SpaceReclaimed || 0;
   return {
     Message: 'Build cache pruned',
-    SpaceReclaimed: reclaimed,                 // bytes — read by cleanup page
-    SpaceReclaimedStr: formatBytes(reclaimed), // human string — read by builds page
+    SpaceReclaimed: reclaimed,                 // bytes - read by cleanup page
+    SpaceReclaimedStr: formatBytes(reclaimed), // human string - read by builds page
     CachesDeleted: r.CachesDeleted || [],
   };
 }
 
-// Minimal byte formatter (kept local to docker.js — used by pruneBuildCache result)
+// Minimal byte formatter (kept local to docker.js - used by pruneBuildCache result)
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
   const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -1120,7 +1120,7 @@ function formatBytes(bytes) {
 async function systemPrune(volumes = false) {
   const results = {};
   results.containers = await docker.pruneContainers();
-  // Bütün unused image-ləri sil (tagged + dangling) — UI preview ilə uyğun
+  // Bütün unused image-ləri sil (tagged + dangling) - UI preview ilə uyğun
   results.images = await docker.pruneImages({ filters: { dangling: ['false'] } });
   results.networks = await docker.pruneNetworks();
   if (volumes) {
@@ -1134,10 +1134,10 @@ async function systemPrune(volumes = false) {
 // NOTE: Real-time streams (events/stats/logs) and container exec are wired up
 // directly via dockerode in the socket handlers in server/index.js.
 // The previous streamEvents/streamContainerStats/streamContainerLogs/execInContainer
-// wrappers weren't used by any caller (divergence risk) — removed.
+// wrappers weren't used by any caller (divergence risk) - removed.
 
 // ============ SETTINGS / SYSTEM ============
-// DockGate manages its own container (autostart, self-update) — this is ALWAYS on the
+// DockGate manages its own container (autostart, self-update) - this is ALWAYS on the
 // local daemon, so use a fresh local client rather than the active (possibly remote) client.
 async function getAppContainer() {
   const os = require('os');
@@ -1162,28 +1162,28 @@ async function setAutoStart(enabled) {
   return policyName;
 }
 
-// Test connection — server config qəbul edir, dockerode ilə ping et
+// Test connection - server config qəbul edir, dockerode ilə ping et
 // Translate a raw ssh2/net/dockerode error into a clear, human message (so "socket hang up" etc. don't
 // leak to the UI). The literal cause stays available, but this is what the user reads.
 function friendlySshError(err) {
   const m = (err && err.message ? err.message : String(err)).toLowerCase();
   if (require('./ssh-hostkey').isHostKeyError(err)) return require('./ssh-hostkey').MISMATCH_MESSAGE;
-  if (/no tty|password change required/.test(m)) return 'The account requires a first-login password change — log in once over SSH to set a password, or use an SSH key.';
-  if (/all configured authentication|authentication method|permission denied|incorrect password|auth/.test(m)) return 'Authentication failed — check the username and the password / SSH key.';
-  if (/econnrefused/.test(m)) return 'Connection refused — nothing is listening on that port (is SSH running, and is the port correct?).';
-  if (/etimedout|timed out|timeout/.test(m)) return 'Connection timed out — the host is unreachable (check the IP/host and any firewall).';
-  if (/enotfound|getaddrinfo|eai_again/.test(m)) return 'Host not found — check the server address / IP.';
-  if (/ehostunreach|enetunreach/.test(m)) return 'Host unreachable — check the network/firewall.';
-  if (/socket hang up|econnreset/.test(m)) return 'The connection was reset by the server — likely a wrong port or firewall, or the IP is temporarily blocked after repeated failed logins.';
+  if (/no tty|password change required/.test(m)) return 'The account requires a first-login password change - log in once over SSH to set a password, or use an SSH key.';
+  if (/all configured authentication|authentication method|permission denied|incorrect password|auth/.test(m)) return 'Authentication failed - check the username and the password / SSH key.';
+  if (/econnrefused/.test(m)) return 'Connection refused - nothing is listening on that port (is SSH running, and is the port correct?).';
+  if (/etimedout|timed out|timeout/.test(m)) return 'Connection timed out - the host is unreachable (check the IP/host and any firewall).';
+  if (/enotfound|getaddrinfo|eai_again/.test(m)) return 'Host not found - check the server address / IP.';
+  if (/ehostunreach|enetunreach/.test(m)) return 'Host unreachable - check the network/firewall.';
+  if (/socket hang up|econnreset/.test(m)) return 'The connection was reset by the server - likely a wrong port or firewall, or the IP is temporarily blocked after repeated failed logins.';
   return (err && err.message) ? err.message : String(err);
 }
 
 // Test a server. This separates two things that used to be conflated: (1) can we SSH in (auth/network),
 // and (2) is Docker reachable. A fresh host where SSH works but Docker isn't installed yet now PASSES the
-// SSH test (success:true, docker:false) so it can be added and then provisioned — instead of failing with
+// SSH test (success:true, docker:false) so it can be added and then provisioned - instead of failing with
 // a cryptic "socket hang up" (which was actually the Docker socket, not SSH).
 async function testServerConnection(serverConfig) {
-  // Local — SSH doesn't apply; just confirm the Docker daemon is reachable.
+  // Local - SSH doesn't apply; just confirm the Docker daemon is reachable.
   if (!serverConfig || serverConfig.type === 'local') {
     try {
       const client = createLocalClient();
@@ -1195,7 +1195,7 @@ async function testServerConnection(serverConfig) {
     }
   }
 
-  // STEP 1 — verify the SSH connection + auth on its OWN (raw ssh2, no Docker). This is the real
+  // STEP 1 - verify the SSH connection + auth on its OWN (raw ssh2, no Docker). This is the real
   // "can I log in?" check. Late require to avoid the circular dep (remote-compose requires this module).
   const { execRemote } = require('./remote-compose');
   let hostKey = null;
@@ -1205,7 +1205,7 @@ async function testServerConnection(serverConfig) {
     return { success: false, stage: 'ssh', ssh: false, error: friendlySshError(err), hostKey };
   }
 
-  // STEP 2 — SSH works; now see whether Docker is reachable over it (a separate, non-fatal signal).
+  // STEP 2 - SSH works; now see whether Docker is reachable over it (a separate, non-fatal signal).
   try {
     const client = createSshClient(serverConfig);
     const version = await client.version();
@@ -1215,12 +1215,12 @@ async function testServerConnection(serverConfig) {
     return {
       success: true, ssh: true, docker: false, hostKey,
       dockerError: (err && err.message) || String(err),
-      message: 'SSH connection OK — Docker is not installed/running on this server yet. Add it, then install Docker from Setup.',
+      message: 'SSH connection OK - Docker is not installed/running on this server yet. Add it, then install Docker from Setup.',
     };
   }
 }
 
-// Resource counts for a SPECIFIC server (the per-server console Overview) — does NOT change the active
+// Resource counts for a SPECIFIC server (the per-server console Overview) - does NOT change the active
 // client. Best-effort with a hard timeout so a slow/unreachable host can't hang the request.
 async function dockerSummaryForServer(server) {
   const client = (server.id === 'local' || server.type === 'local') ? createLocalClient() : createSshClient(server);

@@ -1,5 +1,5 @@
-// Tools → Files extras: Places (where to jump), log tail, and checks of a file before / after it is saved.
-//   places(a)               { home, common: [dir], projects: [{ name, dir }] } — only folders that exist
+// Tools > Files extras: Places (where to jump), log tail, and checks of a file before / after it is saved.
+//   places(a)               { home, common: [dir], projects: [{ name, dir }] } - only folders that exist
 //   tail(a, path, lines)    the last lines of a (log) file; sudo for root-owned logs on a remote server
 //   checkCompose(a, path, content)   docker compose config -q on the unsaved content (project folder = the file's)
 //   checkNginx(a)           nginx -t on the server (after a save under /etc/nginx)
@@ -41,7 +41,7 @@ async function places(a) {
   return { home, common: lines, projects };
 }
 
-/** Last `lines` lines of a file. A remote file the SSH user may not read → 403 EACCES (the UI then offers sudo). */
+/** Last `lines` lines of a file. A remote file the SSH user may not read -> 403 EACCES (the UI then offers sudo). */
 async function tail(a, p, lines, { sudo = false } = {}) {
   const n = Math.max(1, Math.min(MAX_LINES, parseInt(lines, 10) || 1000));
   if (isLocal(a)) {
@@ -59,8 +59,8 @@ async function tail(a, p, lines, { sudo = false } = {}) {
   const r = await remoteExec.execRemote(a.s, `${sudo ? 'sudo -n ' : ''}tail -n ${n} -- ${file}`);
   if (r.code !== 0) {
     const out = String(r.stderr || r.stdout || '');
-    if (!sudo && /permission denied/i.test(out)) throw Object.assign(new Error(`Permission denied: ${p} — read it with sudo`), { statusCode: 403, code: 'EACCES' });
-    if (/password is required|a terminal is required/i.test(out)) throw Object.assign(new Error('sudo asks this user for a password — DockGate needs passwordless sudo'), { statusCode: 403, code: 'SUDO' });
+    if (!sudo && /permission denied/i.test(out)) throw Object.assign(new Error(`Permission denied: ${p} - read it with sudo`), { statusCode: 403, code: 'EACCES' });
+    if (/password is required|a terminal is required/i.test(out)) throw Object.assign(new Error('sudo asks this user for a password - DockGate needs passwordless sudo'), { statusCode: 403, code: 'SUDO' });
     throw Object.assign(new Error(out.trim().slice(0, 300) || 'tail failed'), { statusCode: /No such file/i.test(out) ? 404 : 500 });
   }
   return { text: String(r.stdout || '').replace(/\n$/, '') };
@@ -100,7 +100,7 @@ async function checkNginx(a) {
 }
 
 // Check the unsaved content of a system file with the tool that owns it, on the server:
-//   bash (.sh) → bash -n   · sshd → sshd -t -f   · sudoers → visudo -cf   · fstab → findmnt --verify --tab-file
+//   bash (.sh) -> bash -n  , sshd -> sshd -t -f  , sudoers -> visudo -cf  , fstab -> findmnt --verify --tab-file
 const TOOLS = {
   sshd: { tool: 'sshd -t', cmd: (t) => `sudo -n sshd -t -f ${t} 2>&1 || sshd -t -f ${t} 2>&1`, missing: /sshd: (command )?not found/ },
   sudoers: { tool: 'visudo -c', cmd: (t) => `sudo -n visudo -cf ${t} 2>&1 || visudo -cf ${t} 2>&1`, missing: /visudo: (command )?not found/ },

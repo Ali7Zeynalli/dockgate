@@ -1,22 +1,22 @@
 // Navigation setup
 // One list drives the sidebar, the section pages (tabbed-section.js) and the top-bar breadcrumb. A section's
-// pages are reached from the sidebar only; old links (#/activity?tab=…, #/infra?tab=registries) are sent to
+// pages are reached from the sidebar only; old links (#/activity?tab=..., #/infra?tab=registries) are sent to
 // the new place by Router.resolve.
 const navItems = {
   dashboard: { label: 'Dashboard', icon: Icons.dashboard },
   monitoring: { label: 'Monitoring', icon: Icons.chart },
-  // DOCKER — what runs and how it is deployed
+  // DOCKER - what runs and how it is deployed
   resources: { label: 'Resources', icon: Icons.layers, tabs: [['containers', 'Containers'], ['images', 'Images'], ['builds', 'Builds'], ['volumes', 'Volumes'], ['networks', 'Networks'], ['prune', 'Cleanup']], default: 'containers' },
   deploy: { label: 'Deploy', icon: Icons.compose, tabs: [['compose', 'Projects'], ['templates', 'App templates'], ['tasks', 'Tasks']], default: 'compose' },
   swarm: { label: 'Swarm', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M12 8v4M5 16v-2h14v2"/></svg>', tabs: [['swarm-overview', 'Overview'], ['swarm-nodes', 'Nodes'], ['swarm-stacks', 'Stacks'], ['swarm-services', 'Services'], ['swarm-scaling', 'Auto Scaling'], ['swarm-migrate', 'Migrate'], ['swarm-secrets', 'Secrets & configs'], ['swarm-networks', 'Networks'], ['swarm-firewall', 'Firewall'], ['swarm-settings', 'Cluster settings']], default: 'swarm-overview' },
   databases: { label: 'Databases', icon: SRV_ICONS.databases },
   observe: { label: 'Logs & events', icon: Icons.events, tabs: [['logs', 'Logs'], ['events', 'Events']], default: 'logs' },
-  // WEB — how it is reached from outside
+  // WEB - how it is reached from outside
   uptime: { label: 'Uptime', icon: SRV_ICONS.uptime },
   proxies: { label: 'Proxies & SSL', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' },
-  // SERVERS — every server
+  // SERVERS - every server
   infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH keys'], ['agent', 'Edge agent']], default: 'servers' },
-  // SERVER — the server picked in the top bar (server-sections.js)
+  // SERVER - the server picked in the top bar (server-sections.js)
   'srv-status': { label: 'Status', icon: SRV_ICONS.status, tabs: [['srv-overview', 'Overview'], ['srv-monitoring', 'Monitoring'], ['srv-alerts', 'Alerts'], ['srv-logs', 'Logs'], ['srv-sysinfo', 'System info'], ['srv-connection', 'Connection']], default: 'srv-overview' },
   'srv-security': { label: 'Security', icon: SRV_ICONS.security, tabs: [['srv-access', 'Access & SSH'], ['srv-users', 'Users & keys'], ['srv-firewall', 'Firewall'], ['srv-fail2ban', 'Fail2ban'], ['srv-honeypot', 'Honeypot']], default: 'srv-access' },
   'srv-system': { label: 'System', icon: SRV_ICONS.system, tabs: [['srv-names', 'Name & addresses'], ['srv-network', 'Network'], ['srv-time', 'Time sync'], ['srv-disks', 'Disks'], ['srv-kernel', 'Kernel & limits'], ['srv-configs', 'Config files']], default: 'srv-names' },
@@ -24,13 +24,13 @@ const navItems = {
   'srv-automation': { label: 'Automation', icon: SRV_ICONS.automation, tabs: [['srv-cron', 'Cron'], ['srv-timers', 'Timers'], ['srv-scripts', 'Scripts'], ['schedules', 'Schedules']], default: 'srv-cron' },
   // TOOLS
   tools: { label: 'Tools', icon: Icons.terminal, tabs: [['terminal', 'Terminal'], ['files', 'Files']], default: 'terminal' },
-  // SYSTEM — DockGate itself
+  // SYSTEM - DockGate itself
   settings: { label: 'Settings', icon: Icons.settings, tabs: [['general', 'General'], ['security', 'Security'], ['notifications', 'Notifications'], ['registries', 'Registry logins'], ['update', 'Software update']], default: 'general' },
   help: { label: 'Help', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>' },
   activity: { label: 'Activity', icon: SRV_ICONS.activity, tabs: [['audit', 'Audit log'], ['notification-log', 'Notifications sent']], default: 'audit' },
 };
 
-// DOCKER (what runs) · WEB (how it is reached) · SERVERS (all) · SERVER (the one in the top bar) · TOOLS · SYSTEM (DockGate itself)
+// DOCKER (what runs), WEB (how it is reached), SERVERS (all), SERVER (the one in the top bar), TOOLS, SYSTEM (DockGate itself)
 const navGroups = [
   { label: 'Overview', items: ['dashboard', 'monitoring'] },
   { label: 'Docker', items: ['resources', 'deploy', 'swarm', 'databases', 'observe'] },
@@ -62,7 +62,7 @@ function initMacSidebar() {
       const item = navItems[key];
       if (!item) return;
       if (item.tabs) {
-        // A section with sub-tabs → a collapsible parent + its tabs as sidebar sub-items (auto-expands
+        // A section with sub-tabs -> a collapsible parent + its tabs as sidebar sub-items (auto-expands
         // when active, so the sidebar stays compact). The in-page tab bar still works too.
         itemsHtml += `
           <a class="nav-item nav-parent" data-page="${key}" data-default="${item.default}">
@@ -116,7 +116,7 @@ function initMacSidebar() {
   sidebarNav.addEventListener('click', (e) => { if (e.target.closest('.nav-item, .nav-subitem')) setTimeout(() => setNav(false), 0); });
 
   sidebarNav.addEventListener('click', (e) => {
-    // A sidebar sub-item (a section's tab) → navigate straight to that tab.
+    // A sidebar sub-item (a section's tab) -> navigate straight to that tab.
     const subitem = e.target.closest('.nav-subitem');
     if (subitem) {
       Router.navigate(subitem.dataset.page, { tab: subitem.dataset.tab });
@@ -125,7 +125,7 @@ function initMacSidebar() {
     const item = e.target.closest('.nav-item');
     if (!item) return;
     const page = item.dataset.page;
-    // A section header → open its default tab (syncSidebarTabs then expands it).
+    // A section header -> open its default tab (syncSidebarTabs then expands it).
     if (item.classList.contains('nav-parent')) { Router.navigate(page, { tab: item.dataset.default }); return; }
     if (page) Router.navigate(page);
   });
@@ -159,7 +159,7 @@ function syncSidebarTabs() {
   nav.querySelectorAll('.nav-subitem').forEach(s => {
     const parent = nav.querySelector(`.nav-parent[data-page="${s.dataset.page}"]`);
     const parentOn = parent?.classList.contains('active');
-    // On a bare section URL (no ?tab), the page shows the default tab — highlight it to match.
+    // On a bare section URL (no ?tab), the page shows the default tab - highlight it to match.
     const effTab = tab || parent?.dataset.default;
     s.classList.toggle('active', !!parentOn && s.dataset.tab === effTab);
   });
@@ -218,7 +218,7 @@ function renderAuthScreen(mode, { tokenRequired = false } = {}) {
         ${isSetup && tokenRequired ? '<input class="input" id="auth-token" type="text" placeholder="Setup token" autocomplete="off" spellcheck="false" style="width:100%;margin-top:8px;font-family:var(--font-mono,monospace);"><div style="color:var(--text-muted,#8b949e);font-size:11px;margin-top:6px;text-align:left;">You are connecting from outside the local network. The setup token is printed in DockGate\'s log: <code>docker logs dockgate-control-panel</code></div>' : ''}
         <button class="btn btn-primary" type="submit" style="width:100%;margin-top:14px;">${btnLabel}</button>
         <div id="auth-error" style="color:var(--danger,#f85149);font-size:12px;margin-top:10px;min-height:14px;"></div>
-        ${isSetup ? '<div style="color:var(--text-muted,#8b949e);font-size:11px;margin-top:6px;">Minimum 8 characters · stored as a scrypt hash.</div>' : ''}
+        ${isSetup ? '<div style="color:var(--text-muted,#8b949e);font-size:11px;margin-top:6px;">Minimum 8 characters, stored as a scrypt hash.</div>' : ''}
       </form>
     </div>`;
   const err = root.querySelector('#auth-error');
@@ -243,7 +243,7 @@ function renderAuthScreen(mode, { tokenRequired = false } = {}) {
   setTimeout(() => { const i = root.querySelector('#auth-pw'); if (i) i.focus(); }, 50);
 }
 
-// Sidebar logout button (global — called from index.html).
+// Sidebar logout button (global - called from index.html).
 async function logout() {
   try { await API.post('/auth/logout'); } catch (e) {}
   location.reload();
@@ -259,7 +259,7 @@ async function boot() {
     const savedTheme = localStorage.getItem('dcc_theme') || 'dark';
     applyTheme(savedTheme);
 
-    // Auth gate — show setup/login first; stop boot here if not signed in.
+    // Auth gate - show setup/login first; stop boot here if not signed in.
     if (!(await ensureAuthenticated())) return;
 
     initMacSidebar();
@@ -283,9 +283,9 @@ async function boot() {
       try { startParams = JSON.parse(localStorage.getItem('dcc_last_params')) || {}; } catch(e){ startParams = {}; }
     }
     // Remap a legacy/bookmarked sub-route (e.g. #/containers) onto its consolidated section tab.
-    // Moved pages (#/containers, #/activity?tab=…) are rewritten inside Router.navigate (Router.resolve).
-    // replace:true → set the initial hash without adding a spurious history entry
-    // Settings first (one small request), so the first page already uses them (container layout, shell…).
+    // Moved pages (#/containers, #/activity?tab=...) are rewritten inside Router.navigate (Router.resolve).
+    // replace:true -> set the initial hash without adding a spurious history entry
+    // Settings first (one small request), so the first page already uses them (container layout, shell...).
     try { rememberSettings(await API.get('/meta/settings')); } catch (e) { /* pages fall back to defaults */ }
     await Router.navigate(startPage, startParams, { replace: true });
 
@@ -315,11 +315,11 @@ async function boot() {
       if (v.version) localStorage.setItem('dcc_app_version', v.version);
     }).catch(() => {});
 
-    // Auto update check — on boot and every 5m / Avtomatik update yoxlama — başlanğıcda və hər 5 dəqiqədə bir
+    // Auto update check - on boot and every 5m / Avtomatik update yoxlama - başlanğıcda və hər 5 dəqiqədə bir
     checkForUpdates();
     setInterval(() => checkForUpdates(), 5 * 60 * 1000);
 
-    // Global "deploy running" indicator on the Deploy nav item — so a running deploy is visible from any page.
+    // Global "deploy running" indicator on the Deploy nav item - so a running deploy is visible from any page.
     checkRunningDeploys();
     setInterval(checkRunningDeploys, 4000);
 
@@ -405,27 +405,27 @@ async function checkRunningDeploys() {
     const running = (jobs || []).filter(j => j.status === 'running').length;
     if (running) { badge.textContent = '▶ ' + running; badge.style.display = 'inline-flex'; }
     else badge.style.display = 'none';
-  } catch (e) { /* not logged in / no access — leave the badge hidden */ }
-  // Swarm jobs (move to Swarm, redeploy, add servers …): every Swarm page shows the bar to reopen them.
+  } catch (e) { /* not logged in / no access - leave the badge hidden */ }
+  // Swarm jobs (move to Swarm, redeploy, add servers ...): every Swarm page shows the bar to reopen them.
   try {
     const n = (((await API.get('/swarm/jobs')) || {}).jobs || []).filter(j => j.status === 'running').length;
     const b = document.getElementById('badge-swarm');
     if (b) { if (n) { b.textContent = '▶ ' + n; b.style.display = 'inline-flex'; } else b.style.display = 'none'; }
-  } catch (e) { /* no access — leave it hidden */ }
-  // The same for Edge agent jobs (install / update …) on Servers → Edge agent, where the job reopens.
+  } catch (e) { /* no access - leave it hidden */ }
+  // The same for Edge agent jobs (install / update ...) on Servers > Edge agent, where the job reopens.
   try {
     const n = ((await API.get('/agent/jobs')) || []).filter(j => j.status === 'running').length;
     for (const id of ['badge-infra', 'badge-infra-agent']) {
       const b = document.getElementById(id); if (!b) continue;
       if (n) { b.textContent = '▶ ' + n; b.style.display = 'inline-flex'; } else b.style.display = 'none';
     }
-  } catch (e) { /* no access — leave it hidden */ }
+  } catch (e) { /* no access - leave it hidden */ }
 }
 
 // ============ SERVER SWITCHER (Local + SSH) ============
 
 // Per-server access gate: a protected server can't be switched to without its access password (a 2nd
-// factor on top of the DockGate login). Prompt for it, then resolve to the entered string — or null if
+// factor on top of the DockGate login). Prompt for it, then resolve to the entered string - or null if
 // the user dismisses (X / backdrop / Cancel) so callers can abort cleanly.
 function promptAccessPassword(label) {
   return new Promise((resolve) => {
@@ -446,7 +446,7 @@ function promptAccessPassword(label) {
     okBtn.onclick = () => finish(input.value);
     footer.insertBefore(okBtn, footer.firstChild);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(input.value); } });
-    // X / backdrop / Cancel all just remove the overlay — observe that to resolve as a cancel.
+    // X / backdrop / Cancel all just remove the overlay - observe that to resolve as a cancel.
     const obs = new MutationObserver(() => { if (!root.contains(m.overlay)) finish(null); });
     obs.observe(root, { childList: true });
     setTimeout(() => input.focus(), 50);
@@ -515,7 +515,7 @@ async function initServerSwitcher() {
     // "Server Console" is always visible now (a standard nav item); no longer hidden until a
     // remote SSH server exists. The header server switcher below still tracks the active server.
 
-    // DOM API ilə qur — XSS qoruması (host/id user input-dur)
+    // DOM API ilə qur - XSS qoruması (host/id user input-dur)
     select.replaceChildren();
     for (const s of data.servers) {
       const opt = document.createElement('option');
@@ -528,12 +528,12 @@ async function initServerSwitcher() {
       select.appendChild(opt);
     }
 
-    // Header count badge — total registered servers (with a remote breakdown in the tooltip).
+    // Header count badge - total registered servers (with a remote breakdown in the tooltip).
     const countEl = document.getElementById('server-count');
     if (countEl) {
       const remotes = data.servers.filter(s => s.id !== 'local' && s.type !== 'local').length;
       countEl.textContent = String(data.servers.length);
-      countEl.title = `${data.servers.length} server(s) · ${remotes} remote`;
+      countEl.title = `${data.servers.length} server(s), ${remotes} remote`;
     }
 
     select.addEventListener('change', async (e) => {

@@ -1,6 +1,6 @@
-# Resources → Networks
+# Resources > Networks
 
-> **Where:** sidebar **Resources → Networks**
+> **Where:** sidebar **Resources > Networks**
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**).
 
@@ -8,13 +8,13 @@ Docker networks connect containers to each other. Containers on the same network
 
 ![Networks](images/networks.png)
 
-1. **Used by** — the containers on the network, and the Swarm services attached to it.
-2. **Create network** — see below.
+1. **Used by** - the containers on the network, and the Swarm services attached to it.
+2. **Create network** - see below.
 
 Labels next to the name:
-- **Docker default** — `bridge`, `host`, `none`. Docker makes them; they can not be removed.
-- **made by Swarm** — `ingress` (routes published ports to every server) and `docker_gwbridge`. Never removed here.
-- **internal** — containers on it have no route to the outside.
+- **Docker default** - `bridge`, `host`, `none`. Docker makes them; they can not be removed.
+- **made by Swarm** - `ingress` (routes published ports to every server) and `docker_gwbridge`. Never removed here.
+- **internal** - containers on it have no route to the outside.
 
 Only networks you created **and nothing uses** can be ticked and removed.
 
@@ -37,8 +37,8 @@ Only networks you created **and nothing uses** can be ticked and removed.
 | Action | What it does |
 |---|---|
 | **Inspect** | Settings and the connected containers. **Connect** a container to the network, or **Disconnect** one, from here |
-| **Clone…** | Opens the create form filled from this network. Pick another subnet so they do not overlap |
-| **Remove…** | Only for networks nothing uses |
+| **Clone...** | Opens the create form filled from this network. Pick another subnet so they do not overlap |
+| **Remove...** | Only for networks nothing uses |
 
 ## Errors and fixes
 
@@ -48,4 +48,4 @@ Only networks you created **and nothing uses** can be ticked and removed.
 | `network with name <name> already exists` | Name taken | Choose another name |
 | `error while removing network: network <name> has active endpoints` | Something still uses it | Disconnect the containers or stop the services first |
 | `No free subnet found` | Every suggested range is used | Type a subnet yourself |
-| `… is a pre-defined network and cannot be removed` | `bridge`, `host`, `none` | They always stay |
+| `... is a pre-defined network and cannot be removed` | `bridge`, `host`, `none` | They always stay |

@@ -1,5 +1,5 @@
 /**
- * Builds page — Docker Desktop style build management
+ * Builds page - Docker Desktop style build management
  * Build history, real-time monitoring, cache, builders
  * Module: Frontend builds page | Used via Router navigation
  */
@@ -28,7 +28,7 @@ Router.register('builds', async (content) => {
     });
     document.getElementById('new-build-btn')?.addEventListener('click', () => showNewBuildModal());
 
-    // "Build from this image" entry point (set by the Images page) → open the inline Dockerfile build prefilled
+    // "Build from this image" entry point (set by the Images page) -> open the inline Dockerfile build prefilled
     const buildFrom = sessionStorage.getItem('dgt_build_from');
     if (buildFrom) {
       sessionStorage.removeItem('dgt_build_from');
@@ -42,7 +42,7 @@ Router.register('builds', async (content) => {
     else if (activeTab === 'live') renderLiveBuild();
   }
 
-  // ============ BUILD HISTORY — Docker image build history ============
+  // ============ BUILD HISTORY - Docker image build history ============
   async function renderHistory() {
     const tabContent = document.getElementById('tab-content');
     try {
@@ -77,7 +77,7 @@ Router.register('builds', async (content) => {
       const visibleDockerIds = new Set(dockerHistory.map(d => d.imageId));
       for (const id of selectedDockerIds) { if (!visibleDockerIds.has(id)) selectedDockerIds.delete(id); }
 
-      // Docker image history — each image as a card, expandable to see layers
+      // Docker image history - each image as a card, expandable to see layers
       let historyHtml = '';
       if (dockerHistory.length > 0) {
         historyHtml = `
@@ -130,7 +130,7 @@ Router.register('builds', async (content) => {
                 <div class="build-status-icon build-status-success" style="width:28px;height:28px;font-size:12px;">✓</div>
                 <div style="flex:1;min-width:0;">
                   <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(img.tag)}</div>
-                  <div class="text-muted text-xs" style="margin-top:2px;">${img.layers} layers · ${formatBytes(img.size)} · ${timeAgo(img.created)}</div>
+                  <div class="text-muted text-xs" style="margin-top:2px;">${img.layers} layers, ${formatBytes(img.size)}, ${timeAgo(img.created)}</div>
                 </div>
               </div>
               <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
@@ -218,7 +218,7 @@ Router.register('builds', async (content) => {
               </div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:600;font-size:13px;">${escapeHtml(b.image_tag || 'untagged')}</div>
-                <div class="text-muted text-xs" style="margin-top:2px;">${escapeHtml(b.dockerfile || 'Dockerfile')} · ${b.started_at ? timeAgo(b.started_at) : ''}</div>
+                <div class="text-muted text-xs" style="margin-top:2px;">${escapeHtml(b.dockerfile || 'Dockerfile')}, ${b.started_at ? timeAgo(b.started_at) : ''}</div>
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
@@ -279,7 +279,7 @@ Router.register('builds', async (content) => {
     }
   }
 
-  // ============ BUILD DETAIL — Docker Desktop style ============
+  // ============ BUILD DETAIL - Docker Desktop style ============
   async function renderBuildDetail(tabContent, builds) {
     let build;
     try {
@@ -350,7 +350,7 @@ Router.register('builds', async (content) => {
     renderDetail();
   }
 
-  // ---- INFO TAB — Build timing, dependencies, configuration ----
+  // ---- INFO TAB - Build timing, dependencies, configuration ----
   function renderInfoTab(el, build) {
     const steps = countSteps(build.log || '');
     const logText = build.log || '';
@@ -359,7 +359,7 @@ Router.register('builds', async (content) => {
     const totalSteps = steps || 1;
     const cachePercent = steps > 0 ? Math.round((cacheHits / totalSteps) * 100) : 0;
 
-    // Dependencies — extract pulled images from logs
+    // Dependencies - extract pulled images from logs
     const pullMatches = logText.match(/(?:FROM|Pulling from)\s+([^\s\n]+)/gi) || [];
     const deps = [...new Set(pullMatches.map(m => m.replace(/^(FROM|Pulling from)\s+/i, '').trim()))];
 
@@ -375,7 +375,7 @@ Router.register('builds', async (content) => {
             <div class="summary-card">
               <div class="summary-card-icon blue">⏱</div>
               <div class="summary-card-content">
-                <div class="summary-card-value">${build.duration_ms ? formatDuration(build.duration_ms) : '—'}</div>
+                <div class="summary-card-value">${build.duration_ms ? formatDuration(build.duration_ms) : '-'}</div>
                 <div class="summary-card-label">Real time</div>
               </div>
             </div>
@@ -396,7 +396,7 @@ Router.register('builds', async (content) => {
             <div class="summary-card">
               <div class="summary-card-icon teal">${Icons.layers}</div>
               <div class="summary-card-content">
-                <div class="summary-card-value">${build.image_id ? build.image_id.replace('sha256:', '').substring(0, 12) : '—'}</div>
+                <div class="summary-card-value">${build.image_id ? build.image_id.replace('sha256:', '').substring(0, 12) : '-'}</div>
                 <div class="summary-card-label">Image ID</div>
               </div>
             </div>
@@ -439,7 +439,7 @@ Router.register('builds', async (content) => {
             </div>
             <div class="detail-item">
               <div class="detail-label">Context</div>
-              <div class="detail-value mono">${escapeHtml(build.context_url || '—')}</div>
+              <div class="detail-value mono">${escapeHtml(build.context_url || '-')}</div>
             </div>
             <div class="detail-item">
               <div class="detail-label">No Cache</div>
@@ -471,7 +471,7 @@ Router.register('builds', async (content) => {
             <div style="position:absolute;left:7px;top:8px;bottom:8px;width:2px;background:var(--border);"></div>
             <div style="display:flex;align-items:center;gap:10px;">
               <span style="width:12px;height:12px;border-radius:50%;background:var(--accent);position:relative;z-index:1;flex-shrink:0;"></span>
-              <span class="text-sm">Started: ${build.started_at ? formatTime(build.started_at) : '—'}</span>
+              <span class="text-sm">Started: ${build.started_at ? formatTime(build.started_at) : '-'}</span>
             </div>
             <div style="display:flex;align-items:center;gap:10px;">
               <span style="width:12px;height:12px;border-radius:50%;background:${build.status === 'success' ? 'var(--success)' : build.status === 'failed' ? 'var(--danger)' : 'var(--warning)'};position:relative;z-index:1;flex-shrink:0;"></span>
@@ -513,7 +513,7 @@ Router.register('builds', async (content) => {
     }
   }
 
-  // ---- LOGS TAB — collapsible steps + plain text toggle ----
+  // ---- LOGS TAB - collapsible steps + plain text toggle ----
   // Build log: "Full log" in the shared LogViewer (search, levels, step as source) or the collapsible "Steps" view.
   function buildLogRows(text) {
     let step = '';
@@ -553,7 +553,7 @@ Router.register('builds', async (content) => {
         LogViewer.mount(logContent, { key: 'build-log', fileName: `build-${build.image_tag || build.id || ''}`, limits: null, compact: true, height: '520px',
           retention: 'DockGate keeps the newest 100 builds', empty: 'This build has no log.', load: async () => ({ rows: buildLogRows(logText) }) });
       } else {
-        // List view — collapsible steps
+        // List view - collapsible steps
         if (steps.length === 0) {
           logContent.innerHTML = `<div class="build-log-viewer">${coloredLog}</div>`;
         } else {
@@ -605,7 +605,7 @@ Router.register('builds', async (content) => {
     renderLogView();
   }
 
-  // ---- HISTORY TAB — compare past builds ----
+  // ---- HISTORY TAB - compare past builds ----
   function renderHistoryTab(el, build, builds) {
     // Find builds with same image_tag
     const related = builds.filter(b => b.image_tag === build.image_tag);
@@ -621,7 +621,7 @@ Router.register('builds', async (content) => {
                   <div class="build-status-icon build-status-${b.status}" style="width:24px;height:24px;font-size:11px;">
                     ${b.status === 'success' ? '✓' : b.status === 'failed' ? '✗' : '●'}
                   </div>
-                  <span class="text-sm">${b.started_at ? formatTime(b.started_at) : '—'}</span>
+                  <span class="text-sm">${b.started_at ? formatTime(b.started_at) : '-'}</span>
                   ${b.id === build.id ? '<span class="badge badge-running" style="font-size:9px;">Current</span>' : ''}
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;">
@@ -644,7 +644,7 @@ Router.register('builds', async (content) => {
     });
   }
 
-  // ============ BUILD CACHE — grouped by image ============
+  // ============ BUILD CACHE - grouped by image ============
   async function renderCache() {
     const tabContent = document.getElementById('tab-content');
     try {
@@ -662,7 +662,7 @@ Router.register('builds', async (content) => {
 
       tabContent.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <span class="text-sm text-muted">${groups.length} group(s) · ${totalItems} layer(s) · ${formatBytes(totalSize)}</span>
+          <span class="text-sm text-muted">${groups.length} group(s), ${totalItems} layer(s), ${formatBytes(totalSize)}</span>
           <button class="btn btn-danger btn-sm" id="prune-cache">${Icons.trash} Prune Cache</button>
         </div>
         <div id="cache-groups"></div>
@@ -679,7 +679,7 @@ Router.register('builds', async (content) => {
               <span class="cache-chev" style="transition:transform 200ms;display:flex;">${Icons.chevronRight}</span>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</div>
-                ${g.matchedImage ? `<div class="text-muted text-xs" style="margin-top:2px;">${g.matchedImage.id} · ${formatBytes(g.matchedImage.size)}</div>` : ''}
+                ${g.matchedImage ? `<div class="text-muted text-xs" style="margin-top:2px;">${g.matchedImage.id}, ${formatBytes(g.matchedImage.size)}</div>` : ''}
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
@@ -693,7 +693,7 @@ Router.register('builds', async (content) => {
               <div style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border);font-size:11px;">
                 <span class="td-mono" style="min-width:110px;">${(b.ID||'').substring(0,15)}...</span>
                 <span class="badge ${b.Type==='regular'?'badge-running':'badge-created'}" style="font-size:9px;">${escapeHtml(b.Type||'?')}</span>
-                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);" title="${escapeHtml(b.Description||'')}">${escapeHtml(b.Description||'—')}</span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);" title="${escapeHtml(b.Description||'')}">${escapeHtml(b.Description||'-')}</span>
                 <span style="min-width:55px;text-align:right;">${formatBytes(b.Size||0)}</span>
                 <span style="min-width:50px;">${b.InUse?'<span class="text-accent">In Use</span>':'<span class="text-muted">Idle</span>'}</span>
               </div>
@@ -812,8 +812,8 @@ Router.register('builds', async (content) => {
         <div id="build-src-url" style="display:${inline ? 'none' : 'block'}">
           <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--text-secondary);">Context (Git repo URL or remote tarball)</label>
           <input type="text" id="build-context" class="input" placeholder="https://github.com/user/repo.git" style="width:100%;" />
-          <label style="display:block;margin:8px 0 4px;font-size:13px;color:var(--text-secondary);">Git token — only for a <strong>private</strong> repo (e.g. GitHub PAT with <code>repo</code> scope; not stored)</label>
-          <input type="password" id="build-gittoken" class="input" placeholder="optional — leave blank for public repos" autocomplete="new-password" style="width:100%;" />
+          <label style="display:block;margin:8px 0 4px;font-size:13px;color:var(--text-secondary);">Git token - only for a <strong>private</strong> repo (e.g. GitHub PAT with <code>repo</code> scope; not stored)</label>
+          <input type="password" id="build-gittoken" class="input" placeholder="optional - leave blank for public repos" autocomplete="new-password" style="width:100%;" />
           <label style="display:block;margin:8px 0 4px;font-size:13px;color:var(--text-secondary);">Dockerfile path</label>
           <input type="text" id="build-dockerfile" class="input" placeholder="Dockerfile" value="Dockerfile" style="width:100%;" />
         </div>
@@ -943,7 +943,7 @@ Router.register('builds', async (content) => {
     return steps;
   }
 
-  // Colorize build logs — Docker Desktop style
+  // Colorize build logs - Docker Desktop style
   function colorizeBuildLog(text) {
     if (!text) return '<span class="text-muted">No logs available</span>';
     return escapeHtml(text).split('\n').map(line => {

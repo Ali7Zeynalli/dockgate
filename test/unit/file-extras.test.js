@@ -1,5 +1,5 @@
 'use strict';
-// Tools → Files extras: Places, log tail (local), compose check, and the editor's syntax colouring.
+// Tools > Files extras: Places, log tail (local), compose check, and the editor's syntax colouring.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs'); const os = require('os'); const path = require('path'); const vm = require('vm');
@@ -49,7 +49,7 @@ test('nginx check is for remote servers only', async () => {
   assert.equal((await fx.checkNginx(A)).ok, null);
 });
 
-test('editor colouring: keys, strings, comments, numbers — and the text stays the same', () => {
+test('editor colouring: keys, strings, comments, numbers - and the text stays the same', () => {
   const ctx = { window: {}, escapeHtml: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../../public/js/file-editor.js'), 'utf8'), ctx);

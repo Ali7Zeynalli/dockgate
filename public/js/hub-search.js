@@ -5,7 +5,7 @@
 function openHubSearch(onPick) {
   const body = `
     <div style="display:flex;flex-direction:column;gap:8px">
-      <input class="input" id="hub-q" placeholder="Search Docker Hub… (e.g. nginx, postgres, grafana)" autocomplete="off" style="width:100%">
+      <input class="input" id="hub-q" placeholder="Search Docker Hub... (e.g. nginx, postgres, grafana)" autocomplete="off" style="width:100%">
       <div id="hub-results" style="max-height:50vh;overflow:auto;display:flex;flex-direction:column;gap:4px">
         <div class="text-muted text-sm" style="padding:8px">Type to search Docker Hub.</div>
       </div>
@@ -19,7 +19,7 @@ function openHubSearch(onPick) {
   async function run() {
     const term = q.value.trim();
     if (!term) { list.innerHTML = '<div class="text-muted text-sm" style="padding:8px">Type to search Docker Hub.</div>'; return; }
-    list.innerHTML = '<div class="text-muted text-sm" style="padding:8px">Searching…</div>';
+    list.innerHTML = '<div class="text-muted text-sm" style="padding:8px">Searching...</div>';
     try {
       const data = await API.get('/images/search?q=' + encodeURIComponent(term));
       const results = data.results || [];

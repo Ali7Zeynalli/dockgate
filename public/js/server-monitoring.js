@@ -1,7 +1,7 @@
-// Server Console → Monitoring: two views.
-//  Live (default)   — refreshes every few seconds: resource use, a rolling 15-minute trend, disks, processes,
+// Server Console > Monitoring: two views.
+//  Live (default)   - refreshes every few seconds: resource use, a rolling 15-minute trend, disks, processes,
 //                     open ports (host-monitor.js). Nothing of it is stored.
-//  Last 48 hours    — DockGate's own store: one sample a minute per server, shown as 5-minute averages with
+//  Last 48 hours    - DockGate's own store: one sample a minute per server, shown as 5-minute averages with
 //                     the peak of each bucket. The same with or without the Edge agent, kept across reboots.
 // The alerts that apply to this server follow either view.
 
@@ -20,12 +20,12 @@ async function renderServerMonitoring(serverId, container, range = 'live') {
   try { d = await API.get(`/monitoring/${encodeURIComponent(serverId)}/metrics?range=48h`); }
   catch (e) { view.innerHTML = `<div class="insight-card warning"><div>History is not available: ${escapeHtml(e.message)}</div></div>`; return; }
   const h = d.host || {}, mx = h.max || {}, ts = d.timestamps || [];
-  if (ts.length < 2) { view.innerHTML = '<div class="insight-card info"><div>No history yet. DockGate stores one sample a minute and keeps 48 hours — come back in a few minutes, or use Live.</div></div>'; return; }
+  if (ts.length < 2) { view.innerHTML = '<div class="insight-card info"><div>No history yet. DockGate stores one sample a minute and keeps 48 hours - come back in a few minutes, or use Live.</div></div>'; return; }
   const mbit = (arr) => (arr || []).map(v => (Number(v) || 0) * 8 / 1e6);
   const sum = (a, b) => a.map((v, i) => v + (b[i] || 0));
   const hrs = d.storedSince ? (Date.now() - d.storedSince) / 3600000 : 48;
   view.innerHTML = `
-    <div class="ui-sub" style="margin-bottom:8px">5-minute averages; the thin line is the peak inside each 5 minutes.${hrs < 47 ? ` Stored since ${escapeHtml(new Date(d.storedSince).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }))} (${hrs < 1 ? Math.max(1, Math.round(hrs * 60)) + ' min' : Math.round(hrs) + ' h'}) — the graphs fill up to 48 hours.` : ''}</div>
+    <div class="ui-sub" style="margin-bottom:8px">5-minute averages; the thin line is the peak inside each 5 minutes.${hrs < 47 ? ` Stored since ${escapeHtml(new Date(d.storedSince).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }))} (${hrs < 1 ? Math.max(1, Math.round(hrs * 60)) + ' min' : Math.round(hrs) + ' h'}) - the graphs fill up to 48 hours.` : ''}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px">
       ${monChart('CPU', '%', h.cpu, 100, 'var(--accent)', ts, mx.cpu)}
       ${monChart('Memory', '%', h.memPercent, 100, '#a78bfa', ts, mx.memPercent)}

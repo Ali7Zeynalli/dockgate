@@ -153,7 +153,7 @@ test('a job left "running" by a DockGate restart is closed when DockGate starts'
   assert.match(row.log, /run Update again/);
 });
 
-test('the agent build id changes with a file in a sub-folder of src/ (src/control/…)', () => {
+test('the agent build id changes with a file in a sub-folder of src/ (src/control/...)', () => {
   const fs2 = require('fs'), os2 = require('os'), path2 = require('path');
   const { buildInfo } = require('../../agent/build-info');
   const dir = fs2.mkdtempSync(path2.join(os2.tmpdir(), 'dg-bi-'));

@@ -1,5 +1,5 @@
 // Keep running on servers whose Edge agent does not run the rules (none, or an old one): DockGate does what the
-// agent would (agent/src/control/keep.js) while it is online — a stopped service is started, a removed one made
+// agent would (agent/src/control/keep.js) while it is online - a stopped service is started, a removed one made
 // again from its kept config. The kept config holds the environment, so it is stored encrypted.
 const { db, stmts } = require('./db');
 const { keepAlive } = require('../agent/src/control/keep');
@@ -10,7 +10,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS compose_keep_snap (
 )`);
 const secrets = require('./auth/secrets');
 const TICK_MS = 30000;
-const states = new Map(); // server → { short, snaps }
+const states = new Map(); // server -> { short, snaps }
 let timer = null, running = false;
 
 function clientFor(serverId) {
@@ -57,7 +57,7 @@ async function tick(now = Date.now()) {
       }
       if (res) {
         try { require('./audit').logAction({ sourceIp: 'keep-running', server: r.server_id, resourceType: 'compose', resourceId: r.project, resourceName: `${r.project}/${r.service}`, action: 'compose_keep_' + res.action, details: { ok: res.ok, reason: res.reason, container: res.container } }); } catch (e) { /* best effort */ }
-        await notify(r.server_id, `${res.ok ? '♻️' : '⚠️'} ${r.project}/${r.service}: ${res.reason}${res.container ? ` (${res.container})` : ''} — DockGate${res.ok ? '' : ' could not bring it back'}.`);
+        await notify(r.server_id, `${res.ok ? '♻️' : '⚠️'} ${r.project}/${r.service}: ${res.reason}${res.container ? ` (${res.container})` : ''} - DockGate${res.ok ? '' : ' could not bring it back'}.`);
       }
     }
   } catch (e) { console.warn('[compose-keep]', e.message); } finally { running = false; }

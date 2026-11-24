@@ -1,6 +1,6 @@
-# Deploy → App templates · Settings → Registry logins
+# Deploy > App templates, Settings > Registry logins
 
-> **Where:** sidebar **Deploy → App templates** and **Settings → Registry logins**
+> **Where:** sidebar **Deploy > App templates** and **Settings > Registry logins**
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**).
 
@@ -12,7 +12,7 @@ A catalog of more than 500 ready-made apps: databases, dashboards, media servers
 
 ![App templates](images/templates.png)
 
-1. **Search** by name, description or image, or filter by a chip (*Tools*, *Database*…) or a category.
+1. **Search** by name, description or image, or filter by a chip (*Tools*, *Database*...) or a category.
 2. **Open** an app to see its description, ports, volumes, environment variables and Docker Hub popularity.
 3. **Deploy**:
    - a **container** template opens **Run container** (see [Containers](containers.md#run-container)) with everything filled in;
@@ -22,7 +22,7 @@ Check the ports, passwords and volume paths before you deploy. Template defaults
 
 ### Template source
 
-**Source…** picks where the list comes from:
+**Source...** picks where the list comes from:
 
 | Source | What it is |
 |---|---|
@@ -36,7 +36,7 @@ If the source can not be read, DockGate shows the bundled list and says so. **�
 
 ## Registries
 
-> **Where:** sidebar **Settings → Registry logins**
+> **Where:** sidebar **Settings > Registry logins**
 
 Logins for private image registries: Docker Hub, GitHub (`ghcr.io`), GitLab, a self-hosted registry and so on. DockGate uses the matching login whenever it pulls or pushes an image, for containers, Compose, builds and Swarm.
 
@@ -57,13 +57,13 @@ The password is stored encrypted (AES-256-GCM) and never shown again. When you e
 | **Test login** | Logs in with the stored credential and shows the result in **Status** |
 | **N repos** | Browse the repositories DockGate knows for this registry: the ones it pushed, and the ones you add by name (registries do not list all repositories). **Tags** lists the tags of one, with digest and size |
 | **Edit** | Change the address, user or password |
-| **Remove…** | Deletes the login. Pulling private images from that registry stops working |
+| **Remove...** | Deletes the login. Pulling private images from that registry stops working |
 
 ## Errors and fixes
 
 | You see | Why | What to do |
 |---|---|---|
-| `Templates could not be loaded` / *bundled — remote failed: …* | The template URL is wrong or unreachable | Check the URL in **Source…**, or go back to the default |
+| `Templates could not be loaded` / *bundled - remote failed: ...* | The template URL is wrong or unreachable | Check the URL in **Source...**, or go back to the default |
 | `No compose content found for this template` | The template points to a compose file that is gone | Pick another template, or write the stack yourself |
 | `Only http(s) URLs are allowed` | A template source that is not `http://` or `https://` | Use a web URL |
 | `Registry address is required` / `Username is required` / `Password is required` | Empty field | Fill it in |

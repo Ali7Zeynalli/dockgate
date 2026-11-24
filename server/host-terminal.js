@@ -1,18 +1,18 @@
-// System (host) terminal — a shell on the SERVER you're managing, separate from the container exec terminal.
+// System (host) terminal - a shell on the SERVER you're managing, separate from the container exec terminal.
 // It always targets the ACTIVE server (the one selected in the header):
-//   - remote SSH host → a real interactive shell over ssh2 (DockGate already holds the key/password)
-//   - local          → a PTY shell inside the DockGate container (has the docker CLI + socket)
+//   - remote SSH host -> a real interactive shell over ssh2 (DockGate already holds the key/password)
+//   - local          -> a PTY shell inside the DockGate container (has the docker CLI + socket)
 //
 // Wire-protocol (socket.io), mirrors the container terminal but on its own channel so both can coexist:
-//   in:  hostterm:start {cols,rows} · hostterm:input <str> · hostterm:resize {cols,rows} · hostterm:stop
-//   out: hostterm:ready {target,host} · hostterm:data {data} · hostterm:end · hostterm:error {error}
+//   in:  hostterm:start {cols,rows}, hostterm:input <str>, hostterm:resize {cols,rows}, hostterm:stop
+//   out: hostterm:ready {target,host}, hostterm:data {data}, hostterm:end, hostterm:error {error}
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('ssh2');
 const { decrypt } = require('./auth/secrets');
 
 let pty = null;
-try { pty = require('node-pty'); } catch (e) { /* optional dep — local host terminal disabled if missing */ }
+try { pty = require('node-pty'); } catch (e) { /* optional dep - local host terminal disabled if missing */ }
 
 const paths = require('./paths');
 
@@ -68,7 +68,7 @@ function attachHostTerminal(socket, { dockerService, stmts, logAction }) {
         if (s.passphrase) opts.passphrase = decrypt(s.passphrase);
       } else if (s.password) {
         opts.password = decrypt(s.password);
-      } // else: agent — left to ssh2 defaults
+      } // else: agent - left to ssh2 defaults
 
       const conn = new Client();
       conn.on('ready', () => {

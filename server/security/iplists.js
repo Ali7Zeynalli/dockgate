@@ -37,7 +37,7 @@ function normalizeSource(s) {
 const fmt = (a) => (a.kind() === 'ipv6' ? (a.isIPv4MappedAddress() ? a.toIPv4Address().toString() : a.toRFC5952String()) : a.toString());
 const isV6 = (s) => String(s).includes(':');
 
-/** Parse pasted text (lines, spaces, commas) → { valid: [...canonical], invalid: [...raw] } (deduplicated). */
+/** Parse pasted text (lines, spaces, commas) -> { valid: [...canonical], invalid: [...raw] } (deduplicated). */
 function parseSourceText(text) {
   const valid = [], invalid = [];
   for (const raw of String(text || '').split(/[\s,;]+/).filter(Boolean)) {
@@ -65,13 +65,13 @@ function sourceContains(source, ip) {
 // Defaults so the lists work before the first fetch (Cloudflare and GitHub publish these ranges).
 const OFFICIAL = {
   cloudflare: {
-    name: 'Cloudflare', source: 'cloudflare.com/ips-v4 · /ips-v6',
+    name: 'Cloudflare', source: 'cloudflare.com/ips-v4, /ips-v6',
     urls: ['https://www.cloudflare.com/ips-v4', 'https://www.cloudflare.com/ips-v6'],
     parse: (bodies) => bodies.join('\n'),
     defaults: ['173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13', '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22', '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32', '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32'],
   },
   github: {
-    name: 'GitHub webhooks', source: 'api.github.com/meta → hooks',
+    name: 'GitHub webhooks', source: 'api.github.com/meta -> hooks',
     urls: ['https://api.github.com/meta'],
     parse: (bodies) => (JSON.parse(bodies[0]).hooks || []).join('\n'),
     defaults: ['192.30.252.0/22', '185.199.108.0/22', '140.82.112.0/20', '143.55.64.0/20', '2a0a:a440::/29', '2606:50c0::/32'],
@@ -151,7 +151,7 @@ function fetchText(url) {
   });
 }
 
-/** Fetch an official list's current version → { current, upstream, add, remove } (nothing saved). */
+/** Fetch an official list's current version -> { current, upstream, add, remove } (nothing saved). */
 async function checkOfficial(id, fetcher = fetchText) {
   const d = OFFICIAL[id];
   if (!d) throw httpError(400, 'Only official lists can be checked for updates');
@@ -159,7 +159,7 @@ async function checkOfficial(id, fetcher = fetchText) {
   try { bodies = await Promise.all(d.urls.map(u => fetcher(u))); }
   catch (e) { throw httpError(502, `Could not fetch the ${d.name} list: ${e.message}`); }
   const { valid } = parseSourceText(d.parse(bodies));
-  if (!valid.length) throw httpError(502, `The ${d.name} list came back empty — nothing changed`);
+  if (!valid.length) throw httpError(502, `The ${d.name} list came back empty - nothing changed`);
   const cur = get(id).items;
   return { id, upstream: valid, add: valid.filter(x => !cur.includes(x)), remove: cur.filter(x => !valid.includes(x)) };
 }
@@ -175,7 +175,7 @@ function saveOfficial(id, items) {
 
 // ---------------------------------------------------------------- port sources
 /**
- * Raw sources on a port (['any'] or addresses) → display sources: '@<list>' where every address of a
+ * Raw sources on a port (['any'] or addresses) -> display sources: '@<list>' where every address of a
  * list is present (largest list first), the rest as addresses. outdated: lists whose PREVIOUS version
  * is what the port holds. dockgateIp turns that one address into '@dockgate'.
  */
@@ -193,7 +193,7 @@ function inferSources(raw, lists, dockgateIp) {
   return { sources: [...out, ...rest], outdated };
 }
 
-/** Display sources → addresses ([{ src, tag }]); tag names the list (UFW comment) or 'manual'. */
+/** Display sources -> addresses ([{ src, tag }]); tag names the list (UFW comment) or 'manual'. */
 function expandSources(sources, lists, dockgateIp) {
   const byId = new Map(lists.map(l => [l.id, l]));
   const out = [], seen = new Set();
@@ -204,7 +204,7 @@ function expandSources(sources, lists, dockgateIp) {
     else if (s[0] === '@') { const l = byId.get(s.slice(1)); if (!l) throw httpError(400, `Unknown list ${s.slice(1)}`); l.items.forEach(x => push(x, l.id)); }
     else { const n = normalizeSource(s); if (!n) throw httpError(400, `Not an IP address or range: ${s}`); push(n, 'manual'); }
   }
-  if (seen.has('any') && out.length > 1) throw httpError(400, '"Anyone" already includes every address — remove the other sources');
+  if (seen.has('any') && out.length > 1) throw httpError(400, '"Anyone" already includes every address - remove the other sources');
   return out;
 }
 

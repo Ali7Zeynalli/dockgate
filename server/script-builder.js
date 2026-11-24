@@ -1,9 +1,9 @@
 // Script Builder: a script is a list of steps chosen from blocks; DockGate writes the shell script from them.
-// No step carries raw shell except "Custom command" — every value goes through shq() or a strict pattern, so
+// No step carries raw shell except "Custom command" - every value goes through shq() or a strict pattern, so
 // a name or path can not break out of its place. Pure (unit tested); server/scripts.js stores and runs them.
 //   BLOCKS            the blocks the page offers, with their fields
-//   build(spec)       { name, steps:[{ type, ...fields, onFail }] } → the .sh text
-//   TEMPLATES         ready-made scripts (daily DB backup, weekly Docker cleanup, restart when a site is down …)
+//   build(spec)       { name, steps:[{ type, ...fields, onFail }] } -> the .sh text
+//   TEMPLATES         ready-made scripts (daily DB backup, weekly Docker cleanup, restart when a site is down ...)
 const shq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const bad = (m) => Object.assign(new Error(m), { statusCode: 400 });
 
@@ -30,8 +30,8 @@ const BLOCKS = {
   compose_redeploy: { label: 'Compose: pull and redeploy', group: 'Docker', desc: 'docker compose pull && up -d in the project folder', fields: [['dir', 'Project folder', 'text', '/srv/app', true]] },
   http_check: { label: 'Check a URL', group: 'Checks', desc: 'Fails when the status is not the expected one', fields: [['url', 'URL', 'text', 'https://example.com/health', true], ['expect', 'Expected status', 'text', '200', false]] },
   disk_check: { label: 'Check disk space', group: 'Checks', desc: 'Fails when the disk is fuller than the limit', fields: [['path', 'Disk of', 'text', '/', true], ['max', 'At most (%)', 'number', '85', true]] },
-  notify: { label: 'Send a message', group: 'Notify', desc: 'POST to a webhook (Slack, Discord, ntfy, Teams…)', fields: [['url', 'Webhook URL', 'text', 'https://ntfy.sh/my-topic', true], ['text', 'Message', 'text', 'Backup of $(hostname) done', true]] },
-  os_update: { label: 'Update the system', group: 'System', root: true, desc: 'apt / dnf: security updates only, or everything. Services → Auto updates already does daily security updates — this adds a full update on your schedule',
+  notify: { label: 'Send a message', group: 'Notify', desc: 'POST to a webhook (Slack, Discord, ntfy, Teams...)', fields: [['url', 'Webhook URL', 'text', 'https://ntfy.sh/my-topic', true], ['text', 'Message', 'text', 'Backup of $(hostname) done', true]] },
+  os_update: { label: 'Update the system', group: 'System', root: true, desc: 'apt / dnf: security updates only, or everything. Services > Auto updates already does daily security updates - this adds a full update on your schedule',
     fields: [['mode', 'Which updates', 'select', ['security', 'all'], true], ['autoremove', 'Remove unused packages', 'select', ['yes', 'no'], false]] },
   reboot_if_needed: { label: 'Reboot if an update needs it', group: 'System', root: true, desc: 'Only when the system asks for it (/var/run/reboot-required or needs-restarting), optionally only in a time window',
     fields: [['window', 'Only between (server time)', 'text', '03:00-05:00 (empty = any time)', false], ['delay', 'In (minutes)', 'number', '1', false]] },
@@ -39,16 +39,16 @@ const BLOCKS = {
   journal_vacuum: { label: 'Shrink the system journal', group: 'System', root: true, desc: 'journalctl --vacuum-size, and old rotated logs in /var/log', fields: [['size', 'Keep at most', 'text', '500M', true], ['days', 'Delete rotated logs older than (days)', 'number', '30 (empty = keep)', false]] },
   wait_healthy: { label: 'Wait until a container is healthy', group: 'Docker', desc: 'Until its health check says healthy (or it runs, without a health check)', fields: [['container', 'Container', 'text', 'web', true], ['timeout', 'At most (seconds)', 'number', '120', false]] },
   git_pull: { label: 'Git pull', group: 'Docker', desc: 'Fast-forward a checkout (fails on local changes)', fields: [['dir', 'Folder', 'text', '/srv/app', true], ['branch', 'Branch', 'text', 'main (empty = current)', false]] },
-  db_maintenance: { label: 'Database maintenance', group: 'Backup', desc: 'Postgres VACUUM ANALYZE (vacuumdb) · MySQL / MariaDB OPTIMIZE (mysqlcheck) in its container',
+  db_maintenance: { label: 'Database maintenance', group: 'Backup', desc: 'Postgres VACUUM ANALYZE (vacuumdb), MySQL / MariaDB OPTIMIZE (mysqlcheck) in its container',
     fields: [['container', 'Container', 'text', 'postgres', true], ['engine', 'Database', 'select', ['postgres', 'mysql', 'mariadb'], true], ['database', 'Database name', 'text', 'app (empty = all)', false], ['user', 'User', 'text', 'postgres / root', false]] },
   port_check: { label: 'Check a port', group: 'Checks', desc: 'Fails when host:port does not accept a connection', fields: [['host', 'Host', 'text', '127.0.0.1', true], ['port', 'Port', 'number', '5432', true]] },
   mem_check: { label: 'Check memory', group: 'Checks', desc: 'Fails when more memory is used than the limit', fields: [['max', 'At most (%)', 'number', '90', true]] },
   load_check: { label: 'Check CPU load', group: 'Checks', desc: 'Fails when the 5-minute load per CPU is above the limit', fields: [['max', 'At most (load per CPU)', 'text', '1.5', true]] },
   ssl_check: { label: 'Check an SSL certificate', group: 'Checks', desc: 'Fails when it expires in fewer days than the limit', fields: [['domain', 'Domain', 'text', 'example.com', true], ['days', 'At least (days left)', 'number', '14', true]] },
   top_containers: { label: 'Report the busiest containers', group: 'Checks', desc: 'Prints the containers using the most memory / CPU (docker stats)', fields: [['count', 'How many', 'number', '5', false]] },
-  telegram: { label: 'Telegram message', group: 'Notify', desc: 'With a bot token and chat ID (kept in the script file on the server)', fields: [['token', 'Bot token', 'text', '123456:ABC…', true], ['chat', 'Chat ID', 'text', '-1001234567890 or @channel', true], ['text', 'Message', 'text', '$(hostname): $SCRIPT_STATUS', true]] },
+  telegram: { label: 'Telegram message', group: 'Notify', desc: 'With a bot token and chat ID (kept in the script file on the server)', fields: [['token', 'Bot token', 'text', '123456:ABC...', true], ['chat', 'Chat ID', 'text', '-1001234567890 or @channel', true], ['text', 'Message', 'text', '$(hostname): $SCRIPT_STATUS', true]] },
   sleep: { label: 'Wait', group: 'Flow', desc: '', fields: [['seconds', 'Seconds', 'number', '30', true]] },
-  custom: { label: 'Custom command', group: 'Flow', desc: 'Any shell — runs as written', fields: [['command', 'Command', 'textarea', 'systemctl reload nginx', true]] },
+  custom: { label: 'Custom command', group: 'Flow', desc: 'Any shell - runs as written', fields: [['command', 'Command', 'textarea', 'systemctl reload nginx', true]] },
 };
 
 function stepShell(s) {
@@ -58,21 +58,21 @@ function stepShell(s) {
       const db = String(s.database || '').trim(); if (db && !/^[\w.-]{1,64}$/.test(db)) throw bad('Database name');
       const user = String(s.user || '').trim(); if (user && !/^[\w.-]{1,64}$/.test(user)) throw bad('User');
       const file = `f=${shq(`${dir}/${c}-${db || 'all'}-`)}"$(date +%F-%H%M).sql.gz"`;
-      if (s.engine === 'postgres') return `mkdir -p ${shq(dir)}\n${file}\ndocker exec ${shq(c)} ${db ? 'pg_dump' : 'pg_dumpall'} -U ${shq(user || 'postgres')}${db ? ` ${shq(db)}` : ''} | gzip > "$f"\ntest -s "$f"\necho "→ $f"`;
+      if (s.engine === 'postgres') return `mkdir -p ${shq(dir)}\n${file}\ndocker exec ${shq(c)} ${db ? 'pg_dump' : 'pg_dumpall'} -U ${shq(user || 'postgres')}${db ? ` ${shq(db)}` : ''} | gzip > "$f"\ntest -s "$f"\necho " -> $f"`;
       if (s.engine === 'mysql' || s.engine === 'mariadb') {
         const tool = s.engine === 'mariadb' ? 'mariadb-dump' : 'mysqldump';
-        return `mkdir -p ${shq(dir)}\n${file}\ndocker exec ${shq(c)} sh -c ${shq(`exec ${tool} -u${user || 'root'} -p"$MYSQL_ROOT_PASSWORD$MARIADB_ROOT_PASSWORD" --single-transaction ${db ? db : '--all-databases'}`)} | gzip > "$f"\ntest -s "$f"\necho "→ $f"`;
+        return `mkdir -p ${shq(dir)}\n${file}\ndocker exec ${shq(c)} sh -c ${shq(`exec ${tool} -u${user || 'root'} -p"$MYSQL_ROOT_PASSWORD$MARIADB_ROOT_PASSWORD" --single-transaction ${db ? db : '--all-databases'}`)} | gzip > "$f"\ntest -s "$f"\necho " -> $f"`;
       }
       throw bad('Database: postgres, mysql or mariadb');
     }
     case 'volume_backup': {
       const v = need(s.volume, CONTAINER_RE, 'Volume name'), dir = need(s.dir, PATH_RE, 'Folder: an absolute path');
-      return `mkdir -p ${shq(dir)}\nf=${shq(v + '-')}"$(date +%F-%H%M).tar.gz"\ndocker run --rm -v ${shq(v + ':/v:ro')} -v ${shq(dir + ':/b')} alpine tar czf "/b/$f" -C /v .\necho "→ ${dir}/$f"`;
+      return `mkdir -p ${shq(dir)}\nf=${shq(v + '-')}"$(date +%F-%H%M).tar.gz"\ndocker run --rm -v ${shq(v + ':/v:ro')} -v ${shq(dir + ':/b')} alpine tar czf "/b/$f" -C /v .\necho " -> ${dir}/$f"`;
     }
     case 'folder_backup': {
       const src = need(s.src, PATH_RE, 'Folder: an absolute path'), dir = need(s.dir, PATH_RE, 'Into folder: an absolute path');
       const base = src.replace(/\/+$/, '').split('/').pop() || 'root';
-      return `mkdir -p ${shq(dir)}\nf=${shq(`${dir}/${base}-`)}"$(date +%F-%H%M).tar.gz"\ntar czf "$f" -C ${shq(src)} .\necho "→ $f"`;
+      return `mkdir -p ${shq(dir)}\nf=${shq(`${dir}/${base}-`)}"$(date +%F-%H%M).tar.gz"\ntar czf "$f" -C ${shq(src)} .\necho " -> $f"`;
     }
     case 'copy_remote': {
       const src = need(s.src, PATH_RE, 'From: an absolute path'), dest = need(s.dest, DEST_RE, 'To: user@host:/path or /path');
@@ -135,7 +135,7 @@ function stepShell(s) {
         const m = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/.exec(w);
         if (!m || +m[1] > 23 || +m[3] > 23 || +m[2] > 59 || +m[4] > 59) throw bad('Only between: e.g. 03:00-05:00');
         const a = +m[1] * 60 + +m[2], b = +m[3] * 60 + +m[4];
-        win = `now=$(( 10#$(date +%H) * 60 + 10#$(date +%M) ))\nif ${a <= b ? `[ $now -lt ${a} ] || [ $now -ge ${b} ]` : `[ $now -lt ${a} ] && [ $now -ge ${b} ]`}; then echo "A reboot is needed, but it is outside ${w} — next time"; exit 0; fi\n`;
+        win = `now=$(( 10#$(date +%H) * 60 + 10#$(date +%M) ))\nif ${a <= b ? `[ $now -lt ${a} ] || [ $now -ge ${b} ]` : `[ $now -lt ${a} ] && [ $now -ge ${b} ]`}; then echo "A reboot is needed, but it is outside ${w} - next time"; exit 0; fi\n`;
       }
       return `need=0\n[ -f /var/run/reboot-required ] && need=1\nif command -v needs-restarting >/dev/null 2>&1 && ! needs-restarting -r >/dev/null 2>&1; then need=1; fi\nif [ $need = 0 ]; then echo "No reboot needed"; exit 0; fi\n${win}echo "Rebooting in ${delay} min"\nshutdown -r +${delay} 'DockGate script: reboot after updates'`;
     }
@@ -190,7 +190,7 @@ function stepShell(s) {
       return `docker stats --no-stream --format '{{.MemPerc}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.Name}}' | sort -rn | head -${n} | awk -F'\t' 'BEGIN { print "MEM%\tCPU%\tUSAGE\tNAME" } { print }'`;
     }
     case 'telegram': {
-      const tok = need(s.token, /^\d{5,12}:[\w-]{30,60}$/, 'Bot token: like 123456:ABC… (from @BotFather)');
+      const tok = need(s.token, /^\d{5,12}:[\w-]{30,60}$/, 'Bot token: like 123456:ABC... (from @BotFather)');
       const chat = need(s.chat, /^-?\d{3,20}$|^@[\w]{4,64}$/, 'Chat ID: a number or @channel');
       const text = String(s.text || '').replace(/[\r\n]+/g, ' ').slice(0, 500);
       if (!text) throw bad('Message is required');
@@ -211,7 +211,7 @@ function build(spec) {
   if (steps.length > 40) throw bad('At most 40 steps');
   const out = [
     '#!/usr/bin/env bash',
-    `# ${name} — made with DockGate Script Builder (Server Console → Scripts). Edit it there: changes made here are replaced.`,
+    `# ${name} - made with DockGate Script Builder (Server Console > Scripts). Edit it there: changes made here are replaced.`,
     'set -uo pipefail',
     `SCRIPT_NAME=${shq(name)}`,
     'SCRIPT_STATUS=ok',
@@ -230,7 +230,7 @@ function build(spec) {
     if (onlyIfFailed) out.push(`if [ "$anyfail" != 1 ]; then echo; echo "– ${i + 1}. ${label}: skipped (nothing failed)"; else`);
     // A standalone subshell: set -e works there (inside an "if" condition bash would ignore it).
     out.push(`${ind}step "${i + 1}. ${label}"`, `${ind}(`, `${ind}  set -e`, body, `${ind})`, `${ind}if [ $? -ne 0 ]; then`);
-    out.push(onFail === 'stop' ? `${ind}  echo "✗ step ${i + 1} failed — stopping"; SCRIPT_STATUS=failed; exit 1` : `${ind}  echo "✗ step ${i + 1} failed — going on"; failed=$((failed+1)); anyfail=1; SCRIPT_STATUS=failed`);
+    out.push(onFail === 'stop' ? `${ind}  echo "✗ step ${i + 1} failed - stopping"; SCRIPT_STATUS=failed; exit 1` : `${ind}  echo "✗ step ${i + 1} failed - going on"; failed=$((failed+1)); anyfail=1; SCRIPT_STATUS=failed`);
     // a fix that worked: the earlier failure is handled
     if (onlyIfFailed) out.push(`${ind}else`, `${ind}  echo "✓ fixed"; failed=0; SCRIPT_STATUS=fixed`);
     out.push(`${ind}fi`);
@@ -241,7 +241,7 @@ function build(spec) {
   return out.join('\n');
 }
 
-// Ready-made scripts. params: what the page asks first ([key, label, kind, default, [[step, field], …]]);
+// Ready-made scripts. params: what the page asks first ([key, label, kind, default, [[step, field], ...]]);
 // kind 'container' / 'volume' / 'compose' offer the server's own names. The steps can be changed afterwards.
 const P = (key, label, kind, def, targets) => ({ key, label, kind, def, targets });
 const TEMPLATES = [

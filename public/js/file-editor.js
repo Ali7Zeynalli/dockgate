@@ -1,9 +1,9 @@
-// A safe text editor for server files (Tools → Files; later containers and volumes too).
-//   · line numbers, Ctrl/Cmd+S saves, Esc closes — asking first when something is not saved
-//   · Save shows what changes (a line diff) before it writes; the server keeps the earlier version (Versions)
-//   · a file the SSH user may not read or write can be opened / saved with sudo
-//   · a file changed on the server after it was opened is not overwritten silently
-// FileEditor.open({ path, name, onSaved, actions: [{ label, title, run(api) }] }) — api.insert(text) at the cursor
+// A safe text editor for server files (Tools > Files; later containers and volumes too).
+//  , line numbers, Ctrl/Cmd+S saves, Esc closes - asking first when something is not saved
+//  , Save shows what changes (a line diff) before it writes; the server keeps the earlier version (Versions)
+//  , a file the SSH user may not read or write can be opened / saved with sudo
+//  , a file changed on the server after it was opened is not overwritten silently
+// FileEditor.open({ path, name, onSaved, actions: [{ label, title, run(api) }] }) - api.insert(text) at the cursor
 window.FileEditor = (() => {
   const esc = (s) => escapeHtml(String(s ?? ''));
 
@@ -30,7 +30,7 @@ window.FileEditor = (() => {
   function diffHtml(d) {
     const add = d.filter(x => x.t === '+').length, del = d.filter(x => x.t === '-').length;
     const rows = d.slice(0, 2000).map(x => `<div style="white-space:pre;${x.t === '+' ? 'background:rgba(16,185,129,.15);color:var(--success)' : x.t === '-' ? 'background:rgba(239,68,68,.15);color:var(--danger)' : 'opacity:.6'}">${x.t} ${esc(x.s)}</div>`).join('');
-    return { add, del, html: `<div class="td-mono" style="font-size:12px;max-height:50vh;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-primary)">${rows || '<span class="ui-sub">No change</span>'}${d.length > 2000 ? '<div class="ui-sub">… more</div>' : ''}</div>` };
+    return { add, del, html: `<div class="td-mono" style="font-size:12px;max-height:50vh;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-primary)">${rows || '<span class="ui-sub">No change</span>'}${d.length > 2000 ? '<div class="ui-sub">... more</div>' : ''}</div>` };
   }
   const ask = (title, body, buttons) => new Promise((resolve) => {
     let done = false; const finish = (v) => { if (!done) { done = true; resolve(v); } };
@@ -57,7 +57,7 @@ window.FileEditor = (() => {
     shell: [[/#.*/y, 'c'], [/"(?:[^"\\]|\\.)*"|'[^']*'/y, 's'], [/^\s*(FROM|RUN|CMD|COPY|ADD|ENV|ARG|EXPOSE|WORKDIR|ENTRYPOINT|USER|VOLUME|LABEL|HEALTHCHECK|SHELL|ONBUILD|STOPSIGNAL)\b/y, 'k'], [/\$\{?[a-zA-Z_]\w*\}?/y, 'b'], [/\b(if|then|else|fi|for|do|done|case|esac|while|function|export|local|return|in)\b/y, 'k']],
     conf: [[/[#;].*/y, 'c'], [/^\s*\[[^\]]*\]/y, 'k'], [/^\s*[\w.\-]+(?=\s*[=:])/y, 'k'], [/"(?:[^"\\]|\\.)*"|'[^']*'/y, 's'], [/\$\{?[a-zA-Z_]\w*\}?/y, 'b'], [/\b(true|false|yes|no|on|off)\b/yi, 'b'], [/-?\b\d+(\.\d+)?\b/y, 'n']],
   };
-  /** One line → HTML with <span class="hl-x"> tokens. Rules anchored with ^ only match at the line start. */
+  /** One line > HTML with <span class="hl-x"> tokens. Rules anchored with ^ only match at the line start. */
   function hlLine(line, rules) {
     let out = '', i = 0, plain = '';
     while (i < line.length) {
@@ -88,7 +88,7 @@ window.FileEditor = (() => {
       if (!ok) return;
       try { data = await API.get(`/files/read?path=${encodeURIComponent(path)}&sudo=1`); sudo = true; } catch (e2) { showToast(e2.message, 'error', 9000); return; }
     }
-    if (data.isBinary) { showToast(`"${name}" is binary or larger than 2 MB — it can not be edited here. Download it instead.`, 'warning', 8000); return; }
+    if (data.isBinary) { showToast(`"${name}" is binary or larger than 2 MB - it can not be edited here. Download it instead.`, 'warning', 8000); return; }
     let original = data.content || '', baseMtime = data.mtime || null;
 
     const ov = document.createElement('div');
@@ -102,7 +102,7 @@ window.FileEditor = (() => {
         <button class="btn btn-xs btn-secondary" data-versions title="Earlier versions saved from here">Versions</button>
         <button class="btn-icon modal-close" data-close title="Close (Esc)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
-      <div class="text-xs text-muted td-mono" style="padding:0 20px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(path)} · ${formatBytes(data.size || 0)}</div>
+      <div class="text-xs text-muted td-mono" style="padding:0 20px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(path)}, ${formatBytes(data.size || 0)}</div>
       <div style="flex:1;min-height:0;display:flex;margin:0 20px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg-primary)">
         <pre data-gutter class="td-mono" style="margin:0;padding:10px 8px;text-align:right;color:var(--text-muted);opacity:.6;user-select:none;overflow:hidden;font-size:12.5px;line-height:1.5;min-width:44px;border-right:1px solid var(--border)"></pre>
         <div style="position:relative;flex:1;min-width:0">
@@ -111,10 +111,10 @@ window.FileEditor = (() => {
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;padding:12px 20px">
-        <span class="ui-sub" style="flex:1">Ctrl+S saves · Esc closes · the earlier content is kept under Versions</span>
+        <span class="ui-sub" style="flex:1">Ctrl+S saves, Esc closes, the earlier content is kept under Versions</span>
         ${isCompose(name) || sysKind(path) ? '<button class="btn btn-secondary" data-check title="Check what is in the editor with the tool that owns this file">Check</button>' : ''}
         <button class="btn btn-secondary" data-cancel>Close</button>
-        <button class="btn btn-primary" data-save>Save…</button>
+        <button class="btn btn-primary" data-save>Save...</button>
       </div></div>`;
     document.body.appendChild(ov);
     const ta = ov.querySelector('[data-text]'), gutter = ov.querySelector('[data-gutter]'), dot = ov.querySelector('[data-dirty]'), hlEl = ov.querySelector('[data-hl]');
@@ -146,7 +146,7 @@ window.FileEditor = (() => {
         const before = original;
         const r = await API.post('/files/write', body);
         original = ta.value; baseMtime = r.mtime || baseMtime; mark();
-        showToast(`Saved${r.versionKept ? ' — the earlier version is under Versions' : ''}`);
+        showToast(`Saved${r.versionKept ? ' - the earlier version is under Versions' : ''}`);
         if (onSaved) onSaved();
         if (isNginx(path)) await nginxCheck(before);
         return true;
@@ -169,12 +169,12 @@ window.FileEditor = (() => {
     const nginxCheck = async (before) => {
       let r; try { r = await API.post('/files/check', { path, kind: 'nginx' }); } catch (e) { return; }
       if (r.ok === null) return;
-      if (r.ok) { showToast('nginx -t: the configuration is valid — reload nginx to use it', 'success', 7000); return; }
+      if (r.ok) { showToast('nginx -t: the configuration is valid - reload nginx to use it', 'success', 7000); return; }
       const v = await ask('nginx -t failed', `<div class="text-sm" style="margin-bottom:8px">The file is saved, but nginx would not accept the configuration now. nginx keeps running with the old one until it is reloaded.</div><pre class="td-mono" style="white-space:pre-wrap;font-size:12px;max-height:40vh;overflow:auto;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:8px;margin:0">${esc(r.output)}</pre>`, [{ label: 'Keep editing', className: 'btn btn-secondary', value: false }, { label: 'Put the previous content back', className: 'btn btn-danger', value: true }]);
       if (v) { const mine = ta.value; ta.value = before; lines(); const ok = await write(true); if (!ok) { ta.value = mine; lines(); } else showToast('The previous content is back; your edit is under Versions', 'info', 8000); mark(); }
     };
     const checkHtml = (r) => r.ok === null ? `<div class="ui-sub" style="margin-bottom:8px">${esc(r.tool)}: ${esc(r.output)}</div>`
-      : `<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;border:1px solid ${r.ok ? 'var(--success)' : 'var(--danger)'};background:${r.ok ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)'}"><b style="color:${r.ok ? 'var(--success)' : 'var(--danger)'}">${r.ok ? '✓' : '✗'} ${esc(r.tool)}</b>${r.ok ? ' — valid' : `<pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:6px 0 0;max-height:24vh;overflow:auto">${esc(r.output)}</pre>`}</div>`;
+      : `<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;border:1px solid ${r.ok ? 'var(--success)' : 'var(--danger)'};background:${r.ok ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)'}"><b style="color:${r.ok ? 'var(--success)' : 'var(--danger)'}">${r.ok ? '✓' : '✗'} ${esc(r.tool)}</b>${r.ok ? ' - valid' : `<pre class="td-mono" style="white-space:pre-wrap;font-size:12px;margin:6px 0 0;max-height:24vh;overflow:auto">${esc(r.output)}</pre>`}</div>`;
     const runChecks = async () => {
       if (/\.json$/i.test(name)) { try { JSON.parse(ta.value); return { ok: true, tool: 'JSON', output: '' }; } catch (e) { return { ok: false, tool: 'JSON', output: e.message }; } }
       if (isCompose(name)) { try { return await API.post('/files/check', { path, content: ta.value, kind: 'compose' }); } catch (e) { return { ok: null, tool: 'docker compose config', output: e.message }; } }
@@ -183,7 +183,7 @@ window.FileEditor = (() => {
       return null;
     };
     const check = async () => {
-      const b = ov.querySelector('[data-check]'); if (b) { b.disabled = true; b.textContent = 'Checking…'; }
+      const b = ov.querySelector('[data-check]'); if (b) { b.disabled = true; b.textContent = 'Checking...'; }
       const r = await runChecks();
       if (b) { b.disabled = false; b.textContent = 'Check'; }
       if (r) await ask(r.ok ? 'Valid' : r.ok === null ? 'Could not check' : 'Not valid', checkHtml(r), [{ label: 'Close', className: 'btn btn-secondary', value: null }]);
@@ -194,21 +194,21 @@ window.FileEditor = (() => {
       const chk = await runChecks();
       sb.disabled = false;
       const d = diffHtml(diffLines(original, ta.value));
-      const ok = await ask(`Save ${esc(name)}?`, `${chk ? checkHtml(chk) : ''}<div class="text-sm" style="margin-bottom:8px"><span style="color:var(--success)">+${d.add}</span> · <span style="color:var(--danger)">−${d.del}</span> lines. The file is replaced in one step (never half written); its current content is kept under Versions.${isNginx(path) ? ' After saving, <span class="td-mono">nginx -t</span> checks the configuration.' : ''}</div>${d.html}`, [{ label: 'Back', className: 'btn btn-secondary', value: false }, { label: sudo ? 'Save with sudo' : 'Save', className: 'btn btn-primary', value: true }]);
+      const ok = await ask(`Save ${esc(name)}?`, `${chk ? checkHtml(chk) : ''}<div class="text-sm" style="margin-bottom:8px"><span style="color:var(--success)">+${d.add}</span>, <span style="color:var(--danger)">−${d.del}</span> lines. The file is replaced in one step (never half written); its current content is kept under Versions.${isNginx(path) ? ' After saving, <span class="td-mono">nginx -t</span> checks the configuration.' : ''}</div>${d.html}`, [{ label: 'Back', className: 'btn btn-secondary', value: false }, { label: sudo ? 'Save with sudo' : 'Save', className: 'btn btn-primary', value: true }]);
       if (ok) await write();
     };
     const showVersion = async (id) => {
       let v; try { v = await API.get(`/files/version?id=${encodeURIComponent(id)}`); } catch (er) { return showToast(er.message, 'error'); }
       const d = diffHtml(diffLines(ta.value, v.content));
-      const ok = await ask(`Version of ${esc(new Date(v.t).toLocaleString())}`, `<div class="text-sm" style="margin-bottom:8px">Compared with the editor now: <span style="color:var(--success)">+${d.add}</span> · <span style="color:var(--danger)">−${d.del}</span>.</div>${d.html}`, [{ label: 'Close', className: 'btn btn-secondary', value: false }, { label: 'Put it in the editor', className: 'btn btn-primary', value: true }]);
-      if (ok) { ta.value = v.content; lines(); mark(); showToast('Loaded into the editor — Save to write it'); }
+      const ok = await ask(`Version of ${esc(new Date(v.t).toLocaleString())}`, `<div class="text-sm" style="margin-bottom:8px">Compared with the editor now: <span style="color:var(--success)">+${d.add}</span>, <span style="color:var(--danger)">−${d.del}</span>.</div>${d.html}`, [{ label: 'Close', className: 'btn btn-secondary', value: false }, { label: 'Put it in the editor', className: 'btn btn-primary', value: true }]);
+      if (ok) { ta.value = v.content; lines(); mark(); showToast('Loaded into the editor - Save to write it'); }
     };
     const versions = async () => {
       let list = [];
       try { list = await API.get(`/files/versions?path=${encodeURIComponent(path)}`); } catch (e) { return showToast(e.message, 'error'); }
       const body = list.length
         ? `<div class="text-sm" style="margin-bottom:8px">The content before each save from DockGate (the last 5). Pick one to compare it with the editor.</div>${list.map(v => `<button type="button" class="btn btn-secondary" style="display:flex;width:100%;justify-content:space-between;margin-bottom:6px" data-ver="${v.id}">${esc(new Date(v.t).toLocaleString())}<span class="ui-sub">${formatBytes(v.size)}</span></button>`).join('')}`
-        : '<div class="text-sm">No earlier version yet — one is kept each time this file is saved from here (the last 5).</div>';
+        : '<div class="text-sm">No earlier version yet - one is kept each time this file is saved from here (the last 5).</div>';
       const m = showModal('Versions', body, [{ label: 'Close', className: 'btn btn-secondary' }]);
       m.overlay.style.zIndex = 1300;
       m.overlay.querySelectorAll('[data-ver]').forEach(b => { b.onclick = () => { m.close(); showVersion(b.dataset.ver); }; });
@@ -225,7 +225,7 @@ window.FileEditor = (() => {
     ov.querySelector('[data-save]').onclick = save;
     ov.querySelector('[data-versions]').onclick = versions;
     const cb = ov.querySelector('[data-check]'); if (cb) cb.onclick = check;
-    // Extra buttons from the caller (e.g. Scripts → Insert block): insert text at the cursor.
+    // Extra buttons from the caller (e.g. Scripts > Insert block): insert text at the cursor.
     const api = { insert(text) { const s = ta.selectionStart; ta.setRangeText(text, s, ta.selectionEnd, 'end'); lines(); mark(); ta.focus(); }, get value() { return ta.value; } };
     ov.querySelectorAll('[data-act]').forEach(b => { b.onclick = () => actions[Number(b.dataset.act)].run(api); });
     ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });

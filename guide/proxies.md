@@ -1,8 +1,8 @@
 # Proxies & SSL
 
-> **Where:** Web → **Proxies & SSL**
+> **Where:** Web -> **Proxies & SSL**
 >
-> **Works on:** the local server and SSH servers — proxies in containers and proxies installed on the server itself (nginx, Caddy, HAProxy, Apache).
+> **Works on:** the local server and SSH servers - proxies in containers and proxies installed on the server itself (nginx, Caddy, HAProxy, Apache).
 
 This page is for the web servers in front of your apps on the server in use. With it you can:
 
@@ -45,11 +45,11 @@ A proxy container that stopped (or keeps restarting) is not hidden:
 
 ## Overview
 
-![Proxies & SSL — Overview](images/proxies-overview.png)
+![Proxies & SSL - Overview](images/proxies-overview.png)
 
 **Proxies.** DockGate finds them in three places:
 
-- **Containers.** By the image name (`nginx`, `caddy`, `traefik`…), and also images built from a proxy image — a Compose `build:` gives names like `shop-proxy`, so DockGate looks at what the image inherits (`NGINX_VERSION`, `CADDY_VERSION`, `HAPROXY_VERSION`, `HTTPD_VERSION`, or the program it starts).
+- **Containers.** By the image name (`nginx`, `caddy`, `traefik`...), and also images built from a proxy image - a Compose `build:` gives names like `shop-proxy`, so DockGate looks at what the image inherits (`NGINX_VERSION`, `CADDY_VERSION`, `HAPROXY_VERSION`, `HTTPD_VERSION`, or the program it starts).
 - **The server itself.** nginx, Caddy, HAProxy and Apache installed with the package manager: a systemd service, or (without systemd) the program and its running processes. Processes of containers are left out.
 - **Containers on the host network** (`network_mode: host`). They are marked **host network**. They can not join Docker networks, so they reach containers at their published ports, like a proxy installed on the server.
 
@@ -72,7 +72,7 @@ What DockGate reads from each proxy:
 
 **Read-only proxies.**
 
-- A proxy that runs as a **Swarm service** is one entry, with its number of replicas. Its config is not changed here: a file written into one task container would miss the other replicas and be lost when Swarm replaces it. Change it where the service gets it (its image, a Docker config or a shared mount), then update the service in Swarm → Services.
+- A proxy that runs as a **Swarm service** is one entry, with its number of replicas. Its config is not changed here: a file written into one task container would miss the other replicas and be lost when Swarm replaces it. Change it where the service gets it (its image, a Docker config or a shared mount), then update the service in Swarm > Services.
 - **Caddy with a JSON config** (`caddy run --config caddy.json`): its sites are read, and the JSON can be edited in Config files (checked with `caddy validate`). Site settings, load balancing and new sites write Caddyfiles, so they are not offered.
 
 **HAProxy** with several `-f` files or a folder: every file is read, and the check runs with all of them.
@@ -81,9 +81,9 @@ What DockGate reads from each proxy:
 
 An nginx container that only serves its own app is not counted as a proxy. That means it has no `proxy_pass`, no domain and no port 80 or 443. The same goes for an Apache image built for an app (for example `php:apache`) without `ProxyPass`.
 
-**When nginx's config check fails.** DockGate reads nginx's sites with `nginx -T`, which prints nothing when the config does not pass its check — most often a `proxy_pass` to a container that was removed or stopped (`host not found in upstream`). nginx keeps running, but a reload or restart would fail. DockGate then reads the files itself, from `nginx.conf` through every `include` (`conf.d/*.conf`, `sites-enabled/*` of any name), lists the sites as usual, and marks the proxy red with nginx's own reason. Such an nginx is never taken for an app's own web server.
+**When nginx's config check fails.** DockGate reads nginx's sites with `nginx -T`, which prints nothing when the config does not pass its check - most often a `proxy_pass` to a container that was removed or stopped (`host not found in upstream`). nginx keeps running, but a reload or restart would fail. DockGate then reads the files itself, from `nginx.conf` through every `include` (`conf.d/*.conf`, `sites-enabled/*` of any name), lists the sites as usual, and marks the proxy red with nginx's own reason. Such an nginx is never taken for an app's own web server.
 
-**Web ports** shows who holds 80, 443, 8080, 8443 and the proxies' own ports: a container (`docker → edge-nginx`), a proxy on the server, or a container on the host network.
+**Web ports** shows who holds 80, 443, 8080, 8443 and the proxies' own ports: a container (`docker -> edge-nginx`), a proxy on the server, or a container on the host network.
 
 **Warnings** are shown at the top, for example:
 
@@ -94,23 +94,23 @@ An nginx container that only serves its own app is not counted as a proxy. That 
 
 ## Sites
 
-![Proxies & SSL — Sites](images/proxies-sites.png)
+![Proxies & SSL - Sites](images/proxies-sites.png)
 
 Each domain is one row. It shows where the domain goes, which proxy serves it and where, HTTPS, and the state of the container behind it.
 
-**Sites without a domain** are listed too, marked **no domain**: a server reached by IP or port (`server_name _;`, `server_name 192.168.1.10;`, a server with only `listen 8080;`, Caddy's `:8080 { }`, a HAProxy `default_backend`, a Traefik rule with only `PathPrefix`). Their name is their address — `:8080`, `192.168.1.10`, `/api`. **Open** goes to the server's address on the port the proxy publishes for it (none when the port is not published). Site settings, load balancing and Let's Encrypt need a domain, so they are not offered: change such a site in the editor, or give it a domain with **Put a container on a domain**. A default page without `proxy_pass` is not listed. **⋯** opens what you can do with a site:
+**Sites without a domain** are listed too, marked **no domain**: a server reached by IP or port (`server_name _;`, `server_name 192.168.1.10;`, a server with only `listen 8080;`, Caddy's `:8080 { }`, a HAProxy `default_backend`, a Traefik rule with only `PathPrefix`). Their name is their address - `:8080`, `192.168.1.10`, `/api`. **Open** goes to the server's address on the port the proxy publishes for it (none when the port is not published). Site settings, load balancing and Let's Encrypt need a domain, so they are not offered: change such a site in the editor, or give it a domain with **Put a container on a domain**. A default page without `proxy_pass` is not listed. **⋯** opens what you can do with a site:
 
 ![What you can do with a site](images/proxies-site-menu.png)
 
 - **Open ↗** and **+ Uptime check**.
 - **Edit the config** opens the file at the site's lines.
-- **Site settings…** (nginx, Caddy) — the site as a form:
+- **Site settings...** (nginx, Caddy) - the site as a form:
   - names;
   - where it goes (one container);
   - WebSockets, upload limit, and **Send http to https** (nginx).
 
   Save shows the changed lines, then goes the safe way. Only the names that change are touched, so an HTTP server shared with other sites keeps their names. The redirect of a shared HTTP server is changed in the editor.
-- **Load balancing…** (see [Load balancing](#load-balancing)).
+- **Load balancing...** (see [Load balancing](#load-balancing)).
 - **Add HTTPS** or **Use a Let's Encrypt certificate** (nginx and Apache sites).
 - **Remove the site.** Only sites DockGate added can be removed. Others are removed in the editor.
 
@@ -125,11 +125,11 @@ Each domain is one row. It shows where the domain goes, which proxy serves it an
 | **Domain** / **Also answer on** | `app.example.com`, and other names such as `www.app.example.com` |
 | **Proxy** | the proxies on this server; the one holding ports 80 / 443 comes first |
 | **Goes to** | the container and its port. **+ Another container** balances the load between several. |
-| **Balancing** | round robin, least connections, or same visitor → same container (IP hash) |
+| **Balancing** | round robin, least connections, or same visitor -> same container (IP hash) |
 | **HTTPS** | nginx / Apache: **Let's Encrypt** (DockGate gets and renews it), **a certificate already on the proxy**, or none. Caddy and Traefik: automatic. |
 | **Send http to https**, **WebSockets**, **Upload limit** | |
 
-**Preview →** shows the steps and the exact lines that will be written, before anything changes:
+**Preview -> ** shows the steps and the exact lines that will be written, before anything changes:
 
 ![Preview](images/proxies-expose-preview.png)
 
@@ -144,11 +144,11 @@ A `docker network connect` is lost when the proxy container is re-created (for e
 
 **What gets written:**
 
-- **nginx:** a new file `<domain>.conf` in a folder nginx really loads into `http { }`: the one that already holds sites (`conf.d/`, `sites-enabled/`, `vhosts/`, SWAG's `site-confs/` …). If nginx loads no folder of sites, DockGate makes `conf.d/` and adds its `include` to `http { }`. After the reload DockGate checks that nginx lists the new file (`nginx -T`); if not, the site is taken out again. The new site is then asked once: a 502 means the proxy can not reach the container. The site listens where the proxy already listens (8080 for nginx-unprivileged). A single container is reached through Docker's DNS, so nginx still starts while the container is down. Several containers go into an `upstream` block; see [Load balancing](#load-balancing) for what nginx needs so it still starts when one of them is missing.
+- **nginx:** a new file `<domain>.conf` in a folder nginx really loads into `http { }`: the one that already holds sites (`conf.d/`, `sites-enabled/`, `vhosts/`, SWAG's `site-confs/` ...). If nginx loads no folder of sites, DockGate makes `conf.d/` and adds its `include` to `http { }`. After the reload DockGate checks that nginx lists the new file (`nginx -T`); if not, the site is taken out again. The new site is then asked once: a 502 means the proxy can not reach the container. The site listens where the proxy already listens (8080 for nginx-unprivileged). A single container is reached through Docker's DNS, so nginx still starts while the container is down. Several containers go into an `upstream` block; see [Load balancing](#load-balancing) for what nginx needs so it still starts when one of them is missing.
 - **Caddy, HAProxy:** a block between `# dockgate:begin` and `# dockgate:end` in the Caddyfile or `haproxy.cfg`.
 - **Apache:** a file in `conf/dockgate/` (container) or `sites-enabled/` (Debian). The proxy modules it needs are loaded.
 - **Traefik and caddy-docker-proxy:** the labels. Traefik's entry points and certificate resolvers are read from its command line.
-  - **Add to** *(the project)* (when the container is part of a Compose project): the labels go into DockGate's override for the project — your compose files are not changed — and the service is re-created so they apply. If the re-create fails, the earlier override is put back.
+  - **Add to** *(the project)* (when the container is part of a Compose project): the labels go into DockGate's override for the project - your compose files are not changed - and the service is re-created so they apply. If the re-create fails, the earlier override is put back.
   - **Show the labels**: as a Compose snippet and as `docker run` flags, to add yourself.
   - **Remove the site** takes DockGate's labels for that domain out again and re-creates the service.
 
@@ -169,9 +169,9 @@ Every certificate the proxies use is listed, with **who renews it**. DockGate re
 | Nginx Proxy Manager | Nginx Proxy Manager | its Let's Encrypt certificates are automatic; uploaded ones are not renewed |
 | nginx-proxy | acme-companion | automatic when an acme-companion container runs; a stopped one is shown |
 | acme.sh (`~/.acme.sh`) | acme.sh's own cron | reads them and watches their expiry |
-| A file (nginx `ssl_certificate`, Apache `SSLCertificateFile`, HAProxy `bind … crt`) | nobody | red **none (a file)**; nginx and Apache sites get **Use Let's Encrypt** |
+| A file (nginx `ssl_certificate`, Apache `SSLCertificateFile`, HAProxy `bind ... crt`) | nobody | red **none (a file)**; nginx and Apache sites get **Use Let's Encrypt** |
 
-**Where certificates are read from.** nginx's `ssl_certificate` wherever it is written: in the server block, at `http` level, or in an included snippet (`include snippets/ssl.conf;`). Paths with variables (`$ssl_server_name`) can not be read. Also Apache's `SSLCertificateFile`, HAProxy's `bind … crt`, Traefik's file provider `certFile`, `acme.json`, Caddy's data folder, and on the server itself `/etc/letsencrypt/live` and `~/.acme.sh`. These are read as root when DockGate can (`sudo` is not needed when DockGate logs in as root).
+**Where certificates are read from.** nginx's `ssl_certificate` wherever it is written: in the server block, at `http` level, or in an included snippet (`include snippets/ssl.conf;`). Paths with variables (`$ssl_server_name`) can not be read. Also Apache's `SSLCertificateFile`, HAProxy's `bind ... crt`, Traefik's file provider `certFile`, `acme.json`, Caddy's data folder, and on the server itself `/etc/letsencrypt/live` and `~/.acme.sh`. These are read as root when DockGate can (`sudo` is not needed when DockGate logs in as root).
 
 **Is the new certificate served?** For nginx, Apache and HAProxy, DockGate asks the proxy (from inside it, on 127.0.0.1:443) which certificate it really serves. "✓ served" means it answers with the certificate on disk. **Old one still served** means the file was renewed but the proxy was not reloaded. **Reload** fixes it (after a config check).
 
@@ -190,9 +190,9 @@ Each certificate in the list has **Renew now** when someone can be asked to rene
 
 To renew only by hand, turn **Auto renew** off for a DockGate certificate: DockGate then keeps it, warns before it expires, and renews it only when you press **Renew now**. Let's Encrypt allows 5 new certificates for the same names a week.
 
-### Expired or expiring: "Why? · fix"
+### Expired or expiring: "Why?, fix"
 
-Certificates that expired or expire within 14 days are listed in a box above the table. **Why? · fix** checks what the renewal needs and tells you what is wrong:
+Certificates that expired or expire within 14 days are listed in a box above the table. **Why?, fix** checks what the renewal needs and tells you what is wrong:
 
 | Check | What it looks at |
 |---|---|
@@ -254,14 +254,14 @@ DockGate is the ACME client. It answers the certificate check through the proxy 
 
 DockGate normally answers Let's Encrypt's check over HTTP (port 80). A **wildcard** certificate (`*.example.com`) can only be checked through DNS, and the DNS check also works when port 80 is closed or the site is behind Cloudflare's proxy.
 
-Under **Let's Encrypt account → DNS check (Cloudflare)**: choose Cloudflare, paste an API token with **Zone → DNS → Edit** for your zones (stored encrypted; **Test the token** asks Cloudflare whether it is active), and choose **Wildcard names only** or **Every certificate**. Then, for each name, DockGate:
+Under **Let's Encrypt account > DNS check (Cloudflare)**: choose Cloudflare, paste an API token with **Zone > DNS > Edit** for your zones (stored encrypted; **Test the token** asks Cloudflare whether it is active), and choose **Wildcard names only** or **Every certificate**. Then, for each name, DockGate:
 
 1. adds the TXT record `_acme-challenge.<name>` in the right Cloudflare zone,
 2. waits until public DNS (1.1.1.1 and 8.8.8.8) answers it,
 3. lets Let's Encrypt check it,
 4. removes the record.
 
-With it set up, **Use Let's Encrypt** on a site also covers its wildcard names (`server_name *.example.com`), renewals use the DNS check too, and **Why? · fix** offers **Let DockGate get and renew it** for wildcard certificates.
+With it set up, **Use Let's Encrypt** on a site also covers its wildcard names (`server_name *.example.com`), renewals use the DNS check too, and **Why?, fix** offers **Let DockGate get and renew it** for wildcard certificates.
 
 ### All servers and alerts
 
@@ -271,8 +271,8 @@ With it set up, **Use Let's Encrypt** on a site also covers its wildcard names (
 
 The daily check sends an alert to your notification channels:
 
-- **14, 7, 3 and 1 days** before a certificate expires and on the day it ends — then **every day** while it stays expired. The alert says who should renew it ("certbot should have renewed it by now", or "nothing renews it"), **why** — the failed checks of **Why? · fix** (DNS, the challenge path, certbot's method and timer…) — what DockGate fixed by itself, and the fixes to choose from.
-- When a **renewed certificate is not loaded** (the proxy still serves the old one) — unless DockGate reloaded the proxy by itself.
+- **14, 7, 3 and 1 days** before a certificate expires and on the day it ends - then **every day** while it stays expired. The alert says who should renew it ("certbot should have renewed it by now", or "nothing renews it"), **why** - the failed checks of **Why?, fix** (DNS, the challenge path, certbot's method and timer...) - what DockGate fixed by itself, and the fixes to choose from.
+- When a **renewed certificate is not loaded** (the proxy still serves the old one) - unless DockGate reloaded the proxy by itself.
 - When **Caddy or Traefik log certificate errors** (once a day per proxy).
 
 Internal (Caddy `tls internal`) and test (staging) certificates are left out.
@@ -285,7 +285,7 @@ Internal (Caddy `tls internal`) and test (staging) certificates are left out.
 
 These are the files the proxy loads. Files that Nginx Proxy Manager, nginx-proxy or certbot keep are read-only.
 
-**Save…** shows the changed lines first. You can add a note, which is shown in History:
+**Save...** shows the changed lines first. You can add a note, which is shown in History:
 
 ![Save](images/proxies-save-diff.png)
 
@@ -297,7 +297,7 @@ If someone changes the file on the server after you opened it, DockGate does not
 
 ## Load balancing
 
-From a site's **⋯ → Load balancing…**:
+From a site's **⋯ > Load balancing...**:
 
 ![Load balancing](images/proxies-lb.png)
 
@@ -310,7 +310,7 @@ From a site's **⋯ → Load balancing…**:
   - **Caddy:** the site's `reverse_proxy` and `lb_policy`.
   - **HAProxy:** the backend's `server` lines and `balance`.
 
-Several replicas of one Compose service behind one name are balanced by Docker's DNS. Deploy → Compose → Scale handles that case.
+Several replicas of one Compose service behind one name are balanced by Docker's DNS. Deploy > Compose > Scale handles that case.
 
 ## Logs
 

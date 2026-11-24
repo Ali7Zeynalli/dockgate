@@ -1,4 +1,4 @@
-// Alert rules — Settings → Notifications (shared rules) and Server Console → Monitoring (this server's limits).
+// Alert rules - Settings > Notifications (shared rules) and Server Console > Monitoring (this server's limits).
 // Server rules (reachability, disk, memory, CPU) are checked by the health monitor once a minute; Docker
 // rules fire on Docker events. A switch saves at once; limits and the quiet period are edited in a dialog.
 
@@ -21,14 +21,14 @@ function alertWhen(type, p) {
     case 'swarm_service_down': return `a Swarm service runs fewer tasks than wanted for <b>${p.minutes ?? 2} min</b>, and when it is back`;
     case 'swarm_node_down': return 'a server of the swarm goes Down, and when it is Ready again';
     case 'swarm_update_rollback': return 'a Swarm service update is rolled back or paused because new tasks failed';
-    case 'swarm_quorum': return 'most managers can not be reached — the cluster can not be changed';
+    case 'swarm_quorum': return 'most managers can not be reached - the cluster can not be changed';
     case 'swarm_autoscale': return 'autoscale adds or removes a replica of a Swarm service (or can not)';
     case 'compose_heal': return 'auto-heal restarts an unhealthy Compose container, or stops trying after its hourly limit';
     case 'compose_autoscale': return 'Auto Scaling added or removed replicas of a Compose service, or needed more but the server was full';
-    case 'cron_failed': return 'a cron job with "Notify when it fails" ends with an exit code other than 0 (Server Console → Cron)';
+    case 'cron_failed': return 'a cron job with "Notify when it fails" ends with an exit code other than 0 (Server Console > Cron)';
     case 'cron_missed': return 'a cron job with "Notify when it does not run" has not started 30 minutes after its time';
-    case 'site_down': return 'an Uptime check fails the number of times in a row set on the check (Observe → Uptime)';
-    case 'site_up': return 'a check that was down answers again — with how long it was down';
+    case 'site_down': return 'an Uptime check fails the number of times in a row set on the check (Observe > Uptime)';
+    case 'site_up': return 'a check that was down answers again - with how long it was down';
     case 'site_slow': return 'a check answers slower than its "slow above" limit on several checks in a row';
     case 'cert_expiring': return 'a certificate has 30, 14, 7 or 1 days left (once each)';
     case 'cert_invalid': return 'a certificate has expired, is not for the name, or is not trusted';
@@ -55,19 +55,19 @@ async function renderAlertRules(el) {
     list.map(r => ({ cells: [
       `<b>${escapeHtml(r.description || r.event_type)}</b><div class="ui-sub td-mono">${escapeHtml(r.event_type)}</div>`,
       `<span class="text-sm">${alertWhen(r.event_type, r.params)}</span>`,
-      `<span class="ui-sub">${r.event_type === 'server_up' ? '—' : Number(r.cooldown_minutes) ? `${r.cooldown_minutes} min` : 'none'}</span>`,
+      `<span class="ui-sub">${r.event_type === 'server_up' ? '-' : Number(r.cooldown_minutes) ? `${r.cooldown_minutes} min` : 'none'}</span>`,
       `<div class="toggle ${r.enabled ? 'active' : ''}" role="switch" tabindex="0" aria-checked="${!!r.enabled}" aria-label="${escapeHtml(r.description || r.event_type)}" data-rule-toggle="${escapeHtml(r.event_type)}"></div>`,
       UI.btn('Edit', `data-rule-edit="${escapeHtml(r.event_type)}"`),
     ] })), { minWidth: 680 });
   const isSite = (r) => /^(site_|cert_)/.test(r.event_type), isCron = (r) => /^cron_/.test(r.event_type);
   const health = rules.filter(r => r.health), sites = rules.filter(isSite), crons = rules.filter(isCron), docker = rules.filter(r => !r.health && !isSite(r) && !isCron(r));
-  el.innerHTML = `${UI.header('Rules', 'Which events send an alert. They apply to every server; a server can use its own limits in its console → Monitoring. Switches save at once.')}
+  el.innerHTML = `${UI.header('Rules', 'Which events send an alert. They apply to every server; a server can use its own limits in its console > Monitoring. Switches save at once.')}
     <div class="ui-ph" style="margin-top:4px"><div class="ui-ph-text"><div class="ui-ph-title">Server</div><div class="ui-ph-desc">Checked once a minute for every server over its existing SSH login: does it answer, how full are the disks, memory and CPU.</div></div></div>
     ${table(health)}
     <div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Docker</div></div></div>
     ${table(docker)}
-    ${sites.length ? `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Sites (Uptime)</div><div class="ui-ph-desc">From the checks of Observe → Uptime: when a site stops answering, comes back, gets slow, or its certificate is about to expire.</div></div></div>${table(sites)}` : ''}
-    ${crons.length ? `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Cron jobs</div><div class="ui-ph-desc">For the jobs of Server Console → Cron that ask for it: failed, or did not run.</div></div></div>${table(crons)}` : ''}`;
+    ${sites.length ? `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Sites (Uptime)</div><div class="ui-ph-desc">From the checks of Observe > Uptime: when a site stops answering, comes back, gets slow, or its certificate is about to expire.</div></div></div>${table(sites)}` : ''}
+    ${crons.length ? `<div class="ui-ph"><div class="ui-ph-text"><div class="ui-ph-title">Cron jobs</div><div class="ui-ph-desc">For the jobs of Server Console > Cron that ask for it: failed, or did not run.</div></div></div>${table(crons)}` : ''}`;
 
   const save = async (type, body, msg) => {
     await API.put(`/meta/notifications/rules/${encodeURIComponent(type)}`, body);
@@ -79,7 +79,7 @@ async function renderAlertRules(el) {
       const on = !t.classList.contains('active');
       t.classList.toggle('active', on); t.setAttribute('aria-checked', on);
       const r = rules.find(x => x.event_type === t.dataset.ruleToggle);
-      try { await save(r.event_type, { enabled: on }, `Saved · ${r.description} ${on ? 'on' : 'off'}`); }
+      try { await save(r.event_type, { enabled: on }, `Saved, ${r.description} ${on ? 'on' : 'off'}`); }
       catch (e) { t.classList.toggle('active', !on); t.setAttribute('aria-checked', !on); showToast(e.message, 'error'); }
     };
     t.addEventListener('click', flip);
@@ -89,7 +89,7 @@ async function renderAlertRules(el) {
     const r = rules.find(x => x.event_type === b.dataset.ruleEdit);
     const quiet = r.event_type !== 'server_up';
     UI.dialog({
-      title: `Edit · ${r.description}`, context: false,
+      title: `Edit, ${r.description}`, context: false,
       body: `${alertLimitFields(r.limits, r.params)}
         ${quiet ? `<div class="ui-field"><label for="al-cd">Quiet period</label><div class="flex items-center gap-2"><input class="input" id="al-cd" type="number" min="0" max="1440" value="${Number(r.cooldown_minutes) || 0}" style="width:90px"><span class="text-sm text-muted">minutes</span></div><span class="ui-help">After an alert, the same alert for the same server waits this long. 0 sends every time.${r.event_type === 'server_down' ? ' "Not reachable" is sent once per outage either way.' : ''}</span></div>` : '<p class="text-sm text-muted" style="margin:0">Sent once when a server that was reported as not reachable answers again. It has nothing to set.</p>'}`,
       saveLabel: 'Save',
@@ -98,14 +98,14 @@ async function renderAlertRules(el) {
         if (r.limits && Object.keys(r.limits).length) body.params = readLimits(ov);
         if (quiet) body.cooldown_minutes = Number(ov.querySelector('#al-cd').value) || 0;
         if (!Object.keys(body).length) return;
-        await save(r.event_type, body, `Saved · ${r.description}`);
+        await save(r.event_type, body, `Saved, ${r.description}`);
         renderAlertRules(el);
       },
     });
   }));
 }
 
-/** Server Console → Monitoring: the server rules as they apply here, plus the shared Docker rules. */
+/** Server Console > Monitoring: the server rules as they apply here, plus the shared Docker rules. */
 async function renderServerAlerts(serverId, el) {
   let data, list, rules;
   try {
@@ -122,7 +122,7 @@ async function renderServerAlerts(serverId, el) {
   };
   const uses = (r) => !r.enabled ? UI.pill('off', 'off for all servers') : r.mode === 'off' ? UI.pill('off', 'off here') : r.mode === 'custom' ? UI.pill('info', 'own limit') : UI.pill('ok', 'shared');
   const health = data.rules.filter(r => r.event_type !== 'server_up');
-  el.innerHTML = UI.header('Alerts', `Limits for ${escapeHtml(s.name || s.id)}. Shared limits come from Settings → Notifications; change one here to give this server its own.`,
+  el.innerHTML = UI.header('Alerts', `Limits for ${escapeHtml(s.name || s.id)}. Shared limits come from Settings > Notifications; change one here to give this server its own.`,
       `${UI.btn(muted ? 'Turn on for this server' : 'Mute this server', 'data-mute')}${UI.btn('Edit shared rules', 'data-rules')}`) +
     (muted ? `<div class="insight-card warning" style="margin-bottom:10px"><span>Alerts are muted for this server. Checks still run; nothing is sent.</span></div>` : '') +
     UI.table([{ label: 'Alert' }, { label: 'Shared' }, { label: 'This server' }, { label: 'Uses' }, { label: 'Now' }, { label: '', align: 'right' }],
@@ -150,10 +150,10 @@ async function renderServerAlerts(serverId, el) {
     let mode = r.mode;
     const vals = r.own || r.shared;
     UI.dialog({
-      title: `${s.name || s.id} · ${r.description}`, context: false,
+      title: `${s.name || s.id}, ${r.description}`, context: false,
       body: `<div class="ui-field"><span class="ui-label">For this server</span>${UI.seg([['default', 'Shared limit'], ['custom', 'Own limit'], ['off', 'Off']], mode, 'data-amode')}</div>
         <div data-own ${mode === 'custom' ? '' : 'hidden'}>${alertLimitFields(r.limits, vals, 'sa')}</div>
-        <p class="ui-sub" style="margin:0">Shared: ${alertWhen(r.event_type, r.shared)}.${r.enabled ? '' : ' This rule is off for all servers in Settings → Notifications.'}</p>`,
+        <p class="ui-sub" style="margin:0">Shared: ${alertWhen(r.event_type, r.shared)}.${r.enabled ? '' : ' This rule is off for all servers in Settings > Notifications.'}</p>`,
       onOpen: (ov) => ov.querySelectorAll('[data-amode]').forEach(x => x.addEventListener('click', () => {
         mode = x.dataset.amode;
         ov.querySelectorAll('[data-amode]').forEach(y => y.setAttribute('aria-pressed', String(y === x)));
@@ -161,7 +161,7 @@ async function renderServerAlerts(serverId, el) {
       })),
       onSave: async (ov) => {
         await API.put(`/servers/${encodeURIComponent(serverId)}/alerts/${encodeURIComponent(r.event_type)}`, { mode, params: mode === 'custom' ? readLimits(ov) : undefined });
-        showToast(`Saved · ${r.description}`);
+        showToast(`Saved, ${r.description}`);
         renderServerAlerts(serverId, el);
       },
     });

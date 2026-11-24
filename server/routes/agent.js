@@ -1,4 +1,4 @@
-// Edge Notifier Agent — deploy/manage the outbound-only notifier container on managed hosts.
+// Edge Notifier Agent - deploy/manage the outbound-only notifier container on managed hosts.
 // All actions are DockGate-initiated outbound SSH; the agent itself has no inbound surface.
 const express = require('express');
 const router = express.Router();
@@ -12,16 +12,16 @@ function sourceIp(req) {
   return (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
 }
 
-// GET /api/agent/status — { serverId: { installed, running, state, version } } per remote server
+// GET /api/agent/status - { serverId: { installed, running, state, version } } per remote server
 router.get('/status', async (req, res) => {
   try { res.json(await deployer.statusAll()); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/agent/current — the agent build DockGate installs now ({ version, build, image })
+// GET /api/agent/current - the agent build DockGate installs now ({ version, build, image })
 router.get('/current', (req, res) => res.json(deployer.current()));
 
-// POST /api/agent/update-all — update every installed agent that runs an older build (one job, server by server)
+// POST /api/agent/update-all - update every installed agent that runs an older build (one job, server by server)
 router.post('/update-all', async (req, res) => {
   try {
     const status = await deployer.statusAll();
@@ -33,7 +33,7 @@ router.post('/update-all', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/agent/install { serverId } — async job
+// POST /api/agent/install { serverId } - async job
 router.post('/install', (req, res) => {
   try {
     const { serverId } = req.body || {};
@@ -44,7 +44,7 @@ router.post('/install', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/agent/update { serverId } — install the current agent build on this server (recreate)
+// POST /api/agent/update { serverId } - install the current agent build on this server (recreate)
 router.post('/update', (req, res) => {
   try {
     const { serverId } = req.body || {};
@@ -55,7 +55,7 @@ router.post('/update', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/agent/reconfigure { serverId } — recreate with current settings (channel/rule changes)
+// POST /api/agent/reconfigure { serverId } - recreate with current settings (channel/rule changes)
 router.post('/reconfigure', (req, res) => {
   try {
     const { serverId } = req.body || {};
@@ -66,7 +66,7 @@ router.post('/reconfigure', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/agent/install-all { serverIds? } — fan-out over all remote servers (or a subset)
+// POST /api/agent/install-all { serverIds? } - fan-out over all remote servers (or a subset)
 router.post('/install-all', (req, res) => {
   try {
     let ids = (req.body && Array.isArray(req.body.serverIds)) ? req.body.serverIds : null;
@@ -79,7 +79,7 @@ router.post('/install-all', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/agent/remove { serverId } — synchronous (stop+rm, restart central monitor)
+// POST /api/agent/remove { serverId } - synchronous (stop+rm, restart central monitor)
 router.post('/remove', async (req, res) => {
   try {
     const { serverId } = req.body || {};
@@ -102,7 +102,7 @@ router.post('/power', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/agent/sync — re-push the CURRENT settings (rules + channel) to every installed agent.
+// POST /api/agent/sync - re-push the CURRENT settings (rules + channel) to every installed agent.
 // Called automatically when notification rules / channels change so central edits propagate.
 router.post('/sync', async (req, res) => {
   try {
@@ -115,7 +115,7 @@ router.post('/sync', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/agent/job/:id — re-openable progress (survives a closed modal/browser)
+// GET /api/agent/job/:id - re-openable progress (survives a closed modal/browser)
 router.get('/job/:id', (req, res) => {
   try {
     const row = stmts.getAgentJob.get(req.params.id);
@@ -131,7 +131,7 @@ router.get('/job/:id', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/agent/jobs — recent deploy jobs
+// GET /api/agent/jobs - recent deploy jobs
 router.get('/jobs', (req, res) => {
   try { res.json(stmts.getAgentJobs.all(20)); }
   catch (err) { res.status(500).json({ error: err.message }); }
@@ -139,7 +139,7 @@ router.get('/jobs', (req, res) => {
 
 // ---- per-server channel override (a different Telegram/SMTP per host) ----
 
-// GET /api/agent/channel/:serverId — masked override (or { override:false })
+// GET /api/agent/channel/:serverId - masked override (or { override:false })
 router.get('/channel/:serverId', (req, res) => {
   try {
     const row = stmts.getServerChannel.get(req.params.serverId);
@@ -158,7 +158,7 @@ router.get('/channel/:serverId', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/agent/channel/:serverId — upsert override (secrets encrypted at rest)
+// POST /api/agent/channel/:serverId - upsert override (secrets encrypted at rest)
 router.post('/channel/:serverId', (req, res) => {
   try {
     const sid = req.params.serverId;
@@ -190,7 +190,7 @@ router.post('/channel/:serverId', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE /api/agent/channel/:serverId — revert this host to the global channel
+// DELETE /api/agent/channel/:serverId - revert this host to the global channel
 router.delete('/channel/:serverId', (req, res) => {
   try {
     stmts.deleteServerChannel.run(req.params.serverId);

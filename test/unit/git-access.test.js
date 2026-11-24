@@ -1,5 +1,5 @@
 'use strict';
-// Git → Access… (server/git-access.js): the access DockGate keeps for a stack it did not clone, the URL forms a
+// Git > Access... (server/git-access.js): the access DockGate keeps for a stack it did not clone, the URL forms a
 // token or a key need, and git's auth errors turned into what to do.
 const test = require('node:test');
 const assert = require('node:assert/strict');

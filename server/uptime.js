@@ -1,6 +1,6 @@
-// Observe → Uptime: checks DockGate runs every 30 s – 1 h (uptime-probe.js does one check), their results,
+// Observe > Uptime: checks DockGate runs every 30 s - 1 h (uptime-probe.js does one check), their results,
 // uptime per period, incidents, and the alerts (site down / back up / slow, certificate expiring / invalid)
-// through the notification channels of Settings → Notifications.
+// through the notification channels of Settings > Notifications.
 // Results: every check for 48 hours, then one row per hour for 90 days (so 7 / 30 / 90 day figures stay cheap).
 const { db } = require('./db');
 const P = require('./uptime-probe');
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS uptime_hourly (check_id INTEGER NOT NULL, hour INTEGE
 CREATE TABLE IF NOT EXISTS uptime_incidents (id INTEGER PRIMARY KEY AUTOINCREMENT, check_id INTEGER NOT NULL, start INTEGER NOT NULL, end INTEGER, cause TEXT);
 CREATE INDEX IF NOT EXISTS uptime_incidents_c ON uptime_incidents (check_id, start);
 `);
-// Alert rules (Settings → Notifications): state changes, so no quiet period.
+// Alert rules (Settings > Notifications): state changes, so no quiet period.
 const rule = db.prepare('INSERT OR IGNORE INTO notification_rules (event_type, description, cooldown_minutes, enabled, params) VALUES (?, ?, 0, 1, ?)');
 rule.run('site_down', 'Site down', '{}');
 rule.run('site_up', 'Site back up', '{}');
@@ -115,17 +115,17 @@ function ctxText(x) {
   if (!x) return ['', ''];
   if (x.error) return [`\nLinked ${x.kind} ${x.name}: ${x.error}`, `<p>Linked ${esc(x.kind)} <b>${esc(x.name)}</b>: ${esc(x.error)}</p>`];
   const bad = (x.items || []).filter(i => i.state !== 'running' || /unhealthy|restarting/i.test(i.detail || '')).slice(0, 3);
-  const t = `\nLinked ${x.kind === 'compose' ? 'Compose' : x.kind === 'swarm' ? 'Swarm service' : 'container'} ${x.name}: ${x.summary}${bad.length ? ' — ' + bad.map(i => `${i.name} ${i.state}${i.detail ? ' (' + i.detail + ')' : ''}`).join(', ') : ''}${x.logs ? `\nLast lines${x.from ? ' of ' + x.from : ''}:\n${x.logs.split('\n').slice(-4).join('\n')}` : ''}`;
+  const t = `\nLinked ${x.kind === 'compose' ? 'Compose' : x.kind === 'swarm' ? 'Swarm service' : 'container'} ${x.name}: ${x.summary}${bad.length ? ' - ' + bad.map(i => `${i.name} ${i.state}${i.detail ? ' (' + i.detail + ')' : ''}`).join(', ') : ''}${x.logs ? `\nLast lines${x.from ? ' of ' + x.from : ''}:\n${x.logs.split('\n').slice(-4).join('\n')}` : ''}`;
   return [t, `<p>${esc(t.trim()).replace(/\n/g, '<br>')}</p>`];
 }
 function message(type, c, d) {
   const t = c.target;
   switch (type) {
-    case 'site_down': { const [ct, ch] = ctxText(d.context); return [`Site down — ${c.name}`, `🔴 Site down — ${c.name}\n${d.error || 'failed'} (${d.fails} checks in a row)\n${t}${ct}`, `<p><b>${esc(c.name)}</b> is down: ${esc(d.error || 'failed')} (${d.fails} checks in a row).</p><p>${esc(t)}</p>${ch}`]; }
-    case 'site_up': return [`Back up — ${c.name}`, `🟢 Back up — ${c.name}\nDown for ${fmtDur(d.until - d.since)}. Now ${d.status ? d.status + ' in ' : ''}${d.ms} ms.`, `<p><b>${esc(c.name)}</b> is back up after ${fmtDur(d.until - d.since)}.</p>`];
-    case 'site_slow': return [`Slow — ${c.name}`, `🟠 Slow — ${c.name}\n${d.ms} ms on ${d.count} checks in a row (limit ${d.limit} ms)`, `<p><b>${esc(c.name)}</b> answers slowly: ${d.ms} ms on ${d.count} checks in a row (limit ${d.limit} ms).</p>`];
-    case 'cert_expiring': { const x = d.cert; const day = new Date(x.validTo).toISOString().slice(0, 10); return [`Certificate expires in ${x.daysLeft} days — ${c.name}`, `🟡 Certificate expires in ${x.daysLeft} days — ${c.name}\n${x.issuer || 'certificate'} · until ${day}. Check that auto-renewal (certbot / Traefik / Caddy) works.`, `<p>The certificate of <b>${esc(c.name)}</b> expires in <b>${x.daysLeft} days</b> (${day}, ${esc(x.issuer)}).</p>`]; }
-    case 'cert_invalid': { const x = d.cert; const why = x.daysLeft < 0 ? 'it has expired' : !x.nameOk ? `it is not for this name (${(x.names || []).slice(0, 3).join(', ')})` : (x.error || 'not trusted'); return [`Certificate invalid — ${c.name}`, `🔴 Certificate invalid — ${c.name}\n${why}`, `<p>The certificate of <b>${esc(c.name)}</b> is invalid: ${esc(why)}.</p>`]; }
+    case 'site_down': { const [ct, ch] = ctxText(d.context); return [`Site down - ${c.name}`, `🔴 Site down - ${c.name}\n${d.error || 'failed'} (${d.fails} checks in a row)\n${t}${ct}`, `<p><b>${esc(c.name)}</b> is down: ${esc(d.error || 'failed')} (${d.fails} checks in a row).</p><p>${esc(t)}</p>${ch}`]; }
+    case 'site_up': return [`Back up - ${c.name}`, `🟢 Back up - ${c.name}\nDown for ${fmtDur(d.until - d.since)}. Now ${d.status ? d.status + ' in ' : ''}${d.ms} ms.`, `<p><b>${esc(c.name)}</b> is back up after ${fmtDur(d.until - d.since)}.</p>`];
+    case 'site_slow': return [`Slow - ${c.name}`, `🟠 Slow - ${c.name}\n${d.ms} ms on ${d.count} checks in a row (limit ${d.limit} ms)`, `<p><b>${esc(c.name)}</b> answers slowly: ${d.ms} ms on ${d.count} checks in a row (limit ${d.limit} ms).</p>`];
+    case 'cert_expiring': { const x = d.cert; const day = new Date(x.validTo).toISOString().slice(0, 10); return [`Certificate expires in ${x.daysLeft} days - ${c.name}`, `🟡 Certificate expires in ${x.daysLeft} days - ${c.name}\n${x.issuer || 'certificate'}, until ${day}. Check that auto-renewal (certbot / Traefik / Caddy) works.`, `<p>The certificate of <b>${esc(c.name)}</b> expires in <b>${x.daysLeft} days</b> (${day}, ${esc(x.issuer)}).</p>`]; }
+    case 'cert_invalid': { const x = d.cert; const why = x.daysLeft < 0 ? 'it has expired' : !x.nameOk ? `it is not for this name (${(x.names || []).slice(0, 3).join(', ')})` : (x.error || 'not trusted'); return [`Certificate invalid - ${c.name}`, `🔴 Certificate invalid - ${c.name}\n${why}`, `<p>The certificate of <b>${esc(c.name)}</b> is invalid: ${esc(why)}.</p>`]; }
   }
   return [type, type, type];
 }

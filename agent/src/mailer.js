@@ -1,4 +1,4 @@
-// SMTP sender — PORT of server/notifications/mailer.js. Transport build is verbatim
+// SMTP sender - PORT of server/notifications/mailer.js. Transport build is verbatim
 // (secure when port 465, optional auth, three 10s timeouts). Config comes from cfg.smtp;
 // the [DockGate] subject prefix is kept so emails read identically to the panel.
 const nodemailer = require('nodemailer');

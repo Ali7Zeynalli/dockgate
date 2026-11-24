@@ -1,4 +1,4 @@
-// Integration tests for /api/auth — first-run setup gate, rate limit, session revocation.
+// Integration tests for /api/auth - first-run setup gate, rate limit, session revocation.
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');

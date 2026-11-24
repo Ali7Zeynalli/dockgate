@@ -1,6 +1,6 @@
 // Host logs: the newest N lines of any log on the host over SSH, shown in the shared LogViewer.
 // The source picker is filled by discovery (GET /host/log-sources): System quick-picks, every systemd service unit,
-// every file under /var/log. One implementation for Server Console → Logs and Observe → Logs → Host logs.
+// every file under /var/log. One implementation for Server Console > Logs and Observe > Logs > Host logs.
 // Global: renderHostLogs(serverId, container, { header = true, source })
 function renderHostLogs(serverId, container, opts = {}) {
   const head = opts.header === false ? '' : UI.header('Logs', 'System journal and log files of this server. Most sources need passwordless sudo.');

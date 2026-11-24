@@ -1,5 +1,5 @@
 // The shared log viewer (public/js/log-viewer.js) reads text lines from many sources. Its line reader and the
-// limits behind "Last 1,000 … 10,000" are checked here without a browser.
+// limits behind "Last 1,000 ... 10,000" are checked here without a browser.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');

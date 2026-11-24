@@ -1,5 +1,5 @@
-// Deploy → Tasks: the task files of project folders on SSH servers (Makefile, justfile, Taskfile, package.json
-// scripts, *.sh, Ansible playbooks, Kamal) and runs of them — live log, dry run, variables, one run per folder
+// Deploy > Tasks: the task files of project folders on SSH servers (Makefile, justfile, Taskfile, package.json
+// scripts, *.sh, Ansible playbooks, Kamal) and runs of them - live log, dry run, variables, one run per folder
 // at a time, cancel, time limit, history. Project env (encrypted) is handed to every run in a file the run
 // reads and deletes, never on the command line; its secret values are masked in the log.
 //   projects(serverId)          Compose project folders of the server + folders added here
@@ -113,15 +113,15 @@ async function envFileVars(s, dir, configServerId, job) {
   try { fv = await require('./task-envfiles').varsForRun({ exec }, s, dir, configServerId || s.id); } catch (e) { return []; }
   const missing = fv.filter(x => x.missing).map(x => x.missing);
   const got = fv.filter(x => !x.missing && SHELL_KEY.test(x.key));
-  if (job && (got.length || missing.length)) append(job, `env files: ${[...new Set(got.map(x => x.from))].join(', ') || '—'}${missing.length ? ` (not found: ${missing.join(', ')})` : ''}\n`);
+  if (job && (got.length || missing.length)) append(job, `env files: ${[...new Set(got.map(x => x.from))].join(', ') || '-'}${missing.length ? ` (not found: ${missing.join(', ')})` : ''}\n`);
   return got.map(x => ({ key: x.key, value: x.value, secret: x.secret }));
 }
 /** File variables first, DockGate's own values on top (they win). */
 function mergeEnv(fileVars, own) { const m = new Map(fileVars.map(v => [v.key, v])); for (const o of own) m.set(o.key, o); return [...m.values()]; }
 
 // ---------- runs ----------
-const jobs = new Map(); // live runs: id → { id, serverId, dir, name, status, chunks, size, secretValues, … }
-const locks = new Map(); // `${serverId}|${dir}` → run id
+const jobs = new Map(); // live runs: id -> { id, serverId, dir, name, status, chunks, size, secretValues, ... }
+const locks = new Map(); // `${serverId}|${dir}` -> run id
 const MAX_LIVE = 4 * 1024 * 1024, KEEP_LOG = 400 * 1024;
 const homes = new Map();
 async function homeOf(s) { if (homes.has(s.id)) return homes.get(s.id); const r = await exec(s, 'printf %s "$HOME"'); const h = String(r.stdout).trim(); if (!h.startsWith('/')) throw err('Could not find the home folder of the SSH user'); homes.set(s.id, h); return h; }
@@ -133,7 +133,7 @@ function append(job, text) {
   while (job.size > MAX_LIVE && job.chunks.length > 1) { job.size -= job.chunks[0].length; job.chunks.shift(); job.dropped = true; }
   job.listeners.forEach(f => { try { f(t); } catch (e) {} });
 }
-const logText = (job) => (job.dropped ? '… (the start of the log was dropped)\n' : '') + job.chunks.join('');
+const logText = (job) => (job.dropped ? '... (the start of the log was dropped)\n' : '') + job.chunks.join('');
 
 /** Open a run record + live job. kind: task | recipe. */
 function openRun(s, dir, { kind, name, cmd, trigger = 'manual', by = null, meta = {} }) {
@@ -144,7 +144,7 @@ function openRun(s, dir, { kind, name, cmd, trigger = 'manual', by = null, meta 
 }
 function closeRun(job, status, code) {
   job.status = status; job.code = code; job.finished = Date.now();
-  const log = logText(job); const keep = log.length > KEEP_LOG ? '… (the log was cut to its last 400 KB)\n' + log.slice(-KEEP_LOG) : log;
+  const log = logText(job); const keep = log.length > KEEP_LOG ? '... (the log was cut to its last 400 KB)\n' + log.slice(-KEEP_LOG) : log;
   q.endRun.run(job.finished, status, code == null ? null : code, keep, JSON.stringify(job.meta || {}), job.id);
   q.trim.run(job.serverId, job.dir, job.serverId, job.dir);
   job.listeners.forEach(f => { try { f(null); } catch (e) {} });
@@ -168,10 +168,10 @@ async function runShell(job, cmd, { runAs = 'user', login = true, env = [], time
   const line = `${runAs === 'root' ? 'sudo -n ' : ''}setsid bash -c ${shq(script)} _ ${shq(pidf)} ${shq(job.dir)} ${shq(cmd)} ${shq(envf)} 2>&1; rc=$?; ${runAs === 'root' ? 'sudo -n ' : ''}rm -f ${shq(pidf)} ${envf ? shq(envf) : ''}; exit $rc`;
   job.cancel = async () => { job.cancelled = true; await exec(s, `p=$(cat ${shq(pidf)} 2>/dev/null) || exit 0; ${runAs === 'root' ? 'sudo -n ' : ''}kill -TERM -- -$p 2>/dev/null; sleep 5; ${runAs === 'root' ? 'sudo -n ' : ''}kill -KILL -- -$p 2>/dev/null; true`).catch(() => {}); };
   let timer = null;
-  if (timeoutMin > 0) timer = setTimeout(() => { append(job, `\n⏱ Over ${timeoutMin} minutes — stopping it\n`); job.timedOut = true; job.cancel(); }, timeoutMin * 60000);
+  if (timeoutMin > 0) timer = setTimeout(() => { append(job, `\n⏱ Over ${timeoutMin} minutes - stopping it\n`); job.timedOut = true; job.cancel(); }, timeoutMin * 60000);
   try {
     const r = await exec(s, line, (chunk) => append(job, chunk));
-    if (r.code === 1 && /sudo: a (terminal|password) is required|a password is required/.test(String(r.stdout) + String(r.stderr))) append(job, '\nsudo asks for a password — running as root needs passwordless sudo\n');
+    if (r.code === 1 && /sudo: a (terminal|password) is required|a password is required/.test(String(r.stdout) + String(r.stderr))) append(job, '\nsudo asks for a password - running as root needs passwordless sudo\n');
     return r.code;
   } finally { if (timer) clearTimeout(timer); job.cancel = null; }
 }
@@ -183,7 +183,7 @@ async function start(serverId, dir, spec, { trigger = 'manual', by = null, req =
   if (spec.source === 'custom') { cmd = String(spec.cmd || '').trim(); if (!cmd) throw err('A command is needed'); if (cmd.length > 20000) throw err('The command is too long'); label = spec.label || cmd.slice(0, 80); }
   else { cmd = T.command(spec, { vars: spec.vars, args: spec.args, dry: !!spec.dry, pm: spec.pm, inventory: spec.inventory }); label = `${spec.source} ${spec.name}${spec.dry ? ' (dry run)' : ''}`; }
   const key = `${s.id}|${d}`;
-  if (!spec.dry && locks.has(key) && jobs.get(locks.get(key)) && jobs.get(locks.get(key)).status === 'running') throw err(`Something runs in this folder already (run ${locks.get(key)}) — wait or cancel it`, 409, { code: 'BUSY', run: locks.get(key) });
+  if (!spec.dry && locks.has(key) && jobs.get(locks.get(key)) && jobs.get(locks.get(key)).status === 'running') throw err(`Something runs in this folder already (run ${locks.get(key)}) - wait or cancel it`, 409, { code: 'BUSY', run: locks.get(key) });
   const job = openRun(s, d, { kind: 'task', name: label, cmd, trigger, by, meta: { source: spec.source, task: spec.name || null, vars: spec.vars || {}, dry: !!spec.dry, runAs: spec.runAs || 'user' } });
   if (!spec.dry) locks.set(key, job.id);
   if (req) logAction({ req, server: s.id, resourceType: 'task', resourceName: d, action: spec.dry ? 'task_dry_run' : 'task_run', details: { task: label, trigger } });
@@ -194,13 +194,13 @@ async function start(serverId, dir, spec, { trigger = 'manual', by = null, req =
     catch (e) { append(job, `\n✗ ${e.message}\n`); }
     if (locks.get(key) === job.id) locks.delete(key);
     const status = job.cancelled ? (job.timedOut ? 'timeout' : 'cancelled') : code === 0 ? 'ok' : 'failed';
-    append(job, `\n${status === 'ok' ? '✓ Done' : status === 'cancelled' ? '■ Cancelled' : status === 'timeout' ? '⏱ Stopped (time limit)' : `✗ Exit code ${code}`} · ${((Date.now() - job.started) / 1000).toFixed(1)} s\n`);
+    append(job, `\n${status === 'ok' ? '✓ Done' : status === 'cancelled' ? '■ Cancelled' : status === 'timeout' ? '⏱ Stopped (time limit)' : `✗ Exit code ${code}`}, ${((Date.now() - job.started) / 1000).toFixed(1)} s\n`);
     closeRun(job, status, code);
   })();
   return { id: job.id };
 }
 
-async function cancel(id) { const j = jobs.get(Number(id)); if (!j || j.status !== 'running') return { cancelled: false }; append(j, '\n■ Cancel asked — stopping the process group\n'); if (j.cancel) await j.cancel(); else j.cancelled = true; return { cancelled: true }; }
+async function cancel(id) { const j = jobs.get(Number(id)); if (!j || j.status !== 'running') return { cancelled: false }; append(j, '\n■ Cancel asked - stopping the process group\n'); if (j.cancel) await j.cancel(); else j.cancelled = true; return { cancelled: true }; }
 
 function runs(serverId, dir, limit = 50) { const s = server(serverId); return q.runs.all(s.id, okDir(dir), Math.max(1, Math.min(300, Number(limit) || 50))).map(r => ({ ...r, meta: JSON.parse(r.meta || '{}'), live: jobs.has(r.id) && jobs.get(r.id).status === 'running' })); }
 /** A run's log from a position on (the UI polls with the size it has). */
@@ -214,7 +214,7 @@ function runLog(id, from = 0) {
 
 // ---------- templates ----------
 const TEMPLATES = {
-  Makefile: { file: 'Makefile', text: `# Tasks of this project — DockGate (Deploy → Tasks) lists every target with its "## text".
+  Makefile: { file: 'Makefile', text: `# Tasks of this project - DockGate (Deploy > Tasks) lists every target with its "## text".
 .DEFAULT_GOAL := help
 COMPOSE ?= docker compose
 SERVICE ?=
@@ -246,7 +246,7 @@ down: ## Stop and remove the containers
 .PHONY: help pull build up deploy logs ps down
 ` },
   'deploy.sh': { file: 'deploy.sh', mode: '755', text: `#!/usr/bin/env bash
-# Deploy: pull the code, build, start, and check — go back to the previous commit when the check fails.
+# Deploy: pull the code, build, start, and check - go back to the previous commit when the check fails.
 set -euo pipefail
 cd "$(dirname "$0")"
 HEALTH_URL="\${HEALTH_URL:-}"          # e.g. http://localhost:8080/health (empty = no check)
@@ -256,14 +256,14 @@ docker compose build
 docker compose up -d --remove-orphans
 if [ -n "$HEALTH_URL" ]; then
   for i in $(seq 1 20); do curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null && { echo "✓ healthy"; exit 0; }; sleep 3; done
-  echo "✗ $HEALTH_URL does not answer — going back to $before"
+  echo "✗ $HEALTH_URL does not answer - going back to $before"
   git reset --hard "$before"
   docker compose up -d --build --remove-orphans
   exit 1
 fi
 echo "✓ deployed $(git rev-parse --short HEAD)"
 ` },
-  justfile: { file: 'justfile', text: `# Tasks of this project — DockGate (Deploy → Tasks) lists every recipe with the comment above it.
+  justfile: { file: 'justfile', text: `# Tasks of this project - DockGate (Deploy > Tasks) lists every recipe with the comment above it.
 compose := "docker compose"
 
 # Show the tasks

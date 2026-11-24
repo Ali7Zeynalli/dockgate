@@ -1,5 +1,5 @@
 'use strict';
-// Build & push for Swarm (server/swarm-build.js) — where an image goes. No Docker.
+// Build & push for Swarm (server/swarm-build.js) - where an image goes. No Docker.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const B = require('../../server/swarm-build');

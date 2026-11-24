@@ -1,5 +1,5 @@
 // How DockGate reaches the Git repository of a stack it did not clone itself (adopted from the server, or found by
-// its containers): an access token (HTTPS) or an SSH key from Servers → SSH keys, per server and project. Without
+// its containers): an access token (HTTPS) or an SSH key from Servers > SSH keys, per server and project. Without
 // one, git uses whatever the server's own user has set up (its SSH key, a credential helper). Tokens are stored
 // encrypted, never shown again, never written into the repository's .git/config.
 const { db } = require('./db');
@@ -40,7 +40,7 @@ function set(serverId, project, { method, keyId, token }) {
 }
 function remove(serverId, project) { q.del.run(serverId || 'local', project); }
 
-// git@host:owner/repo(.git) ⇄ https://host/owner/repo(.git) — a token needs HTTPS, a key needs SSH
+// git@host:owner/repo(.git) ⇄ https://host/owner/repo(.git) - a token needs HTTPS, a key needs SSH
 function toHttps(url) {
   const s = String(url || '').trim();
   let m = s.match(/^git@([^:]+):(.+)$/); if (m) return `https://${m[1]}/${m[2]}`;
@@ -53,7 +53,7 @@ function toSsh(url) {
   return m ? `git@${m[1]}:${m[2]}` : s;
 }
 
-/** https://host/… with the token as git expects it there (a user name and the token as its password). */
+/** https://host/... with the token as git expects it there (a user name and the token as its password). */
 function withToken(url, token) {
   const u = toHttps(url); if (!token || !/^https:\/\//i.test(u)) return u;
   const host = (u.match(/^https:\/\/([^/]+)/i) || [])[1] || '';
@@ -63,18 +63,18 @@ function withToken(url, token) {
 }
 
 /** Turns git's own auth failures into what to do. */
-/** Credentials inside any URL of a message (https://user:token@host) → https://***@host. */
+/** Credentials inside any URL of a message (https://user:token@host) -> https://***@host. */
 const hideUrlAuth = (msg) => String(msg || '').replace(/(https?:\/\/)[^@\s/'"]+@/gi, '$1***@');
 function explain(msg) {
   const s = hideUrlAuth(msg);
   if (/Invalid username or token|could not read Password|HTTP Basic: Access denied|Invalid credentials/i.test(s) || (/Authentication failed for/i.test(s) && /\*\*\*|x-access-token|oauth2|x-token-auth/.test(s))) {
-    return `${s.trim()}\n→ The repository refused the access token: it is wrong, expired, or has no read access to this repository. Paste a new one: the stack's page → Git → Access…`;
+    return `${s.trim()}\n > The repository refused the access token: it is wrong, expired, or has no read access to this repository. Paste a new one: the stack's page > Git > Access...`;
   }
   if (/could not read Username|Authentication failed|terminal prompts disabled|Invalid username or password|403/i.test(s)) {
-    return `${s.trim()}\n→ The repository is private and git has no access to it. Give DockGate an access token or an SSH key: the stack's page → Git → Access…`;
+    return `${s.trim()}\n > The repository is private and git has no access to it. Give DockGate an access token or an SSH key: the stack's page > Git > Access...`;
   }
   if (/Permission denied \(publickey\)|Host key verification failed|Could not read from remote repository/i.test(s)) {
-    return `${s.trim()}\n→ The server's SSH key is not accepted for this repository. Choose an SSH key for it (the stack's page → Git → Access…) and add its public key to the repository's Deploy keys — or use an access token.`;
+    return `${s.trim()}\n > The server's SSH key is not accepted for this repository. Choose an SSH key for it (the stack's page > Git > Access...) and add its public key to the repository's Deploy keys - or use an access token.`;
   }
   return s;
 }

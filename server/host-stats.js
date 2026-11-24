@@ -1,11 +1,11 @@
-// Host metrics — PURE parsers for /proc + df/ps/ss output, plus collectHostStats() which gathers one
+// Host metrics - PURE parsers for /proc + df/ps/ss output, plus collectHostStats() which gathers one
 // snapshot over SSH via an isolated worker (host-stats-worker.js). CPU% and net rate need two reads
 // ~0.6s apart, so the remote command samples /proc/stat and /proc/net/dev twice.
 const { execFile } = require('child_process');
 const path = require('path');
 
 function cpuTimes(line) {
-  const p = line.trim().split(/\s+/).slice(1).map(Number); // user nice system idle iowait irq softirq steal …
+  const p = line.trim().split(/\s+/).slice(1).map(Number); // user nice system idle iowait irq softirq steal ...
   const idle = (p[3] || 0) + (p[4] || 0);
   const total = p.reduce((a, b) => a + (b || 0), 0);
   return { idle, total };

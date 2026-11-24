@@ -1,5 +1,5 @@
-// The env files of a project folder (Deploy → Tasks → Env & secrets, a project's page): .env and every file whose
-// name starts with .env (.env.local, .env.production, .env-dev, .env_staging …) or ends in .env (app.env), in the
+// The env files of a project folder (Deploy > Tasks > Env & secrets, a project's page): .env and every file whose
+// name starts with .env (.env.local, .env.production, .env-dev, .env_staging ...) or ends in .env (app.env), in the
 // folder and its subfolders, read like dotenv reads them. Each file is shown
 // on its own (path, keys, which look secret, used by Compose, tracked by Git); keys can be imported into the
 // folder's Env & secrets, and chosen files can be loaded into every task / recipe run (DockGate's own values win).
@@ -20,7 +20,7 @@ const SECRETISH = /(PASS|PWD|SECRET|TOKEN|PRIVATE|CREDENTIAL|AUTH|API_?KEY|ACCES
 const EXAMPLE = /\.(example|sample|template|dist|defaults?)$|\.example\.|\.sample\./i;
 const REL_RE = /^(?!.*(^|\/)\.\.(\/|$))[\w.@+\-/ ]{1,300}$/;
 
-/** dotenv-style parsing: comments, `export`, '…' (literal), "…" (escapes, may span lines), unquoted with ` #` comments. */
+/** dotenv-style parsing: comments, `export`, '...' (literal), "..." (escapes, may span lines), unquoted with ` #` comments. */
 function parseDotenv(text) {
   const vars = []; let bad = 0;
   const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
@@ -55,7 +55,7 @@ const secretish = (key) => SECRETISH.test(key);
 function preview(key, value) {
   if (!value) return '';
   if (secretish(key)) return '••••••';
-  return value.length > 300 ? value.slice(0, 300) + '…' : value;
+  return value.length > 300 ? value.slice(0, 300) + '...' : value;
 }
 
 /** Find and read every env file of the folder (and its Compose and Git context). */

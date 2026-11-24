@@ -1,5 +1,5 @@
 // Unified Observability & Monitoring Dashboard (Grafana-like Native Charts & Metrics)
-// Zero external libraries — pure HTML5 Canvas & SVG with smooth bezier curves and tooltips.
+// Zero external libraries - pure HTML5 Canvas & SVG with smooth bezier curves and tooltips.
 
 const MonitoringPage = {
   currentRange: 'live', // 'live' (rolling 15 minutes) or '48h' (DockGate's store)
@@ -28,7 +28,7 @@ const MonitoringPage = {
         <div id="mon-fleet"></div>
         <div class="ui-sub" id="mon-range-note" style="margin:-6px 0 -8px"></div>
 
-        <div class="ui-ph" style="margin:6px 0 -6px"><div class="ui-ph-text"><div class="ui-ph-title">${escapeHtml(activeServer.name || activeServer.label || serverId)} <span id="mon-agent-badge" class="ui-pill ui-pill-off" style="margin-left:6px">connecting…</span></div><div class="ui-ph-desc">Metrics of the server picked in the header — live, or the last 48 hours, as chosen above.</div></div></div>
+        <div class="ui-ph" style="margin:6px 0 -6px"><div class="ui-ph-text"><div class="ui-ph-title">${escapeHtml(activeServer.name || activeServer.label || serverId)} <span id="mon-agent-badge" class="ui-pill ui-pill-off" style="margin-left:6px">connecting...</span></div><div class="ui-ph-desc">Metrics of the server picked in the header - live, or the last 48 hours, as chosen above.</div></div></div>
 
         <!-- Metric Stat Cards -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:14px;">
@@ -36,7 +36,7 @@ const MonitoringPage = {
           <div class="card" style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);position:relative;overflow:hidden;">
             <div style="display:flex;justify-content:space-between;color:var(--text-muted);font-size:12px;font-weight:600;">
               <span>HOST CPU</span>
-              <span id="mon-stat-cpu-sub">—</span>
+              <span id="mon-stat-cpu-sub">-</span>
             </div>
             <div id="mon-stat-cpu" style="font-size:26px;font-weight:800;margin:6px 0 2px;color:var(--text-primary);">0.0%</div>
             <div class="progress-bar" style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
@@ -48,7 +48,7 @@ const MonitoringPage = {
           <div class="card" style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);position:relative;overflow:hidden;">
             <div style="display:flex;justify-content:space-between;color:var(--text-muted);font-size:12px;font-weight:600;">
               <span>HOST MEMORY</span>
-              <span id="mon-stat-mem-sub">—</span>
+              <span id="mon-stat-mem-sub">-</span>
             </div>
             <div id="mon-stat-mem" style="font-size:26px;font-weight:800;margin:6px 0 2px;color:var(--text-primary);">0.0%</div>
             <div class="progress-bar" style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
@@ -60,7 +60,7 @@ const MonitoringPage = {
           <div class="card" style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);position:relative;overflow:hidden;">
             <div style="display:flex;justify-content:space-between;color:var(--text-muted);font-size:12px;font-weight:600;">
               <span>DISK USAGE ( / )</span>
-              <span id="mon-stat-disk-sub">—</span>
+              <span id="mon-stat-disk-sub">-</span>
             </div>
             <div id="mon-stat-disk" style="font-size:26px;font-weight:800;margin:6px 0 2px;color:var(--text-primary);">0.0%</div>
             <div class="progress-bar" style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
@@ -74,7 +74,7 @@ const MonitoringPage = {
               <span>NETWORK I/O</span>
               <span id="mon-stat-net-sub">RX / TX</span>
             </div>
-            <div id="mon-stat-net" style="font-size:20px;font-weight:800;margin:8px 0 2px;color:var(--text-primary);">0 KB/s · 0 KB/s</div>
+            <div id="mon-stat-net" style="font-size:20px;font-weight:800;margin:8px 0 2px;color:var(--text-primary);">0 KB/s, 0 KB/s</div>
             <div style="font-size:11px;color:var(--text-muted);">Real-time bandwidth</div>
           </div>
         </div>
@@ -149,7 +149,7 @@ const MonitoringPage = {
                 </tr>
               </thead>
               <tbody id="mon-containers-tbody">
-                <tr><td colspan="5" style="padding:16px;text-align:center;color:var(--text-muted);">Loading containers…</td></tr>
+                <tr><td colspan="5" style="padding:16px;text-align:center;color:var(--text-muted);">Loading containers...</td></tr>
               </tbody>
             </table>
           </div>
@@ -208,7 +208,7 @@ const MonitoringPage = {
         const lastY = pts[pts.length - 1].split(',')[1];
         return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true" style="display:block"><polyline points="0,${h} ${pts.join(' ')} ${w},${h}" fill="${color}" fill-opacity=".14" stroke="none"/><polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5"/><circle cx="${w}" cy="${lastY}" r="2.4" fill="${color}"/></svg>`;
       };
-      const pct = (x) => x == null ? '—' : `${Math.round(x)}%`;
+      const pct = (x) => x == null ? '-' : `${Math.round(x)}%`;
       const rows = servers.map(s => {
         const o = (ov.servers || {})[s.id] || {}, last = o.lastStat, series = o.series || [];
         const ageMin = last && last.ts ? (Date.now() - new Date(String(last.ts).replace(' ', 'T') + (String(last.ts).includes('Z') ? '' : 'Z')).getTime()) / 60000 : null;
@@ -226,11 +226,11 @@ const MonitoringPage = {
           state,
           `${spark(series.map(x => x.cpu), '#3b82f6')}<span class="ui-sub">${pct(last && last.cpu)}</span>`,
           `${spark(series.map(x => x.mem), '#a78bfa')}<span class="ui-sub">${pct(last && last.mem)}</span>`,
-          last && last.disk != null ? `<div class="disk-bar" style="height:6px;margin:0;width:120px"><div class="disk-bar-fill ${diskCls}" style="width:${Math.min(100, last.disk)}%"></div></div><span class="ui-sub">${pct(last.disk)}</span>` : '<span class="text-muted">—</span>',
+          last && last.disk != null ? `<div class="disk-bar" style="height:6px;margin:0;width:120px"><div class="disk-bar-fill ${diskCls}" style="width:${Math.min(100, last.disk)}%"></div></div><span class="ui-sub">${pct(last.disk)}</span>` : '<span class="text-muted">-</span>',
           s.id === 'local' ? '' : UI.btn('Open', `data-mon-open="${escapeHtml(s.id)}"`),
         ] };
       });
-      el.innerHTML = UI.table([{ label: 'Server' }, { label: 'State' }, { label: 'CPU · last 40 min' }, { label: 'Memory · last 40 min' }, { label: 'Disk' }, { label: '', align: 'right' }], rows, { empty: 'No servers yet.', minWidth: 760 });
+      el.innerHTML = UI.table([{ label: 'Server' }, { label: 'State' }, { label: 'CPU, last 40 min' }, { label: 'Memory, last 40 min' }, { label: 'Disk' }, { label: '', align: 'right' }], rows, { empty: 'No servers yet.', minWidth: 760 });
       el.querySelectorAll('[data-mon-open]').forEach(b => b.addEventListener('click', () => Router.navigate('server-console', { id: b.dataset.monOpen, tab: 'monitoring' })));
     } catch (e) {
       el.innerHTML = UI.errorState(e, { compact: true, title: 'The server list could not be loaded' });
@@ -251,7 +251,7 @@ const MonitoringPage = {
         API.get(`/monitoring/${serverId}/summary`).catch(() => null)
       ]);
 
-      // Live without the agent: one sample per refresh → keep a rolling 15-minute window here (host + containers).
+      // Live without the agent: one sample per refresh -> keep a rolling 15-minute window here (host + containers).
       if (this.currentRange === 'live' && metrics.count === 1 && metrics.timestamps && metrics.timestamps.length === 1 && metrics.host && metrics.host.cpu) {
         if (!this._clientHistory) this._clientHistory = { timestamps: [], cpu: [], mem: [], netRx: [], netTx: [], containers: {} };
         const h = this._clientHistory;
@@ -288,14 +288,14 @@ const MonitoringPage = {
     if (note) {
       if (data.range === '48h') {
         const hrs = data.storedSince ? (Date.now() - data.storedSince) / 3600000 : 0;
-        note.textContent = data.storedSince ? `Last 48 hours from DockGate's own store: 5-minute averages of one sample a minute${hrs < 47 ? ` · stored since ${new Date(data.storedSince).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} (${hrs < 1 ? Math.max(1, Math.round(hrs * 60)) + ' min' : Math.round(hrs) + ' h'})` : ''}. Kept across reboots.` : 'No stored samples yet — DockGate stores one a minute and keeps 48 hours.';
-      } else note.textContent = `Live · the last 15 minutes${data.source === 'agent' ? ' from the edge agent' : ', read by DockGate on each refresh'}.`;
+        note.textContent = data.storedSince ? `Last 48 hours from DockGate's own store: 5-minute averages of one sample a minute${hrs < 47 ? `, stored since ${new Date(data.storedSince).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} (${hrs < 1 ? Math.max(1, Math.round(hrs * 60)) + ' min' : Math.round(hrs) + ' h'})` : ''}. Kept across reboots.` : 'No stored samples yet - DockGate stores one a minute and keeps 48 hours.';
+      } else note.textContent = `Live, the last 15 minutes${data.source === 'agent' ? ' from the edge agent' : ', read by DockGate on each refresh'}.`;
     }
     const badge = document.getElementById('mon-agent-badge');
     if (badge) {
       const agent = data.source === 'agent';
       badge.className = `ui-pill ui-pill-${agent ? 'ok' : 'info'}`;
-      badge.textContent = agent ? 'edge agent · live' : 'polled by DockGate';
+      badge.textContent = agent ? 'edge agent, live' : 'polled by DockGate';
       badge.title = agent ? 'Metrics come from the edge agent on the server.' : 'DockGate reads these metrics over SSH (or the local socket) every few seconds.';
     }
 
@@ -325,7 +325,7 @@ const MonitoringPage = {
     if (elDiskBar) elDiskBar.style.width = `${Math.min(100, diskVal)}%`;
 
     const elNet = document.getElementById('mon-stat-net');
-    if (elNet) elNet.textContent = `↓ ${(netRx / 1024).toFixed(1)} KB/s · ↑ ${(netTx / 1024).toFixed(1)} KB/s`;
+    if (elNet) elNet.textContent = `↓ ${(netRx / 1024).toFixed(1)} KB/s, ↑ ${(netTx / 1024).toFixed(1)} KB/s`;
 
     // 2. Render Canvas Charts
     const timestamps = data.timestamps || [];
@@ -349,7 +349,7 @@ const MonitoringPage = {
       });
       cIndex++;
     }
-    this.drawChart('chart-containers', timestamps, containerLines, '%', data.range === '48h' ? 'Container graphs are live only — switch to Live.' : null);
+    this.drawChart('chart-containers', timestamps, containerLines, '%', data.range === '48h' ? 'Container graphs are live only - switch to Live.' : null);
 
     // 3. Render Containers Table
     const tbody = document.getElementById('mon-containers-tbody');
@@ -363,7 +363,7 @@ const MonitoringPage = {
           const name = c.name || c.id || 'container';
           const cpuP = c.cpuPercent ?? 0;
           const memBytes = c.memUsageBytes ?? c.memUsedBytes; // the Edge agent sends memUsedBytes
-          const memMb = memBytes ? (memBytes / (1024 * 1024)).toFixed(1) : (c.memMb ? c.memMb : '—');
+          const memMb = memBytes ? (memBytes / (1024 * 1024)).toFixed(1) : (c.memMb ? c.memMb : '-');
           const memP = c.memPercent ?? 0;
 
           return `
@@ -413,7 +413,7 @@ const MonitoringPage = {
       ctx.fillStyle = '#64748b';
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(emptyText || (this.currentRange === '48h' ? 'No stored samples yet — DockGate stores one a minute.' : 'Collecting live samples…'), w / 2, h / 2);
+      ctx.fillText(emptyText || (this.currentRange === '48h' ? 'No stored samples yet - DockGate stores one a minute.' : 'Collecting live samples...'), w / 2, h / 2);
       return;
     }
 

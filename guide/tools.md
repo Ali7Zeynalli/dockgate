@@ -1,6 +1,6 @@
-# Tools → Terminal, Files, Databases, Schedules
+# Tools > Terminal, Files, Databases, Schedules
 
-> **Where:** sidebar **Tools** (Terminal, Files) · **Databases** · **Server → Automation → Schedules**
+> **Where:** sidebar **Tools** (Terminal, Files), **Databases**, **Server > Automation > Schedules**
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**).
 
@@ -12,14 +12,14 @@
 
 | Tab | What you get |
 |---|---|
-| **Container** | A shell inside a running container. Pick the container and the shell (`/bin/sh`, `/bin/bash`…), then **Connect** |
-| **Server** | A shell on the server. On a remote server it is a real SSH shell (`apt`, `systemctl`, `docker`…). On *Local* it is a shell inside the DockGate container, which has the `docker` CLI |
+| **Container** | A shell inside a running container. Pick the container and the shell (`/bin/sh`, `/bin/bash`...), then **Connect** |
+| **Server** | A shell on the server. On a remote server it is a real SSH shell (`apt`, `systemctl`, `docker`...). On *Local* it is a shell inside the DockGate container, which has the `docker` CLI |
 
 **Ctrl+`** opens the **quick terminal** from any page: a drawer at the bottom that keeps running while you move around. The **Terminal** button in the top bar does the same.
 
-The default shell is set in **Settings → General → Default shell**. When a session ends, press **Reconnect**.
+The default shell is set in **Settings > General > Default shell**. When a session ends, press **Reconnect**.
 
-> Opening a container terminal is recorded in **System → Activity → Audit log** (`terminal_open`). What you type is not recorded.
+> Opening a container terminal is recorded in **System > Activity > Audit log** (`terminal_open`). What you type is not recorded.
 
 ---
 
@@ -34,7 +34,7 @@ The default shell is set in **Settings → General → Default shell**. When a s
       - /srv:/host/srv    # any folder you want to manage
 ```
 
-They then appear under `/host/…`. Remote servers need nothing: pick one in the top bar.
+They then appear under `/host/...`. Remote servers need nothing: pick one in the top bar.
 
 ![Files](images/files.png)
 
@@ -44,7 +44,7 @@ They then appear under `/host/…`. Remote servers need nothing: pick one in the
 | **New folder** / **New file** | Create in the current folder |
 | **Upload** | Files or whole folders, with progress. Drop them on the page |
 | **Edit** | Text files open in an editor (see below) |
-| **👁 Preview** | Images (PNG, JPG, GIF, WebP, SVG, ICO…) open as a picture with their size in pixels |
+| **👁 Preview** | Images (PNG, JPG, GIF, WebP, SVG, ICO...) open as a picture with their size in pixels |
 | **📜 Tail** | Logs (`*.log`, files in `/var/log`) open in the log viewer and follow new lines every 3 s: search, levels, Live / Pause, Download. A log the SSH user may not read is read with sudo |
 | **Permissions** | Click the `rw-r--r--` in a row: change the mode (ticks or a number like `644`) and the owner and group; for a folder, optionally everything inside too |
 | **Rename** / **Delete** | One item, or tick several and **Delete selected** |
@@ -57,18 +57,18 @@ They then appear under `/host/…`. Remote servers need nothing: pick one in the
 The panel on the left jumps to:
 
 - **Home** of the SSH user and **/**; on *Local*, the shared folders;
-- folders that exist on this server: `/srv`, `/opt`, `/etc`, `/etc/nginx`, `/var/log`, `/var/www`, Docker volumes …;
+- folders that exist on this server: `/srv`, `/opt`, `/etc`, `/etc/nginx`, `/var/log`, `/var/www`, Docker volumes ...;
 - **Compose projects** of this server (their folders);
-- your **Bookmarks** — ☆ bookmarks the folder you are in (kept in this browser, per server).
+- your **Bookmarks** - ☆ bookmarks the folder you are in (kept in this browser, per server).
 
-Deploy → Projects → ⋯ → **Open folder in Files** (or the project's *Working Directory*) opens that folder in Quick Files.
+Deploy > Projects -> ⋯ -> **Open folder in Files** (or the project's *Working Directory*) opens that folder in Quick Files.
 
 ### Quick Files
 
-The **Files** button in the top bar (or **Ctrl+Shift+F**, or ⌘K → *Open quick files*) opens the same file browser in a window over any page — like the Terminal button. It works on the server picked in the top bar and switches with it.
+The **Files** button in the top bar (or **Ctrl+Shift+F**, or ⌘K -> *Open quick files*) opens the same file browser in a window over any page - like the Terminal button. It works on the server picked in the top bar and switches with it.
 
-- **—** or **Esc** minimizes it: the folder stays, and a dot on the Files button shows it is still open. Click the button to bring it back.
-- **⤢** fills the screen; **Open page** goes to Tools → Files; **×** closes it.
+- **-** or **Esc** minimizes it: the folder stays, and a dot on the Files button shows it is still open. Click the button to bring it back.
+- **⤢** fills the screen; **Open page** goes to Tools > Files; **×** closes it.
 - It opens in the folder you were last in on that server.
 
 ### The editor
@@ -76,45 +76,45 @@ The **Files** button in the top bar (or **Ctrl+Shift+F**, or ⌘K → *Open quic
 | | |
 |---|---|
 | **Ctrl+S** (⌘S) | Save |
-| **Esc** | Close — if something is not saved, DockGate asks first. A ● after the name means unsaved changes |
-| **Save…** | Shows the changed lines (green added, red removed) before anything is written |
-| **Versions** | The content the file had before each save from DockGate — the last 5 per file (up to 512 KB each). Pick one to compare it with the editor, then **Put it in the editor** and save. Kept encrypted in DockGate's database, not next to the file (a `default.conf.bak` in nginx's `conf.d/` would be loaded too) |
+| **Esc** | Close - if something is not saved, DockGate asks first. A ● after the name means unsaved changes |
+| **Save...** | Shows the changed lines (green added, red removed) before anything is written |
+| **Versions** | The content the file had before each save from DockGate - the last 5 per file (up to 512 KB each). Pick one to compare it with the editor, then **Put it in the editor** and save. Kept encrypted in DockGate's database, not next to the file (a `default.conf.bak` in nginx's `conf.d/` would be loaded too) |
 
 **Colours:** YAML, JSON, nginx, shell / Dockerfile and `.env` / ini files are coloured (keys, strings, numbers, comments). Files over 300 KB are shown without colours.
 
 **Checks:**
 - **System files:** `sshd_config` (`sshd -t`), `sudoers` (`visudo -c`) and `/etc/fstab` (`findmnt --verify`) are checked on the server before saving.
-- **Compose files** (`docker-compose.yml`, `compose.yaml` …): **Check** — and every Save — runs `docker compose config` on what is in the editor, with the file's folder as the project folder. A mistake is shown before anything is written.
+- **Compose files** (`docker-compose.yml`, `compose.yaml` ...): **Check** - and every Save - runs `docker compose config` on what is in the editor, with the file's folder as the project folder. A mistake is shown before anything is written.
 - **JSON:** Save says when the content is not valid JSON.
 - **nginx** (files under `/etc/nginx/`): after Save, `nginx -t` checks the whole configuration. If nginx would not accept it, **Put the previous content back** restores the file (your edit stays under Versions). nginx keeps running with the old configuration until it is reloaded.
 
 A save is never half written: the new content goes to a temporary file next to it, which gets the file's mode and owner, then replaces the file in one step. If the owner can not be kept (the file belongs to another user), the file is written in place, so its owner stays.
 
-**Files of another user** (for example `/etc/nginx/nginx.conf` owned by root): DockGate offers **Open with sudo** / **Save with sudo**. This needs passwordless sudo for the SSH user — the deploy user made in Server → Software → Setup has it. Owner and mode stay the same. Changing the owner (Permissions) always uses sudo on a remote server; on *Local* use numbers (uid and gid).
+**Files of another user** (for example `/etc/nginx/nginx.conf` owned by root): DockGate offers **Open with sudo** / **Save with sudo**. This needs passwordless sudo for the SSH user - the deploy user made in Server > Software > Setup has it. Owner and mode stay the same. Changing the owner (Permissions) always uses sudo on a remote server; on *Local* use numbers (uid and gid).
 
 **Changed on the server:** if someone changed the file after you opened it, Save stops and asks: **Load theirs**, or **Save mine anyway**.
 
-Files inside containers and volumes are edited on their own pages: **Resources → Containers →** a container **→ Files**, and **Resources → Volumes → Browse**.
+Files inside containers and volumes are edited on their own pages: **Resources > Containers -> ** a container ** > Files**, and **Resources > Volumes > Browse**.
 
 ---
 
 ## Databases
 
-PostgreSQL running in containers on the server picked in the top bar — browse and edit tables, run SQL, manage users, back up and restore. A PostgreSQL container's page has **Open in Databases** too.
+PostgreSQL running in containers on the server picked in the top bar - browse and edit tables, run SQL, manage users, back up and restore. A PostgreSQL container's page has **Open in Databases** too.
 
-**How DockGate reaches it:** it runs `psql` (and `pg_dump`, `pg_restore`) **inside the container** with `docker exec`. No port is published, no tunnel, no client to install — the same on this machine and on SSH servers. It finds containers of the `postgres`, `postgis`, `timescaledb`, `pgvector`, `supabase/postgres`, `bitnami/postgresql` and similar images, and logs in as the container's `POSTGRES_USER` (or `postgres`) to its `POSTGRES_DB`. **Connection…** sets another user, login database or password (stored encrypted) — usually not needed, because inside the container the local socket trusts its users.
+**How DockGate reaches it:** it runs `psql` (and `pg_dump`, `pg_restore`) **inside the container** with `docker exec`. No port is published, no tunnel, no client to install - the same on this machine and on SSH servers. It finds containers of the `postgres`, `postgis`, `timescaledb`, `pgvector`, `supabase/postgres`, `bitnami/postgresql` and similar images, and logs in as the container's `POSTGRES_USER` (or `postgres`) to its `POSTGRES_DB`. **Connection...** sets another user, login database or password (stored encrypted) - usually not needed, because inside the container the local socket trusts its users.
 
 **Safety**
 
 | | |
 |---|---|
-| **Read-only by default** | Every session runs with `default_transaction_read_only = on` until you turn on **Allow changes** (the 🔒 switch in the status bar, or the container's menu). It is a guard against mistakes, not a permission system — the admin can always turn it on |
-| **Asks first** | `DROP`, `TRUNCATE`, `ALTER … DROP`, and `DELETE` / `UPDATE` without `WHERE`. A connection marked **Production** asks before every statement that changes data |
+| **Read-only by default** | Every session runs with `default_transaction_read_only = on` until you turn on **Allow changes** (the 🔒 switch in the status bar, or the container's menu). It is a guard against mistakes, not a permission system - the admin can always turn it on |
+| **Asks first** | `DROP`, `TRUNCATE`, `ALTER ... DROP`, and `DELETE` / `UPDATE` without `WHERE`. A connection marked **Production** asks before every statement that changes data |
 | **Edits by primary key only** | A cell, a new row or deleted rows touch exactly the rows meant (a table without a primary key is changed with SQL) |
-| **Limits** | 30 s per statement in the editor and the table view, `lock_timeout` 10 s; psql commands (`\…`) are not run |
+| **Limits** | 30 s per statement in the editor and the table view, `lock_timeout` 10 s; psql commands (`\...`) are not run |
 | **Audit log** | Every change: SQL that writes, row edits, users, databases, backups, restores |
 
-### The page — Explorer, tabs, menus
+### The page - Explorer, tabs, menus
 
 ![Databases](images/databases.png)
 
@@ -122,24 +122,24 @@ The page works like a database client:
 
 | | |
 |---|---|
-| **Explorer** (left) | container → database → schema → **Tables / Views / Materialized views / Sequences / Functions** → a table's **Columns** (🔑 primary key, 🔗 foreign key, type, not null), **Indexes**, **Foreign keys**, **Triggers**. Each level loads when opened; what was open is kept. The filter finds tables, views and functions; ↑ ↓ move, → ← open and close, Enter opens, Shift+F10 the menu. Drag its edge to make it wider |
+| **Explorer** (left) | container -> database -> schema -> **Tables / Views / Materialized views / Sequences / Functions** -> a table's **Columns** (🔑 primary key, 🔗 foreign key, type, not null), **Indexes**, **Foreign keys**, **Triggers**. Each level loads when opened; what was open is kept. The filter finds tables, views and functions; ↑ ↓ move, -> ← open and close, Enter opens, Shift+F10 the menu. Drag its edge to make it wider |
 | **Tabs** (right) | a table's **data**, its **design**, each **SQL query**, a **database overview**, **admin** and **backups** open as tabs. A click opens a *preview* tab (name in italics) that the next click replaces; a double-click or an edit keeps it. Middle-click closes. The tabs come back after a reload |
-| **Right-click** | on every node and tab — see the table below |
-| **Status bar** | container › database › table, the PostgreSQL version and user, **production**, the **🔒 Read-only / ✎ Changes allowed** switch and **Connection…** |
+| **Right-click** | on every node and tab - see the table below |
+| **Status bar** | container › database › table, the PostgreSQL version and user, **production**, the **🔒 Read-only / ✎ Changes allowed** switch and **Connection...** |
 
 | Right-click on | |
 |---|---|
-| a container | New query · Refresh · Users, sessions and databases · Backups · Connection settings · Allow changes / make it read-only |
-| a database | New query · Open (the overview) · **New table** · **Export** · **Import a .sql file** · **New table from a CSV** · Refresh · Admin · Backups |
-| a table or view | Open data · Open in a new tab · **Design** · New query: **SELECT / INSERT / UPDATE / DELETE** (filled with its columns and key) or the view's definition · Count rows · **Export** (SQL, CSV, Excel) · **Fill with test data** · Export CSV / JSON lines · Copy name · VACUUM ANALYZE / ANALYZE / REFRESH · **Empty (TRUNCATE)** · **Drop** — the last two ask for the name |
+| a container | New query, Refresh, Users, sessions and databases, Backups, Connection settings, Allow changes / make it read-only |
+| a database | New query, Open (the overview), **New table**, **Export**, **Import a .sql file**, **New table from a CSV**, Refresh, Admin, Backups |
+| a table or view | Open data, Open in a new tab, **Design**, New query: **SELECT / INSERT / UPDATE / DELETE** (filled with its columns and key) or the view's definition, Count rows, **Export** (SQL, CSV, Excel), **Fill with test data**, Export CSV / JSON lines, Copy name, VACUUM ANALYZE / ANALYZE / REFRESH, **Empty (TRUNCATE)**, **Drop** - the last two ask for the name |
 | a function | its definition in a new query |
-| a tab | Close · Close others · Close to the right · Close all · Keep open · Rename (queries) · Reveal in Explorer |
+| a tab | Close, Close others, Close to the right, Close all, Keep open, Rename (queries), Reveal in Explorer |
 
-**Database overview** (double-click a database, or *Open*): every table, view and sequence with its estimated rows and size, **Data** / **Design** buttons, a filter, and — for the ticked ones — **ANALYZE**, **VACUUM ANALYZE**, **Empty** and **Drop** together. **New table**, **Export…** (the ticked tables) and **Import…** are at the top.
+**Database overview** (double-click a database, or *Open*): every table, view and sequence with its estimated rows and size, **Data** / **Design** buttons, a filter, and - for the ticked ones - **ANALYZE**, **VACUUM ANALYZE**, **Empty** and **Drop** together. **New table**, **Export...** (the ticked tables) and **Import...** are at the top.
 
-**Data** — the table as a spreadsheet (see *Editing data* below); 50–500 rows a page; click a column name to sort; filters (`=`, `≠`, contains, starts with, `<`, `>`, in, is NULL…) and any `WHERE` condition; **Count rows** for the exact number; **Export** CSV or JSON lines (the whole table, streamed). NULL and an empty text are told apart; big numbers stay exact.
+**Data** - the table as a spreadsheet (see *Editing data* below); 50–500 rows a page; click a column name to sort; filters (`=`, `≠`, contains, starts with, `<`, `>`, in, is NULL...) and any `WHERE` condition; **Count rows** for the exact number; **Export** CSV or JSON lines (the whole table, streamed). NULL and an empty text are told apart; big numbers stay exact.
 
-### Design — change the structure
+### Design - change the structure
 
 ![Design](images/databases-design.png)
 
@@ -153,11 +153,11 @@ A table's **Design** tab has **Columns**, **Indexes**, **Keys & checks**, **Trig
 | **Triggers** | enable or disable |
 | **DDL** | a CREATE TABLE made from the catalog, to copy or open in a query |
 
-Changes **wait** — yellow = changed, green = new, struck = dropped — until the bar at the bottom: **Show SQL** (the exact statements), **🧪 Test** (they run and are **rolled back**: a type the data does not fit, a duplicate value for a new unique index or a key that points to nothing is seen now), **Discard**, **Save**. Everything is saved **in one transaction**: if one statement fails, the message says which change and why, and nothing is kept. A read-only connection can Test; Save asks to allow changes. Dropping columns or changing types asks once more.
+Changes **wait** - yellow = changed, green = new, struck = dropped - until the bar at the bottom: **Show SQL** (the exact statements), **🧪 Test** (they run and are **rolled back**: a type the data does not fit, a duplicate value for a new unique index or a key that points to nothing is seen now), **Discard**, **Save**. Everything is saved **in one transaction**: if one statement fails, the message says which change and why, and nothing is kept. A read-only connection can Test; Save asks to allow changes. Dropping columns or changing types asks once more.
 
-**New table** (database, schema or *Tables* menu, or the overview): schema, name, comment and the same sheet — with **PK** and **Unique** columns; it starts with `id bigint` identity primary key and `created_at timestamptz default now()`.
+**New table** (database, schema or *Tables* menu, or the overview): schema, name, comment and the same sheet - with **PK** and **Unique** columns; it starts with `id bigint` identity primary key and `created_at timestamptz default now()`.
 
-**Table ▾** in the Design tab: **Rename**, **Move to another schema**, **Duplicate** (structure, constraints and indexes — `LIKE … INCLUDING ALL` — with or without the rows), **Comment**, plus VACUUM, export, test data, empty and drop. Each shows its SQL and can be tested before it runs. Every structure change is in the audit log with its SQL.
+**Table ▾** in the Design tab: **Rename**, **Move to another schema**, **Duplicate** (structure, constraints and indexes - `LIKE ... INCLUDING ALL` - with or without the rows), **Comment**, plus VACUUM, export, test data, empty and drop. Each shows its SQL and can be tested before it runs. Every structure change is in the audit log with its SQL.
 
 ### Export, import, test data
 
@@ -165,19 +165,19 @@ Changes **wait** — yellow = changed, green = new, struck = dropped — until t
 
 | | |
 |---|---|
-| **Export…** (database, overview or table menu) | tick the tables, then: **SQL** — `pg_dump` in the container: structure and data, structure only or data only; rows as `INSERT` (readable, loads anywhere) or `COPY` (fast, psql); *drop the tables first*; compressed `.sql.gz` (streamed, any size). **CSV** — one file per table in a `.zip`. **Excel (.xlsx)** — one sheet per table, header row frozen, numbers as numbers (up to 300 MB of data) |
-| **Import a .sql file** | a `.sql` or `.sql.gz` (a plain pg_dump or any SQL) is run by psql in the database, with progress; it stops at the first error and says the line. **In one transaction** (on by default): if a statement fails, nothing of the file stays. A custom-format `.dump` goes through Backups → Restore |
-| **New table from a CSV** | the separator is found by itself; column names are made SQL-friendly and the types guessed (integer, bigint, numeric, boolean, date, timestamptz, uuid, text) — check them in the New table tab, then **Create table**: the rows are loaded right after |
-| **Import CSV into a table** | in the table's Data tab: Export / import → Import CSV (see *Many rows at once*) |
-| **Fill with test data…** | made-up rows that fit the columns: names, e-mails, phones, cities, URLs, statuses by column name; numbers within the column's size; dates, times, enums, JSON, arrays; **foreign keys get keys that exist** in the other table; unique columns get unique values; columns with a default or identity keep it. **🧪 Preview** makes them and rolls back, showing the first rows |
+| **Export...** (database, overview or table menu) | tick the tables, then: **SQL** - `pg_dump` in the container: structure and data, structure only or data only; rows as `INSERT` (readable, loads anywhere) or `COPY` (fast, psql); *drop the tables first*; compressed `.sql.gz` (streamed, any size). **CSV** - one file per table in a `.zip`. **Excel (.xlsx)** - one sheet per table, header row frozen, numbers as numbers (up to 300 MB of data) |
+| **Import a .sql file** | a `.sql` or `.sql.gz` (a plain pg_dump or any SQL) is run by psql in the database, with progress; it stops at the first error and says the line. **In one transaction** (on by default): if a statement fails, nothing of the file stays. A custom-format `.dump` goes through Backups > Restore |
+| **New table from a CSV** | the separator is found by itself; column names are made SQL-friendly and the types guessed (integer, bigint, numeric, boolean, date, timestamptz, uuid, text) - check them in the New table tab, then **Create table**: the rows are loaded right after |
+| **Import CSV into a table** | in the table's Data tab: Export / import > Import CSV (see *Many rows at once*) |
+| **Fill with test data...** | made-up rows that fit the columns: names, e-mails, phones, cities, URLs, statuses by column name; numbers within the column's size; dates, times, enums, JSON, arrays; **foreign keys get keys that exist** in the other table; unique columns get unique values; columns with a default or identity keep it. **🧪 Preview** makes them and rolls back, showing the first rows |
 
 ### Editing data
 
 | | |
 |---|---|
 | **In the cell** | Click a cell, then type, press Enter or double-click: it is edited in place. Enter keeps it and goes down, Tab goes right, Esc leaves it as it was; arrows move between cells; **Ctrl+0** sets NULL; Ctrl+C copies the cell |
-| **By type** | Enums and booleans: a list · dates: a date box · JSON / JSONB: an editor that checks the JSON (and formats it) · long text, XML and arrays: a bigger editor · foreign keys: suggestions from the table they point to (key and name) as you type · generated columns can not be changed |
-| **Not saved yet** | Changed cells turn yellow, new rows green, rows to delete are struck through; the bar says how many changes wait. **Review…** lists them, **🧪 Test** does them all in a transaction and rolls back, **Discard** drops them, **Save** writes them **in one transaction** — if one fails (a constraint, a foreign key) none is saved and that row is marked |
+| **By type** | Enums and booleans: a list, dates: a date box, JSON / JSONB: an editor that checks the JSON (and formats it), long text, XML and arrays: a bigger editor, foreign keys: suggestions from the table they point to (key and name) as you type, generated columns can not be changed |
+| **Not saved yet** | Changed cells turn yellow, new rows green, rows to delete are struck through; the bar says how many changes wait. **Review...** lists them, **🧪 Test** does them all in a transaction and rolls back, **Discard** drops them, **Save** writes them **in one transaction** - if one fails (a constraint, a foreign key) none is saved and that row is marked |
 | **Nobody else's change is lost** | An edit is saved only if the row still holds what you loaded; if someone (or the app) changed it meanwhile, nothing is saved and you choose to keep your edits or reload |
 | **Rows** | **+ Row** adds a row at the top (columns with a default or serial are left to the database); **Copy row** makes a new row from the ticked one; tick rows and **Delete** marks them |
 | **Paste from Excel** | Select a cell and paste: the cells go from there to the right and down, new rows are added when needed |
@@ -189,26 +189,26 @@ In the Data tab's **Export / import** menu (for tables). Each runs **in one tran
 
 | | |
 |---|---|
-| **Import CSV…** | Pick a file (up to 80 MB; the separator `,` `;` Tab or `|` is found by itself, quoted values and new lines inside quotes are read). Each CSV column is matched to a table column by its name — change or skip any in the list above it — with the first rows shown. **Add every row**, **Add — skip rows whose key exists**, or **Add — update rows whose key exists** (only the matched columns change). An empty cell is NULL unless you untick it. If one row fails, nothing is imported and the message says which rows |
-| **Change many rows…** | For the rows matching the Data tab's filter: set one or more columns to a value (or NULL), or delete them. Test shows how many rows it changes; Run asks with that number. With no filter it asks you to confirm *every row* |
-| **Find and replace…** | In one column: a part of the value (case-insensitive unless *Match case*) or the whole value only; **Preview** shows how many rows and the first ten before → after |
+| **Import CSV...** | Pick a file (up to 80 MB; the separator `,` `;` Tab or `|` is found by itself, quoted values and new lines inside quotes are read). Each CSV column is matched to a table column by its name - change or skip any in the list above it - with the first rows shown. **Add every row**, **Add - skip rows whose key exists**, or **Add - update rows whose key exists** (only the matched columns change). An empty cell is NULL unless you untick it. If one row fails, nothing is imported and the message says which rows |
+| **Change many rows...** | For the rows matching the Data tab's filter: set one or more columns to a value (or NULL), or delete them. Test shows how many rows it changes; Run asks with that number. With no filter it asks you to confirm *every row* |
+| **Find and replace...** | In one column: a part of the value (case-insensitive unless *Match case*) or the whole value only; **Preview** shows how many rows and the first ten before -> after |
 
-### Who wrote it — change tracking
+### Who wrote it - change tracking
 
 PostgreSQL does not keep who changed a row. DockGate shows what is known and, if you turn it on for a table, records every change from then on.
 
 | | |
 |---|---|
 | **Always (no setup)** | The row's last transaction, and its commit time when the server records commit times (`track_commit_timestamp = on`); and the edits made from DockGate (from its own audit log: when, what, from which address) |
-| **🕘 Changes → Track changes…** (per table, needs Allow changes) | Every INSERT, UPDATE and DELETE of the table — from your app, from psql, from DockGate — is written to `dockgate_audit.changes`: **the database user**, **the application** (`application_name`), **the client address**, **the time**, the **old and new values** and which columns changed. An UPDATE that changes nothing is not written. Kept 90 days by default (you choose) |
-| **In the row card** | *Who wrote it*: last changed when, by whom, through which app; every change of the row with old → new per column, and **Put the row back as before this** |
+| **🕘 Changes > Track changes...** (per table, needs Allow changes) | Every INSERT, UPDATE and DELETE of the table - from your app, from psql, from DockGate - is written to `dockgate_audit.changes`: **the database user**, **the application** (`application_name`), **the client address**, **the time**, the **old and new values** and which columns changed. An UPDATE that changes nothing is not written. Kept 90 days by default (you choose) |
+| **In the row card** | *Who wrote it*: last changed when, by whom, through which app; every change of the row with old -> new per column, and **Put the row back as before this** |
 | **🕘 Changes** (the table) | All changes newest first, filtered by kind (added / changed / deleted), by user, or by a value in the row; **Bring the row back** for a deleted row |
 | **Restores** | Write the old values back (a deleted row is inserted again); a restore is recorded like any other change |
-| **How** | DockGate adds the schema `dockgate_audit` (the table of changes, a small settings table, one trigger function — `SECURITY DEFINER`, so the app's users need no rights on it) and one trigger `dockgate_audit_trg` per tracked table. Each change costs one extra insert. **Turn off…** removes the trigger, and optionally the changes kept |
+| **How** | DockGate adds the schema `dockgate_audit` (the table of changes, a small settings table, one trigger function - `SECURITY DEFINER`, so the app's users need no rights on it) and one trigger `dockgate_audit_trg` per tracked table. Each change costs one extra insert. **Turn off...** removes the trigger, and optionally the changes kept |
 
-**The row as a card** (⤢ at the start of a row): every column one under the other, long text and JSON in full, ‹ › for the next row. A foreign key shows what it points to (`customer_id 17 → Ann`) with **Open ↗**; **Rows pointing here** lists the tables whose rows point at this one (`orders via customer_id: 12 rows`) with **Open**. Edits in the card go to the grid as not saved. The card ends with **Who wrote it** (below). In the grid, **↗** beside a foreign key value opens the row it points to.
-- **Structure** — columns (type, NULL, default, identity), primary key, indexes with their size, constraints, foreign keys pointing here, triggers, a view's definition, a sequence's settings; VACUUM / ANALYZE of the table.
-- **SQL** — the workbench (see below).
+**The row as a card** (⤢ at the start of a row): every column one under the other, long text and JSON in full, ‹ › for the next row. A foreign key shows what it points to (`customer_id 17 > Ann`) with **Open ↗**; **Rows pointing here** lists the tables whose rows point at this one (`orders via customer_id: 12 rows`) with **Open**. Edits in the card go to the grid as not saved. The card ends with **Who wrote it** (below). In the grid, **↗** beside a foreign key value opens the row it points to.
+- **Structure** - columns (type, NULL, default, identity), primary key, indexes with their size, constraints, foreign keys pointing here, triggers, a view's definition, a sequence's settings; VACUUM / ANALYZE of the table.
+- **SQL** - the workbench (see below).
 
 ### SQL workbench
 
@@ -216,30 +216,30 @@ PostgreSQL does not keep who changed a row. DockGate shows what is known and, if
 |---|---|
 | **Editor** | Colours, line numbers, brackets that match and close, **completion** of keywords, tables and columns of the open database (`alias.` offers that table's columns; Ctrl+Space anytime), **Format** (Shift+Alt+F), Ctrl+/ comments a line. The editor loads only when the SQL tab opens |
 | **Run** | **▶ Run** / Ctrl+Enter runs the statement at the cursor (or the selection); **▶▶ Run all** / Ctrl+Shift+Enter runs every statement. An error stops there and is **marked in the editor** where PostgreSQL points |
-| **🧪 Test run** | Runs it inside a transaction and **always rolls back**: you see the rows it returns and how many rows it would change (`UPDATE 433`), and nothing stays. Works on a read-only connection too. It refuses statements that end a transaction or can not run in one (COMMIT, VACUUM, CREATE DATABASE, … CONCURRENTLY). Sequences that moved and effects outside the database (e.g. dblink) are not undone |
-| **A session per tab** | Each tab keeps its own psql connection: `BEGIN` in one Run and the next Run is in the same transaction — the header shows **● Transaction open** with **Commit** / **Roll back** (a failed one: **Roll back**). `SET`, temp tables and cursors stay too. A tab idle for 10 minutes is closed (an open transaction rolls back); closing the tab asks first when a transaction is open |
+| **🧪 Test run** | Runs it inside a transaction and **always rolls back**: you see the rows it returns and how many rows it would change (`UPDATE 433`), and nothing stays. Works on a read-only connection too. It refuses statements that end a transaction or can not run in one (COMMIT, VACUUM, CREATE DATABASE, ... CONCURRENTLY). Sequences that moved and effects outside the database (e.g. dblink) are not undone |
+| **A session per tab** | Each tab keeps its own psql connection: `BEGIN` in one Run and the next Run is in the same transaction - the header shows **● Transaction open** with **Commit** / **Roll back** (a failed one: **Roll back**). `SET`, temp tables and cursors stay too. A tab idle for 10 minutes is closed (an open transaction rolls back); closing the tab asks first when a transaction is open |
 | **Cancel** | Stops the running query (from another connection) |
 | **Time limit** | 30 s, 1, 5 or 10 minutes per statement |
 | **Results** | A tab per result plus **Messages** (command tags, notices, the error, timing). The first 1000 rows come back; **Load 1000 more** (up to 50 000 kept). Click a column to sort, filter the rows, double-click a cell to see all of it (JSON shown formatted); **copy** as CSV, TSV (for Excel), JSON or INSERT statements, or download |
-| **📊 Explain** | **Explain** shows the plan PostgreSQL would use; **Explain analyze** runs the statement (inside a transaction that is rolled back) and shows the real time of each step as a tree — red bars take the most time, and it points out a whole table read, a row estimate that is far off, and a sort that used the disk |
+| **📊 Explain** | **Explain** shows the plan PostgreSQL would use; **Explain analyze** runs the statement (inside a transaction that is rolled back) and shows the real time of each step as a tree - red bars take the most time, and it points out a whole table read, a row estimate that is far off, and a sort that used the disk |
 | **Parameters** | Write `:name` in a query (`WHERE city = :city`); Run asks for the values and puts them in as quoted values (numbers as they are, or NULL). `::casts`, `[1:2]` and anything in quotes or comments stay as written |
-| **Edit in the result** | When a query reads **one table with its primary key** (`SELECT id, name FROM customers WHERE …`), double-click a cell to change it (with Allow changes) |
-| **Snippets** | Ready queries: largest tables, running queries, who blocks whom, unused indexes, tables read without an index, cache hit ratio, dead rows, connections, a read-only user, an index without blocking writes… — a click opens one in a new tab |
-| **Tabs** | Kept on DockGate's side — open, rename (double-click), close; they come back on another browser too |
-| **Beside the editor** | **Schema** (tables and their columns; a click puts the name in), **Snippets**, **Saved** queries (Ctrl+S / Save…, with folders and a description) and **History** (the last 500 runs with their time and result, searchable) |
+| **Edit in the result** | When a query reads **one table with its primary key** (`SELECT id, name FROM customers WHERE ...`), double-click a cell to change it (with Allow changes) |
+| **Snippets** | Ready queries: largest tables, running queries, who blocks whom, unused indexes, tables read without an index, cache hit ratio, dead rows, connections, a read-only user, an index without blocking writes... - a click opens one in a new tab |
+| **Tabs** | Kept on DockGate's side - open, rename (double-click), close; they come back on another browser too |
+| **Beside the editor** | **Schema** (tables and their columns; a click puts the name in), **Snippets**, **Saved** queries (Ctrl+S / Save..., with folders and a description) and **History** (the last 500 runs with their time and result, searchable) |
 
-Statements that change data still need **Allow changes** (or Test run), and DROP, TRUNCATE, ALTER … DROP and DELETE / UPDATE without WHERE still ask first. psql commands (a backslash outside quotes) are not run, and an unfinished text (an open quote or parenthesis) is not sent.
-- **Admin** — connections used of `max_connections`, uptime and key settings; **sessions** (user, database, state, how long, the query) with **Cancel** (stop the query) and **Terminate** (close the connection); **users and roles** — **+ New user** (password, read-write or read-only access to a database, also for tables made later), **Set password…**, **Grant on a database…**, **Drop…**; **databases** — open, **+ New database** (with an owner), **Drop…** (type the name; its sessions are closed first); **tables** largest first with dead rows, last VACUUM / ANALYZE, and VACUUM ANALYZE / ANALYZE / REINDEX / VACUUM FULL; the slowest queries when the `pg_stat_statements` extension is installed.
-- **Backups** — next to the database:
+Statements that change data still need **Allow changes** (or Test run), and DROP, TRUNCATE, ALTER ... DROP and DELETE / UPDATE without WHERE still ask first. psql commands (a backslash outside quotes) are not run, and an unfinished text (an open quote or parenthesis) is not sent.
+- **Admin** - connections used of `max_connections`, uptime and key settings; **sessions** (user, database, state, how long, the query) with **Cancel** (stop the query) and **Terminate** (close the connection); **users and roles** - **+ New user** (password, read-write or read-only access to a database, also for tables made later), **Set password...**, **Grant on a database...**, **Drop...**; **databases** - open, **+ New database** (with an owner), **Drop...** (type the name; its sessions are closed first); **tables** largest first with dead rows, last VACUUM / ANALYZE, and VACUUM ANALYZE / ANALYZE / REINDEX / VACUUM FULL; the slowest queries when the `pg_stat_statements` extension is installed.
+- **Backups** - next to the database:
 
 | | |
 |---|---|
 | **Back up now** | One database as `pg_dump` custom (`.dump`, compressed, a single table can be restored from it) or plain SQL (`.sql.gz`), or **the whole server** (`pg_dumpall`: every database and the users). It runs while the database is in use (a consistent snapshot) |
-| **Where** | SSH server: `/var/backups/dockgate/postgres` on that server (made with sudo once, owned by the SSH user; `~/dockgate-backups/postgres` without sudo) — the dump runs there and never passes through DockGate. This machine: DockGate's data folder (`data/backups/postgres`) |
-| **Names** | `<container>-<database or all>-<date-time>.dump` / `.sql.gz` — the same as Scripts' *Database backup* block, so scheduled backups show in the same list |
-| **Restore…** | Always into a **new database** first (nothing that exists changes); then **Swap it in place of …** renames the current one to `<name>_before_<date>` and puts the restored one in its place (its sessions are closed for a moment). "Keep owners and grants" can be turned off when the backup's users do not exist here. A failed restore removes the new database |
-| **Whole-server backup** | Restored by hand into an empty PostgreSQL (a new container) — **How to restore** shows the command |
-| **Schedule…** | This machine: opens Tools → Schedules with **Back up a database** filled in. SSH servers: pick how often (every few hours, every day, days of the week, once a month) and the time from lists — hour 00–23 and minute 00–59, server time — or a custom cron line. Makes the script `pg-backup-<container>-<db>` in Server → Automation → Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
+| **Where** | SSH server: `/var/backups/dockgate/postgres` on that server (made with sudo once, owned by the SSH user; `~/dockgate-backups/postgres` without sudo) - the dump runs there and never passes through DockGate. This machine: DockGate's data folder (`data/backups/postgres`) |
+| **Names** | `<container>-<database or all>-<date-time>.dump` / `.sql.gz` - the same as Scripts' *Database backup* block, so scheduled backups show in the same list |
+| **Restore...** | Always into a **new database** first (nothing that exists changes); then **Swap it in place of ...** renames the current one to `<name>_before_<date>` and puts the restored one in its place (its sessions are closed for a moment). "Keep owners and grants" can be turned off when the backup's users do not exist here. A failed restore removes the new database |
+| **Whole-server backup** | Restored by hand into an empty PostgreSQL (a new container) - **How to restore** shows the command |
+| **Schedule...** | This machine: opens Tools > Schedules with **Back up a database** filled in. SSH servers: pick how often (every few hours, every day, days of the week, once a month) and the time from lists - hour 00–23 and minute 00–59, server time - or a custom cron line. Makes the script `pg-backup-<container>-<db>` in Server > Automation > Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
 | **Download / Delete** | The file itself |
 
 ## Schedules
@@ -252,12 +252,12 @@ Jobs DockGate runs by itself on a server.
 |---|---|
 | **Prune unused data** | Removes the things you tick: unused images, stopped containers, unused networks. Unused volumes are never pruned |
 | **Back up a volume** | Saves the volume as a `.tar.gz` in a folder on the server and keeps the newest *N* copies (1–365, default 7) |
-| **Back up a database** | A PostgreSQL container's database (or all of them and the users, `pg_dumpall`) — the same backup as Databases → Backups, kept where those are (DockGate's data folder for this machine, `/var/backups/dockgate/postgres` on an SSH server), so it is restored from there. Keeps the newest *N* of that database. The container must be running when the task runs |
+| **Back up a database** | A PostgreSQL container's database (or all of them and the users, `pg_dumpall`) - the same backup as Databases > Backups, kept where those are (DockGate's data folder for this machine, `/var/backups/dockgate/postgres` on an SSH server), so it is restored from there. Keeps the newest *N* of that database. The container must be running when the task runs |
 | **Sync Git stacks** | Pulls the chosen Git stacks (or every DockGate-managed Git stack on the server) and redeploys, only when there is a new commit |
 
-**How often:** every hour (at a minute), every day or every week, at a time in `HH:MM`. Times are in UTC unless a timezone is set in **Settings → General → Timezone**.
+**How often:** every hour (at a minute), every day or every week, at a time in `HH:MM`. Times are in UTC unless a timezone is set in **Settings > General > Timezone**.
 
-The list shows each task's server, schedule, last run (with its result) and next run. Each row has an on/off switch, **Run now**, **Edit…** and **Delete…**. Deleting a task keeps the backups it made. A failed run sends the **Scheduled task failed** notification.
+The list shows each task's server, schedule, last run (with its result) and next run. Each row has an on/off switch, **Run now**, **Edit...** and **Delete...**. Deleting a task keeps the backups it made. A failed run sends the **Scheduled task failed** notification.
 
 A task runs on its own server whatever server is picked in the top bar.
 
@@ -267,9 +267,9 @@ The second view lists everything that runs on a schedule on one server, by its n
 
 | Where it lives | What |
 |---|---|
-| DockGate · Schedules | the tasks above |
-| DockGate · Deploy recipe | Deploy → Tasks recipes with a schedule |
-| Cron | the server's cron jobs (SSH servers) — the same as Server → Automation → Cron |
+| DockGate, Schedules | the tasks above |
+| DockGate, Deploy recipe | Deploy > Tasks recipes with a schedule |
+| Cron | the server's cron jobs (SSH servers) - the same as Server > Automation > Cron |
 | systemd timer | the server's timers (SSH servers) |
 
 Each row says which clock its schedule is written in (DockGate's timezone or the server's clock), when it runs next (in your browser's time) and how its last run ended. Jobs that start within 10 minutes of each other are marked **starts with another job**, so two heavy ones (a backup and a prune) can be moved apart. **Open** goes to the page where the row is changed.
@@ -279,37 +279,37 @@ Each row says which clock its schedule is written in (DockGate's timezone or the
 | You see | Why | What to do |
 |---|---|---|
 | *No folder of this machine is shared with DockGate yet* | Files on *Local* with no folder shared | Add a volume under `/host` as shown above, or pick a remote server |
-| `Permission denied: … belongs to another user — open it with sudo` | The SSH user may not read or write this file | **Open with sudo** / **Save with sudo**, or tick **Use sudo** in Permissions |
-| `sudo asks this user for a password — DockGate needs passwordless sudo` | The SSH user has sudo only with a password | Connect with the deploy user (Server → Software → Setup), or allow passwordless sudo for this user |
+| `Permission denied: ... belongs to another user - open it with sudo` | The SSH user may not read or write this file | **Open with sudo** / **Save with sudo**, or tick **Use sudo** in Permissions |
+| `sudo asks this user for a password - DockGate needs passwordless sudo` | The SSH user has sudo only with a password | Connect with the deploy user (Server > Software > Setup), or allow passwordless sudo for this user |
 | *Changed on the server* | The file changed after you opened it | **Load theirs** to see it, or **Save mine anyway** |
 | *✗ docker compose config* | The compose file has a mistake (the message says where) | Fix it, **Check** again |
 | *nginx -t failed* | nginx would not accept the configuration | Fix it, or **Put the previous content back** |
 | *nginx is not installed on this server* | nginx runs in a container, or not at all | Check it in its container |
 | `Mode: 3 or 4 octal digits, e.g. 644 or 0755` | Wrong mode in Permissions | e.g. `644` for files, `755` for folders |
 | `Owner and group: a user / group name or number` | Wrong owner or group | A user name like `www-data`, or a number like `33` |
-| `Session expired — sign in again` | You were signed out during a transfer | Sign in and start the transfer again |
-| *— session ended (press Reconnect) —* | The shell exited, or the connection dropped | **Reconnect** |
+| `Session expired - sign in again` | You were signed out during a transfer | Sign in and start the transfer again |
+| *- session ended (press Reconnect) -* | The shell exited, or the connection dropped | **Reconnect** |
 | `Time must look like 03:30` | Wrong time format | `HH:MM`, 24-hour |
 | `The backup folder must be an absolute path at least two levels deep, e.g. /var/backups/dockgate` | A folder like `/` or `/backups` | Use a deeper folder |
 | `Keep between 1 and 365 copies` | Value out of range | e.g. `7` |
 | `Tick at least one thing to prune` | Prune task with nothing ticked | Tick images, containers or networks |
 | `Choose a volume` / `Choose a server` / `Choose a day of the week` | Empty field | Fill it in |
-| Databases: *Could not log in* / `password authentication failed` | The container's user needs a password over the network, or another user is wanted | **Connection…** → user / password |
-| Databases: *This connection is read-only* | Statements that change data are refused until you allow them | **🔒 Read-only** → **Allow changes** |
+| Databases: *Could not log in* / `password authentication failed` | The container's user needs a password over the network, or another user is wanted | **Connection...** -> user / password |
+| Databases: *This connection is read-only* | Statements that change data are refused until you allow them | **🔒 Read-only** -> **Allow changes** |
 | Databases: *psql is not in this container* | The image is not a PostgreSQL server | Pick the database container itself |
 | Databases: *This table has no primary key* | Rows can not be told apart for an edit | Change it with SQL, or add a primary key |
 | Databases: *The query took too long and was stopped* | Over 30 s | Add `LIMIT` / an index; long maintenance runs from the Admin tab |
-| Databases: restore fails with `role … does not exist` | The backup's owners are not on this server | Restore again with **Keep owners and grants** off |
-| SQL: *A test run can not hold "…"* | The statement ends a transaction or can not run in one | Use **Run** (with Allow changes) |
+| Databases: restore fails with `role ... does not exist` | The backup's owners are not on this server | Restore again with **Keep owners and grants** off |
+| SQL: *A test run can not hold "..."* | The statement ends a transaction or can not run in one | Use **Run** (with Allow changes) |
 | SQL: *A transaction is open in this tab* | You changed the database or the time limit while a transaction is open | **Commit** or **Roll back** first |
-| SQL: *The text is not complete* | An open quote, `$$` body, comment or parenthesis | Close it — psql would wait for the rest |
+| SQL: *The text is not complete* | An open quote, `$$` body, comment or parenthesis | Close it - psql would wait for the rest |
 | Data: *was changed or deleted by someone else since you loaded it* | The row changed after the page loaded it | **Reload** to see the new values, then edit again (or keep your edits and fix them first) |
-| Data: *Change 3: … — nothing was saved* | That change broke a rule (NOT NULL, unique, a foreign key) | Fix the marked row; none of the changes was written |
+| Data: *Change 3: ... - nothing was saved* | That change broke a rule (NOT NULL, unique, a foreign key) | Fix the marked row; none of the changes was written |
 | Changes: *Tracking needs a primary key* | Rows are told apart by their key | Add a primary key to the table |
 | Changes: no time for *Last written* | The server does not record commit times | Turn on change tracking for the table (or `track_commit_timestamp = on` in postgresql.conf and a restart) |
-| Import: *… — nothing was imported (in rows 501–1000)* | A row in that part broke a rule (a missing value, a duplicate key, a wrong type) | Fix the file, Test again |
+| Import: *... - nothing was imported (in rows 501–1000)* | A row in that part broke a rule (a missing value, a duplicate key, a wrong type) | Fix the file, Test again |
 | Change many: *No filter: this would change every row* | The Data tab has no filter | Filter the rows first, or tick *every row* |
-| Design: *Change 2 (price: type numeric(10,2)): invalid input syntax…* | A value in the table does not fit the new type | Fix those rows first (SQL), or keep the type — nothing was changed |
-| Design: *foreign key … cannot be implemented … incompatible types* | The column and the key it points to have different types | Change one type first (the dialog warns) |
-| Import .sql: *Line 120: …* | That statement failed | Fix the file; with *one transaction* nothing stayed |
-| Test data: *… has no rows yet — fill it first* | A NOT NULL foreign key points to an empty table | Fill that table first (it can get test data too) |
+| Design: *Change 2 (price: type numeric(10,2)): invalid input syntax...* | A value in the table does not fit the new type | Fix those rows first (SQL), or keep the type - nothing was changed |
+| Design: *foreign key ... cannot be implemented ... incompatible types* | The column and the key it points to have different types | Change one type first (the dialog warns) |
+| Import .sql: *Line 120: ...* | That statement failed | Fix the file; with *one transaction* nothing stayed |
+| Test data: *... has no rows yet - fill it first* | A NOT NULL foreign key points to an empty table | Fill that table first (it can get test data too) |

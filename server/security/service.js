@@ -1,4 +1,4 @@
-// Shared server-security operations used by the routes AND the provisioning runner (Setup → Deploy user).
+// Shared server-security operations used by the routes AND the provisioning runner (Setup > Deploy user).
 const fs = require('fs');
 const path = require('path');
 const { stmts } = require('../db');
@@ -37,7 +37,7 @@ function generateKey(serverId, username) {
     if (pub && priv && !(priv instanceof Error) && priv.getPublicSSH().toString('base64') === pub.b64) break;
     pub = null;
   }
-  if (!pub) throw new Error('Could not generate a valid SSH key pair — try again');
+  if (!pub) throw new Error('Could not generate a valid SSH key pair - try again');
   if (!fs.existsSync(SSH_KEYS_DIR)) fs.mkdirSync(SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
   const file = `${serverId}--${username}--${Date.now()}.pem`;
   fs.writeFileSync(path.join(SSH_KEYS_DIR, file), kp.private, { mode: 0o600 });
@@ -62,7 +62,7 @@ function startDeployUser(row, { username, keyMode = 'generate', publicKey }, { r
   try {
     return runner.startPlan(cfgOf(row), plan, {
       title: `Deploy user "${username}"`,
-      successText: `DockGate now connects as ${username} with an SSH key. Password login is still on — turn it off in Access & SSH when you are ready.`,
+      successText: `DockGate now connects as ${username} with an SSH key. Password login is still on - turn it off in Access & SSH when you are ready.`,
       onSuccess: () => {
         stmts.setServerConnection.run(username, gen.privatePath, row.id);
         stmts.insertGeneratedKey.run(row.id, username, gen.pub.fingerprint, gen.privatePath);

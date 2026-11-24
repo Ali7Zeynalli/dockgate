@@ -1,4 +1,4 @@
-// Fail2ban tab (Server Console): problems first, then Banned IPs · Whitelist · Settings · History.
+// Fail2ban tab (Server Console): problems first, then Banned IPs, Whitelist, Settings, History.
 // Settings are written to DockGate's own files (jail.d/dockgate.conf + fail2ban.d/dockgate.conf), tested
 // with `fail2ban-client -t` and applied with a RELOAD, so current bans are kept. The backend detects
 // settings that cannot work (a recidive that can never trigger, a jail on the wrong SSH port, a short
@@ -14,7 +14,7 @@ function f2bSeconds(v) {
   return t;
 }
 function f2bHuman(sec) {
-  if (sec == null) return '—';
+  if (sec == null) return '-';
   const d = Math.floor(sec / 86400), h = Math.round((sec % 86400) / 3600);
   if (d >= 1) return h ? `${d}d ${h}h` : `${d}d`;
   if (sec >= 3600) return `${Math.round(sec / 3600)}h`;
@@ -38,7 +38,7 @@ async function renderFail2banPanel(serverId, container) {
   catch (e) { return secError(container, "Couldn't read fail2ban", e, () => renderFail2banPanel(serverId, container)); }
   const reload = () => renderFail2banPanel(serverId, container);
   if (!f.installed) {
-    container.innerHTML = `<div class="card" style="border-left:3px solid var(--warning)"><div style="font-weight:700;font-size:15px">fail2ban is not installed</div><div class="text-sm text-muted" style="margin-top:4px">Install it in <b>Setup → Fail2ban</b>. DockGate writes a working configuration (sshd jail on the real SSH port, ban history, recidive).</div><button class="btn btn-primary btn-sm" data-setup style="margin-top:10px">Open Setup</button></div>`;
+    container.innerHTML = `<div class="card" style="border-left:3px solid var(--warning)"><div style="font-weight:700;font-size:15px">fail2ban is not installed</div><div class="text-sm text-muted" style="margin-top:4px">Install it in <b>Setup > Fail2ban</b>. DockGate writes a working configuration (sshd jail on the real SSH port, ban history, recidive).</div><button class="btn btn-primary btn-sm" data-setup style="margin-top:10px">Open Setup</button></div>`;
     container.querySelector('[data-setup]').addEventListener('click', () => srvGo('setup'));
     return;
   }
@@ -51,19 +51,19 @@ async function renderFail2banPanel(serverId, container) {
   container.innerHTML = `
     <div data-bar style="margin-bottom:12px"></div>
     ${f.problems.length ? `<div style="display:grid;gap:8px;margin-bottom:12px">${f.problems.map((p, i) => `
-      <div class="insight-card ${LV[p.level]}" style="justify-content:space-between;margin:0"><span>${escapeHtml(p.text)}</span>${p.fix ? `<button class="btn btn-xs btn-secondary" data-fix="${i}" style="flex:none">${p.fix === 'start' ? 'Start fail2ban' : p.fix === 'editlocal' ? 'Edit jail.local' : p.fix === 'takeover' ? 'Move to DockGate…' : p.fix === 'allowdg' ? "Add DockGate's IP" : 'Fix now'}</button>` : ''}</div>`).join('')}</div>` : ''}
+      <div class="insight-card ${LV[p.level]}" style="justify-content:space-between;margin:0"><span>${escapeHtml(p.text)}</span>${p.fix ? `<button class="btn btn-xs btn-secondary" data-fix="${i}" style="flex:none">${p.fix === 'start' ? 'Start fail2ban' : p.fix === 'editlocal' ? 'Edit jail.local' : p.fix === 'takeover' ? 'Move to DockGate...' : p.fix === 'allowdg' ? "Add DockGate's IP" : 'Fix now'}</button>` : ''}</div>`).join('')}</div>` : ''}
     ${UI.statusLine([
       `<b>${totalBanned}</b> <span class="text-muted">banned now</span>`,
       `<b>${f.jails.length}</b> <span class="text-muted">jails running</span>`,
-      `<span class="text-muted">One IP gets</span> ${escapeHtml(f.sequence.slice(0, 5).join(' → '))} <span class="text-muted">· remembered ~${escapeHtml(f.memory)}</span>`,
+      `<span class="text-muted">One IP gets</span> ${escapeHtml(f.sequence.slice(0, 5).join(' -> '))} <span class="text-muted">· remembered ~${escapeHtml(f.memory)}</span>`,
     ])}
     <details class="f2b-card" data-banned-card style="margin-top:4px"><summary><span class="f2b-chev" aria-hidden="true">›</span><span><b>Banned IPs</b> ${UI.pill(totalBanned ? 'bad' : 'off', `${rows.length} banned`)}<div class="ui-sub">Blocked right now. They are released automatically when their time runs out.</div></span><span>${UI.primary('Ban an IP', 'data-ban')}</span></summary>
-      <div style="padding:12px 14px;display:grid;gap:8px"><input class="input" id="f2b-q" placeholder="Search IP or jail…" style="width:220px;max-width:100%"><div data-banned></div></div></details>
+      <div style="padding:12px 14px;display:grid;gap:8px"><input class="input" id="f2b-q" placeholder="Search IP or jail..." style="width:220px;max-width:100%"><div data-banned></div></div></details>
     <div data-config style="margin-top:20px"></div>
     <details class="f2b-card" style="margin-top:20px"><summary><span class="f2b-chev" aria-hidden="true">›</span><span><b>Ban history</b><div class="ui-sub">fail2ban's own log (/var/log/fail2ban.log): bans, unbans and the failed logins it counted</div></span><span></span></summary><div style="padding:12px 14px" data-history></div></details>
 `;
 
-  renderServiceBar(serverId, 'fail2ban', container.querySelector('[data-bar]'), { label: 'fail2ban', note: f.version ? escapeHtml(f.version) + ' · Reload keeps current bans' : 'Reload keeps current bans', onChange: reload });
+  renderServiceBar(serverId, 'fail2ban', container.querySelector('[data-bar]'), { label: 'fail2ban', note: f.version ? escapeHtml(f.version) + ', Reload keeps current bans' : 'Reload keeps current bans', onChange: reload });
   f2bHistory(serverId, container.querySelector('[data-history]'));
 
   const saveSettings = async (settings, title) => {
@@ -95,7 +95,7 @@ async function renderFail2banPanel(serverId, container) {
     const slice = list.slice((bState.page - 1) * 25, bState.page * 25);
     bannedBox.innerHTML = UI.table([{ label: 'IP address' }, { label: 'Jail' }, { label: 'Banned' }, { label: 'Until' }, { label: '', align: 'right' }], slice.map(({ r, i }) => `<tr data-ip="${escapeHtml(r.ip)}">
       <td><span class="td-mono" style="font-weight:600">${escapeHtml(r.ip)}</span>${r.ip === f.dockgateIp ? ' ' + UI.pill('bad', 'DockGate') : ''}</td><td>${escapeHtml(r.jail)}</td>
-      <td><span class="ui-sub">${escapeHtml(r.bannedAt || '—')}</span></td><td><span class="ui-sub">${escapeHtml(r.until || '—')}${r.seconds ? ` (${escapeHtml(f2bHuman(r.seconds))})` : ''}</span></td>
+      <td><span class="ui-sub">${escapeHtml(r.bannedAt || '-')}</span></td><td><span class="ui-sub">${escapeHtml(r.until || '-')}${r.seconds ? ` (${escapeHtml(f2bHuman(r.seconds))})` : ''}</span></td>
       <td class="ui-td-actions">${UI.btn('Unban', `data-unban="${i}"`)}${UI.btn('Unban & allow', `data-unwl="${i}"`)}</td></tr>`), { minWidth: 640, empty: q ? 'No banned IP matches.' : 'No IP is banned right now.' }) + UI.pager(bState.page, list.length, 25);
   };
   container.querySelector('#f2b-q').addEventListener('input', (e) => { bState.q = e.target.value.trim(); bState.page = 1; drawBanned(); });
@@ -104,7 +104,7 @@ async function renderFail2banPanel(serverId, container) {
     const ub = e.target.closest('[data-unban]'); if (ub) return unban(rows[Number(ub.dataset.unban)], false);
     const uw = e.target.closest('[data-unwl]'); if (uw) { const r = rows[Number(uw.dataset.unwl)];
       secConfirm({ title: `Unban and allow ${escapeHtml(r.ip)}`, confirmLabel: 'Unban & allow',
-        change: 'The IP is unbanned now and added to the allowlist (ignoreip) — fail2ban will never ban it again.',
+        change: 'The IP is unbanned now and added to the allowlist (ignoreip) - fail2ban will never ban it again.',
         protects: 'fail2ban reloads after a configuration test; other bans are kept.', undo: 'Remove it from the Allowlist.',
         onConfirm: () => unban(r, true) }); }
   });
@@ -134,38 +134,38 @@ function f2bPreviewHtml(x) {
     const win = f2bSeconds(x.recidive.findtime);
     rec = win != null && need >= win
       ? `<div class="insight-card danger" style="margin-top:8px"><div>recidive can never trigger: ${x.recidive.maxretry} bans take at least ${f2bHuman(need)}, the window is ${f2bHuman(win)}.</div></div>`
-      : `<div class="text-xs" style="color:var(--success);margin-top:8px">✓ recidive can trigger: the ${x.recidive.maxretry}th ban comes after at least ${f2bHuman(need)} — inside the ${f2bHuman(win)} window.</div>`;
+      : `<div class="text-xs" style="color:var(--success);margin-top:8px">✓ recidive can trigger: the ${x.recidive.maxretry}th ban comes after at least ${f2bHuman(need)} - inside the ${f2bHuman(win)} window.</div>`;
     if (x.recidive.increment) {
       const rs = f2bSequence({ bantime: x.recidive.bantime, increment: true, factor: x.recidive.factor, maxtime: x.recidive.maxtime }, 4);
-      if (!rs.some(t => t == null)) rec += `<div class="text-xs text-muted" style="margin-top:4px">All-port bans for one IP: ${rs.map(f2bHuman).join(' → ')}.</div>`;
+      if (!rs.some(t => t == null)) rec += `<div class="text-xs text-muted" style="margin-top:4px">All-port bans for one IP: ${rs.map(f2bHuman).join(' -> ')}.</div>`;
     }
   }
-  return `<div class="ui-explain"><div><b>What one IP gets</b> ${seq.map((t, i) => `${i + 1}. ${f2bHuman(t)}`).join(' → ')}</div><div>A first ban is remembered for about ${f2bHuman(purge + 3 * seq[0])}; after that the IP starts again at ${f2bHuman(seq[0])}.</div></div>${rec}`;
+  return `<div class="ui-explain"><div><b>What one IP gets</b> ${seq.map((t, i) => `${i + 1}. ${f2bHuman(t)}`).join(' -> ')}</div><div>A first ban is remembered for about ${f2bHuman(purge + 3 * seq[0])}; after that the IP starts again at ${f2bHuman(seq[0])}.</div></div>${rec}`;
 }
 
 /**
  * Move fail2ban's sshd / recidive / allowlist / history settings out of jail.local (and any other file read after
  * DockGate's) into DockGate's own files. Shows exactly what moves, what is corrected, what goes and what stays,
- * and every file before → after; one job applies it (backup, test, reload, restore on failure).
+ * and every file before -> after; one job applies it (backup, test, reload, restore on failure).
  */
 async function f2bTakeoverDialog(serverId, f, reload) {
   let t;
   try { t = await API.post(`/servers/${serverId}/fail2ban/takeover/preview`, {}); }
   catch (e) { showToast(e.message, 'error', 9000); return; }
-  const li = (rows, fmt) => rows.length ? `<ul class="f2b-list">${rows.map(r => `<li>${fmt(r)}</li>`).join('')}</ul>` : '<div class="ui-sub">—</div>';
+  const li = (rows, fmt) => rows.length ? `<ul class="f2b-list">${rows.map(r => `<li>${fmt(r)}</li>`).join('')}</ul>` : '<div class="ui-sub">-</div>';
   const many = t.files.length > 1;
   const recFixed = t.corrected.some(c => c.what === 'recidive');
   const kv = (r) => `<span class="td-mono">[${escapeHtml(r.jail)}] ${escapeHtml(r.key)} = ${escapeHtml(r.value)}</span>${many ? ` <span class="ui-sub">· ${escapeHtml(r.file)}</span>` : ''}`;
-  const kvA = (r) => kv(r) + (recFixed && r.jail === 'recidive' && (r.key === 'maxretry' || r.key === 'findtime') ? ' <span class="ui-sub">→ corrected</span>' : '');
+  const kvA = (r) => kv(r) + (recFixed && r.jail === 'recidive' && (r.key === 'maxretry' || r.key === 'findtime') ? ' <span class="ui-sub"> -> corrected</span>' : '');
   const cur = Object.fromEntries((f.files || []).map(x => [x.path, x.text || '']));
   UI.dialog({
     title: 'Move fail2ban settings to DockGate', saveLabel: 'Move & reload', wide: true,
     body: `<div class="ui-sub">${t.files.map(x => `<span class="td-mono">${escapeHtml(x.path)}</span>`).join(', ')} ${t.files.length > 1 ? 'are' : 'is'} read after DockGate's file and override${t.files.length > 1 ? '' : 's'} it. DockGate takes over what it manages and leaves everything else in ${t.files.length > 1 ? 'those files' : 'that file'} as it is. A backup is kept next to each file (<span class="td-mono">.dockgate-backup</span>); the configuration is tested before it is applied and everything is put back if the test or the reload fails. Current bans are kept.</div>
       <div class="f2b-cols">
         <div><div class="pv-k">Carried over to DockGate</div>${li(t.adopted, kvA)}</div>
-        <div><div class="pv-k">Corrected</div>${li(t.corrected, r => `<b>${escapeHtml(r.what)}</b>: ${escapeHtml(r.from)} → <b>${escapeHtml(r.to)}</b><div class="ui-sub">${escapeHtml(r.why)}</div>`)}</div>
-        <div><div class="pv-k">Removed — not needed</div>${li(t.removed, r => `${kv(r)}<div class="ui-sub">${escapeHtml(r.reason)}</div>`)}</div>
-        <div><div class="pv-k">Left in place</div>${li(t.kept, r => `${kv(r)}<div class="ui-sub">a [DEFAULT] option — it also applies to your other jails</div>`)}</div>
+        <div><div class="pv-k">Corrected</div>${li(t.corrected, r => `<b>${escapeHtml(r.what)}</b>: ${escapeHtml(r.from)} -> <b>${escapeHtml(r.to)}</b><div class="ui-sub">${escapeHtml(r.why)}</div>`)}</div>
+        <div><div class="pv-k">Removed - not needed</div>${li(t.removed, r => `${kv(r)}<div class="ui-sub">${escapeHtml(r.reason)}</div>`)}</div>
+        <div><div class="pv-k">Left in place</div>${li(t.kept, r => `${kv(r)}<div class="ui-sub">a [DEFAULT] option - it also applies to your other jails</div>`)}</div>
       </div>
       ${t.files.map(x => `<div style="display:grid;gap:4px"><span class="td-mono text-sm">${escapeHtml(x.path)}</span>${lineDiffHtml(x.before, x.after)}</div>`).join('')}
       ${t.dockgate.map(x => `<div style="display:grid;gap:4px"><span class="td-mono text-sm">${escapeHtml(x.path)}</span>${(cur[x.path] || '') === x.text ? '<div class="ui-sub">No change.</div>' : lineDiffHtml(cur[x.path] || '', x.text)}</div>`).join('')}`,
@@ -178,14 +178,14 @@ async function f2bTakeoverDialog(serverId, f, reload) {
 
 /**
  * Configuration (Fail2ban tab): everything fail2ban runs with for SSH, in one place. Two tabs:
- *  Settings — cards in a fixed order (Allowlist → sshd → recidive → History & log → Other options). Each row shows
+ *  Settings - cards in a fixed order (Allowlist -> sshd -> recidive > History & log > Other options). Each row shows
  *    the value, what fail2ban really runs and which file sets it. Changes are drafts: edit one card or "Edit all",
- *    changed rows turn amber, a bar at the bottom collects them — "Review & apply all" writes everything in ONE
+ *    changed rows turn amber, a bar at the bottom collects them - "Review & apply all" writes everything in ONE
  *    tested reload; "Save this card" applies one card and leaves the rest pending. Drafts survive a reload/navigation
  *    (per server, in memory) until applied or discarded.
- *  Files — every fail2ban file under jail.d / fail2ban.d plus jail.local / fail2ban.local, with an editor.
+ *  Files - every fail2ban file under jail.d / fail2ban.d plus jail.local / fail2ban.local, with an editor.
  */
-const F2B_DRAFTS = {}; // serverId → draft settings not applied yet
+const F2B_DRAFTS = {}; // serverId -> draft settings not applied yet
 const F2B_FIELDS = [ // [card, path, label, tech, type, runtime key]
   ['sshd', 'sshd.maxretry', 'Failures before a ban', 'maxretry', 'int', 'maxretry'],
   ['sshd', 'sshd.findtime', 'Counting window', 'findtime', 'dur', 'findtime'],
@@ -223,7 +223,7 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
   const cur = Object.fromEntries((f.files || []).map(x => [x.path, x.text || '']));
   const get = (o, p) => p.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
   const put = (o, p, v) => { const k = p.split('.'); const last = k.pop(); k.reduce((a, x) => a[x], o)[last] = v; };
-  const show = (v, t) => t === 'bool' ? (v ? 'on' : 'off') : (v == null ? '—' : String(v));
+  const show = (v, t) => t === 'bool' ? (v ? 'on' : 'off') : (v == null ? '-' : String(v));
   const isDur = (v) => { const x = f2bSeconds(v); return x != null && x > 0; };
   const errOf = (fd) => {
     const v = get(D, fd[1]);
@@ -236,7 +236,7 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
   const extraLines = (s) => ['DEFAULT', 'sshd', 'recidive'].flatMap(sec => ((s.extra || {})[sec] || []).map(l => `${sec}|${l}`));
   function changes() {
     const out = [];
-    for (const fd of F2B_FIELDS) { const a = get(A, fd[1]), b = get(D, fd[1]); if (!same(a, b)) out.push({ card: fd[0], text: `${F2B_CARD[fd[0]]} · ${fd[2]}: ${show(a, fd[4])} → ${show(b, fd[4])}` }); }
+    for (const fd of F2B_FIELDS) { const a = get(A, fd[1]), b = get(D, fd[1]); if (!same(a, b)) out.push({ card: fd[0], text: `${F2B_CARD[fd[0]]}, ${fd[2]}: ${show(a, fd[4])} -> ${show(b, fd[4])}` }); }
     for (const ip of D.ignoreip) if (!A.ignoreip.includes(ip)) out.push({ card: 'allow', text: `Allowlist: + ${ip}` });
     for (const ip of A.ignoreip) if (!D.ignoreip.includes(ip)) out.push({ card: 'allow', text: `Allowlist: − ${ip}` });
     const ea = extraLines(A), ed = extraLines(D);
@@ -261,7 +261,7 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
   };
   const runs = (fd) => {
     const jail = fd[0], rtv = jail === 'hist' ? (f.runtime && f.runtime.dbpurgeage != null ? Number(f.runtime.dbpurgeage) : null) : fd[1] === 'recidive.enabled' ? ((f.runtime && f.runtime.jails) ? (f.runtime.jails || []).includes('recidive') : null) : (fd[5] && RT[jail] ? RT[jail][fd[5]] : null);
-    if (rtv == null) return '<span class="ui-sub">—</span>';
+    if (rtv == null) return '<span class="ui-sub">-</span>';
     const mine = get(A, fd[1]);
     const a = fd[4] === 'dur' ? f2bSeconds(mine) : fd[4] === 'bool' ? !!mine : Number(mine);
     const shown = fd[4] === 'dur' ? f2bHuman(rtv) : fd[4] === 'bool' ? (rtv ? 'on' : 'off') : String(rtv);
@@ -284,19 +284,19 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
   const badge = (id) => { const e = errCount(id), n = changes().filter(c => c.card === id).length; return e ? UI.pill('bad', 'fix the red field') : n ? `<span class="f2b-pend">${n} change${n > 1 ? 's' : ''}</span>` : ''; };
   function cardFoot(id) {
     const n = changes().filter(c => c.card === id).length, e = errCount(id), canEdit = id !== 'allow' && id !== 'other';
-    return `<div class="f2b-cardfoot"><span class="ui-sub">${n ? `${n} pending change${n > 1 ? 's' : ''} — applied with the others, or now` : ''}</span><span class="flex gap-1">${canEdit ? (st.editing.has(id) ? UI.btn('Done', `data-done="${id}"`, 'btn-ghost') : UI.btn('Edit', `data-edit="${id}"`)) : ''}${n ? UI.btn('Save this card', `data-savecard="${id}" ${e ? 'disabled' : ''}`) : ''}</span></div>`;
+    return `<div class="f2b-cardfoot"><span class="ui-sub">${n ? `${n} pending change${n > 1 ? 's' : ''} - applied with the others, or now` : ''}</span><span class="flex gap-1">${canEdit ? (st.editing.has(id) ? UI.btn('Done', `data-done="${id}"`, 'btn-ghost') : UI.btn('Edit', `data-edit="${id}"`)) : ''}${n ? UI.btn('Save this card', `data-savecard="${id}" ${e ? 'disabled' : ''}`) : ''}</span></div>`;
   }
   const card = (id, title, summary, inner) => `<details class="f2b-card ${changes().some(c => c.card === id) ? 'f2b-card-dirty' : ''}" data-card="${id}" ${st.open.has(id) ? 'open' : ''}><summary><span class="f2b-chev" aria-hidden="true">›</span><span><b>${title}</b><div class="ui-sub" data-sum="${id}">${summary}</div></span><span data-badge="${id}">${badge(id)}</span></summary>${inner}<div data-foot="${id}">${cardFoot(id)}</div></details>`;
-  const seqText = (x, n) => { const q = f2bSequence(x, n); return q.some(t => t == null) ? '—' : q.map(f2bHuman).join(' → '); };
+  const seqText = (x, n) => { const q = f2bSequence(x, n); return q.some(t => t == null) ? '-' : q.map(f2bHuman).join(' -> '); };
   const summary = {
-    sshd: () => `${escapeHtml(String(D.sshd.maxretry))} failures within ${escapeHtml(D.sshd.findtime)} · bans ${escapeHtml(seqText(D.sshd, 5))} · ${escapeHtml(D.sshd.mode)} mode · port ${escapeHtml(String(f.sshPort))}`,
-    recidive: () => (f.problems || []).some(p => /recidive (can never trigger|reads|is on in DockGate)/.test(p.text)) && !changes().some(c => c.card === 'recidive') ? '<span class="f2b-diff">does not work as set — see the warning above</span>' : D.recidive.enabled ? `${escapeHtml(String(D.recidive.maxretry))} bans within ${escapeHtml(D.recidive.findtime)} · all-port bans ${escapeHtml(D.recidive.increment ? seqText(D.recidive, 4) : D.recidive.bantime)}` : 'off',
-    hist: () => `ban history kept ${escapeHtml(D.dbpurgeage)} · a first ban is remembered ~${escapeHtml(f2bHuman((f2bSeconds(D.dbpurgeage) || 0) + 3 * (f2bSeconds(D.sshd.bantime) || 0)))} · logs to /var/log/fail2ban.log`,
+    sshd: () => `${escapeHtml(String(D.sshd.maxretry))} failures within ${escapeHtml(D.sshd.findtime)}, bans ${escapeHtml(seqText(D.sshd, 5))}, ${escapeHtml(D.sshd.mode)} mode, port ${escapeHtml(String(f.sshPort))}`,
+    recidive: () => (f.problems || []).some(p => /recidive (can never trigger|reads|is on in DockGate)/.test(p.text)) && !changes().some(c => c.card === 'recidive') ? '<span class="f2b-diff">does not work as set - see the warning above</span>' : D.recidive.enabled ? `${escapeHtml(String(D.recidive.maxretry))} bans within ${escapeHtml(D.recidive.findtime)}, all-port bans ${escapeHtml(D.recidive.increment ? seqText(D.recidive, 4) : D.recidive.bantime)}` : 'off',
+    hist: () => `ban history kept ${escapeHtml(D.dbpurgeage)}, a first ban is remembered ~${escapeHtml(f2bHuman((f2bSeconds(D.dbpurgeage) || 0) + 3 * (f2bSeconds(D.sshd.bantime) || 0)))}, logs to /var/log/fail2ban.log`,
   };
 
   function settingsHtml() {
     const ips = [...new Set([...A.ignoreip, ...D.ignoreip])];
-    const allow = card('allow', 'Allowlist', `${D.ignoreip.length + 2} addresses are never banned${O['DEFAULT.ignoreip'] && O['DEFAULT.ignoreip'] !== OWN ? ` · <span class="f2b-diff">replaced by ${escapeHtml(O['DEFAULT.ignoreip'])}</span>` : ''}`,
+    const allow = card('allow', 'Allowlist', `${D.ignoreip.length + 2} addresses are never banned${O['DEFAULT.ignoreip'] && O['DEFAULT.ignoreip'] !== OWN ? `, <span class="f2b-diff">replaced by ${escapeHtml(O['DEFAULT.ignoreip'])}</span>` : ''}`,
       `<div class="f2b-chips"><span class="f2b-chip f2b-chip-fixed">127.0.0.1/8</span><span class="f2b-chip f2b-chip-fixed">::1</span>${ips.map(ip => { const gone = !D.ignoreip.includes(ip), isNew = !A.ignoreip.includes(ip);
         return `<span class="f2b-chip ${isNew ? 'f2b-chip-new' : ''} ${gone ? 'f2b-chip-gone' : ''}">${escapeHtml(ip)}${ip === f.dockgateIp ? ' ' + UI.pill('info', 'DockGate') : ''}${gone ? `<button type="button" data-keepip="${escapeHtml(ip)}" title="Keep it" aria-label="Keep ${escapeHtml(ip)}">↺</button>` : `<button type="button" data-rmip="${escapeHtml(ip)}" aria-label="Remove ${escapeHtml(ip)}">×</button>`}</span>`; }).join('')}
         <span class="flex gap-1">${f.dockgateIp && !D.ignoreip.includes(f.dockgateIp) ? UI.btn("Add DockGate's IP", 'data-adddg') : ''}<input class="input td-mono" id="f2b-newip" placeholder="IP or CIDR" style="width:150px">${UI.btn('Add', 'data-addip')}</span></div>`);
@@ -308,20 +308,20 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
     const exD = extraLines(D), exA = extraLines(A);
     const other = card('other', 'Other options', `${exD.length} option${exD.length === 1 ? '' : 's'} DockGate keeps exactly as written`,
       `<div class="f2b-rows">${exAll.map(k => { const [sec, line] = [k.split('|')[0], k.slice(k.indexOf('|') + 1)], gone = !exD.includes(k), isNew = !exA.includes(k);
-        return `<div class="f2b-row f2b-row2 ${gone || isNew ? 'f2b-chg' : ''}"><div class="td-mono" style="${gone ? 'text-decoration:line-through;opacity:.6' : ''}">[${sec}] ${escapeHtml(line)}</div><div style="text-align:right">${gone ? UI.btn('Keep', `data-keepx="${escapeHtml(k)}"`, 'btn-ghost') : UI.btn('Remove', `data-rmx="${escapeHtml(k)}"`, 'btn-ghost')}</div></div>`; }).join('') || '<div class="f2b-row f2b-row2"><span class="ui-sub">None. Options DockGate has no field for (bantime.rndtime, usedns, …) go here and are kept when you save.</span></div>'}
+        return `<div class="f2b-row f2b-row2 ${gone || isNew ? 'f2b-chg' : ''}"><div class="td-mono" style="${gone ? 'text-decoration:line-through;opacity:.6' : ''}">[${sec}] ${escapeHtml(line)}</div><div style="text-align:right">${gone ? UI.btn('Keep', `data-keepx="${escapeHtml(k)}"`, 'btn-ghost') : UI.btn('Remove', `data-rmx="${escapeHtml(k)}"`, 'btn-ghost')}</div></div>`; }).join('') || '<div class="f2b-row f2b-row2"><span class="ui-sub">None. Options DockGate has no field for (bantime.rndtime, usedns, ...) go here and are kept when you save.</span></div>'}
         <div class="f2b-row f2b-row2"><span class="flex gap-1" style="flex-wrap:wrap"><select class="select" id="f2b-xsec">${['DEFAULT', 'sshd', 'recidive'].map(x => `<option>${x}</option>`).join('')}</select><input class="input td-mono" id="f2b-newx" placeholder="bantime.rndtime = 30m" style="width:240px;max-width:100%"></span><span>${UI.btn('Add', 'data-addx')}</span></div></div>`);
     return allow + sshd + rec + hist + other;
   }
 
   function filesHtml() {
-    if (!st.files) return '<div class="ui-sub">Reading the files…</div>';
+    if (!st.files) return '<div class="ui-sub">Reading the files...</div>';
     const fs = st.files, x = fs[st.sel] || fs[0];
     if (!x) return '<div class="ui-sub">No fail2ban configuration files found.</div>';
     return `<div class="f2b-files"><div class="f2b-flist">${fs.map((y, i) => `<button type="button" class="f2b-fitem" data-file="${i}" aria-current="${i === st.sel}"><span class="td-mono">${escapeHtml(y.path)}</span><span class="ui-sub">${escapeHtml(y.note)}</span></button>`).join('')}
-        <div class="ui-sub" style="margin-top:6px">fail2ban reads jail.conf, jail.d/*.conf, jail.local, jail.d/*.local — a later file wins.</div></div>
+        <div class="ui-sub" style="margin-top:6px">fail2ban reads jail.conf, jail.d/*.conf, jail.local, jail.d/*.local - a later file wins.</div></div>
       <div class="f2b-editor"><div class="f2b-ehead"><span class="td-mono">${escapeHtml(x.path)}</span>${x.editable ? UI.pill('ok', 'editable') : UI.pill('off', 'read only')}</div>
         <div class="f2b-code"><div class="f2b-gutter" data-gut></div><textarea data-ta spellcheck="false" ${x.editable ? '' : 'readonly'}>${escapeHtml(x.text)}</textarea></div>
-        <div class="f2b-ehead"><span class="ui-sub">${x.editable ? 'Save shows the change, then backup → test → reload; everything is put back if the test fails.' : escapeHtml(x.note)}</span>${x.editable ? `<span class="flex gap-1">${UI.btn('Revert', 'data-revert')}${UI.primary('Save…', 'data-fsave')}</span>` : ''}</div></div></div>`;
+        <div class="f2b-ehead"><span class="ui-sub">${x.editable ? 'Save shows the change, then backup -> test -> reload; everything is put back if the test fails.' : escapeHtml(x.note)}</span>${x.editable ? `<span class="flex gap-1">${UI.btn('Revert', 'data-revert')}${UI.primary('Save...', 'data-fsave')}</span>` : ''}</div></div></div>`;
   }
 
   // Review dialog for a target settings object: the change list + both file diffs; one job on confirm.
@@ -332,7 +332,7 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
     const diffs = pv.files.map(x => (cur[x.path] || '') === x.text ? '' : `<div style="display:grid;gap:4px"><span class="td-mono text-sm">${escapeHtml(x.path)}</span>${lineDiffHtml(cur[x.path] || '', x.text)}</div>`).join('');
     UI.dialog({ title, saveLabel: `Apply ${list.length} change${list.length > 1 ? 's' : ''}`, wide: true,
       body: `<div><b>${list.length} change${list.length > 1 ? 's' : ''}</b><ul class="f2b-list" style="margin-top:4px">${list.map(c => `<li>${escapeHtml(c.text)}</li>`).join('')}</ul></div>${diffs || '<div class="ui-sub">The files do not change.</div>'}
-        <div class="ui-sub">One job: back up both files → write → <span class="td-mono">fail2ban-client -t</span> → reload. If the test or the reload fails, both files are put back and nothing changes. Current bans are kept.</div>`,
+        <div class="ui-sub">One job: back up both files -> write -> <span class="td-mono">fail2ban-client -t</span> -> reload. If the test or the reload fails, both files are put back and nothing changes. Current bans are kept.</div>`,
       onSave: () => saveSettings(target, title) });
   }
 
@@ -344,17 +344,17 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
   function drawBar() {
     const n = changes().length, e = errCount();
     bar.classList.toggle('show', st.tab === 'settings' && (n > 0 || e > 0) && document.body.contains(el));
-    bar.innerHTML = `<span>${e ? `<b>${e} field${e > 1 ? 's' : ''} to fix</b> · ` : ''}<b>${n} fail2ban change${n === 1 ? '' : 's'}</b> not applied yet</span><span class="flex gap-1">${UI.btn('Discard', 'data-discard')}${UI.btn('Review & apply all', `data-applyall ${e || !n ? 'disabled' : ''}`, 'btn-primary')}</span>`;
+    bar.innerHTML = `<span>${e ? `<b>${e} field${e > 1 ? 's' : ''} to fix</b>, ` : ''}<b>${n} fail2ban change${n === 1 ? '' : 's'}</b> not applied yet</span><span class="flex gap-1">${UI.btn('Discard', 'data-discard')}${UI.btn('Review & apply all', `data-applyall ${e || !n ? 'disabled' : ''}`, 'btn-primary')}</span>`;
     bar.querySelector('[data-discard]').onclick = () => { D = clone(A); D.extra = D.extra || { DEFAULT: [], sshd: [], recidive: [] }; keep(); draw(); showToast('Changes discarded'); };
     bar.querySelector('[data-applyall]').onclick = () => review(clone(D), changes(), 'Review & apply all');
   }
-  // Leave the page / server → the bar goes; the draft stays for this server.
+  // Leave the page / server -> the bar goes; the draft stays for this server.
   const gone = () => { if (!document.body.contains(el)) { bar.remove(); clearInterval(watcher); window.removeEventListener('hashchange', onHash); return true; } return false; };
   const onHash = () => { bar.classList.remove('show'); setTimeout(gone, 0); };
   window.addEventListener('hashchange', onHash);
   const watcher = setInterval(gone, 500);
 
-  // Light refresh after typing: marks, notes, badges, summaries and the bar — inputs keep focus.
+  // Light refresh after typing: marks, notes, badges, summaries and the bar - inputs keep focus.
   function refresh() {
     for (const fd of F2B_FIELDS) {
       const r = el.querySelector(`[data-row="${fd[1]}"]`); if (!r) continue;
@@ -385,7 +385,7 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
 
   function draw() {
     const allEditing = ['sshd', 'recidive', 'hist'].every(x => st.editing.has(x));
-    el.innerHTML = `${UI.header('Configuration', 'Everything fail2ban runs with for SSH. Change what you need, then apply it all at once — or one card at a time. Changes are tested before they apply; current bans are kept.',
+    el.innerHTML = `${UI.header('Configuration', 'Everything fail2ban runs with for SSH. Change what you need, then apply it all at once - or one card at a time. Changes are tested before they apply; current bans are kept.',
       `${st.tab === 'settings' ? UI.btn(allEditing ? 'Done editing' : 'Edit all', 'data-editall') : ''}<div class="ui-seg" role="tablist">${[['settings', 'Settings'], ['files', 'Files']].map(([k, l]) => `<button type="button" role="tab" data-ctab="${k}" aria-pressed="${st.tab === k}">${l}</button>`).join('')}</div>`)}
       <div style="display:grid;gap:10px">${st.tab === 'settings' ? settingsHtml() : filesHtml()}</div>`;
     el.querySelectorAll('[data-ctab]').forEach(b => b.onclick = async () => {
@@ -432,7 +432,7 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
       const x = st.files[st.sel], next = ta.value;
       if (next === x.text) return showToast('No change');
       UI.dialog({ title: `Save ${x.path}`, saveLabel: 'Test & save', wide: true,
-        body: `<div class="ui-sub">The lines that change. On save: backup → <span class="td-mono">fail2ban-client -t</span> → reload; the previous file is put back if the test fails. Current bans are kept.</div>${lineDiffHtml(x.text, next)}`,
+        body: `<div class="ui-sub">The lines that change. On save: backup -> <span class="td-mono">fail2ban-client -t</span> -> reload; the previous file is put back if the test fails. Current bans are kept.</div>${lineDiffHtml(x.text, next)}`,
         onSave: async () => {
           const { jobId } = await API.post(`/servers/${serverId}/fail2ban/file`, { path: x.path, content: next, confirm: true });
           setTimeout(async () => { if (await runLifelineJob(serverId, jobId, `Save ${x.path}`)) reload(); }, 0);

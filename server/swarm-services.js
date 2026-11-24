@@ -1,8 +1,8 @@
-// Swarm services — phase 3.
+// Swarm services - phase 3.
 //
 // The Settings form is a plain model (10 sections) that maps to Docker's ServiceSpec both ways:
 // formFromSpec() fills the form from a service, specFromForm() writes the form onto a copy of the service's
-// spec, so fields the form does not show (Privileges, Isolation, …) are kept as they are.
+// spec, so fields the form does not show (Privileges, Isolation, ...) are kept as they are.
 // New services get safe defaults: rolling update one task at a time, start-first, automatic roll back when
 // the new task fails within 15 s; restart on any exit with a 5 s delay; json-file logs 10 MB × 3.
 const dockerService = require('./docker');
@@ -13,7 +13,7 @@ const bad = (m) => Object.assign(new Error(m), { statusCode: 400 });
 
 // ---- units ----
 
-/** "10s", "1m30s", "500ms", "2h", "15" (seconds) → nanoseconds. Empty → undefined. */
+/** "10s", "1m30s", "500ms", "2h", "15" (seconds) -> nanoseconds. Empty -> undefined. */
 function parseDur(v, what = 'duration') {
   if (v === undefined || v === null || String(v).trim() === '') return undefined;
   const s = String(v).trim();
@@ -29,7 +29,7 @@ function fmtDur(ns) {
   const h = Math.floor(s / 3600); s -= h * 3600; const mi = Math.floor(s / 60); s -= mi * 60;
   return `${h ? h + 'h' : ''}${mi ? mi + 'm' : ''}${s ? +s.toFixed(3) + 's' : ''}` || '0s';
 }
-/** "512M", "1G", "256m", "1048576" → bytes. */
+/** "512M", "1G", "256m", "1048576" -> bytes. */
 function parseBytes(v, what = 'size') {
   if (v === undefined || v === null || String(v).trim() === '') return undefined;
   const m = /^(\d+(?:\.\d+)?)\s*([kmgt]?)i?b?$/i.exec(String(v).trim());
@@ -41,7 +41,7 @@ function fmtBytes(b) {
   for (const [u, n] of [['G', 1024 ** 3], ['M', 1024 ** 2], ['K', 1024]]) if (b % n === 0 || b >= n * 10) return `${+(b / n).toFixed(2)}${u}`;
   return String(b);
 }
-/** Split a command line like a shell does (quotes, backslashes) — no expansion. */
+/** Split a command line like a shell does (quotes, backslashes) - no expansion. */
 function splitArgs(s) {
   const out = []; let cur = '', q = null, any = false;
   for (let i = 0; i < s.length; i++) {
@@ -60,7 +60,7 @@ const joinArgs = (a) => (a || []).map(x => (/^[\w@%+=:,./-]+$/.test(x) ? x : `'$
 const lines = (v) => (Array.isArray(v) ? v : String(v || '').split('\n')).map(x => String(x).trim()).filter(Boolean);
 const kv = (list, what) => {
   const o = {};
-  for (const l of lines(list)) { const i = l.indexOf('='); if (i < 1) throw bad(`${what}: "${l}" — write key=value`); o[l.slice(0, i).trim()] = l.slice(i + 1); }
+  for (const l of lines(list)) { const i = l.indexOf('='); if (i < 1) throw bad(`${what}: "${l}" - write key=value`); o[l.slice(0, i).trim()] = l.slice(i + 1); }
   return o;
 };
 const toLines = (o) => Object.entries(o || {}).map(([k, v]) => `${k}=${v}`);
@@ -164,7 +164,7 @@ function updFrom(f, def, what) {
 
 /**
  * Write the form onto a copy of `base` (an existing spec, or {} for a new service). Throws a 400 with the reason.
- * secretIds / configIds: Map name → ID (Docker needs both).
+ * secretIds / configIds: Map name > ID (Docker needs both).
  */
 function specFromForm(form, base = {}, { secretIds = new Map(), configIds = new Map() } = {}) {
   const spec = JSON.parse(JSON.stringify(base || {}));
@@ -188,7 +188,7 @@ function specFromForm(form, base = {}, { secretIds = new Map(), configIds = new 
   const reps = num(g.replicas, 'Replicas', 0, 1000);
   if (isNew || modeOf(spec) !== mode) {
     spec.Mode = mode === 'global' ? { Global: {} } : mode === 'replicated-job' ? { ReplicatedJob: { MaxConcurrent: 1, TotalCompletions: reps ?? 1 } } : mode === 'global-job' ? { GlobalJob: {} } : { Replicated: { Replicas: reps ?? 1 } };
-    if (!isNew) throw bad('The mode of a service can not be changed — create a new service');
+    if (!isNew) throw bad('The mode of a service can not be changed - create a new service');
   } else if (mode === 'replicated') spec.Mode = { Replicated: { Replicas: reps ?? 1 } };
   else if (mode === 'replicated-job') spec.Mode.ReplicatedJob.TotalCompletions = reps ?? 1;
   const ent = String(g.entrypoint || '').trim(), cmd = String(g.command || '').trim();
@@ -258,7 +258,7 @@ function specFromForm(form, base = {}, { secretIds = new Map(), configIds = new 
   });
   const em = n.endpointMode || 'vip';
   if (!['vip', 'dnsrr'].includes(em)) throw bad('Endpoint mode must be vip or dnsrr');
-  if (em === 'dnsrr' && ports.some(x => x.PublishMode === 'ingress')) throw bad('DNS round robin can not publish ports in ingress mode — use host mode');
+  if (em === 'dnsrr' && ports.some(x => x.PublishMode === 'ingress')) throw bad('DNS round robin can not publish ports in ingress mode - use host mode');
   spec.EndpointSpec = { Mode: em, Ports: ports };
   if (ports.some(x => x.PublishMode === 'host') && spec.UpdateConfig.Order === 'start-first') spec.UpdateConfig.Order = 'stop-first'; // two tasks can not hold the same host port
   tt.Networks = (n.networks || []).filter(x => x && x.name).map(x => ({ Target: String(x.name).trim(), ...(String(x.aliases || '').trim() ? { Aliases: String(x.aliases).split(',').map(a => a.trim()).filter(Boolean) } : {}) }));
@@ -306,7 +306,7 @@ function newForm() {
 async function mgr() {
   const st = await swarm.status();
   if (st.state !== 'active') throw Object.assign(new Error('Swarm is not active on the server in use'), { statusCode: 409 });
-  if (!st.manager) throw Object.assign(new Error('The server in use is a worker — switch to a manager at the top'), { statusCode: 409 });
+  if (!st.manager) throw Object.assign(new Error('The server in use is a worker - switch to a manager at the top'), { statusCode: 409 });
   return { c: dockerService.docker, serverId: st.serverId };
 }
 async function idMaps(c) {
@@ -371,7 +371,7 @@ async function tasks(id) {
   const where = new Map();
   try { const ns = await require('./swarm-cluster').nodes(); for (const n of ns.nodes) where.set(n.id, n.serverId || (n.self ? (dockerService.getActiveServerId() || 'local') : null)); } catch (e) { /* no mapping */ }
   return ts.sort((a, b) => new Date(b.CreatedAt) - new Date(a.CreatedAt)).slice(0, 200).map(t => ({
-    id: t.ID, slot: t.Slot || null, node: host.get(t.NodeID) || (t.NodeID ? t.NodeID.slice(0, 12) : '—'), state: t.Status.State, desired: t.DesiredState,
+    id: t.ID, slot: t.Slot || null, node: host.get(t.NodeID) || (t.NodeID ? t.NodeID.slice(0, 12) : '-'), state: t.Status.State, desired: t.DesiredState,
     serverId: where.get(t.NodeID) || null, containerId: t.Status.ContainerStatus && t.Status.ContainerStatus.ContainerID ? t.Status.ContainerStatus.ContainerID : null,
     message: t.Status.Message || '', error: t.Status.Err || null, exitCode: t.Status.ContainerStatus ? t.Status.ContainerStatus.ExitCode : null,
     container: t.Status.ContainerStatus && t.Status.ContainerStatus.ContainerID ? t.Status.ContainerStatus.ContainerID.slice(0, 12) : null,
@@ -379,7 +379,7 @@ async function tasks(id) {
   }));
 }
 
-/** docker service logs → rows for the log viewer (source = name.slot @ server). */
+/** docker service logs -> rows for the log viewer (source = name.slot @ server). */
 async function logs(id, { tail = 1000 } = {}) {
   const { c } = await mgr();
   const lim = Math.min(Math.max(parseInt(tail) || 1000, 1), 10000);
@@ -430,7 +430,7 @@ async function create(form, { sourceIp } = {}) {
 async function save(id, form, { sourceIp, version } = {}) {
   const { c, serverId } = await mgr();
   const s = await c.getService(id).inspect();
-  if (version && Number(version) !== s.Version.Index) throw Object.assign(new Error('The service changed since the form was opened — open it again'), { statusCode: 409 });
+  if (version && Number(version) !== s.Version.Index) throw Object.assign(new Error('The service changed since the form was opened - open it again'), { statusCode: 409 });
   const spec = specFromForm(form, s.Spec, await idMaps(c));
   const reps = spec.Mode.Replicated ? spec.Mode.Replicated.Replicas : 1;
   dbGuard(spec.TaskTemplate.ContainerSpec.Image, reps, (spec.TaskTemplate.ContainerSpec.Mounts || []).some(m => m.Type === 'volume'), form.confirmDb);
@@ -587,7 +587,7 @@ async function stats() {
 
 module.exports = { checkImages, updateToNewest, writeSpec, stats, list, get, choices, tasks, logs, create, save, scale, setImage, rollback, resumeUpdate, restart, remove, progress, formFromSpec, specFromForm, newForm, parseDur, fmtDur, parseBytes, splitArgs, isDatabase };
 
-// ---- service history (Services → Graphs): CPU and memory of each service, every 2 minutes, kept 48 hours ----
+// ---- service history (Services > Graphs): CPU and memory of each service, every 2 minutes, kept 48 hours ----
 const { db: hdb } = require('./db');
 hdb.exec(`CREATE TABLE IF NOT EXISTS swarm_service_samples (
   cluster_id TEXT NOT NULL, service_id TEXT NOT NULL, t INTEGER NOT NULL, cpu REAL, mem INTEGER, tasks INTEGER
@@ -633,7 +633,7 @@ module.exports.sampleOnce = sampleOnce;
 module.exports.startSampler = startSampler;
 module.exports.history = history;
 
-// ---- the service page (Swarm → Services → a service) ----
+// ---- the service page (Swarm > Services -> a service) ----
 
 /** One service in the list's shape. */
 async function one(id) {
@@ -654,7 +654,7 @@ async function taskTarget(taskId) {
   const ns = await require('./swarm-cluster').nodes();
   const n = ns.nodes.find(x => x.id === t.NodeID) || {};
   const sid = n.serverId || (n.self ? (dockerService.getActiveServerId() || 'local') : null);
-  if (!sid) throw Object.assign(new Error(`The task runs on ${n.hostname || 'a node'} that is not in DockGate — add it (Swarm → Nodes → Add to DockGate…)`), { statusCode: 409 });
+  if (!sid) throw Object.assign(new Error(`The task runs on ${n.hostname || 'a node'} that is not in DockGate - add it (Swarm > Nodes > Add to DockGate...)`), { statusCode: 409 });
   let client;
   if (sid === (dockerService.getActiveServerId() || 'local')) client = dockerService.docker;
   else if (sid === 'local') client = dockerService.createLocalClient();

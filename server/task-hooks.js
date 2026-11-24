@@ -1,10 +1,10 @@
 // Deploy recipes started from outside: a push webhook of GitHub, GitLab, Bitbucket Cloud or Bitbucket Server /
 // Data Center (Gitea and Forgejo send GitHub's signature too), or a CI job calling with a token. Each recipe has
 // its own hook id and secret. The request is verified, the branch filtered, then the recipe runs; with a token of
-// the provider, DockGate reports the deploy back on the commit (pending → success / failure).
-//   verify(headers, rawBody, secret)  → { ok, provider, event }   (timing-safe; no secret = refused)
-//   parse(provider, event, body)      → { push, branch, sha, message, author, repo, api } | { ping } | { ignored }
-//   statusPoster(provider, git, token, targetUrl) → (state, description) => Promise
+// the provider, DockGate reports the deploy back on the commit (pending -> success / failure).
+//   verify(headers, rawBody, secret)  -> { ok, provider, event }   (timing-safe; no secret = refused)
+//   parse(provider, event, body)      -> { push, branch, sha, message, author, repo, api } | { ping } | { ignored }
+//   statusPoster(provider, git, token, targetUrl) -> (state, description) => Promise
 const crypto = require('crypto');
 
 const eq = (a, b) => { const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || '')); return x.length === y.length && crypto.timingSafeEqual(x, y); };

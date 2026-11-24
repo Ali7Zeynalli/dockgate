@@ -67,7 +67,7 @@ async function helperRun(vol, cmd) {
 // A shell script with the paths as $1/$2 (never interpolated): read, stat, mkdir, mv, rm.
 const SCRIPTS = {
   stat: 'stat -c "%a %u %g %s %F" -- "$1"',
-  read: `[ -f "$1" ] || { echo "not a file" >&2; exit 2; }; s=$(stat -c %s -- "$1"); [ "$s" -le ${MAX_EDIT} ] || { echo "too big to edit here ($s bytes) — download it" >&2; exit 3; }; cat -- "$1"`,
+  read: `[ -f "$1" ] || { echo "not a file" >&2; exit 2; }; s=$(stat -c %s -- "$1"); [ "$s" -le ${MAX_EDIT} ] || { echo "too big to edit here ($s bytes) - download it" >&2; exit 3; }; cat -- "$1"`,
   mkdir: '[ ! -e "$1" ] || { echo "already exists" >&2; exit 2; }; mkdir -p -- "$1"',
   mv: '[ -e "$1" ] || { echo "not found" >&2; exit 2; }; [ ! -e "$2" ] || { echo "the new name already exists" >&2; exit 2; }; mv -- "$1" "$2"',
   rm: '[ -e "$1" ] || [ -L "$1" ] || { echo "not found" >&2; exit 2; }; rm -rf -- "$1"',
@@ -77,7 +77,7 @@ function check(r, what) {
   if (r.code === 0) return r;
   const msg = r.err || `exit code ${r.code}`;
   if (/No such container|is not running/i.test(msg)) throw bad(409, 'The container must be running');
-  if (/executable file not found|sh: not found|no such file or directory.*sh/i.test(msg)) throw bad(400, 'The container has no shell (sh) — files can only be downloaded and uploaded');
+  if (/executable file not found|sh: not found|no such file or directory.*sh/i.test(msg)) throw bad(400, 'The container has no shell (sh) - files can only be downloaded and uploaded');
   throw bad(400, `${what}: ${msg}`);
 }
 
@@ -112,7 +112,7 @@ async function read(kind, id, path, { client } = {}) {
   const t = target(kind, id, client);
   const p = t.path(path);
   const r = check(await t.run(SCRIPTS.read, p), 'Read');
-  if (r.out.includes(0)) throw bad(400, 'This is a binary file — download it instead');
+  if (r.out.includes(0)) throw bad(400, 'This is a binary file - download it instead');
   return { path: shown(kind, p), content: r.out.toString('utf8'), size: r.out.length };
 }
 
@@ -123,7 +123,7 @@ async function write(kind, id, path, content, { client } = {}) {
   const name = baseOf(p);
   if (!VALID_NAME(name)) throw bad(400, 'Give a file name');
   const buf = Buffer.from(String(content ?? ''), 'utf8');
-  if (buf.length > MAX_EDIT) throw bad(400, 'More than 1 MB — upload the file instead');
+  if (buf.length > MAX_EDIT) throw bad(400, 'More than 1 MB - upload the file instead');
   let meta = { mode: 0o644, uid: 0, gid: 0 };
   const st = await t.run(SCRIPTS.stat, p);
   if (st.code === 0) {
@@ -133,7 +133,7 @@ async function write(kind, id, path, content, { client } = {}) {
   }
   try { await t.put(dirOf(p), await tarOf(name, buf, meta)); }
   catch (e) {
-    if (e.statusCode === 404) throw bad(400, `The folder ${shown(kind, dirOf(p))} does not exist — make it first`);
+    if (e.statusCode === 404) throw bad(400, `The folder ${shown(kind, dirOf(p))} does not exist - make it first`);
     if (e.statusCode === 403 || /read-only/i.test(e.message)) throw bad(400, 'That place is read-only');
     throw e;
   }
@@ -161,7 +161,7 @@ async function remove(kind, id, path, { client } = {}) {
   const t = target(kind, id, client);
   const p = t.path(path);
   if (p === '/' || p === '/volume' || p === '/volume/') throw bad(400, 'The top folder can not be deleted');
-  if (kind === 'container' && /^\/(bin|sbin|lib|lib64|usr|etc|proc|sys|dev|boot|var|run)$/.test(p)) throw bad(400, `${p} is a system folder — it is not deleted here`);
+  if (kind === 'container' && /^\/(bin|sbin|lib|lib64|usr|etc|proc|sys|dev|boot|var|run)$/.test(p)) throw bad(400, `${p} is a system folder - it is not deleted here`);
   check(await t.run(SCRIPTS.rm, p), 'Delete');
   return { path: shown(kind, p) };
 }

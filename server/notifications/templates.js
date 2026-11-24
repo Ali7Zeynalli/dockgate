@@ -35,7 +35,7 @@ function esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// A dark "Recent container logs" block — the WHY behind a crash/OOM/unhealthy event. Empty if no logs.
+// A dark "Recent container logs" block - the WHY behind a crash/OOM/unhealthy event. Empty if no logs.
 function logsBlock(logs) {
   if (!logs || !String(logs).trim()) return '';
   return `
@@ -46,7 +46,7 @@ function logsBlock(logs) {
 }
 
 function containerDieTemplate({ containerName, containerId, image, time, exitCode, unexpected = true, server, logs }) {
-  // unexpected=false (exit 0 / intentional stop) → neutral blue; non-zero crash → red alert
+  // unexpected=false (exit 0 / intentional stop) -> neutral blue; non-zero crash -> red alert
   const title = unexpected ? 'Container Crashed' : 'Container Stopped';
   const boxStyle = unexpected
     ? 'background:#fff3f3;border:1px solid #fecaca;color:#b91c1c;'
@@ -63,8 +63,8 @@ function containerDieTemplate({ containerName, containerId, image, time, exitCod
           ${serverRow(server)}
           ${row('Container', containerName)}
           ${row('ID', containerId)}
-          ${row('Image', image || '—')}
-          ${row('Exit Code', exitCode ?? '—')}
+          ${row('Image', image || '-')}
+          ${row('Exit Code', exitCode ?? '-')}
           ${row('Time', time)}
         </table>
         ${logsBlock(logs)}
@@ -76,14 +76,14 @@ function containerRestartTemplate({ containerName, containerId, image, time, res
   return `${header('Container Restarted')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
         <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">
-          Container <strong>${containerName}</strong> has restarted.${restartCount > 3 ? ' Frequent restarts detected — investigate the cause.' : ''}
+          Container <strong>${containerName}</strong> has restarted.${restartCount > 3 ? ' Frequent restarts detected - investigate the cause.' : ''}
         </div>
         <table style="width:100%;border-collapse:collapse;">
           ${serverRow(server)}
           ${row('Container', containerName)}
           ${row('ID', containerId)}
-          ${row('Image', image || '—')}
-          ${row('Restart Count', restartCount ?? '—')}
+          ${row('Image', image || '-')}
+          ${row('Restart Count', restartCount ?? '-')}
           ${row('Time', time)}
         </table>
       </div>
@@ -100,8 +100,8 @@ function containerUnhealthyTemplate({ containerName, containerId, image, time, f
           ${serverRow(server)}
           ${row('Container', containerName)}
           ${row('ID', containerId)}
-          ${row('Image', image || '—')}
-          ${row('Failing Streak', failingStreak ?? '—')}
+          ${row('Image', image || '-')}
+          ${row('Failing Streak', failingStreak ?? '-')}
           ${row('Time', time)}
         </table>
         ${lastOutput ? `<div style="margin-top:16px;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;font-size:12px;color:#991b1b;font-family:monospace;white-space:pre-wrap;word-break:break-all;">${lastOutput}</div>` : ''}
@@ -123,7 +123,7 @@ function containerOomTemplate({ containerName, containerId, image, time, server,
           ${serverRow(server)}
           ${row('Container', containerName)}
           ${row('ID', containerId)}
-          ${row('Image', image || '—')}
+          ${row('Image', image || '-')}
           ${row('Time', time)}
         </table>
         <div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border-radius:4px;font-size:12px;color:#666;">
@@ -134,7 +134,7 @@ function containerOomTemplate({ containerName, containerId, image, time, server,
     ${footer()}`;
 }
 
-// thresholdGB is an absolute size limit (NOT a host disk-fullness percentage) — an alert
+// thresholdGB is an absolute size limit (NOT a host disk-fullness percentage) - an alert
 // fires when Docker's reclaimable space exceeds this limit. The previous version showed the
 // GB/limit ratio as a "percentage", which was misleading; sizes are now reported accurately in absolute GB.
 function diskAlertTemplate({ usedSpace, usedGB, thresholdGB, breakdown = {}, server }) {
@@ -163,7 +163,7 @@ function diskAlertTemplate({ usedSpace, usedGB, thresholdGB, breakdown = {}, ser
 }
 
 function buildFailTemplate({ imageTag, buildId, error, duration }) {
-  const durationStr = duration ? `${(duration / 1000).toFixed(1)}s` : '—';
+  const durationStr = duration ? `${(duration / 1000).toFixed(1)}s` : '-';
   return `${header('Build Failed')}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
         <div style="background:#fff3f3;border:1px solid #fecaca;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#b91c1c;">
@@ -171,7 +171,7 @@ function buildFailTemplate({ imageTag, buildId, error, duration }) {
         </div>
         <table style="width:100%;border-collapse:collapse;">
           ${row('Image', imageTag || 'untagged')}
-          ${row('Build ID', buildId || '—')}
+          ${row('Build ID', buildId || '-')}
           ${row('Duration', durationStr)}
         </table>
         ${error ? `<div style="margin-top:16px;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;font-size:12px;color:#991b1b;font-family:monospace;white-space:pre-wrap;word-break:break-all;">${error}</div>` : ''}
@@ -179,7 +179,7 @@ function buildFailTemplate({ imageTag, buildId, error, duration }) {
     ${footer()}`;
 }
 
-// Generic lifecycle event (start / pause / unpause) — neutral informational style.
+// Generic lifecycle event (start / pause / unpause) - neutral informational style.
 function containerLifecycleTemplate({ title, message, containerName, containerId, image, time, server }) {
   return `${header(title)}
       <div style="padding:20px 24px;border:1px solid #e0e0e0;border-top:0;">
@@ -190,7 +190,7 @@ function containerLifecycleTemplate({ title, message, containerName, containerId
           ${serverRow(server)}
           ${row('Container', containerName)}
           ${row('ID', containerId)}
-          ${row('Image', image || '—')}
+          ${row('Image', image || '-')}
           ${row('Time', time)}
         </table>
       </div>

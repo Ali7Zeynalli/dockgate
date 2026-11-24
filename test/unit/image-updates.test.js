@@ -53,7 +53,7 @@ test('versionOf: repo-named env, aliases, OCI label, helper vars ignored', () =>
   assert.equal(IU.versionOf({ Env: ['NGINX_VERSION=1.27.5', 'NJS_VERSION=0.8.10', 'PKG_RELEASE=1'] }, 'nginx'), '1.27.5');
   assert.equal(IU.versionOf({ Env: ['REDIS_VERSION=7.4.12'] }, 'bitnami/redis'), '7.4.12');
   assert.equal(IU.versionOf({ Env: ['GOSU_VERSION=1.17'], Labels: { 'org.opencontainers.image.version': 'v3.1.7' } }, 'traefik'), 'v3.1.7');
-  assert.equal(IU.versionOf({ Env: ['GOSU_VERSION=1.17', 'YARN_VERSION=1.22'] }, 'myapp'), null, 'only helper versions → unknown');
+  assert.equal(IU.versionOf({ Env: ['GOSU_VERSION=1.17', 'YARN_VERSION=1.22'] }, 'myapp'), null, 'only helper versions -> unknown');
   assert.equal(IU.versionOf({ Env: ['APP_VERSION=2.0'] }, 'ghcr.io/acme/api'), '2.0', 'another *_VERSION as a last resort');
   assert.equal(IU.versionOf({ Labels: { 'org.opencontainers.image.version': 'latest' } }, 'x'), null);
   assert.equal(IU.versionOf(null, 'x'), null);

@@ -1,12 +1,12 @@
-// Isolated security worker — forked child process (same pattern as provision-worker / service-ctl-worker)
+// Isolated security worker - forked child process (same pattern as provision-worker / service-ctl-worker)
 // so its ssh2 connection never contends with the main-process connections to the same host.
 //
-// It executes ONLY what the parent built in server/security/plans.js — it has no command logic of its
+// It executes ONLY what the parent built in server/security/plans.js - it has no command logic of its
 // own beyond the root/sudo prefix and the "test a NEW login" step.
 //
 // Input (argv[2], JSON): { host, port, username, keyPath?, password?, passphrase?, hostKey?, mode, script?, plan? }
-//   mode 'read' → runs `script`, prints {"out": "...", "code": n} to stdout
-//   mode 'plan' → runs plan.steps in order, streaming NDJSON:
+//   mode 'read' -> runs `script`, prints {"out": "...", "code": n} to stdout
+//   mode 'plan' -> runs plan.steps in order, streaming NDJSON:
 //       {type:'step', i, state:'running'|'done'|'failed', out?}  {type:'rolledback'}  {type:'done'}  {type:'fatal', error}
 //     A step is { label, cmd } or { label, test: { port?, username, keyPath?, password?, cmd? } }.
 //     When a step marked rollbackOnFail fails, plan.rollback runs immediately on the (still open) original
@@ -53,7 +53,7 @@ async function testLogin(t) {
     passphrase: t.keyPath ? null : cfg.passphrase, hostKey: cfg.hostKey,
   }, { readyTimeout: 15000 });
   // sshd closes its listening socket for a moment while it re-executes on reload (SIGHUP), so a refused
-  // or reset connection is retried for ~15 s. An authentication failure is final — that is the answer.
+  // or reset connection is retried for ~15 s. An authentication failure is final - that is the answer.
   let c, lastErr;
   for (let attempt = 0; attempt < 8 && !c; attempt++) {
     try { c = await connect(opts); }

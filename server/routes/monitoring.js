@@ -58,7 +58,7 @@ function parseAgentReply(r) {
   try { return JSON.parse(out); } catch (e) { throw new Error('The agent sent an answer DockGate could not read'); }
 }
 
-// GET /api/monitoring/servers — list all servers with agent readiness
+// GET /api/monitoring/servers - list all servers with agent readiness
 router.get('/servers', async (req, res) => {
   try {
     const servers = stmts.getServers.all();
@@ -77,9 +77,9 @@ router.get('/servers', async (req, res) => {
 });
 
 // GET /api/monitoring/:serverId/metrics?range=live|48h&container=<name>
-//   live (default) — the last 15 minutes from the Edge agent when it runs, otherwise one fresh sample (the page
+//   live (default) - the last 15 minutes from the Edge agent when it runs, otherwise one fresh sample (the page
 //                    keeps a rolling 15-minute window itself).
-//   48h            — DockGate's own store: one sample a minute per server, 5-minute buckets (average + peak).
+//   48h            - DockGate's own store: one sample a minute per server, 5-minute buckets (average + peak).
 //                    The same with or without the agent, and it survives reboots.
 // Keep the agent's last `ms` of samples. host.* arrays line up with timestamps; a container's arrays may be
 // shorter (it started later), so each keeps at most the same number of newest points.
@@ -104,7 +104,7 @@ router.get('/:serverId/metrics', async (req, res) => {
       try {
         const data = await queryAgent(serverId, `/metrics?range=1h${container ? `&container=${encodeURIComponent(container)}` : ''}`);
         return res.json({ source: 'agent', range, ...liveCut(data, 15 * 60 * 1000) });
-      } catch (agentErr) { /* no agent → one fresh sample below */ }
+      } catch (agentErr) { /* no agent -> one fresh sample below */ }
     }
 
     if (range === '48h') {
@@ -289,7 +289,7 @@ router.get('/:serverId/logs', async (req, res) => {
   }
 });
 
-// GET /api/monitoring/:serverId/doctor — Intelligent Diagnostic & Health Analysis
+// GET /api/monitoring/:serverId/doctor - Intelligent Diagnostic & Health Analysis
 router.get('/:serverId/doctor', async (req, res) => {
   const { serverId } = req.params;
 
@@ -377,7 +377,7 @@ router.get('/:serverId/summary', async (req, res) => {
         }
       }
 
-      // Container resource breakdown — fetch real stats for each running container
+      // Container resource breakdown - fetch real stats for each running container
       const containers = await dockerService.listContainers(false).catch(() => []);
       const breakdown = await Promise.all(containers.map(async (c) => {
         const base = {

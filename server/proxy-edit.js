@@ -1,11 +1,11 @@
-// Web → Proxies & SSL — changing proxies safely (PX2–PX4):
-//   · edit a config file: earlier version kept → write → the proxy's own check → reload → the sites still
-//     answer as before; any step fails → the earlier files are put back (and reloaded)
-//   · put a container on a domain (nginx, Caddy, HAProxy, Apache files; Traefik / caddy-docker-proxy labels),
+// Web > Proxies & SSL - changing proxies safely (PX2–PX4):
+//  , edit a config file: earlier version kept -> write -> the proxy's own check -> reload -> the sites still
+//     answer as before; any step fails -> the earlier files are put back (and reloaded)
+//  , put a container on a domain (nginx, Caddy, HAProxy, Apache files; Traefik / caddy-docker-proxy labels),
 //     joining the proxy to the container's network when they share none
-//   · Let's Encrypt certificates for nginx and Apache sites (DockGate is the ACME client; the challenge is
+//  , Let's Encrypt certificates for nginx and Apache sites (DockGate is the ACME client; the challenge is
 //     answered by the proxy from ACME_ROOT), stored and renewed by DockGate (30 days before expiry)
-//   · load balancing (nginx upstream, Caddy reverse_proxy, HAProxy backend), Traefik's live API, access-log stats
+//  , load balancing (nginx upstream, Caddy reverse_proxy, HAProxy backend), Traefik's live API, access-log stats
 // Files under a read-only mount of a proxy container are written through a short-lived helper container that
 // mounts the same source read-write.
 const crypto = require('crypto');
@@ -154,7 +154,7 @@ async function writeFile(ctx, p, path, text, { mode = null } = {}) {
   return { persistent: pl.persistent, via: pl.via };
 }
 async function removeFile(ctx, p, path) {
-  if (isStopped(p)) { const m = await onMount(ctx, p, path); if (!m) throw err('A file inside a stopped container can not be removed — start it first'); await helper(ctx, m.Type === 'volume' ? m.Name : m.Source, `rm -f ${shq('/w' + path.slice(m.Destination.length))}`); return; }
+  if (isStopped(p)) { const m = await onMount(ctx, p, path); if (!m) throw err('A file inside a stopped container can not be removed - start it first'); await helper(ctx, m.Type === 'volume' ? m.Name : m.Source, `rm -f ${shq('/w' + path.slice(m.Destination.length))}`); return; }
   const pl = await place(ctx, p, path); await pl.exec(`rm -f ${shq(pl.path)}`);
 }
 
@@ -169,7 +169,7 @@ async function startAndWatch(ctx, p, seconds = 4) {
 }
 async function startProxy(id, user) {
   const p = await PX.proxyById(id); const ctx = activeCtx();
-  if (p.where !== 'container') throw err('Start a host service from Server → Software → Services');
+  if (p.where !== 'container') throw err('Start a host service from Server > Software > Services');
   if (p.running) return { ok: true, state: 'running', steps: [{ t: `${p.name} is already running`, ok: true }] };
   const r = await startAndWatch(ctx, p);
   PX.invalidate();
@@ -188,7 +188,7 @@ function cmds(p) {
 }
 /**
  * HTTP status of each site asked from the proxy itself (127.0.0.1), before and after a change. Items are a domain
- * (https first, then http) or { domain, https } — asked only the way the site is served, so a site without HTTPS
+ * (https first, then http) or { domain, https } - asked only the way the site is served, so a site without HTTPS
  * is not answered by another site's TLS server. Up to 20 sites, asked at the same time.
  */
 /** The ports a proxy listens on inside its own network, from its config: [{ scheme, port }] (80 / 443 always tried). */
@@ -247,7 +247,7 @@ const healthy = (c) => c > 0 && c < 500;
 const locks = new Set();
 /**
  * Apply file changes to proxy p: [{ path, text }] (text null = remove). Earlier versions are kept, then the check,
- * reload and site probe run; on any failure the earlier files go back. → { ok, stage, steps, output, probe }
+ * reload and site probe run; on any failure the earlier files go back. -> { ok, stage, steps, output, probe }
  */
 async function apply(ctx, p, changes, opts = {}) {
   if (p.swarmService) throw err(swarmLock(p), 409);
@@ -256,7 +256,7 @@ async function apply(ctx, p, changes, opts = {}) {
 }
 /** A stopped proxy: write the files (earlier versions kept), start it, watch it; if it stops again, the earlier files go back. */
 async function applyStopped(ctx, p, changes, { user = null, note = '', versions = true } = {}) {
-  const key = ctx.serverId + p.name; if (locks.has(key)) throw err(`A change to ${p.name} is running — wait for it`, 409);
+  const key = ctx.serverId + p.name; if (locks.has(key)) throw err(`A change to ${p.name} is running - wait for it`, 409);
   locks.add(key);
   const steps = []; const step = (t, ok = true) => steps.push({ t, ok }); const old = [];
   try {
@@ -264,7 +264,7 @@ async function applyStopped(ctx, p, changes, { user = null, note = '', versions 
     for (const ch of changes) { if (ch.text == null) { await removeFile(ctx, p, ch.path); step(`Removed ${ch.path}`); } else { const w = await writeFile(ctx, p, ch.path, ch.text, { mode: ch.mode }); step(`Wrote ${ch.path} (${w.via})`); } }
     const r = await startAndWatch(ctx, p);
     if (!r.ok) {
-      step(`${p.name} does not start with it — ${r.state}`, false);
+      step(`${p.name} does not start with it - ${r.state}`, false);
       const failed = [];
       for (const o of [...old].reverse()) { try { if (o.existed) await writeFile(ctx, p, o.path, o.text); else await removeFile(ctx, p, o.path); } catch (e) { failed.push(o.path); } }
       step(failed.length ? `COULD NOT put back ${failed.join(', ')}` : 'Put the earlier files back (the proxy stays stopped, as before)', !failed.length);
@@ -278,7 +278,7 @@ async function applyStopped(ctx, p, changes, { user = null, note = '', versions 
 }
 async function applyRunning(ctx, p, changes, { domains = [], user = null, note = '', versions = true, probeSites = true } = {}) {
   const C = cmds(p); if (!C) throw err(`${PX.LABEL[p.kind] || p.kind} is configured by labels, not files`);
-  const key = ctx.serverId + p.name; if (locks.has(key)) throw err(`A change to ${p.name} is running — wait for it`, 409);
+  const key = ctx.serverId + p.name; if (locks.has(key)) throw err(`A change to ${p.name} is running - wait for it`, 409);
   locks.add(key);
   const steps = []; const step = (t, ok = true) => steps.push({ t, ok });
   const old = [];
@@ -286,7 +286,7 @@ async function applyRunning(ctx, p, changes, { domains = [], user = null, note =
   const restore = async () => {
     const failed = [];
     for (const o of [...old].reverse()) { try { if (o.existed) await writeFile(ctx, p, o.path, o.text); else await removeFile(ctx, p, o.path); } catch (e) { failed.push(`${o.path} (${e.message})`); } }
-    if (failed.length) step(`COULD NOT put back ${failed.join(', ')} — the new text is still there. Restore it from History.`, false);
+    if (failed.length) step(`COULD NOT put back ${failed.join(', ')} - the new text is still there. Restore it from History.`, false);
     return !failed.length;
   };
   const saveVersions = () => { if (versions) for (const o of old) { q.addVer.run(ctx.serverId, p.name, o.path, o.text, o.existed ? 1 : 0, Date.now(), user, note || null); q.prune.run(ctx.serverId, p.name, o.path, ctx.serverId, p.name, o.path); } };
@@ -300,22 +300,22 @@ async function applyRunning(ctx, p, changes, { domains = [], user = null, note =
     }
     const t = await run(ctx, p, `${C.test} 2>&1`);
     const out = (t.out + t.err).trim();
-    if (t.code !== 0) { step(`${C.test} — failed`, false); if (await restore()) step('Put the earlier files back'); return { ok: false, stage: 'test', steps, output: out.slice(-4000) }; }
-    step(`${C.test} — ok`);
+    if (t.code !== 0) { step(`${C.test} - failed`, false); if (await restore()) step('Put the earlier files back'); return { ok: false, stage: 'test', steps, output: out.slice(-4000) }; }
+    step(`${C.test} - ok`);
     const r = await run(ctx, p, `${C.reload} 2>&1`);
-    if (r.code !== 0) { step('Reload — failed', false); const back = await restore(); await run(ctx, p, `${C.reload} 2>&1`).catch(() => {}); if (back) step('Put the earlier files back and reloaded'); return { ok: false, stage: 'reload', steps, output: (r.out + r.err).trim().slice(-4000) }; }
+    if (r.code !== 0) { step('Reload - failed', false); const back = await restore(); await run(ctx, p, `${C.reload} 2>&1`).catch(() => {}); if (back) step('Put the earlier files back and reloaded'); return { ok: false, stage: 'reload', steps, output: (r.out + r.err).trim().slice(-4000) }; }
     step('Reloaded');
     let after = {};
-    if (probeSites && Object.keys(before).length && Object.values(before).every(c => !c)) step(`The sites could not be asked through ${p.name} (none answered before) — open them to check`);
+    if (probeSites && Object.keys(before).length && Object.values(before).every(c => !c)) step(`The sites could not be asked through ${p.name} (none answered before) - open them to check`);
     else if (probeSites && Object.keys(before).length) {
       await sleep(1500); after = await probe(ctx, p, domains.filter(x => (typeof x === 'string' ? x : x.domain) in before));
       const broke = Object.keys(before).filter(d => healthy(before[d]) && !healthy(after[d] || 0));
       if (broke.length) {
-        step(`Sites stopped answering: ${broke.map(d => `${d} (${before[d]} → ${after[d] || 'no answer'})`).join(', ')}`, false);
+        step(`Sites stopped answering: ${broke.map(d => `${d} (${before[d]} -> ${after[d] || 'no answer'})`).join(', ')}`, false);
         const back = await restore(); await run(ctx, p, `${C.reload} 2>&1`).catch(() => {}); if (back) step('Put the earlier files back and reloaded');
         return { ok: false, stage: 'check', steps, output: '', probe: { before, after } };
       }
-      step(`Sites answer as before: ${Object.keys(before).map(d => `${d} ${after[d] || '—'}`).join(', ')}`);
+      step(`Sites answer as before: ${Object.keys(before).map(d => `${d} ${after[d] || '-'}`).join(', ')}`);
     }
     saveVersions();
     PX.invalidate();
@@ -326,14 +326,14 @@ async function applyRunning(ctx, p, changes, { domains = [], user = null, note =
 }
 
 // ---------- editing files ----------
-const caddyJsonOnly = (p) => { if (p.kind === 'caddy' && p.caddyJson) throw err(`${p.name} runs a JSON config (${p.config}): DockGate writes Caddyfiles — change the JSON in Config files (it is checked with caddy validate and reloaded the safe way)`, 409); };
-const swarmLock = (p) => p.swarmService ? `${p.swarmService} is a Swarm service (${p.replicas} replica${p.replicas === 1 ? '' : 's'} here): a change written into one task container misses the others and is lost when Swarm replaces it. Change the config where the service gets it (its image, a Docker config or a shared mount), then update the service in Swarm → Services.` : null;
+const caddyJsonOnly = (p) => { if (p.kind === 'caddy' && p.caddyJson) throw err(`${p.name} runs a JSON config (${p.config}): DockGate writes Caddyfiles - change the JSON in Config files (it is checked with caddy validate and reloaded the safe way)`, 409); };
+const swarmLock = (p) => p.swarmService ? `${p.swarmService} is a Swarm service (${p.replicas} replica${p.replicas === 1 ? '' : 's'} here): a change written into one task container misses the others and is lost when Swarm replaces it. Change the config where the service gets it (its image, a Docker config or a shared mount), then update the service in Swarm > Services.` : null;
 function lockReason(p, path) {
   if (p.swarmService) return swarmLock(p);
-  if (p.kind === 'traefik') return 'Traefik reads these files by itself (no reload needed): edit them where they are mounted from — DockGate shows them read-only';
+  if (p.kind === 'traefik') return 'Traefik reads these files by itself (no reload needed): edit them where they are mounted from - DockGate shows them read-only';
   if (p.kind === 'caddy-docker-proxy') return `${PX.LABEL[p.kind]} is configured by container labels`;
-  if (p.kind === 'nginx-proxy') return 'nginx-proxy writes its config from the containers\' VIRTUAL_HOST — change those instead';
-  if (p.kind === 'npm') return 'Nginx Proxy Manager keeps this config — change it in its own web UI';
+  if (p.kind === 'nginx-proxy') return 'nginx-proxy writes its config from the containers\' VIRTUAL_HOST - change those instead';
+  if (p.kind === 'npm') return 'Nginx Proxy Manager keeps this config - change it in its own web UI';
   if (/\/letsencrypt\//.test(path)) return 'certbot keeps this file';
   return null;
 }
@@ -469,7 +469,7 @@ async function exposePlan(body) {
   const ctx = activeCtx(); const d = await PX.scan({ fresh: true });
   const p = d.proxies.find(x => x.id === body.proxy); if (!p) throw err('Choose a proxy', 400);
   if (p.swarmService) throw err(swarmLock(p), 409);
-  if (p.kind === 'npm') throw err('Nginx Proxy Manager adds sites in its own web UI (Hosts → Proxy Hosts)');
+  if (p.kind === 'npm') throw err('Nginx Proxy Manager adds sites in its own web UI (Hosts > Proxy Hosts)');
   if (p.kind === 'nginx-proxy') throw err('nginx-proxy: set VIRTUAL_HOST (and LETSENCRYPT_HOST) on the container instead');
   const targetsIn = (Array.isArray(body.targets) && body.targets.length ? body.targets : [{ container: body.container, port: body.port }]).filter(t => t && t.container);
   if (!targetsIn.length) throw err('Choose the container the domain goes to');
@@ -477,7 +477,7 @@ async function exposePlan(body) {
   const domain = String(body.domain || '').trim().toLowerCase();
   const existing = d.sites.find(s => s.domain === domain);
   const notes = routes.map(r => r.note).filter(Boolean);
-  if (existing) notes.push(`${domain} is already set up in ${existing.proxyName} — two proxies for one name is a conflict.`);
+  if (existing) notes.push(`${domain} is already set up in ${existing.proxyName} - two proxies for one name is a conflict.`);
   if (p.kind === 'apache' && !d.sites.some(s => s.proxy === p.id)) notes.push('This is the first site on this Apache: Apache answers every unknown domain with its first site, so it replaces the default page.');
   if (p.ports.length && !p.ports.some(x => [80, 443].includes(x)) && p.where === 'container') notes.push(`${p.name} publishes ${p.ports.join(', ')}, not 80 / 443: the site will be at those ports, and Let's Encrypt needs port 80.`);
   const join = [...new Set(routes.filter(r => r.join).map(r => r.join))];
@@ -524,7 +524,7 @@ async function exposePlan(body) {
     return { mode: 'file', proxy: p, changes: await withBefore(ctx, p, changes), flow, certPath, keyPath, join, notes };
   }
   if (p.kind === 'caddy') { caddyJsonOnly(p); const cur = await readFile(ctx, p, p.config); changes.push({ path: p.config, text: G.caddyAdd(cur.text, input) }); }
-  else if (p.kind === 'haproxy') { const cur = await readFile(ctx, p, p.config); changes.push({ path: p.config, text: G.haproxyAdd(cur.text, input) }); if (https !== 'none') notes.push('HAProxy: HTTPS works when its frontend already has a certificate (bind … ssl crt). DockGate adds the routing only.'); }
+  else if (p.kind === 'haproxy') { const cur = await readFile(ctx, p, p.config); changes.push({ path: p.config, text: G.haproxyAdd(cur.text, input) }); if (https !== 'none') notes.push('HAProxy: HTTPS works when its frontend already has a certificate (bind ... ssl crt). DockGate adds the routing only.'); }
   else throw err(`${PX.LABEL[p.kind] || p.kind}: not supported`);
   return { mode: 'file', proxy: p, changes: await withBefore(ctx, p, changes), join, notes };
 }
@@ -534,10 +534,10 @@ async function expose(body, user, log = () => {}) {
   const ctx = activeCtx(); const plan = await exposePlan(body);
   const p = plan.proxy;
   if (plan.flow === 'letsencrypt' && !acmeSettings().tos) throw err("Accept the certificate authority's terms first", 409);
-  if (plan.flow === 'letsencrypt' && p.running === false) throw err(`${p.name} is stopped: Let's Encrypt asks it over port 80 — start it first, or add the site without HTTPS (saving it starts the proxy)`, 409);
+  if (plan.flow === 'letsencrypt' && p.running === false) throw err(`${p.name} is stopped: Let's Encrypt asks it over port 80 - start it first, or add the site without HTTPS (saving it starts the proxy)`, 409);
   const joined = [];
   for (const net of plan.join) {
-    log(`Joining ${p.name} to the network ${net}…`);
+    log(`Joining ${p.name} to the network ${net}...`);
     try { await ctx.c.getNetwork(net).connect({ Container: p.cid }); joined.push(net); } catch (e) { if (!/already exists|endpoint with name/i.test(e.message)) throw err(`Could not join ${net}: ${e.message}`, 502); }
     mountCache.delete(ctx.serverId + p.cid);
   }
@@ -550,23 +550,23 @@ async function expose(body, user, log = () => {}) {
     if (!res.ok || !joined.length) return res;
     try {
       const me = await containerInfo(ctx, p.cid);
-      if (!me.project || !me.service) { res.steps.push({ t: `${p.name} joined ${joined.join(', ')} with docker network connect — it leaves them when the container is re-created. Add them to how you start it.`, ok: true, warn: true }); return res; }
+      if (!me.project || !me.service) { res.steps.push({ t: `${p.name} joined ${joined.join(', ')} with docker network connect - it leaves them when the container is re-created. Add them to how you start it.`, ok: true, warn: true }); return res; }
       await require('./compose-scale').addNetworks(me.project, me.service, joined);
       res.steps.push({ t: `${joined.join(', ')} kept in DockGate's override of ${me.project}/${me.service}, so ${p.name} stays on them when it is re-created`, ok: true });
     } catch (e) { res.steps.push({ t: `${p.name} is on ${joined.join(', ')} now, but they could not be kept for a re-create: ${e.message}`, ok: true, warn: true }); }
     return res;
   };
   if (plan.mode === 'labels') {
-    if (!body.applyLabels) return { ok: true, labels: plan.labels, text: plan.text, steps: [{ t: 'Labels ready — add them to the container (they apply when it is re-created)', ok: true }] };
+    if (!body.applyLabels) return { ok: true, labels: plan.labels, text: plan.text, steps: [{ t: 'Labels ready - add them to the container (they apply when it is re-created)', ok: true }] };
     // into the Compose project's override (the compose files are not changed), then the service is re-created
     const t0 = await containerInfo(ctx, plan.container);
-    if (!t0.project || !t0.service) return leave({ ok: false, stage: 'labels', steps: [{ t: `${t0.name} is not part of a Compose project — add the labels yourself`, ok: false }], text: plan.text });
+    if (!t0.project || !t0.service) return leave({ ok: false, stage: 'labels', steps: [{ t: `${t0.name} is not part of a Compose project - add the labels yourself`, ok: false }], text: plan.text });
     const CS = require('./compose-scale');
     const kept = (CS.readRules(ctx.serverId, t0.project)[t0.service] || {}).labels || {};
     const steps = [];
     try {
       await CS.setLabels(t0.project, t0.service, { ...kept, ...plan.labels }, { log: (l) => steps.push({ t: l.trim(), ok: true }) });
-      steps.push({ t: `${t0.project}/${t0.service} re-created with the labels (kept in DockGate's override — your compose files are not changed)`, ok: true });
+      steps.push({ t: `${t0.project}/${t0.service} re-created with the labels (kept in DockGate's override - your compose files are not changed)`, ok: true });
       PX.invalidate();
       return keep({ ok: true, steps, labels: plan.labels });
     } catch (e) { steps.push({ t: e.message, ok: false }); return leave({ ok: false, stage: 'labels', steps, text: plan.text }); }
@@ -580,18 +580,18 @@ async function expose(body, user, log = () => {}) {
   const loaded = await siteLoaded(ctx, p, sitePath, domain);
   if (loaded === false) {
     const back = await apply(ctx, p, plan.changes.map(c => ({ path: c.path, text: c.before === '' || c.before == null ? null : c.before })), { domains: [], user, note: `undo site ${domain} (not loaded)`, probeSites: false, versions: false });
-    res.steps.push({ t: `${p.name} does not load ${sitePath} (it is not in a folder its config includes) — the site was taken out again${back.ok ? '' : ', but putting the files back failed'}`, ok: false });
+    res.steps.push({ t: `${p.name} does not load ${sitePath} (it is not in a folder its config includes) - the site was taken out again${back.ok ? '' : ', but putting the files back failed'}`, ok: false });
     return leave({ ...res, ok: false, stage: 'loaded', site: domain });
   }
   if (loaded) res.steps.push({ t: `${p.name} loads ${sitePath}`, ok: true });
   // and ask the new site itself (from the proxy's own network): a 502 means the proxy can not reach the container
   const ans = (await probe(ctx, p, [{ domain, https: false }]))[domain] || 0;
-  res.steps.push(ans === 0 ? { t: `${domain} could not be asked from ${p.name} — open it to check`, ok: true, warn: true }
+  res.steps.push(ans === 0 ? { t: `${domain} could not be asked from ${p.name} - open it to check`, ok: true, warn: true }
     : healthy(ans) ? { t: `${domain} answers ${ans}`, ok: true }
-    : { t: `${domain} answers ${ans}: ${p.name} has the site but can not reach where it goes — check the container and its port`, ok: true, warn: true });
+    : { t: `${domain} answers ${ans}: ${p.name} has the site but can not reach where it goes - check the container and its port`, ok: true, warn: true });
   await keep(res);
   if (plan.flow !== 'letsencrypt') return { ...res, site: domain };
-  log('The HTTP site is live; asking Let\'s Encrypt for a certificate…');
+  log('The HTTP site is live; asking Let\'s Encrypt for a certificate...');
   try {
     const names = [domain, ...G.siteInput({ ...body, domain, targets: ['x:1'] }).aliases];
     const got = await obtain(ctx, p, names, plan.certPath, plan.keyPath, log);
@@ -624,7 +624,7 @@ async function removeSite(id, domain, user) {
   const cur = await readFile(ctx, p, path);
   let change;
   if (G.isDockgateFile(cur.text) && (PX.NGINXISH.has(p.kind) || p.kind === 'apache')) change = { path, text: null };
-  else { const r = G.removeMarked(cur.text, domain); if (!r.changed) throw err(`${domain} was not added by DockGate — remove it in the editor`, 409); change = { path, text: r.text }; }
+  else { const r = G.removeMarked(cur.text, domain); if (!r.changed) throw err(`${domain} was not added by DockGate - remove it in the editor`, 409); change = { path, text: r.text }; }
   const r = await apply(ctx, p, [change], { domains: domainsFor(d, p, path).filter(x => x.domain !== domain), user, note: `removed ${domain}` });
   if (r.ok) for (const row of q.certs.all(ctx.serverId).filter(x => x.proxy === p.name && JSON.parse(x.names)[0] === domain)) { q.delCert.run(row.id); r.steps.push({ t: `DockGate stopped renewing the certificate of ${domain} (the files stay)`, ok: true }); }
   return r;
@@ -634,12 +634,12 @@ async function removeSite(id, domain, user) {
 async function removeLabelSite(ctx, p, s, domain) {
   const cname = String(s.file || '').replace(/^labels of /, '');
   const t = await containerInfo(ctx, cname).catch(() => null);
-  if (!t || !t.project || !t.service) throw err(`${domain} comes from labels of ${cname} — remove them from its compose file`, 409);
+  if (!t || !t.project || !t.service) throw err(`${domain} comes from labels of ${cname} - remove them from its compose file`, 409);
   const CS = require('./compose-scale');
   const kept = (CS.readRules(ctx.serverId, t.project)[t.service] || {}).labels || {};
   const id = p.kind === 'traefik' ? `dg-${G.slug(domain).replace(/_/g, '-')}` : null;
   const left = Object.fromEntries(Object.entries(kept).filter(([k, v]) => id ? !k.includes(`.${id}.`) && !k.includes(`.${id}-http.`) && !k.includes(`.${id}-https.`) : !(/^caddy(\.|$)/.test(k) && (k !== 'caddy' || String(v).split(/[\s,]+/).some(x => x.replace(/^https?:\/\//, '') === domain)))));
-  if (Object.keys(left).length === Object.keys(kept).length) throw err(`${domain} was not added by DockGate — remove its labels from the compose file of ${t.project}`, 409);
+  if (Object.keys(left).length === Object.keys(kept).length) throw err(`${domain} was not added by DockGate - remove its labels from the compose file of ${t.project}`, 409);
   if (id && !Object.keys(left).some(k => k.startsWith('traefik.http.'))) delete left['traefik.enable']; // no DockGate router left on this service
   const steps = [];
   await CS.setLabels(t.project, t.service, left, { log: (l) => steps.push({ t: l.trim(), ok: true }) });
@@ -705,7 +705,7 @@ async function certPlace(ctx, p, domain) {
   }
   return { certPath: `${dir}/fullchain.pem`, keyPath: `${dir}/privkey.pem` };
 }
-/** The DNS check (Cloudflare) for ACME.issue, when it is set up and wanted for these names — else null (HTTP check). */
+/** The DNS check (Cloudflare) for ACME.issue, when it is set up and wanted for these names - else null (HTTP check). */
 function dnsChallenge(names, log = () => {}) {
   const st = acmeSettings();
   if (st.dns.provider !== 'cloudflare' || !st.dns.hasToken) return null;
@@ -713,14 +713,14 @@ function dnsChallenge(names, log = () => {}) {
   const token = decrypt(getSetting('proxy_dns_cf_token', '')); const CF = require('./dns-cloudflare');
   return { set: (fqdn, value) => CF.setTxt(token, fqdn, value), clear: (h) => CF.clearTxt(token, h), wait: (fqdn, value) => CF.waitTxt(fqdn, value, { log }) };
 }
-/** Check the saved Cloudflare token (Certificates → Let's Encrypt account → Test). */
+/** Check the saved Cloudflare token (Certificates > Let's Encrypt account > Test). */
 async function testDns() {
   const t = getSetting('proxy_dns_cf_token', ''); if (!t) throw err('Save a Cloudflare API token first');
   return require('./dns-cloudflare').verify(decrypt(t));
 }
 async function obtain(ctx, p, names, certPath, keyPath, log = () => {}) {
   const st = acmeSettings();
-  if (!st.tos) throw err("Accept the certificate authority's terms first (Certificates → Let's Encrypt account)", 409);
+  if (!st.tos) throw err("Accept the certificate authority's terms first (Certificates > Let's Encrypt account)", 409);
   const accKey = getSetting(`proxy_acme_account:${st.directoryUrl}`);
   const challengeDir = `${G.ACME_ROOT}/.well-known/acme-challenge`;
   const res = await ACME.issue({
@@ -749,7 +749,7 @@ async function certForSite(id, domain, { redirect = true } = {}, user, log = () 
   if (p.kind === 'npm' || p.kind === 'nginx-proxy') throw err(`${PX.LABEL[p.kind]} keeps its own certificates`);
   if (p.kind === 'haproxy') throw err('HAProxy can not answer the certificate check itself (it serves no files). Put the site behind nginx or Caddy, or use certbot with a reload hook.');
   if (p.kind !== 'nginx' && p.kind !== 'apache') throw err('Not supported for this proxy');
-  if (!acmeSettings().tos) throw err("Accept the certificate authority's terms first (Certificates → Let's Encrypt account)", 409); // before anything is changed
+  if (!acmeSettings().tos) throw err("Accept the certificate authority's terms first (Certificates > Let's Encrypt account)", 409); // before anything is changed
   const site = d.sites.find(s => s.proxy === id && s.domain === domain); if (!site) throw err('Site not found', 404);
   const file = site.file && site.file.startsWith('/') ? site.file : null; if (!file) throw err('The file of this site is not known');
   const apache = p.kind === 'apache';
@@ -784,13 +784,13 @@ async function findProxy(ctx, row) {
   const ct = list.find(x => (x.Names || []).includes('/' + row.proxy)); if (!ct) throw err(`${row.proxy} is not running`, 404);
   return { id: 'c:' + ct.Id.slice(0, 12), cid: ct.Id, name: row.proxy, kind: row.proxy_kind, where: 'container' };
 }
-/** Renew one DockGate certificate: new certificate → files (the old ones kept) → check → reload; recorded only once the proxy took it. */
+/** Renew one DockGate certificate: new certificate -> files (the old ones kept) -> check -> reload; recorded only once the proxy took it. */
 async function renew(rowId, { log = () => {}, ctx: given } = {}) {
   const row = q.cert.get(Number(rowId)); if (!row) throw err('Certificate not found', 404);
   const ctx = given || (row.server_id === activeCtx().serverId ? activeCtx() : ctxFor(row.server_id));
   const p = await findProxy(ctx, row);
   const C = cmds(p);
-  const key = ctx.serverId + p.name; if (locks.has(key)) throw err(`A change to ${p.name} is running — the renewal waits for the next round`, 409);
+  const key = ctx.serverId + p.name; if (locks.has(key)) throw err(`A change to ${p.name} is running - the renewal waits for the next round`, 409);
   locks.add(key);
   const oldCert = await readFile(ctx, p, row.cert_path).catch(() => ({ exists: false, text: '' })); const oldKey = await readFile(ctx, p, row.key_path).catch(() => ({ exists: false, text: '' }));
   try {
@@ -834,7 +834,7 @@ async function renewDue() {
         if (e.statusCode === 409 && /running/.test(e.message)) continue; // an edit is running: next round
         console.warn(`[proxies] renewal of ${row.names} failed: ${e.message}`);
         const names = JSON.parse(row.names).join(', ');
-        try { await require('./notifications/health-monitor').deliver('cert_renew_failed', { id: row.server_id, name: row.server_id }, `Certificate renewal failed — ${names}`, `🔴 Certificate renewal failed — ${names}\n${row.proxy}: ${e.message}\nIt expires in ${Math.floor(days)} days. DockGate tries again in 6 hours.`, `<p>The certificate for <b>${names}</b> (${row.proxy}) could not be renewed: ${String(e.message).replace(/</g, '&lt;')}</p><p>It expires in ${Math.floor(days)} days. DockGate tries again in 6 hours.</p>`, { retry: true }); } catch (e2) { /* no channel */ }
+        try { await require('./notifications/health-monitor').deliver('cert_renew_failed', { id: row.server_id, name: row.server_id }, `Certificate renewal failed - ${names}`, `🔴 Certificate renewal failed - ${names}\n${row.proxy}: ${e.message}\nIt expires in ${Math.floor(days)} days. DockGate tries again in 6 hours.`, `<p>The certificate for <b>${names}</b> (${row.proxy}) could not be renewed: ${String(e.message).replace(/</g, '&lt;')}</p><p>It expires in ${Math.floor(days)} days. DockGate tries again in 6 hours.</p>`, { retry: true }); } catch (e2) { /* no channel */ }
       }
     }
   } finally { busy = false; }
@@ -853,7 +853,7 @@ async function lbGet(id, domain) {
     const block = G.nginxBlocks(text, 'server').find(b => (b.text.match(/server_name\s+([^;]+);/) || [, ''])[1].split(/\s+/).includes(domain) && /proxy_pass/.test(b.text));
     const pp = block && ((block.text.match(/proxy_pass\s+https?:\/\/([^/;$\s]+)/) || [])[1] || (block.text.match(/set\s+\$\w+\s+https?:\/\/([^/;\s]+)/) || [])[1]);
     // the upstream may be defined in another file (upstreams.conf): looked up in every file of the config, and
-    // changed where it is — with the other sites that use it named, since they change too
+    // changed where it is - with the other sites that use it named, since they change too
     let up = G.nginxUpstreams(text).find(u => u.name === pp); let upFile = up ? file : null;
     if (!up && pp) {
       const raw = await PX.rawFor();
@@ -926,14 +926,14 @@ function accessStats(entries) {
 async function stats(id, tail = 2000) { const l = await PX.logs(id, 'access', tail); return { proxy: l.proxy, ...(accessStats(l.entries) || { requests: 0 }) }; }
 
 // ---------- certificate center ----------
-/** Every certificate of a server with who renews it — DockGate's own merged in. */
+/** Every certificate of a server with who renews it - DockGate's own merged in. */
 async function certOverview({ ctx = activeCtx(), fresh = false } = {}) {
   const r = await PX.certificates({ ctx, fresh });
   const managed = certList(ctx.serverId);
   for (const c of r.certs) {
     const m = managed.find(x => c.paths.includes(x.certPath));
-    if (m) { c.source = 'DockGate'; c.renewer = 'dockgate'; c.auto = !!m.auto; c.renewal = m.auto ? 'DockGate — automatic' : 'DockGate — auto renew off'; c.managedId = m.id; if (m.lastError) c.renewError = m.lastError; }
-    else if (c.renewer === 'dockgate') { c.auto = false; c.renewal = 'DockGate files — not renewed (forgotten)'; c.renewer = 'none'; }
+    if (m) { c.source = 'DockGate'; c.renewer = 'dockgate'; c.auto = !!m.auto; c.renewal = m.auto ? 'DockGate - automatic' : 'DockGate - auto renew off'; c.managedId = m.id; if (m.lastError) c.renewError = m.lastError; }
+    else if (c.renewer === 'dockgate') { c.auto = false; c.renewal = 'DockGate files - not renewed (forgotten)'; c.renewer = 'none'; }
   }
   return { ...r, managed, acme: acmeSettings() };
 }
@@ -979,17 +979,17 @@ async function certbotRenew(name) {
 
 /**
  * "Renew now" for any certificate of the Certificates list, by hand: whoever keeps it does it now.
- * DockGate's own → a new one from Let's Encrypt; certbot on the server or in a certbot container → certbot renew
- * --force-renewal; acme.sh → acme.sh --renew --force. Then the proxies that use it are checked and reloaded.
+ * DockGate's own -> a new one from Let's Encrypt; certbot on the server or in a certbot container -> certbot renew
+ * --force-renewal; acme.sh -> acme.sh --renew --force. Then the proxies that use it are checked and reloaded.
  * Caddy, Traefik and Nginx Proxy Manager renew by themselves (nothing to ask them); a plain file has nobody to ask.
  */
 async function renewNow(fingerprint, user) {
   const ctx = activeCtx();
   const ov = await certOverview({ ctx });
-  const c = ov.certs.find(x => x.fingerprint === fingerprint); if (!c) throw err('Certificate not found — refresh the list', 404);
+  const c = ov.certs.find(x => x.fingerprint === fingerprint); if (!c) throw err('Certificate not found - refresh the list', 404);
   const reloadUsers = async (steps) => {
     for (const id of c.proxyIds || []) {
-      try { const r = await reloadProxy(id); steps.push({ t: `${(await PX.proxyById(id)).name}: ${r.ok ? 'config checked and reloaded' : `reload failed — ${r.output.split('\n').pop()}`}`, ok: r.ok }); }
+      try { const r = await reloadProxy(id); steps.push({ t: `${(await PX.proxyById(id)).name}: ${r.ok ? 'config checked and reloaded' : `reload failed - ${r.output.split('\n').pop()}`}`, ok: r.ok }); }
       catch (e) { steps.push({ t: `${id}: ${e.message}`, ok: false }); }
     }
   };
@@ -1028,7 +1028,7 @@ async function certbotHook(preview = false) {
   const reloads = await certbotReloads(ctx);
   if (!reloads.length) throw err('No running web server here uses certbot\'s certificates');
   const path = '/etc/letsencrypt/renewal-hooks/deploy/dockgate-reload.sh';
-  const text = `#!/bin/sh\n# Written by DockGate (Web → Proxies & SSL): after certbot renews a certificate, the web servers that use it are\n# checked and reloaded, so they serve the new one. Remove this file to stop it.\n${reloads.map(c => `${c} || echo "dockgate-reload: failed: ${c.replace(/"/g, '')}" >&2`).join('\n')}\nexit 0\n`;
+  const text = `#!/bin/sh\n# Written by DockGate (Web > Proxies & SSL): after certbot renews a certificate, the web servers that use it are\n# checked and reloaded, so they serve the new one. Remove this file to stop it.\n${reloads.map(c => `${c} || echo "dockgate-reload: failed: ${c.replace(/"/g, '')}" >&2`).join('\n')}\nexit 0\n`;
   if (preview) return { path, text };
   const b64 = Buffer.from(text).toString('base64');
   const r = await PX.hostExec(ctx.server, asRoot(`mkdir -p /etc/letsencrypt/renewal-hooks/deploy && printf %s ${shq(b64)} | base64 -d > ${path} && chmod 755 ${path}`));
@@ -1058,7 +1058,7 @@ async function checkAllCerts({ notify = true } = {}) {
   return out;
 }
 // Expiring certificates: an alert at 14, 7, 3 and 1 days left and on the day it ends, then every day while it stays
-// expired. Each alert says why (the "Why? · fix" check, run on that server) and what DockGate fixed by itself: with
+// expired. Each alert says why (the "Why?, fix" check, run on that server) and what DockGate fixed by itself: with
 // "Fix safe problems by itself" on, it reloads a proxy that still serves the old file and turns on certbot's timer.
 const AUTO_FIXES = ['reload', 'certbot-timer'];
 async function certWhy(sv, c) {
@@ -1071,7 +1071,7 @@ async function certWhy(sv, c) {
     for (const f of dg.fixes) {
       if (acmeSettings().autoFix && AUTO_FIXES.includes(f.id)) {
         const r = await dockerSvc.withServer(sv.id, () => D.fix(c.fingerprint, f.id, 'DockGate (automatic)')).catch(e => ({ ok: false, steps: [{ t: e.message }] }));
-        out.fixed.push(`${r.ok ? '✓' : '✗'} ${f.label}${r.ok ? '' : ` — ${((r.steps || [])[0] || {}).t || 'failed'}`}`);
+        out.fixed.push(`${r.ok ? '✓' : '✗'} ${f.label}${r.ok ? '' : ` - ${((r.steps || [])[0] || {}).t || 'failed'}`}`);
         try { require('./audit').logAction({ server: sv.id, resourceType: 'proxy', resourceName: c.names[0], action: 'proxy_cert_autofix', details: { fix: f.id, ok: !!r.ok } }); } catch (e) { /* best effort */ }
       } else out.suggest.push(f.label);
     }
@@ -1090,12 +1090,12 @@ async function certAlerts(sv, snap) {
       const key = c.daysLeft < 0 ? `exp:${c.fingerprint}:expired:${day}` : `exp:${c.fingerprint}:${t}`;
       if (q.alerted.get(key)) continue;
       const why = await certWhy(sv, c);
-      const who = c.auto ? `${c.renewal.replace(/ — .*/, '')} should have renewed it by now` : 'nothing renews it';
+      const who = c.auto ? `${c.renewal.replace(/ - .*/, '')} should have renewed it by now` : 'nothing renews it';
       const when = c.daysLeft < 0 ? `expired ${-c.daysLeft} days ago` : `expires in ${c.daysLeft} days`;
-      const extra = [why.reason && `Why: ${why.reason}`, why.fixed.length && `Fixed by DockGate:\n${why.fixed.join('\n')}`, why.suggest.length && `To fix (Proxies & SSL → Certificates → Why? · fix): ${why.suggest.join(' · ')}`].filter(Boolean).join('\n');
-      await once(key, 'cert_expiring', `Certificate ${when} — ${c.names[0]} on ${sv.name}`,
-        `${c.daysLeft <= 3 ? '🔴' : '🟠'} Certificate ${when} — ${sv.name}\n${c.names.join(', ')} (${c.proxies.join(', ')})\n${who}.${extra ? '\n' + extra : ''}`,
-        `<p>The certificate for <b>${esc(c.names.join(', '))}</b> on <b>${esc(sv.name)}</b> (${esc(c.proxies.join(', '))}) ${when}. ${esc(who)}.</p>${why.reason ? `<p><b>Why:</b><br>${esc(why.reason).replace(/\n/g, '<br>')}</p>` : ''}${why.fixed.length ? `<p><b>Fixed by DockGate:</b><br>${why.fixed.map(esc).join('<br>')}</p>` : ''}${why.suggest.length ? `<p><b>To fix</b> (Proxies &amp; SSL → Certificates → Why? · fix): ${why.suggest.map(esc).join(' · ')}</p>` : ''}`);
+      const extra = [why.reason && `Why: ${why.reason}`, why.fixed.length && `Fixed by DockGate:\n${why.fixed.join('\n')}`, why.suggest.length && `To fix (Proxies & SSL > Certificates > Why?, fix): ${why.suggest.join(', ')}`].filter(Boolean).join('\n');
+      await once(key, 'cert_expiring', `Certificate ${when} - ${c.names[0]} on ${sv.name}`,
+        `${c.daysLeft <= 3 ? '🔴' : '🟠'} Certificate ${when} - ${sv.name}\n${c.names.join(', ')} (${c.proxies.join(', ')})\n${who}.${extra ? '\n' + extra : ''}`,
+        `<p>The certificate for <b>${esc(c.names.join(', '))}</b> on <b>${esc(sv.name)}</b> (${esc(c.proxies.join(', '))}) ${when}. ${esc(who)}.</p>${why.reason ? `<p><b>Why:</b><br>${esc(why.reason).replace(/\n/g, '<br>')}</p>` : ''}${why.fixed.length ? `<p><b>Fixed by DockGate:</b><br>${why.fixed.map(esc).join('<br>')}</p>` : ''}${why.suggest.length ? `<p><b>To fix</b> (Proxies &amp; SSL > Certificates > Why?, fix): ${why.suggest.map(esc).join(', ')}</p>` : ''}`);
       continue; // the stale check below is part of this one
     }
     if (c.served && c.served.stale) {
@@ -1104,10 +1104,10 @@ async function certAlerts(sv, snap) {
         const why = await certWhy(sv, c);
         if (why.fixed.some(x => x.startsWith('✓'))) continue; // reloaded: nothing to tell
       }
-      await once(`stale:${c.fingerprint}`, 'cert_not_loaded', `Renewed certificate not loaded — ${c.names[0]} on ${sv.name}`, `🟠 Renewed certificate not loaded — ${sv.name}\n${c.served.proxy} still serves the one that ends ${c.served.notAfter.slice(0, 10)}; the file on disk is newer. Reload ${c.served.proxy} (Proxies & SSL → Certificates → Reload).`, `<p><b>${esc(c.served.proxy)}</b> on <b>${esc(sv.name)}</b> still serves the old certificate of ${esc(c.names[0])} (ends ${esc(c.served.notAfter.slice(0, 10))}); the renewed file is not loaded. Reload it.</p>`);
+      await once(`stale:${c.fingerprint}`, 'cert_not_loaded', `Renewed certificate not loaded - ${c.names[0]} on ${sv.name}`, `🟠 Renewed certificate not loaded - ${sv.name}\n${c.served.proxy} still serves the one that ends ${c.served.notAfter.slice(0, 10)}; the file on disk is newer. Reload ${c.served.proxy} (Proxies & SSL > Certificates > Reload).`, `<p><b>${esc(c.served.proxy)}</b> on <b>${esc(sv.name)}</b> still serves the old certificate of ${esc(c.names[0])} (ends ${esc(c.served.notAfter.slice(0, 10))}); the renewed file is not loaded. Reload it.</p>`);
     }
   }
-  for (const e of snap.errors || []) await once(`acme:${sv.id}:${e.proxy}:${day}`, 'cert_acme_error', `Certificate errors in ${e.proxy} on ${sv.name}`, `🟠 ${e.proxy} could not get or renew a certificate — ${sv.name}\n${e.lines.slice(-2).join('\n').slice(0, 600)}`, `<p><b>${esc(e.proxy)}</b> on <b>${esc(sv.name)}</b> logged certificate errors:</p><pre>${esc(e.lines.join('\n'))}</pre>`);
+  for (const e of snap.errors || []) await once(`acme:${sv.id}:${e.proxy}:${day}`, 'cert_acme_error', `Certificate errors in ${e.proxy} on ${sv.name}`, `🟠 ${e.proxy} could not get or renew a certificate - ${sv.name}\n${e.lines.slice(-2).join('\n').slice(0, 600)}`, `<p><b>${esc(e.proxy)}</b> on <b>${esc(sv.name)}</b> logged certificate errors:</p><pre>${esc(e.lines.join('\n'))}</pre>`);
 }
 function fleet() {
   const names = Object.fromEntries([['local', 'Local'], ...stmts.getServers.all().map(x => [x.id, x.name || x.host])]);

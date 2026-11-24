@@ -1,9 +1,9 @@
-// Services tab (Server Console) — one page per system service, as sub-tabs: Docker · Time sync · Auto updates.
-// Security services live in their own tabs (SSH → Access & SSH, UFW → Firewall, fail2ban → Fail2ban).
-// Every page has the same shape: header (state + actions) → settings form → live details → raw config
-// (advanced, collapsed) → recent log. Also exports the shared pieces those other tabs reuse:
-//   renderServiceBar(serverId, itemId, el, opts)   — state badge + start/stop/restart/enable/disable
-//   renderRawConfig(serverId, itemId, path, el, opts) — guarded raw editor (backup → validate → auto-restore)
+// Services tab (Server Console) - one page per system service, as sub-tabs: Docker, Time sync, Auto updates.
+// Security services live in their own tabs (SSH > Access & SSH, UFW > Firewall, fail2ban > Fail2ban).
+// Every page has the same shape: header (state + actions) -> settings form -> live details -> raw config
+// (advanced, collapsed) -> recent log. Also exports the shared pieces those other tabs reuse:
+//   renderServiceBar(serverId, itemId, el, opts)   - state badge + start/stop/restart/enable/disable
+//   renderRawConfig(serverId, itemId, path, el, opts) - guarded raw editor (backup -> validate -> auto-restore)
 // Globals only (no build step), same as the rest of public/js.
 
 function svcPre(text, empty) {
@@ -30,7 +30,7 @@ async function renderServiceBar(serverId, itemId, el, { label, note, onChange } 
       <div class="flex items-center gap-2" style="flex-wrap:wrap">
         <span style="font-weight:600">${escapeHtml(label || s.label)}</span>
         ${s.active === null ? '<span class="badge" title="No systemd on this server and no way to check this service">state unknown</span>' : (s.active ? '<span class="badge badge-running"><span class="badge-dot"></span> active</span>' : '<span class="badge badge-stopped">inactive</span>')}
-        ${s.enabled === null ? '<span class="text-xs text-muted" title="Starting at boot is managed by systemd, which this server does not run">no systemd · boot start not managed</span>' : `<span class="text-xs ${s.enabled ? '' : 'text-muted'}" style="${s.enabled ? 'color:var(--success)' : ''}">${s.enabled ? '● starts at boot' : '○ not started at boot'}</span>`}
+        ${s.enabled === null ? '<span class="text-xs text-muted" title="Starting at boot is managed by systemd, which this server does not run">no systemd, boot start not managed</span>' : `<span class="text-xs ${s.enabled ? '' : 'text-muted'}" style="${s.enabled ? 'color:var(--success)' : ''}">${s.enabled ? '● starts at boot' : '○ not started at boot'}</span>`}
         <span class="text-xs text-muted td-mono">${escapeHtml(s.unit || '')}${s.timer ? ' (timer)' : ''}</span>
       </div>
       <div class="flex gap-1" style="flex-wrap:wrap">${acts.join('')}</div>
@@ -42,7 +42,7 @@ async function renderServiceBar(serverId, itemId, el, { label, note, onChange } 
     const done = () => { showToast(`${s.label}: ${b.textContent.toLowerCase()} ✓`); setTimeout(() => { renderServiceBar(serverId, itemId, el, { label, note, onChange }); onChange && onChange(); }, 700); };
     send(false).then(done).catch((e) => {
       if (/confirm/i.test(e.message || '')) secConfirm({
-        title: `${escapeHtml(b.textContent)} — ${escapeHtml(s.label)}`, danger: true, confirmLabel: b.textContent,
+        title: `${escapeHtml(b.textContent)} - ${escapeHtml(s.label)}`, danger: true, confirmLabel: b.textContent,
         change: `${escapeHtml(s.label)} (${escapeHtml(s.unit || '')}) will ${escapeHtml(b.textContent.toLowerCase())}.`,
         protects: s.risk === 'high' ? 'This service guards access (SSH / firewall): stopping it over a password login is refused, and open SSH sessions survive a reload.' : 'Only this service is affected.',
         undo: action === 'stop' || action === 'disable' ? 'Start / enable it again from this bar.' : 'Nothing to undo.',
@@ -60,12 +60,12 @@ function renderRawConfig(serverId, itemId, path, el, { label, high, hint } = {})
     <details class="card" style="padding:12px 14px">
       <summary class="text-sm" style="cursor:pointer;font-weight:600">Advanced: edit ${escapeHtml(path)} directly</summary>
       <div style="margin-top:10px">
-        ${high ? '<div class="insight-card warning" style="display:block;margin-bottom:8px"><b>Lockout risk.</b> A wrong value here can cut SSH access. The file is backed up, validated and restored if the service fails to restart — but prefer the form above, which also tests a new login.</div>' : ''}
+        ${high ? '<div class="insight-card warning" style="display:block;margin-bottom:8px"><b>Lockout risk.</b> A wrong value here can cut SSH access. The file is backed up, validated and restored if the service fails to restart - but prefer the form above, which also tests a new login.</div>' : ''}
         ${hint ? `<div class="text-xs text-muted" style="margin-bottom:6px">${hint}</div>` : ''}
-        <textarea class="input" data-ta spellcheck="false" style="width:100%;min-height:200px;font-family:var(--font-mono);font-size:12px;line-height:1.5" placeholder="loading…"></textarea>
+        <textarea class="input" data-ta spellcheck="false" style="width:100%;min-height:200px;font-family:var(--font-mono);font-size:12px;line-height:1.5" placeholder="loading..."></textarea>
         <div class="flex gap-1 items-center" style="margin-top:8px;flex-wrap:wrap">
           <button class="btn btn-sm btn-primary" data-save>Validate &amp; save</button>
-          <span class="text-xs text-muted">backup → validate → restore automatically on failure</span>
+          <span class="text-xs text-muted">backup -> validate -> restore automatically on failure</span>
         </div>
       </div>
     </details>`;
@@ -76,7 +76,7 @@ function renderRawConfig(serverId, itemId, path, el, { label, high, hint } = {})
     loaded = true; ta.disabled = true;
     try {
       const r = await API.get(`/servers/${serverId}/services/${itemId}/config?path=${encodeURIComponent(path)}`);
-      ta.value = r.content || ''; ta.placeholder = r.exists ? '' : '(file does not exist yet — saving creates it)';
+      ta.value = r.content || ''; ta.placeholder = r.exists ? '' : '(file does not exist yet - saving creates it)';
     } catch (e) { ta.placeholder = 'could not read: ' + e.message; loaded = false; }
     ta.disabled = false;
   });
@@ -84,13 +84,13 @@ function renderRawConfig(serverId, itemId, path, el, { label, high, hint } = {})
     title: `Save ${escapeHtml(label || path)}`, danger: !!high, confirmLabel: 'Validate & save',
     change: `${escapeHtml(path)} is replaced with the text above and the service applies it.`,
     protects: high
-      ? 'The file is backed up and validated, and restored if the service fails to restart. This editor does NOT test a new login — a wrong value can still lock you out; prefer the form above.'
+      ? 'The file is backed up and validated, and restored if the service fails to restart. This editor does NOT test a new login - a wrong value can still lock you out; prefer the form above.'
       : 'The file is backed up and validated, and restored if the service fails to restart.',
     undo: 'The previous version is kept as a backup next to the file.',
     onConfirm: async () => {
       try {
         const r = await API.post(`/servers/${serverId}/services/${itemId}/config`, { path, content: ta.value, confirm: true });
-        showToast(`Saved${r.validated ? ' & validated' : ''}${r.backup ? ' · backup kept' : ''}`, 'success', 6000);
+        showToast(`Saved${r.validated ? ' & validated' : ''}${r.backup ? ', backup kept' : ''}`, 'success', 6000);
       } catch (e) { showToast('Save failed: ' + e.message, 'error', 10000); }
     },
   }));
@@ -110,7 +110,7 @@ function renderServiceLogs(serverId, info, el) {
   });
 }
 
-// ---------- Services tab — Cockpit "Services" style: one table, select a row for its details ----------
+// ---------- Services tab - Cockpit "Services" style: one table, select a row for its details ----------
 const SVC_INFO = {
   docker: ['Container engine', null], timesync: ['Keeps the clock right (chrony)', null], 'unattended-upgrades': ['Installs security updates', null],
   'ssh-hardening': ['Remote login', 'access'], firewall: ['Blocks unwanted traffic', 'firewall'], fail2ban: ['Bans brute-force IPs', 'fail2ban'],
@@ -126,7 +126,7 @@ async function renderServicesPanel(serverId, container, sub) {
   let active = usable.some(x => x.itemId === sub) ? sub : (usable.find(x => x.itemId === 'docker') || usable[0] || {}).itemId;
   const reload = () => renderServicesPanel(serverId, container, active);
   const stateCell = (x) => x.na ? UI.pill('off', 'Not available') : x.active === null ? UI.pill('off', 'Unknown') : x.active ? UI.pill('ok', 'Running') : UI.pill('bad', 'Stopped');
-  const bootCell = (x) => x.na || x.enabled === null ? '<span class="ui-sub">—</span>'
+  const bootCell = (x) => x.na || x.enabled === null ? '<span class="ui-sub">-</span>'
     : `<button type="button" class="toggle ${x.enabled ? 'active' : ''}" role="switch" aria-checked="${!!x.enabled}" aria-label="Start ${escapeHtml(x.label)} at boot" data-boot="${x.itemId}" style="border:0"></button>`;
   container.innerHTML = `
     ${UI.header('Services', 'System services DockGate manages on this server. Select one for its settings and log.')}
@@ -165,7 +165,7 @@ function svcRunAction(serverId, s, action, label, done) {
   const ok = () => { showToast(`${s.label}: ${label.toLowerCase()} ✓`); setTimeout(done, 700); };
   send(false).then(ok).catch((e) => {
     if (/confirm/i.test(e.message || '')) secConfirm({
-      title: `${escapeHtml(label)} — ${escapeHtml(s.label)}`, danger: true, confirmLabel: label,
+      title: `${escapeHtml(label)} - ${escapeHtml(s.label)}`, danger: true, confirmLabel: label,
       change: `${escapeHtml(s.label)} (${escapeHtml(s.unit || '')}) will ${escapeHtml(label.toLowerCase())}.`,
       protects: s.risk === 'high' ? 'This service guards access (SSH / firewall): stopping it over a password login is refused, and open SSH sessions survive a reload.' : 'Only this service is affected.',
       undo: action === 'stop' || action === 'disable' ? 'Start / enable it again here.' : 'Nothing to undo.',
@@ -210,20 +210,20 @@ function renderDockerPage(serverId, info, body, reload) {
         <form data-form style="display:grid;gap:4px">
           <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Log size per file</div><div class="settings-row-desc">e.g. 10m, 50m, 1g</div></div><input class="input" id="dk-size" value="${escapeHtml(st.maxSize || '10m')}" style="width:90px"></div>
           <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Log files kept</div><div class="settings-row-desc">Oldest file is deleted when a new one starts</div></div><input class="input" id="dk-files" type="number" min="1" max="50" value="${st.maxFile || 3}" style="width:90px"></div>
-          <div class="settings-row" style="padding:8px 0;border-bottom:0"><div><div class="settings-row-label">Live restore</div><div class="settings-row-desc">Containers keep running while Docker itself restarts${s && s.swarm === 'active' ? ' · not available in swarm mode' : ''}</div></div><div class="toggle ${st.liveRestore ? 'active' : ''}" id="dk-lr" role="switch" tabindex="0"></div></div>
-          ${info.daemonJsonValid === false ? '<div class="insight-card danger">/etc/docker/daemon.json is not valid JSON — fix it under Advanced first.</div>' : ''}
+          <div class="settings-row" style="padding:8px 0;border-bottom:0"><div><div class="settings-row-label">Live restore</div><div class="settings-row-desc">Containers keep running while Docker itself restarts${s && s.swarm === 'active' ? ', not available in swarm mode' : ''}</div></div><div class="toggle ${st.liveRestore ? 'active' : ''}" id="dk-lr" role="switch" tabindex="0"></div></div>
+          ${info.daemonJsonValid === false ? '<div class="insight-card danger">/etc/docker/daemon.json is not valid JSON - fix it under Advanced first.</div>' : ''}
           <button class="btn btn-sm btn-primary" type="submit" style="justify-self:start;margin-top:6px">Save</button>
         </form>
       </div>
       <div class="card">
         <div style="font-weight:700;font-size:15px;margin-bottom:10px">Engine</div>
-        ${s ? svcKv([['Version', escapeHtml(s.version || '—')], ['Containers', `${s.running} running / ${s.containers}`], ['Images', String(s.images)], ['Storage', escapeHtml(s.storageDriver || '—')], ['Logging', escapeHtml(s.loggingDriver || '—')], ['Live restore', s.liveRestore ? 'on' : 'off'], ['Cgroup', escapeHtml(s.cgroupDriver || '—')], ['Swarm', s.swarm && s.swarm !== 'inactive' ? `${escapeHtml(s.swarm)} · <a href="#/swarm">Swarm page</a> <span class="ui-sub">(use this server at the top)</span>` : escapeHtml(s.swarm || '—')]]) : '<div class="text-sm text-muted">Docker is not reachable on this server.</div>'}
+        ${s ? svcKv([['Version', escapeHtml(s.version || '-')], ['Containers', `${s.running} running / ${s.containers}`], ['Images', String(s.images)], ['Storage', escapeHtml(s.storageDriver || '-')], ['Logging', escapeHtml(s.loggingDriver || '-')], ['Live restore', s.liveRestore ? 'on' : 'off'], ['Cgroup', escapeHtml(s.cgroupDriver || '-')], ['Swarm', s.swarm && s.swarm !== 'inactive' ? `${escapeHtml(s.swarm)}, <a href="#/swarm">Swarm page</a> <span class="ui-sub">(use this server at the top)</span>` : escapeHtml(s.swarm || '-')]]) : '<div class="text-sm text-muted">Docker is not reachable on this server.</div>'}
         ${info.df ? `<div style="margin-top:12px">${svcPre(info.df)}</div>` : ''}
       </div>
     </div>`;
   const lr = body.querySelector('#dk-lr');
   // In swarm mode Docker refuses to start with live-restore on: the switch can only be turned off there.
-  const flipLr = () => { if (!lr.classList.contains('active') && s && s.swarm && s.swarm !== 'inactive') { showToast('This server is in a swarm — Docker would not start with live-restore on', 'warning', 7000); return; } lr.classList.toggle('active'); };
+  const flipLr = () => { if (!lr.classList.contains('active') && s && s.swarm && s.swarm !== 'inactive') { showToast('This server is in a swarm - Docker would not start with live-restore on', 'warning', 7000); return; } lr.classList.toggle('active'); };
   lr.addEventListener('click', flipLr);
   lr.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flipLr(); } });
   body.querySelector('[data-form]').addEventListener('submit', (e) => {
@@ -252,7 +252,7 @@ function renderTimesyncPage(serverId, info, body, reload) {
       <div class="card">
         <div class="flex justify-between items-center" style="margin-bottom:4px"><div style="font-weight:700;font-size:15px">NTP sources</div>${info.managed ? '<span class="badge" style="background:var(--accent-dim);color:var(--accent)">set by DockGate</span>' : '<span class="badge" style="opacity:.7">distro defaults</span>'}</div>
         <div class="text-sm text-muted" style="margin-bottom:10px">Where this server gets its time. A <b>pool</b> name resolves to several servers; a <b>server</b> is one host. DockGate keeps the distro's own lines (commented) and can switch back to them.</div>
-        ${info.installed === false ? '<div class="insight-card warning">chrony is not installed — install it in Setup → Time sync.</div>' : `
+        ${info.installed === false ? '<div class="insight-card warning">chrony is not installed - install it in Setup > Time sync.</div>' : `
         <div data-list style="display:grid;gap:6px;margin-bottom:10px"></div>
         <form data-add class="flex gap-1 items-center" style="flex-wrap:wrap">
           <select class="select" id="ntp-type"><option value="pool">pool</option><option value="server">server</option></select>
@@ -276,7 +276,7 @@ function renderTimesyncPage(serverId, info, body, reload) {
   const listEl = body.querySelector('[data-list]');
   const draw = () => {
     listEl.innerHTML = list.length ? list.map((x, i) => `<div class="flex items-center justify-between" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px"><span><span class="text-xs text-muted" style="display:inline-block;width:52px">${escapeHtml(x.type)}</span><span class="td-mono">${escapeHtml(x.host)}</span></span><button class="btn btn-xs btn-secondary" data-rm="${i}">Remove</button></div>`).join('')
-      : '<div class="text-sm text-muted">No sources — add at least one, or use the distro defaults.</div>';
+      : '<div class="text-sm text-muted">No sources - add at least one, or use the distro defaults.</div>';
     listEl.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { list.splice(Number(b.dataset.rm), 1); draw(); }));
   };
   draw();
@@ -322,11 +322,11 @@ function renderAutoUpdatesPage(serverId, info, body, reload) {
           <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Reboot automatically when needed</div><div class="settings-row-desc">Only when an update requires it (kernel, libc)</div></div><div class="toggle ${st.autoReboot ? 'active' : ''}" id="au-rb" role="switch" tabindex="0"></div></div>
           <div class="settings-row" style="padding:8px 0;border-bottom:0"><div><div class="settings-row-label">Reboot time</div><div class="settings-row-desc">Server local time, 24-hour</div></div><input class="input" id="au-time" value="${escapeHtml(st.rebootTime || '04:00')}" style="width:90px"></div>
           <button class="btn btn-sm btn-primary" type="submit" style="justify-self:start;margin-top:6px">Save</button>
-        </form>` : (info.installed === false ? `<div class="text-sm text-muted" style="margin:6px 0 10px">dnf-automatic is not installed — install it in Setup → Auto updates.</div>` : `
+        </form>` : (info.installed === false ? `<div class="text-sm text-muted" style="margin:6px 0 10px">dnf-automatic is not installed - install it in Setup > Auto updates.</div>` : `
         <form data-form style="display:grid;gap:4px">
           <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Install updates automatically</div><div class="settings-row-desc">Daily, via dnf-automatic.timer</div></div><div class="toggle ${rs.enabled ? 'active' : ''}" id="au-en" role="switch" tabindex="0"></div></div>
           <div class="settings-row" style="padding:8px 0"><div><div class="settings-row-label">Which updates</div><div class="settings-row-desc">Security only is the safer choice for servers</div></div><select class="select" id="au-type" style="width:150px"><option value="security" ${rs.upgradeType === 'security' ? 'selected' : ''}>Security only</option><option value="default" ${rs.upgradeType !== 'security' ? 'selected' : ''}>All updates</option></select></div>
-          <div class="settings-row" style="padding:8px 0;border-bottom:0"><div><div class="settings-row-label">Reboot automatically when needed</div><div class="settings-row-desc">Right after an update that requires it (kernel, glibc). Needs dnf 4.15+ / dnf5 — older versions ignore it</div></div><div class="toggle ${rs.reboot === 'when-needed' ? 'active' : ''}" id="au-rb" role="switch" tabindex="0"></div></div>
+          <div class="settings-row" style="padding:8px 0;border-bottom:0"><div><div class="settings-row-label">Reboot automatically when needed</div><div class="settings-row-desc">Right after an update that requires it (kernel, glibc). Needs dnf 4.15+ / dnf5 - older versions ignore it</div></div><div class="toggle ${rs.reboot === 'when-needed' ? 'active' : ''}" id="au-rb" role="switch" tabindex="0"></div></div>
           <button class="btn btn-sm btn-primary" type="submit" style="justify-self:start;margin-top:6px">Save</button>
         </form>`)}
       </div>

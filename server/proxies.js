@@ -1,8 +1,8 @@
-// Web → Proxies & SSL (PX1, read-only): the web servers in front of the apps of the server in use — nginx,
-// OpenResty, Nginx Proxy Manager, nginx-proxy, Caddy (also caddy-docker-proxy), Traefik, HAProxy, Apache — in
+// Web > Proxies & SSL (PX1, read-only): the web servers in front of the apps of the server in use - nginx,
+// OpenResty, Nginx Proxy Manager, nginx-proxy, Caddy (also caddy-docker-proxy), Traefik, HAProxy, Apache - in
 // containers and as host services (SSH servers, and the local host through local-host.js); which domain goes where, the certificates, config files and
-// logs. Nothing is changed here: configs are read (nginx -T, the Caddyfile, labels…), "Test config" runs the
-// proxy's own check (nginx -t, caddy validate…).
+// logs. Nothing is changed here: configs are read (nginx -T, the Caddyfile, labels...), "Test config" runs the
+// proxy's own check (nginx -t, caddy validate...).
 const P = require('./proxy-parse');
 const dockerService = require('./docker');
 const RC = require('./remote-compose');
@@ -11,7 +11,7 @@ const LH = require('./local-host');
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const err = (m, code = 400) => Object.assign(new Error(m), { statusCode: code });
 
-/** image → kind */
+/** image -> kind */
 function kindOf(image) {
   const i = String(image || '').toLowerCase().replace(/^docker\.io\//, '').replace(/@.*$/, '');
   if (/(^|\/)nginx-proxy-manager(:|$)/.test(i)) return 'npm';
@@ -27,9 +27,9 @@ function kindOf(image) {
   return null;
 }
 /**
- * The kind of an image that is not named after its proxy (built with `build:` → "shop-proxy", or a private
- * registry): from what the official images leave in their config, which images built FROM them inherit —
- * NGINX_VERSION, CADDY_VERSION, HAPROXY_VERSION, HTTPD_VERSION — or the program they start.
+ * The kind of an image that is not named after its proxy (built with `build:` -> "shop-proxy", or a private
+ * registry): from what the official images leave in their config, which images built FROM them inherit -
+ * NGINX_VERSION, CADDY_VERSION, HAPROXY_VERSION, HTTPD_VERSION - or the program they start.
  */
 function kindOfConfig(cfg = {}) {
   const env = (cfg.Env || []).map(e => String(e).split('=')[0]);
@@ -41,7 +41,7 @@ function kindOfConfig(cfg = {}) {
   if (env.includes('HTTPD_VERSION') || /httpd-foreground|apache2ctl|apachectl|apache2-foreground/.test(cmd)) return 'apache';
   return null;
 }
-const imageKinds = new Map(); // image id → kind (or null): an image does not change under its id
+const imageKinds = new Map(); // image id -> kind (or null): an image does not change under its id
 async function kindOfContainer(c, ct) {
   const byName = kindOf(ct.Image); if (byName) return { kind: byName, derived: false };
   const id = ct.ImageID || ct.Image;
@@ -74,7 +74,7 @@ async function hostExec(server, cmd) {
 const catGlobs = (globs) => `for f in ${globs.filter(g => /^[\w./*@+-]+$/.test(g)).join(' ')}; do [ -f "$f" ] && { echo "@@F $f"; cat "$f"; echo; }; done; true`;
 const splitCat = (out) => String(out || '').split(/^@@F /m).slice(1).map(ch => { const nl = ch.indexOf('\n'); return { path: ch.slice(0, nl).trim(), text: ch.slice(nl + 1).replace(/\n$/, '') }; });
 /**
- * nginx's files when `nginx -T` prints nothing (the config does not pass its check — a backend whose name does not
+ * nginx's files when `nginx -T` prints nothing (the config does not pass its check - a backend whose name does not
  * resolve, a certificate it can not read): nginx.conf (where `nginx -V` says, else /etc/nginx/nginx.conf), then every
  * file its include lines reach, of any name (sites-enabled/example.com too). run(sh) runs a shell line where nginx is.
  */
@@ -99,7 +99,7 @@ const rootSh = (script) => `if [ "$(id -u)" = 0 ]; then sh -c ${shq(script)}; el
 const sudoTry = (cmd) => `sudo -n ${cmd} 2>&1 || ${cmd} 2>&1`;
 
 // ---------- the scan ----------
-const cache = new Map(); // serverId → { at, data, raw }
+const cache = new Map(); // serverId -> { at, data, raw }
 /** Where to look: the server in use, or (for the daily certificate check) any server: { serverId, c, server }. */
 function activeCtx() {
   const c = dockerService.docker; const remote = RC.getActiveRemoteServer();
@@ -116,7 +116,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
   const proxies = []; const sites = []; const warnings = [];
 
   // index of containers for resolving targets
-  const byName = new Map(); const byIp = new Map(); const byHostPort = new Map(); // host port → the container that publishes it
+  const byName = new Map(); const byIp = new Map(); const byHostPort = new Map(); // host port -> the container that publishes it
   for (const ct of containers) {
     const name = (ct.Names || [''])[0].replace(/^\//, '');
     const L = ct.Labels || {};
@@ -143,7 +143,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
   const helpers = []; // certbot / acme-companion containers: they renew certificates, they are not proxies
   const addSite = (s, proxy) => {
     const same = sites.find(x => x.proxy === proxy.id && x.domain === s.domain);
-    if (same) { // one domain, two entries of one proxy (Traefik's http → https router, two server blocks): one row
+    if (same) { // one domain, two entries of one proxy (Traefik's http -> https router, two server blocks): one row
       if (s.https && !same.https) { same.https = true; same.redirect = true; same.file = s.file || same.file; same.line = s.line || same.line; } else if (!s.https && same.https) same.redirect = true;
       if (!same.target && s.targets && s.targets.length) { same.target = resolve(s.targets[0], proxy); same.targetsAll = s.targets.map(t => resolve(t, proxy)); }
       return;
@@ -185,7 +185,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
           const why = nginxWhy(r.err || r.out);
           parsed = await readNginxByIncludes((sh) => execIn(c, ct.Id, ['sh', '-c', sh]));
           p.problem = `config check fails: ${why}`;
-          warnings.push({ level: 'bad', text: `${name}: the nginx config does not pass its check — ${why}. A reload or restart would fail.` });
+          warnings.push({ level: 'bad', text: `${name}: the nginx config does not pass its check - ${why}. A reload or restart would fail.` });
         }
         raw.files[p.id] = parsed.files; raw.nginx[p.id] = parsed;
         p.config = parsed.files[0] ? parsed.files[0].path.replace(/\/[^/]+$/, '') : '/etc/nginx';
@@ -277,7 +277,7 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
   let ports = [];
   if (server) {
     const tag = '@@PX';
-    // a systemd unit, or (no systemd) the program installed and its processes — not the ones of containers, which
+    // a systemd unit, or (no systemd) the program installed and its processes - not the ones of containers, which
     // share the host's process list
     const script = `hostproc() { for pid in $(pgrep -x "$1" 2>/dev/null); do grep -qE 'docker|containerd|kubepods|libpod|lxc' /proc/$pid/cgroup 2>/dev/null || { echo y; return; }; done; }
 for s in nginx caddy apache2 httpd haproxy traefik; do if command -v systemctl >/dev/null 2>&1 && systemctl cat "$s.service" >/dev/null 2>&1; then echo "${tag}S $s $(systemctl is-active $s 2>/dev/null) $(systemctl is-enabled $s 2>/dev/null)";
@@ -338,9 +338,9 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnpH 2>/dev/null || ss -l
     for (const p of proxies.filter(x => x.where === 'container' && x.hostNet && x.running)) p.ports = [...new Set(ports.filter(x => x.container && (BIN[p.kind] || []).includes(x.process)).map(x => x.port))];
   }
   for (const x of ports.filter(y => y.container)) { const own = proxies.find(p => p.hostNet && (p.ports || []).includes(x.port)); x.process = `${x.process} (${own ? `container ${own.name}` : 'a container'}, host network)`; }
-  for (const x of ports) if (x.process === 'docker-proxy') { const ct = byHostPort.get(String(x.port)); if (ct) x.process = `docker → ${ct.name}`; } // the container that publishes it, not Docker's forwarder
+  for (const x of ports) if (x.process === 'docker-proxy') { const ct = byHostPort.get(String(x.port)); if (ct) x.process = `docker -> ${ct.name}`; } // the container that publishes it, not Docker's forwarder
   // published ports of the proxy containers (local server, or when ss could not tell)
-  for (const p of proxies.filter(x => x.where === 'container' && x.running)) for (const port of p.ports) if ([80, 443, 8080, 8443].includes(port) && !ports.some(x => x.port === port && /docker/.test(x.process))) ports.push({ port, addr: `*:${port}`, process: `docker → ${p.name}` });
+  for (const p of proxies.filter(x => x.where === 'container' && x.running)) for (const port of p.ports) if ([80, 443, 8080, 8443].includes(port) && !ports.some(x => x.port === port && /docker/.test(x.process))) ports.push({ port, addr: `*:${port}`, process: `docker -> ${p.name}` });
   ports.sort((a, b) => a.port - b.port);
 
   const appServers = proxies.filter(p => p.appServer).map(p => p.name);
@@ -351,7 +351,7 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnpH 2>/dev/null || ss -l
     const holders = proxies.filter(p => p.running && p.ports.includes(port));
     const idle = proxies.filter(p => !p.running && p.where === 'host' && p.enabled === 'enabled');
     if (holders.length > 1) warnings.push({ level: 'bad', text: `${holders.map(h => h.name).join(' and ')} both want port ${port}.` });
-    for (const i of idle) warnings.push({ level: 'warn', text: `${i.name} is installed and enabled but not running — at boot it would also want ports 80 / 443.` });
+    for (const i of idle) warnings.push({ level: 'warn', text: `${i.name} is installed and enabled but not running - at boot it would also want ports 80 / 443.` });
   }
   const dup = new Map(); for (const s of sites.filter(x => !x.nameless)) dup.set(s.domain, (dup.get(s.domain) || new Set()).add(s.proxyName));
   for (const [d, set] of dup) if (set.size > 1) warnings.push({ level: 'warn', text: `${d} is configured in ${[...set].join(' and ')}.` });
@@ -409,10 +409,10 @@ async function stoppedProxy(c, ct, p, kind, raw, addSite, warnings) {
   }
   const n = files.length ? '' : ' (its config could not be read)';
   p.problem = `stopped${reason.length ? ': ' + reason[reason.length - 1] : ''}`;
-  warnings.push({ level: 'bad', proxy: p.id, stopped: true, text: `${p.name} is ${p.restarting ? 'restarting again and again' : 'stopped'} — its sites do not answer${reason.length ? `. It says: ${reason[reason.length - 1]}` : ''}${n}.` });
+  warnings.push({ level: 'bad', proxy: p.id, stopped: true, text: `${p.name} is ${p.restarting ? 'restarting again and again' : 'stopped'} - its sites do not answer${reason.length ? `. It says: ${reason[reason.length - 1]}` : ''}${n}.` });
 }
 async function rawFor(ctx = activeCtx()) { await scan({ ctx }); const hit = cache.get(ctx.serverId); return hit ? hit.raw : { files: {}, nginx: {}, certPaths: {} }; }
-async function proxyById(id) { const d = await scan(); const p = d.proxies.find(x => x.id === id); if (!p) throw err('Proxy not found — refresh', 404); return p; }
+async function proxyById(id) { const d = await scan(); const p = d.proxies.find(x => x.id === id); if (!p) throw err('Proxy not found - refresh', 404); return p; }
 
 // ---------- certificates ----------
 const CERT_DIRS = 'for d in /data/caddy/certificates /root/.local/share/caddy/certificates /var/lib/caddy/.local/share/caddy/certificates; do [ -d "$d" ] && find "$d" -name "*.crt" 2>/dev/null; done | head -80 | while IFS= read -r f; do echo "@@F $f"; cat "$f"; done';
@@ -491,7 +491,7 @@ async function certificates({ ctx = activeCtx(), fresh = false, served = true } 
     const head = out.split('@@HOOKS')[0];
     for (const ch of chunks(head)) {
       if (found.some(f => f.path === ch.path)) continue;
-      if (/\/\.acme\.sh\//.test(ch.path)) found.push({ pem: ch.pem, path: ch.path, proxy: 'host', source: 'acme.sh', renewer: 'acme.sh', auto: true, label: 'acme.sh — its own cron' });
+      if (/\/\.acme\.sh\//.test(ch.path)) found.push({ pem: ch.pem, path: ch.path, proxy: 'host', source: 'acme.sh', renewer: 'acme.sh', auto: true, label: 'acme.sh - its own cron' });
       else found.push({ pem: ch.pem, path: ch.path, proxy: 'host', source: 'certbot', renewer: 'certbot', auto: true });
     }
     const hooks = ((out.split('@@HOOKS')[1] || '').split('@@END')[0] || '').split('\n').map(x => x.trim()).filter(Boolean);
@@ -501,7 +501,7 @@ async function certificates({ ctx = activeCtx(), fresh = false, served = true } 
     certbot = { installed: !!r && (head.includes('@@F') || timer != null), timer, hooks, reloads: hooks.length > 0 };
     if (found.some(f => f.renewer === 'certbot') && !certbot.reloads) notes.push('certbot renews, but no deploy hook reloads the web server: after a renewal the old certificate is still served until a reload. "Add a reload hook" fixes it.');
   }
-  const certbotLabel = certbot ? (certbot.timer ? `certbot ${certbot.timer} — on` : 'certbot — no timer or cron found') : null;
+  const certbotLabel = certbot ? (certbot.timer ? `certbot ${certbot.timer} - on` : 'certbot - no timer or cron found') : null;
   // one entry per certificate
   const byFp = new Map();
   for (const f of found) {
@@ -509,8 +509,8 @@ async function certificates({ ctx = activeCtx(), fresh = false, served = true } 
     const cur = byFp.get(cert.fingerprint);
     if (cur) { if (!cur.paths.includes(f.path)) cur.paths.push(f.path); if (!cur.proxies.includes(f.proxy)) cur.proxies.push(f.proxy); continue; }
     const internal = isInternalIssuer(cert.issuer); const staging = isStagingIssuer(cert.issuer) && !internal;
-    let renewal = f.label || (f.renewer === 'caddy' ? 'Caddy — automatic' : f.renewer === 'traefik' ? 'Traefik — automatic' : f.renewer === 'certbot' ? (certbotLabel || 'certbot — not checked') : 'none (a file)');
-    if (internal) renewal = `${f.renewer === 'traefik' ? 'Traefik' : 'Caddy'} — internal (automatic)`;
+    let renewal = f.label || (f.renewer === 'caddy' ? 'Caddy - automatic' : f.renewer === 'traefik' ? 'Traefik - automatic' : f.renewer === 'certbot' ? (certbotLabel || 'certbot - not checked') : 'none (a file)');
+    if (internal) renewal = `${f.renewer === 'traefik' ? 'Traefik' : 'Caddy'} - internal (automatic)`;
     byFp.set(cert.fingerprint, { ...cert, source: f.source || (f.renewer === 'certbot' ? 'certbot' : 'file'), paths: [f.path], proxies: [f.proxy], proxyIds: f.proxyId ? [f.proxyId] : [], kind: f.kind || null, renewer: internal ? 'internal' : f.renewer || 'none', auto: !!f.auto || internal, renewal, internal, staging, watch: !internal, certbotContainer: f.certbotContainer || null });
   }
   const certs = [...byFp.values()].sort((a, b) => a.daysLeft - b.daysLeft);
@@ -543,10 +543,10 @@ const PX_FILE_CERTS = {
 };
 /** Who renews a certificate file found in a proxy's config. */
 function renewerOf(p, path, helper) {
-  if (p.kind === 'npm') return /letsencrypt/.test(path) ? { source: 'Nginx Proxy Manager', renewer: 'npm', auto: true, label: 'Nginx Proxy Manager — automatic' } : { source: 'Nginx Proxy Manager', renewer: 'none', label: 'uploaded in Nginx Proxy Manager (not renewed)' };
-  if (p.kind === 'nginx-proxy') { const h = helper('acme-companion'); return h ? { source: 'acme-companion', renewer: 'acme-companion', auto: true, label: `acme-companion — automatic${h.running ? '' : ' (container stopped!)'}` } : { source: 'file', renewer: 'none' }; }
+  if (p.kind === 'npm') return /letsencrypt/.test(path) ? { source: 'Nginx Proxy Manager', renewer: 'npm', auto: true, label: 'Nginx Proxy Manager - automatic' } : { source: 'Nginx Proxy Manager', renewer: 'none', label: 'uploaded in Nginx Proxy Manager (not renewed)' };
+  if (p.kind === 'nginx-proxy') { const h = helper('acme-companion'); return h ? { source: 'acme-companion', renewer: 'acme-companion', auto: true, label: `acme-companion - automatic${h.running ? '' : ' (container stopped!)'}` } : { source: 'file', renewer: 'none' }; }
   if (/\/letsencrypt\//.test(path)) { const h = helper('certbot'); return h ? { source: 'certbot', renewer: 'certbot', auto: true, label: `certbot container ${h.name}${h.running ? '' : ' (stopped!)'}`, certbotContainer: h.name } : { source: 'certbot', renewer: 'certbot', auto: true }; }
-  if (/\/dockgate-certs\/|\/etc\/dockgate\/certs\//.test(path)) return { source: 'DockGate', renewer: 'dockgate', auto: true, label: 'DockGate — automatic' };
+  if (/\/dockgate-certs\/|\/etc\/dockgate\/certs\//.test(path)) return { source: 'DockGate', renewer: 'dockgate', auto: true, label: 'DockGate - automatic' };
   return { source: 'file', renewer: 'none' };
 }
 
@@ -556,7 +556,7 @@ async function files(id) {
   if (raw.files[id] && raw.files[id].length && p.kind !== 'traefik') return { proxy: p.name, kind: p.kind, files: raw.files[id].map(f => ({ ...f, managed: p.kind === 'npm' && /^\/data\//.test(f.path) ? 'Nginx Proxy Manager' : /letsencrypt/.test(f.path) ? 'certbot' : null })) };
   if (p.kind === 'traefik' || p.kind === 'caddy-docker-proxy') {
     const d = await scan();
-    const text = d.sites.filter(s => s.proxy === id).map(s => `# ${s.domain}  (${s.file})\n${s.router ? `traefik.http.routers.${s.router}.rule=Host(\`${s.domain}\`)\n` : ''}→ ${s.target ? s.target.label : '?'}${s.https ? '   (HTTPS' + (s.resolver ? ', ' + s.resolver : '') + ')' : ''}\n`).join('\n');
+    const text = d.sites.filter(s => s.proxy === id).map(s => `# ${s.domain}  (${s.file})\n${s.router ? `traefik.http.routers.${s.router}.rule=Host(\`${s.domain}\`)\n` : ''} -> ${s.target ? s.target.label : '?'}${s.https ? '   (HTTPS' + (s.resolver ? ', ' + s.resolver : '') + ')' : ''}\n`).join('\n');
     return { proxy: p.name, kind: p.kind, files: [...(raw.files[id] || []), { path: `${p.kind === 'traefik' ? 'Traefik' : 'Caddy'} labels (read-only summary)`, text: text || '# no labels found' }] };
   }
   return { proxy: p.name, kind: p.kind, files: [], note: p.problem || 'No config files read for this proxy.' };

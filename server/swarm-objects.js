@@ -1,8 +1,8 @@
-// Swarm secrets, configs and networks — phase 5.
+// Swarm secrets, configs and networks - phase 5.
 //
 // Swarm can not change a secret or config. Rotate (Edit for configs) does it the safe way, as a job: a new
-// version <name>_v2 is created → every service that uses it moves to the new one with a rolling update,
-// keeping the same file path in the container → when every update finished, the old version is removed.
+// version <name>_v2 is created -> every service that uses it moves to the new one with a rolling update,
+// keeping the same file path in the container -> when every update finished, the old version is removed.
 // If an update fails or rolls back, the job stops and the old version stays, so nothing is left without it.
 // Secret values never go into DockGate's database or log; they are sent to Swarm and that is it.
 const dockerService = require('./docker');
@@ -16,11 +16,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function mgr() {
   const st = await swarm.status();
   if (st.state !== 'active') throw bad(409, 'Swarm is not active on the server in use');
-  if (!st.manager) throw bad(409, 'The server in use is a worker — switch to a manager at the top');
+  if (!st.manager) throw bad(409, 'The server in use is a worker - switch to a manager at the top');
   return { c: dockerService.docker, st };
 }
 const stackOf = (labels) => (labels || {})['com.docker.stack.namespace'] || null;
-/** "db_password_v3" → { base: "db_password", n: 3 }; "db_password" → { base, n: 1 }. */
+/** "db_password_v3" -> { base: "db_password", n: 3 }; "db_password" -> { base, n: 1 }. */
 function versionOf(name) { const m = /^(.*)_v(\d+)$/.exec(name); return m ? { base: m[1], n: Number(m[2]) } : { base: name, n: 1 }; }
 
 // ---- secrets and configs ----
@@ -73,7 +73,7 @@ async function remove(kind, id, { sourceIp } = {}) {
   const { c, st } = await mgr();
   const use = await usage(c);
   const users = (kind === 'secret' ? use.secrets : use.configs).get(id) || [];
-  if (users.length) throw bad(409, `Still used by ${users.map(u => u.name).join(', ')} — rotate those services to another ${kind}, or remove them first`);
+  if (users.length) throw bad(409, `Still used by ${users.map(u => u.name).join(', ')} - rotate those services to another ${kind}, or remove them first`);
   const obj = kind === 'secret' ? c.getSecret(id) : c.getConfig(id);
   const x = await obj.inspect();
   await obj.remove();
@@ -81,7 +81,7 @@ async function remove(kind, id, { sourceIp } = {}) {
   return { ok: true };
 }
 
-/** Wait until a service's update finishes. Returns the final state (completed, paused, rollback_completed, …). */
+/** Wait until a service's update finishes. Returns the final state (completed, paused, rollback_completed, ...). */
 async function waitUpdate(c, id, log, name) {
   const t0 = Date.now();
   await sleep(1500);
@@ -89,14 +89,14 @@ async function waitUpdate(c, id, log, name) {
     const s = await c.getService(id).inspect();
     const us = s.UpdateStatus;
     if (!us || us.State === 'completed') return 'completed';
-    if (['paused', 'rollback_completed', 'rollback_paused'].includes(us.State)) { log(`  ${name}: ${us.State}${us.Message ? ` — ${us.Message}` : ''}`); return us.State; }
+    if (['paused', 'rollback_completed', 'rollback_paused'].includes(us.State)) { log(`  ${name}: ${us.State}${us.Message ? ` - ${us.Message}` : ''}`); return us.State; }
     if (Date.now() - t0 > 600000) return 'timeout';
     await sleep(2000);
   }
 }
 
 /**
- * Rotate a secret or edit a config: new version → services move to it one by one → old one removed.
+ * Rotate a secret or edit a config: new version -> services move to it one by one -> old one removed.
  * Runs as a Swarm job.
  */
 async function startRotate(kind, id, value, { sourceIp } = {}) {
@@ -130,16 +130,16 @@ async function startRotate(kind, id, value, { sourceIp } = {}) {
         const cs = spec2.TaskTemplate.ContainerSpec;
         cs[`${K}s`] = (cs[`${K}s`] || []).map(x => (x[`${K}ID`] === id ? { ...x, [`${K}ID`]: newId, [`${K}Name`]: newName, File: x.File || { Name: old.Spec.Name, UID: '0', GID: '0', Mode: 0o444 } } : x));
         await require('./swarm-services').writeSpec(c, u.id, s.Version.Index, spec2); // registry login sent: tasks may start on other servers
-        log(`  ${u.name}: updating — the file stays at ${kind === 'secret' ? '/run/secrets/' : ''}${u.target || old.Spec.Name}`);
+        log(`  ${u.name}: updating - the file stays at ${kind === 'secret' ? '/run/secrets/' : ''}${u.target || old.Spec.Name}`);
         const r = await waitUpdate(c, u.id, log, u.name);
-        if (r !== 'completed') throw new Error(`${u.name} did not finish its update (${r}) — ${old.Spec.Name} is kept; fix the service, then rotate again`);
+        if (r !== 'completed') throw new Error(`${u.name} did not finish its update (${r}) - ${old.Spec.Name} is kept; fix the service, then rotate again`);
         step(job, `svc-${u.id}`, 'done');
       }
       step(job, 'remove', 'running', `Remove ${old.Spec.Name}`);
       await obj.remove().catch(e => log(`  could not remove ${old.Spec.Name}: ${swarm.dockerMsg(e)}`));
       step(job, 'remove', 'done');
       job.status = 'done'; job.result = { newName, services: users.map(u => u.name) };
-      log(`✓ ${users.length} service${users.length === 1 ? '' : 's'} use ${newName}; ${old.Spec.Name} is removed.${stackOf(old.Spec.Labels) ? ` Note: it belongs to stack ${stackOf(old.Spec.Labels)} — update the compose file too, or the next stack deploy uses its own value again.` : ''}`);
+      log(`✓ ${users.length} service${users.length === 1 ? '' : 's'} use ${newName}; ${old.Spec.Name} is removed.${stackOf(old.Spec.Labels) ? ` Note: it belongs to stack ${stackOf(old.Spec.Labels)} - update the compose file too, or the next stack deploy uses its own value again.` : ''}`);
       logAction({ sourceIp, server: st.serverId, resourceType: `swarm-${kind}`, resourceName: old.Spec.Name, action: `swarm_${kind}_rotate`, details: { to: newName, services: users.map(u => u.name) } });
     } catch (e) {
       job.steps.forEach(s => { if (s.status === 'running') s.status = 'failed'; });
@@ -187,24 +187,24 @@ async function removeNetwork(id, { sourceIp } = {}) {
   const { c, st } = await mgr();
   const n = (await networks()).find(x => x.id === id || x.name === id);
   if (!n) throw bad(404, 'Network not found');
-  if (n.ingress) throw bad(400, 'The ingress network is changed with Change subnet…, not removed');
-  if (n.usedBy.length) throw bad(409, `Used by ${n.usedBy.join(', ')} — remove it from those services first`);
+  if (n.ingress) throw bad(400, 'The ingress network is changed with Change subnet..., not removed');
+  if (n.usedBy.length) throw bad(409, `Used by ${n.usedBy.join(', ')} - remove it from those services first`);
   try { await c.getNetwork(n.id).remove(); } catch (e) { throw bad(409, swarm.dockerMsg(e)); }
   logAction({ sourceIp, server: st.serverId, resourceType: 'swarm-network', resourceName: n.name, action: 'swarm_network_remove' });
   return { ok: true };
 }
 
-/** Recreate the ingress network with another subnet — only when no service publishes a port through it. */
+/** Recreate the ingress network with another subnet - only when no service publishes a port through it. */
 async function changeIngress(subnet, { sourceIp } = {}) {
   const { c, st } = await mgr();
   const sn = String(subnet || '').trim();
   if (!/^\d+\.\d+\.\d+\.\d+\/(1[6-9]|2[0-8])$/.test(sn)) throw bad(400, 'Subnet: write it like 10.250.0.0/24 (a /16 to /28)');
   const nets = await networks();
   const ing = nets.find(n => n.ingress);
-  if (ing && ing.usedBy.length) throw bad(409, `${ing.usedBy.join(', ')} publish${ing.usedBy.length === 1 ? 'es' : ''} ports through ingress — change those ports to host mode or remove the services first`);
+  if (ing && ing.usedBy.length) throw bad(409, `${ing.usedBy.join(', ')} publish${ing.usedBy.length === 1 ? 'es' : ''} ports through ingress - change those ports to host mode or remove the services first`);
   if (ing) { await c.getNetwork(ing.id).remove(); for (let i = 0; i < 15; i++) { if (!(await c.listNetworks({ filters: JSON.stringify({ name: ['ingress'] }) })).some(n => n.Ingress)) break; await sleep(1000); } }
   try { await c.createNetwork({ Name: 'ingress', Driver: 'overlay', Ingress: true, IPAM: { Driver: 'default', Config: [{ Subnet: sn }] } }); }
-  catch (e) { throw bad(400, `The ingress network was removed but could not be created again: ${swarm.dockerMsg(e)} — create it with: docker network create --driver overlay --ingress --subnet ${sn} ingress`); }
+  catch (e) { throw bad(400, `The ingress network was removed but could not be created again: ${swarm.dockerMsg(e)} - create it with: docker network create --driver overlay --ingress --subnet ${sn} ingress`); }
   logAction({ sourceIp, server: st.serverId, resourceType: 'swarm-network', resourceName: 'ingress', action: 'swarm_ingress_subnet', details: { from: ing ? ing.subnets : [], to: sn } });
   return { ok: true };
 }

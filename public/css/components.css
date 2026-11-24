@@ -1,5 +1,5 @@
 /* ============================================
-   COMPONENTS — Cards, Tables, Badges, Buttons, Modals, etc.
+   COMPONENTS - Cards, Tables, Badges, Buttons, Modals, etc.
    ============================================ */
 
 /* ============ BUTTONS ============ */
@@ -245,7 +245,7 @@ tbody td {
   justify-content: flex-end;
 }
 
-/* Row "⋯ More" overflow menu — position:fixed so the table-wrapper's overflow never clips it.
+/* Row "⋯ More" overflow menu - position:fixed so the table-wrapper's overflow never clips it.
    Items keep their data-* attributes, so the existing row-action handlers still fire. */
 .row-menu-pop {
   position: fixed;
@@ -294,7 +294,7 @@ tbody td {
 .hub-tab:hover { color: var(--text-primary); }
 .hub-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-/* Sidebar collapsible sections (Resources/Deploy/Activity/Infrastructure → their tabs as sub-items) */
+/* Sidebar collapsible sections (Resources/Deploy/Activity/Infrastructure -> their tabs as sub-items) */
 .nav-parent { cursor: pointer; }
 .nav-parent .nav-caret { margin-left: auto; transition: transform .2s; font-size: 10px; opacity: .6; }
 .nav-subitems { display: none; margin: 1px 0 3px 0; }
@@ -340,7 +340,7 @@ tbody td {
   font-weight: 700;
 }
 
-/* ============ TABS (segmented control — shared by .tabs/.tab AND .tab-bar/.tab-btn) ============ */
+/* ============ TABS (segmented control - shared by .tabs/.tab AND .tab-bar/.tab-btn) ============ */
 .tabs, .tab-bar {
   display: inline-flex;
   gap: 4px;
@@ -450,7 +450,7 @@ tbody td {
   background: var(--bg-card);
   color: var(--text-primary);
 }
-/* The header switcher select is transparent to blend into its pill — keep its (closed) text readable. */
+/* The header switcher select is transparent to blend into its pill - keep its (closed) text readable. */
 #server-select { color: var(--text-primary); }
 
 /* ============ MODAL ============ */
@@ -473,7 +473,7 @@ tbody td {
   width: 90%;
   max-width: 520px;
   max-height: 85vh;
-  /* Flex column so the header/footer stay fixed and only the body scrolls — keeps tall
+  /* Flex column so the header/footer stay fixed and only the body scrolls - keeps tall
      modals (Run Container, Compose editor) within the viewport with the action button always visible. */
   display: flex;
   flex-direction: column;
@@ -958,7 +958,7 @@ tbody td {
 
 /* ============ TAB BAR ============ */
 /* .tab-bar / .tab-btn share the segmented-control styling defined with .tabs / .tab above
-   (single source of truth — do not redefine here, or it would override the cascade). */
+   (single source of truth - do not redefine here, or it would override the cascade). */
 
 /* ============ PULSE ANIMATION ============ */
 @keyframes pulse {
@@ -976,7 +976,7 @@ tbody td {
   font-size: 13px;
   transition: all var(--transition-fast);
   /* Allow inputs to shrink below their intrinsic width inside flex/grid rows (e.g. the Run modal's
-     port/volume/env rows, the server-edit grid) — without this they overflow and force a horizontal scrollbar. */
+     port/volume/env rows, the server-edit grid) - without this they overflow and force a horizontal scrollbar. */
   min-width: 0;
 }
 
@@ -1640,7 +1640,7 @@ tr.pv-open .pv-chev { transform: rotate(90deg); }
   .lv-detail { left: 8px; right: 8px; width: auto; }
 }
 
-/* File browser (Tools → Files, Quick Files): Places panel + main column */
+/* File browser (Tools > Files, Quick Files): Places panel + main column */
 .fb-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 12px; align-items: start; }
 .fb-places { padding: 8px; display: flex; flex-direction: column; gap: 1px; position: sticky; top: 0; max-height: calc(100vh - 160px); overflow: auto; }
 .fb-places-h { font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text-muted); padding: 8px 8px 4px; }
@@ -1659,7 +1659,7 @@ tr.pv-open .pv-chev { transform: rotate(90deg); }
 .fe-hl .hl-c { color: var(--text-muted); font-style: italic; }
 .fb-main .td-actions { flex-wrap: nowrap; }
 
-/* ---- System → Help: the guide inside DockGate ---- */
+/* ---- System > Help: the guide inside DockGate ---- */
 .help-q { padding: 0 7px; min-width: 22px; height: 22px; border-radius: 50%; font-weight: 700; vertical-align: middle; margin-left: 4px; }
 .help-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 14px; align-items: start; }
 .help-index { padding: 12px; position: sticky; top: 12px; max-height: calc(100vh - 140px); overflow: auto; }

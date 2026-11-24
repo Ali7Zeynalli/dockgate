@@ -1,7 +1,7 @@
-// File browser — browse / upload / download / edit / copy / move / delete / permissions on the ACTIVE server
+// File browser - browse / upload / download / edit / copy / move / delete / permissions on the ACTIVE server
 // (remote: SFTP + SSH; Local: the folders shared with DockGate under /host). One component, two places:
-//   · Tools → Files (the page)                FileBrowser.mount(content, { page: true })
-//   · Quick Files (header button, Alt+F)      FileBrowser.mount(el, { compact: true, startPath })
+//  , Tools > Files (the page)                FileBrowser.mount(content, { page: true })
+//  , Quick Files (header button, Alt+F)      FileBrowser.mount(el, { compact: true, startPath })
 // Everything it touches is looked up inside its own element, so the page and Quick Files can be open together.
 window.FileBrowser = (() => {
 async function mount(content, opts = {}) {
@@ -19,7 +19,7 @@ async function mount(content, opts = {}) {
     return i <= 0 ? '/' : p.slice(0, i);
   }
   function joinPath(name) { return (cwd === '/' ? '' : cwd) + '/' + name; }
-  // Recognized archive formats → friendly label (drives the 📦 Extract row action).
+  // Recognized archive formats -> friendly label (drives the 📦 Extract row action).
   function archiveKind(name) {
     const n = (name || '').toLowerCase();
     if (/\.(tar\.gz|tgz)$/.test(n)) return 'tar.gz';
@@ -60,14 +60,14 @@ async function mount(content, opts = {}) {
           <div class="text-sm text-muted">DockGate runs as root in its container, so it does not open the whole machine. Share the folders you want to manage: add a line under <span class="td-mono">volumes:</span> of the DockGate service in its <span class="td-mono">docker-compose.yml</span>, then restart DockGate.</div>
           <pre class="td-mono" style="margin:0;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;font-size:12.5px">    volumes:
       - /srv:${root}/srv          # any folder you want to manage here</pre>
-          <div class="text-sm text-muted">The folders then appear here under <span class="td-mono">${root}/…</span>. Remote servers need nothing: switch to one in the header and Files works over SSH.</div>
+          <div class="text-sm text-muted">The folders then appear here under <span class="td-mono">${root}/...</span>. Remote servers need nothing: switch to one in the header and Files works over SSH.</div>
           <div><button class="btn btn-secondary btn-sm" data-err-act="servers">Switch server</button></div>
         </div>`;
       return;
     }
 
     content.innerHTML = `${header()}
-      <div class="fb-layout"><aside class="fb-places card" id="f-places"><div class="ui-sub">Loading…</div></aside><div class="fb-main">
+      <div class="fb-layout"><aside class="fb-places card" id="f-places"><div class="ui-sub">Loading...</div></aside><div class="fb-main">
       <div class="card mb-2" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px">
         <button class="btn btn-secondary btn-sm" id="f-up" title="Up one level">⬆</button>
         <div id="f-crumbs" style="flex:1;min-width:200px;font-family:var(--font-mono,monospace);font-size:12.5px;overflow-x:auto;white-space:nowrap"></div>
@@ -92,7 +92,7 @@ async function mount(content, opts = {}) {
           <th style="width:28px"><input type="checkbox" id="f-all" title="Select all"></th>
           <th>Name</th><th>Size</th><th>Modified</th><th>Permissions</th><th style="text-align:right">Actions</th>
         </tr></thead>
-        <tbody id="f-tbody"><tr><td colspan="6" class="text-muted" style="padding:14px">Loading…</td></tr></tbody>
+        <tbody id="f-tbody"><tr><td colspan="6" class="text-muted" style="padding:14px">Loading...</td></tr></tbody>
       </table></div></div></div>`;
 
     wireToolbar();
@@ -122,7 +122,7 @@ async function mount(content, opts = {}) {
       const f = fileInput.files[0];
       if (!f) return;
       const btn = $id('f-upload');
-      btn.disabled = true; btn.textContent = 'Uploading…';
+      btn.disabled = true; btn.textContent = 'Uploading...';
       try {
         const r = await fetch(`/api/files/upload?path=${encodeURIComponent(cwd)}&name=${encodeURIComponent(f.name)}`, {
           method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: f,
@@ -168,14 +168,14 @@ async function mount(content, opts = {}) {
     const items = [...selected.entries()].map(([name, v]) => ({ path: joinPath(name), name, isDir: v.isDir }));
     if (!items.length) return;
     clipboard = { mode, items };
-    showToast(`${mode === 'copy' ? 'Copied' : 'Cut'} ${items.length} item(s) — go to a folder and Paste`, 'info', 4000);
+    showToast(`${mode === 'copy' ? 'Copied' : 'Cut'} ${items.length} item(s) - go to a folder and Paste`, 'info', 4000);
     selected.clear(); list(); updatePasteBtn();
   }
 
   async function doPaste() {
     if (!clipboard || !clipboard.items.length) return;
     const mode = clipboard.mode;
-    const btn = $id('f-paste'); if (btn) { btn.disabled = true; btn.textContent = 'Pasting…'; }
+    const btn = $id('f-paste'); if (btn) { btn.disabled = true; btn.textContent = 'Pasting...'; }
     let ok = 0, fail = 0;
     for (const it of clipboard.items) {
       try {
@@ -263,8 +263,8 @@ async function mount(content, opts = {}) {
     tbody.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => download(`/api/files/download?path=${encodeURIComponent(joinPath(b.dataset.dl))}`, b.dataset.dl)));
     tbody.querySelectorAll('[data-dlf]').forEach(b => b.addEventListener('click', () => download(`/api/files/download-folder?path=${encodeURIComponent(joinPath(b.dataset.dlf))}`, b.dataset.dlf + '.tar.gz')));
     tbody.querySelectorAll('[data-extract]').forEach(b => b.addEventListener('click', () => openExtract(b.dataset.extract)));
-    tbody.querySelectorAll('[data-cp]').forEach(b => b.addEventListener('click', () => { clipboard = { mode: 'copy', items: [{ path: joinPath(b.dataset.cp), name: b.dataset.cp, isDir: b.dataset.isdir === '1' }] }; showToast(`Copied "${b.dataset.cp}" — go to a folder and Paste`, 'info', 4000); updatePasteBtn(); }));
-    tbody.querySelectorAll('[data-ct]').forEach(b => b.addEventListener('click', () => { clipboard = { mode: 'cut', items: [{ path: joinPath(b.dataset.ct), name: b.dataset.ct, isDir: b.dataset.isdir === '1' }] }; showToast(`Cut "${b.dataset.ct}" — go to a folder and Paste`, 'info', 4000); updatePasteBtn(); }));
+    tbody.querySelectorAll('[data-cp]').forEach(b => b.addEventListener('click', () => { clipboard = { mode: 'copy', items: [{ path: joinPath(b.dataset.cp), name: b.dataset.cp, isDir: b.dataset.isdir === '1' }] }; showToast(`Copied "${b.dataset.cp}" - go to a folder and Paste`, 'info', 4000); updatePasteBtn(); }));
+    tbody.querySelectorAll('[data-ct]').forEach(b => b.addEventListener('click', () => { clipboard = { mode: 'cut', items: [{ path: joinPath(b.dataset.ct), name: b.dataset.ct, isDir: b.dataset.isdir === '1' }] }; showToast(`Cut "${b.dataset.ct}" - go to a folder and Paste`, 'info', 4000); updatePasteBtn(); }));
     tbody.querySelectorAll('[data-rn]').forEach(b => b.addEventListener('click', async () => {
       const next = prompt('Rename to:', b.dataset.rn);
       if (!next || next.trim() === b.dataset.rn) return;
@@ -323,9 +323,9 @@ async function mount(content, opts = {}) {
   // ---- Image preview (fetched as a blob: an SVG is shown as an image, its scripts never run) ----
   async function openImage(name) {
     const p = joinPath(name), e = entries.find(x => x.name === name);
-    if (e && e.size > 15 * 1024 * 1024) return showToast('Larger than 15 MB — download it instead', 'warning');
-    const m = showModal(`🖼 ${escapeHtml(name)}`, `<div class="text-xs text-muted td-mono" style="margin-bottom:8px">${escapeHtml(p)}${e ? ' · ' + formatBytes(e.size) : ''}</div>
-      <div data-img-box style="display:flex;align-items:center;justify-content:center;min-height:200px;max-height:70vh;overflow:auto;background:repeating-conic-gradient(rgba(128,128,128,.15) 0 25%,transparent 0 50%) 0 0/16px 16px;border-radius:8px"><span class="ui-sub">Loading…</span></div>
+    if (e && e.size > 15 * 1024 * 1024) return showToast('Larger than 15 MB - download it instead', 'warning');
+    const m = showModal(`🖼 ${escapeHtml(name)}`, `<div class="text-xs text-muted td-mono" style="margin-bottom:8px">${escapeHtml(p)}${e ? ', ' + formatBytes(e.size) : ''}</div>
+      <div data-img-box style="display:flex;align-items:center;justify-content:center;min-height:200px;max-height:70vh;overflow:auto;background:repeating-conic-gradient(rgba(128,128,128,.15) 0 25%,transparent 0 50%) 0 0/16px 16px;border-radius:8px"><span class="ui-sub">Loading...</span></div>
       <div class="ui-sub" data-img-dim style="margin-top:6px"></div>`, [{ label: 'Download', className: 'btn btn-secondary', onClick: () => download(`/api/files/download?path=${encodeURIComponent(p)}`, name) }, { label: 'Close', className: 'btn btn-primary' }]);
     m.overlay.querySelector('.modal')?.classList.add('ui-modal-wide');
     try {
@@ -354,7 +354,7 @@ async function mount(content, opts = {}) {
       load: async (limit) => {
         try { return { text: (await API.get(`/files/tail?path=${encodeURIComponent(p)}&lines=${limit}${sudo ? '&sudo=1' : ''}`)).text, format: 'auto' }; }
         catch (e) {
-          if (e.code === 'EACCES' && !sudo) { sudo = true; showToast('Not readable for the SSH user — reading it with sudo', 'info', 5000); return { text: (await API.get(`/files/tail?path=${encodeURIComponent(p)}&lines=${limit}&sudo=1`)).text, format: 'auto' }; }
+          if (e.code === 'EACCES' && !sudo) { sudo = true; showToast('Not readable for the SSH user - reading it with sudo', 'info', 5000); return { text: (await API.get(`/files/tail?path=${encodeURIComponent(p)}&lines=${limit}&sudo=1`)).text, format: 'auto' }; }
           throw e;
         }
       },
@@ -381,7 +381,7 @@ async function mount(content, opts = {}) {
   function openPerms(e) {
     const p = joinPath(e.name), isDir = e.type === 'dir', remote = !!ctx.remote;
     const bits = [['Owner', 0o400, 0o200, 0o100], ['Group', 0o40, 0o20, 0o10], ['Others', 0o4, 0o2, 0o1]];
-    const m = showModal(`Permissions — ${escapeHtml(e.name)}`, `
+    const m = showModal(`Permissions - ${escapeHtml(e.name)}`, `
       ${serverContextBanner()}
       <div class="text-xs text-muted td-mono" style="margin-bottom:10px">${escapeHtml(p)}</div>
       <table class="table" style="margin-bottom:10px"><thead><tr><th></th><th>Read</th><th>Write</th><th>${isDir ? 'Enter' : 'Run'}</th></tr></thead><tbody>
@@ -409,24 +409,24 @@ async function mount(content, opts = {}) {
       const b = ev.target, mode = modeIn.value.trim(), owner = o.querySelector('#pm-owner').value.trim(), group = o.querySelector('#pm-group').value.trim();
       const recursive = !!o.querySelector('#pm-rec')?.checked, sudo = !!o.querySelector('#pm-sudo')?.checked;
       if (!/^[0-7]{3,4}$/.test(mode)) return showToast('Mode: 3 or 4 octal digits, e.g. 644', 'error');
-      b.disabled = true; b.textContent = 'Applying…';
+      b.disabled = true; b.textContent = 'Applying...';
       try {
         if (mode !== octal(e.mode || 0) || recursive) await API.post('/files/chmod', { path: p, mode, recursive, sudo });
         if (owner && (owner !== (e.owner || '') || group !== (e.group || '') || recursive)) await API.post('/files/chown', { path: p, owner, group, recursive });
         showToast('Permissions changed'); m.close(); list();
       } catch (err) {
-        if (err.code === 'EACCES' && remote && !sudo) { const c = o.querySelector('#pm-sudo'); if (c) c.checked = true; showToast('Not allowed for the SSH user — "Use sudo" is now ticked; Apply again.', 'warning', 9000); }
+        if (err.code === 'EACCES' && remote && !sudo) { const c = o.querySelector('#pm-sudo'); if (c) c.checked = true; showToast('Not allowed for the SSH user - "Use sudo" is now ticked; Apply again.', 'warning', 9000); }
         else showToast(err.message, 'error', 10000);
         b.disabled = false; b.textContent = 'Apply';
       }
     };
   }
 
-  // Extract an archive on the remote host. Default → a new subfolder named after the archive (safest).
+  // Extract an archive on the remote host. Default -> a new subfolder named after the archive (safest).
   function openExtract(name) {
     const fmt = archiveKind(name);
     const stem = name.replace(/\.(tar\.(gz|bz2|xz)|tgz|tbz2|txz|tar|zip|gz)$/i, '') || 'extracted';
-    const m = showModal(`Extract — ${escapeHtml(name)}`, `
+    const m = showModal(`Extract - ${escapeHtml(name)}`, `
       ${serverContextBanner()}
       <div class="text-sm" style="margin-bottom:8px">Detected format: <strong>${escapeHtml(fmt || '?')}</strong></div>
       <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:8px">
@@ -435,14 +435,14 @@ async function mount(content, opts = {}) {
       </div>
       <label style="display:flex;gap:8px;align-items:center;font-weight:400;font-size:13px"><input type="checkbox" id="ex-overwrite"> Overwrite files that already exist</label>
       <label style="display:flex;gap:8px;align-items:center;font-weight:400;font-size:13px"><input type="checkbox" id="ex-del"> Delete the archive after a successful extract</label>
-      <div class="text-xs text-muted" style="margin-top:8px">Extracted on the server — path traversal and out-of-tree symlinks are blocked.</div>
+      <div class="text-xs text-muted" style="margin-top:8px">Extracted on the server - path traversal and out-of-tree symlinks are blocked.</div>
       <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">
         <button class="btn btn-secondary" id="ex-cancel" type="button">Cancel</button>
         <button class="btn btn-primary" id="ex-go" type="button">📦 Extract</button>
       </div>`, []);
     m.overlay.querySelector('#ex-cancel').onclick = () => m.close();
     m.overlay.querySelector('#ex-go').onclick = async (e) => {
-      const b = e.target; b.disabled = true; b.textContent = 'Extracting…';
+      const b = e.target; b.disabled = true; b.textContent = 'Extracting...';
       const here = m.overlay.querySelector('input[name="ex-dest"]:checked').value === 'here';
       const overwrite = m.overlay.querySelector('#ex-overwrite').checked;
       const deleteAfter = m.overlay.querySelector('#ex-del').checked;
@@ -456,19 +456,19 @@ async function mount(content, opts = {}) {
   // ── Explorer / Transfer mode ──────────────────────────────────────────────────────────────────
   // Opt-in two-pane view (opens on demand; the default single-pane File Manager stays unchanged).
   // LEFT  = YOUR COMPUTER: a browsable tree of the folder/files you pick or drop (navigate in & out);
-  //         tick items → upload into the remote folder on the right, structure preserved.
+  //         tick items -> upload into the remote folder on the right, structure preserved.
   // RIGHT = the REMOTE server: browse + download files/folders back to your computer.
   // Cross-platform by design: only browser file APIs (identical on Windows/macOS/Linux and on
-  // Chrome/Edge/Firefox/Safari) and POSIX ('/') paths — a Windows client's back-slashes are normalized
-  // so they never reach the host. A browser can only show what you pick — not the whole disk.
+  // Chrome/Edge/Firefox/Safari) and POSIX ('/') paths - a Windows client's back-slashes are normalized
+  // so they never reach the host. A browser can only show what you pick - not the whole disk.
   let explorerDoClose = null;          // set while the Explorer is open so route-nav can tear it down (leak fix)
   function openExplorer() {
-    if (openExplorer._ov) return;      // single instance — don't fork a second pipeline over a running one
+    if (openExplorer._ov) return;      // single instance - don't fork a second pipeline over a running one
     let rcwd = cwd;                    // remote cwd (RIGHT pane)
     let lprefix = '';                  // local virtual cwd (LEFT pane); '' = root, else ends with '/'
     let busy = false;                  // an upload is in flight
     let dlBusy = false;                // a batch download is in flight
-    let preparing = false;             // upload pre-flight (conflict check/prompt) — re-entrancy lock
+    let preparing = false;             // upload pre-flight (conflict check/prompt) - re-entrancy lock
     let cancelUpload = false, cancelDownload = false;
     const UPLOAD_CONCURRENCY = 7;      // parallel upload workers. Each opens its OWN SSH connection (no pooling
                                        // yet), so keep this well under the remote sshd's MaxStartups (~10) minus
@@ -485,7 +485,7 @@ async function mount(content, opts = {}) {
     const remoteSel = new Map();       // ticked REMOTE child name -> isDir (batch download)
     const madeDirs = new Map();        // remote dir -> mkdir promise (dedupe concurrent ensure-dir across workers)
 
-    // Normalize any path → safe POSIX relative ('\' → '/', drop '.'/empty, reject '..').
+    // Normalize any path -> safe POSIX relative ('\' -> '/', drop '.'/empty, reject '..').
     const toRel = (raw) => {
       const segs = String(raw || '').replace(/\\/g, '/').split('/').filter(s => s && s !== '.');
       return (!segs.length || segs.some(s => s === '..')) ? '' : segs.join('/');
@@ -497,7 +497,7 @@ async function mount(content, opts = {}) {
     ov.innerHTML = `
       <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden">
         <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)">
-          <strong style="font-size:15px">⇆ Explorer — your computer ⇄ ${escapeHtml(ctx.host || ctx.serverId || 'server')}</strong>
+          <strong style="font-size:15px">⇆ Explorer - your computer ⇄ ${escapeHtml(ctx.host || ctx.serverId || 'server')}</strong>
           <div style="flex:1"></div>
           <button class="btn btn-secondary btn-sm" id="fx-close" type="button">✕ Close</button>
         </div>
@@ -515,7 +515,7 @@ async function mount(content, opts = {}) {
             <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
               <span class="text-xs text-muted" id="fx-info" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
               <button class="btn btn-xs btn-ghost" id="fx-clear" type="button">Clear</button>
-              <button class="btn btn-primary btn-sm" id="fx-upload" type="button" disabled>Upload →</button>
+              <button class="btn btn-primary btn-sm" id="fx-upload" type="button" disabled>Upload -> </button>
             </div>
           </div>
           <!-- RIGHT: REMOTE server -->
@@ -566,7 +566,7 @@ async function mount(content, opts = {}) {
       if (!anyActive()) { doClose(); return; }
       if (closeConfirmOpen) return;   // don't stack confirms on repeated Esc/Close
       closeConfirmOpen = true;
-      // The app's showConfirm modal is z-index:1000 — BELOW this overlay (1200) — so it would be hidden
+      // The app's showConfirm modal is z-index:1000 - BELOW this overlay (1200) - so it would be hidden
       // behind the Explorer and freeze the user. Use a dedicated confirm at z:1300 instead.
       const c = document.createElement('div');
       c.className = 'fx-child-dialog';
@@ -602,21 +602,21 @@ async function mount(content, opts = {}) {
       const parts = [];
       if (c.active) parts.push(`${c.active} active`);
       if (c.done) parts.push(`✓ ${c.done}`);
-      if (c.handed) parts.push(`→browser ${c.handed}`);
+      if (c.handed) parts.push(` -> browser ${c.handed}`);
       if (c.error) parts.push(`✗ ${c.error} failed`);
       if (c.cancelled) parts.push(`✕ ${c.cancelled}`);
-      $('fx-tsummary').textContent = `${parts.join('  ·  ')}   /   ${transfers.length} total`;
+      $('fx-tsummary').textContent = `${parts.join(' ,  ')}   /   ${transfers.length} total`;
       const rb = $('fx-tretry');
       if (rb) { rb.style.display = c.error ? '' : 'none'; rb.textContent = `↻ Retry ${c.error} failed`; rb.disabled = anyActive(); }
       $('fx-tlist').innerHTML = transfers.slice().reverse().map(t => {
         const pct = t.total ? Math.min(100, Math.round(t.loaded / t.total * 100)) : (t.status === 'done' ? 100 : 0);
         const col = t.status === 'error' ? 'var(--danger)' : t.status === 'cancelled' ? 'var(--warning)' : (t.status === 'done' || t.status === 'handed') ? 'var(--success,#22c55e)' : 'var(--accent)';
-        const st = t.status === 'active' ? (t.total ? `${pct}% · ${formatBytes(t.loaded)}/${formatBytes(t.total)}` : formatBytes(t.loaded))
-                 : t.status === 'done' ? '✓' : t.status === 'handed' ? '→ browser' : t.status === 'error' ? ('✗ ' + (t.error || 'failed')) : '✕ cancelled';
+        const st = t.status === 'active' ? (t.total ? `${pct}%, ${formatBytes(t.loaded)}/${formatBytes(t.total)}` : formatBytes(t.loaded))
+                 : t.status === 'done' ? '✓' : t.status === 'handed' ? ' -> browser' : t.status === 'error' ? ('✗ ' + (t.error || 'failed')) : '✕ cancelled';
         return `<div style="padding:5px 12px;border-bottom:1px solid var(--border)">
           <div style="display:flex;align-items:center;gap:8px;font-size:12px">
             <span style="flex:none">${t.dir === 'up' ? '⬆' : '⬇'}</span>
-            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(t.name)} → ${escapeHtml(t.dest)}">${escapeHtml(t.name)}</span>
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(t.name)} -> ${escapeHtml(t.dest)}">${escapeHtml(t.name)}</span>
             <span class="text-xs text-muted" style="flex:none">${escapeHtml(st)}</span>
           </div>
           <div style="height:4px;border-radius:3px;background:var(--border);margin-top:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col};transition:width .15s"></div></div>
@@ -651,21 +651,21 @@ async function mount(content, opts = {}) {
       if (anyActive()) window.addEventListener('beforeunload', onBeforeUnload); else window.removeEventListener('beforeunload', onBeforeUnload);
       const up = $('fx-upload');
       if (busy) { up.disabled = false; up.textContent = '✕ Cancel'; }
-      else if (preparing) { up.disabled = true; up.textContent = 'Checking…'; }
-      else { up.textContent = 'Upload →'; up.disabled = !staged.length; }
+      else if (preparing) { up.disabled = true; up.textContent = 'Checking...'; }
+      else { up.textContent = 'Upload -> '; up.disabled = !staged.length; }
       if (!busy && !preparing) {
         const sel = localSel.size;
-        $('fx-info').textContent = sel ? `${sel} selected → ${rcwd}`
-          : staged.length ? `Tick items to upload → ${rcwd}` : 'Pick or drop a folder / files to begin.';
+        $('fx-info').textContent = sel ? `${sel} selected -> ${rcwd}`
+          : staged.length ? `Tick items to upload -> ${rcwd}` : 'Pick or drop a folder / files to begin.';
       }
       const dl = $('fx-download');
       if (dlBusy) { dl.disabled = false; dl.textContent = '✕ Cancel'; }
       else { dl.textContent = '← Download'; dl.disabled = remoteSel.size === 0; }
-      $('fx-rinfo').textContent = dlBusy ? '' : (remoteSel.size ? `${remoteSel.size} selected → your Downloads` : '');
+      $('fx-rinfo').textContent = dlBusy ? '' : (remoteSel.size ? `${remoteSel.size} selected -> your Downloads` : '');
       $('fx-clear').disabled = busy || preparing;
     }
 
-    // ---- LEFT: your computer — a browsable tree DERIVED from the flat staged[] list ----
+    // ---- LEFT: your computer - a browsable tree DERIVED from the flat staged[] list ----
     function localChildren(prefix) {
       const dirs = new Map(); const files = [];
       for (const it of staged) {
@@ -693,11 +693,11 @@ async function mount(content, opts = {}) {
       $('fx-lup').disabled = !lprefix;
       const el = $('fx-local');
       if (!staged.length) {
-        el.innerHTML = `<div class="text-muted" style="text-align:center;padding:34px 12px;font-size:13px;border:2px dashed var(--border);border-radius:8px;margin:6px">Drag a folder or files here, or use “Choose folder / Choose files”.<br><span style="font-size:11px;opacity:.8">A browser only shows what you pick — not your whole disk.</span></div>`;
+        el.innerHTML = `<div class="text-muted" style="text-align:center;padding:34px 12px;font-size:13px;border:2px dashed var(--border);border-radius:8px;margin:6px">Drag a folder or files here, or use “Choose folder / Choose files”.<br><span style="font-size:11px;opacity:.8">A browser only shows what you pick - not your whole disk.</span></div>`;
       } else {
         el.innerHTML = localChildren(lprefix).map(c => {
           const full = lprefix + c.name, fe = escapeHtml(full), nm = escapeHtml(c.name);
-          const meta = c.isDir ? `${c.count} item(s) · ${formatBytes(c.size)}` : formatBytes(c.size);
+          const meta = c.isDir ? `${c.count} item(s), ${formatBytes(c.size)}` : formatBytes(c.size);
           return `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--border)">
             <input type="checkbox" data-lsel="${fe}" ${localSel.has(full) ? 'checked' : ''}>
             ${c.isDir ? `<a href="#" data-lcd="${nm}" style="flex:1;min-width:0;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📁 ${nm}</a>`
@@ -733,10 +733,10 @@ async function mount(content, opts = {}) {
     ['dragleave', 'dragend'].forEach(ev => dz.addEventListener(ev, () => { dz.style.background = ''; }));
     dz.addEventListener('drop', async (e) => {
       e.preventDefault(); e.stopPropagation(); dz.style.background = '';
-      $('fx-info').textContent = 'Reading dropped items…';
+      $('fx-info').textContent = 'Reading dropped items...';
       addLocal(await collectDrop(e.dataTransfer));
     });
-    // Recursively read dropped files/folders (webkitGetAsEntry) → [{file, rel}] with POSIX rel paths.
+    // Recursively read dropped files/folders (webkitGetAsEntry) -> [{file, rel}] with POSIX rel paths.
     function collectDrop(dt) {
       const roots = [];
       if (dt.items && dt.items.length && dt.items[0].webkitGetAsEntry) {
@@ -760,25 +760,25 @@ async function mount(content, opts = {}) {
       });
     }
 
-    // ---- RIGHT: remote browser (navigate, tick → batch download, per-row download) ----
-    // Download with live progress (stream → blob → save). Very large payloads (>512 MB) are handed to the
+    // ---- RIGHT: remote browser (navigate, tick -> batch download, per-row download) ----
+    // Download with live progress (stream -> blob -> save). Very large payloads (>512 MB) are handed to the
     // browser's own downloader (no JS progress) so they are never buffered in memory.
     async function downloadTracked(name, isDir, txid, base) {
       const dir = base != null ? base : rcwd;
       const full = (dir === '/' ? '' : dir) + '/' + name;
       const url = isDir ? `/api/files/download-folder?path=${encodeURIComponent(full)}` : `/api/files/download?path=${encodeURIComponent(full)}`;
       const saveName = isDir ? name + '.tar.gz' : name;
-      // Folders (tar stream carries no Content-Length → can't size-guard) go straight to the browser
+      // Folders (tar stream carries no Content-Length -> can't size-guard) go straight to the browser
       // downloader, so a multi-GB tarball is never buffered into a Blob in memory.
       if (isDir) { download(url, saveName); setTransfer(txid, { status: 'handed', loaded: 1, total: 1 }); return 'handed'; }
       const ctrl = new AbortController(); activeDls.add(ctrl); updateInfo();
       try {
         const res = await fetch(url, { signal: ctrl.signal });
-        if (res.status === 401 || res.status === 403 || res.redirected) { cancelDownload = true; if (window.__authExpired) window.__authExpired(); throw Object.assign(new Error('Session expired — sign in again'), { name: 'AuthError' }); }
+        if (res.status === 401 || res.status === 403 || res.redirected) { cancelDownload = true; if (window.__authExpired) window.__authExpired(); throw Object.assign(new Error('Session expired - sign in again'), { name: 'AuthError' }); }
         if (!res.ok) throw new Error(`Download failed (${res.status})`);
         const total = +(res.headers.get('Content-Length') || 0);
         setTransfer(txid, { total });
-        if (!total || total > 536870912 || !res.body || !res.body.getReader) { // unknown size / >512 MB / no streaming → browser
+        if (!total || total > 536870912 || !res.body || !res.body.getReader) { // unknown size / >512 MB / no streaming -> browser
           ctrl.abort(); download(url, saveName); setTransfer(txid, { status: 'handed', loaded: total || 1, total: total || 1 }); return 'handed';
         }
         const reader = res.body.getReader(); const chunks = []; let loaded = 0;
@@ -795,7 +795,7 @@ async function mount(content, opts = {}) {
       $('fx-crumbs').innerHTML = cr.join('<span style="opacity:.35;margin:0 2px">/</span>');
       $('fx-crumbs').querySelectorAll('[data-fxcrumb]').forEach(a => a.onclick = (e) => { e.preventDefault(); rcwd = a.dataset.fxcrumb; remoteSel.clear(); renderRemote(); });
       const body = $('fx-remote');
-      body.innerHTML = '<div class="text-muted" style="padding:14px">Loading…</div>';
+      body.innerHTML = '<div class="text-muted" style="padding:14px">Loading...</div>';
       try {
         const d = await API.get(`/files?path=${encodeURIComponent(rcwd)}`);
         rcwd = d.path;
@@ -838,7 +838,7 @@ async function mount(content, opts = {}) {
       }
       dlBusy = false; remoteSel.clear(); renderRemote();
       showToast(cancelDownload
-        ? `Download cancelled — ${done + handed} started`
+        ? `Download cancelled - ${done + handed} started`
         : `Downloaded ${done}${handed ? `, ${handed} handed to browser` : ''}${fail ? `, ${fail} failed` : ''}`,
         (cancelDownload || fail) ? 'warning' : 'success', 4000);
     };
@@ -850,8 +850,8 @@ async function mount(content, opts = {}) {
       for (const s of relDir.split('/').filter(Boolean)) {
         const full = (cur === '/' ? '' : cur) + '/' + s;
         // Cache the mkdir PROMISE per dir so concurrent workers dedupe it and parent-before-child holds.
-        // ensure:true → the backend treats an already-existing directory as success (no 500 spam on re-upload).
-        if (!madeDirs.has(full)) madeDirs.set(full, API.post('/files/mkdir', { path: cur, name: s, ensure: true }).catch(() => { /* real error (e.g. name exists as a file) — the file upload will surface it */ }));
+        // ensure:true -> the backend treats an already-existing directory as success (no 500 spam on re-upload).
+        if (!madeDirs.has(full)) madeDirs.set(full, API.post('/files/mkdir', { path: cur, name: s, ensure: true }).catch(() => { /* real error (e.g. name exists as a file) - the file upload will surface it */ }));
         await madeDirs.get(full);
         cur = full;
       }
@@ -872,7 +872,7 @@ async function mount(content, opts = {}) {
         xhr.onload = () => {
           doneXhr();
           if (xhr.status >= 200 && xhr.status < 300) return resolve();
-          if (xhr.status === 401 || xhr.status === 403) { cancelUpload = true; if (window.__authExpired) window.__authExpired(); return reject(Object.assign(new Error('Session expired — sign in again'), { name: 'AuthError' })); }
+          if (xhr.status === 401 || xhr.status === 403) { cancelUpload = true; if (window.__authExpired) window.__authExpired(); return reject(Object.assign(new Error('Session expired - sign in again'), { name: 'AuthError' })); }
           let m; try { m = JSON.parse(xhr.responseText).error; } catch (e2) { /* non-JSON */ }
           reject(new Error(m || `Upload failed (${xhr.status})`));
         };
@@ -881,7 +881,7 @@ async function mount(content, opts = {}) {
         xhr.send(file);
       });
     }
-    // Conflict handling — before an upload, find names that already exist in the destination and let the
+    // Conflict handling - before an upload, find names that already exist in the destination and let the
     // user choose Overwrite / Keep-both (rename) / Skip. Frontend-only (reuses the listing + upload).
     async function detectConflicts(R, jobs) {
       const byDir = new Map();
@@ -892,10 +892,10 @@ async function mount(content, opts = {}) {
         if (!byDir.has(destDir)) byDir.set(destDir, []);
         byDir.get(destDir).push({ j, name: j.rel.slice(cut + 1) });
       }
-      // Only list directories that ACTUALLY EXIST — walk top-down from R and descend into a sub-dir only
+      // Only list directories that ACTUALLY EXIST - walk top-down from R and descend into a sub-dir only
       // when its parent listing already contains it. A brand-new folder is never listed (no SFTP 500 spam),
       // and its files can't conflict anyway. Listings are cached as PROMISES so the per-dir walks run in
-      // PARALLEL and a shared ancestor is fetched once (this is what makes "Checking…" fast — the backend
+      // PARALLEL and a shared ancestor is fetched once (this is what makes "Checking..." fast - the backend
       // opens a fresh SSH connection per request, so serial listings stacked up).
       const listing = new Map();   // dir -> Promise<Set(names) | null>
       const listDir = (dir) => {
@@ -908,7 +908,7 @@ async function mount(content, opts = {}) {
         const relPath = R === '/' ? dir.slice(1) : dir.slice(R.length + 1);
         let curNames = await listDir(R), cur = R;
         for (const seg of relPath.split('/').filter(Boolean)) {
-          if (!curNames || !curNames.has(seg)) return null;   // an ancestor is missing → this dir is new
+          if (!curNames || !curNames.has(seg)) return null;   // an ancestor is missing -> this dir is new
           cur = (cur === '/' ? '' : cur) + '/' + seg;
           curNames = await listDir(cur);
         }
@@ -918,7 +918,7 @@ async function mount(content, opts = {}) {
       const conflicts = new Set();
       await Promise.all([...byDir].map(async ([dir, arr]) => {
         const names = await existingListing(dir);
-        if (!names) return;   // dir doesn't exist → nothing to collide with
+        if (!names) return;   // dir doesn't exist -> nothing to collide with
         existing.set(dir, names);
         for (const { j, name } of arr) if (names.has(name)) conflicts.add(j);
       }));
@@ -946,9 +946,9 @@ async function mount(content, opts = {}) {
           <div style="font-size:15px;font-weight:700;margin-bottom:8px">Files already exist</div>
           <div class="text-sm" style="margin-bottom:12px"><strong>${n}</strong> file(s) already exist in the destination. What should happen?</div>
           <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="btn btn-secondary" data-cf="overwrite" type="button">Overwrite — replace the existing file(s)</button>
-            <button class="btn btn-secondary" data-cf="rename" type="button">Keep both — upload with a new name (e.g. name-1.ext)</button>
-            <button class="btn btn-secondary" data-cf="skip" type="button">Skip — keep the existing file(s), upload the rest</button>
+            <button class="btn btn-secondary" data-cf="overwrite" type="button">Overwrite - replace the existing file(s)</button>
+            <button class="btn btn-secondary" data-cf="rename" type="button">Keep both - upload with a new name (e.g. name-1.ext)</button>
+            <button class="btn btn-secondary" data-cf="skip" type="button">Skip - keep the existing file(s), upload the rest</button>
             <button class="btn btn-ghost" data-cf="cancel" type="button">Cancel the whole upload</button>
           </div></div>`;
         document.body.appendChild(m);
@@ -959,7 +959,7 @@ async function mount(content, opts = {}) {
     }
 
     $('fx-upload').onclick = async () => {
-      if (busy) { cancelUpload = true; activeXhrs.forEach(x => { try { x.abort(); } catch (e) { /* best-effort */ } }); return; }   // in-flight → Cancel all
+      if (busy) { cancelUpload = true; activeXhrs.forEach(x => { try { x.abort(); } catch (e) { /* best-effort */ } }); return; }   // in-flight > Cancel all
       if (preparing || !staged.length) return;   // no double-submit while the pre-flight is running
       const R = rcwd, P = lprefix;
       // ticked immediate children at P; if none ticked, upload every child of the current view
@@ -973,14 +973,14 @@ async function mount(content, opts = {}) {
         for (const it of staged) if (it.rel.startsWith(fp)) jobs.push({ file: it.file, rel: it.rel.slice(P.length) });
       }
       if (!jobs.length) return;
-      preparing = true; updateInfo();             // synchronous lock — blocks re-entry during the awaits below
+      preparing = true; updateInfo();             // synchronous lock - blocks re-entry during the awaits below
       let jobsToRun = jobs;
       try {
         const { conflicts, existing } = await detectConflicts(R, jobs);
-        if (!openExplorer._ov) return;            // modal closed during the await → bail (no ghost upload)
+        if (!openExplorer._ov) return;            // modal closed during the await -> bail (no ghost upload)
         if (conflicts.size) {
           const choice = await askConflict(conflicts.size);
-          if (!openExplorer._ov) return;          // closed during the dialog → bail
+          if (!openExplorer._ov) return;          // closed during the dialog -> bail
           if (choice === 'cancel') jobsToRun = [];
           else if (choice === 'skip') jobsToRun = jobs.filter(j => !conflicts.has(j));
           else if (choice === 'rename') {
@@ -994,7 +994,7 @@ async function mount(content, opts = {}) {
             }
             jobsToRun = jobs.map(j => conflicts.has(j) ? renameJob(R, j, existing) : j);
           }
-          // 'overwrite' → jobsToRun stays = jobs
+          // 'overwrite' -> jobsToRun stays = jobs
         }
       } finally { preparing = false; }
       if (!jobsToRun.length) { updateInfo(); return; }
@@ -1008,16 +1008,16 @@ async function mount(content, opts = {}) {
           const t = addTransfer('up', j.rel, R, { kind: 'up', R, file: j.file, rel: j.rel });
           try { await uploadOneTo(R, j.file, j.rel, t); setTransfer(t, { status: 'done' }); done++; }
           catch (e) {
-            if (cancelUpload || e.name === 'AbortError' || e.name === 'AuthError') { setTransfer(t, { status: 'cancelled' }); if (!warnedPartial) { warnedPartial = true; showToast('⚠ Cancelled — some files may be left partially written on the server', 'warning', 9000); } break; }
+            if (cancelUpload || e.name === 'AbortError' || e.name === 'AuthError') { setTransfer(t, { status: 'cancelled' }); if (!warnedPartial) { warnedPartial = true; showToast('⚠ Cancelled - some files may be left partially written on the server', 'warning', 9000); } break; }
             setTransfer(t, { status: 'error', error: e.message }); fail++; showToast(`${j.rel}: ${e.message}`, 'error', 8000);
           }
-          $('fx-info').textContent = `Uploading ${done + fail}/${total}…`;
+          $('fx-info').textContent = `Uploading ${done + fail}/${total}...`;
         }
       };
       await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, total) }, () => worker()));
       busy = false;
       showToast(cancelUpload
-        ? `Upload cancelled — ${done}/${total} done`
+        ? `Upload cancelled - ${done}/${total} done`
         : `Uploaded ${done}/${total}${fail ? `, ${fail} failed` : ''}`, (cancelUpload || fail) ? 'warning' : 'success');
       localSel.clear(); renderLocal();
       if (rcwd === R) renderRemote();

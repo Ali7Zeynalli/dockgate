@@ -1,6 +1,6 @@
 'use strict';
-// DockGate must start on a brand-new data folder and answer — every background module it starts at boot (scaling,
-// healing, Swarm firewall, agent control…) loads in whatever order index.js gives. Regression: 2.53.1 crashed at
+// DockGate must start on a brand-new data folder and answer - every background module it starts at boot (scaling,
+// healing, Swarm firewall, agent control...) loads in whatever order index.js gives. Regression: 2.53.1 crashed at
 // boot because a module read a table another module had not made yet.
 const test = require('node:test');
 const assert = require('node:assert/strict');

@@ -14,16 +14,16 @@ test('host-logs.isLogFile: only /var/log, no traversal, no shell metachars', () 
   assert.equal(hl.isLogFile('/var/log/fail2ban.log'), true);
   assert.equal(hl.isLogFile('/var/log/nginx/access.log'), true);
   assert.equal(hl.isLogFile('/var/log/syslog'), true);
-  // invalid — outside /var/log
+  // invalid - outside /var/log
   assert.equal(hl.isLogFile('/etc/passwd'), false);
   assert.equal(hl.isLogFile('/var/logs/x'), false, 'prefix must be exactly /var/log/');
-  // invalid — traversal
+  // invalid - traversal
   assert.equal(hl.isLogFile('/var/log/../../etc/shadow'), false);
-  // invalid — injection / metacharacters
+  // invalid - injection / metacharacters
   assert.equal(hl.isLogFile("/var/log/x; rm -rf /"), false);
   assert.equal(hl.isLogFile('/var/log/$(reboot)'), false);
   assert.equal(hl.isLogFile('/var/log/`id`'), false);
-  // invalid — non-absolute / non-string
+  // invalid - non-absolute / non-string
   assert.equal(hl.isLogFile('var/log/syslog'), false);
   assert.equal(hl.isLogFile(null), false);
 });

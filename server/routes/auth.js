@@ -1,4 +1,4 @@
-// Auth endpoints — open (not behind requireAuth): first-run setup, login, logout, status.
+// Auth endpoints - open (not behind requireAuth): first-run setup, login, logout, status.
 // The admin password (scrypt hash + salt) and the setup flag live in the settings table.
 const express = require('express');
 const router = express.Router();
@@ -15,7 +15,7 @@ function isSetupDone() { return getSetting('admin_setup_done') === 'true'; }
 // ---- First-run setup gate ----
 // Until an admin password exists, whoever reaches /setup first becomes admin. So setup from the internet
 // needs a one-time token that only someone with access to the server/container logs can read. Setup from
-// the same machine or a private network (the usual LAN install) needs no token — unless DG_SETUP_TOKEN is
+// the same machine or a private network (the usual LAN install) needs no token - unless DG_SETUP_TOKEN is
 // set, which then is always required.
 const crypto = require('crypto');
 const ipaddr = require('ipaddr.js');
@@ -41,7 +41,7 @@ if (!isSetupDone()) {
   console.log('  └────────────────────────────────────────────────────────────┘\n');
 }
 
-// In-memory login/setup rate limit per source IP (req.ip honours TRUST_PROXY — see server/trust-proxy.js).
+// In-memory login/setup rate limit per source IP (req.ip honours TRUST_PROXY - see server/trust-proxy.js).
 const RL_WINDOW_MS = 15 * 60 * 1000;
 const RL_MAX = 10;
 const rlHits = new Map(); // ip -> { count, resetAt }
@@ -51,26 +51,26 @@ function rateLimited(req, res) {
   let rec = rlHits.get(ip);
   if (!rec || now > rec.resetAt) { rec = { count: 0, resetAt: now + RL_WINDOW_MS }; rlHits.set(ip, rec); }
   rec.count++;
-  if (rec.count > RL_MAX) { res.status(429).json({ error: 'Too many attempts — try again later' }); return true; }
+  if (rec.count > RL_MAX) { res.status(429).json({ error: 'Too many attempts - try again later' }); return true; }
   return false;
 }
 function clearRateLimit(req) { rlHits.delete(req.ip || 'unknown'); }
 
-// GET /api/auth/status — used by the SPA on boot to decide setup vs login vs panel.
+// GET /api/auth/status - used by the SPA on boot to decide setup vs login vs panel.
 router.get('/status', (req, res) => {
   const uid = verifyToken(readSessionToken(req));
   const setupDone = isSetupDone();
   res.json({ authenticated: !!uid, setupDone, ...(setupDone ? {} : { setupTokenRequired: setupTokenRequired(req) }) });
 });
 
-// POST /api/auth/setup — first-run only: set the admin password. Auto-logs-in on success.
+// POST /api/auth/setup - first-run only: set the admin password. Auto-logs-in on success.
 router.post('/setup', (req, res) => {
   if (rateLimited(req, res)) return;
   if (isSetupDone()) return res.status(409).json({ error: 'Already configured' });
   const { password, setupToken } = req.body || {};
   if (setupTokenRequired(req) && !setupTokenOk(setupToken)) {
     logAction({ req, server: 'local', resourceType: 'system', resourceName: 'auth', action: 'auth_setup_denied' });
-    return res.status(403).json({ error: 'Setup token is missing or wrong — find it in the DockGate logs (docker logs <container>).' });
+    return res.status(403).json({ error: 'Setup token is missing or wrong - find it in the DockGate logs (docker logs <container>).' });
   }
   if (!password || String(password).length < MIN_PASSWORD_LEN) {
     return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LEN} characters` });
@@ -84,7 +84,7 @@ router.post('/setup', (req, res) => {
   res.json({ success: true });
 });
 
-// POST /api/auth/login — verify the password, set the session cookie.
+// POST /api/auth/login - verify the password, set the session cookie.
 router.post('/login', (req, res) => {
   if (rateLimited(req, res)) return;
   if (!isSetupDone()) return res.status(409).json({ error: 'Setup required' });
@@ -100,14 +100,14 @@ router.post('/login', (req, res) => {
   res.json({ success: true });
 });
 
-// POST /api/auth/logout — clear the session cookie.
+// POST /api/auth/logout - clear the session cookie.
 router.post('/logout', (req, res) => {
   require('../auth/server-gate').forget(require('../auth/server-gate').keyOfReq(req)); // its unlocked servers lock again
   res.setHeader('Set-Cookie', clearSessionCookie());
   res.json({ success: true });
 });
 
-// POST /api/auth/logout-all — end every session on every device (this one included).
+// POST /api/auth/logout-all - end every session on every device (this one included).
 router.post('/logout-all', (req, res) => {
   const uid = verifyToken(readSessionToken(req));
   if (!uid) return res.status(401).json({ error: 'Not authenticated' });
@@ -117,7 +117,7 @@ router.post('/logout-all', (req, res) => {
   res.json({ success: true });
 });
 
-// POST /api/auth/change-password — requires a valid session; verify the current password, set a new one.
+// POST /api/auth/change-password - requires a valid session; verify the current password, set a new one.
 // (This route lives in the open /api/auth router, so it checks the session itself.)
 router.post('/change-password', (req, res) => {
   const uid = verifyToken(readSessionToken(req));

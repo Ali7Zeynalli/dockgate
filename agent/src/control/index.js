@@ -1,5 +1,5 @@
 // The agent as a local controller. DockGate sends signed rules and commands through a unix socket inside this
-// container (no network port): only someone who can `docker exec` into it — root on the server — can reach it,
+// container (no network port): only someone who can `docker exec` into it - root on the server - can reach it,
 // and only messages signed by the DockGate that installed the agent are taken. The loops keep replicas and heal
 // unhealthy containers by the last rules, also while DockGate is away.
 const fs = require('fs');
@@ -70,7 +70,7 @@ class Controller {
       this.record({ kind: 'rejected', reason: v.reason });
       if (Date.now() - (this.lastRejectNotice || 0) > 600000) { // at most one notice in 10 minutes
         this.lastRejectNotice = Date.now();
-        await this.notify(`🛑 Rejected a command (${v.reason}) — it was not signed by the DockGate that installed this agent.`).catch(() => {});
+        await this.notify(`🛑 Rejected a command (${v.reason}) - it was not signed by the DockGate that installed this agent.`).catch(() => {});
       }
       return { ok: false, reason: v.reason };
     }
@@ -149,7 +149,7 @@ class Controller {
         if (rule.heal) for (const rep of reps) await this.healOne(project, service, rule, rep).catch(e => this.log('[control] heal:', e.message));
         // Under Auto Scaling the number moves; only the minimum is kept.
         const want = rule.auto && rule.auto.mode === 'auto' ? rule.auto.min : rule.replicas;
-        if (rule.keepRunning) { // stopped → started, removed → made again from its kept config
+        if (rule.keepRunning) { // stopped -> started, removed -> made again from its kept config
           const r = await keepAlive({ docker: this.docker, project, service, target: Math.max(1, Number.isInteger(want) ? want : 1), state: (this.state.keepAlive = this.state.keepAlive || {}) }).catch(e => ({ action: 'keep', ok: false, reason: e.message }));
           if (r) {
             this.record({ kind: 'keep', project, service, ...r });
@@ -179,15 +179,15 @@ class Controller {
       await this.docker.getContainer(rep.id).restart({ t: 10 });
       h.restarts = [...(h.restarts || []).filter(t => Date.now() - t < 3600000), Date.now()]; h.fails = 0;
       this.record({ kind: 'heal', action: 'restart', project, service, container: rep.name, ok: true });
-      await this.notify(`🩺 ${rep.name} was unhealthy — restarted (${h.restarts.length} in the last hour).`).catch(() => {});
+      await this.notify(`🩺 ${rep.name} was unhealthy - restarted (${h.restarts.length} in the last hour).`).catch(() => {});
     } else if ((d === 'stop' || d === 'rollback') && !h.stopped) {
       h.stopped = true;
       this.record({ kind: 'heal', action: 'gave up', project, service, container: rep.name, ok: false, reason: `still unhealthy after ${rule.healPerHour} restarts in an hour` });
-      await this.notify(`🛑 ${rep.name} is still unhealthy after ${rule.healPerHour} restarts in an hour — the agent stopped restarting it. Look at its logs.`).catch(() => {});
+      await this.notify(`🛑 ${rep.name} is still unhealthy after ${rule.healPerHour} restarts in an hour - the agent stopped restarting it. Look at its logs.`).catch(() => {});
     } else this.save();
   }
 
-  /** Bring back replicas that are gone — only while the running ones were made with DockGate's override (else: drift, DockGate shows it). */
+  /** Bring back replicas that are gone - only while the running ones were made with DockGate's override (else: drift, DockGate shows it). */
   async keepReplicas(project, service, rule, reps) {
     const key = `${project}/${service}`;
     if (reps.length >= rule.replicas) { delete this.state.short[key]; return; }
@@ -198,14 +198,14 @@ class Controller {
     if (this.state.short[key] < 2) { this.save(); return; } // two checks in a row, so a deploy in between is not mistaken
     const r = await ex.execute('add-replica', { project, service }, { docker: this.docker, rules: this.state.rules });
     this.record({ kind: 'replicas', action: 'add', project, service, ok: r.ok, container: r.container, reason: r.reason });
-    if (r.ok) await this.notify(`🔁 ${project}/${service} had ${reps.length} of ${rule.replicas} replicas — the agent started ${r.container}.`).catch(() => {});
+    if (r.ok) await this.notify(`🔁 ${project}/${service} had ${reps.length} of ${rule.replicas} replicas - the agent started ${r.container}.`).catch(() => {});
   }
 
   start() {
-    if (!this.enabled) { this.log('[control] off — no key from DockGate (update the agent from DockGate to turn it on)'); return; }
+    if (!this.enabled) { this.log('[control] off - no key from DockGate (update the agent from DockGate to turn it on)'); return; }
     this.startSocket();
     this.timer = setInterval(() => this.tick().catch(e => this.log('[control] tick:', e.message)), TICK_MS);
-    this.log(`[control] on — rules v${this.state.rules ? this.state.rules.version : '-'}`);
+    this.log(`[control] on - rules v${this.state.rules ? this.state.rules.version : '-'}`);
   }
   stop() { clearInterval(this.timer); try { this.server && this.server.close(); } catch (e) { /* closed */ } }
 }

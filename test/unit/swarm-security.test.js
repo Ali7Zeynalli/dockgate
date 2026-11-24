@@ -1,5 +1,5 @@
 'use strict';
-// Protection before and after a move to Swarm (server/swarm-security.js) — pure parts, no Docker.
+// Protection before and after a move to Swarm (server/swarm-security.js) - pure parts, no Docker.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs'); const os = require('os'); const path = require('path');
@@ -13,7 +13,7 @@ test('a compose service and its stack form: what the stack file drops shows as w
   const rows = SEC.compareProfiles(SEC.profileOfService(hardened), SEC.profileOfService(stack, { onSwarm: true }));
   const weak = SEC.weakerRows(rows).map(r => r.field).sort();
   assert.deepEqual(weak, ['no-new-privileges', 'published ports']);
-  assert.match(rows.find(r => r.field === 'published ports').why, /10\.0\.0\.5 → 0\.0\.0\.0/);
+  assert.match(rows.find(r => r.field === 'published ports').why, /10\.0\.0\.5 -> 0\.0\.0\.0/);
   assert.equal(rows.find(r => r.field === 'user').verdict, 'same');
 });
 test('DockGate keeps no-new-privileges and seccomp on the Swarm service', async () => {
@@ -27,7 +27,7 @@ test('DockGate keeps no-new-privileges and seccomp on the Swarm service', async 
   const rows = SEC.compareProfiles(SEC.profileOfService(s), SEC.predictOnSwarm({}, k));
   assert.deepEqual(SEC.weakerRows(rows).map(r => r.field), ['AppArmor'], 'only the custom AppArmor profile is lost');
 });
-test('ingress: 0.0.0.0 → every server is a change; one address → every server is weaker', () => {
+test('ingress: 0.0.0.0 -> every server is a change; one address -> every server is weaker', () => {
   const a = SEC.profileOfService({ ports: [{ published: '80', target: 80, mode: 'ingress' }] }); // compose config writes mode: ingress too
   assert.equal(a.ports[0].ip, '0.0.0.0');
   const b = SEC.profileOfService({ ports: [{ published: 80, target: 80, mode: 'ingress' }] }, { onSwarm: true });
@@ -50,7 +50,7 @@ test('a running container reads the same as its compose service', () => {
   const rows = SEC.compareProfiles(SEC.profileOfService(hardened), SEC.profileOfContainer(ct));
   assert.deepEqual(rows.filter(r => r.verdict !== 'same'), []);
 });
-test('privileged → cap_add is not "more capabilities"', () => {
+test('privileged -> cap_add is not "more capabilities"', () => {
   const rows = SEC.compareProfiles(SEC.profileOfService({ privileged: true }), SEC.profileOfService({ cap_add: ['NET_ADMIN'] }, { onSwarm: true }));
   assert.deepEqual(SEC.weakerRows(rows), []);
   assert.equal(rows.find(r => r.field === 'privileged').verdict, 'changed');

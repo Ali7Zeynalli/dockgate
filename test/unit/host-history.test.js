@@ -1,4 +1,4 @@
-// Monitoring → Last 48 hours: DockGate keeps 48 hours of host samples per server and serves 5-minute buckets.
+// Monitoring > Last 48 hours: DockGate keeps 48 hours of host samples per server and serves 5-minute buckets.
 const os = require('node:os'), fs = require('node:fs'), path = require('node:path');
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dockgate-hosthist-test-'));
 const { test } = require('node:test');

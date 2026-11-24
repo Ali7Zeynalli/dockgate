@@ -1,4 +1,4 @@
-// File manager API (Phase 2) — operates on the ACTIVE server (from the header). Remote SSH host → SFTP.
+// File manager API (Phase 2) - operates on the ACTIVE server (from the header). Remote SSH host > SFTP.
 // Local: only the folders shared with DockGate under FILES_ROOT (/host), see file-manager-local.js.
 const express = require('express');
 const router = express.Router();
@@ -10,7 +10,7 @@ const fm = require('../file-manager');
 const fmLocal = require('../file-manager-local');
 
 // The active server's file manager: SFTP for a remote server; for the local machine only the folders shared
-// with DockGate under FILES_ROOT (/host) — see file-manager-local.js. Writes 400/404 and returns null otherwise.
+// with DockGate under FILES_ROOT (/host) - see file-manager-local.js. Writes 400/404 and returns null otherwise.
 function activeRemote(res) {
   const id = dockerService.getActiveServerId();
   if (id === 'local') {
@@ -47,7 +47,7 @@ router.get('/download', async (req, res) => {
   } catch (err) { if (!res.headersSent) res.status(err.statusCode || 500).json({ error: err.message }); else res.end(); }
 });
 
-// Raw-body upload (Content-Type: application/octet-stream) → not JSON-parsed by express.json.
+// Raw-body upload (Content-Type: application/octet-stream) -> not JSON-parsed by express.json.
 router.post('/upload', async (req, res) => {
   const a = activeRemote(res); if (!a) return;
   try {
@@ -91,7 +91,7 @@ router.delete('/', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// Read a file as text for the in-browser editor (binary/oversized → metadata only).
+// Read a file as text for the in-browser editor (binary/oversized -> metadata only).
 // ?sudo=1 reads a file the SSH user may not (root-owned configs), with passwordless sudo.
 router.get('/read', async (req, res) => {
   const a = activeRemote(res); if (!a) return;
@@ -141,7 +141,7 @@ router.get('/tail', async (req, res) => {
   try { res.json(await fx.tail(a, String(req.query.path || ''), req.query.lines, { sudo: req.query.sudo === '1' })); }
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message, code: err.code }); }
 });
-// body { path, content, kind: 'compose' | 'nginx' } → { ok: true | false | null (tool missing), tool, output }
+// body { path, content, kind: 'compose' | 'nginx' } -> { ok: true | false | null (tool missing), tool, output }
 router.post('/check', async (req, res) => {
   const a = activeRemote(res); if (!a) return;
   try {
@@ -153,7 +153,7 @@ router.post('/check', async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-// Permissions: chmod (mode, recursive, sudo) and chown (owner, group, recursive — with sudo on a remote server).
+// Permissions: chmod (mode, recursive, sudo) and chown (owner, group, recursive - with sudo on a remote server).
 router.post('/chmod', async (req, res) => {
   const a = activeRemote(res); if (!a) return;
   try {

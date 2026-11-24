@@ -1,16 +1,15 @@
-// Swarm stacks and moving compose projects to Swarm — phase 4.
+// Swarm stacks and moving compose projects to Swarm - phase 4.
 //
 // A stack is a compose project running on Swarm. Its compose files are never changed: on every deploy
 // DockGate reads them with `docker compose config` (.env filled in, several files merged) and adapts the
-// result in memory — container_name and build removed, restart → deploy.restart_policy, depends_on
-// conditions → a plain list, ports as numbers, networks as attachable overlays — adds the Swarm settings kept
+// result in memory - container_name and build removed, restart -> deploy.restart_policy, depends_on
+// conditions -> a plain list, ports as numbers, networks as attachable overlays - adds the Swarm settings kept
 // in DockGate (replicas, update order, port mode) and runs `docker stack deploy --prune --with-registry-auth`.
 // Volume names stay the same, so the data stays.
 //
-// Moving a project (one at a time): the files are read again (stop if they changed since the plan) →
-// `docker compose down` (volumes stay) → stack deploy under the same name → every service must reach its
+// Moving a project (one at a time): the files are read again (stop if they changed since the plan) -> // `docker compose down` (volumes stay) -> stack deploy under the same name -> every service must reach its
 // replicas and stay up for 30 s (healthy, if it has a health check). If not, DockGate puts it back: stack
-// rm → wait until the stack network is gone → `docker compose up -d`.
+// rm -> wait until the stack network is gone -> `docker compose up -d`.
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { db } = require('./db');
@@ -58,7 +57,7 @@ const qb = {
   put: db.prepare('INSERT OR IGNORE INTO swarm_bridges (server_id, bridge, overlay, created_at) VALUES (?, ?, ?, ?)'),
 };
 const twinName = (bridge) => `${bridge}-swarm`.slice(0, 63);
-/** bridge → overlay twin already made on this server. */
+/** bridge -> overlay twin already made on this server. */
 function twinsMap(sid = serverId()) { return Object.fromEntries(qb.all.all(sid).map(r => [r.bridge, r.overlay])); }
 
 const q = {
@@ -103,7 +102,7 @@ const IGNORED_BY_SWARM = ['security_opt', 'cgroup_parent', 'pid', 'ipc', 'userns
 const CONVERTED = ['mem_limit', 'mem_reservation', 'cpus', 'cpu_quota', 'cpu_period', 'pids_limit', 'shm_size', 'links', 'volumes_from'];
 const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|localhost)$/;
 const HOST_NET = 'host_net'; // the stack's name for Docker's predefined "host" network
-// privileged → the capabilities images of a family usually need (offered in the plan, used only when accepted)
+// privileged -> the capabilities images of a family usually need (offered in the plan, used only when accepted)
 const CAP_HINTS = [
   [/wireguard|wg-easy|wg-portal|wg-access/i, ['NET_ADMIN', 'SYS_MODULE'], 'WireGuard'],
   [/openvpn|tailscale|zerotier|netbird|headscale|gluetun/i, ['NET_ADMIN'], 'VPN'],
@@ -129,15 +128,15 @@ const memSpec = (b) => (b % 1048576 === 0 ? `${b / 1048576}M` : `${b}b`);
 function resourcesOf(s) {
   const limits = {}, reservations = {}, notes = [];
   const mem = bytesOf(s.mem_limit), memRes = bytesOf(s.mem_reservation);
-  if (mem) { limits.memory = memSpec(mem); notes.push(`mem_limit ${mbText(mem)} → memory limit`); }
-  if (memRes) { reservations.memory = memSpec(memRes); notes.push(`mem_reservation ${mbText(memRes)} → memory reservation`); }
+  if (mem) { limits.memory = memSpec(mem); notes.push(`mem_limit ${mbText(mem)} -> memory limit`); }
+  if (memRes) { reservations.memory = memSpec(memRes); notes.push(`mem_reservation ${mbText(memRes)} -> memory reservation`); }
   let cpus = Number(s.cpus);
-  if (!(cpus > 0) && Number(s.cpu_quota) > 0) { cpus = Number(s.cpu_quota) / (Number(s.cpu_period) || 100000); notes.push(`cpu_quota ${s.cpu_quota} / cpu_period ${s.cpu_period || 100000} → ${Math.round(cpus * 100) / 100} CPU limit`); }
-  else if (cpus > 0) notes.push(`cpus ${cpus} → CPU limit`);
+  if (!(cpus > 0) && Number(s.cpu_quota) > 0) { cpus = Number(s.cpu_quota) / (Number(s.cpu_period) || 100000); notes.push(`cpu_quota ${s.cpu_quota} / cpu_period ${s.cpu_period || 100000} -> ${Math.round(cpus * 100) / 100} CPU limit`); }
+  else if (cpus > 0) notes.push(`cpus ${cpus} > CPU limit`);
   if (cpus > 0) limits.cpus = String(Math.round(cpus * 1000) / 1000);
-  if (Number(s.pids_limit) > 0) { limits.pids = Number(s.pids_limit); notes.push(`pids_limit ${s.pids_limit} → pids limit`); }
+  if (Number(s.pids_limit) > 0) { limits.pids = Number(s.pids_limit); notes.push(`pids_limit ${s.pids_limit} -> pids limit`); }
   const shm = bytesOf(s.shm_size);
-  if (shm) notes.push(`shm_size ${mbText(shm)} → a ${mbText(shm)} tmpfs at /dev/shm`);
+  if (shm) notes.push(`shm_size ${mbText(shm)} -> a ${mbText(shm)} tmpfs at /dev/shm`);
   return { limits, reservations, shm, notes };
 }
 /** Extra names each service answers to: its old container_name and the aliases other services gave it with links. */
@@ -164,7 +163,7 @@ const hashOf = (cfg) => crypto.createHash('sha256').update(JSON.stringify(cfg)).
 
 /**
  * Look at a compose project: can it move, and what changes? Returns
- * { project, status: ready|attention|impossible, reasons, services:[…], volumes, hash, location }.
+ * { project, status: ready|attention|impossible, reasons, services:[...], volumes, hash, location }.
  */
 async function analyze(project, { nodes = 1, localImages = null, location = null, settings = null, privilegesOk = false } = {}) {
   const h = helpers();
@@ -210,68 +209,68 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
     const add = (level, text) => f.push({ level, text });
     const hint = s.privileged ? capHint(s.image) : null;
     const capInstead = !!(hint && settings && settings.services && settings.services[name] && settings.services[name].capInstead);
-    if (s.privileged && capInstead) add('warn', `privileged → cap_add ${hint.caps.join(', ')} (accepted): it runs on Swarm without privileged, with only what a ${hint.family} image needs. If it does not start, the move is put back`);
-    else if (s.privileged && hint) add('bad', `privileged: Swarm services can not be privileged — it stays in Compose. A ${hint.family} image usually needs only cap_add ${hint.caps.join(', ')}: choose "Run with cap_add" in the plan to move it`);
-    else if (s.privileged) add('bad', 'privileged: Swarm services can not be privileged — it stays in Compose. Often only some rights are needed: give them with cap_add (e.g. NET_ADMIN) and it can move');
-    if (s.devices && s.devices.length) add('bad', 'devices: Swarm services can not use host devices — it stays in Compose (a GPU can use Swarm generic resources instead)');
-    if (s.network_mode === 'host') add('warn', 'network_mode: host → the service joins Docker\'s host network on Swarm (same as before); it can have no other network and no published ports');
-    else if (s.network_mode && s.network_mode !== 'bridge') add('bad', `network_mode: ${s.network_mode} shares another container's network — Swarm has no such mode, so it stays in Compose`);
+    if (s.privileged && capInstead) add('warn', `privileged -> cap_add ${hint.caps.join(', ')} (accepted): it runs on Swarm without privileged, with only what a ${hint.family} image needs. If it does not start, the move is put back`);
+    else if (s.privileged && hint) add('bad', `privileged: Swarm services can not be privileged - it stays in Compose. A ${hint.family} image usually needs only cap_add ${hint.caps.join(', ')}: choose "Run with cap_add" in the plan to move it`);
+    else if (s.privileged) add('bad', 'privileged: Swarm services can not be privileged - it stays in Compose. Often only some rights are needed: give them with cap_add (e.g. NET_ADMIN) and it can move');
+    if (s.devices && s.devices.length) add('bad', 'devices: Swarm services can not use host devices - it stays in Compose (a GPU can use Swarm generic resources instead)');
+    if (s.network_mode === 'host') add('warn', 'network_mode: host -> the service joins Docker\'s host network on Swarm (same as before); it can have no other network and no published ports');
+    else if (s.network_mode && s.network_mode !== 'bridge') add('bad', `network_mode: ${s.network_mode} shares another container's network - Swarm has no such mode, so it stays in Compose`);
     let image = s.image || null;
     const push = settings && settings.build && settings.build.registryId ? (() => { try { return require('./swarm-build').registryById(settings.build.registryId); } catch (e) { return null; } })() : null;
     if (s.build && push) {
       const ref = require('./swarm-build').repoFor(push, project, name);
       image = `${ref}:<time>`;
-      add('info', `build: built with Compose and pushed to ${push.name || push.server_address} as ${ref}:<time> on every move and Redeploy — every server pulls it from there`);
+      add('info', `build: built with Compose and pushed to ${push.name || push.server_address} as ${ref}:<time> on every move and Redeploy - every server pulls it from there`);
     } else if (s.build) {
       const built = `${project}-${name}`;
       if (!image) {
-        if (nodes > 1) add('bad', 'build: without image — on several servers the image must be in a registry: choose one under "Build & push" in the plan (Deploy → Registries holds the logins)');
+        if (nodes > 1) add('bad', 'build: without image - on several servers the image must be in a registry: choose one under "Build & push" in the plan (Deploy > Registries holds the logins)');
         else if (localImages && localImages.has(built)) { image = built; add('warn', `build: the image built by Compose (${built}) is used; Swarm does not build`); }
-        else add('bad', `build: without image and no built image ${built} here — build it first (Compose → Build)`);
-      } else add('warn', `build: Swarm does not build — the image ${image} is used${nodes > 1 ? ' (it must be in a registry for the other servers — or choose one under "Build & push" in the plan)' : ''}`);
+        else add('bad', `build: without image and no built image ${built} here - build it first (Compose > Build)`);
+      } else add('warn', `build: Swarm does not build - the image ${image} is used${nodes > 1 ? ' (it must be in a registry for the other servers - or choose one under "Build & push" in the plan)' : ''}`);
     }
-    if (s.container_name && s.container_name !== name) add('info', `container_name ${s.container_name}: Swarm names tasks ${project}_${name}.1 …, but ${s.container_name} stays a name other services reach it by`);
+    if (s.container_name && s.container_name !== name) add('info', `container_name ${s.container_name}: Swarm names tasks ${project}_${name}.1 ..., but ${s.container_name} stays a name other services reach it by`);
     for (const l of s.links || []) { const [svc, alias] = String(l).split(':'); if (alias && alias !== svc) add('info', `links ${l}: ${svc} also answers as ${alias}`); }
     for (const vf of s.volumes_from || []) {
       const src = String(vf).split(':')[0];
-      if (/^container:/.test(String(vf))) add('warn', `volumes_from ${vf}: a container outside the project — not possible on Swarm, mount its volumes by name instead`);
+      if (/^container:/.test(String(vf))) add('warn', `volumes_from ${vf}: a container outside the project - not possible on Swarm, mount its volumes by name instead`);
       else add('info', `volumes_from ${src}: the volumes of ${src} are mounted here too, and both stay on this server`);
     }
     for (const [net, v] of Object.entries(s.networks || {})) {
       const ip = v && (v.ipv4_address || v.ipv6_address);
       if (!ip) continue;
       const users = Object.entries(cfg.services || {}).filter(([n2, s2]) => n2 !== name && JSON.stringify(s2.environment || {}).includes(ip)).map(([n2]) => n2);
-      add('warn', `fixed address ${ip} on ${net}: Swarm gives addresses itself, so it is dropped — reach it by name (${name})${users.length ? `. ${users.join(', ')} use${users.length === 1 ? 's' : ''} ${ip} in environment: change it to ${name}` : ''}`);
+      add('warn', `fixed address ${ip} on ${net}: Swarm gives addresses itself, so it is dropped - reach it by name (${name})${users.length ? `. ${users.join(', ')} use${users.length === 1 ? 's' : ''} ${ip} in environment: change it to ${name}` : ''}`);
     }
     const res = resourcesOf(s);
     for (const n of res.notes) add('info', n);
     if (s.depends_on && Object.keys(s.depends_on).length) {
       const healthy = Object.entries(s.depends_on).filter(([, d]) => d && d.condition === 'service_healthy').map(([k]) => k);
-      add('info', `depends_on ${Object.keys(s.depends_on).join(', ')}: on the move DockGate starts it after ${Object.keys(s.depends_on).length === 1 ? 'that service runs' : 'those run'}${healthy.length ? ` (${healthy.join(', ')} healthy)` : ''}. Later, when a task restarts, Swarm does not wait — the app should retry its connections`);
+      add('info', `depends_on ${Object.keys(s.depends_on).join(', ')}: on the move DockGate starts it after ${Object.keys(s.depends_on).length === 1 ? 'that service runs' : 'those run'}${healthy.length ? ` (${healthy.join(', ')} healthy)` : ''}. Later, when a task restarts, Swarm does not wait - the app should retry its connections`);
     }
-    if (s.restart) add('info', `restart: ${s.restart} → restart policy ${restartPolicy(s.restart).condition}`);
+    if (s.restart) add('info', `restart: ${s.restart} -> restart policy ${restartPolicy(s.restart).condition}`);
     for (const p of s.ports || []) {
       const sc = portScope(p);
-      if (sc === 'local') add('warn', `port ${p.host_ip}:${p.published}: only this server could reach it. On Swarm it is not published — other services reach it inside as ${name}:${p.target}. If something on the server itself needs it, choose "this server only"`);
-      else if (sc === 'address') add('warn', `port ${p.host_ip}:${p.published}: tied to one address. Swarm can not bind an address, so it is published on this server only (host mode) — allow it only from that network in the firewall`);
+      if (sc === 'local') add('warn', `port ${p.host_ip}:${p.published}: only this server could reach it. On Swarm it is not published - other services reach it inside as ${name}:${p.target}. If something on the server itself needs it, choose "this server only"`);
+      else if (sc === 'address') add('warn', `port ${p.host_ip}:${p.published}: tied to one address. Swarm can not bind an address, so it is published on this server only (host mode) - allow it only from that network in the firewall`);
     }
     if (isDatabase(image)) add('warn', 'database: stays at 1 replica');
     const ignored = IGNORED_BY_SWARM.filter(k => k !== 'security_opt' && s[k] !== undefined && s[k] !== null && !(Array.isArray(s[k]) && !s[k].length));
-    if (ignored.length) add('warn', `Swarm has no place for ${ignored.join(', ')} — ${ignored.length === 1 ? 'it is' : 'they are'} left out`);
+    if (ignored.length) add('warn', `Swarm has no place for ${ignored.join(', ')} - ${ignored.length === 1 ? 'it is' : 'they are'} left out`);
     const binds = (s.volumes || []).filter(v => v.type === 'bind');
     const vols = (s.volumes || []).filter(v => v.type === 'volume');
     if (nodes > 1 && (binds.length || vols.length)) add('info', 'has data on this server: it is kept on this server (placement rule)');
-    for (const sec of [...(s.secrets || []), ...(s.configs || [])]) { const top = (cfg.secrets || {})[sec.source] || (cfg.configs || {})[sec.source]; if (top && top.file) add('info', `secret/config ${sec.source} from ${top.file}: DockGate reads the file${r.remote ? ' over SSH' : ''} and makes it a Swarm object named by its content — a new version when the file changes, so Redeploy never fails on it`); }
+    for (const sec of [...(s.secrets || []), ...(s.configs || [])]) { const top = (cfg.secrets || {})[sec.source] || (cfg.configs || {})[sec.source]; if (top && top.file) add('info', `secret/config ${sec.source} from ${top.file}: DockGate reads the file${r.remote ? ' over SSH' : ''} and makes it a Swarm object named by its content - a new version when the file changes, so Redeploy never fails on it`); }
     for (const net of Object.keys(s.networks || {})) {
       const n = (cfg.networks || {})[net];
       if (!n || n.external || !LAN_DRIVERS.includes(n.driver)) continue;
       const sub = (((n.ipam || {}).config) || [])[0] || {};
-      if (!sub.subnet) add('bad', `network ${net} (${n.driver}) has no subnet in ipam — Swarm needs one to make it on every server; it stays in Compose`);
-      else add('info', `network ${net} (${n.driver} on ${(n.driver_opts || {}).parent || 'the default interface'}, ${sub.subnet}): DockGate makes it on every server as a config-only network and the stack joins it${nodes > 1 ? ' — the interface must have that name on each server' : ''}`);
+      if (!sub.subnet) add('bad', `network ${net} (${n.driver}) has no subnet in ipam - Swarm needs one to make it on every server; it stays in Compose`);
+      else add('info', `network ${net} (${n.driver} on ${(n.driver_opts || {}).parent || 'the default interface'}, ${sub.subnet}): DockGate makes it on every server as a config-only network and the stack joins it${nodes > 1 ? ' - the interface must have that name on each server' : ''}`);
     }
     if (s.environment && Object.keys(s.environment).length) add('info', `environment (${Object.keys(s.environment).length}) taken from the files and .env`);
     const secretish = Object.keys(s.environment || {}).filter(k => /(PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|PRIVATE_KEY)$/i.test(k) && !/_FILE$/i.test(k));
-    if (secretish.length) add('info', `${secretish.join(', ')} look${secretish.length === 1 ? 's' : ''} like a password in plain environment. If the image reads ${secretish[0]}_FILE (postgres, mysql and many others do), it can become a Swarm secret later (Secrets & configs) — DockGate does not change it by itself.`);
+    if (secretish.length) add('info', `${secretish.join(', ')} look${secretish.length === 1 ? 's' : ''} like a password in plain environment. If the image reads ${secretish[0]}_FILE (postgres, mysql and many others do), it can become a Swarm secret later (Secrets & configs) - DockGate does not change it by itself.`);
     // Protection: the same on Swarm, or weaker? Weaker keeps the service in Compose unless "move anyway" was chosen.
     const otherBad = f.some(x => x.level === 'bad');
     let secRows = [], weaker = [];
@@ -279,13 +278,13 @@ async function analyze(project, { nodes = 1, localImages = null, location = null
       const kept = privilegesOk ? await SEC.privilegesFor(s, { cwd: r.cwd, readFile }) : { privileges: null, kept: [], lost: [] };
       if (!privilegesOk && (s.security_opt || []).length) add('warn', 'security_opt: this Docker is older than 25 (API 1.44), so DockGate can not put it back on the Swarm service');
       if (kept.privileges) out.privileges[name] = kept.privileges;
-      if (kept.kept.length) add('info', `kept on Swarm: ${kept.kept.join(', ')} — stack files drop security_opt, so DockGate sets ${kept.kept.length === 1 ? 'it' : 'them'} on the Swarm service itself`);
+      if (kept.kept.length) add('info', `kept on Swarm: ${kept.kept.join(', ')} - stack files drop security_opt, so DockGate sets ${kept.kept.length === 1 ? 'it' : 'them'} on the Swarm service itself`);
       secRows = SEC.compareProfiles(SEC.profileOfService(s), SEC.predictOnSwarm(onSwarm.services[name], kept));
       weaker = SEC.weakerRows(secRows);
       out.security[name] = secRows;
       const anyway = !!(settings && settings.services && settings.services[name] && settings.services[name].moveAnyway);
-      for (const w of weaker) add(anyway ? 'warn' : 'bad', `less protected on Swarm — ${w.field}: ${w.before} → ${w.after}${w.why ? ` (${w.why})` : ''}${anyway ? ' — moving anyway, as chosen' : ' — it stays in Compose unless you choose "Move anyway"'}`);
-      for (const c of secRows.filter(x => x.verdict === 'changed')) add('info', `${c.field}: ${c.before} → ${c.after}${c.why ? ` (${c.why})` : ''}`);
+      for (const w of weaker) add(anyway ? 'warn' : 'bad', `less protected on Swarm - ${w.field}: ${w.before} -> ${w.after}${w.why ? ` (${w.why})` : ''}${anyway ? ' - moving anyway, as chosen' : ' - it stays in Compose unless you choose "Move anyway"'}`);
+      for (const c of secRows.filter(x => x.verdict === 'changed')) add('info', `${c.field}: ${c.before} -> ${c.after}${c.why ? ` (${c.why})` : ''}`);
     }
     const stays = f.some(x => x.level === 'bad'); // this service can not run on Swarm: it stays in Compose
     if (!stays && out.status === 'ready' && f.some(x => x.level === 'warn')) out.status = 'attention';
@@ -353,7 +352,7 @@ function adapt(cfg, settings = {}, ctx = {}) {
     for (const k of IGNORED_BY_SWARM) delete s[k];
     // /dev/shm: Swarm has no shm_size; a tmpfs of that size does the same
     if (res.shm && !(s.volumes || []).some(v => v.target === '/dev/shm')) (s.volumes = s.volumes || []).push({ type: 'tmpfs', target: '/dev/shm', tmpfs: { size: res.shm } });
-    // network_mode: host → Docker's predefined host network (no other network, no published ports)
+    // network_mode: host > Docker's predefined host network (no other network, no published ports)
     if (s0.network_mode === 'host') { delete s.network_mode; s.networks = { [HOST_NET]: {} }; delete s.ports; usesHostNet = true; }
     else if (s.network_mode === 'bridge') delete s.network_mode;
     // fixed addresses are Swarm's to give; old container names and link aliases stay reachable as aliases
@@ -410,7 +409,7 @@ function adapt(cfg, settings = {}, ctx = {}) {
     if (LAN_DRIVERS.includes(n.driver) && ctx.stackName) { out.networks[k] = { external: true, name: lanNetName(ctx.stackName, k) }; continue; } // made by DockGate (ensureLanNets)
     if (n.external) {
       const twin = ctx.twins && ctx.twins[n.name || k];
-      out.networks[k] = twin ? { external: true, name: twin } : clean(n); // a shared Compose bridge → its overlay twin
+      out.networks[k] = twin ? { external: true, name: twin } : clean(n); // a shared Compose bridge -> its overlay twin
       continue;
     }
     delete n.ipam; if (n.driver === 'bridge' || !n.driver) n.driver = 'overlay';
@@ -482,8 +481,8 @@ async function stackRemove(name, log) {
   let services;
   try { services = await c.listServices({ filters: stackFilter(name) }); }
   catch (e) {
-    // The swarm itself is gone (left outside DockGate): so is the stack — nothing to remove.
-    if (e.statusCode === 503 || /not part of a swarm|not a swarm manager/i.test(swarm.dockerMsg(e) || '')) { log('  the server is not in a swarm any more — the stack is already gone'); return; }
+    // The swarm itself is gone (left outside DockGate): so is the stack - nothing to remove.
+    if (e.statusCode === 503 || /not part of a swarm|not a swarm manager/i.test(swarm.dockerMsg(e) || '')) { log('  the server is not in a swarm any more - the stack is already gone'); return; }
     throw e;
   }
   for (const s of services) { await c.getService(s.ID).remove().catch(() => {}); log(`  removed service ${s.Spec.Name}`); }
@@ -497,7 +496,7 @@ async function stackRemove(name, log) {
     for (const n of nets) await c.getNetwork(n.Id).remove().catch(() => {});
     await sleep(2000);
   }
-  throw new Error('The stack network was not removed in 2 minutes — tasks may still be shutting down');
+  throw new Error('The stack network was not removed in 2 minutes - tasks may still be shutting down');
 }
 
 /**
@@ -507,7 +506,7 @@ async function stackRemove(name, log) {
 async function verify(name, log, { since = Date.now(), timeoutMs = 180000 } = {}) {
   const c = dockerService.docker;
   const t0 = Date.now();
-  log(`Waiting for every service of ${name} to run…`);
+  log(`Waiting for every service of ${name} to run...`);
   for (;;) {
     const services = await c.listServices({ filters: stackFilter(name), status: true });
     if (!services.length) throw new Error('The stack has no services');
@@ -522,7 +521,7 @@ async function verify(name, log, { since = Date.now(), timeoutMs = 180000 } = {}
     await sleep(2000);
   }
   const ready = Date.now();
-  log(`✓ Every service runs (${Math.round((ready - t0) / 1000)}s). Watching for ${Math.round(WATCH_MS() / 1000)}s…`);
+  log(`✓ Every service runs (${Math.round((ready - t0) / 1000)}s). Watching for ${Math.round(WATCH_MS() / 1000)}s...`);
   while (Date.now() - ready < WATCH_MS()) {
     await sleep(2000);
     const tasks = await c.listTasks({ filters: stackFilter(name) });
@@ -562,19 +561,19 @@ async function waitServices(name, names, log, { since = Date.now(), timeoutMs = 
     if (failed) throw new Error(`${(services.find(s => s.ID === failed.ServiceID) || { Spec: { Name: '?' } }).Spec.Name} failed while starting: ${failed.Status.Err || failed.Status.State}`);
     const notReady = services.filter(s => s.ServiceStatus && s.ServiceStatus.RunningTasks < s.ServiceStatus.DesiredTasks);
     if (services.length === want.size && !notReady.length) return;
-    if (Date.now() - t0 > timeoutMs) throw new Error(`not running (healthy) in time: ${notReady.map(s => s.Spec.Name).join(', ') || [...want].join(', ')} — what depends on it can not start`);
+    if (Date.now() - t0 > timeoutMs) throw new Error(`not running (healthy) in time: ${notReady.map(s => s.Spec.Name).join(', ') || [...want].join(', ')} - what depends on it can not start`);
     await sleep(2000);
   }
 }
 /**
  * First deploy in the order of depends_on (Swarm starts every service at once): the services that depend on
  * others start with 0 replicas, then each level is raised once the one before runs (healthy, if it has a check).
- * Only for a new stack — a redeploy keeps everything running.
+ * Only for a new stack - a redeploy keeps everything running.
  */
 async function deployInOrder(name, stack, log, opts = {}) {
   const levels = startLevels(stack);
   if (!levels || levels.length < 2) return stackDeploy(name, stack, log);
-  log(`Starting in the order of depends_on: ${levels.map(l => l.join(' + ')).join(' → ')}`);
+  log(`Starting in the order of depends_on: ${levels.map(l => l.join(' + ')).join(' -> ')}`);
   const staged = JSON.parse(JSON.stringify(stack));
   const held = new Set(levels.slice(1).flat().filter(n => (staged.services[n].deploy || {}).mode !== 'global'));
   for (const n of held) staged.services[n].deploy.replicas = 0;
@@ -582,7 +581,7 @@ async function deployInOrder(name, stack, log, opts = {}) {
   // Raise each level by its replica count only: a second stack deploy would touch (and may restart) the rest.
   const c = dockerService.docker;
   for (let i = 1; i < levels.length; i++) {
-    log(`Waiting for ${levels[i - 1].join(', ')} before ${levels[i].join(', ')}…`);
+    log(`Waiting for ${levels[i - 1].join(', ')} before ${levels[i].join(', ')}...`);
     await waitServices(name, levels[i - 1], log, opts);
     for (const n of levels[i]) {
       if (!held.has(n)) continue;
@@ -590,7 +589,7 @@ async function deployInOrder(name, stack, log, opts = {}) {
       const svc = await c.getService(`${name}_${n}`).inspect();
       const spec = { ...svc.Spec, Mode: { Replicated: { Replicas: want } } };
       await c.getService(svc.ID).update({ version: svc.Version.Index, ...spec });
-      log(`  ${name}_${n} → ${want} replica${want === 1 ? '' : 's'}`);
+      log(`  ${name}_${n} -> ${want} replica${want === 1 ? '' : 's'}`);
     }
   }
 }
@@ -673,7 +672,7 @@ async function connectStaying(project, stackName, stays, log) {
   for (const ct of cts) {
     const svc = ct.Labels['com.docker.compose.service'];
     if (!stays.includes(svc)) continue;
-    if (ct.HostConfig && ct.HostConfig.NetworkMode === 'host') { log(`  ${svc}: host network — it reaches the stack through published ports only`); continue; }
+    if (ct.HostConfig && ct.HostConfig.NetworkMode === 'host') { log(`  ${svc}: host network - it reaches the stack through published ports only`); continue; }
     for (const n of nets) {
       if (((ct.NetworkSettings || {}).Networks || {})[n.Name]) continue;
       try { await c.getNetwork(n.Id).connect({ Container: ct.Id, EndpointConfig: { Aliases: [svc] } }); log(`  ${svc} connected to ${n.Name}`); }
@@ -691,10 +690,10 @@ async function netByName(name) {
 async function ensureTwin(bridge, encrypt, log) {
   const twin = twinName(bridge);
   const have = await netByName(twin);
-  if (have && have.Driver !== 'overlay') throw new Error(`A network ${twin} already exists and is not an overlay — rename or remove it first`);
+  if (have && have.Driver !== 'overlay') throw new Error(`A network ${twin} already exists and is not an overlay - rename or remove it first`);
   if (!have) {
     await dockerService.docker.createNetwork({ Name: twin, Driver: 'overlay', Attachable: true, CheckDuplicate: true, ...(encrypt ? { Options: { encrypted: '' } } : {}), Labels: { 'dockgate.twin-of': bridge } });
-    log(`  created overlay ${twin} — the Swarm twin of ${bridge}`);
+    log(`  created overlay ${twin} - the Swarm twin of ${bridge}`);
   }
   qb.put.run(serverId(), bridge, twin, Date.now());
   return twin;
@@ -797,7 +796,7 @@ async function ensureLanNets(cfg, stackName, ctx, log) {
     const sub = (((n.ipam || {}).config) || [])[0] || {};
     const IPAM = { Driver: 'default', Config: [{ Subnet: sub.subnet, ...(sub.gateway ? { Gateway: sub.gateway } : {}), ...(sub.ip_range ? { IPRange: sub.ip_range } : {}) }] };
     for (const s of servers.servers) {
-      if (!s.row) throw new Error(`network ${key}: server ${s.hostname} is not in DockGate, so its config-only network can not be made — add it in Servers`);
+      if (!s.row) throw new Error(`network ${key}: server ${s.hostname} is not in DockGate, so its config-only network can not be made - add it in Servers`);
       const c = s.row.id === 'local' || s.row.type === 'local' ? dockerService.createLocalClient() : (s.row.id === serverId() ? dockerService.docker : dockerService.createSshClient(s.row));
       const have = await c.listNetworks({ filters: JSON.stringify({ name: [cfgName] }) });
       if (!have.some(x => x.Name === cfgName)) {
@@ -886,13 +885,13 @@ async function securityCheck(stackName, snap, planned, log) {
   const failed = [], rows = {};
   for (const [svc, b] of Object.entries(snap)) {
     const a = now[svc];
-    if (!a) { log(`  ${svc}: its task runs on another server — checked by plan only`); continue; }
+    if (!a) { log(`  ${svc}: its task runs on another server - checked by plan only`); continue; }
     const cmp = SEC.compareProfiles(b.profile, a.profile);
     rows[svc] = cmp.filter(x => x.verdict !== 'same');
     const allowed = new Set(SEC.weakerRows((planned && planned[svc]) || []).map(x => x.field));
     const bad = SEC.weakerRows(cmp).filter(x => !allowed.has(x.field));
-    for (const x of bad) failed.push(`${svc}: ${x.field} ${x.before} → ${x.after}`);
-    if (b.image !== a.image) log(`  ${svc}: runs image ${String(a.image).slice(7, 19)} (${String(a.imageName).split('@')[0]}); it ran ${String(b.image).slice(7, 19)} in Compose — pulled again, or built and pushed`);
+    for (const x of bad) failed.push(`${svc}: ${x.field} ${x.before} -> ${x.after}`);
+    if (b.image !== a.image) log(`  ${svc}: runs image ${String(a.image).slice(7, 19)} (${String(a.imageName).split('@')[0]}); it ran ${String(b.image).slice(7, 19)} in Compose - pulled again, or built and pushed`);
     if (NGINX.test(String(a.imageName).replace(/^docker\.io\//, '').replace(/^library\//, ''))) {
       const t = await execIn(a.id, ['nginx', '-t']).catch(e => ({ code: 1, out: e.message }));
       if (t.code !== 0) failed.push(`${svc}: nginx -t fails in the Swarm task (${t.out.split('\n').pop()})`);
@@ -931,14 +930,14 @@ async function startMove(plans, { sourceIp } = {}) {
         if (isOnSwarm(p, sid)) throw new Error('already runs on Swarm');
         const a = await analyze(p, { nodes: ctx.nodes, localImages: ctx.localImages, settings: plan.settings || {}, privilegesOk: ctx.privilegesOk });
         if (a.status === 'impossible') throw new Error(a.reasons.concat(a.services.flatMap(s => s.findings.filter(f => f.level === 'bad').map(f => `${s.name}: ${f.text}`))).join('; '));
-        if (plan.hash && a.hash !== plan.hash) { res.status = 'changed'; throw new Error('the compose files changed after the plan was made — review it again'); }
+        if (plan.hash && a.hash !== plan.hash) { res.status = 'changed'; throw new Error('the compose files changed after the plan was made - review it again'); }
         r = { files: a.location.files, cwd: a.location.cwd, remote: a.location.remote, server: a.location.serverId ? require('./db').stmts.getServer.get(a.location.serverId) : null };
         partial = a.status === 'partial' ? { project: p, services: a.services.filter(x => !x.stays).map(x => x.name), stays: a.stays } : null;
-        if (partial && !partial.services.length) throw new Error('nothing moves — every service would be less protected on Swarm (choose "Move anyway" for the ones that may)');
+        if (partial && !partial.services.length) throw new Error('nothing moves - every service would be less protected on Swarm (choose "Move anyway" for the ones that may)');
         stackName = partial ? `${p}-swarm` : p;
         if (partial) {
           if (q.get.get(sid, stackName) || (await dockerService.docker.listServices({ filters: stackFilter(stackName) })).length) throw new Error(`a stack named ${stackName} already exists`);
-          log(`Part of ${p} moves: ${partial.services.join(', ')} → stack ${stackName}. ${partial.stays.join(', ')} stay${partial.stays.length === 1 ? 's' : ''} in Compose and ${partial.stays.length === 1 ? 'is' : 'are'} connected to the stack network.`);
+          log(`Part of ${p} moves: ${partial.services.join(', ')} -> stack ${stackName}. ${partial.stays.join(', ')} stay${partial.stays.length === 1 ? 's' : ''} in Compose and ${partial.stays.length === 1 ? 'is' : 'are'} connected to the stack network.`);
         }
         const images = {};
         for (const s of a.services) if (s.image && !(a.cfg.services[s.name] || {}).image) images[s.name] = s.image;
@@ -976,7 +975,7 @@ async function startMove(plans, { sourceIp } = {}) {
         sk('secure', 'running', 'check the Swarm tasks are protected as before');
         const report = await securityCheck(stackName, snap, a.security, log);
         res.security = report;
-        if (report.failed.length) throw new Error(`less protected on Swarm than planned — ${report.failed.join('; ')}`);
+        if (report.failed.length) throw new Error(`less protected on Swarm than planned - ${report.failed.join('; ')}`);
         sk('secure', 'done');
         if (partial) { sk('connect', 'running', 'connect the services that stay in Compose'); await connectStaying(p, stackName, partial.stays, log); sk('connect', 'done'); }
         await pruneFileObjects(stackName, log).catch(() => {});
@@ -1002,7 +1001,7 @@ async function startMove(plans, { sourceIp } = {}) {
           } catch (u) {
             sk('back', 'failed');
             res.status = 'failed'; res.error += `; putting it back failed: ${u.message}`;
-            log(`✗ putting ${p} back failed: ${u.message} — run docker compose up -d in its folder`);
+            log(`✗ putting ${p} back failed: ${u.message} - run docker compose up -d in its folder`);
           }
         } else if (res.status !== 'changed') res.status = 'skipped';
         if (deployId) q.endDeploy.run(res.status === 'rolled_back' ? 'rolled_back' : 'failed', res.error, downAt ? Date.now() - downAt : null, Date.now(), deployId);
@@ -1012,7 +1011,7 @@ async function startMove(plans, { sourceIp } = {}) {
     }
     const moved = job.result.projects.filter(x => x.status === 'moved').length;
     log(`\n${moved} of ${plans.length} project${plans.length > 1 ? 's' : ''} moved.`);
-    finish(job, moved === plans.length ? null : new Error(`${plans.length - moved} project${plans.length - moved > 1 ? 's were' : ' was'} not moved — see the report`));
+    finish(job, moved === plans.length ? null : new Error(`${plans.length - moved} project${plans.length - moved > 1 ? 's were' : ' was'} not moved - see the report`));
   })();
   return job;
 }
@@ -1108,7 +1107,7 @@ function imagesForBuilt(cfg, project, ctx) {
   return images;
 }
 
-/** Move a stack back to Compose: stack rm → wait for its network → compose up -d. */
+/** Move a stack back to Compose: stack rm -> wait for its network -> compose up -d. */
 async function startMoveBack(name, { sourceIp } = {}) {
   const sid = serverId();
   const row = q.get.get(sid, name);
@@ -1140,7 +1139,7 @@ async function startMoveBack(name, { sourceIp } = {}) {
       for (const [svcName, b] of Object.entries(before)) {
         if (!after[svcName]) continue;
         const w = require('./swarm-security').weakerRows(require('./swarm-security').compareProfiles(b.profile, after[svcName].profile));
-        for (const x of w) { backRows.push(`${svcName}: ${x.field} ${x.before} → ${x.after}`); log(`  ! ${svcName} is less protected in Compose — ${x.field}: ${x.before} → ${x.after}${x.why ? ` (${x.why})` : ''}`); }
+        for (const x of w) { backRows.push(`${svcName}: ${x.field} ${x.before} -> ${x.after}`); log(`  ! ${svcName} is less protected in Compose - ${x.field}: ${x.before} -> ${x.after}${x.why ? ` (${x.why})` : ''}`); }
       }
       if (!backRows.length && Object.keys(before).length) log('  ✓ protected as on Swarm');
       job.result = { ...(job.result || {}), security: backRows };

@@ -1,6 +1,6 @@
-# Swarm → Auto Scaling
+# Swarm > Auto Scaling
 
-> **Where:** sidebar **Swarm → Auto Scaling**
+> **Where:** sidebar **Swarm > Auto Scaling**
 >
 > **Works on:** the server picked in the top bar (**SERVERS ▾**). Swarm must be active and that server must be a manager.
 
@@ -13,7 +13,7 @@ The page has four parts:
 1. **Cluster capacity**: the CPU and memory of the active servers, how much the running tasks have reserved, and what is free for new replicas (also per server).
 2. **Rules**: one row per service.
 3. **History**: every change in the last 30 days.
-4. Buttons: **Settings…**, **Pause all** / **Resume all** and **Add a rule…**.
+4. Buttons: **Settings...**, **Pause all** / **Resume all** and **Add a rule...**.
 
 ## Rules
 
@@ -22,7 +22,7 @@ The page has four parts:
 | Column | What it shows |
 |---|---|
 | **Replicas** | Replicas now, then the range (`2 2–6`). `±2` means two replicas per change |
-| **CPU · memory now** | The last reading per replica, in % of the replica's limit. *average* or *every replica*, and how many replicas were measured |
+| **CPU, memory now** | The last reading per replica, in % of the replica's limit. *average* or *every replica*, and how many replicas were measured |
 | **Scales when** | When it adds and when it removes |
 | **Each replica** | Its CPU and memory limit, and below it the guarantee (`min`) |
 | **State** | See the table below. Under it, **room**: how many more replicas fit on the servers |
@@ -39,11 +39,11 @@ The page has four parts:
 | *not measured* | No replica runs on a server DockGate knows, so there is nothing to read |
 | *paused* / *all paused* | This rule, or every rule, is paused |
 
-The **⋯** menu of a row has **Edit…**, **Pause** / **Resume**, **Open service** and **Remove rule…**. Removing a rule keeps the service as it is: same replicas, same limits.
+The **⋯** menu of a row has **Edit...**, **Pause** / **Resume**, **Open service** and **Remove rule...**. Removing a rule keeps the service as it is: same replicas, same limits.
 
 ## Add a rule
 
-**Add a rule…** opens four steps. Every field has a **?** next to it: click it for what the field does, an example and a good value.
+**Add a rule...** opens four steps. Every field has a **?** next to it: click it for what the field does, an example and a good value.
 
 ![Help for a field](images/auto-scaling-help.png)
 
@@ -75,7 +75,7 @@ Leave a field empty to keep what the service has. The guarantee is how DockGate 
 
 #### Suggested values
 
-For a new rule, DockGate fills this step and the range (step 4) from what the chosen services really used. It keeps the CPU and memory of every service for 48 hours (the same readings as **Services → Graphs**, one every 2 minutes). Under each suggested field it says why, in blue.
+For a new rule, DockGate fills this step and the range (step 4) from what the chosen services really used. It keeps the CPU and memory of every service for 48 hours (the same readings as **Services > Graphs**, one every 2 minutes). Under each suggested field it says why, in blue.
 
 | Field | Suggested as |
 |---|---|
@@ -132,7 +132,7 @@ The box under them says how many replicas fit with the guarantee from step 2. Th
 - **Never during a rolling update.** It waits until the update ends.
 - The rule runs on the manager it was saved on, whichever server is picked in the top bar.
 - If a service is removed, its rule goes too.
-- **It does not add servers.** A replica that fits nowhere waits as *pending*. This is recorded once in History as **not placed: …** and sent through the notification.
+- **It does not add servers.** A replica that fits nowhere waits as *pending*. This is recorded once in History as **not placed: ...** and sent through the notification.
 
 ## Settings
 
@@ -140,15 +140,15 @@ The box under them says how many replicas fit with the guarantee from step 2. Th
 |---|---|
 | **Check every** | 1 minute (default), 30 seconds |
 | **When a replica does not fit** | *Add it anyway: it waits as pending, you are told* (default), or *Add no more until the waiting one is placed* |
-| **Notifications** | Opens the **Swarm autoscale changed a service** rule in **Settings → Notifications** (Telegram, email, webhook) |
+| **Notifications** | Opens the **Swarm autoscale changed a service** rule in **Settings > Notifications** (Telegram, email, webhook) |
 
 **Pause all** stops every rule at once. Replicas stay as they are until you resume.
 
 ## On the service page
 
-A service with a rule has an **Autoscale** tab on its page (**Swarm → Services →** the name). It shows the rule in short, the last change and the service's history, with **Pause** / **Resume** and **Edit on Auto Scaling**. The rule is edited only on this page.
+A service with a rule has an **Autoscale** tab on its page (**Swarm > Services -> ** the name). It shows the rule in short, the last change and the service's history, with **Pause** / **Resume** and **Edit on Auto Scaling**. The rule is edited only on this page.
 
-Each change is also in **System → Activity → Audit log** (`swarm_autoscale`).
+Each change is also in **System > Activity > Audit log** (`swarm_autoscale`).
 
 ## Good to know
 
@@ -163,12 +163,12 @@ Each change is also in **System → Activity → Audit log** (`swarm_autoscale`)
 |---|---|---|
 | `Swarm must be active and the server in use a manager` | The server picked in the top bar is a worker, or not in a swarm | Pick a manager in **SERVERS ▾** |
 | `Choose at least one service` | Step 1 is empty | Tick a service |
-| `<service> is global: it runs one task on every server — autoscale works for replicated services` | Global service | Use a replicated service |
-| `<service>: <image> looks like a database. …` | Databases are not offered | Scale the database by its own replication |
+| `<service> is global: it runs one task on every server - autoscale works for replicated services` | Global service | Use a replicated service |
+| `<service>: <image> looks like a database. ...` | Databases are not offered | Scale the database by its own replication |
 | `<service> has no memory limit: set one (Each replica) so memory % can be measured` | Memory rule without a memory limit | Set **Memory limit** in step 2, or untick memory |
 | `The maximum must be at least the minimum` | Min above max | Fix the range |
 | `Remove at a CPU % at least 10 below the add %, or the service would go up and down` | The two % are too close | e.g. add at 80, remove at 30 |
-| `Remove at a memory % at least 10 below the add %, …` | Same for memory | e.g. add at 70, remove at 40 |
+| `Remove at a memory % at least 10 below the add %, ...` | Same for memory | e.g. add at 70, remove at 40 |
 | `The CPU guarantee can not be above the CPU limit` | Guarantee > limit | Lower the guarantee |
 | `The memory guarantee can not be above the memory limit` | Same for memory | Lower the guarantee |
 | `<field>: a whole number from <a> to <b>` | A value out of range | Use a value in the range |

@@ -95,7 +95,7 @@ function busy(link, now = Date.now()) {
   return recent.all(link.server, link.name, like, since).some(r => CHANGE.test(r.action));
 }
 
-/** Domains in proxy labels of the active server's containers (Traefik Host(), caddy, VIRTUAL_HOST is env — not read). */
+/** Domains in proxy labels of the active server's containers (Traefik Host(), caddy, VIRTUAL_HOST is env - not read). */
 async function suggestions(existing, serverId) {
   const docker = clientFor(serverId);
   if (!docker) return [];

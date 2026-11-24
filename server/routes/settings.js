@@ -100,7 +100,7 @@ router.delete('/tags/:id/:tag', (req, res) => {
 
 // ============ ACTIVITY / AUDIT LOG ============
 // Filter support: type, action, server, q (search), limit. Unfiltered calls (dashboard/
-// container-detail) work as before — via parameterized SQL (no injection).
+// container-detail) work as before - via parameterized SQL (no injection).
 router.get('/activity', (req, res) => {
   try {
     const { type, action, server, q } = req.query;
@@ -165,7 +165,7 @@ router.get('/settings', (req, res) => {
 });
 
 // Only setting keys managed by the UI can be written.
-// active_server is INTENTIONALLY excluded — it must only change via POST /api/servers/active
+// active_server is INTENTIONALLY excluded - it must only change via POST /api/servers/active
 // (dockerService.setActiveServer performs the real client switch). Writing it directly causes
 // state drift between the DB and the active client.
 const ALLOWED_SETTING_KEYS = new Set([
@@ -177,7 +177,7 @@ const ALLOWED_SETTING_KEYS = new Set([
 router.post('/settings', (req, res) => {
   try {
     const rejected = [];
-    const changed = []; // [{key, from, to}] — audit-də əvvəl/sonra dəyər görünsün deyə
+    const changed = []; // [{key, from, to}] - audit-də əvvəl/sonra dəyər görünsün deyə
     Object.entries(req.body).forEach(([key, value]) => {
       if (!ALLOWED_SETTING_KEYS.has(key)) { rejected.push(key); return; }
       const from = stmts.getSetting.get(key)?.value;
@@ -246,7 +246,7 @@ router.get('/webhook', (req, res) => {
   try {
     const { url, format } = require('../notifications/webhook').getWebhookSettings();
     let shown = '';
-    if (url) { try { const u = new URL(url); shown = `${u.host}/…${url.slice(-4)}`; } catch (e) { shown = '••••' + url.slice(-4); } }
+    if (url) { try { const u = new URL(url); shown = `${u.host}/...${url.slice(-4)}`; } catch (e) { shown = '••••' + url.slice(-4); } }
     res.json({ configured: !!url, url: shown, format });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -460,8 +460,8 @@ const REPO_NAME = 'dockgate';
 const DOCKER_IMAGE = `ghcr.io/${REPO_OWNER.toLowerCase()}/${REPO_NAME}`;
 const REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
 
-// Fetch file from GitHub (wget — Node.js https hangs on Alpine) / GitHub-dan fayl al (wget ilə)
-// NOTE: the runtime image is node:18-alpine → busybox wget, which does NOT accept the GNU long flag
+// Fetch file from GitHub (wget - Node.js https hangs on Alpine) / GitHub-dan fayl al (wget ilə)
+// NOTE: the runtime image is node:18-alpine -> busybox wget, which does NOT accept the GNU long flag
 // `--timeout=`. Use `-T SEC`, which both busybox AND GNU wget support, so the check works on a real
 // deploy (previously every Alpine instance failed the fetch and silently showed "up to date").
 function githubRawFetch(filePath) {
@@ -522,7 +522,7 @@ function isNewerVersion(current, remote) {
   return false;
 }
 
-// Check for updates — version comparison & changelog / Yenilik yoxla
+// Check for updates - version comparison & changelog / Yenilik yoxla
 router.get('/update/check', async (req, res) => {
   const pkgPath = require('path').join(__dirname, '..', '..', 'package.json');
   delete require.cache[require.resolve(pkgPath)];
@@ -587,10 +587,10 @@ async function inspectSelf(docker) {
   return await container.inspect();
 }
 
-// Apply update — pull pre-built image + restart via helper container / Yeniləmə tətbiq et
+// Apply update - pull pre-built image + restart via helper container / Yeniləmə tətbiq et
 router.post('/update/apply', async (req, res) => {
   const dockerService = require('../docker');
-  // The DockGate container is ALWAYS on the local host — not the active (possibly remote)
+  // The DockGate container is ALWAYS on the local host - not the active (possibly remote)
   // client, so use a fresh local client. Otherwise, while a remote SSH host is active, the
   // self-update would look for a container that doesn't exist there and the helper would
   // start on the remote daemon.
@@ -607,7 +607,7 @@ router.post('/update/apply', async (req, res) => {
     const nanoCpus = info.HostConfig?.NanoCpus || 0;
     const memory = info.HostConfig?.Memory || 0;
     const labels = info.Config?.Labels || {};
-    // Exclude default networks — custom networks must be reconnected,
+    // Exclude default networks - custom networks must be reconnected,
     // otherwise the updated container loses its network connectivity.
     const customNetworks = Object.keys(info.NetworkSettings?.Networks || {})
       .filter(n => !['bridge', 'host', 'none'].includes(n));

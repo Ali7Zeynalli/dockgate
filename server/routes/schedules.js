@@ -1,4 +1,4 @@
-// /api/schedules — Tools → Schedules (server/schedules.js).
+// /api/schedules - Tools > Schedules (server/schedules.js).
 const express = require('express');
 const router = express.Router();
 const S = require('../schedules');
@@ -51,7 +51,7 @@ router.delete('/:id', (req, res) => {
   } catch (e) { fail(res, e); }
 });
 
-// POST /api/schedules/:id/run — run now, wait for the result (prune and backups take seconds to minutes).
+// POST /api/schedules/:id/run - run now, wait for the result (prune and backups take seconds to minutes).
 router.post('/:id/run', async (req, res) => {
   try { res.json(view(await S.runOne(Number(req.params.id), { manual: true }))); }
   catch (e) { fail(res, e); }
