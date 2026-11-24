@@ -5,7 +5,7 @@
 > | Sidebar | Tabs |
 > |---|---|
 > | **Status** | Overview · Monitoring · Alerts · Logs · System info · Connection |
-> | **Security** | Access & SSH · Users & keys · Firewall · Fail2ban |
+> | **Security** | Access & SSH · Users & keys · Firewall · Fail2ban · Honeypot |
 > | **System** | Name & addresses · Network · Time sync · Disks · Kernel & limits · Config files |
 > | **Software** | Setup · Services · Docker engine · Auto updates |
 > | **Automation** | Cron · Timers · Scripts · Schedules |
@@ -22,7 +22,7 @@ The console manages the **server itself**, not Docker: what is installed, who ca
 
 ## Status → Overview
 
-The state of the server and what to do next: OS, uptime, CPU, memory and disk, Docker, firewall, fail2ban, SSH settings, pending updates and whether a reboot is needed. Items that need attention link to the tab that fixes them.
+The state of the server and what to do next: OS, uptime, CPU, memory and disk, Docker, firewall, fail2ban, the honeypot, SSH settings, pending updates and whether a reboot is needed. Items that need attention link to the tab that fixes them; the honeypot shows as **Optional** while it is off — it is never something to fix.
 
 ## Status → Monitoring and Alerts
 
@@ -85,11 +85,45 @@ Docker publishes ports past UFW by default. DockGate adds rules so a container's
 
 ## Security → Fail2ban
 
-Bans addresses that fail to log in over SSH too often.
+Bans addresses that fail to log in over SSH too often (and, with the [Honeypot](#security--honeypot), every address that connects to port 22).
 
 - The banned addresses, per jail; **Unban & allow** lets one back in.
 - **Ban an IP** by hand.
 - **Configuration**: ban time, find time, max retries, addresses never banned, and more. Change cards, then **Review & apply all**, or **Save this card** one at a time. Changes are tested before they apply; current bans are kept.
+
+## Security → Honeypot
+
+A fake SSH server on port 22, for a server whose real SSH listens on another port. Nobody with a reason to be there connects to port 22, so **every address that connects to it is banned on every port of the server** — the host's ports and the ports Docker publishes — before it finds the real SSH. It records the user names and passwords tried. Every login is refused; there is no shell.
+
+**Before it can be turned on** (the page shows each check and where to fix it):
+
+- the real SSH does not listen on 22, and DockGate connects on the new port (change it in **Access & SSH**)
+- nothing else listens on port 22
+- Docker is installed, and fail2ban is running (**Setup → Fail2ban**)
+
+**Turn on…** asks for a ban time (one day, a week, 30 days) and addresses that are never banned (your office, a monitoring service). Loopback, private networks (10.x, 172.16–31.x, 192.168.x) and fail2ban's own allowlist (DockGate's address) are never banned anyway. Then one job:
+
+| Step | What |
+|---|---|
+| Checks | the same checks, on the server |
+| Image | `dockgate-honeypot`, built on the server from `node:22-alpine` and the honeypot's code (~2 MB on top of the base image, which the Edge agent uses too). Nothing else is downloaded |
+| Container | on port 22; runs as an unprivileged user, read-only, without capabilities, 96 MB of RAM, 0.25 CPU, at most 100 connections at a time, each closed after 60 s |
+| ipset | installed when missing, so a long ban list stays fast |
+| fail2ban | the `dockgate-honeypot` jail: one connection = banned. Bans go to the host's firewall (iptables or firewalld) and to Docker's `DOCKER-USER` chain |
+| Test | port 22 answers like an SSH server (from the server itself, which is never banned) |
+
+A failed step removes everything again.
+
+**What it saw**: connections and addresses (24 hours and in all), the user names, passwords, addresses and SSH programs seen most, and the latest login attempts. A connection is written down when it opens, so port scanners that never speak SSH are banned too. Banned addresses are in the **Fail2ban** tab, where **Unban & allow** lets one back in.
+
+| On the server | |
+|---|---|
+| `/var/log/dockgate-honeypot/honeypot.log` | what it saw; rotated weekly, 4 kept, at most 5 MB each |
+| `/var/lib/dockgate-honeypot/` | its SSH host key (the same fingerprint after a restart) |
+| `/etc/fail2ban/jail.d/dockgate-honeypot.conf`, `filter.d/dockgate-honeypot.conf` | the jail and how it reads the log |
+| `/etc/logrotate.d/dockgate-honeypot` | log rotation |
+
+**Settings…** changes the ban time and the allowed addresses. **Turn off…** removes the container, its image, the jail and the rotation; you choose whether its log stays. Addresses already banned stay banned until their time runs out. While the honeypot is on, **Access & SSH** does not move the real SSH back to port 22.
 
 ## Software → Services, Docker engine, Auto updates — and System → Time sync
 

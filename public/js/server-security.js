@@ -102,13 +102,13 @@ async function renderSecurityPosture(serverId, container, goTab) {
   catch (e) { container.innerHTML = ''; return; }
   const worst = data.checks.some(c => c.level === 'crit') ? 'crit' : data.checks.some(c => c.level === 'warn') ? 'warn' : 'ok';
   const dep = data.checks.find(c => c.id === 'deploy-user');
-  const go = { 'deploy-wizard': 'Set up', access: 'Open Access & SSH', firewall: 'Open Firewall', fail2ban: 'Open Fail2ban', setup: 'Open Setup' };
+  const go = { 'deploy-wizard': 'Set up', access: 'Open Access & SSH', firewall: 'Open Firewall', fail2ban: 'Open Fail2ban', setup: 'Open Setup', honeypot: 'Open Honeypot' };
   // Azure Defender / DO Insights style: a list of recommendations, most important first, each with a
   // link to the place that fixes it.
-  const order = { crit: 0, warn: 1, ok: 2 };
+  const order = { crit: 0, warn: 1, info: 2, ok: 3 };
   const checks = data.checks.slice().sort((a, b) => order[a.level] - order[b.level]);
-  const pillOf = { crit: ['bad', 'High'], warn: ['warn', 'Medium'], ok: ['ok', 'OK'] };
-  const open = checks.filter(c => c.level !== 'ok').length;
+  const pillOf = { crit: ['bad', 'High'], warn: ['warn', 'Medium'], info: ['info', 'Optional'], ok: ['ok', 'OK'] };
+  const open = checks.filter(c => c.level === 'crit' || c.level === 'warn').length;
   container.innerHTML = `
     ${data.rebootRequired ? `
     <div class="card" style="border-left:3px solid var(--warning);margin-bottom:14px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap">
@@ -394,8 +394,9 @@ function wireKeyMode(ov, id) {
 // Download a private key DockGate generated. The admin password is asked again: the file grants SSH access.
 function downloadPrivateKey(serverId, username, key) {
   const m = showModal('Download private key', `
-    <div class="text-sm text-muted" style="margin-bottom:10px">This file lets anyone who has it log in as <b>${escapeHtml(username)}</b>. Enter the DockGate admin password to continue.</div>
-    <input class="input" id="pk-pw" type="password" autocomplete="current-password" placeholder="Admin password" style="width:100%">
+    <div class="text-sm text-muted" style="margin-bottom:10px">This file lets anyone who has it log in as <b>${escapeHtml(username)}</b>. Enter <b>your DockGate password</b> — the one you sign in to DockGate with, not the server's or this user's password.</div>
+    <input class="input" id="pk-pw" type="password" autocomplete="off" data-lpignore="true" placeholder="DockGate password" style="width:100%">
+    <div class="ui-sub" style="margin-top:6px">If your browser filled this in, clear it and type it yourself: it may have filled a server's password.</div>
     <div data-err style="margin-top:8px"></div>`, []);
   const footer = m.overlay.querySelector('.modal-footer');
   const c = document.createElement('button'); c.className = 'btn btn-secondary'; c.textContent = 'Cancel'; c.onclick = () => m.close();

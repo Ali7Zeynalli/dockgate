@@ -20,11 +20,12 @@ function workerCfg(server) {
 /** Run a read script; resolves the raw output text. Rejects with the worker's error. */
 function read(server, script) {
   return new Promise((resolve, reject) => {
-    const child = execFile(process.execPath, [WORKER, JSON.stringify({ ...workerCfg(server), mode: 'read', script })], { maxBuffer: 16 * 1024 * 1024, timeout: 90000 }, (err, stdout, stderr) => {
+    const child = execFile(process.execPath, [WORKER], { maxBuffer: 16 * 1024 * 1024, timeout: 90000 }, (err, stdout, stderr) => {
       if (err) return reject(new Error(String(stderr || err.message || 'read failed').trim()));
       try { resolve(JSON.parse(stdout).out); } catch (e) { reject(new Error('bad worker output')); }
     });
     child.on('error', reject);
+    child.stdin.end(JSON.stringify({ ...workerCfg(server), mode: 'read', script }));
   });
 }
 
@@ -54,7 +55,9 @@ function startPlan(server, plan, { title, onSuccess, onFailure, successText } = 
   };
   jobs.set(id, job);
   // test steps never carry free text — only connection parameters
-  const child = execFile(process.execPath, [WORKER, JSON.stringify({ ...workerCfg(server), mode: 'plan', plan })], { maxBuffer: 16 * 1024 * 1024 });
+  const child = execFile(process.execPath, [WORKER], { maxBuffer: 16 * 1024 * 1024 });
+  child.stdin.on('error', () => {}); // a worker that died at once is reported by its exit
+  child.stdin.end(JSON.stringify({ ...workerCfg(server), mode: 'plan', plan }));
   let buf = '';
   child.stdout.on('data', (chunk) => {
     buf += chunk.toString();

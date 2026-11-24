@@ -1,0 +1,9 @@
+{
+  "name": "dockgate-honeypot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SSH honeypot for DockGate: records and refuses every login on the old SSH port",
+  "author": "Ali Zeynalli",
+  "license": "MIT",
+  "main": "src/index.js"
+}

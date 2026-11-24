@@ -16,7 +16,7 @@ const SRV_ICONS = {
 // old console tab → [section, tab]
 const SRV_OLD_TABS = {
   overview: ['srv-status', 'srv-overview'], monitoring: ['srv-status', 'srv-monitoring'], logs: ['srv-status', 'srv-logs'], settings: ['srv-status', 'srv-connection'],
-  access: ['srv-security', 'srv-access'], users: ['srv-security', 'srv-users'], firewall: ['srv-security', 'srv-firewall'], fail2ban: ['srv-security', 'srv-fail2ban'],
+  access: ['srv-security', 'srv-access'], users: ['srv-security', 'srv-users'], firewall: ['srv-security', 'srv-firewall'], fail2ban: ['srv-security', 'srv-fail2ban'], honeypot: ['srv-security', 'srv-honeypot'],
   system: ['srv-system', 'srv-names'], setup: ['srv-software', 'srv-setup'], manage: ['srv-software', 'srv-services'], docker: ['srv-software', 'srv-docker'],
   cron: ['srv-automation', 'srv-cron'], scripts: ['srv-automation', 'srv-scripts'],
 };
@@ -83,6 +83,7 @@ const SRV_PAGES = {
   'srv-users': srvPage((id, el) => renderUsersPanel(id, el)),
   'srv-firewall': srvPage((id, el) => renderFirewallPanel(id, el)),
   'srv-fail2ban': srvPage((id, el) => renderFail2banPanel(id, el)),
+  'srv-honeypot': srvPage((id, el) => renderHoneypotPanel(id, el)),
   'srv-names': srvSection((id, el) => renderSystemPanel(id, el), 'Name and addresses'),
   'srv-network': srvSection((id, el) => renderSystemPanel(id, el), 'Network'),
   'srv-time': srvServiceTab('timesync', 'Time sync', 'Keeps the server\'s clock right (chrony): NTP sources and how far off the clock is.'),

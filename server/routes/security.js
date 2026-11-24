@@ -91,6 +91,10 @@ router.get('/:id/security/posture', send(async (req) => {
   const hk = hostKeyInfo(row);
   checks.push({ id: 'host-key', label: 'Host key', level: hk.pinned ? 'ok' : 'warn', value: hk.pinned ? `${hk.type} pinned` : 'Not pinned yet', action: null });
   checks.push(fail2banCheck(f2b));
+  // the honeypot is optional: shown as such when off, never as something to fix
+  const hpJail = f2b && f2b.jails ? f2b.jails.find(j => j.name === 'dockgate-honeypot') : null;
+  checks.push(hpJail ? { id: 'honeypot', label: 'Honeypot', level: 'ok', value: `On · port 22 · ${hpJail.currentlyBanned} banned now`, action: 'honeypot' }
+    : { id: 'honeypot', label: 'Honeypot', level: 'info', value: 'Off — a fake SSH on port 22 that bans every address connecting to it (once SSH has moved off 22)', action: 'honeypot' });
   return { checks, rebootRequired: a.rebootRequired };
 }));
 
@@ -148,6 +152,7 @@ router.post('/:id/access', send(async (req) => {
   } else if (setting === 'sshPort') {
     const to = P.assertPort(value);
     if (to === state.sshPort) throw P.httpError(400, `SSH already listens on ${to}`);
+    if (to === 22) { const hp = await honeypotOf(row).catch(() => null); if (hp && (hp.running || hp.jailFile)) throw P.httpError(400, 'The SSH honeypot uses port 22 — turn it off first (Security → Honeypot)'); }
     next.ports = [to];
     portChange = { from: state.sshPort, to };
     testPort = to;
@@ -346,7 +351,7 @@ router.post('/:id/users/:name/keys/private', send((req) => {
   const row = loadServer(req);
   const { fingerprint, adminPassword } = req.body || {};
   const salt = (stmts.getSetting.get('auth_salt') || {}).value, hash = (stmts.getSetting.get('auth_password_hash') || {}).value;
-  if (!adminPassword || !verifyPassword(String(adminPassword), salt, hash)) throw P.httpError(403, 'Admin password is incorrect');
+  if (!adminPassword || !verifyPassword(String(adminPassword), salt, hash)) throw P.httpError(403, 'That is not your DockGate password (the one you sign in to DockGate with — not the server\'s or this user\'s password)');
   const g = stmts.getGeneratedKey.get(row.id, req.params.name, String(fingerprint || ''));
   if (!g) throw P.httpError(404, 'DockGate did not generate this key, so it has no private half for it');
   audit(req, row, 'user-key-download', { name: req.params.name, fingerprint });
@@ -639,6 +644,42 @@ router.post('/:id/reboot', send(async (req) => {
   await runOrThrow(row, { steps: [{ label: 'Reboot', cmd: plans.REBOOT }] }, 'Reboot');
   audit(req, row, 'reboot', {});
   return { success: true };
+}));
+
+// ---------------------------------------------------------------- honeypot (server/honeypot.js)
+const HP = require('../honeypot');
+async function honeypotOf(row) { return HP.parseStatus(await runner.read(cfgOf(row), HP.READ), { serverPort: row.port || 22 }); }
+
+router.get('/:id/honeypot', send(async (req) => {
+  const row = loadServer(req);
+  return { ...(await honeypotOf(row)), bantimes: HP.BANTIMES, dockgatePort: row.port || 22 };
+}));
+// Turn on, or apply new settings. body { bantime: '1d'|'7d'|'30d', allow: [ip | cidr] }
+router.post('/:id/honeypot', send(async (req) => {
+  const row = loadServer(req);
+  const b = req.body || {};
+  const cur = await honeypotOf(row);
+  const blocking = cur.checks.filter(c => c.ok === false);
+  if (blocking.length) throw P.httpError(400, `Not ready: ${blocking.map(c => `${c.label} — ${c.fix}`).join('; ')}`);
+  const files = HP.contextFiles();
+  const plan = HP.installPlan({ tag: HP.imageTag(files), tarGz: await HP.contextTarGz(files), bantime: b.bantime || '30d', allow: b.allow || [] });
+  const title = cur.on ? 'Honeypot settings' : 'Turn on the SSH honeypot';
+  const jobId = runner.startPlan(cfgOf(row), plan, {
+    title, successText: 'The honeypot answers on port 22. Every address that connects there is banned on every port.',
+    onSuccess: () => audit(req, row, cur.on ? 'honeypot-settings' : 'honeypot-on', { bantime: b.bantime || '30d', allow: (b.allow || []).length }),
+    onFailure: () => audit(req, row, 'honeypot-on-failed', {}),
+  });
+  return { jobId };
+}));
+// body { keepLog: true|false }
+router.post('/:id/honeypot/off', send(async (req) => {
+  const row = loadServer(req);
+  const keepLog = (req.body || {}).keepLog !== false;
+  const jobId = runner.startPlan(cfgOf(row), HP.removePlan({ keepLog }), {
+    title: 'Turn off the SSH honeypot', successText: 'The honeypot is off. Addresses it banned stay banned until their time runs out (Fail2ban tab: unban).',
+    onSuccess: () => audit(req, row, 'honeypot-off', { keepLog }),
+  });
+  return { jobId };
 }));
 
 module.exports = router;
