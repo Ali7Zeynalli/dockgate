@@ -63,8 +63,10 @@ function withToken(url, token) {
 }
 
 /** Turns git's own auth failures into what to do. */
+/** Credentials inside any URL of a message (https://user:token@host) → https://***@host. */
+const hideUrlAuth = (msg) => String(msg || '').replace(/(https?:\/\/)[^@\s/'"]+@/gi, '$1***@');
 function explain(msg) {
-  const s = String(msg || '');
+  const s = hideUrlAuth(msg);
   if (/Invalid username or token|could not read Password|HTTP Basic: Access denied|Invalid credentials/i.test(s) || (/Authentication failed for/i.test(s) && /\*\*\*|x-access-token|oauth2|x-token-auth/.test(s))) {
     return `${s.trim()}\n→ The repository refused the access token: it is wrong, expired, or has no read access to this repository. Paste a new one: the stack's page → Git → Access…`;
   }
@@ -77,4 +79,4 @@ function explain(msg) {
   return s;
 }
 
-module.exports = { get, set, describe, remove, toHttps, toSsh, withToken, explain };
+module.exports = { get, set, describe, remove, toHttps, toSsh, withToken, explain, hideUrlAuth };

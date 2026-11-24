@@ -2120,9 +2120,11 @@ async function gitUpdate(ctx, { force = false, onData = null, log = () => {} } =
   let branch = ctx.branch && ctx.branch !== 'HEAD' ? ctx.branch : '';
   if (!branch) { try { branch = (await run(['rev-parse', '--abbrev-ref', 'HEAD'])).trim(); } catch (e) { /* detached */ } if (branch === 'HEAD') branch = ''; }
   let origin = ''; try { origin = (await run(['remote', 'get-url', 'origin'])).trim(); } catch (e) { /* no origin */ }
+  // origin that already carries its credentials (a stack DockGate cloned with a token) is used as it is, like before
+  const originHasAuth = /^https:\/\/[^/@]+@/i.test(origin);
   let src = 'origin';
-  if (ctx.token && origin) src = GA.withToken(origin, ctx.token);
-  else if (keyId && /^https:\/\//i.test(origin)) src = GA.toSsh(origin);
+  if (ctx.token && origin && !originHasAuth) src = GA.withToken(origin, ctx.token);
+  else if (keyId && /^https:\/\//i.test(origin) && !originHasAuth) src = GA.toSsh(origin);
   await persistSshConfigForRepo(server, root, keyId);
   const before = (await run(['rev-parse', 'HEAD'])).trim();
   const fetchArgs = ['fetch', '--quiet', ...(force && ctx.type === 'managed' ? ['--depth', '1'] : []), src, ...(branch ? [branch] : [])];
@@ -2134,7 +2136,7 @@ async function gitUpdate(ctx, { force = false, onData = null, log = () => {} } =
   } else {
     log('$ git merge --ff-only FETCH_HEAD\n');
     try { await run(['merge', '--ff-only', 'FETCH_HEAD']); } catch (e) {
-      const err = new Error(`The checkout has its own changes or commits, so it can not simply move to the new commit: ${redactToken(String(e.stderr || e.message || e), ctx.token).trim().split('\n').slice(-2).join(' ')} — resolve it on the server, or use Force pull (local changes are lost).`);
+      const err = new Error(`The checkout has its own changes or commits, so it can not simply move to the new commit: ${GA.hideUrlAuth(redactToken(String(e.stderr || e.message || e), ctx.token)).trim().split('\n').slice(-2).join(' ')} — resolve it on the server, or use Force pull (local changes are lost).`);
       err.statusCode = 409; err.diverged = true; throw err;
     }
   }
@@ -2429,7 +2431,8 @@ router.post('/:project/git-access/test', async (req, res) => {
     const token = method === 'token' ? (b.token || ctx.token || saved.token) : '';
     let origin = ''; try { origin = (await gitInDir(ctx.server, ctx.repoRoot, ['remote', 'get-url', 'origin'])).trim(); } catch (e) { /* none */ }
     if (!origin) return res.status(400).json({ error: 'The checkout has no origin remote' });
-    const src = token ? GA.withToken(origin, token) : keyId && /^https:\/\//i.test(origin) ? GA.toSsh(origin) : origin;
+    const originHasAuth = !b.method && /^https:\/\/[^/@]+@/i.test(origin); // testing what is saved: an origin with its own credentials is used as it is
+    const src = originHasAuth ? origin : token ? GA.withToken(origin, token) : keyId && /^https:\/\//i.test(origin) ? GA.toSsh(origin) : origin;
     try {
       const out = String(await gitInDir(ctx.server, ctx.repoRoot, ['ls-remote', '--heads', src], null, keyId || null));
       res.json({ ok: true, via: method, branches: out.split('\n').filter(Boolean).length, url: token ? GA.toHttps(origin) : src });

@@ -38,4 +38,6 @@ test("git's auth errors say what to do", () => {
   assert.match(GA.explain('git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.'), /Deploy keys/);
   assert.match(GA.explain('remote: Invalid username or token. Password authentication is not supported\nfatal: Authentication failed for x'), /refused the access token/);
   assert.equal(GA.explain('fatal: not a git repository'), 'fatal: not a git repository');
+  assert.doesNotMatch(GA.explain("fatal: could not read Password for 'https://OLDtok123@github.com': terminal prompts disabled"), /OLDtok123/, 'a token inside a URL is hidden');
+  assert.equal(GA.hideUrlAuth('x https://user:pw@gitlab.com/a y'), 'x https://***@gitlab.com/a y');
 });

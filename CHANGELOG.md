@@ -13,7 +13,8 @@
 ### Fixed
 - **Pull, Pull every stack and Sync now update the checkout the same way:** fetch the branch, then fast-forward (or reset with Force).
   - A stack cloned with an access token pulled without it. Now the token is used.
-  - git's authentication errors now say what to do (private repository, SSH key not accepted, token refused). The token never shows in a message.
+  - git's authentication errors now say what to do (private repository, SSH key not accepted, token refused). No token shows in a message, including one written into the repository's own address (`https://token@…`).
+  - A stack DockGate cloned with a token, which keeps it in its origin address, is pulled through that address as before.
 - **A stack's page opened the Pull result twice and could pull twice.** When the page rendered twice in a row, its buttons got two handlers.
 - **The Git ▾ menu of the stacks list says it acts on every Git stack of the server.** Its result window says so too and has **Access…** next to each failed stack.
 
