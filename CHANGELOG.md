@@ -2,6 +2,15 @@
 
 ---
 
+## [2.88.5] - 2026-11-24
+
+### Fixed
+- **Download private key said "Admin password is incorrect" when it was not clear which password it wanted.** It wants your DockGate password, the one you sign in with.
+  - The dialog says so now, and the error says which password it expected.
+  - The browser no longer fills a saved password into this field. It could fill a server's password.
+
+---
+
 ## [2.88.4] - 2026-11-24
 
 ### Added

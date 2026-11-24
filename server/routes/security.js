@@ -346,7 +346,7 @@ router.post('/:id/users/:name/keys/private', send((req) => {
   const row = loadServer(req);
   const { fingerprint, adminPassword } = req.body || {};
   const salt = (stmts.getSetting.get('auth_salt') || {}).value, hash = (stmts.getSetting.get('auth_password_hash') || {}).value;
-  if (!adminPassword || !verifyPassword(String(adminPassword), salt, hash)) throw P.httpError(403, 'Admin password is incorrect');
+  if (!adminPassword || !verifyPassword(String(adminPassword), salt, hash)) throw P.httpError(403, 'That is not your DockGate password (the one you sign in to DockGate with — not the server\'s or this user\'s password)');
   const g = stmts.getGeneratedKey.get(row.id, req.params.name, String(fingerprint || ''));
   if (!g) throw P.httpError(404, 'DockGate did not generate this key, so it has no private half for it');
   audit(req, row, 'user-key-download', { name: req.params.name, fingerprint });
