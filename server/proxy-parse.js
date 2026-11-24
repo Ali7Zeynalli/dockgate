@@ -72,6 +72,49 @@ function walk(src, fn) {
   };
   return parseBlock('main', [], 0); // the file's own top level (its directives), for callers that need it
 }
+/** The include lines of an nginx file, as absolute paths or globs (relative ones are under baseDir, nginx's prefix). */
+function nginxIncludes(text, baseDir = '/etc/nginx') {
+  const src = String(text || '').replace(/#[^\n]*/g, '');
+  const out = [];
+  for (const m of src.matchAll(/(?:^|[;{}\s])include\s+("[^"]+"|'[^']+'|[^;\s]+)\s*;/g)) {
+    const v = m[1].replace(/^["']|["']$/g, '');
+    if (!v || v.includes('$')) continue;
+    out.push(v.startsWith('/') ? v : `${baseDir.replace(/\/$/, '')}/${v}`);
+  }
+  return [...new Set(out)];
+}
+/** A shell-style glob (*, ?, [..]) as a RegExp for one path; * and ? do not cross "/". */
+function globRe(glob) {
+  let re = '';
+  for (let i = 0; i < glob.length; i++) {
+    const ch = glob[i];
+    if (ch === '*') re += '[^/]*';
+    else if (ch === '?') re += '[^/]';
+    else if (ch === '[') { const j = glob.indexOf(']', i + 1); if (j > i) { re += '[' + glob.slice(i + 1, j).replace(/^!/, '^').replace(/\\/g, '\\\\') + ']'; i = j; } else re += '\\['; }
+    else re += ch.replace(/[.+^${}()|\\]/g, '\\$&');
+  }
+  return new RegExp('^' + re + '$');
+}
+/**
+ * The files nginx really loads, from the files of a folder (a stopped container's archive): nginx.conf first,
+ * then what its include lines reach, in order — like `nginx -T` prints them. Without nginx.conf: the .conf files.
+ */
+function nginxReachable(files, mainPath = '/etc/nginx/nginx.conf') {
+  const byPath = new Map(files.map(f => [f.path, f]));
+  const main = byPath.get(mainPath) || files.find(f => /\/nginx\.conf$/.test(f.path));
+  if (!main) return files.filter(f => /\.conf$/.test(f.path));
+  const base = main.path.replace(/\/[^/]+$/, '');
+  const out = []; const seen = new Set();
+  const visit = (f, depth) => {
+    if (seen.has(f.path) || depth > 8) return; seen.add(f.path); out.push(f);
+    for (const inc of nginxIncludes(f.text, base)) {
+      const re = globRe(inc);
+      for (const g of files.filter(x => re.test(x.path)).sort((a, b) => a.path.localeCompare(b.path))) visit(g, depth + 1);
+    }
+  };
+  visit(main, 0);
+  return out;
+}
 /** nginx servers → one site per domain (the http server that only redirects is folded into the https one). */
 function nginxSites(parsed) {
   const by = new Map();
@@ -377,4 +420,4 @@ function parseCaddyJson(text) {
   return out;
 }
 
-module.exports = { namelessLabel, isIp, isCaddyJson, parseCaddyJson, nginxSiteTarget, nginxAllCerts, caddyImports, traefikFileSites, isDomain, parseNginxT, nginxSites, upstreamOf, parseCaddyfile, traefikSites, caddyLabelSites, parseHaproxy, parseApacheS, parseAccessLine, parseCaddyJsonLine, parseCertPem, traefikAcme };
+module.exports = { nginxIncludes, globRe, nginxReachable, namelessLabel, isIp, isCaddyJson, parseCaddyJson, nginxSiteTarget, nginxAllCerts, caddyImports, traefikFileSites, isDomain, parseNginxT, nginxSites, upstreamOf, parseCaddyfile, traefikSites, caddyLabelSites, parseHaproxy, parseApacheS, parseAccessLine, parseCaddyJsonLine, parseCertPem, traefikAcme };

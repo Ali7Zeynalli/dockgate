@@ -73,6 +73,27 @@ async function hostExec(server, cmd) {
 /** A shell loop that prints each file of the globs as "@@F path" + its text (paths with odd characters are left out). */
 const catGlobs = (globs) => `for f in ${globs.filter(g => /^[\w./*@+-]+$/.test(g)).join(' ')}; do [ -f "$f" ] && { echo "@@F $f"; cat "$f"; echo; }; done; true`;
 const splitCat = (out) => String(out || '').split(/^@@F /m).slice(1).map(ch => { const nl = ch.indexOf('\n'); return { path: ch.slice(0, nl).trim(), text: ch.slice(nl + 1).replace(/\n$/, '') }; });
+/**
+ * nginx's files when `nginx -T` prints nothing (the config does not pass its check — a backend whose name does not
+ * resolve, a certificate it can not read): nginx.conf (where `nginx -V` says, else /etc/nginx/nginx.conf), then every
+ * file its include lines reach, of any name (sites-enabled/example.com too). run(sh) runs a shell line where nginx is.
+ */
+async function readNginxByIncludes(run) {
+  const v = await run('nginx -V 2>&1 | tr " " "\\n" | sed -n "s/^--conf-path=//p" | head -1').catch(() => null);
+  const main = ((v && v.out) || '').trim().split('\n')[0] || '/etc/nginx/nginx.conf';
+  const base = main.replace(/\/[^/]+$/, '');
+  const files = []; const seen = new Set(); let queue = [main];
+  for (let round = 0; round < 8 && queue.length && files.length < 300; round++) {
+    const r = await run(catGlobs(queue)).catch(() => null); queue = [];
+    for (const f of splitCat(r ? r.out : '')) {
+      if (seen.has(f.path)) continue; seen.add(f.path); files.push(f);
+      for (const inc of P.nginxIncludes(f.text, base)) if (!seen.has(inc) && !queue.includes(inc)) queue.push(inc);
+    }
+  }
+  return P.parseNginxT(files.map(f => `# configuration file ${f.path}:\n${f.text}`).join('\n'));
+}
+/** The line of nginx's own error that says why its config check fails. */
+const nginxWhy = (text) => { const t = String(text || ''); return (t.split('\n').filter(l => /emerg|error|failed/i.test(l) && !/test failed/i.test(l))[0] || t.split('\n').filter(Boolean).pop() || 'nginx -T gave nothing').replace(/^nginx: \[emerg\]\s*/, '').replace(/^\S+ \S+ \[emerg\] \d+#\d+: /, '').trim(); };
 /** A script run as root on a host: root already (the local helper, a root SSH login), sudo when it works, else as is. */
 const rootSh = (script) => `if [ "$(id -u)" = 0 ]; then sh -c ${shq(script)}; elif sudo -n true 2>/dev/null; then sudo -n sh -c ${shq(script)}; else sh -c ${shq(script)}; fi`;
 const sudoTry = (cmd) => `sudo -n ${cmd} 2>&1 || ${cmd} 2>&1`;
@@ -160,18 +181,17 @@ async function scan({ fresh = false, ctx = activeCtx() } = {}) {
       if (NGINXISH.has(kind)) {
         const r = await execIn(c, ct.Id, ['nginx', '-T']);
         let parsed = P.parseNginxT(r.out + '\n' + r.err);
-        if (!parsed.files.length) { // the config does not pass its check (nginx -T then prints nothing): read the files directly, and say why
-          const why = (r.err || r.out).split('\n').filter(l => /emerg|error|failed/i.test(l))[0] || (r.err || r.out).split('\n').filter(Boolean).pop() || 'nginx -T gave nothing';
-          const f = await execIn(c, ct.Id, ['sh', '-c', 'for f in $(find /etc/nginx /etc/nginx/conf.d -maxdepth 2 -name "*.conf" 2>/dev/null | sort -u); do echo "# configuration file $f:"; cat "$f"; echo; done']);
-          parsed = P.parseNginxT(f.out);
-          p.problem = `config check fails: ${why.replace(/^nginx: \[emerg\]\s*/, '').replace(/^\S+ \S+ \[emerg\] \d+#\d+: /, '')}`;
-          warnings.push({ level: 'bad', text: `${name}: the nginx config does not pass its check — ${p.problem.replace('config check fails: ', '')}. A reload or restart would fail.` });
+        if (!parsed.files.length) { // the config does not pass its check (nginx -T then prints nothing): read the files it includes, and say why
+          const why = nginxWhy(r.err || r.out);
+          parsed = await readNginxByIncludes((sh) => execIn(c, ct.Id, ['sh', '-c', sh]));
+          p.problem = `config check fails: ${why}`;
+          warnings.push({ level: 'bad', text: `${name}: the nginx config does not pass its check — ${why}. A reload or restart would fail.` });
         }
         raw.files[p.id] = parsed.files; raw.nginx[p.id] = parsed;
         p.config = parsed.files[0] ? parsed.files[0].path.replace(/\/[^/]+$/, '') : '/etc/nginx';
         // nginx that only serves its own app (no proxy_pass, no domain, no published web port) is a web server, not a proxy
         const realNames = parsed.servers.some(sv => sv.names.some(nm => P.isDomain(nm)));
-        if (kind === 'nginx' && !realNames && !parsed.servers.some(sv => sv.proxyPass || sv.locations.some(l => l.proxyPass)) && !p.ports.some(x => [80, 443].includes(x))) { p.appServer = true; return; }
+        if (kind === 'nginx' && !p.problem && !realNames && !parsed.servers.some(sv => sv.proxyPass || sv.locations.some(l => l.proxyPass)) && !p.ports.some(x => [80, 443].includes(x))) { p.appServer = true; return; } // never hidden when its config could not be checked
         const v = await execIn(c, ct.Id, ['nginx', '-v']).catch(() => null); const vm = v && (v.err + v.out).match(/nginx\/(\S+)|openresty\/(\S+)/); if (vm) p.version = vm[1] || vm[2];
         for (const s of P.nginxSites(parsed).filter(x => x.domain !== 'localhost')) addSite({ ...s, managed: kind === 'npm' && /^\/data\//.test(s.file) ? 'Nginx Proxy Manager' : kind === 'nginx-proxy' ? 'nginx-proxy' : null }, p);
         raw.certPaths[p.id] = P.nginxAllCerts(parsed);
@@ -273,8 +293,15 @@ echo "${tag}P"; (sudo -n ss -ltnpH 2>/dev/null || ss -ltnpH 2>/dev/null || ss -l
       try {
         if (kind === 'nginx') {
           const t = await hostExec(server, sudoTry('nginx -T'));
-          const parsed = P.parseNginxT(t.out); raw.files[p.id] = parsed.files; raw.nginx[p.id] = parsed;
-          p.config = '/etc/nginx'; if (!parsed.files.length) p.problem = 'nginx -T needs root: give the SSH user passwordless sudo';
+          let parsed = P.parseNginxT(t.out);
+          if (!parsed.files.length) { // nginx -T printed nothing: read the files its include lines reach, and say nginx's own reason
+            const why = nginxWhy(t.out);
+            parsed = await readNginxByIncludes((sh) => hostExec(server, rootSh(sh)));
+            p.problem = /permission denied|\(13:/i.test(why) ? `nginx -T needs root (${why}): give the SSH user passwordless sudo` : `config check fails: ${why}`;
+            warnings.push({ level: 'bad', text: `nginx on the server: ${p.problem}${/needs root/.test(p.problem) ? '' : '. A reload or restart would fail.'}` });
+          }
+          raw.files[p.id] = parsed.files; raw.nginx[p.id] = parsed;
+          p.config = parsed.files[0] ? parsed.files[0].path.replace(/\/[^/]+$/, '') : '/etc/nginx';
           const v = await hostExec(server, 'nginx -v 2>&1'); const vm = v && v.out.match(/nginx\/(\S+)/); if (vm) p.version = vm[1];
           for (const s of P.nginxSites(parsed).filter(x => x.domain !== 'localhost')) addSite(s, p);
           raw.certPaths[p.id] = P.nginxAllCerts(parsed);
@@ -363,8 +390,8 @@ async function stoppedProxy(c, ct, p, kind, raw, addSite, warnings) {
   p.restarting = !!(info && info.State && info.State.Restarting);
   let files = [];
   if (NGINXISH.has(kind)) {
-    files = await archiveFiles(c, ct.Id, '/etc/nginx', f => /\.conf$/.test(f) && !/\/(mime\.types|fastcgi|scgi|uwsgi)/.test(f));
-    const main = files.find(f => /\/nginx\.conf$/.test(f.path)); if (main) files = [main, ...files.filter(f => f !== main)];
+    // the files nginx.conf's include lines reach (sites-enabled/example.com too), not only *.conf
+    files = P.nginxReachable(await archiveFiles(c, ct.Id, '/etc/nginx', f => !/\/(mime\.types|fastcgi|scgi|uwsgi|koi-|win-utf|modules)/.test(f), 300));
     const parsed = P.parseNginxT(files.map(f => `# configuration file ${f.path}:\n${f.text}`).join('\n'));
     raw.files[p.id] = parsed.files; raw.nginx[p.id] = parsed; raw.certPaths[p.id] = P.nginxAllCerts(parsed);
     p.config = '/etc/nginx/conf.d';
