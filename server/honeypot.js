@@ -74,7 +74,7 @@ const READ = [
   'echo @@f2b; command -v fail2ban-client >/dev/null 2>&1 && echo installed; {{S}}fail2ban-client ping >/dev/null 2>&1 && echo active; true',
   `echo @@jail; {{S}}fail2ban-client status ${NAME} 2>/dev/null`,
   `echo @@jailFile; {{S}}cat ${JAIL} 2>/dev/null`,
-  'echo @@ipset; command -v ipset >/dev/null 2>&1 && echo yes; true',
+  "echo @@ipset; {{S}}sh -c 'command -v ipset' >/dev/null 2>&1 && echo yes; true",
   `echo @@logSize; {{S}}stat -c %s ${LOG_FILE} 2>/dev/null`,
   `echo @@log; {{S}}tail -n 5000 ${LOG_FILE} 2>/dev/null`,
 ].join('; ');
@@ -188,7 +188,7 @@ ${LOG_FILE} {
 function jailCmd(bantime) {
   const head = `# Managed by DockGate (Server Console → Security → Honeypot)\n# Any address that connects to the honeypot on port 22 is banned on every port.\n[${NAME}]\nenabled = true\nbackend = auto\nfilter = ${NAME}\nlogpath = ${LOG_FILE}\nlogtimezone = UTC\nmaxretry = 1\nfindtime = 1d\nbantime = ${bantime}\n`;
   return [
-    'if command -v ipset >/dev/null 2>&1; then A=iptables-ipset-proto6-allports; else A=iptables-allports; fi',
+    "if {{S}}sh -c 'command -v ipset' >/dev/null 2>&1; then A=iptables-ipset-proto6-allports; else A=iptables-allports; fi",
     `if {{S}}firewall-cmd --state >/dev/null 2>&1; then H="firewallcmd-ipset[name=${NAME}, actiontype=<allports>]"; else H="$A[name=${NAME}]"; fi`,
     `D=''; if {{S}}iptables -n -L DOCKER-USER >/dev/null 2>&1; then D="         $A[name=hp-docker, chain=DOCKER-USER]"; fi`,
     `{ echo ${b64(head)} | base64 -d; printf 'action = %s\\n' "$H"; [ -n "$D" ] && printf '%s\\n' "$D"; true; } | {{S}}tee ${JAIL} >/dev/null && {{S}}chmod 0644 ${JAIL}`,
@@ -242,7 +242,7 @@ function installPlan({ tag, tarGz, bantime = '30d', allow = [] }) {
       `for i in $({{S}}docker images -q --filter label=dockgate.role=honeypot-image 2>/dev/null | sort -u); do [ "$i" = "$({{S}}docker image inspect -f '{{.Id}}' ${tag} | cut -c8-19)" ] || {{S}}docker rmi $i >/dev/null 2>&1; done; true`,
       'echo running',
     ].join('; ') },
-    { label: 'ipset (fast bans when the list grows)', cmd: 'if command -v ipset >/dev/null 2>&1; then echo "already installed"; exit 0; fi; if command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive {{S}}apt-get install -y -qq ipset >/dev/null 2>&1; elif command -v dnf >/dev/null 2>&1; then {{S}}dnf -y -q install ipset >/dev/null 2>&1; elif command -v apk >/dev/null 2>&1; then {{S}}apk add -q ipset >/dev/null 2>&1; fi; command -v ipset >/dev/null 2>&1 && echo installed || echo "not available — plain iptables rules are used"; true' },
+    { label: 'ipset (fast bans when the list grows)', cmd: 'HAS="{{S}}sh -c \'command -v ipset\'"; if eval "$HAS" >/dev/null 2>&1; then echo "already installed"; exit 0; fi; if command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive {{S}}apt-get install -y -qq ipset >/dev/null 2>&1; elif command -v dnf >/dev/null 2>&1; then {{S}}dnf -y -q install ipset >/dev/null 2>&1; elif command -v apk >/dev/null 2>&1; then {{S}}apk add -q ipset >/dev/null 2>&1; fi; eval "$HAS" >/dev/null 2>&1 && echo installed || echo "not available — plain iptables rules are used"; true' },
     { label: `fail2ban: the ${NAME} jail (1 connection = banned for ${BANTIMES[bantime]}, every port)`, rollbackOnFail: true, cmd: [
       writeFile(FILTER, FILTER_TEXT),
       jailCmd(bantime),
