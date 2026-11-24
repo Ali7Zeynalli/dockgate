@@ -22,7 +22,7 @@ The console manages the **server itself**, not Docker: what is installed, who ca
 
 ## Status → Overview
 
-The state of the server and what to do next: OS, uptime, CPU, memory and disk, Docker, firewall, fail2ban, SSH settings, pending updates and whether a reboot is needed. Items that need attention link to the tab that fixes them.
+The state of the server and what to do next: OS, uptime, CPU, memory and disk, Docker, firewall, fail2ban, the honeypot, SSH settings, pending updates and whether a reboot is needed. Items that need attention link to the tab that fixes them; the honeypot shows as **Optional** while it is off — it is never something to fix.
 
 ## Status → Monitoring and Alerts
 

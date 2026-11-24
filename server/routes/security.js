@@ -91,6 +91,10 @@ router.get('/:id/security/posture', send(async (req) => {
   const hk = hostKeyInfo(row);
   checks.push({ id: 'host-key', label: 'Host key', level: hk.pinned ? 'ok' : 'warn', value: hk.pinned ? `${hk.type} pinned` : 'Not pinned yet', action: null });
   checks.push(fail2banCheck(f2b));
+  // the honeypot is optional: shown as such when off, never as something to fix
+  const hpJail = f2b && f2b.jails ? f2b.jails.find(j => j.name === 'dockgate-honeypot') : null;
+  checks.push(hpJail ? { id: 'honeypot', label: 'Honeypot', level: 'ok', value: `On · port 22 · ${hpJail.currentlyBanned} banned now`, action: 'honeypot' }
+    : { id: 'honeypot', label: 'Honeypot', level: 'info', value: 'Off — a fake SSH on port 22 that bans every address connecting to it (once SSH has moved off 22)', action: 'honeypot' });
   return { checks, rebootRequired: a.rebootRequired };
 }));
 

@@ -23,6 +23,7 @@
 - **Never banned:** loopback, private networks, fail2ban's allowlist (DockGate's address), and the addresses you add.
 - **Settings… and Turn off…** Turning it off removes the container, its image and its jail, and you choose whether its log stays.
 - **Access & SSH** does not move the real SSH back to 22 while the honeypot is on.
+- **Status → Overview** lists the honeypot under Security recommendations: on with its bans, or **Optional** while it is off (not counted as something to fix).
 
 ### Changed
 - Security jobs get their instructions on stdin instead of on the command line. A long job no longer hits the command-line limit, and a server's password is no longer visible in the process list.

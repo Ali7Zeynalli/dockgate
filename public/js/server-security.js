@@ -102,13 +102,13 @@ async function renderSecurityPosture(serverId, container, goTab) {
   catch (e) { container.innerHTML = ''; return; }
   const worst = data.checks.some(c => c.level === 'crit') ? 'crit' : data.checks.some(c => c.level === 'warn') ? 'warn' : 'ok';
   const dep = data.checks.find(c => c.id === 'deploy-user');
-  const go = { 'deploy-wizard': 'Set up', access: 'Open Access & SSH', firewall: 'Open Firewall', fail2ban: 'Open Fail2ban', setup: 'Open Setup' };
+  const go = { 'deploy-wizard': 'Set up', access: 'Open Access & SSH', firewall: 'Open Firewall', fail2ban: 'Open Fail2ban', setup: 'Open Setup', honeypot: 'Open Honeypot' };
   // Azure Defender / DO Insights style: a list of recommendations, most important first, each with a
   // link to the place that fixes it.
-  const order = { crit: 0, warn: 1, ok: 2 };
+  const order = { crit: 0, warn: 1, info: 2, ok: 3 };
   const checks = data.checks.slice().sort((a, b) => order[a.level] - order[b.level]);
-  const pillOf = { crit: ['bad', 'High'], warn: ['warn', 'Medium'], ok: ['ok', 'OK'] };
-  const open = checks.filter(c => c.level !== 'ok').length;
+  const pillOf = { crit: ['bad', 'High'], warn: ['warn', 'Medium'], info: ['info', 'Optional'], ok: ['ok', 'OK'] };
+  const open = checks.filter(c => c.level === 'crit' || c.level === 'warn').length;
   container.innerHTML = `
     ${data.rebootRequired ? `
     <div class="card" style="border-left:3px solid var(--warning);margin-bottom:14px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap">
