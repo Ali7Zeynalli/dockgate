@@ -18,12 +18,8 @@ const EPEL = 'sudo dnf -y install epel-release || sudo dnf -y install "https://d
 const IS_AMZN = '[ "$(. /etc/os-release; echo $ID)" = amzn ]';
 
 
-// Swap sized to the machine; refuses when the root disk lacks room (size + 1 GB headroom). A leftover
-// /swapfile from an interrupted run is removed first so fallocate never fails on it.
-const SWAP_INSTALL = 'M=$(awk \'/MemTotal/{print int($2/1024)}\' /proc/meminfo); if [ "$M" -lt 2048 ]; then S=2048; elif [ "$M" -lt 4096 ]; then S=$M; else S=4096; fi; ' +
-  'F=$(df -Pm / | awk \'NR==2{print $4}\'); if [ "$F" -le $((S+1024)) ]; then echo "Not enough free disk for a ${S} MB swap file (${F} MB free)"; false; fi && ' +
-  '{ sudo swapoff /swapfile 2>/dev/null; sudo rm -f /swapfile; true; } && (sudo fallocate -l ${S}M /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=$S status=none) && ' +
-  'sudo chmod 600 /swapfile && sudo mkswap /swapfile >/dev/null && sudo swapon /swapfile && (grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null)';
+// Swap: a 4 GB /swapfile + swappiness 10 in DockGate's sysctl file (server/swap.js — the same scripts as System → Disks).
+const SWAP = require('../swap');
 
 // Docker daemon.json: log rotation + live-restore. Fresh file → written; existing file → merged with
 // python3 (a backup is kept); no python3 → refuse rather than clobber the admin's config. live-restore is
@@ -74,7 +70,7 @@ const CHANGES = {
   'ssh-hardening': { short: '3 auth tries, 30 s grace, idle drop ~10 min', installs: [], writes: ['/etc/ssh/sshd_config.d/10-dockgate-access.conf'], sets: ['MaxAuthTries 3', 'LoginGraceTime 30', 'PermitEmptyPasswords no', 'X11Forwarding no', 'ClientAliveInterval 300', 'ClientAliveCountMax 2', 'a value already set in the file is kept; checked with sshd -t, restored if rejected'], editIn: 'Server Console → Access & SSH' },
   fail2ban: { short: 'Bans IPs after failed SSH logins', installs: ['fail2ban', 'python3-systemd (RHEL, from EPEL)'], writes: ['/etc/fail2ban/jail.d/dockgate.conf', '/etc/fail2ban/fail2ban.d/dockgate.conf'], sets: ['sshd: 3 failures within 1d → 24h ban, then 4d, 8d … up to 30d', 'recidive: 3 bans within 30d → 1w on every port', 'ban history kept 30d', "DockGate's own address in the allowlist"], editIn: 'Server Console → Fail2ban' },
   'unattended-upgrades': { short: 'Security patches applied automatically', installs: ['unattended-upgrades (Debian/Ubuntu) · dnf-automatic (RHEL)'], writes: ['/etc/apt/apt.conf.d/20auto-upgrades (Debian/Ubuntu)', '/etc/dnf/automatic.conf (RHEL)'], sets: ['daily package list update and unattended upgrade (Debian/Ubuntu)', 'apply_updates = yes and the dnf-automatic timer on (RHEL)'], editIn: 'Server Console → Services → Auto updates' },
-  swap: { short: 'Swap sized to RAM, swappiness 10', installs: [], writes: ['/swapfile', '/etc/fstab (one line)', '/etc/sysctl.d/99-swappiness.conf'], sets: ['2 GB under 2 GB RAM, otherwise equal to RAM up to 4 GB', 'vm.swappiness=10'], editIn: '' },
+  swap: { short: '4 GB swap file, swappiness 10', installs: [], writes: ['/swapfile', '/etc/fstab (one line)', '/etc/sysctl.d/99-dockgate.conf (one line)'], sets: ['4 GB, needs 5 GB free on the disk', 'vm.swappiness=10 (a value already set in Kernel is kept)', 'a server that already has swap is left as it is'], editIn: 'Server Console → System → Disks → Swap' },
   docker: { short: 'Engine, CLI, containerd, buildx, compose v2', installs: ['Docker Engine, CLI, containerd, buildx, compose v2 plugin', 'from Docker\'s official repository (Amazon Linux: distro package + compose plugin)'], writes: ["Docker's package repository and signing key"], sets: ['docker service enabled and started'], editIn: 'Server Console → Services → Docker' },
   'docker-config': { short: 'Logs 10 MB × 3 per container, live-restore', installs: [], writes: ['/etc/docker/daemon.json (merged into an existing file, a copy kept as daemon.json.dockgate.bak)'], sets: ['log-driver json-file', 'max-size 10m, max-file 3', 'live-restore true (false in swarm mode)', 'only containers created afterwards get the limits'], editIn: 'Server Console → Services → Docker' },
   'deploy-user': { short: 'Non-root user with sudo, Docker and its own SSH key', installs: [], writes: ['/etc/sudoers.d/90-dockgate-<user>', '~<user>/.ssh/authorized_keys'], sets: ['user name asked when you run it (default "deploy")', 'passwordless sudo and the docker group', 'DockGate switches to this user after the key login is proven', 'password login stays on (turned off separately in Access & SSH)'], editIn: 'Server Console → Users & keys' },
@@ -161,10 +157,10 @@ const ITEMS = [
   },
   {
     id: 'swap', seq: 80, label: 'Swap file', group: 'system', risk: 'low', needsSudo: true, optional: true,
-    description: 'A swap file sized to the machine (2 GB under 2 GB RAM, otherwise equal to RAM up to 4 GB) + low swappiness — an OOM safety net for Docker builds on small VPSes. Skipped if the disk lacks room.',
+    description: 'A 4 GB swap file + low swappiness — an OOM safety net for Docker builds and memory spikes. Refused (with the reason) when the disk lacks room or the server is a container VPS; a file the kernel does not take is removed again.',
     distro: {
-      debian: { detect: 'swapon --show | grep -q .', install: SWAP_INSTALL + ' && echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swappiness.conf >/dev/null && sudo sysctl --system >/dev/null', verify: 'swapon --show | grep -q .' },
-      rhel:   { detect: 'swapon --show | grep -q .', install: SWAP_INSTALL + ' && echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swappiness.conf >/dev/null && sudo sysctl --system >/dev/null', verify: 'swapon --show | grep -q .' },
+      debian: { detect: 'swapon --show | grep -q .', install: SWAP.setupInstall('sudo '), verify: 'swapon --show | grep -q .' },
+      rhel:   { detect: 'swapon --show | grep -q .', install: SWAP.setupInstall('sudo '), verify: 'swapon --show | grep -q .' },
     },
   },
   {

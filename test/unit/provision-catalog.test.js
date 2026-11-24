@@ -104,12 +104,17 @@ test('catalog: fail2ban writes its own jail.d drop-in (never jail.local) and det
   }
 });
 
-test('catalog: swap is sized to RAM and refuses when the disk lacks room', () => {
+test('catalog: swap is a 4 GB file, keeps a swappiness set in Kernel, never runs sysctl --system', () => {
   const sw = cat.byId.swap.distro.debian.install;
-  assert.match(sw, /MemTotal/);
-  assert.match(sw, /Not enough free disk/);
-  // the disk check must gate the destructive part (no stray `;` after it)
-  assert.ok(/false; fi && \{ sudo swapoff/.test(sw));
+  const scripts = [...sw.matchAll(/echo ([A-Za-z0-9+/=]+) \| base64 -d \| sudo sh/g)].map(m => Buffer.from(m[1], 'base64').toString('utf8'));
+  assert.equal(scripts.length, 2);
+  assert.match(scripts[0], /S=4096/);
+  assert.match(scripts[0], /Not enough free disk/);
+  assert.match(scripts[0], /swapoff "\$P" 2>\/dev\/null; rm -f "\$P"/, 'a file the kernel did not take is removed');
+  assert.match(scripts[1], /99-dockgate\.conf/);
+  assert.match(scripts[1], /if ! grep -qE/, 'a value already set is kept');
+  assert.doesNotMatch(sw + scripts.join('\n'), /sysctl --system/);
+  assert.equal(cat.byId.swap.distro.rhel.install, sw);
 });
 
 test('catalog: docker-config depends on docker, caps logs, merges an existing daemon.json', () => {

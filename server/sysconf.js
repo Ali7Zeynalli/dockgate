@@ -7,6 +7,7 @@
 // Everything here builds text and commands from validated values only (pure, unit tested).
 const P = require('./security/parse');
 const plans = require('./security/plans');
+const SWAP = require('./swap');
 
 const b64 = (s) => Buffer.from(String(s), 'utf8').toString('base64');
 const shq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
@@ -58,6 +59,11 @@ const READ = [
   'echo @@mounts; findmnt -rn -o TARGET,SOURCE,FSTYPE,OPTIONS 2>/dev/null | head -100',
   'echo @@df; df -PhT 2>/dev/null | tail -n +2 | head -50',
   'echo @@blk; lsblk -J -o NAME,SIZE,TYPE,FSTYPE,UUID,MOUNTPOINT 2>/dev/null',
+  'echo @@swaps; cat /proc/swaps 2>/dev/null',
+  "echo @@meminfo; grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo 2>/dev/null",
+  'echo @@virt; systemd-detect-virt -c 2>/dev/null; true',
+  `echo @@swapLegacy; cat ${SWAP.LEGACY_FILE} 2>/dev/null`,
+  "echo @@rootFree; stat -f -c %T / 2>/dev/null; df -Pm / 2>/dev/null | awk 'NR==2{print $4}'",
   'echo @@os; . /etc/os-release 2>/dev/null; echo "$PRETTY_NAME"',
 ].join('; ');
 
@@ -141,6 +147,19 @@ function parseRead(out) {
     mounts: String(S.mounts || '').split('\n').filter(Boolean).map(l => { const [target, source, fstype, options] = l.split(' '); return { target, source, fstype, options }; }),
     df: String(S.df || '').split('\n').filter(Boolean).map(l => { const p = l.trim().split(/\s+/); return { source: p[0], fstype: p[1], size: p[2], used: p[3], avail: p[4], pct: p[5], target: p[6] }; }),
     blk: (json(S.blk, {}) || {}).blockdevices || [],
+    swap: (() => {
+      const mem = {}; for (const l of String(S.meminfo || '').split('\n')) { const m = /^(\w+):\s+(\d+)/.exec(l); if (m) mem[m[1]] = Math.round(Number(m[2]) / 1024); }
+      const [fs, free] = String(S.rootFree || '').split('\n').map(x => x.trim());
+      const virt = String(S.virt || '').trim();
+      return {
+        devices: SWAP.parseSwaps(S.swaps), ramMb: mem.MemTotal || null, availMb: mem.MemAvailable || null,
+        swappiness: sysNow['vm.swappiness'] || '', dockgate: parseKv(S.sysctlDrop)['vm.swappiness'] || null,
+        legacy: parseKv(S.swapLegacy)['vm.swappiness'] || null,
+        container: /^(lxc|openvz)/.test(virt) ? virt : null, rootFs: fs || '', rootFreeMb: Number(free) || null,
+        fstab: parseFstab(S.fstab).filter(e => e.kind === 'entry' && e.fstype === 'swap').map(e => e.source),
+        defaultMb: SWAP.DEFAULT_MB,
+      };
+    })(),
   };
 }
 
@@ -237,7 +256,28 @@ function sysctlPlan(values) {
     { label: `Back up ${F.sysctl}`, cmd: backup(F.sysctl) },
     { label: `Write ${F.sysctl}`, cmd: writeFile(F.sysctl, text) },
     { label: 'Apply (sysctl -p) — an unknown value restores the file', cmd: `out=$({{S}}sysctl -p ${F.sysctl} 2>&1) || { ${restore(F.sysctl)}; {{S}}sysctl --system >/dev/null 2>&1; echo "The kernel refused: $out — restored"; exit 1; }; echo "$out"; ${drop(F.sysctl)}` },
+    ...(lines.some(l => l.startsWith('vm.swappiness ')) ? [{ label: `Remove ${SWAP.LEGACY_FILE} (an older swappiness file that would win at boot)`, cmd: `if {{S}}test -f ${SWAP.LEGACY_FILE} && ! {{S}}grep -vqE '^[[:space:]]*(#|$|vm\\.swappiness[[:space:]]*=)' ${SWAP.LEGACY_FILE}; then {{S}}rm -f ${SWAP.LEGACY_FILE}; fi; true` }] : []),
   ] } };
+}
+
+/** Swap: set (make / resize a swap file) or remove one. `current` = parseRead().swap, so only swap DockGate can see is touched. */
+function swapPlan(op, current) {
+  const cur = current || { devices: [], fstab: [] };
+  if (op.action === 'set') {
+    if (cur.container) throw bad(`This server is a container (${cur.container}): its host decides swap`);
+    const path = SWAP.checkPath(op.path || '/swapfile'), size = SWAP.checkSize(op.sizeMb == null ? SWAP.DEFAULT_MB : op.sizeMb);
+    const dev = cur.devices.find(d => d.path === path);
+    if (dev && dev.type !== 'file') throw bad(`${path} is a ${dev.type}, not a file — it is not changed here`);
+    return { steps: [{ label: dev ? `Resize ${path} to ${size} MB` : `Make a ${size} MB swap file at ${path}`, cmd: SWAP.asRoot(SWAP.createScript(path, size), '{{S}}') }] };
+  }
+  if (op.action === 'remove') {
+    const path = SWAP.checkPath(op.path);
+    const dev = cur.devices.find(d => d.path === path);
+    if (dev && dev.type !== 'file') throw bad(`${path} is a ${dev.type}, not a file — it is not removed here`);
+    if (!dev && !(cur.fstab || []).includes(path)) throw bad(`${path} is not a swap file on this server`);
+    return { steps: [{ label: `Turn off and remove ${path}`, cmd: SWAP.asRoot(SWAP.removeScript(path), '{{S}}') }] };
+  }
+  throw bad('Unknown change');
 }
 
 /** Open-file limit for logins (limits.d) and for services (systemd DefaultLimitNOFILE). Takes effect for new sessions / restarted services. */
@@ -361,4 +401,4 @@ const CATALOG = [
   { group: 'Web servers', items: [['/etc/nginx/nginx.conf', 'nginx (checked with nginx -t)', 'nginx'], ['/etc/nginx/sites-available', 'nginx sites (folder)', 'nginx'], ['/etc/caddy/Caddyfile', 'Caddy', null], ['/etc/haproxy/haproxy.cfg', 'HAProxy', null]] },
 ];
 
-module.exports = { fstabVerify, F, READ, SYSCTL_INFO, CATALOG, sections, parseRead, parseHosts, parseFstab, hostnamePlan, hostsPlan, dnsPlan, sysctlPlan, nofilePlan, journaldPlan, networkPlan, fstabPlan };
+module.exports = { swapPlan, fstabVerify, F, READ, SYSCTL_INFO, CATALOG, sections, parseRead, parseHosts, parseFstab, hostnamePlan, hostsPlan, dnsPlan, sysctlPlan, nofilePlan, journaldPlan, networkPlan, fstabPlan };
