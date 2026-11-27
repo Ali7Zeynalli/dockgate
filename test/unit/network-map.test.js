@@ -91,3 +91,41 @@ test('compare: matches the file; the file changed the network; a file that can n
   assert.equal(empty.findings[0].kind, 'unused');
   assert.deepEqual(NM.compare(NM.describe({ Id: 'b', Name: 'bridge', Driver: 'bridge' }, []), {}).findings, []);
 });
+
+const HOST = `1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever
+2: eth0    inet 203.0.113.10/24 brd 203.0.113.255 scope global eth0\\       valid_lft forever
+2: eth0    inet6 2001:db8::10/64 scope global\\       valid_lft forever
+3: wg0    inet 10.8.0.2/24 scope global wg0\\       valid_lft forever
+5: br-08636ac9cd0d    inet 172.25.0.1/16 brd 172.25.255.255 scope global br-08636ac9cd0d
+6: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+7: eth1@if9    inet 192.168.50.4/24 scope global eth1
+@@routes
+default via 203.0.113.1 dev eth0
+10.8.0.0/24 dev wg0 scope link src 10.8.0.2
+10.100.0.0/16 via 10.8.0.1 dev wg0
+172.17.0.0/16 dev docker0 scope link src 172.17.0.1
+172.25.0.0/16 dev br-08636ac9cd0d scope link src 172.25.0.1
+192.168.50.0/24 dev eth1 scope link`;
+
+test('the server\'s own networks: interfaces (Docker\'s marked) and routes', () => {
+  const h = NM.parseHostNet(HOST);
+  assert.deepEqual(h.interfaces.map(i => [i.name, i.docker]), [['lo', false], ['eth0', false], ['wg0', false], ['br-08636ac9cd0d', true], ['docker0', true], ['eth1', false]]);
+  assert.deepEqual(h.interfaces.find(i => i.name === 'eth0').addrs, ['203.0.113.10/24', '2001:db8::10/64']);
+  assert.deepEqual(h.routes.filter(r => !r.docker).map(r => r.dst), ['10.8.0.0/24', '10.100.0.0/16', '192.168.50.0/24']);
+});
+
+test('subnet clashes: Docker networks refuse, a VPN route or the LAN is a warning, free is free', () => {
+  const h = NM.parseHostNet(HOST);
+  const nets = [{ name: 'web', subnets: ['172.30.0.0/16'] }, { name: 'bridge', subnets: ['172.17.0.0/16'] }];
+  assert.equal(NM.overlaps('10.100.5.0/24', '10.100.0.0/16'), true);
+  assert.equal(NM.overlaps('10.0.0.0/8', '10.100.0.0/16'), true);
+  assert.equal(NM.overlaps('10.101.0.0/16', '10.100.0.0/16'), false);
+  assert.equal(NM.overlaps('fd00::/8', '10.0.0.0/8'), false);
+  assert.deepEqual(NM.subnetConflicts('172.30.4.0/24', h, nets).map(c => [c.kind, c.with]), [['docker', 'web']]);
+  assert.deepEqual(NM.subnetConflicts('10.100.0.0/16', h, nets).map(c => [c.kind, c.with]), [['route', 'wg0']], 'a VPN route');
+  assert.deepEqual(NM.subnetConflicts('192.168.50.0/24', h, nets).map(c => c.kind), ['host'], 'the LAN once, not again as a route');
+  assert.deepEqual(NM.subnetConflicts('172.31.0.0/16', h, nets), []);
+  assert.deepEqual(NM.subnetConflicts('172.30.0.0/16', h, nets, { except: 'web' }), []);
+  assert.equal(NM.subnetConflicts('nonsense', h, nets)[0].kind, 'invalid');
+  assert.deepEqual(NM.subnetConflicts('10.100.0.0/16', null, nets), [], 'the server could not be read: only Docker');
+});

@@ -90,8 +90,14 @@ Router.register('network-detail', async (content, params) => {
     q('[data-nw-ctr]').forEach(a => a.onclick = (e) => { e.preventDefault(); Router.navigate('container-detail', { id: a.dataset.nwCtr }); });
     q('[data-nw-proj]').forEach(a => a.onclick = (e) => { e.preventDefault(); Router.navigate('deploy', { tab: 'compose', project: a.dataset.nwProj }); });
     q('[data-nw-disc]').forEach(b => b.onclick = () => showConfirm('Disconnect from the network', `Take <b>${esc(b.dataset.nwDisc)}</b> off <b>${esc(d.name)}</b>? It can no longer reach the containers here by name or address.`, async () => {
-      try { await API.post(`/networks/${encodeURIComponent(id)}/disconnect`, { container: b.dataset.nwDisc, force: true }); showToast(`Disconnected ${b.dataset.nwDisc}`); if (await load()) { paint(); compare(); } }
-      catch (e) { showToast(e.message, 'error'); }
+      const c = b.dataset.nwDisc, after = async () => { showToast(`Disconnected ${c}`); if (await load()) { paint(); compare(); } };
+      try { await API.post(`/networks/${encodeURIComponent(id)}/disconnect`, { container: c }); await after(); }
+      catch (e) {
+        showConfirm('Disconnect anyway?', `Docker did not disconnect <b>${esc(c)}</b>: ${esc(e.message)}<br><br>Force it? Its place on the network is removed even if the container does not answer.`, async () => {
+          try { await API.post(`/networks/${encodeURIComponent(id)}/disconnect`, { container: c, force: true }); await after(); }
+          catch (e2) { showToast(e2.message, 'error'); }
+        }, true);
+      }
     }, true));
     q('[data-nw-up]').forEach(b => b.onclick = () => {
       const p = b.dataset.nwUp, orphans = b.dataset.orphans === '1', svc = b.dataset.recreate || '';

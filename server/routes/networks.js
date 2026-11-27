@@ -8,6 +8,31 @@ router.get('/', async (req, res) => {
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
+// The server's own interfaces and routes (for the parent of a macvlan network, and for subnets that would clash).
+const hostCache = new Map(); // serverId -> { at, host }
+async function hostNet() {
+  const id = dockerService.getActiveServerId() || 'local';
+  const c = hostCache.get(id);
+  if (c && Date.now() - c.at < 60000) return c.host;
+  const host = require('../network-map').parseHostNet(await dockerService.runHelperOnce(require('../network-map').HOST_CMD, { network: 'host' }));
+  hostCache.set(id, { at: Date.now(), host });
+  return host;
+}
+router.get('/host-info', async (req, res) => {
+  try { res.json(await hostNet()); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+// What a subnet would clash with: other Docker networks, and the server's own networks and routes outside Docker.
+router.post('/check-subnet', async (req, res) => {
+  try {
+    const { subnets = [], except } = req.body || {};
+    const [host, nets] = await Promise.all([hostNet().catch(() => null), dockerService.listNetworks()]);
+    const list = nets.map(n => ({ name: n.name, subnets: ((n.ipam && n.ipam.Config) || []).map(x => x.Subnet).filter(Boolean) }));
+    const NMod = require('../network-map');
+    res.json({ hostRead: !!host, conflicts: (Array.isArray(subnets) ? subnets : [subnets]).filter(Boolean).flatMap(sn => NMod.subnetConflicts(String(sn).trim(), host, list, { except }).map(c => ({ ...c, for: sn }))) });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 // A network's page: members with addresses, aliases, ports and compose project (server/network-map.js).
 const NM = require('../network-map');
 async function readNetwork(id) {

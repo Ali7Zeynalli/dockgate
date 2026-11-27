@@ -142,4 +142,71 @@ function compare(desc, configs, others = []) {
   return { projects, findings, clean: !findings.some(f => f.level !== 'info') };
 }
 
-module.exports = { describe, compare, serviceNets, LABELS: { PROJECT, SERVICE, NETKEY, FILES, WORKDIR } };
+// ---------------------------------------------------------------- the server's own interfaces and routes
+// Read with a short helper container on the host network (works on a remote server too, through Docker):
+//   ip -o addr show; echo @@routes; ip route
+const net = require('net');
+const HOST_CMD = 'ip -o addr show 2>/dev/null; echo @@routes; ip route 2>/dev/null; ip -6 route 2>/dev/null';
+const DOCKER_IF = /^(docker\d*|docker_gwbridge|br-[0-9a-f]+|veth\w*|vxlan\w*|ov-\w+)$/;
+
+/** { interfaces: [{ name, addrs: [cidr], docker }], routes: [{ dst, dev, docker }] } */
+function parseHostNet(text) {
+  const [a, r = ''] = String(text || '').split('@@routes');
+  const ifs = {};
+  for (const l of a.split('\n')) {
+    const m = /^\d+:\s+(\S+?)(?:@\S+)?\s+(inet6?)\s+(\S+)/.exec(l.trim());
+    if (!m) continue;
+    const i = ifs[m[1]] = ifs[m[1]] || { name: m[1], addrs: [], docker: DOCKER_IF.test(m[1]) };
+    if (!i.addrs.includes(m[3])) i.addrs.push(m[3]);
+  }
+  const routes = [];
+  for (const l of r.split('\n')) {
+    const m = /^(\S+)(?:\s+via\s+\S+)?\s+dev\s+(\S+)/.exec(l.trim());
+    if (!m || m[1] === 'default' || !m[1].includes('/')) continue;
+    if (!routes.some(x => x.dst === m[1] && x.dev === m[2])) routes.push({ dst: m[1], dev: m[2], docker: DOCKER_IF.test(m[2]) });
+  }
+  return { interfaces: Object.values(ifs), routes };
+}
+
+const base = (cidr) => String(cidr).split('/')[0];
+/** Do two networks (CIDR) share any address? */
+function overlaps(a, b) {
+  const [ba, la] = String(a).split('/'), [bb, lb] = String(b).split('/');
+  const va = net.isIP(ba), vb = net.isIP(bb);
+  if (!va || va !== vb) return false;
+  const t = va === 6 ? 'ipv6' : 'ipv4';
+  const max = va === 6 ? 128 : 32;
+  try {
+    const A = new net.BlockList(); A.addSubnet(ba, la === undefined ? max : Number(la), t);
+    const B = new net.BlockList(); B.addSubnet(bb, lb === undefined ? max : Number(lb), t);
+    return A.check(bb, t) || B.check(ba, t);
+  } catch (e) { return false; }
+}
+
+/**
+ * What a new subnet would clash with: other Docker networks (Docker refuses those), and the server's own networks
+ * and routes outside Docker (Docker allows those, and the server then can not reach that network: an office LAN,
+ * a VPN, the cloud provider's private network). host: parseHostNet(...). networks: [{ name, subnets: [cidr] }].
+ */
+function subnetConflicts(subnet, host, networks, { except } = {}) {
+  const out = [];
+  if (!subnet) return out;
+  const [b, len] = String(subnet).split('/');
+  if (!net.isIP(b) || len === undefined || !/^\d+$/.test(len)) return [{ kind: 'invalid', text: `${subnet} is not a subnet (like 172.30.0.0/16).` }];
+  for (const n of networks || []) {
+    if (except && n.name === except) continue;
+    for (const s of n.subnets || []) if (overlaps(subnet, s)) out.push({ kind: 'docker', with: n.name, subnet: s, text: `Overlaps ${s} of the Docker network ${n.name}: Docker will refuse it.` });
+  }
+  for (const i of (host && host.interfaces) || []) {
+    if (i.docker || i.name === 'lo') continue;
+    for (const a of i.addrs) if (overlaps(subnet, a)) out.push({ kind: 'host', with: i.name, subnet: a, text: `Overlaps ${a} on the server's interface ${i.name}: the server and its containers could no longer reach that network.` });
+  }
+  for (const r of (host && host.routes) || []) {
+    if (r.docker) continue;
+    if (out.some(o => o.kind === 'host' && o.with === r.dev && base(o.subnet) && overlaps(o.subnet, r.dst))) continue;
+    if (overlaps(subnet, r.dst)) out.push({ kind: 'route', with: r.dev, subnet: r.dst, text: `Overlaps ${r.dst}, which the server reaches through ${r.dev} (a VPN or a private network?): traffic to it would go to the containers instead.` });
+  }
+  return out;
+}
+
+module.exports = { describe, compare, serviceNets, parseHostNet, overlaps, subnetConflicts, HOST_CMD, LABELS: { PROJECT, SERVICE, NETKEY, FILES, WORKDIR } };
