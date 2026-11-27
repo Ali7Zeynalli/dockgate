@@ -99,6 +99,13 @@ Before **Turn on Docker port isolation** applies anything, its dialog walks ever
 
 After a firewall change, DockGate also checks that 80 and 443 still answer when they answered before, and warns when one stopped.
 
+Two notifications watch the firewall of every server with UFW (every 5 minutes, one short SSH command; they go to the channels in Settings > Notifications and can be switched off there like the other rules):
+
+| Notification | When |
+|---|---|
+| **Web traffic blocked by the firewall** | 3 or more connections to port 80 or 443 were dropped in the last 5 minutes. Says how many, by what (UFW, or Docker port isolation to a container) and from which addresses. At most once an hour per server |
+| **Docker port isolation rules left behind** | DockGate's isolation rules are in the live firewall but not in `/etc/ufw/after.rules`. Once, until they are gone (**Remove them...** on this page) |
+
 **Remove them...** (on "rules left behind") takes DockGate's isolation rules out of DOCKER-USER. fail2ban's rules (honeypot, bans from other servers) and rules you added yourself stay. Then the page is read again.
 
 The check reads one snapshot and assumes a new TCP or UDP connection. A rule that uses a match DockGate cannot judge is shown in the steps and treated as not applying.

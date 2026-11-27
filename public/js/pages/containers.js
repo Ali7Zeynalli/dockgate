@@ -3,6 +3,7 @@
 const isUnhealthy = (c) => /\(unhealthy\)/i.test(c.status || '') || c.health === 'unhealthy';
 Router.register('containers', async (content) => {
   const view = Store.view('containers'); // filter, search and sort survive leaving the page
+  let topoGroup = view.get('topoGroup', 'stack'); // Topology: group by compose stack or by network
   let currentFilter = view.get('filter', 'all');
   let currentSearch = view.get('search', '');
   let currentSort = view.get('sort', 'name');
@@ -363,8 +364,22 @@ Router.register('containers', async (content) => {
     ensureTopoStyles();
     if (!containers.length) return '<div class="empty-state"><h3>Nothing to visualize</h3><p>No containers match the current filter.</p></div>';
 
-    const groups = getGroupedContainers(containers);
-    const keys = getSortedGroupKeys(groups);
+    // grouped by compose stack, or by network: each container in the zone of its first own network (Docker's
+    // default bridge last), marked when it is on other networks too
+    const byNet = topoGroup === 'network';
+    let groups, keys;
+    if (byNet) {
+      groups = {};
+      for (const c of containers) {
+        const own = topoCustomNets(c).slice().sort();
+        const k = own[0] || ((c.networks || []).includes('host') ? 'host' : (c.networks || [])[0] || 'none');
+        (groups[k] = groups[k] || []).push(c);
+      }
+      keys = Object.keys(groups).sort((a, b) => (['bridge', 'host', 'none'].includes(a) ? 1 : 0) - (['bridge', 'host', 'none'].includes(b) ? 1 : 0) || a.localeCompare(b));
+    } else {
+      groups = getGroupedContainers(containers);
+      keys = getSortedGroupKeys(groups);
+    }
     const CARDW = 196, CARDH = 62, COLGAP = 78, ROWGAP = 14, LABELH = 30, BANDGAP = 30, PADX = 18, PADY = 14;
     const tierIdx = { proxy: 0, app: 1, data: 2 };
     const colX = t => PADX + tierIdx[t] * (CARDW + COLGAP);
@@ -375,7 +390,7 @@ Router.register('containers', async (content) => {
       const list = groups[k];
       const tiers = { proxy: [], app: [], data: [] };
       list.forEach(c => tiers[topoRole(c)].push(c));
-      zones.push({ label: k ? ('Stack ' + k) : 'Not in a stack', x: PADX, y: bandTop });
+      zones.push({ label: byNet ? `Network ${k}` : k ? ('Stack ' + k) : 'Not in a stack', x: PADX, y: bandTop });
       const bodyTop = bandTop + LABELH;
       let maxRows = 0;
       ['proxy', 'app', 'data'].forEach(t => {
@@ -431,7 +446,7 @@ Router.register('containers', async (content) => {
       return `<div class="topo-node ${n.pub ? 'pub' : ''}" data-detail="${c.id}" title="${escapeHtml(c.name)}, ${escapeHtml(c.image)}" style="left:${n.x}px;top:${n.y}px;width:${CARDW}px;height:${CARDH}px">
         <div class="topo-node-h"><span class="topo-dot ${escapeHtml(c.state)}"></span><span class="topo-name">${escapeHtml(c.composeService || c.name)}</span>${n.pub ? `<span class="topo-pub">🌐 :${pubPorts[0]}</span>` : ''}</div>
         <div class="topo-img">${escapeHtml(topoShortImage(c.image))}</div>
-        <div class="topo-meta">${escapeHtml(c.state)}${nets.length ? ', ' + escapeHtml(nets.slice(0, 2).join(', ')) : ''}</div>
+        <div class="topo-meta">${escapeHtml(c.state)}${byNet ? (nets.length > 1 ? `, also on ${escapeHtml(nets.slice().sort().slice(1, 3).join(', '))}` : c.composeProject ? `, ${escapeHtml(c.composeProject)}` : '') : nets.length ? ', ' + escapeHtml(nets.slice(0, 2).join(', ')) : ''}</div>
       </div>`;
     }).join('');
     const zoneHtml = zones.map(z => `<div class="topo-zone-label" style="left:${z.x}px;top:${z.y}px">${escapeHtml(z.label)}</div>`).join('');
@@ -439,6 +454,7 @@ Router.register('containers', async (content) => {
     return `
       <div class="topo-legend">
         <span class="text-muted text-sm">Read-only topology - drawn live from running containers &amp; their Compose links.</span>
+        <select class="select" id="topo-group" style="width:auto;padding:3px 8px;font-size:12px"><option value="stack" ${byNet ? '' : 'selected'}>Group by stack</option><option value="network" ${byNet ? 'selected' : ''}>Group by network</option></select>
         <span style="flex:1"></span>
         <span class="topo-leg"><span class="topo-dot running"></span>running</span>
         <span class="topo-leg"><span class="topo-dot exited"></span>stopped</span>
@@ -484,6 +500,7 @@ Router.register('containers', async (content) => {
     document.getElementById('view-table')?.addEventListener('click', () => { currentView = 'table'; render(); });
     document.getElementById('view-card')?.addEventListener('click', () => { currentView = 'card'; render(); });
     document.getElementById('view-topology')?.addEventListener('click', () => { currentView = 'topology'; render(); });
+    document.getElementById('topo-group')?.addEventListener('change', (e) => { topoGroup = e.target.value; view.set('topoGroup', topoGroup); render(); });
 
     // Run a new container (guided modal)
     document.getElementById('run-container-btn')?.addEventListener('click', () => openRunContainerModal());

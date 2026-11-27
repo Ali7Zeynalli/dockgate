@@ -15,7 +15,7 @@ The list of every container on the server, and a page for each one with its logs
 1. **Search** by name, image, ID or port.
 2. **Filters:** All, Running, Stopped, Unhealthy, Restarting, Paused, Swarm. A filter only appears when some container is in that state.
 3. **Group by stack** shows the containers of each Compose project together. The rest are under *Not in a stack*.
-4. **Views:** table, cards, or **topology** (a read-only graph of the stacks and their networks).
+4. **Views:** table, cards, or **topology** (a read-only graph of the stacks and their networks). In topology, **Group by network** puts each container in the zone of its own network instead of its stack, and says which other networks it is on.
 5. **Check for updates** asks each registry whether a newer image exists for each container's tag. **Update history** lists the image updates and roll backs started from DockGate on this server.
 6. **Run container** opens a guided form (see below).
 

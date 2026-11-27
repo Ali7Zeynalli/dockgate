@@ -671,6 +671,7 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   if (process.env.NODE_ENV !== 'test') require('./cron-monitor').start(); // cron jobs failed / did not run
   if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
   if (process.env.NODE_ENV !== 'test') require('./honeypot-fleet').start(); // honeypot bans shared with every server, every 5 min
+  if (process.env.NODE_ENV !== 'test') require('./firewall-monitor').start(); // web traffic blocked / isolation rules left behind, every 5 min
   if (process.env.NODE_ENV !== 'test') { require('./swarm-monitor').start(); require('./swarm-stacks').startBridgeKeeper(); require('./agent/control').start(); require('./compose-heal').start(); require('./compose-autoscale').start(); require('./swarm-firewall').start(); require('./compose-keep').start(); }
   if (process.env.NODE_ENV !== 'test') require('./swarm-services').startSampler(); // Swarm > Services > Graphs (every 2 min, 48 h)
   if (process.env.NODE_ENV !== 'test') require('./swarm-autoscale').start(); // autoscale rules, every minute
