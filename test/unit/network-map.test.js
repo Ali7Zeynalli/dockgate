@@ -129,3 +129,13 @@ test('subnet clashes: Docker networks refuse, a VPN route or the LAN is a warnin
   assert.equal(NM.subnetConflicts('nonsense', h, nets)[0].kind, 'invalid');
   assert.deepEqual(NM.subnetConflicts('10.100.0.0/16', null, nets), [], 'the server could not be read: only Docker');
 });
+
+test('can A reach B: the command takes only a name or address and a port, the answer is read back', () => {
+  assert.match(NM.reachCmd('db', 5432), /getent hosts db.*nc -z -w 3 db 5432/);
+  assert.match(NM.reachCmd('172.30.0.5'), /echo skip/);
+  assert.throws(() => NM.reachCmd('db; rm -rf /'), /Target/);
+  assert.throws(() => NM.reachCmd('db', 70000), /Port/);
+  const r = NM.parseReach('@@dns\r\n172.31.0.10    postgres\n172.31.0.10 postgres\n@@resolv\nnameserver 127.0.0.11\n@@tcp\nrefused\n');
+  assert.deepEqual(r, { resolved: ['172.31.0.10'], nameserver: '127.0.0.11', tcp: 'refused' });
+  assert.deepEqual(NM.parseReach('@@dns\nnone\n@@resolv\n@@tcp\nskip').resolved, []);
+});

@@ -81,6 +81,19 @@ Router.register('network-detail', async (content, params) => {
           ${UI.btn('Connect', 'data-nw-connect')}</div>
         <div class="ui-sub" style="margin-top:4px">Connecting here is not written to any compose file: the compare above shows it as connected by hand.</div>` : ''}
 
+      ${UI.header('Can a container reach another?', 'Checked from inside the first container\'s network: is the name found (Docker\'s DNS), which address and network it gives, and does the port answer. The first container must be running.')}
+      <div class="card" style="padding:12px 14px">
+        <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+          <label class="ui-field" style="margin:0;flex:2;min-width:180px"><span class="ui-label">From</span><select class="select" id="nw-r-from">${d.members.filter(m => m.state === 'running').map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('') || '<option value="">no running container here</option>'}</select></label>
+          <label class="ui-field" style="margin:0;flex:2;min-width:180px"><span class="ui-label">To (name, alias or address)</span><input class="input td-mono" id="nw-r-to" list="nw-r-names" placeholder="db"><datalist id="nw-r-names">${[...new Set(d.members.flatMap(m => [m.name, ...m.aliases, m.service].filter(Boolean)))].map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
+          <label class="ui-field" style="margin:0;width:110px"><span class="ui-label">Port (optional)</span><input class="input" id="nw-r-port" type="number" min="1" max="65535" placeholder="5432"></label>
+          ${UI.btn('Check', 'data-nw-reach', 'btn-primary')}
+        </div>
+        <div data-nw-reach-res style="margin-top:10px"></div>
+      </div>
+
+      <details class="card" style="padding:10px 14px;margin-top:12px" data-nw-hist><summary style="cursor:pointer"><b>History</b> <span class="ui-sub">what DockGate did to this network: created, connected, disconnected, changed</span></summary><div data-nw-hist-body class="ui-sub" style="margin-top:8px">Reading...</div></details>
+
       ${Object.keys(d.options).length || Object.keys(d.labels).length ? `<details class="card" style="padding:10px 14px;margin-top:12px"><summary style="cursor:pointer"><b>Options and labels</b></summary>
         ${[...Object.entries(d.options), ...Object.entries(d.labels)].map(([k, v]) => `<div style="display:grid;grid-template-columns:minmax(200px,1fr) 2fr;gap:8px;font-size:12px;margin-top:4px"><span class="td-mono ui-sub" style="overflow-wrap:anywhere">${esc(k)}</span><span class="td-mono" style="overflow-wrap:anywhere">${esc(v)}</span></div>`).join('')}</details>` : ''}`;
     wire(canAttach);
@@ -92,6 +105,33 @@ Router.register('network-detail', async (content, params) => {
     content.querySelector('[data-nw-reload]').onclick = async () => { if (await load()) { paint(); compare(); } };
     content.querySelector('[data-nw-compare]').onclick = () => compare();
     content.querySelector('[data-nw-change]')?.addEventListener('click', openChange);
+    content.querySelector('[data-nw-reach]').onclick = async () => {
+      const box = content.querySelector('[data-nw-reach-res]');
+      const body = { from: content.querySelector('#nw-r-from').value, to: content.querySelector('#nw-r-to').value.trim(), port: content.querySelector('#nw-r-port').value.trim() || undefined };
+      if (!body.from) { showToast('No running container to check from', 'warning'); return; }
+      if (!body.to) { showToast('To: a name, alias or address', 'warning'); return; }
+      box.innerHTML = '<div class="ui-sub">Checking (a small helper container joins the first one\'s network for a few seconds)...</div>';
+      try {
+        const r = await API.post(`/networks/${encodeURIComponent(id)}/reach`, body);
+        const row = (ok, title, text) => `<div style="display:flex;gap:8px;align-items:flex-start;margin:4px 0">${UI.pill(ok === true ? 'ok' : ok === false ? 'bad' : 'off', ok === true ? 'yes' : ok === false ? 'no' : 'skipped')}<div class="text-sm"><b>${title}</b> ${text}</div></div>`;
+        const found = r.resolved.length > 0;
+        const tcp = r.tcp === 'open' ? true : ['refused', 'timeout'].includes(r.tcp) ? false : null;
+        box.innerHTML = row(found, 'Name found:', found ? r.addresses.map(a => `<span class="td-mono">${esc(a.ip)}</span>${a.network ? ` on ${esc(a.network)}${a.shared ? '' : ` <span style="color:var(--danger)">(${esc(r.from)} is not on that network: it can not reach it)</span>` }` : ''}`).join(', ') : `<span class="td-mono">${esc(body.to)}</span> is not known to ${esc(r.from)}'s DNS (${esc(r.nameserver || '?')}). The name must be a container or alias on a network ${esc(r.from)} is on (${esc(r.fromNetworks.join(', '))}).`)
+          + (body.port ? row(tcp, `Port ${esc(body.port)}:`, r.tcp === 'open' ? 'answers.' : r.tcp === 'refused' ? 'refused: nothing listens there (wrong port, or the service is down or listens only on 127.0.0.1).' : r.tcp === 'timeout' ? 'no answer in 3 seconds: dropped on the way (an internal network, a firewall rule) or the address is not reachable.' : 'not checked.') : '');
+      } catch (e) { box.innerHTML = `<div class="insight-card danger"><div>${esc(e.message)}</div></div>`; }
+    };
+    content.querySelector('[data-nw-hist]').addEventListener('toggle', async (e) => {
+      if (!e.target.open || e.target.dataset.loaded) return;
+      e.target.dataset.loaded = '1';
+      const b = content.querySelector('[data-nw-hist-body]');
+      try {
+        const rows = await API.get(`/networks/${encodeURIComponent(id)}/history`);
+        const what = (r) => { let x = {}; try { x = JSON.parse(r.details || '{}'); } catch (er) { /* text */ }
+          const c = x.container ? ` <span class="td-mono">${esc(x.container)}</span>` : '';
+          return ({ create: 'Created', remove: 'Removed', connect: `Connected${c}${x.aliases && x.aliases.length ? ` as ${esc(x.aliases.join(', '))}` : ''}${x.ipv4 ? ` at ${esc(x.ipv4)}` : ''}`, disconnect: `Disconnected${c}`, recreate: `Settings changed (${esc(Object.entries(x.changes || {}).filter(([, v]) => v !== '' && v !== undefined).map(([k, v]) => `${k} ${v}`).join(', '))})`, 'network-connect': `Connected <span class="td-mono">${esc(r.resource_name)}</span>`, 'network-disconnect': `Disconnected <span class="td-mono">${esc(r.resource_name)}</span>` })[r.action] || esc(r.action); };
+        b.innerHTML = rows.length ? rows.map(r => `<div style="display:grid;grid-template-columns:170px minmax(0,1fr) auto;gap:8px;font-size:12.5px;margin-top:4px"><span class="ui-sub">${esc(formatTime(String(r.created_at).replace(' ', 'T') + 'Z'))}</span><span>${what(r)}</span><span class="ui-sub td-mono">${esc(r.source_ip || '')}</span></div>`).join('') : 'Nothing recorded for this network. Changes made outside DockGate (docker network ... on the server) are not here.';
+      } catch (er) { b.textContent = er.message; }
+    });
     q('[data-nw-ctr]').forEach(a => a.onclick = (e) => { e.preventDefault(); Router.navigate('container-detail', { id: a.dataset.nwCtr }); });
     q('[data-nw-proj]').forEach(a => a.onclick = (e) => { e.preventDefault(); Router.navigate('deploy', { tab: 'compose', project: a.dataset.nwProj }); });
     q('[data-nw-disc]').forEach(b => b.onclick = () => showConfirm('Disconnect from the network', `Take <b>${esc(b.dataset.nwDisc)}</b> off <b>${esc(d.name)}</b>? It can no longer reach the containers here by name or address.`, async () => {

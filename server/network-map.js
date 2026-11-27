@@ -209,4 +209,27 @@ function subnetConflicts(subnet, host, networks, { except } = {}) {
   return out;
 }
 
-module.exports = { describe, compare, serviceNets, parseHostNet, overlaps, subnetConflicts, HOST_CMD, LABELS: { PROJECT, SERVICE, NETKEY, FILES, WORKDIR } };
+// ---------------------------------------------------------------- can A reach B?
+// A helper container shares the network of container A (same addresses, same DNS through Docker's resolver), looks
+// the name up and opens a TCP connection. Its output, cut in sections, is read by parseReach.
+const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,252}$/;
+function reachCmd(target, port) {
+  if (!NAME_RE.test(String(target)) && !net.isIP(String(target))) throw Object.assign(new Error('Target: a container name, alias or address'), { statusCode: 400 });
+  const p = port === undefined || port === null || port === '' ? null : Number(port);
+  if (p !== null && !(Number.isInteger(p) && p > 0 && p < 65536)) throw Object.assign(new Error('Port: 1-65535'), { statusCode: 400 });
+  const t = String(target);
+  return [
+    `echo @@dns; getent hosts ${t} || echo none`,
+    'echo @@resolv; grep -m1 ^nameserver /etc/resolv.conf',
+    p === null ? 'echo @@tcp; echo skip' : `echo @@tcp; S=$(date +%s); if nc -z -w 3 ${t} ${p} 2>/dev/null; then echo open; else E=$(( $(date +%s) - S )); if [ "$E" -ge 3 ]; then echo timeout; else echo refused; fi; fi`,
+  ].join('; ');
+}
+/** { resolved: [ip], nameserver, tcp: open | refused | timeout | skip | null } */
+function parseReach(text) {
+  const sec = {}; let cur = null;
+  for (const l of String(text || '').replace(/\r/g, '').split('\n')) { const m = /^@@(\w+)$/.exec(l.trim()); if (m) { cur = m[1]; sec[cur] = []; } else if (cur && l.trim()) sec[cur].push(l.trim()); }
+  const resolved = [...new Set((sec.dns || []).filter(l => l !== 'none').map(l => l.split(/\s+/)[0]).filter(ip => net.isIP(ip)))];
+  return { resolved, nameserver: ((sec.resolv || [])[0] || '').replace(/^nameserver\s+/, ''), tcp: (sec.tcp || [])[0] || null };
+}
+
+module.exports = { describe, compare, serviceNets, parseHostNet, overlaps, subnetConflicts, HOST_CMD, reachCmd, parseReach, LABELS: { PROJECT, SERVICE, NETKEY, FILES, WORKDIR } };
