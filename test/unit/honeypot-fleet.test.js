@@ -45,7 +45,7 @@ test('sync: a sharing server\'s bans reach the receiving one; what ended is remo
   };
   const res = await FB.syncOnce({ now, io, rows });
   assert.equal(res.added, 1, 'only 192.0.2.50: the others are allowlisted, a server, or private');
-  assert.deepEqual(calls.map(c => c[1].replace('{{S}}', '')), ['fail2ban-client set dockgate-fleet banip 192.0.2.50 >/dev/null', 'fail2ban-client set dockgate-fleet unbanip 192.0.2.99 >/dev/null 2>&1; true']);
+  assert.deepEqual(calls.map(c => c[1].split('{{S}}').join('')), ['fail2ban-client set dockgate-fleet banip 192.0.2.50 >/dev/null && fail2ban-client set dockgate-fleet unbanip 192.0.2.99 >/dev/null 2>&1; true'], 'one SSH command for both');
   assert.equal(FB.flagsOf('t-b').active, 1);
   // a server that does not answer is retried next time, the others go on
   calls.length = 0;
@@ -82,4 +82,15 @@ test('receiving jail: reads no log, bans on every port, removed again on failure
   assert.match(jail, /fleet-docker, chain=DOCKER-USER/);
   assert.match(p.rollback, /rm -f \/etc\/fail2ban\/jail\.d\/dockgate-fleet\.conf/);
   assert.throws(() => FB.saveSettings({ allow: ['example.com'] }), /Allowed address/);
+});
+
+test('a large first sync goes in a few SSH commands, each below the command line limit', () => {
+  const ips = Array.from({ length: 20000 }, (_, i) => `198.18.${Math.floor(i / 250)}.${i % 250 + 1}`);
+  const cmds = [];
+  for (let i = 0; i < ips.length; i += 400) cmds.push(`{{S}}fail2ban-client set dockgate-fleet banip ${ips.slice(i, i + 400).join(' ')} >/dev/null`);
+  const b = FB.batches(cmds);
+  assert.ok(b.length <= 5, `${b.length} commands`);
+  for (const x of b) assert.ok(x.length < 100 * 1024);
+  assert.equal(b.join(' && ').split('banip').length - 1, 50, 'nothing lost');
+  assert.deepEqual(FB.batches([]), []);
 });

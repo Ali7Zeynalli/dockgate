@@ -146,6 +146,17 @@ async function serverAddresses(rows) {
 }
 
 // ---------------------------------------------------------------- the sync
+const BATCH_BYTES = 90 * 1024; // one SSH command carries several fail2ban-client calls (a remote command line stays under 128 KB)
+/** Joins commands into as few shell lines as fit; a failing ban call stops its line with an error. */
+function batches(cmds) {
+  const out = []; let cur = '';
+  for (const c of cmds) {
+    if (cur && cur.length + c.length + 4 > BATCH_BYTES) { out.push(cur); cur = ''; }
+    cur = cur ? `${cur} && ${c}` : c;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
 let running = null;
 let lastRun = null;
 const read = (row) => runner.read(cfgOf(row), READ);
@@ -193,8 +204,10 @@ async function syncOnce({ now = Date.now(), io = { read, sh }, rows = remoteServ
       const toBan = [...desired].filter(ip => !present.has(ip));
       const toUnban = v.fleetBans.filter(ip => !desired.has(ip));
       try {
-        for (let i = 0; i < toBan.length; i += CHUNK) await io.sh(r, `{{S}}fail2ban-client set ${JAIL} banip ${toBan.slice(i, i + CHUNK).join(' ')} >/dev/null`);
-        for (let i = 0; i < toUnban.length; i += CHUNK) await io.sh(r, `{{S}}fail2ban-client set ${JAIL} unbanip ${toUnban.slice(i, i + CHUNK).join(' ')} >/dev/null 2>&1; true`);
+        const cmds = [];
+        for (let i = 0; i < toBan.length; i += CHUNK) cmds.push(`{{S}}fail2ban-client set ${JAIL} banip ${toBan.slice(i, i + CHUNK).join(' ')} >/dev/null`);
+        for (let i = 0; i < toUnban.length; i += CHUNK) cmds.push(`{{S}}fail2ban-client set ${JAIL} unbanip ${toUnban.slice(i, i + CHUNK).join(' ')} >/dev/null 2>&1; true`);
+        for (const batch of batches(cmds)) await io.sh(r, batch);
         active = present.size + toBan.length - toUnban.length;
         results[r.id] = { banned: toBan.length, unbanned: toUnban.length };
       } catch (e) { error = e.message.slice(0, 200); results[r.id] = { error }; }
@@ -289,4 +302,4 @@ function status({ now = Date.now() } = {}) {
 }
 function forget(serverId) { q.dropServer.run(serverId); }
 
-module.exports = { JAIL, JAIL_FILE, FILTER_FILE, FILTER_TEXT, READ, EVERY_MS, MAX_ACTIVE, settings, saveSettings, flagsOf, setFlags, parseRead, protectedList, syncOnce, sync, start, receivePlan, stopReceivingPlan, unbanEverywhere, status, forget, q };
+module.exports = { batches, JAIL, JAIL_FILE, FILTER_FILE, FILTER_TEXT, READ, EVERY_MS, MAX_ACTIVE, settings, saveSettings, flagsOf, setFlags, parseRead, protectedList, syncOnce, sync, start, receivePlan, stopReceivingPlan, unbanEverywhere, status, forget, q };

@@ -10,6 +10,7 @@
   - DockGate syncs every 5 minutes, or at once with **Sync now**. A ban ends on every server when it ends where it was caught. A server that does not answer is tried again on the next sync.
   - **Never spread**: DockGate's address, every managed server's addresses, private networks and the addresses you list.
   - **Unban everywhere** for one address: out of the honeypot that caught it and out of every receiving server.
+  - A large list goes in a few SSH commands per server (about 5 000 addresses each), not one per 400.
   - The page lists the servers (honeypot, sharing, receiving, bans here, last sync, problems) and the addresses spread now. Status > Overview counts the bans from other servers next to the honeypot.
 
 ### Changed
