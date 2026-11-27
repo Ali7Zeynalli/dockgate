@@ -49,7 +49,7 @@ Router.register('network-detail', async (content, params) => {
     const made = d.definedBy ? `Compose project <b>${esc(d.definedBy.project)}</b>${d.definedBy.key ? ` (as <span class="td-mono">${esc(d.definedBy.key)}</span>)` : ''}` : d.builtIn ? 'Docker (its own network)' : 'By hand or by another tool (docker network create)';
     content.innerHTML = `
       ${UI.header(esc(d.name), `${esc(d.driver)} network, ${d.members.length} container${d.members.length === 1 ? '' : 's'}.`,
-        `${UI.btn('Back', 'data-nw-back')} ${UI.btn('Read again', 'data-nw-reload')} ${UI.btn('Compare with compose', 'data-nw-compare', 'btn-primary')}`)}
+        `${UI.btn('Back', 'data-nw-back')} ${UI.btn('Read again', 'data-nw-reload')} ${d.builtIn ? '' : UI.btn('Change settings...', 'data-nw-change')} ${UI.btn('Compare with compose', 'data-nw-compare', 'btn-primary')}`)}
       ${kv([
         ['Made by', made],
         ['Driver', `${esc(d.driver)}, ${esc(d.scope)}`],
@@ -74,7 +74,11 @@ Router.register('network-detail', async (content, params) => {
           m.ports.length ? m.ports.map(p => `<span class="td-mono">${p.host}->${p.port}/${esc(p.proto)}</span>`).join('<br>') : '<span class="ui-sub">-</span>',
           canAttach ? UI.btn('Disconnect...', `data-nw-disc="${esc(m.name)}"`) : '',
         ] })), { minWidth: 820 }) : '<div class="ui-sub" style="margin:4px 0 10px">No container is on this network.</div>'}
-      ${canAttach ? `<div style="display:flex;gap:6px;align-items:center;margin-top:8px;max-width:520px"><select class="select" id="nw-conn" style="flex:1"><option value="">Connect a container...</option></select>${UI.btn('Connect', 'data-nw-connect')}</div>
+      ${canAttach ? `<div style="display:flex;gap:6px;align-items:end;margin-top:8px;flex-wrap:wrap">
+          <label class="ui-field" style="margin:0;flex:2;min-width:200px"><span class="ui-label">Container</span><select class="select" id="nw-conn"><option value="">Connect a container...</option></select></label>
+          <label class="ui-field" style="margin:0;flex:2;min-width:160px"><span class="ui-label">Aliases (optional)</span><input class="input td-mono" id="nw-conn-alias" placeholder="db, postgres"></label>
+          <label class="ui-field" style="margin:0;flex:1;min-width:140px"><span class="ui-label">Fixed address (optional)</span><input class="input td-mono" id="nw-conn-ip" placeholder="${esc((d.subnets[0] || {}).gateway ? (d.subnets[0].gateway.replace(/\.\d+$/, '.50')) : '172.30.0.50')}"></label>
+          ${UI.btn('Connect', 'data-nw-connect')}</div>
         <div class="ui-sub" style="margin-top:4px">Connecting here is not written to any compose file: the compare above shows it as connected by hand.</div>` : ''}
 
       ${Object.keys(d.options).length || Object.keys(d.labels).length ? `<details class="card" style="padding:10px 14px;margin-top:12px"><summary style="cursor:pointer"><b>Options and labels</b></summary>
@@ -87,6 +91,7 @@ Router.register('network-detail', async (content, params) => {
     content.querySelector('[data-nw-back]').onclick = () => Router.navigate('resources', { tab: 'networks' });
     content.querySelector('[data-nw-reload]').onclick = async () => { if (await load()) { paint(); compare(); } };
     content.querySelector('[data-nw-compare]').onclick = () => compare();
+    content.querySelector('[data-nw-change]')?.addEventListener('click', openChange);
     q('[data-nw-ctr]').forEach(a => a.onclick = (e) => { e.preventDefault(); Router.navigate('container-detail', { id: a.dataset.nwCtr }); });
     q('[data-nw-proj]').forEach(a => a.onclick = (e) => { e.preventDefault(); Router.navigate('deploy', { tab: 'compose', project: a.dataset.nwProj }); });
     q('[data-nw-disc]').forEach(b => b.onclick = () => showConfirm('Disconnect from the network', `Take <b>${esc(b.dataset.nwDisc)}</b> off <b>${esc(d.name)}</b>? It can no longer reach the containers here by name or address.`, async () => {
@@ -117,10 +122,82 @@ Router.register('network-detail', async (content, params) => {
       }).catch(() => {});
       content.querySelector('[data-nw-connect]').onclick = async () => {
         if (!sel.value) { showToast('Pick a container', 'warning'); return; }
-        try { await API.post(`/networks/${encodeURIComponent(id)}/connect`, { container: sel.value }); showToast(`Connected ${sel.value}`); if (await load()) { paint(); compare(); } }
+        const ip = content.querySelector('#nw-conn-ip').value.trim();
+        const body = { container: sel.value, aliases: content.querySelector('#nw-conn-alias').value.trim() };
+        if (ip) body[ip.includes(':') ? 'ipv6' : 'ipv4'] = ip;
+        try { await API.post(`/networks/${encodeURIComponent(id)}/connect`, body); showToast(`Connected ${sel.value}`); if (await load()) { paint(); compare(); } }
         catch (e) { showToast(e.message, 'error'); }
       };
     }
+  }
+
+  // Change settings: the network is made again with the new settings and every container goes back to it.
+  async function openChange() {
+    let chk;
+    try { chk = await API.get(`/networks/${encodeURIComponent(id)}/recreate-check`); } catch (e) { showToast(e.message, 'error'); return; }
+    if (chk.refusal) {
+      const proj = d.definedBy && d.definedBy.project;
+      showModal('Change settings', `<div class="text-sm">${esc(chk.refusal)}</div>`, [...(proj ? [{ label: `Open ${proj}`, className: 'btn btn-primary', onClick: () => Router.navigate('deploy', { tab: 'compose', project: proj }) }] : []), { label: 'Close', className: 'btn btn-secondary' }]);
+      return;
+    }
+    const s4 = d.subnets.find(x => !x.subnet.includes(':')) || {}, s6 = d.subnets.find(x => x.subnet.includes(':')) || {};
+    const o = d.options || {};
+    const running = chk.members.filter(m => m.state === 'running');
+    const chk1 = (idn, label, on, hint = '') => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" id="${idn}" ${on ? 'checked' : ''}> ${label}${hint ? ` <span class="ui-sub">${hint}</span>` : ''}</label>`;
+    UI.dialog({ title: `Change settings: ${d.name}`, saveLabel: 'Make it again with these settings', danger: true, wide: true,
+      body: `<div class="text-sm" style="color:var(--text-secondary)">Docker can not change a network in place. DockGate disconnects the containers, removes the network, creates it again under the same name with these settings, and connects every container back with its aliases. If a step fails after the removal, the old network comes back.</div>
+        <div class="insight-card ${running.length ? 'warning' : 'info'}" style="display:block;margin:8px 0">${chk.members.length ? `${chk.members.length} container${chk.members.length === 1 ? '' : 's'} on it${running.length ? `, ${running.length} running: they can not reach each other over this network for a few seconds` : ''}: ${chk.members.map(m => esc(m.name)).join(', ')}.` : 'No container is on it.'}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <label class="ui-field" style="margin:0;flex:1;min-width:150px"><span class="ui-label">Subnet</span><input class="input td-mono" id="ch-subnet" value="${esc(s4.subnet || '')}"></label>
+          <label class="ui-field" style="margin:0;flex:1;min-width:130px"><span class="ui-label">Gateway</span><input class="input td-mono" id="ch-gateway" value="${esc(s4.gateway || '')}"></label>
+          <label class="ui-field" style="margin:0;flex:1;min-width:130px"><span class="ui-label">IP range</span><input class="input td-mono" id="ch-range" value="${esc(s4.range || '')}"></label>
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">${chk1('ch-internal', 'Internal', d.internal, '(no way out to the internet)')}${chk1('ch-attachable', 'Attachable', d.attachable)}${chk1('ch-ipv6', 'IPv6', d.ipv6)}</div>
+        <div style="display:${d.ipv6 ? 'flex' : 'none'};gap:10px;flex-wrap:wrap;margin-top:8px" id="ch-v6"><label class="ui-field" style="margin:0;flex:2;min-width:180px"><span class="ui-label">IPv6 subnet</span><input class="input td-mono" id="ch-subnet6" value="${esc(s6.subnet || '')}" placeholder="fd12:3456:789a::/64"></label></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+          <label class="ui-field" style="margin:0;flex:1;min-width:120px"><span class="ui-label">MTU</span><input class="input" id="ch-mtu" type="number" min="576" max="9000" placeholder="default" value="${esc(o['com.docker.network.driver.mtu'] || '')}"></label>
+        </div>
+        ${d.driver === 'bridge' ? `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">${chk1('ch-icc', 'Containers can talk to each other', o['com.docker.network.bridge.enable_icc'] !== 'false')}${chk1('ch-masq', 'Outgoing NAT', o['com.docker.network.bridge.enable_ip_masquerade'] !== 'false')}</div>` : ''}
+        <div data-ch-conf style="margin-top:8px"></div>
+        <div class="ui-sub" style="margin-top:6px">A container with a fixed address keeps it when it fits the new subnet; otherwise it gets a new one (the log says which).</div>`,
+      onOpen: (ov) => {
+        const q = (x) => ov.querySelector(x);
+        q('#ch-ipv6').addEventListener('change', () => { q('#ch-v6').style.display = q('#ch-ipv6').checked ? 'flex' : 'none'; });
+        let t = null;
+        const check = () => { clearTimeout(t); t = setTimeout(async () => {
+          const subs = [q('#ch-subnet').value.trim(), q('#ch-ipv6').checked ? q('#ch-subnet6').value.trim() : ''].filter(Boolean);
+          try { const r = await API.post('/networks/check-subnet', { subnets: subs, except: d.name }); q('[data-ch-conf]').innerHTML = r.conflicts.length ? `<div class="insight-card warning" style="display:block">${r.conflicts.map(c => `<div>${esc(c.text)}</div>`).join('')}</div>` : ''; } catch (e) { /* no check */ }
+        }, 350); };
+        ['#ch-subnet', '#ch-subnet6'].forEach(x => q(x).addEventListener('input', check));
+        check();
+      },
+      onSave: async (ov) => {
+        const q = (x) => ov.querySelector(x);
+        const changes = { subnet: q('#ch-subnet').value.trim(), gateway: q('#ch-gateway').value.trim(), ipRange: q('#ch-range').value.trim(), internal: q('#ch-internal').checked, attachable: q('#ch-attachable').checked, ipv6: q('#ch-ipv6').checked, subnet6: q('#ch-subnet6').value.trim(), mtu: q('#ch-mtu').value.trim() };
+        if (q('#ch-icc')) { changes.icc = q('#ch-icc').checked; changes.masquerade = q('#ch-masq').checked; }
+        const r = await API.post(`/networks/${encodeURIComponent(id)}/recreate`, { changes });
+        setTimeout(async () => {
+          const j = await followNetJob(r.jobId, d.name);
+          // the network has a new id after a successful change: open it by name
+          if (j && j.status === 'done') { showToast(`${d.name} has the new settings, every container is back`); Router.navigate('network-detail', { id: d.name }, { replace: true }); }
+          else if (await load()) { paint(); compare(); }
+        }, 0);
+      } });
+  }
+
+  // A network job: its steps and log until it ends.
+  function followNetJob(jobId, name) {
+    return new Promise((resolve) => {
+      const m = showModal(`Change settings - ${esc(name)}`, '<div id="nwr-steps"></div><pre id="nwr-log" style="max-height:44vh;overflow:auto;background:#000;color:#ddd;padding:8px;border-radius:6px;font-size:12px;white-space:pre-wrap;margin-top:8px"></pre>', [{ label: 'Close', className: 'btn btn-secondary' }]);
+      const root = m.overlay;
+      const tick = async () => {
+        let j; try { j = await API.get(`/networks/jobs/${jobId}`); } catch (e) { root.querySelector('#nwr-steps').textContent = e.message; resolve(null); return; }
+        root.querySelector('#nwr-steps').innerHTML = j.steps.map(st => `<div style="display:flex;gap:8px;align-items:center;margin:3px 0">${UI.pill(st.status === 'done' ? 'ok' : st.status === 'failed' ? 'bad' : 'info', st.status === 'done' ? 'done' : st.status === 'failed' ? 'failed' : 'running')}<span class="text-sm">${esc(st.label)}</span></div>`).join('') + (j.status !== 'running' ? `<div class="text-sm" style="margin-top:6px;font-weight:600;color:${j.status === 'done' ? 'var(--success)' : 'var(--danger)'}">${j.status === 'done' ? 'Done: the network has the new settings and every container is back.' : `Failed: ${esc(j.error || '')}`}</div>` : '');
+        root.querySelector('#nwr-log').textContent = j.log || '';
+        if (j.status === 'running') setTimeout(tick, 800); else resolve(j);
+      };
+      tick();
+    });
   }
 
   // A compose job: its log until it ends.
