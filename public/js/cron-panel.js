@@ -44,7 +44,7 @@ async function renderCronPanelAll(serverId, container) {
 
   container.innerHTML = `
     ${UI.header('Cron jobs', 'Scheduled commands on this server: crontabs, /etc/cron.d and systemd timers. Jobs run on the server\'s clock.',
-      `<span class="ui-chip">Server time <b class="td-mono" style="margin-left:4px">${fmtServer(Date.now()).slice(11)} ${esc(d.tzName || tzTxt(d.offsetMin))}</b>${d.offsetMin !== yourOffset ? ` <span class="ui-sub" style="margin-left:4px">· yours ${tzTxt(yourOffset)}</span>` : ''}</span>
+      `<span class="ui-chip">Server time <b class="td-mono" style="margin-left:4px">${fmtServer(Date.now()).slice(11)} ${esc(d.tzName || tzTxt(d.offsetMin))}</b>${d.offsetMin !== yourOffset ? ` <span class="ui-sub" style="margin-left:4px">- yours ${tzTxt(yourOffset)}</span>` : ''}</span>
        ${d.cronRunning ? UI.pill('ok', '● cron running') : UI.pill('bad', '● cron not running')}
        ${editable.length ? UI.primary('+ New job', 'data-new') : ''}`)}
     ${!d.cronRunning ? '<div class="insight-card danger" style="margin-bottom:10px"><div><b>No cron daemon is running.</b> None of these jobs runs until it is started (Services tab: <span class="td-mono">cron</span> / <span class="td-mono">crond</span>).</div></div>' : ''}

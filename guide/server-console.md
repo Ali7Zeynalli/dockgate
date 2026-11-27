@@ -101,7 +101,7 @@ A fake SSH server on port 22, for a server whose real SSH listens on another por
 - nothing else listens on port 22
 - Docker is installed, and fail2ban is running (**Setup > Fail2ban**)
 
-**Turn on...** asks for a ban time (one day, a week, 30 days) and addresses that are never banned (your office, a monitoring service). Loopback, private networks (10.x, 172.16–31.x, 192.168.x) and fail2ban's own allowlist (DockGate's address) are never banned anyway. Then one job:
+**Turn on...** asks for a ban time (one day, a week, 30 days) and addresses that are never banned (your office, a monitoring service). Loopback, private networks (10.x, 172.16-31.x, 192.168.x) and fail2ban's own allowlist (DockGate's address) are never banned anyway. Then one job:
 
 | Step | What |
 |---|---|
@@ -125,6 +125,8 @@ A failed step removes everything again.
 
 **Settings...** changes the ban time and the allowed addresses. **Turn off...** removes the container, its image, the jail and the rotation; you choose whether its log stays. Addresses already banned stay banned until their time runs out. While the honeypot is on, **Access & SSH** does not move the real SSH back to port 22.
 
+**With Docker port isolation** (Firewall tab, UFW): the honeypot opens its own port behind the isolation when it is turned on, and closes it again when it is turned off. Turning isolation on keeps the honeypot's port public by itself (its row is ticked and cannot be unticked). After the firewall is reloaded or switched on, DockGate restarts the honeypot's fail2ban jail, because a UFW reload empties the chain where fail2ban keeps its bans for Docker ports; the bans come back with it.
+
 ## Software > Services, Docker engine, Auto updates - and System > Time sync
 
 System services DockGate manages on the server (Docker, SSH, the firewall, fail2ban, time sync...). Select one for its state, **Start at boot**, start / stop / restart, its settings and its log.
@@ -139,7 +141,7 @@ The server's scheduled jobs in one table: the SSH user's crontab, root's crontab
 
 **What DockGate writes:** the SSH user's crontab, root's crontab (passwordless `sudo`) and its own file `/etc/cron.d/dockgate`. Files of the system and of packages are shown, not changed - ⋯ -> **Open in Files** to edit one yourself.
 
-**+ New job / Edit:** name, runs as (SSH user, root, or a user of your choice in `/etc/cron.d/dockgate`), **When** picked from lists - every few minutes, every few hours, every day, days of the week or once a month, at an hour 00–23 and minute 00–59 (24-hour, server time) - or *At reboot*, or your own expression in the box, with the **next 5 runs**, the command. **Review changes...** shows what changes in the crontab before it is written; the crontab before each change is kept (**Earlier versions...**). Turning a job off keeps it as a comment (`#dg-off# ...`), so it can be turned on again.
+**+ New job / Edit:** name, runs as (SSH user, root, or a user of your choice in `/etc/cron.d/dockgate`), **When** picked from lists - every few minutes, every few hours, every day, days of the week or once a month, at an hour 00-23 and minute 00-59 (24-hour, server time) - or *At reboot*, or your own expression in the box, with the **next 5 runs**, the command. **Review changes...** shows what changes in the crontab before it is written; the crontab before each change is kept (**Earlier versions...**). Turning a job off keeps it as a comment (`#dg-off# ...`), so it can be turned on again.
 
 Options for a named job:
 

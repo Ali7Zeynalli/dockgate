@@ -30,7 +30,7 @@ window.ComposeScaling = (() => {
         const state = s.drift ? UI.pill('warn', `drift: ${s.replicas} running, ${s.wanted} wanted`) : s.replicas ? UI.pill('ok', `${s.replicas} running`) : UI.pill('off', 'stopped');
         return { cells: [
           `<b>${esc(s.name)}</b>${s.rollable ? ` <button class="btn btn-xs btn-secondary" data-roll="${esc(s.name)}" title="New replicas with the current compose file and image, one at a time, without downtime">Roll out...</button>` : ''}<div class="ui-sub td-mono">${esc(s.image || '')}</div>${notes.length ? `<div style="margin-top:4px;white-space:normal;max-width:280px">${notes.join('<br>')}</div>` : ''}`,
-          `${s.auto && s.auto.mode === 'auto' ? `<b>${s.replicas}</b> <span class="ui-sub">of ${s.auto.min}–${s.auto.max}</span>` : `<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-xs btn-secondary" data-minus="${esc(s.name)}" ${s.wanted <= 0 ? 'disabled' : ''}>−</button><b style="min-width:22px;text-align:center">${s.wanted}</b><button class="btn btn-xs btn-secondary" data-plus="${esc(s.name)}" ${!canMore || s.wanted >= 20 ? 'disabled' : ''} title="${canMore ? 'Add a replica' : esc(sc.block)}">+</button></div>`}${autoChip(s)}`,
+          `${s.auto && s.auto.mode === 'auto' ? `<b>${s.replicas}</b> <span class="ui-sub">of ${s.auto.min}-${s.auto.max}</span>` : `<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-xs btn-secondary" data-minus="${esc(s.name)}" ${s.wanted <= 0 ? 'disabled' : ''}>−</button><b style="min-width:22px;text-align:center">${s.wanted}</b><button class="btn btn-xs btn-secondary" data-plus="${esc(s.name)}" ${!canMore || s.wanted >= 20 ? 'disabled' : ''} title="${canMore ? 'Add a replica' : esc(sc.block)}">+</button></div>`}${autoChip(s)}`,
           `<span class="text-sm">${lim}</span><div class="ui-sub">from your compose file</div>`,
           `${state}${s.drift ? ` <button class="btn btn-xs btn-secondary" data-fix="${esc(s.name)}" data-n="${s.wanted}">Fix</button>` : ''}`,
           healCell(s),
@@ -60,8 +60,8 @@ window.ComposeScaling = (() => {
       const a = s.auto;
       if (!s.scalable.ok) return '';
       let label = 'Auto scaling: off', cls = 'off';
-      if (a && a.mode === 'suggest') { label = `Suggest ${a.min}–${a.max}`; cls = 'info'; }
-      if (a && a.mode === 'auto') { const sim = a.simulateUntil && a.simulateUntil > Date.now(); label = sim ? `Simulating until ${new Date(a.simulateUntil).toLocaleString()}` : `Auto ${a.min}–${a.max}`; cls = sim ? 'warn' : 'ok'; }
+      if (a && a.mode === 'suggest') { label = `Suggest ${a.min}-${a.max}`; cls = 'info'; }
+      if (a && a.mode === 'auto') { const sim = a.simulateUntil && a.simulateUntil > Date.now(); label = sim ? `Simulating until ${new Date(a.simulateUntil).toLocaleString()}` : `Auto ${a.min}-${a.max}`; cls = sim ? 'warn' : 'ok'; }
       return `<div style="margin-top:6px"><button class="btn btn-xs btn-secondary" data-rule="${esc(s.name)}" title="Auto Scaling rule">${UI.pill(cls, esc(label))}</button></div>`;
     }
     function historyBlock() {
@@ -127,7 +127,7 @@ window.ComposeScaling = (() => {
           ${s.limits.mem ? `${num('memUp', 'Add at memory % (optional)', 'of its memory limit', a.memUp, 10, 100)}${num('memDown', 'Remove at memory %', 'at least 10 below', a.memDown, 1, 90)}` : ''}
           ${num('upMinutes', 'Add after (minutes)', 'busy this long', a.upMinutes, 1, 30)}${num('downMinutes', 'Remove after (minutes)', 'quiet this long', a.downMinutes, 2, 60)}
           ${num('coolUpMinutes', 'Wait after adding (min)', 'before the next change', a.coolUpMinutes, 1, 60)}${num('coolDownMinutes', 'Wait after removing (min)', 'before the next change', a.coolDownMinutes, 1, 60)}
-          ${num('step', 'Replicas per change', '1–5', a.step, 1, 5)}
+          ${num('step', 'Replicas per change', '1-5', a.step, 1, 5)}
         </div>`;
       const d = showModal(`Auto Scaling - ${esc(name)}`, body, [
         { label: 'Cancel', className: 'btn btn-secondary' },

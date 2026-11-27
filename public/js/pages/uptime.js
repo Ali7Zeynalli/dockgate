@@ -87,7 +87,7 @@ const UptimePage = (() => {
           return { cells: [
             `<a href="#" data-open="${c.id}" class="td-name">${esc(c.name)}</a><div class="ui-sub td-mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(targetLine(c))}</div>`,
             statusOf(c).pill + (s.status === 'down' && s.lastError ? `<div class="ui-sub text-danger" style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(s.lastError)}">${esc(s.lastError)}</div>` : ''),
-            `<b>${pctTxt(c.uptime24)}</b> <span class="ui-sub">· ${pctTxt(c.uptime30)}</span>`,
+            `<b>${pctTxt(c.uptime24)}</b> <span class="ui-sub">- ${pctTxt(c.uptime30)}</span>`,
             `<span class="td-mono" style="${slowTone}">${s.status === 'down' ? '-' : s.lastMs != null ? `${s.lastMs} ms` : '-'}</span>`,
             bar(c.bar),
             certCell(c),

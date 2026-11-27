@@ -235,15 +235,18 @@ router.post('/:id/firewall/docker-isolation', send(async (req) => {
   const keepPublic = [];
   for (const k of (Array.isArray(req.body.keepPublic) ? req.body.keepPublic : [])) {
     const [port, proto] = String(k).split('/');
-    const p = fw.ports.find(x => x.kind === 'container' && x.port === Number(port) && x.proto === proto);
+    const p = (fw.bypass || []).find(x => x.port === Number(port) && x.proto === proto); // published container ports, before isolation
     if (!p) throw P.httpError(400, `${k} is not a published container port`);
     keepPublic.push({ port: p.containerPort, proto: p.proto });
   }
+  // the SSH honeypot must stay reachable: closing its port would switch it off without anyone noticing
+  const honeypot = enable ? (fw.bypass || []).filter(x => /(^|\/)dockgate-honeypot$/.test(String(x.usedBy || ''))) : [];
+  for (const h of honeypot) if (!keepPublic.some(k => k.port === h.containerPort && k.proto === h.proto)) keepPublic.push({ port: h.containerPort, proto: h.proto });
   const plan = plans.isolationPlan({ id: newId(), enable, keepPublic, test: { username: row.username } });
   const before = await healthOf(row);
   const jobId = runner.startPlan(cfgOf(row), plan, {
     title: enable ? 'Docker port isolation' : 'Turn off Docker port isolation',
-    successText: enable ? `Isolation is on. Public container ports: ${(req.body.keepPublic || []).join(', ') || 'none'}.` : 'Isolation is off - published container ports bypass UFW again.',
+    successText: enable ? `Isolation is on. Public container ports: ${[...(req.body.keepPublic || []), ...honeypot.filter(h => !(req.body.keepPublic || []).includes(`${h.port}/${h.proto}`)).map(h => `${h.port}/${h.proto} (honeypot)`)].join(', ') || 'none'}.` : 'Isolation is off - published container ports bypass UFW again.',
     onSuccess: async () => {
       audit(req, row, 'firewall-docker-isolation', { enable, keepPublic: req.body.keepPublic || [] });
       return { warnings: healthWarnings(before, await healthOf(row)) };

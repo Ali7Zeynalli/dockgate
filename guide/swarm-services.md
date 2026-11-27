@@ -10,7 +10,7 @@ A **service** is an app Swarm runs as one or more **tasks** (containers). *Repli
 
 | Column | What it shows |
 |---|---|
-| **Service** | Name, its stack, and *auto 1–3* when it has an autoscale rule |
+| **Service** | Name, its stack, and *auto 1-3* when it has an autoscale rule |
 | **Image** | The image and tag; a badge when a newer image exists |
 | **Mode** | replicated or global |
 | **Tasks** | Running of desired, with a dot per task |

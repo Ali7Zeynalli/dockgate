@@ -39,7 +39,7 @@ window.QuickFiles = (() => {
     if (fb) { fb.destroy(); fb = null; }
     serverId = id;
     const srv = Store.get('activeServer') || {};
-    ov.querySelector('[data-qf-srv]').textContent = `· ${srv.name || srv.label || id}`;
+    ov.querySelector('[data-qf-srv]').textContent = `- ${srv.name || srv.label || id}`;
     const body = ov.querySelector('[data-qf-body]');
     body.innerHTML = '';
     const el = document.createElement('div'); body.appendChild(el);

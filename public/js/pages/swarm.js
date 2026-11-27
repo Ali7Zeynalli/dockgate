@@ -450,7 +450,7 @@
           ${data.warnings.map(w => banner(w.level, esc(w.text), wAction(w))).join('')}
           <div class="sw-cards">
             ${card('Ready servers', `${c.ready}/${c.nodes}`, c.ready === c.nodes ? 'ok' : 'warn')}
-            ${card('Managers', `${c.managers} <span class="ui-sub" style="font-size:12px">· tolerates ${plural(c.tolerates, 'loss', 'losses')}</span>`, c.managers === 2 ? 'warn' : '')}
+            ${card('Managers', `${c.managers} <span class="ui-sub" style="font-size:12px">- tolerates ${plural(c.tolerates, 'loss', 'losses')}</span>`, c.managers === 2 ? 'warn' : '')}
             ${card('Services', c.services)}
             ${card('Running tasks', `${c.running}/${c.desired}`, c.running < c.desired ? 'warn' : c.desired ? 'ok' : '')}
           </div>
@@ -512,7 +512,7 @@
           { label: 'Remove...', attrs: `data-act="remove" data-id="${esc(n.id)}"` },
         ].filter(Boolean);
         return { cells: [
-          `<a href="#" data-node="${esc(n.id)}" class="td-name" title="Open the node page"><b>${esc(n.hostname)}</b></a> ${n.leader ? UI.pill('info', 'leader') : ''}${n.self ? ' <span class="ui-sub">· DockGate manages through this one</span>' : ''}
+          `<a href="#" data-node="${esc(n.id)}" class="td-name" title="Open the node page"><b>${esc(n.hostname)}</b></a> ${n.leader ? UI.pill('info', 'leader') : ''}${n.self ? ' <span class="ui-sub">- DockGate manages through this one</span>' : ''}
             <div class="ui-sub">${n.serverId ? `DockGate server: ${esc(n.serverName)}` : '<span style="color:var(--warning,#d97706)">not in DockGate</span>'}, Docker ${esc(n.engine)}, ${esc(n.arch)}</div>`,
           `<span class="td-mono text-sm">${esc(n.addr)}</span>`,
           `${esc(n.role)}${n.role === 'manager' && n.reachability && n.reachability !== 'reachable' ? ` ${UI.pill('bad', esc(n.reachability))}` : ''}`,
@@ -740,8 +740,8 @@
       };
       content.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
         const k = b.dataset.edit;
-        const meta = { certDays: { title: 'Node certificate lifetime', label: 'Days (1–3650)', cur: c.certExpiryDays }, taskHistory: { title: 'Task history per slot', label: 'Stopped tasks kept per slot (0–100)', cur: c.taskHistory },
-          heartbeatSec: { title: 'Heartbeat period', label: 'Seconds (1–60, default 5)', cur: c.heartbeatSec }, snapshotInterval: { title: 'Raft snapshot interval', label: 'Log entries (100–1,000,000, default 10,000)', cur: c.snapshotInterval } }[k];
+        const meta = { certDays: { title: 'Node certificate lifetime', label: 'Days (1-3650)', cur: c.certExpiryDays }, taskHistory: { title: 'Task history per slot', label: 'Stopped tasks kept per slot (0-100)', cur: c.taskHistory },
+          heartbeatSec: { title: 'Heartbeat period', label: 'Seconds (1-60, default 5)', cur: c.heartbeatSec }, snapshotInterval: { title: 'Raft snapshot interval', label: 'Log entries (100-1,000,000, default 10,000)', cur: c.snapshotInterval } }[k];
         UI.dialog({ title: meta.title, saveLabel: 'Save', body: `<label class="ui-field"><span class="ui-label">${meta.label}</span><input class="input" type="number" data-v value="${esc(meta.cur)}"></label>`,
           onSave: async (ov) => { await save({ [k]: Number(ov.querySelector('[data-v]').value) }, `${meta.title} saved`); } });
       }));

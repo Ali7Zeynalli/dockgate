@@ -14,8 +14,8 @@ Settings of the whole swarm, its keys and certificates, backups, and the way bac
 |---|---|
 | **Cluster ID**, **Created** | For reference |
 | **Overlay address pool**, **Data port** | Set when the swarm was created. Can not be changed |
-| **Node certificate lifetime** | 1–3650 days (default 90). Swarm renews certificates before they expire |
-| **Task history per slot** | How many stopped tasks Swarm keeps per slot (0–100, default 5), shown in a service's Tasks |
+| **Node certificate lifetime** | 1-3650 days (default 90). Swarm renews certificates before they expire |
+| **Task history per slot** | How many stopped tasks Swarm keeps per slot (0-100, default 5), shown in a service's Tasks |
 | **Autolock** | **Turn on...**: Swarm encrypts its keys at rest, and a manager stays locked after every Docker restart until it is unlocked. DockGate keeps the key (encrypted) and shows it once: save it somewhere safe too. **Turn off...** removes the stored key. Services keep running either way |
 | **Unlock key > Show unlock key... / Rotate...** | With autolock on. **Rotate...** makes a new key; the old one stops working. DockGate stores the new one and shows it once |
 | **Join tokens > Show...** | The worker and manager tokens for `docker swarm join` by hand. **Rotate** makes a new token; servers already in the swarm are not affected. Showing them is recorded in the audit log |
@@ -27,8 +27,8 @@ The defaults suit most clusters. Change them only with a reason.
 
 | Row | Meaning |
 |---|---|
-| **Heartbeat period** | How often servers report to the managers (1–60 s, default 5). Higher means less traffic, but a lost server is noticed later |
-| **Raft snapshot interval** | Log entries between snapshots of the cluster state (100–1,000,000, default 10,000). Lower means smaller logs and more frequent snapshots |
+| **Heartbeat period** | How often servers report to the managers (1-60 s, default 5). Higher means less traffic, but a lost server is noticed later |
+| **Raft snapshot interval** | Log entries between snapshots of the cluster state (100-1,000,000, default 10,000). Lower means smaller logs and more frequent snapshots |
 
 ## Backups
 
@@ -60,10 +60,10 @@ A backup is a `.tar` with:
 
 | You see | Why | What to do |
 |---|---|---|
-| `Certificate lifetime must be 1–3650 days` | Out of range | e.g. `90` |
-| `Task history must be 0–100` | Out of range | e.g. `5` |
-| `Heartbeat period must be 1–60 seconds` | Out of range | e.g. `5` |
-| `Raft snapshot interval must be 100–1,000,000 log entries` | Out of range | e.g. `10000` |
+| `Certificate lifetime must be 1-3650 days` | Out of range | e.g. `90` |
+| `Task history must be 0-100` | Out of range | e.g. `5` |
+| `Heartbeat period must be 1-60 seconds` | Out of range | e.g. `5` |
+| `Raft snapshot interval must be 100-1,000,000 log entries` | Out of range | e.g. `10000` |
 | `Nothing to change` | The value is the same | - |
 | `The cluster has a leader - nothing to recover. ...` | Recover on a healthy cluster | Not needed |
 | `Not a DockGate Swarm backup (no cluster.json inside)` | Upload of another file | Use a `.tar` made by DockGate |

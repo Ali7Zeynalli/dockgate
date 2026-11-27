@@ -14,7 +14,7 @@ const DEST_RE = /^([\w.-]+@)?[\w.-]+:[\w./~@+-]*$|^\/[\w./@:+-]*$/;
 const IMAGE_RE = /^[a-z0-9][a-z0-9._\/:@-]{0,254}$/i;
 
 const need = (v, re, label) => { const s = String(v == null ? '' : v).trim(); if (!re.test(s)) throw bad(`${label}`); return s; };
-const num = (v, lo, hi, label) => { const n = Number(v); if (!Number.isInteger(n) || n < lo || n > hi) throw bad(`${label}: ${lo}–${hi}`); return n; };
+const num = (v, lo, hi, label) => { const n = Number(v); if (!Number.isInteger(n) || n < lo || n > hi) throw bad(`${label}: ${lo}-${hi}`); return n; };
 
 // fields: [key, label, kind ('text'|'number'|'select'|'textarea'), placeholder/options, required]
 const BLOCKS = {
@@ -227,7 +227,7 @@ function build(spec) {
     const body = stepShell(s).split('\n').map(l => ind + '  ' + l).join('\n');
     const onFail = s.onFail === 'continue' ? 'continue' : 'stop';
     out.push(`# ${i + 1}. ${label}${onlyIfFailed ? ' (only if an earlier step failed)' : ''}`);
-    if (onlyIfFailed) out.push(`if [ "$anyfail" != 1 ]; then echo; echo "– ${i + 1}. ${label}: skipped (nothing failed)"; else`);
+    if (onlyIfFailed) out.push(`if [ "$anyfail" != 1 ]; then echo; echo "- ${i + 1}. ${label}: skipped (nothing failed)"; else`);
     // A standalone subshell: set -e works there (inside an "if" condition bash would ignore it).
     out.push(`${ind}step "${i + 1}. ${label}"`, `${ind}(`, `${ind}  set -e`, body, `${ind})`, `${ind}if [ $? -ne 0 ]; then`);
     out.push(onFail === 'stop' ? `${ind}  echo "✗ step ${i + 1} failed - stopping"; SCRIPT_STATUS=failed; exit 1` : `${ind}  echo "✗ step ${i + 1} failed - going on"; failed=$((failed+1)); anyfail=1; SCRIPT_STATUS=failed`);

@@ -532,7 +532,7 @@ async function startRebalance({ sourceIp } = {}) {
     try {
       const [list, services] = await Promise.all([mgr.client.listNodes(), mgr.client.listServices()]);
       const movable = services.filter(s => s.Spec.Mode && s.Spec.Mode.Replicated && !pinnedTo(s, list) && !hasVolume(s));
-      for (const s of services) if (!movable.includes(s)) log(`· ${s.Spec.Name}: left alone (${s.Spec.Mode && s.Spec.Mode.Global ? 'global' : hasVolume(s) ? 'has a data volume' : 'pinned to a server'})`);
+      for (const s of services) if (!movable.includes(s)) log(`- ${s.Spec.Name}: left alone (${s.Spec.Mode && s.Spec.Mode.Global ? 'global' : hasVolume(s) ? 'has a data volume' : 'pinned to a server'})`);
       if (!movable.length) log('Nothing to move.');
       for (const s of movable) {
         step(job, `svc-${s.ID}`, 'running', `Spread ${s.Spec.Name}`);

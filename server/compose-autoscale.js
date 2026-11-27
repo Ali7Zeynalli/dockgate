@@ -1,4 +1,4 @@
-// Compose Auto Scaling, DockGate's side. The rule of a service (Off / Suggest / Auto, min–max, when to add and
+// Compose Auto Scaling, DockGate's side. The rule of a service (Off / Suggest / Auto, min-max, when to add and
 // remove) is kept in compose_scaling and sent to the server's Edge agent with the other rules; the agent runs it,
 // also while DockGate is offline. On a server without an up-to-date agent DockGate runs the very same loop
 // (agent/src/control/autoscale.js) itself. Every decision lands in compose_scaling_log, and the number of replicas
@@ -43,7 +43,7 @@ function ruleOf(serverId, project, service) {
 }
 
 /**
- * Check a rule from the form. Swarm's checks (thresholds 10 apart, waits...), Compose's range (1–20), and a limit on the
+ * Check a rule from the form. Swarm's checks (thresholds 10 apart, waits...), Compose's range (1-20), and a limit on the
  * service - without one there is nothing to measure against.
  */
 function validateRule(body, lim) {

@@ -40,9 +40,9 @@ Router.register('dashboard', async (content) => {
       const who = `<b>${escapeHtml(sv.name)}</b>`;
       if (sv.locked) { rows.push({ sv, kind: 'locked', cells: [who, UI.pill('off', 'locked'), '<span class="ui-sub">Needs its access password - switch to it to see inside</span>', ''] }); continue; }
       if (!sv.reachable) rows.push({ sv, kind: 'down', cells: [who, UI.pill('bad', 'not reachable'), `<span class="ui-sub">${escapeHtml(sv.error || '')}</span>`, ''] });
-      sv.problems.forEach(p => rows.push({ sv, kind: 'ctr', target: p.name, cells: [who, UI.pill(p.problem === 'unhealthy' || p.problem === 'restarting' ? 'warn' : 'bad', escapeHtml(p.problem)), `<span class="td-mono">${escapeHtml(p.name)}</span>${p.project ? ` <span class="ui-sub">· ${escapeHtml(p.project)}</span>` : ''}<div class="ui-sub">${escapeHtml(p.status)}</div>`] }));
+      sv.problems.forEach(p => rows.push({ sv, kind: 'ctr', target: p.name, cells: [who, UI.pill(p.problem === 'unhealthy' || p.problem === 'restarting' ? 'warn' : 'bad', escapeHtml(p.problem)), `<span class="td-mono">${escapeHtml(p.name)}</span>${p.project ? ` <span class="ui-sub">- ${escapeHtml(p.project)}</span>` : ''}<div class="ui-sub">${escapeHtml(p.status)}</div>`] }));
       sv.updates.forEach(u => rows.push({ sv, kind: 'upd', target: u.containers[0] || null, cells: [who, UI.pill('info', 'newer image'), `<span class="td-mono">${escapeHtml(u.image)}</span>${u.from || u.to ? ` <span class="ui-sub">${escapeHtml(u.from || '?')} -> ${escapeHtml(u.to || 'newer')}</span>` : ''}<div class="ui-sub">${u.containers.length ? `used by ${escapeHtml(u.containers.join(', '))}` : 'no container uses it now'}</div>`] }));
-      sv.jobs.forEach(j => rows.push({ sv, kind: j.source === 'Cron' ? 'cron' : j.source === 'Deploy recipe' ? 'recipe' : 'task', target: j.note, cells: [who, UI.pill('bad', 'failed'), `${escapeHtml(j.source)}, <b>${escapeHtml(j.name)}</b>${j.note ? ` <span class="ui-sub">· ${escapeHtml(j.note.slice(0, 120))}</span>` : ''}${j.at ? `<div class="ui-sub">${formatTime(new Date(j.at).toISOString())}</div>` : ''}`] }));
+      sv.jobs.forEach(j => rows.push({ sv, kind: j.source === 'Cron' ? 'cron' : j.source === 'Deploy recipe' ? 'recipe' : 'task', target: j.note, cells: [who, UI.pill('bad', 'failed'), `${escapeHtml(j.source)}, <b>${escapeHtml(j.name)}</b>${j.note ? ` <span class="ui-sub">- ${escapeHtml(j.note.slice(0, 120))}</span>` : ''}${j.at ? `<div class="ui-sub">${formatTime(new Date(j.at).toISOString())}</div>` : ''}`] }));
     }
     const t = d.totals;
     const summary = [t.problems && `${t.problems} container${t.problems === 1 ? '' : 's'} in trouble`, t.updates && `${t.updates} newer image${t.updates === 1 ? '' : 's'}`, t.jobs && `${t.jobs} failed job${t.jobs === 1 ? '' : 's'}`, t.unreachable && `${t.unreachable} not reachable`].filter(Boolean).join(', ');
@@ -161,7 +161,7 @@ Router.register('dashboard', async (content) => {
           <div class="summary-card" onclick="Router.navigate('deploy',{tab:'registries'})">
             <div class="summary-card-icon blue"><span class="nav-item-icon">${Icons.registry}</span></div>
             <div class="summary-card-content">
-              <div class="summary-card-value" id="dash-reg-value">–</div>
+              <div class="summary-card-value" id="dash-reg-value">-</div>
               <div class="summary-card-label" id="dash-reg-label">Registries</div>
             </div>
           </div>

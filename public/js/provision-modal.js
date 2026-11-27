@@ -81,7 +81,7 @@ function renderProvisionForm(serverId, catalog, scan, container, { matrix = [], 
           : key === 'na' ? escapeHtml((scan.items.find(x => x.id === it.id) || {}).reason || 'not on this OS') : escapeHtml(ch.short || it.description || '');
         const row = `<tr class="pv-row${on ? ' ui-row-selected' : ''}${isOpen ? ' pv-open' : ''}" data-row="${escapeHtml(it.id)}" aria-expanded="${isOpen}">
           <td><input type="checkbox" data-comp="${escapeHtml(it.id)}" aria-label="Include ${escapeHtml(it.label)}" ${on ? 'checked' : ''} ${key === 'na' ? 'disabled' : ''} style="accent-color:var(--accent)"></td>
-          <td><span class="pv-chev" aria-hidden="true">›</span> <b>${escapeHtml(it.label)}</b> <span class="ui-sub">· ${groupLabel(it.group)}</span>${it.risk === 'high' ? '<div class="ui-sub" style="color:var(--warning);padding-left:16px">risky, tested with a new SSH login</div>' : ''}</td>
+          <td><span class="pv-chev" aria-hidden="true">›</span> <b>${escapeHtml(it.label)}</b> <span class="ui-sub">- ${groupLabel(it.group)}</span>${it.risk === 'high' ? '<div class="ui-sub" style="color:var(--warning);padding-left:16px">risky, tested with a new SSH login</div>' : ''}</td>
           <td>${UI.pill(lv, txt)}</td><td>${run}</td>
           <td><span class="ui-sub">${detail}</span></td>
           <td><span class="ui-sub">${fmtWhen(m && m.lastAt)}</span></td>

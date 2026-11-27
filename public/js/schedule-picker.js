@@ -1,4 +1,4 @@
-// A schedule picker that writes a cron line: how often, then the hour (00–23) and minute (00–59) from lists,
+// A schedule picker that writes a cron line: how often, then the hour (00-23) and minute (00-59) from lists,
 // 24-hour clock, server time. "Custom" keeps a raw cron line for anything else.
 //   SchedulePicker.html(cron, { minutes })   minutes: offer "every N minutes" (Cron, Scripts) - not for backups
 //   SchedulePicker.bind(el, { onChange })    -> { value() }

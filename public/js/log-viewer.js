@@ -1,7 +1,6 @@
 // One log viewer for every log in DockGate (container logs, host logs, events, audit, notifications, build and
 // deploy output, setup runs, fail2ban bans, service journals). Same toolbar everywhere:
-//   search (highlights, regex, match case, ↑/↓ or Enter to jump), level chips with counts, source, time range ·
-//   how many of the newest lines to load (1,000 ... 10,000, remembered per place), Live/Pause, Wrap, Copy, Download
+//   search (highlights, regex, match case, ↑/↓ or Enter to jump), level chips with counts, source, time range - //   how many of the newest lines to load (1,000 ... 10,000, remembered per place), Live/Pause, Wrap, Copy, Download
 // A per-minute histogram (red = errors) zooms to a minute on click; a line opens its details. Only the visible rows
 // are drawn, so 10,000 lines scroll as smoothly as 100.
 //

@@ -10,7 +10,7 @@
   const esc = (s) => escapeHtml(String(s == null ? '' : s));
   const STATUS = { ready: ['ok', 'Ready'], attention: ['warn', 'Attention'], partial: ['warn', 'Part can move'], impossible: ['bad', 'Not possible'] };
   const LV = { info: 'var(--text-muted)', warn: 'var(--warning,#d97706)', bad: 'var(--danger,#dc2626)' };
-  const findings = (list) => list.map(f => `<div class="text-sm" style="color:${LV[f.level]};white-space:normal;min-width:220px">${f.level === 'bad' ? '✗' : f.level === 'warn' ? '!' : '·'} ${esc(f.text)}</div>`).join('');
+  const findings = (list) => list.map(f => `<div class="text-sm" style="color:${LV[f.level]};white-space:normal;min-width:220px">${f.level === 'bad' ? '✗' : f.level === 'warn' ? '!' : '-'} ${esc(f.text)}</div>`).join('');
   const job = (...a) => window.SwarmUI.openJob(...a);
 
   // Settings per service: replicas, port mode, update order.
@@ -112,7 +112,7 @@
               (s.ports || []).map(p => `${p.published || ''} -> ${p.target}/${p.protocol} <span class="ui-sub">${p.mode}</span>`).join('<br>') || '-', `<span class="text-sm">${esc(s.deploy.update_config.order)}</span>${s.deploy.placement ? `<div class="ui-sub">${esc((s.deploy.placement.constraints || []).join(', '))}</div>` : ''}`, findings(a.findings) || '<span class="ui-sub">nothing</span>'] };
           }), { minWidth: 760 })}
           <div class="text-sm" style="margin-top:6px"><b>Volumes that stay the same:</b> ${pv.volumes.length ? pv.volumes.map(v => `<span class="td-mono">${esc(v.name)}</span>`).join(', ') : 'none'}. <b>Network:</b> ${Object.entries(pv.stack.networks || {}).map(([k, n]) => `<span class="td-mono">${esc(n.name || `${sname}_${k}`)}</span> (overlay)`).join(', ') || `${esc(sname)}_default (overlay)`}.</div>`;
-      }).join('') + `<div class="insight-card info" style="margin-top:12px"><div><b>What happens, one project at a time:</b> the files are read again (if they changed since this plan, the project is not moved) -> <span class="td-mono">docker compose down</span> (volumes stay) -> <span class="td-mono">docker stack deploy</span> under the same name -> every service must run and stay up for 30 s. If not, it is put back: the stack is removed and <span class="td-mono">docker compose up -d</span> runs. <b>The project is down from compose down until its services run on Swarm</b> - usually 10–60 s. The compose files are not changed.${previews.some(pv => pv.status === 'partial') ? ' <b>For part of a project</b> only the moving services are stopped, and the stack gets the name <i>project</i>-swarm.' : ''}</div></div>`;
+      }).join('') + `<div class="insight-card info" style="margin-top:12px"><div><b>What happens, one project at a time:</b> the files are read again (if they changed since this plan, the project is not moved) -> <span class="td-mono">docker compose down</span> (volumes stay) -> <span class="td-mono">docker stack deploy</span> under the same name -> every service must run and stay up for 30 s. If not, it is put back: the stack is removed and <span class="td-mono">docker compose up -d</span> runs. <b>The project is down from compose down until its services run on Swarm</b> - usually 10-60 s. The compose files are not changed.${previews.some(pv => pv.status === 'partial') ? ' <b>For part of a project</b> only the moving services are stopped, and the stack gets the name <i>project</i>-swarm.' : ''}</div></div>`;
       next.disabled = previews.every(pv => !pv.stack || !Object.keys(pv.stack.services || {}).length);
     }
     back.onclick = () => { step = 0; render(); };
@@ -183,7 +183,7 @@
       container: `This file was written from the container. <b>${esc(o.container || '')}</b> is stopped (kept, its restart policy set to "no") and the stack deployed. If the service does not come up, the container is started again. Named volumes are used by their own name, so the data stays.`,
     }[o.mode];
     const m = showModal(titles[o.mode], `${serverContextBanner()}<p class="text-sm">${intro}</p>
-      ${(o.notes || []).length ? `<div style="margin:8px 0">${o.notes.map(n => `<div class="text-sm" style="color:${NOTE[n.level]}">${n.level === 'bad' ? '✗' : n.level === 'warn' ? '!' : '·'} ${esc(n.text)}</div>`).join('')}</div>` : ''}
+      ${(o.notes || []).length ? `<div style="margin:8px 0">${o.notes.map(n => `<div class="text-sm" style="color:${NOTE[n.level]}">${n.level === 'bad' ? '✗' : n.level === 'warn' ? '!' : '-'} ${esc(n.text)}</div>`).join('')}</div>` : ''}
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin:8px 0">
         ${o.mode === 'new' || o.mode === 'container' ? `<label class="ui-field" style="flex:1;min-width:200px"><span class="ui-label">Stack name</span><input class="input" data-name value="${esc(o.name || '')}" placeholder="myapp"></label>` : ''}
         ${o.mode === 'new' ? `<label class="ui-field" style="flex:2;min-width:240px"><span class="ui-label">Start from an app template (optional)</span><select class="select" data-tpl><option value="">Loading templates...</option></select></label>` : ''}
@@ -236,7 +236,7 @@
   window.SwarmUI.stackEditor = stackEditor;
   /** Move a stack that came from Compose back to Compose (Stacks menu, and the Compose page). */
   function moveBackConfirm(s, done) {
-    secConfirm({ title: `Move ${s.name} back to Compose`, danger: true, change: `The stack is removed, DockGate waits until its network is gone, then <span class="td-mono">docker compose up -d</span> runs in ${esc((s.location || {}).cwd || 'its folder')}. It is down for a short time (usually 20–60 s).`, protects: 'Volumes keep their data: Compose uses the same volume names.', undo: 'Move it to Swarm again with Migrate.', confirmLabel: 'Move back',
+    secConfirm({ title: `Move ${s.name} back to Compose`, danger: true, change: `The stack is removed, DockGate waits until its network is gone, then <span class="td-mono">docker compose up -d</span> runs in ${esc((s.location || {}).cwd || 'its folder')}. It is down for a short time (usually 20-60 s).`, protects: 'Volumes keep their data: Compose uses the same volume names.', undo: 'Move it to Swarm again with Migrate.', confirmLabel: 'Move back',
       onConfirm: async () => { try { const r = await API.post(`/swarm/stacks/${encodeURIComponent(s.name)}/move-back`, { confirm: true }); job(r.jobId, done, 'Move back to Compose'); } catch (e) { showToast(e.message, 'error', 9000); } } });
   }
   window.SwarmUI.moveBack = async (name, done) => {

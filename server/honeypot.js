@@ -196,10 +196,17 @@ function jailCmd(bantime) {
   ].join('; ');
 }
 
+// Docker port isolation (Firewall tab, UFW) closes every published container port that has no `ufw route allow`
+// rule. The honeypot opens its own port there (marked with a comment so only DockGate's rule is removed later).
+const ISOLATED = `{{S}}ufw status 2>/dev/null | grep -q 'Status: active' && {{S}}grep -q 'BEGIN DOCKGATE-DOCKER' /etc/ufw/after.rules 2>/dev/null`;
+const ROUTE_OPEN = `if ${ISOLATED}; then if {{S}}ufw status | grep -q '${NAME}'; then echo "port already open behind Docker port isolation"; else {{S}}ufw route allow proto tcp from any to any port 2222 comment '${NAME}' >/dev/null && echo "opened behind Docker port isolation"; fi; else echo "Docker port isolation is off - nothing to open"; fi`;
+const ROUTE_CLOSE = `if command -v ufw >/dev/null 2>&1 && {{S}}ufw status 2>/dev/null | grep -q '${NAME}'; then {{S}}ufw route delete allow proto tcp from any to any port 2222 >/dev/null 2>&1; fi`;
+
 /** Shell that removes everything the honeypot added (bans already made stay until they expire). */
 function removeCmd({ keepLog = true } = {}) {
   return [
     `{{S}}docker rm -f ${NAME} >/dev/null 2>&1`,
+    ROUTE_CLOSE,
     `for i in $({{S}}docker images -q --filter label=dockgate.role=honeypot-image 2>/dev/null | sort -u); do {{S}}docker rmi -f $i >/dev/null 2>&1; done`,
     `{{S}}rm -f ${JAIL} ${FILTER} ${LOGROTATE}`,
     `if command -v fail2ban-client >/dev/null 2>&1 && {{S}}fail2ban-client ping >/dev/null 2>&1; then {{S}}fail2ban-client reload >/dev/null 2>&1; fi`,
@@ -242,6 +249,7 @@ function installPlan({ tag, tarGz, bantime = '30d', allow = [] }) {
       `for i in $({{S}}docker images -q --filter label=dockgate.role=honeypot-image 2>/dev/null | sort -u); do [ "$i" = "$({{S}}docker image inspect -f '{{.Id}}' ${tag} | cut -c8-19)" ] || {{S}}docker rmi $i >/dev/null 2>&1; done; true`,
       'echo running',
     ].join('; ') },
+    { label: 'Docker port isolation: keep port 22 reachable (UFW only, when isolation is on)', cmd: ROUTE_OPEN },
     { label: 'ipset (fast bans when the list grows)', cmd: 'HAS="{{S}}sh -c \'command -v ipset\'"; if eval "$HAS" >/dev/null 2>&1; then echo "already installed"; exit 0; fi; if command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive {{S}}apt-get install -y -qq ipset >/dev/null 2>&1; elif command -v dnf >/dev/null 2>&1; then {{S}}dnf -y -q install ipset >/dev/null 2>&1; elif command -v apk >/dev/null 2>&1; then {{S}}apk add -q ipset >/dev/null 2>&1; fi; eval "$HAS" >/dev/null 2>&1 && echo installed || echo "not available - plain iptables rules are used"; true' },
     { label: `fail2ban: the ${NAME} jail (1 connection = banned for ${BANTIMES[bantime]}, every port)`, rollbackOnFail: true, cmd: [
       writeFile(FILTER, FILTER_TEXT),

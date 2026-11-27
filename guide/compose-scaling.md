@@ -21,7 +21,7 @@ With the [Edge agent](agent-security.md) on the server, these keep running while
 | Column | What it shows |
 |---|---|
 | **Service** | Name and image, **Roll out...**, and notes: what it needs to run as several replicas, the old name it still answers to, the proxy in front of it (and whether it waits too long for a replica that stopped) |
-| **Replicas** | `−` and `+` (`+` is disabled with the reason when the service can not have more than one). Under it the **Auto Scaling** chip (Off / Suggest / Simulating / Auto) opens the rule; under Auto the cell shows *2 of 1–3* |
+| **Replicas** | `−` and `+` (`+` is disabled with the reason when the service can not have more than one). Under it the **Auto Scaling** chip (Off / Suggest / Simulating / Auto) opens the rule; under Auto the cell shows *2 of 1-3* |
 | **Limits** | The CPU and memory limits **from your compose file** (`cpus`, `mem_limit`, `deploy.resources.limits`). DockGate does not change them |
 | **State** | Replicas running, or **drift** when they differ from what was set |
 | **Health** | **Auto-heal**: a replica that stays unhealthy is restarted (its own health check; without one, the Edge agent checks its port). **Keep running**: a stopped or removed service comes back |
@@ -107,7 +107,7 @@ The rule has the same fields as Swarm Auto Scaling: add at CPU % (and/or memory 
 - **Never during a deploy:** nothing changes while a deploy, rebuild or image update of the project runs, or a container of it was made in the last 2 minutes.
 - **One change at a time per project**, then the wait you set.
 - **Fewer replicas stop gracefully** (the highest numbers go), and nginx / Caddy are reloaded after each change.
-- **The number Auto Scaling chose is written to DockGate's override**, so a later deploy through DockGate keeps it. Under Auto, the panel shows *2 of 1–3* instead of `−` / `+`, and drift means only *outside min–max*.
+- **The number Auto Scaling chose is written to DockGate's override**, so a later deploy through DockGate keeps it. Under Auto, the panel shows *2 of 1-3* instead of `−` / `+`, and drift means only *outside min-max*.
 
 **Who runs it:** the Edge agent on that server, every 30 seconds - also while DockGate is offline; DockGate reads what it did into the history. On a server without an up-to-date agent, DockGate runs the same loop every minute while it is online. The **By** column of the history says which.
 
@@ -175,7 +175,7 @@ If someone runs `docker compose up` on the server without DockGate's override, t
 | `... needs Docker Compose 2.24.4 or newer on the server` | Old Compose | Update Docker Compose on the server |
 | `A deploy of this project is running - try again when it ends` | A deploy or rebuild is running | Wait for it |
 | `<service> could not run N replicas: ... - the previous setting is back` | Compose failed (image, port...) | Read the message; nothing changed |
-| `Replicas: a whole number from 0–20` | Out of range | 0 to 20 |
+| `Replicas: a whole number from 0-20` | Out of range | 0 to 20 |
 | `This service has no CPU or memory limit in its compose file - Auto Scaling needs one...` | No `cpus` / `mem_limit` | Add a limit to the compose file and redeploy |
 | `... needs its host port moved behind the proxy before it can have more than one replica - press + once...` | A rule with a maximum above 1 on a service that needs a fix | Press `+` once and accept the fix, then set the rule |
 | `Remove at a CPU % at least 10 below the add %...` | The two thresholds are too close | Keep 10 or more between them |

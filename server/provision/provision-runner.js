@@ -125,7 +125,7 @@ async function runSpecialItems(job) {
     sj = runner.getJob(secJobId);
     if (!sj || sj.status !== 'running') break;
   }
-  for (const st of (sj ? sj.steps : [])) jobLog(job, `  ${st.state === 'done' ? '✓' : st.state === 'failed' ? '✗' : '·'} ${st.label}`);
+  for (const st of (sj ? sj.steps : [])) jobLog(job, `  ${st.state === 'done' ? '✓' : st.state === 'failed' ? '✗' : '-'} ${st.label}`);
   if (sj && sj.status === 'done') { record('verified', { durationMs: Date.now() - t0 }); jobLog(job, `  ✓ DockGate now connects as ${job._deployUser} (SSH key)`); }
   else record('failed', { error: (sj && sj.error) || 'deploy user failed', durationMs: Date.now() - t0 });
 }

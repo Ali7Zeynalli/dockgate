@@ -93,7 +93,7 @@ A recipe is the steps of a deploy, in order; the first step that fails stops it.
 | **A task of the folder** | a Makefile target, just recipe, npm script, script... with its variables and arguments |
 | **Command** | any bash line |
 | **docker compose up** | `docker compose up -d --remove-orphans` - with `--build`, and `pull` first if you tick it |
-| **Check a URL** | asks the URL **from the server** until it answers well (200–399 or the status you set, optionally containing a text), N tries every N seconds |
+| **Check a URL** | asks the URL **from the server** until it answers well (200-399 or the status you set, optionally containing a text), N tries every N seconds |
 | **Wait until a container is healthy** | its health check says *healthy* (or it runs, when it has none) |
 | **Wait** | N seconds |
 | **Back to the commit before the pull** | recovery only - `git reset --hard` to the commit of before this run's Git pull |

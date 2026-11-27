@@ -161,10 +161,10 @@ router.post('/:id/access', send(async (req) => {
   } else if (setting === 'hardening') {
     const v = value || {};
     const tries = Number(v.maxAuthTries), grace = Number(v.loginGraceTime), dead = Number(v.deadTimeoutMin), idle = Number(v.idleTimeoutMin || 0);
-    if (!Number.isInteger(tries) || tries < 1 || tries > 10) throw P.httpError(400, 'Max auth tries must be 1–10');
-    if (!Number.isInteger(grace) || grace < 10 || grace > 600) throw P.httpError(400, 'Login grace time must be 10–600 seconds');
-    if (!Number.isInteger(dead) || dead < 0 || dead > 240) throw P.httpError(400, 'Dead connection timeout must be 0–240 minutes (0 = off)');
-    if (!Number.isInteger(idle) || idle < 0 || idle > 1440) throw P.httpError(400, 'Idle session timeout must be 0–1440 minutes (0 = off)');
+    if (!Number.isInteger(tries) || tries < 1 || tries > 10) throw P.httpError(400, 'Max auth tries must be 1-10');
+    if (!Number.isInteger(grace) || grace < 10 || grace > 600) throw P.httpError(400, 'Login grace time must be 10-600 seconds');
+    if (!Number.isInteger(dead) || dead < 0 || dead > 240) throw P.httpError(400, 'Dead connection timeout must be 0-240 minutes (0 = off)');
+    if (!Number.isInteger(idle) || idle < 0 || idle > 1440) throw P.httpError(400, 'Idle session timeout must be 0-1440 minutes (0 = off)');
     if (idle && !state.supportsIdleTimeout) throw P.httpError(400, `This server runs OpenSSH ${state.sshVersion || '(unknown)'} - an idle session timeout needs OpenSSH 9.2 or newer`);
     next.maxAuthTries = tries;
     next.loginGraceTime = grace;
@@ -591,7 +591,7 @@ router.post('/:id/services/docker/settings', send(async (req) => {
   const { maxSize, maxFile, liveRestore } = req.body || {};
   if (!/^\d{1,4}[kmg]$/.test(String(maxSize || ''))) throw P.httpError(400, 'Log size per file: a number with k, m or g, e.g. 10m');
   const mf = Number(maxFile);
-  if (!Number.isInteger(mf) || mf < 1 || mf > 50) throw P.httpError(400, 'Log files to keep must be 1–50');
+  if (!Number.isInteger(mf) || mf < 1 || mf > 50) throw P.httpError(400, 'Log files to keep must be 1-50');
   // Docker does not start with live-restore on while the server is in a swarm - never write that.
   if (liveRestore) {
     let state = null;

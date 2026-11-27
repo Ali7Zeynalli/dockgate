@@ -114,3 +114,20 @@ test('honeypot program: logs the connection, the greeting and the password, and 
     assert.equal(ev[2].user, 'admin'); assert.equal(ev[2].password, 'hunter2');
   } finally { child.kill(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('honeypot behind Docker port isolation: opens its own port, and every UFW reload restarts its jail', () => {
+  const plans = require('../../server/security/plans');
+  const tarGz = Buffer.from('x');
+  const plan = HP.installPlan({ tag: 'dockgate-honeypot:1.0.0-abc', tarGz });
+  const route = plan.steps.find(s => /Docker port isolation/.test(s.label)).cmd;
+  assert.match(route, /BEGIN DOCKGATE-DOCKER/);
+  assert.match(route, /ufw route allow proto tcp from any to any port 2222 comment 'dockgate-honeypot'/);
+  assert.match(plan.rollback, /ufw route delete allow proto tcp from any to any port 2222/);
+  assert.match(HP.removePlan().steps[0].cmd, /grep -q 'dockgate-honeypot'.*ufw route delete/);
+  // ufw reload / enable re-apply after.rules and empty DOCKER-USER: the jail is restarted so its rule (and bans) come back
+  assert.match(plans.UFW_RELOAD, /fail2ban-client reload --restart dockgate-honeypot/);
+  const iso = plans.isolationPlan({ id: 'x', enable: true, keepPublic: [], test: { username: 'root' } });
+  assert.match(iso.steps.find(s => s.label === 'Reload UFW').cmd, /reload --restart dockgate-honeypot/);
+  const on = plans.ufwEnablePlan({ id: 'x', sshPorts: [2299], webPorts: [80], test: { username: 'root' } });
+  assert.match(on.steps.find(s => /Switch the firewall on/.test(s.label)).cmd, /reload --restart dockgate-honeypot/);
+});

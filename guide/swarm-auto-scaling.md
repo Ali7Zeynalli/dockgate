@@ -21,7 +21,7 @@ The page has four parts:
 
 | Column | What it shows |
 |---|---|
-| **Replicas** | Replicas now, then the range (`2 2–6`). `±2` means two replicas per change |
+| **Replicas** | Replicas now, then the range (`2 2-6`). `±2` means two replicas per change |
 | **CPU, memory now** | The last reading per replica, in % of the replica's limit. *average* or *every replica*, and how many replicas were measured |
 | **Scales when** | When it adds and when it removes |
 | **Each replica** | Its CPU and memory limit, and below it the guarantee (`min`) |

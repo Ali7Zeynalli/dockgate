@@ -53,10 +53,10 @@ async function renderSystemPanelAll(serverId, container) {
         x.type === 'file' ? `${UI.btn('Resize...', `data-swresize="${esc(x.path)}"`)} ${UI.btn('Turn off & remove...', `data-swrm="${esc(x.path)}"`)}` : '<span class="ui-sub">partition - not changed here</span>'] })),
       ...off.map(p => ({ cells: [`<span class="td-mono">${esc(p)}</span> ${UI.pill('warn', 'in fstab, not on')}`, '-', '-', '-', '-', p.startsWith('/dev/') ? '' : UI.btn('Remove...', `data-swrm="${esc(p)}"`)] })),
     ];
-    return `<div style="margin:14px 0 6px"><b>Swap</b> <span class="ui-sub">· ${total ? `${gb(total)}, ${gb(used)} in use` : 'none'}${sw.ramMb ? `, RAM ${gb(sw.ramMb)}` : ''}, a safety net when memory runs out (builds, spikes): without it the kernel stops a process instead.</span></div>
+    return `<div style="margin:14px 0 6px"><b>Swap</b> <span class="ui-sub">- ${total ? `${gb(total)}, ${gb(used)} in use` : 'none'}${sw.ramMb ? `, RAM ${gb(sw.ramMb)}` : ''}, a safety net when memory runs out (builds, spikes): without it the kernel stops a process instead.</span></div>
       ${sw.container ? `<div class="insight-card warning" style="margin-bottom:8px"><div>This server is a container (<b>${esc(sw.container)}</b>): its host decides swap, a swap file can not be turned on here.</div></div>` : ''}
       ${rows.length ? UI.table([{ label: 'Swap' }, { label: 'Type' }, { label: 'Size' }, { label: 'In use' }, { label: 'Priority' }, { label: '', align: 'right' }], rows, { minWidth: 760 }) : ''}
-      ${UI.settings([{ label: 'Swappiness', desc: '10 keeps apps in RAM and swaps only under pressure; 60 is the kernel default. Written to /etc/sysctl.d/99-dockgate.conf, the same file as Kernel &amp; limits.', value: `<span class="td-mono">${esc(sw.swappiness || '-')}</span>${sw.dockgate ? ` <span class="ui-sub">· DockGate: ${esc(sw.dockgate)}</span>` : ''}${sw.legacy && !sw.dockgate ? ` <span class="ui-sub">· older file 99-swappiness.conf: ${esc(sw.legacy)}</span>` : ''}`, action: UI.btn('Edit', 'data-swappiness') }])}
+      ${UI.settings([{ label: 'Swappiness', desc: '10 keeps apps in RAM and swaps only under pressure; 60 is the kernel default. Written to /etc/sysctl.d/99-dockgate.conf, the same file as Kernel &amp; limits.', value: `<span class="td-mono">${esc(sw.swappiness || '-')}</span>${sw.dockgate ? ` <span class="ui-sub">- DockGate: ${esc(sw.dockgate)}</span>` : ''}${sw.legacy && !sw.dockgate ? ` <span class="ui-sub">- older file 99-swappiness.conf: ${esc(sw.legacy)}</span>` : ''}`, action: UI.btn('Edit', 'data-swappiness') }])}
       <div style="margin:6px 0 12px">${!sw.container && !sw.devices.some(x => x.path === '/swapfile') ? UI.btn(sw.devices.length ? '+ Add swap file...' : `+ Create swap file (${gb(sw.defaultMb || 4096)})...`, 'data-swadd') : ''}</div>`;
   }
 
@@ -79,8 +79,8 @@ async function renderSystemPanelAll(serverId, container) {
       d.sysctl.map(s => ({ cells: [`<b>${esc(s.label)}</b><div class="ui-sub td-mono">${esc(s.key)}</div>`, `<span class="td-mono">${esc(s.now || '-')}</span>`, s.dockgate ? `<span class="td-mono">${esc(s.dockgate)}</span>` : '<span class="ui-sub">-</span>', `<span class="ui-sub">${esc(s.hint)}</span>`] })), { minWidth: 720 })}
     <div style="margin:6px 0 12px">${UI.btn('Edit kernel settings...', 'data-sysctl')} <span class="ui-sub">Written to <span class="td-mono">/etc/sysctl.d/99-dockgate.conf</span>; the kernel checks each value before it is kept.</span></div>
     ${UI.settings([
-      { label: 'Open files limit', desc: 'For logins and services (nofile). Services get it when they restart.', value: `<span class="td-mono">${esc(d.nofile.soft)}</span> <span class="ui-sub">/ hard ${esc(d.nofile.hard)}</span>${d.nofile.dockgate ? ` <span class="ui-sub">· DockGate: ${esc(d.nofile.dockgate)}</span>` : ''}`, action: UI.btn('Edit', 'data-nofile') },
-      { label: 'Journal size', desc: 'The most disk the system journal may use', value: `${esc(d.journal.usage || '-')}${d.journal.maxUse ? ` <span class="ui-sub">· limit ${esc(d.journal.maxUse)}</span>` : ''}`, action: UI.btn('Edit', 'data-journal') },
+      { label: 'Open files limit', desc: 'For logins and services (nofile). Services get it when they restart.', value: `<span class="td-mono">${esc(d.nofile.soft)}</span> <span class="ui-sub">/ hard ${esc(d.nofile.hard)}</span>${d.nofile.dockgate ? ` <span class="ui-sub">- DockGate: ${esc(d.nofile.dockgate)}</span>` : ''}`, action: UI.btn('Edit', 'data-nofile') },
+      { label: 'Journal size', desc: 'The most disk the system journal may use', value: `${esc(d.journal.usage || '-')}${d.journal.maxUse ? ` <span class="ui-sub">- limit ${esc(d.journal.maxUse)}</span>` : ''}`, action: UI.btn('Edit', 'data-journal') },
       { label: 'Docker daemon', desc: 'Log size limits and live-restore', value: '<span class="ui-sub">in Services > Docker</span>', action: UI.btn('Open', 'data-docker') },
     ])}
 
@@ -181,7 +181,7 @@ async function renderSystemPanelAll(serverId, container) {
       [{ label: 'Cancel', className: 'btn btn-secondary' }, { label: 'Turn off & remove', className: 'btn btn-danger', onClick: () => run('swap', { action: 'remove', path: b.dataset.swrm }, `Remove swap ${b.dataset.swrm}`).catch(e => showToast(e.message, 'error', 9000)) }]);
   }));
   container.querySelector('[data-swappiness]').addEventListener('click', () => UI.dialog({ title: 'Swappiness', saveLabel: 'Review changes...',
-    body: `<label class="ui-field"><span class="ui-label">vm.swappiness</span><input class="input td-mono" id="sw-sp" type="number" min="0" max="200" value="${esc(sw.dockgate || sw.swappiness || 10)}"><span class="ui-sub">0–200. 10 is a good value for servers; 60 is the kernel default. Applied now, kept after a reboot.</span></label>`,
+    body: `<label class="ui-field"><span class="ui-label">vm.swappiness</span><input class="input td-mono" id="sw-sp" type="number" min="0" max="200" value="${esc(sw.dockgate || sw.swappiness || 10)}"><span class="ui-sub">0-200. 10 is a good value for servers; 60 is the kernel default. Applied now, kept after a reboot.</span></label>`,
     onSave: async (ov) => { const value = ov.querySelector('#sw-sp').value.trim(); await API.post(`/servers/${serverId}/system/swap`, { action: 'swappiness', value, preview: true }); setTimeout(() => reviewThenRun('swap', { action: 'swappiness', value }, `Swappiness -> ${value}`).catch(e => showToast(e.message, 'error', 9000)), 0); } }));
 
   container.querySelectorAll('[data-fsrm]').forEach(b => b.addEventListener('click', () => {

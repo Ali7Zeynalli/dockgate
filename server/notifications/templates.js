@@ -15,7 +15,7 @@ function header(title) {
 function footer() {
   return `
       <div style="padding:12px 24px;background:#f5f5f5;text-align:center;font-size:11px;color:#888;border-radius:0 0 8px 8px;border:1px solid #e0e0e0;border-top:0;">
-        Sent by DockGate &mdash; Docker Control Panel
+        Sent by DockGate - Docker Control Panel
       </div>
     </div>`;
 }
