@@ -2,6 +2,13 @@
 
 ---
 
+## [2.89.2] - 2026-11-27
+
+### Removed
+- **The UptimeRobot IP list** (Firewall > IP lists). DockGate checks your sites itself (Uptime), so a list for another monitoring service is not needed. Cloudflare and GitHub webhooks stay. A firewall rule that already used the list stays on the server and shows as separate addresses.
+
+---
+
 ## [2.89.1] - 2026-11-27
 
 ### Fixed
