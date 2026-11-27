@@ -2,6 +2,16 @@
 
 ---
 
+## [2.90.1] - 2026-11-27
+
+### Fixed
+- **Docker port isolation could take sites offline.** On one server the ports ticked to stay public (80 and 443 of a Caddy container) were dropped once isolation was on, and Cloudflare could no longer reach the site.
+  - The ports kept public are now written into DockGate's isolation rules themselves, so they no longer depend on separate `ufw route` rules being live. Opening the honeypot's port behind isolation works the same way.
+  - Before the change is kept, DockGate checks that each kept port is open in the live firewall, and that the kept ports which answered from DockGate before still answer from outside. If not, everything is put back and the reason is shown.
+- **Turning isolation off, and its automatic rollback, left the rules in the live firewall.** Removing them from the UFW files and reloading did not take them out of Docker's DOCKER-USER chain. Now DockGate removes its own rules there too; fail2ban's rules and rules you added yourself stay.
+
+---
+
 ## [2.90.0] - 2026-11-27
 
 ### Added

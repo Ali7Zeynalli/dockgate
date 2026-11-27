@@ -226,6 +226,15 @@ router.delete('/:id/firewall/rules/:n', send(async (req) => {
   return { success: true, warnings };
 }));
 
+/** The ports (of `ports`) that accept a TCP connection from DockGate right now. */
+function answeringPorts(host, ports) {
+  const net = require('net');
+  return Promise.all(ports.map(port => new Promise((resolve) => {
+    const s = net.connect({ host, port, timeout: 4000 });
+    const done = (ok) => { try { s.destroy(); } catch (e) {} resolve(ok ? port : null); };
+    s.once('connect', () => done(true)); s.once('timeout', () => done(false)); s.once('error', () => done(false));
+  }))).then(r => r.filter(Boolean));
+}
 router.post('/:id/firewall/docker-isolation', send(async (req) => {
   const row = loadServer(req);
   requireConfirm(req.body);
@@ -242,7 +251,10 @@ router.post('/:id/firewall/docker-isolation', send(async (req) => {
   // the SSH honeypot must stay reachable: closing its port would switch it off without anyone noticing
   const honeypot = enable ? (fw.bypass || []).filter(x => /(^|\/)dockgate-honeypot$/.test(String(x.usedBy || ''))) : [];
   for (const h of honeypot) if (!keepPublic.some(k => k.port === h.containerPort && k.proto === h.proto)) keepPublic.push({ port: h.containerPort, proto: h.proto });
-  const plan = plans.isolationPlan({ id: newId(), enable, keepPublic, test: { username: row.username } });
+  // ports kept public that answer from DockGate now must still answer after the change, or it is put back
+  const keptHostPorts = enable ? [...new Set((fw.bypass || []).filter(b => b.proto === 'tcp' && keepPublic.some(k => k.port === b.containerPort && k.proto === 'tcp')).map(b => b.port))] : [];
+  const answering = await answeringPorts(row.host, keptHostPorts);
+  const plan = plans.isolationPlan({ id: newId(), enable, keepPublic, test: { username: row.username }, probe: answering.length ? { host: row.host, ports: answering } : null });
   const before = await healthOf(row);
   const jobId = runner.startPlan(cfgOf(row), plan, {
     title: enable ? 'Docker port isolation' : 'Turn off Docker port isolation',
