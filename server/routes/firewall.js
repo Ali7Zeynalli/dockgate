@@ -308,6 +308,35 @@ router.post('/:id/firewall/reload', send(async (req) => {
 }));
 
 
+// ---------------------------------------------------------------- Live firewall (server/firewall-live.js)
+const FL = require('../firewall-live');
+const liveCache = new Map(); // serverId -> { at, state }: "Will this pass?" checks reuse a read for 30 s
+async function liveState(row, fresh) {
+  const c = liveCache.get(row.id);
+  if (!fresh && c && Date.now() - c.at < 30000) return c.state;
+  const out = await runner.read(cfgOf(row), FL.READ);
+  const state = FL.parseState(out);
+  liveCache.set(row.id, { at: Date.now(), state });
+  return state;
+}
+router.get('/:id/firewall/live', send(async (req) => FL.view(await liveState(loadServer(req), true))));
+// body { src, port, proto }
+router.post('/:id/firewall/live/check', send(async (req) => {
+  const b = req.body || {};
+  return FL.simulate(await liveState(loadServer(req), false), { src: String(b.src || '').trim(), port: b.port, proto: b.proto || 'tcp' });
+}));
+// body { fix: 'remove-leftover' } - takes DockGate's isolation rules out of the live firewall (only opens; fail2ban's stay)
+router.post('/:id/firewall/live/fix', send(async (req) => {
+  const row = loadServer(req);
+  if ((req.body || {}).fix !== 'remove-leftover') throw Object.assign(new Error('Unknown fix'), { statusCode: 400 });
+  liveCache.delete(row.id);
+  const jobId = runner.startPlan(cfgOf(row), { steps: [
+    { label: 'Take the leftover Docker port isolation rules out of the live firewall (fail2ban and your own rules stay)', cmd: `${plans.ourLiveRules('{{S}}')}; ${plans.HONEYPOT_REARM}` },
+    { label: 'Check: none left', cmd: "if {{S}}iptables -S DOCKER-USER | grep -q -- '-j ufw-user-forward'; then echo 'still there'; exit 1; fi; echo ok" },
+  ] }, { title: 'Remove leftover isolation rules', successText: 'The leftover rules are gone: published container ports are reachable again as before isolation.', onSuccess: () => audit(req, row, 'firewall-live-remove-leftover', {}) });
+  return { jobId };
+}));
+
 module.exports = router;
 module.exports.firewallOf = firewallOf; // used by Swarm (server/swarm-cluster.js) to open the cluster ports
 module.exports.runFirewallOp = runFirewallOp; // used by Swarm > Firewall (server/swarm-firewall.js)

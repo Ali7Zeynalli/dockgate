@@ -83,6 +83,22 @@ UFW (or firewalld on RHEL-type systems).
 
 Docker publishes ports past UFW by default. DockGate adds rules so a container's published port obeys the firewall too.
 
+## Security > Live firewall
+
+The rules as the kernel holds them right now (`iptables-save`, `ip6tables-save`, `ipset`), not only what UFW lists. It only reads, apart from the one fix it offers.
+
+| Part | What it does |
+|---|---|
+| **Needs attention** | Differences between the firewall files and the live firewall: isolation rules left behind after isolation was turned off, isolation in the file but not live, a port kept public whose rule is missing, a UFW route rule that is not live, Docker on its nftables backend, and connections to 80 or 443 dropped in the last hour |
+| **Will this connection pass?** | An address and a port of this server, walked through the rules the kernel uses. A port Docker forwards to a container goes through FORWARD (and DOCKER-USER), any other port through INPUT. Shows Passes or Blocked, the rule that decided, where that rule comes from, and every step on the way |
+| **Ports Docker forwards to containers** | Each published port, its container and address. **Check from the internet** runs the check above from a public address |
+| **Dropped in the last hour** | From the kernel log (`UFW BLOCK`, `UFW DOCKER BLOCK`), grouped by port with the addresses seen most. Logging is rate limited, so the counts are a sample. A drop to a container shows the container's port (after Docker's forwarding) |
+| **All rules** | Every chain and rule in order, each marked UFW, Docker, fail2ban (with the jail), DockGate (isolation or a port kept public) or unknown (added by hand?) |
+
+**Remove them...** (on "rules left behind") takes DockGate's isolation rules out of DOCKER-USER. fail2ban's rules (honeypot, bans from other servers) and rules you added yourself stay. Then the page is read again.
+
+The check reads one snapshot and assumes a new TCP or UDP connection. A rule that uses a match DockGate cannot judge is shown in the steps and treated as not applying.
+
 ## Security > Fail2ban
 
 Bans addresses that fail to log in over SSH too often (and, with the [Honeypot](#security--honeypot), every address that connects to port 22).

@@ -2,6 +2,15 @@
 
 ---
 
+### Added
+- **Live firewall** (Server Console > Security > Live firewall). The rules as the kernel holds them, not only what UFW lists.
+  - **Will this connection pass?**: an address and a port, walked through the rules the kernel uses (Docker's forwarding to a container through FORWARD, the server itself through INPUT). Shows the rule that decides and where it comes from: UFW, Docker, fail2ban (which jail), DockGate's isolation, or unknown.
+  - **Needs attention**: isolation rules left behind in the live firewall, isolation in the file but not live, a kept port or a UFW route rule that is not live, Docker on its nftables backend, and connections to 80 or 443 dropped in the last hour.
+  - **Remove them...** takes leftover isolation rules out of DOCKER-USER and keeps fail2ban's rules and your own.
+  - The ports Docker forwards, with **Check from the internet**, the connections dropped in the last hour (from the kernel log), and every rule in order.
+
+---
+
 ## [2.90.1] - 2026-11-27
 
 ### Fixed
