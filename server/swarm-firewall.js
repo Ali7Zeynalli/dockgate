@@ -92,7 +92,7 @@ async function overview() {
  */
 async function apply({ port, proto = 'tcp', sources = [] }, { sourceIp } = {}) {
   port = Number(port); proto = proto === 'udp' ? 'udp' : 'tcp';
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw bad(400, 'Port: 1–65535');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw bad(400, 'Port: 1-65535');
   if (!Array.isArray(sources) || sources.length > 60) throw bad(400, 'Sources: a list of at most 60 entries (use an IP list for more)');
   const c = dockerService.docker;
   const p = (await publishedPorts(c)).find(x => x.published === port && x.proto === proto);

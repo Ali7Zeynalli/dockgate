@@ -182,6 +182,9 @@ html, body {
   background: var(--bg-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Inter turns -> into an arrow glyph; show the characters as written */
+  font-variant-ligatures: no-contextual;
+  font-feature-settings: "calt" 0;
   overflow: hidden;
 }
 

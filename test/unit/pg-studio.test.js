@@ -386,7 +386,7 @@ test('Many rows at once against PostgreSQL: import (insert / upsert / skip), bul
   assert.equal((await BU.bulkUpdate('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', where: "sku like 'NEW%'", op: 'delete' })).rows, 1);
   // find and replace: preview, part of the value (case-insensitive), whole value
   const pv = await BU.findReplace('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', column: 'name', find: 'ITEM 1', replace: 'Thing-1', preview: true });
-  assert.equal(pv.rows, 310, 'Item 1, 10–19, 100–199, 1000–1199 (S1 was renamed)'); assert.equal(pv.samples[0].after.startsWith('Thing-1'), true);
+  assert.equal(pv.rows, 310, 'Item 1, 10-19, 100-199, 1000-1199 (S1 was renamed)'); assert.equal(pv.samples[0].after.startsWith('Thing-1'), true);
   assert.equal((await BU.findReplace('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', column: 'name', find: 'item 1', replace: 'Thing-1' })).rows, 310);
   assert.equal(pq('-c', "select name from shop.prod where sku = 'S15'"), 'Thing-15');
   assert.equal((await BU.findReplace('shop-db-1', 'dgtest', { schema: 'shop', table: 'prod', column: 'note', find: "it's", replace: 'its', wholeValue: true, matchCase: true })).rows, 392, '400 minus the 8 set to free above');

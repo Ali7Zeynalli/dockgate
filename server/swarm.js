@@ -206,9 +206,9 @@ function initOptions(body = {}) {
   if (!Number.isInteger(o.dataPort) || o.dataPort < 1024 || o.dataPort > 49151) throw bad('The data port must be between 1024 and 49151');
   o.autolock = !!body.autolock;
   o.certDays = Number(body.certDays || 90);
-  if (!Number.isInteger(o.certDays) || o.certDays < 1 || o.certDays > 3650) throw bad('Certificate lifetime must be 1–3650 days');
+  if (!Number.isInteger(o.certDays) || o.certDays < 1 || o.certDays > 3650) throw bad('Certificate lifetime must be 1-3650 days');
   o.taskHistory = Number(body.taskHistory ?? 5);
-  if (!Number.isInteger(o.taskHistory) || o.taskHistory < 0 || o.taskHistory > 100) throw bad('Task history must be 0–100');
+  if (!Number.isInteger(o.taskHistory) || o.taskHistory < 0 || o.taskHistory > 100) throw bad('Task history must be 0-100');
   return o;
 }
 
@@ -230,7 +230,7 @@ async function startInit(body, { sourceIp, join } = {}) {
     try {
       step(job, 'check', 'running', 'Check the server again');
       const ck = await checks({ pool: o.pool, multi: !!join });
-      for (const x of ck.checks) log(`${{ ok: '✓', warn: '!', bad: '✗', info: '·' }[x.status]} ${x.label}: ${x.detail}`);
+      for (const x of ck.checks) log(`${{ ok: '✓', warn: '!', bad: '✗', info: '-' }[x.status]} ${x.label}: ${x.detail}`);
       if (!ck.ok) throw new Error('A check failed: ' + ck.checks.filter(x => x.status === 'bad').map(x => x.label).join(', '));
       step(job, 'check', 'done');
 
@@ -461,23 +461,23 @@ async function updateSettings(body = {}) {
   const before = { autolock: !!(spec.EncryptionConfig && spec.EncryptionConfig.AutoLockManagers), certDays: spec.CAConfig && spec.CAConfig.NodeCertExpiry ? Math.round(spec.CAConfig.NodeCertExpiry / 1e9 / 86400) : null, taskHistory: spec.Orchestration ? spec.Orchestration.TaskHistoryRetentionLimit : null };
   if (body.certDays !== undefined) {
     const d = Number(body.certDays);
-    if (!Number.isInteger(d) || d < 1 || d > 3650) throw bad('Certificate lifetime must be 1–3650 days');
+    if (!Number.isInteger(d) || d < 1 || d > 3650) throw bad('Certificate lifetime must be 1-3650 days');
     spec.CAConfig = { ...(spec.CAConfig || {}), NodeCertExpiry: d * 86400 * 1e9 };
   }
   if (body.taskHistory !== undefined) {
     const n = Number(body.taskHistory);
-    if (!Number.isInteger(n) || n < 0 || n > 100) throw bad('Task history must be 0–100');
+    if (!Number.isInteger(n) || n < 0 || n > 100) throw bad('Task history must be 0-100');
     spec.Orchestration = { ...(spec.Orchestration || {}), TaskHistoryRetentionLimit: n };
   }
   if (body.autolock !== undefined) spec.EncryptionConfig = { ...(spec.EncryptionConfig || {}), AutoLockManagers: !!body.autolock };
   if (body.heartbeatSec !== undefined) {
     const h = Number(body.heartbeatSec);
-    if (!Number.isInteger(h) || h < 1 || h > 60) throw bad('Heartbeat period must be 1–60 seconds');
+    if (!Number.isInteger(h) || h < 1 || h > 60) throw bad('Heartbeat period must be 1-60 seconds');
     spec.Dispatcher = { ...(spec.Dispatcher || {}), HeartbeatPeriod: h * 1e9 };
   }
   if (body.snapshotInterval !== undefined) {
     const n = Number(body.snapshotInterval);
-    if (!Number.isInteger(n) || n < 100 || n > 1000000) throw bad('Raft snapshot interval must be 100–1,000,000 log entries');
+    if (!Number.isInteger(n) || n < 100 || n > 1000000) throw bad('Raft snapshot interval must be 100-1,000,000 log entries');
     spec.Raft = { ...(spec.Raft || {}), SnapshotInterval: n };
   }
   try { await dial(c, '/swarm/update?', 'POST', { _query: { version: sw.Version.Index }, _body: spec }); }

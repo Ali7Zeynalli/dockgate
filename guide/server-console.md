@@ -101,7 +101,7 @@ A fake SSH server on port 22, for a server whose real SSH listens on another por
 - nothing else listens on port 22
 - Docker is installed, and fail2ban is running (**Setup > Fail2ban**)
 
-**Turn on...** asks for a ban time (one day, a week, 30 days) and addresses that are never banned (your office, a monitoring service). Loopback, private networks (10.x, 172.16–31.x, 192.168.x) and fail2ban's own allowlist (DockGate's address) are never banned anyway. Then one job:
+**Turn on...** asks for a ban time (one day, a week, 30 days) and addresses that are never banned (your office, a monitoring service). Loopback, private networks (10.x, 172.16-31.x, 192.168.x) and fail2ban's own allowlist (DockGate's address) are never banned anyway. Then one job:
 
 | Step | What |
 |---|---|
@@ -139,7 +139,7 @@ The server's scheduled jobs in one table: the SSH user's crontab, root's crontab
 
 **What DockGate writes:** the SSH user's crontab, root's crontab (passwordless `sudo`) and its own file `/etc/cron.d/dockgate`. Files of the system and of packages are shown, not changed - ⋯ -> **Open in Files** to edit one yourself.
 
-**+ New job / Edit:** name, runs as (SSH user, root, or a user of your choice in `/etc/cron.d/dockgate`), **When** picked from lists - every few minutes, every few hours, every day, days of the week or once a month, at an hour 00–23 and minute 00–59 (24-hour, server time) - or *At reboot*, or your own expression in the box, with the **next 5 runs**, the command. **Review changes...** shows what changes in the crontab before it is written; the crontab before each change is kept (**Earlier versions...**). Turning a job off keeps it as a comment (`#dg-off# ...`), so it can be turned on again.
+**+ New job / Edit:** name, runs as (SSH user, root, or a user of your choice in `/etc/cron.d/dockgate`), **When** picked from lists - every few minutes, every few hours, every day, days of the week or once a month, at an hour 00-23 and minute 00-59 (24-hour, server time) - or *At reboot*, or your own expression in the box, with the **next 5 runs**, the command. **Review changes...** shows what changes in the crontab before it is written; the crontab before each change is kept (**Earlier versions...**). Turning a job off keeps it as a comment (`#dg-off# ...`), so it can be turned on again.
 
 Options for a named job:
 

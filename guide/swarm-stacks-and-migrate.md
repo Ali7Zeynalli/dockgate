@@ -44,7 +44,7 @@ Every move can be undone: **Stacks -> ⋯ > Move back to Compose...** (also in t
 
 | Column | Choices | Notes |
 |---|---|---|
-| **Replicas** | 0–100 (default 1) | Databases are always 1 (postgres, mysql, mariadb, mongo, redis, elasticsearch, rabbitmq, minio and similar images). |
+| **Replicas** | 0-100 (default 1) | Databases are always 1 (postgres, mysql, mariadb, mongo, redis, elasticsearch, rabbitmq, minio and similar images). |
 | **Ports** | `ingress` - every server answers, `host` - the real client IP | With `host`, only one task per server can use the port. On a single server keep 1 replica for such a service. |
 | **Updates** | `start-first` (no downtime), `stop-first` | A service with a volume or bind mount is always `stop-first`, so two copies never write the same data. |
 
@@ -99,7 +99,7 @@ One project at a time:
 5. Every service must run its replicas and **stay up for 30 seconds**.
 6. If it does not, DockGate puts it back by itself: the stack is removed and `docker compose up -d` runs.
 
-The project is **down from step 3 until its services run on Swarm** - usually 10–60 seconds.
+The project is **down from step 3 until its services run on Swarm** - usually 10-60 seconds.
 A live log of each step opens while the job runs. Only one Swarm job runs at a time.
 
 > **Data is kept.** Volumes keep their names (`<project>_<volume>`), so the stack uses the same data.
@@ -182,7 +182,7 @@ Before a service moves, DockGate compares how it is protected in Compose with ho
 | **Take over...** | stacks deployed outside DockGate | DockGate writes a stack file from the running services for you to check. Nothing is deployed; afterwards Redeploy and Edit work. |
 | **History** | all | Every deploy: when, what, result, downtime, file hash, source IP. **Deploy this again...** deploys the stored stack file of an earlier successful deploy. |
 | **Services** | all | Opens Swarm > Services. |
-| **Move back to Compose...** | stacks moved from Compose | Removes the stack, waits until its network is gone, then runs `docker compose up -d` in the project folder. Down for about 20–60 s. |
+| **Move back to Compose...** | stacks moved from Compose | Removes the stack, waits until its network is gone, then runs `docker compose up -d` in the project folder. Down for about 20-60 s. |
 | **Move back to the container...** | stacks moved from a container | Removes the stack, gives the container its restart policy back and starts it. |
 | **Remove...** | all | Removes the services and networks. **Volumes, secrets and configs stay**; compose files are not touched. You type the stack name to confirm. |
 

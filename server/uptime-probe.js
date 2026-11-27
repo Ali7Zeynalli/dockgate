@@ -59,7 +59,7 @@ function parseHostPort(target, defPort) {
   const m = /^\[([^\]]+)\](?::(\d+))?$/.exec(s) || /^([^:]+)(?::(\d+))?$/.exec(s);
   if (!m || !m[1]) throw new Error('Host: example.com or example.com:443');
   const port = m[2] ? Number(m[2]) : defPort;
-  if (!port || port < 1 || port > 65535) throw new Error('Port: 1–65535');
+  if (!port || port < 1 || port > 65535) throw new Error('Port: 1-65535');
   return { host: m[1], port };
 }
 
@@ -93,17 +93,17 @@ function normalize(input) {
     if (config.expectIp && !net.isIP(config.expectIp)) throw new Error('Expected address: an IP like 203.0.113.10');
   }
   const timeout = Math.round(Number(c.timeout) || 10);
-  if (timeout < 1 || timeout > 60) throw new Error('Timeout: 1–60 seconds');
+  if (timeout < 1 || timeout > 60) throw new Error('Timeout: 1-60 seconds');
   config.timeout = timeout;
   const slowMs = c.slowMs === '' || c.slowMs == null ? 0 : Math.round(Number(c.slowMs));
-  if (!Number.isFinite(slowMs) || slowMs < 0 || slowMs > 120000) throw new Error('Slow above: 0–120000 ms (0 = off)');
+  if (!Number.isFinite(slowMs) || slowMs < 0 || slowMs > 120000) throw new Error('Slow above: 0-120000 ms (0 = off)');
   config.slowMs = slowMs;
   config.slowCount = Math.min(10, Math.max(1, Math.round(Number(c.slowCount) || 3)));
   config.certAlerts = (type === 'http' && /^https:/i.test(target)) || type === 'ssl' ? c.certAlerts !== false : false;
   const interval = Math.round(Number(input.interval) || 60);
   if (interval < 30 || interval > 3600) throw new Error('Every: 30 seconds to 1 hour');
   const fails = Math.round(Number(input.fails) || 2);
-  if (fails < 1 || fails > 10) throw new Error('Down after: 1–10 failures in a row');
+  if (fails < 1 || fails > 10) throw new Error('Down after: 1-10 failures in a row');
   return { name: name || target, type, target, config, interval, fails };
 }
 

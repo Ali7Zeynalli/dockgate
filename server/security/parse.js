@@ -59,7 +59,7 @@ function assertPublicKey(text) {
 }
 
 function validPort(p) { const n = Number(p); return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : null; }
-function assertPort(p) { const n = validPort(p); if (!n) throw httpError(400, 'Port must be a whole number 1–65535'); return n; }
+function assertPort(p) { const n = validPort(p); if (!n) throw httpError(400, 'Port must be a whole number 1-65535'); return n; }
 function assertProto(p) { if (p !== 'tcp' && p !== 'udp') throw httpError(400, 'Protocol must be tcp or udp'); return p; }
 /** "any" or an IPv4/IPv6 address / CIDR. Returns the normalised value. */
 function assertSource(src) {
@@ -130,14 +130,14 @@ function buildAccessConf(s) {
     lines.push(`PasswordAuthentication ${s.passwordAuth ? 'yes' : 'no'}`);
     lines.push(`KbdInteractiveAuthentication ${s.passwordAuth ? 'yes' : 'no'}`);
   }
-  if (s.maxAuthTries != null) { const n = Number(s.maxAuthTries); if (!Number.isInteger(n) || n < 1 || n > 10) throw httpError(400, 'Max auth tries must be 1–10'); lines.push(`MaxAuthTries ${n}`); }
+  if (s.maxAuthTries != null) { const n = Number(s.maxAuthTries); if (!Number.isInteger(n) || n < 1 || n > 10) throw httpError(400, 'Max auth tries must be 1-10'); lines.push(`MaxAuthTries ${n}`); }
   if (s.clientAliveInterval != null) { const n = Number(s.clientAliveInterval); if (!Number.isInteger(n) || n < 0 || n > 7200) throw httpError(400, 'Idle timeout out of range'); lines.push(`ClientAliveInterval ${n}`); lines.push(`ClientAliveCountMax ${Number.isInteger(Number(s.clientAliveCountMax)) ? Number(s.clientAliveCountMax) : 2}`); }
   if (typeof s.x11 === 'boolean') lines.push(`X11Forwarding ${s.x11 ? 'yes' : 'no'}`);
-  if (s.loginGraceTime != null) { const n = Number(s.loginGraceTime); if (!Number.isInteger(n) || n < 10 || n > 600) throw httpError(400, 'Login grace time must be 10–600 seconds'); lines.push(`LoginGraceTime ${n}`); }
+  if (s.loginGraceTime != null) { const n = Number(s.loginGraceTime); if (!Number.isInteger(n) || n < 10 || n > 600) throw httpError(400, 'Login grace time must be 10-600 seconds'); lines.push(`LoginGraceTime ${n}`); }
   if (typeof s.permitEmptyPasswords === 'boolean') lines.push(`PermitEmptyPasswords ${s.permitEmptyPasswords ? 'yes' : 'no'}`);
   // Real idle limit (OpenSSH 9.2+): close a session with no traffic in either direction, then the
   // connection once it has no channels left. 0/null = off.
-  if (s.idleTimeoutMin) { const n = Number(s.idleTimeoutMin); if (!Number.isInteger(n) || n < 1 || n > 1440) throw httpError(400, 'Idle session timeout must be 1–1440 minutes'); lines.push(`ChannelTimeout session=${n}m`); lines.push(`UnusedConnectionTimeout ${n}m`); }
+  if (s.idleTimeoutMin) { const n = Number(s.idleTimeoutMin); if (!Number.isInteger(n) || n < 1 || n > 1440) throw httpError(400, 'Idle session timeout must be 1-1440 minutes'); lines.push(`ChannelTimeout session=${n}m`); lines.push(`UnusedConnectionTimeout ${n}m`); }
   return lines.join('\n') + '\n';
 }
 
@@ -198,7 +198,7 @@ function removeAuthorizedKey(text, fingerprint) {
 
 /**
  * Users view from the read script sections. `today` = days since epoch (for account expiry).
- * Human accounts (uid 0 and 1000–59999) only.
+ * Human accounts (uid 0 and 1000-59999) only.
  */
 function usersState(sec, today = Math.floor(Date.now() / 86400000)) {
   const groups = {};

@@ -119,7 +119,7 @@ function renderHostMonitoring(serverId, container, opts = {}) {
         <div class="card">
           <div style="font-size:15px;font-weight:700;margin-bottom:12px">System</div>
           <div class="detail-grid" style="grid-template-columns:1fr 1fr">
-            <div class="detail-item"><div class="detail-label">Load avg (1·5·15)</div><div class="detail-value" id="hm-d-load">-</div></div>
+            <div class="detail-item"><div class="detail-label">Load avg (1, 5, 15)</div><div class="detail-value" id="hm-d-load">-</div></div>
             <div class="detail-item"><div class="detail-label">Processes</div><div class="detail-value" id="hm-d-procs">-</div></div>
             <div class="detail-item"><div class="detail-label">Network ↓</div><div class="detail-value" id="hm-d-rx">-</div></div>
             <div class="detail-item"><div class="detail-label">Network ↑</div><div class="detail-value" id="hm-d-tx">-</div></div>

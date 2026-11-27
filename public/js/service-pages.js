@@ -98,7 +98,7 @@ function renderRawConfig(serverId, itemId, path, el, { label, high, hint } = {})
 
 // Recent log of a service: its systemd journal in the shared LogViewer, loaded when the section is opened.
 function renderServiceLogs(serverId, info, el) {
-  el.innerHTML = `<details class="card" style="padding:12px 14px"><summary class="text-sm" style="cursor:pointer;font-weight:600">Recent log${info.unit ? ` <span class="ui-sub">· ${escapeHtml(info.unit)}</span>` : ''}</summary><div data-lv style="margin-top:10px"></div></details>`;
+  el.innerHTML = `<details class="card" style="padding:12px 14px"><summary class="text-sm" style="cursor:pointer;font-weight:600">Recent log${info.unit ? ` <span class="ui-sub">- ${escapeHtml(info.unit)}</span>` : ''}</summary><div data-lv style="margin-top:10px"></div></details>`;
   const det = el.querySelector('details');
   det.addEventListener('toggle', () => {
     if (!det.open || det._lv) return;

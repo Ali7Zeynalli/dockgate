@@ -1367,7 +1367,7 @@ Router.register('compose', async (content, params = {}) => {
       <p style="margin:6px 0 0"><b>External networks</b> - if a selected compose uses an <code>external:</code> network, it's listed at the top. Leave it ticked and DockGate <b>creates it before</b> the stacks start, so the deploy won't fail with "network not found".</p>
 
       <h4 style="margin:14px 0 4px">3, Deploy</h4>
-      <p style="margin:0">Click <b>Deploy</b>. The <b>Deploys</b> console shows each step - ensure network, then each stack - going <code>· pending -> ⏳ running -> ✓ done / ✗ failed</code>, with the live <code>docker compose</code> output in a real terminal. You can close the modal; the deploy keeps running on the server. Re-open it anytime from <b>Deploys -> view log</b>.</p>
+      <p style="margin:0">Click <b>Deploy</b>. The <b>Deploys</b> console shows each step - ensure network, then each stack - going <code>- pending -> ⏳ running -> ✓ done / ✗ failed</code>, with the live <code>docker compose</code> output in a real terminal. You can close the modal; the deploy keeps running on the server. Re-open it anytime from <b>Deploys -> view log</b>.</p>
 
       <h4 style="margin:14px 0 4px">Three folders, each with its own compose?</h4>
       <p style="margin:0">That's the multi-stack case: select all three in the picker, give each a name, tick a shared external network if they use one, and they deploy in order as three separate projects.</p>
@@ -1572,7 +1572,7 @@ Router.register('compose', async (content, params = {}) => {
       // Render the full file list once; each row's status icon is updated in place as it uploads.
       list.innerHTML = picked.map((f, i) => {
         const rel = f.webkitRelativePath.split('/').slice(1).join('/');
-        return `<div id="fd-row-${i}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span id="fd-st-${i}">·</span> ${escapeHtml(rel)} <span class="text-muted">(${formatBytes(f.size)})</span></div>`;
+        return `<div id="fd-row-${i}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span id="fd-st-${i}">-</span> ${escapeHtml(rel)} <span class="text-muted">(${formatBytes(f.size)})</span></div>`;
       }).join('');
       const setStatus = (i, icon, color) => { const el = root.querySelector(`#fd-st-${i}`); if (el) { el.textContent = icon; el.style.color = color || ''; } };
       try {
@@ -1724,7 +1724,7 @@ Router.register('compose', async (content, params = {}) => {
     if (s === 'failed') return '<span style="color:var(--danger,#f85149)">✗</span>';
     if (s === 'running') return '<span style="color:var(--accent)">⏳</span>';
     if (s === 'skipped') return '<span class="text-muted">∅</span>';
-    return '<span class="text-muted">·</span>';
+    return '<span class="text-muted">-</span>';
   }
 
   // Re-openable live log for a deploy job - per-step status + a real terminal (xterm) so docker's

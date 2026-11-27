@@ -43,7 +43,7 @@
 
 ### Added
 - **System > Disks > Swap.** See the server's swap (size, how much is in use, priority) and change it here.
-  - **Create swap file** (4 GB by default), **Resize...** (1–16 GB) and **Turn off & remove...**.
+  - **Create swap file** (4 GB by default), **Resize...** (1-16 GB) and **Turn off & remove...**.
   - Turning swap off is refused when the free RAM can not take back what is in it.
   - **Swappiness** is edited here too, in the same file as Kernel & limits.
   - Swap partitions are shown but not changed.
@@ -119,7 +119,7 @@
 
 ### Fixed
 - **Cron and Timers tabs were empty.** The page title got a help (?) button, so the tab no longer found its own section.
-- **A schedule's "Keep" of 0 became 7** (volume and database backups); it is now refused like any value outside 1–365.
+- **A schedule's "Keep" of 0 became 7** (volume and database backups); it is now refused like any value outside 1-365.
 - On this machine, Databases > Backups > Schedule pointed to Tools > Schedules, which had no database backup.
 
 ---
@@ -585,7 +585,7 @@
 ## [2.64.2] - 2026-11-17
 
 ### Changed
-- **Schedules are picked from lists, not typed as cron.** Databases > Backups > Schedule..., Scripts > Schedule... and Cron > New job / Edit: choose how often (every few minutes, every few hours, every day, days of the week, once a month), then the hour (00–23) and minute (00–59) - 24-hour, server time. The schedule is shown in words with its cron line; *Custom* still takes any cron expression (and Cron keeps *At reboot* and its own box).
+- **Schedules are picked from lists, not typed as cron.** Databases > Backups > Schedule..., Scripts > Schedule... and Cron > New job / Edit: choose how often (every few minutes, every few hours, every day, days of the week, once a month), then the hour (00-23) and minute (00-59) - 24-hour, server time. The schedule is shown in words with its cron line; *Custom* still takes any cron expression (and Cron keeps *At reboot* and its own box).
 
 ---
 
@@ -984,12 +984,12 @@
   - **New rule** in 4 steps: services (one rule can cover several services), what each replica gets (CPU and memory limit and reservation, spread over the servers), when to scale, and the range with a check of how many replicas fit.
 - **Memory** as a reason to scale: add a replica when the memory per replica stays above a % of its limit, with *CPU or memory* or *CPU and memory*. A memory rule needs a memory limit.
 - **Every replica busy**: scale on the least busy replica instead of the average, so one hot replica does not add more.
-- **Replicas per change** (1–5) and separate waits after adding and after removing.
+- **Replicas per change** (1-5) and separate waits after adding and after removing.
 - Checks **every 30 seconds** or every minute, and what to do with a replica that fits nowhere: wait for room or skip. A replica that stays pending is recorded once (*not placed: ...*) and sent through the **Swarm autoscale** notification.
 - **Cluster settings**:
   - **Root CA > Rotate...** gives every node a new certificate.
   - **Unlock key > Rotate...** (with autolock on) shows the new key once and keeps it in DockGate.
-  - **Tuning**: heartbeat period (1–60 s) and Raft snapshot interval.
+  - **Tuning**: heartbeat period (1-60 s) and Raft snapshot interval.
 - **Resume the update...** for a service whose rolling update paused after a failure: on the service's Updates tab and in a banner at the top of its page.
 
 ### Changed
@@ -1015,7 +1015,7 @@
   - a wait between changes (default 5 min), so new replicas settle;
   - spreading the replicas over the servers (placement preference `spread=node.id`).
 
-  CPU per task is the % of the service's CPU limit, or of one CPU core when it has none. DockGate checks every minute, changes one replica at a time, never during a rolling update, and keeps working whichever server is picked at the top. Each change is shown in the tab's History, in the audit log and through the new **Swarm autoscale** notification rule; the Services list marks services with a rule (*auto 2–5*). Not offered for global services or databases, and a warning is shown for services with volumes. Autoscale does not add servers: a replica that fits nowhere waits as pending.
+  CPU per task is the % of the service's CPU limit, or of one CPU core when it has none. DockGate checks every minute, changes one replica at a time, never during a rolling update, and keeps working whichever server is picked at the top. Each change is shown in the tab's History, in the audit log and through the new **Swarm autoscale** notification rule; the Services list marks services with a rule (*auto 2-5*). Not offered for global services or databases, and a warning is shown for services with volumes. Autoscale does not add servers: a replica that fits nowhere waits as pending.
 
 ---
 
@@ -1142,7 +1142,7 @@
 - **New screenshots** taken from a running DockGate, including the Swarm pages, Monitoring and the container terminal.
 
 ### Fixed
-- **Opening a container terminal could stop DockGate.** When the browser sent the terminal size before the shell had started (or after it ended), Docker answered "exec process is not started". That rejected promise was not caught, and Node stopped the whole process. The error is now ignored, as it was meant to be. Fifteen quick open–resize–close rounds stopped the old version and leave the new one running.
+- **Opening a container terminal could stop DockGate.** When the browser sent the terminal size before the shell had started (or after it ended), Docker answered "exec process is not started". That rejected promise was not caught, and Node stopped the whole process. The error is now ignored, as it was meant to be. Fifteen quick open-resize-close rounds stopped the old version and leave the new one running.
 - **The Back button on a container's page showed its text upside down** ("Back" was rotated along with the arrow). Only the arrow is turned now.
 
 ---
@@ -1587,7 +1587,7 @@
 ### Changed
 - **Fail2ban > Banned IPs** is a collapsible card, like the rest of the tab. The header shows how many IPs are banned and holds **Ban an IP**. The card opens by default when something is banned, and the open/closed choice is remembered in the browser. The list shows 25 IPs per page, and the search (IP or jail) covers every banned IP, not just the visible page. Unban and Unban & allow work on every page.
 - **Ban history** also shows 25 events per page, newest first.
-- New `UI.pager` (shared pager: "26–50 of 340, ‹ Prev, Page 2 of 14, Next ›").
+- New `UI.pager` (shared pager: "26-50 of 340, ‹ Prev, Page 2 of 14, Next ›").
 - A fail2ban warning still pointed to the old Jails table; it now points to Configuration > Settings.
 
 ---
@@ -1686,7 +1686,7 @@ Checked against a real fail2ban 1.0.2 (the Ubuntu 24.04 version): the overriding
 - Tools > Files now works on **Local** for folders you share with DockGate under `/host` (for example `- /srv:/host/srv` under the DockGate service's volumes; `FILES_ROOT` changes the root). Every path is resolved with realpath and must stay inside, so `..` and symlinks cannot lead out; the shared folders themselves cannot be deleted. With nothing shared, the page shows how to share a folder. DockGate never opens the whole machine because it runs as root in its container.
 
 ### Logs, Events, Dashboard
-- **Logs**: a time range next to Tail - last 15 min, 1 hour, 24 hours, 7 days, or from–to. With an end time the logs are shown without following.
+- **Logs**: a time range next to Tail - last 15 min, 1 hour, 24 hours, 7 days, or from-to. With an end time the logs are shown without following.
 - **Events**: keep 100 / 500 / 2000 on the page and **Export CSV** (respects the type filter).
 - **Dashboard** shows the host metrics block for the local machine too (it was remote-only).
 
@@ -2125,7 +2125,7 @@ Every server page now follows the layout cloud panels use (Hetzner, DigitalOcean
   - **Zero Browser Freezing & Low RAM Usage**: Eliminated DOM reflow thrashing and memory spikes by replacing periodic 5s whole-DOM replacements with a strict **circular DOM ring buffer (`maxLines: 1000`)** and **`requestAnimationFrame` micro-batching (60 FPS smoothness)**.
   - **🐳 Real-Time Container WebSocket Streaming**: Restored continuous Socket.IO streaming (`logs:subscribe`) with live container picker, Connect/Disconnect toggle, Pause/Resume, Tail lines selector (100, 200, 500, 1000, 2000), Timestamps toggle, Auto-scroll, Search filtering, and **`.log` Export Download**.
   - **🐧 Linux Host & System Logs Explorer**: Discovers and live-streams real host logs (`journalctl`, `kernel/dmesg`, `auth.log`, `syslog`, `/var/log/*`, and systemd service units) on both **Local Daemon** and **Remote SSH Servers** with auto-refresh and customizable line counts.
-  - **🩺 Log Doctor & Autonomous Diagnostics**: Comprehensive Health Score (0–100) card with automatic detection of Kernel OOM kills, Nginx 502/504 Bad Gateways, SSH brute-force attacks, and port collisions with 1-click action buttons.
+  - **🩺 Log Doctor & Autonomous Diagnostics**: Comprehensive Health Score (0-100) card with automatic detection of Kernel OOM kills, Nginx 502/504 Bad Gateways, SSH brute-force attacks, and port collisions with 1-click action buttons.
   - **🌐 Cross-Container Search**: Instant multi-container error/warn aggregator and search across all container buffers simultaneously.
 - **Native Local Execution for Host Logs (`server/host-logs.js`, `server/routes/servers.js`, `server/routes/monitoring.js`)**:
   - `hostLogs.runWorkerCmd()` now directly executes local diagnostic commands via `child_process.exec` when `serverId === 'local'`, enabling full systemd discovery and journald reading without SSH overhead.
@@ -2184,7 +2184,7 @@ Every server page now follows the layout cloud panels use (Hetzner, DigitalOcean
 
 ### Added & Fixed - Autonomous Log Doctor Diagnostics & Revamped Software Update Center (v2.2.1)
 - **Log Doctor Autonomous Diagnostic Engine (`server/diagnostics/log-doctor.js`)**:
-  - Automatically analyzes multi-layer server and container logs, outputs an overall **Server Health Score (0–100)**, and flags critical issues.
+  - Automatically analyzes multi-layer server and container logs, outputs an overall **Server Health Score (0-100)**, and flags critical issues.
   - **Kernel OOM Killer:** Detects Linux kernel memory terminations and suggests adjusting container memory limits.
   - **Nginx 502/504 Bad Gateway:** Detects upstream connection refusals (`111: Connection refused`) and offers 1-click backend restart.
   - **Port Collisions & Storage Exhaustion:** Flags `EADDRINUSE` conflicts and `No space left on device` with direct 1-click Docker prune.
@@ -2205,7 +2205,7 @@ Every server page now follows the layout cloud panels use (Hetzner, DigitalOcean
 
 ### Added - Unified Observability Engine: Native Metrics & Centralized Log Explorer (v2.2.0)
 - **All-in-One Observability Agent (~40 MB RAM)**:
-  - Replaced the need for heavy external stacks (Prometheus + Grafana + Loki / ELK consuming 1.5–4 GB RAM) with a native, single-container Edge Observability Engine.
+  - Replaced the need for heavy external stacks (Prometheus + Grafana + Loki / ELK consuming 1.5-4 GB RAM) with a native, single-container Edge Observability Engine.
   - **Metrics Engine**: Samples host (CPU%, RAM, Disk I/O, Network RX/TX, Load) and per-container metrics every 10 seconds.
   - **Auto-Downsampling Ring Buffer**: Capped at <50 MB disk/RAM (10s raw samples for 1h, 1-minute averages for 24h, 15-minute averages for 7d).
   - **Centralized Log Explorer (Loki-Style)**: Unified multi-container log aggregator with live multiplexing, log level classification (`🔴 Error`, `🟡 Warn`, `🟢 Info`), keyword filtering, and automatic error spike anomaly alerts (>30 errors/min).
@@ -2261,7 +2261,7 @@ Every server page now follows the layout cloud panels use (Hetzner, DigitalOcean
 - **Native Remote Git Operations (`remoteCompose.runGitOnRemote`)**:
   - `POST /compose/deploy-git-prepare` now executes `git clone`, `git fetch`, `git reset`, `git diff`, and `git rev-parse` directly on the target remote server instead of cloning to master and slowly uploading via SFTP.
   - Remote compose files are scanned directly on the target host using `remoteScanComposeFiles`.
-  - Deployment completes in ~1–2 seconds utilizing the remote server's high-speed network.
+  - Deployment completes in ~1-2 seconds utilizing the remote server's high-speed network.
 - **Secure Remote Deploy Key Provisioning (`remoteCompose.ensureRemoteKey` & `removeRemoteKey`)**:
   - Automatically provisions decrypted SSH deploy keys to `$HOME/.dockgate/keys/dg_key_<keyId>` with strict `0600` permissions on demand.
   - Keys remain securely centralized in Dockgate's encrypted database (AES-256-GCM) and are removed from target servers when deleted from **Servers > SSH Keys**.
@@ -2312,7 +2312,7 @@ Every server page now follows the layout cloud panels use (Hetzner, DigitalOcean
 ## [2.1.42] - 2026-07-30
 
 ### Docs - README: document the File Manager Explorer and fix the alert-rule count
-- The README described the file feature only as an "SFTP file manager" and never mentioned the **Explorer** built across v2.1.31–2.1.41. The Files entry now documents the opt-in **⇆ Explorer** mode: two-pane FileZilla-style transfer between your computer and the server (any Windows/macOS/Linux browser), whole-folder upload, parallel transfers (7 concurrent), pre-upload conflict detection (Overwrite/Keep-both/Skip), a live transfer panel (`active, done, failed, cancelled / total`) with Retry-failed, and cancel of in-flight uploads/downloads.
+- The README described the file feature only as an "SFTP file manager" and never mentioned the **Explorer** built across v2.1.31-2.1.41. The Files entry now documents the opt-in **⇆ Explorer** mode: two-pane FileZilla-style transfer between your computer and the server (any Windows/macOS/Linux browser), whole-folder upload, parallel transfers (7 concurrent), pre-upload conflict detection (Overwrite/Keep-both/Skip), a live transfer panel (`active, done, failed, cancelled / total`) with Retry-failed, and cancel of in-flight uploads/downloads.
 - Fixed the **"Alert rules (9)"** miscount - eight rule types are listed (`container_die` surfaces as Stopped/Crashed/OOM), so the heading now reads **(8)**.
 
 ---
@@ -2792,7 +2792,7 @@ A cluster of bugs meant a **locally** git-deployed project lost its Git affordan
 ## [2.0.175] - 2026-06-20
 
 ### Changed - light theme shifted toward soft sky-blue (less grey)
-- Pushed the light surfaces from neutral grey-blue toward a clearer **sky-blue tint** (more blue, less grey): page `#e2e8f1 -> #e0e9f6`, card/secondary `#e8edf5 -> #e8eff9`, hover `#d9e4f4`, elevated/modal `#eff4fc`, sidebar/header glass `rgba(214,222,234,.9) -> rgba(206,220,240,.92)`, sidebar var `#ccdcf0`. The blue channel now leads the red by ~22–34, so it reads blue rather than grey. Verified in a real browser: page `#e0e9f6`, sidebar `rgba(206,220,240,.92)`
+- Pushed the light surfaces from neutral grey-blue toward a clearer **sky-blue tint** (more blue, less grey): page `#e2e8f1 -> #e0e9f6`, card/secondary `#e8edf5 -> #e8eff9`, hover `#d9e4f4`, elevated/modal `#eff4fc`, sidebar/header glass `rgba(214,222,234,.9) -> rgba(206,220,240,.92)`, sidebar var `#ccdcf0`. The blue channel now leads the red by ~22-34, so it reads blue rather than grey. Verified in a real browser: page `#e0e9f6`, sidebar `rgba(206,220,240,.92)`
 
 ---
 
@@ -2988,7 +2988,7 @@ A cluster of bugs meant a **locally** git-deployed project lost its Git affordan
 ## [2.0.153] - 2026-06-16
 
 ### Added - Git deploy now has a live console (per-step status + terminal)
-- "Deploy from Git" used to just freeze on **"Cloning & deploying..."** with no feedback. Now it runs as a **background job** with the same **live console** as folder deploy: per-step status (**git clone -> transfer to server -> docker compose up**, each `· -> ⏳ -> ✓/✗`) and the real-time output in an **xterm.js terminal** - so you see the clone progress, the SFTP transfer, and the compose output as they happen, and can close the modal while it keeps running
+- "Deploy from Git" used to just freeze on **"Cloning & deploying..."** with no feedback. Now it runs as a **background job** with the same **live console** as folder deploy: per-step status (**git clone -> transfer to server -> docker compose up**, each `- -> ⏳ -> ✓/✗`) and the real-time output in an **xterm.js terminal** - so you see the clone progress, the SFTP transfer, and the compose output as they happen, and can close the modal while it keeps running
 - `git clone --progress` is **streamed** live (verified); the deploy survives closing the modal and is re-openable from **Deploys -> view log**
 - The auto-redeploy **webhook** is still created (copy it from the project ▸ details)
 
@@ -3066,7 +3066,7 @@ A cluster of bugs meant a **locally** git-deployed project lost its Git affordan
 ### Added - folder deploy: "Choose what to deploy" selection UI
 - After you upload a folder, DockGate now **scans it and shows a picker** (instead of silently auto-running the first `docker-compose.yml`): every detected compose file is a card you can include/exclude, with **per-service checkboxes** (deploy all or just some), **build / no-cache / pull / no-deps** toggles, and an editable **stack name**
 - **Multiple compose files = multiple stacks** - exactly the "I upload 3 folders, each with its own compose" case: each file deploys as its own project from its own directory, top -> bottom, with **external networks created first** (collected from the scan, each with a create checkbox)
-- The deploy runs through the live **per-step status + terminal** from v2.0.142–144, so you watch each network and each stack go green in order
+- The deploy runs through the live **per-step status + terminal** from v2.0.142-144, so you watch each network and each stack go green in order
 - Update-from-folder is unchanged (re-uploads the existing remote project); cancelling the picker drops the staged upload
 
 ---
@@ -3085,7 +3085,7 @@ A cluster of bugs meant a **locally** git-deployed project lost its Git affordan
 ## [2.0.143] - 2026-06-16
 
 ### Added - deploy console shows per-step status + a real terminal
-- The re-openable **"view log"** (Deploys console) now renders the job's **per-step status** - `clean / upload / deploy`, each with a live `· pending -> ⏳ running -> ✓ done / ✗ failed` indicator - so you can see exactly **where** a deploy/update is, not just a phase word
+- The re-openable **"view log"** (Deploys console) now renders the job's **per-step status** - `clean / upload / deploy`, each with a live `- pending -> ⏳ running -> ✓ done / ✗ failed` indicator - so you can see exactly **where** a deploy/update is, not just a phase word
 - The log itself now renders in a real **xterm.js terminal** (instead of a plain `<pre>`), so docker's `\r` progress bars and ANSI colors display correctly instead of piling up as garbled lines; falls back to a `<pre>` if xterm isn't loaded
 - The Deploys console row now shows a compact **step progress** count (e.g. `up (2/3)`)
 - Builds on v2.0.142's live streaming - together: live, terminal-accurate output **with** step indicators
@@ -3783,7 +3783,7 @@ A cluster of bugs meant a **locally** git-deployed project lost its Git affordan
 ## [2.0.56] - 2026-06-12
 
 ### Improved - Deploy from folder shows live per-file upload progress
-- Files now upload **one by one** into a staging session, so the dialog shows a live list - **"12 / 45 uploaded, 33 remaining"** counter, progress bar, and a scrolling file list with per-file status (· waiting -> ⏳ uploading -> ✓ done / ✗ failed)
+- Files now upload **one by one** into a staging session, so the dialog shows a live list - **"12 / 45 uploaded, 33 remaining"** counter, progress bar, and a scrolling file list with per-file status (- waiting -> ⏳ uploading -> ✓ done / ✗ failed)
 - New endpoints: `deploy-folder-start` -> `deploy-folder-file` (per file) -> `deploy-folder-finish` (validate + `compose up`), plus `deploy-folder-abort`; stale sessions are cleaned up automatically (30min TTL)
 - Side benefit: no single giant request anymore - large folders no longer brush against the request-size limit, and a failure shows exactly which file it stopped on
 - The original single-shot `POST /api/compose/deploy-folder` endpoint still works (API compatibility)

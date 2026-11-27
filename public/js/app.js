@@ -45,7 +45,7 @@ function syncServerGroupLabel() {
   const el = document.getElementById('nav-group-server'); if (!el) return;
   const a = (typeof Store !== 'undefined' && Store.get('activeServer')) || {};
   const remote = a.id && a.id !== 'local' && a.type !== 'local';
-  el.innerHTML = `Server${a.id ? ` <span style="text-transform:none;letter-spacing:0;font-weight:500;opacity:.85">· ${remote ? escapeHtml(a.name || a.id) : 'Local'}</span>` : ''}`;
+  el.innerHTML = `Server${a.id ? ` <span style="text-transform:none;letter-spacing:0;font-weight:500;opacity:.85">- ${remote ? escapeHtml(a.name || a.id) : 'Local'}</span>` : ''}`;
 }
 window.syncServerGroupLabel = syncServerGroupLabel;
 

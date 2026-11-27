@@ -36,7 +36,7 @@
       const act = cap.nodes.filter(n => n.active), off = cap.nodes.filter(n => !n.active);
       const rows = data.rules.map(r => ({ cells: [
         `<a href="#" class="td-name" data-svc="${esc(r.serviceId)}"><b>${esc(r.serviceName)}</b></a>`,
-        `<b>${r.replicas}</b> <span class="ui-sub">${r.min}–${r.max}${r.step > 1 ? `, ±${r.step}` : ''}</span>`,
+        `<b>${r.replicas}</b> <span class="ui-sub">${r.min}-${r.max}${r.step > 1 ? `, ±${r.step}` : ''}</span>`,
         r.now ? `${usage(r.now.cpu)}, ${r.now.mem != null ? usage(r.now.mem) : '<span class="ui-sub">no memory limit</span>'}<div class="ui-sub">${r.basis === 'every' ? 'every replica' : 'average'}, ${r.now.measured}/${r.now.tasks} measured</div>` : '<span class="ui-sub">first reading soon</span>',
         `<div class="text-sm" style="white-space:normal;min-width:220px"><span class="ui-sub">add</span> ${upText(r)}</div><div class="text-sm" style="white-space:normal"><span class="ui-sub">remove</span> ${downText(r)}</div>`,
         `<span class="td-mono text-sm">${r.limits.cpu ? fmtCpu(r.limits.cpu) : 'no CPU limit'}, ${r.limits.mem ? formatBytes(r.limits.mem) : 'no memory limit'}</span>${r.limits.cpuRes || r.limits.memRes ? `<div class="ui-sub">min ${r.limits.cpuRes ? fmtCpu(r.limits.cpuRes) : '0'}, ${formatBytes(r.limits.memRes || 0)}</div>` : '<div class="ui-sub" style="color:var(--warning)">no guarantee: room unknown</div>'}`,
@@ -83,15 +83,15 @@
       memLimit: ['Memory limit', 'The most memory one replica may use, in MB. A replica that goes over is stopped by Docker and started again. Needed for a memory rule, since memory % is measured against it. A good start: 1.5× the highest use of one replica.'],
       cpuReserve: ['CPU guaranteed', 'CPU that Swarm keeps free for each replica (reservation). Swarm places a replica only on a server that still has this much free, and DockGate uses it to count how many more replicas fit. Set it to what one replica usually uses.'],
       memReserve: ['Memory guaranteed', 'Memory that Swarm keeps free for each replica. Like the CPU guarantee, it decides where a replica can go and how many more fit. Set it to what one replica usually uses.'],
-      cpuUp: ['Add at CPU %', 'Add a replica when the CPU per replica stays above this % of its limit for the minutes on the right. 70–80% leaves room for a spike while the new replica starts.'],
+      cpuUp: ['Add at CPU %', 'Add a replica when the CPU per replica stays above this % of its limit for the minutes on the right. 70-80% leaves room for a spike while the new replica starts.'],
       memOn: ['Memory too', 'Also look at memory. "or": memory alone can add a replica (apps that need more memory under load). "and": both CPU and memory must be high (stops a memory-hungry but idle app from growing). Needs a memory limit.'],
       memUp: ['Add at memory %', 'With memory on: add a replica when memory per replica stays above this % of its limit.'],
-      upMinutes: ['Add after', 'How long the load must stay high before a replica is added. Short (1–3 min) reacts fast but may react to a brief spike; 5 min is a safe default.'],
+      upMinutes: ['Add after', 'How long the load must stay high before a replica is added. Short (1-3 min) reacts fast but may react to a brief spike; 5 min is a safe default.'],
       basis: ['Measured as', '"The average": the mean of all replicas - the usual choice. "Every replica is busy": the least busy replica must be over the limit, so one stuck or hot replica (a long report, a loop) does not add more.'],
       cpuDown: ['Remove at CPU %', 'Remove a replica when CPU stays below this %. Must be at least 10 below the add %, or the service would go up and down.'],
       memDown: ['Remove at memory %', 'With memory on: memory must also be below this % to remove. Many apps keep memory after the load is gone, so CPU and memory must both be low.'],
       downMinutes: ['Remove after', 'How long the load must stay low before a replica is removed. Longer than "add after" (10 min by default), so a short quiet moment does not shrink the service.'],
-      stepN: ['Replicas per change', 'How many replicas are added or removed at once (1–5). 1 is gentle; 2–3 helps a service that gets sudden large traffic.'],
+      stepN: ['Replicas per change', 'How many replicas are added or removed at once (1-5). 1 is gentle; 2-3 helps a service that gets sudden large traffic.'],
       coolUp: ['Wait after adding', 'After adding, wait this long before the next change, so new replicas start and take traffic before DockGate looks again.'],
       coolDown: ['Wait after removing', 'After removing, wait this long before the next change.'],
       min: ['Minimum replicas', 'Never fewer. Keep at least 2 for a service that must stay up while a server restarts. A service below the minimum is raised at once.'],
@@ -218,7 +218,7 @@
           <label class="text-sm" style="display:block;margin:0 0 10px"><input type="checkbox" data-w="enabled" ${W.enabled ? 'checked' : ''}> Turn the rule on now${q('enabled')}</label>
           ${fits == null ? '<div class="insight-card warning"><div><b>Room unknown.</b> Set a CPU or memory guarantee (step 2) so DockGate can tell whether more replicas fit.</div></div>'
             : `<div class="insight-card ${fits ? 'success' : 'danger'}"><div><b>${fits ? 'Fits.' : 'Does not fit.'}</b> At the maximum, ${chosen.length > 1 ? `${chosen.length} services need` : 'it needs'} ${extra} more replica${extra === 1 ? '' : 's'}; ${fit} fit on the active servers with ${cpuRes ? fmtCpu(cpuRes) : 'no CPU'} and ${memRes ? formatBytes(memRes) : 'no memory'} guaranteed each.${fits ? '' : ' Lower the maximum or the guarantee, or add a server.'}</div></div>`}
-          <div class="text-sm" style="margin-top:10px"><b>Summary:</b> ${chosen.map(s => esc(s.name)).join(', ')}, add ${W.stepN} when CPU &gt; ${W.cpuUp}%${W.memOn ? ` ${W.logic} memory &gt; ${W.memUp}%` : ''} for ${W.upMinutes} min (${W.basis === 'every' ? 'every replica' : 'average'}), remove when CPU &lt; ${W.cpuDown}%${W.memOn ? ` and memory &lt; ${W.memDown}%` : ''} for ${W.downMinutes} min, ${W.min}–${W.max} replicas.</div>`;
+          <div class="text-sm" style="margin-top:10px"><b>Summary:</b> ${chosen.map(s => esc(s.name)).join(', ')}, add ${W.stepN} when CPU &gt; ${W.cpuUp}%${W.memOn ? ` ${W.logic} memory &gt; ${W.memUp}%` : ''} for ${W.upMinutes} min (${W.basis === 'every' ? 'every replica' : 'average'}), remove when CPU &lt; ${W.cpuDown}%${W.memOn ? ` and memory &lt; ${W.memDown}%` : ''} for ${W.downMinutes} min, ${W.min}-${W.max} replicas.</div>`;
         root.querySelectorAll('[data-w="max"],[data-w="min"]').forEach(i => i.addEventListener('change', () => { read(); draw(); }));
       }
       async function go() {

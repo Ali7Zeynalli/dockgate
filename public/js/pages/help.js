@@ -20,7 +20,7 @@ Router.register('help', async (content, params = {}) => {
     if (q.length > 1) {
       let r = []; try { r = await API.get(`/help/search?q=${encodeURIComponent(q)}`); } catch (er) { /* none */ }
       if (!alive()) return;
-      body.innerHTML = `<h2 class="help-h">Search: ${e(q)}</h2>${r.length ? r.map(x => `<a class="help-hit" href="#/help?doc=${encodeURIComponent(x.doc)}${x.anchor ? `&h=${encodeURIComponent(x.anchor)}` : ''}"><b>${e(x.heading)}</b> <span class="ui-sub">· ${e(x.title)}</span><div class="ui-sub">${e(x.snippet)}</div></a>`).join('') : '<div class="ui-sub">Nothing found.</div>'}`;
+      body.innerHTML = `<h2 class="help-h">Search: ${e(q)}</h2>${r.length ? r.map(x => `<a class="help-hit" href="#/help?doc=${encodeURIComponent(x.doc)}${x.anchor ? `&h=${encodeURIComponent(x.anchor)}` : ''}"><b>${e(x.heading)}</b> <span class="ui-sub">- ${e(x.title)}</span><div class="ui-sub">${e(x.snippet)}</div></a>`).join('') : '<div class="ui-sub">Nothing found.</div>'}`;
       return;
     }
     if (!doc) { body.innerHTML = `<h1 class="help-h">DockGate guide</h1>${Help.render(idx.intro)}${idx.groups.map(g => `<h2 class="help-h">${e(g.title)}</h2><ul>${g.pages.map(p => `<li><a href="#/help?doc=${encodeURIComponent(p.doc)}">${e(p.title)}</a>${p.about ? ` - ${e(p.about)}` : ''}</li>`).join('')}</ul>`).join('')}`; return; }

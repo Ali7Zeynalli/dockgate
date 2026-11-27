@@ -59,11 +59,11 @@ async function renderFirewallPanel(serverId, container) {
       ${UI.header('Outbound rules', isFwd ? 'Outbound filtering needs UFW.' : 'Traffic leaving this server. Allowed unless a rule here denies it.', isFwd ? '' : UI.primary('Add rule', 'data-add="out"'))}
       ${isFwd ? '' : UI.table(cols('Destinations'), [...ruleRows(f.outbound, 'out'), defaultRow('out')], { minWidth: 760 })}
       <div data-iplists></div>
-      <details class="card" style="padding:0;margin-top:20px"><summary style="cursor:pointer;padding:12px 16px;font-weight:600">Advanced <span class="text-xs text-muted" style="font-weight:400">· raw ${isFwd ? 'firewalld' : 'UFW'} entries${f.locked.length ? `, ${f.locked.length} DockGate cannot show as rules` : ''}</span></summary>
+      <details class="card" style="padding:0;margin-top:20px"><summary style="cursor:pointer;padding:12px 16px;font-weight:600">Advanced <span class="text-xs text-muted" style="font-weight:400">- raw ${isFwd ? 'firewalld' : 'UFW'} entries${f.locked.length ? `, ${f.locked.length} DockGate cannot show as rules` : ''}</span></summary>
         <div style="padding:0 16px 16px">
           ${f.locked.length ? `<div class="text-sm" style="margin-bottom:8px">These entries do not fit the rule table (${[...new Set(f.locked.map(l => l.reason))].map(UI.esc).join('; ')}). They still work; delete them here if they are not needed.</div>` : ''}
           ${UI.table([{ label: '#' }, { label: 'To' }, { label: 'Action' }, { label: 'From' }, { label: '', align: 'right' }], f.rules.map(r => ({ cells: [
-            `<span class="text-muted">${r.n}</span>`, `<span class="td-mono">${UI.esc(r.to)}</span>${r.v6 ? ' <span class="ui-sub">v6</span>' : ''}`, UI.esc(`${r.action} ${r.dir || ''}`), `${UI.esc(r.from)}${r.note ? ` <span class="ui-sub">· ${UI.esc(r.note)}</span>` : ''}`,
+            `<span class="text-muted">${r.n}</span>`, `<span class="td-mono">${UI.esc(r.to)}</span>${r.v6 ? ' <span class="ui-sub">v6</span>' : ''}`, UI.esc(`${r.action} ${r.dir || ''}`), `${UI.esc(r.from)}${r.note ? ` <span class="ui-sub">- ${UI.esc(r.note)}</span>` : ''}`,
             UI.btn('Delete', `data-delraw="${r.n}"`, 'btn-danger'),
           ] })), { minWidth: 560, empty: 'No entries' })}
           <div data-rawcfg style="margin-top:12px"></div>
@@ -219,7 +219,7 @@ function openFwRuleDialog(ctx, g, preset = {}) {
     const portLocked = editing && r.container;
     form.innerHTML = `
       <div class="ui-field"><label for="fr-desc">Description</label><input class="input" id="fr-desc" maxlength="80" placeholder="${isIn() ? 'Web (HTTPS)' : 'Block outgoing mail'}" value="${UI.esc(r.description)}"></div>
-      <div class="ui-field"><span class="ui-label">${isIn() ? 'Sources' : 'Destinations'} <span class="ui-sub" style="font-weight:400">· IPv4 and IPv6</span></span>
+      <div class="ui-field"><span class="ui-label">${isIn() ? 'Sources' : 'Destinations'} <span class="ui-sub" style="font-weight:400">- IPv4 and IPv6</span></span>
         <div class="ui-chips">${sources.length ? sources.map(s => fwChip(s, lists, f.dockgateIp, true)).join('') : `<span class="ui-sub">${isIn() ? 'No sources yet - the port stays closed to the outside.' : 'No destinations yet.'}</span>`}</div>
         <div class="flex gap-1" style="flex-wrap:wrap">
           ${['any4', 'any6'].map(a => UI.btn(`+ ${a === 'any4' ? 'Any IPv4' : 'Any IPv6'}`, `data-addsrc="${a}" ${sources.includes(a) ? 'disabled' : ''}`)).join('')}
@@ -328,7 +328,7 @@ function openListDialog(l, reloadPanel) {
   UI.dialog({
     title: l ? `Edit list, ${UI.esc(l.name)}` : 'New IP list', saveLabel: 'Save list',
     body: `<div class="ui-field"><label for="ipl-name">Name</label><input class="input" id="ipl-name" value="${UI.esc(l ? l.name : '')}" placeholder="Office, VPN, Partner API..." maxlength="40"></div>
-      <div class="ui-field"><label for="ipl-items">Addresses <span class="ui-sub" style="font-weight:400">· one per line, IPv4 and IPv6</span></label><textarea class="input" id="ipl-items" rows="8" style="font-family:var(--font-mono);font-size:12.5px;width:100%;resize:vertical">${UI.esc(l ? l.items.join('\n') : '')}</textarea></div>
+      <div class="ui-field"><label for="ipl-items">Addresses <span class="ui-sub" style="font-weight:400">- one per line, IPv4 and IPv6</span></label><textarea class="input" id="ipl-items" rows="8" style="font-family:var(--font-mono);font-size:12.5px;width:100%;resize:vertical">${UI.esc(l ? l.items.join('\n') : '')}</textarea></div>
       ${l ? '<div class="ui-sub">Rules that use this list then show "changed - update this rule" until you update them.</div>' : ''}`,
     onSave: async (ov) => {
       const body = { name: ov.querySelector('#ipl-name').value, items: ov.querySelector('#ipl-items').value };

@@ -406,7 +406,7 @@ router.get('/:project/scaling', async (req, res) => {
     for (const [name, s] of Object.entries(cfg.services || {})) {
       const running = (await CS.replicasOf(c, project, name)).length;
       const rule = rules[name] || {};
-      const auto = require('../compose-autoscale').ruleOf(sid, project, name); // under Auto Scaling the number moves within min–max
+      const auto = require('../compose-autoscale').ruleOf(sid, project, name); // under Auto Scaling the number moves within min-max
       const wanted = rule.replicas ?? (s.deploy && Number.isInteger(s.deploy.replicas) ? s.deploy.replicas : 1);
       const behind = proxies.filter(p => p.kind === 'nginx' && new RegExp(`https?://${name}[:/;]`).test(confs[p.id] || '')).map(p => ({ name: p.name, usesResolver: T.nginxUsesResolver(confs[p.id], name), connectTimeout: T.connectTimeoutOf(confs[p.id]) }));
       services.push({ name, image: s.image || null, heal: !!rule.heal, keepRunning: !!rule.keepRunning, healthcheck: !!(s.healthcheck && !s.healthcheck.disable && s.healthcheck.test), exposed: (s.expose || []).length > 0 || (s.ports || []).length > 0 || await imageExposes(c, s.image), replicas: running, wanted, limits: CS.limitsOf(s), scalable: CS.checkScalable(s, name, version), fixes: { dropPorts: !!rule.dropPorts, dropName: !!rule.dropName }, ports: (s.ports || []).filter(p => p.published).map(p => `${p.host_ip ? `${p.host_ip}:` : ''}${p.published} -> ${p.target}`), containerName: s.container_name || null, aliases: rule.aliases || [], behind, auto, rollable: running > 0 && CS.checkScalable(s, name, version).ok && CS.checkScalable(s, name, version).fixes.every(f => rule[f]), drift: auto ? (running < auto.min || running > auto.max) : (rule.replicas !== undefined && rule.replicas !== null && running !== rule.replicas) });
@@ -448,7 +448,7 @@ router.post('/:project/scaling/:service/apply', async (req, res) => {
     const { project, service } = req.params;
     const n = Number((req.body || {}).to);
     const auto = require('../compose-autoscale').ruleOf(dockerService.getActiveServerId() || 'local', project, service);
-    if (auto && (n < auto.min || n > auto.max)) return res.status(400).json({ error: `Outside the rule's ${auto.min}–${auto.max} replicas` });
+    if (auto && (n < auto.min || n > auto.max)) return res.status(400).json({ error: `Outside the rule's ${auto.min}-${auto.max} replicas` });
     const r = await require('../compose-scale').setReplicas(project, service, n, { sourceIp: req.ip, log: (l) => out.push(l) });
     res.json({ ...r, log: out.join('\n') });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message, log: out.join('\n') }); }

@@ -55,7 +55,7 @@ async function renderFail2banPanel(serverId, container) {
     ${UI.statusLine([
       `<b>${totalBanned}</b> <span class="text-muted">banned now</span>`,
       `<b>${f.jails.length}</b> <span class="text-muted">jails running</span>`,
-      `<span class="text-muted">One IP gets</span> ${escapeHtml(f.sequence.slice(0, 5).join(' -> '))} <span class="text-muted">· remembered ~${escapeHtml(f.memory)}</span>`,
+      `<span class="text-muted">One IP gets</span> ${escapeHtml(f.sequence.slice(0, 5).join(' -> '))} <span class="text-muted">- remembered ~${escapeHtml(f.memory)}</span>`,
     ])}
     <details class="f2b-card" data-banned-card style="margin-top:4px"><summary><span class="f2b-chev" aria-hidden="true">›</span><span><b>Banned IPs</b> ${UI.pill(totalBanned ? 'bad' : 'off', `${rows.length} banned`)}<div class="ui-sub">Blocked right now. They are released automatically when their time runs out.</div></span><span>${UI.primary('Ban an IP', 'data-ban')}</span></summary>
       <div style="padding:12px 14px;display:grid;gap:8px"><input class="input" id="f2b-q" placeholder="Search IP or jail..." style="width:220px;max-width:100%"><div data-banned></div></div></details>
@@ -155,7 +155,7 @@ async function f2bTakeoverDialog(serverId, f, reload) {
   const li = (rows, fmt) => rows.length ? `<ul class="f2b-list">${rows.map(r => `<li>${fmt(r)}</li>`).join('')}</ul>` : '<div class="ui-sub">-</div>';
   const many = t.files.length > 1;
   const recFixed = t.corrected.some(c => c.what === 'recidive');
-  const kv = (r) => `<span class="td-mono">[${escapeHtml(r.jail)}] ${escapeHtml(r.key)} = ${escapeHtml(r.value)}</span>${many ? ` <span class="ui-sub">· ${escapeHtml(r.file)}</span>` : ''}`;
+  const kv = (r) => `<span class="td-mono">[${escapeHtml(r.jail)}] ${escapeHtml(r.key)} = ${escapeHtml(r.value)}</span>${many ? ` <span class="ui-sub">- ${escapeHtml(r.file)}</span>` : ''}`;
   const kvA = (r) => kv(r) + (recFixed && r.jail === 'recidive' && (r.key === 'maxretry' || r.key === 'findtime') ? ' <span class="ui-sub"> -> corrected</span>' : '');
   const cur = Object.fromEntries((f.files || []).map(x => [x.path, x.text || '']));
   UI.dialog({
@@ -227,8 +227,8 @@ function f2bConfig(serverId, f, el, { saveSettings, reload }) {
   const isDur = (v) => { const x = f2bSeconds(v); return x != null && x > 0; };
   const errOf = (fd) => {
     const v = get(D, fd[1]);
-    if (fd[4] === 'int') return Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 50 && String(v).trim() !== '' ? null : '1–50';
-    if (fd[4] === 'num') return Number(v) >= 0.5 && Number(v) <= 10 ? null : '0.5–10';
+    if (fd[4] === 'int') return Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 50 && String(v).trim() !== '' ? null : '1-50';
+    if (fd[4] === 'num') return Number(v) >= 0.5 && Number(v) <= 10 ? null : '0.5-10';
     if (fd[4] === 'dur') return isDur(v) ? null : 'like 30m, 24h, 1d, 1w';
     return null;
   };

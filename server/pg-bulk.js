@@ -49,7 +49,7 @@ async function importRows(name, dbname, { schema, table, columns, rows, mode = '
     const m = /psql:[^:]*:(\d+):/.exec(e);
     let row = null;
     if (m) { const line = Number(m[1]); const lines = sqlText.split('\n'); let stmt = -1; for (let k = 0; k < line && k < lines.length; k++) if (lines[k].startsWith('INSERT INTO')) stmt++; if (stmt >= 0) row = stmt * BATCH + 1; }
-    throw err(`${cleanErr(e) || 'The import failed'}${row ? ` (in rows ${row}–${row + BATCH - 1})` : ''} - nothing was imported.`, 400, { code: 'FAILED' });
+    throw err(`${cleanErr(e) || 'The import failed'}${row ? ` (in rows ${row}-${row + BATCH - 1})` : ''} - nothing was imported.`, 400, { code: 'FAILED' });
   }
   const done = [...stdout.matchAll(/^INSERT 0 (\d+)$/gm)].reduce((a, x) => a + Number(x[1]), 0);
   return { rows: rows.length, written: done, skipped: rows.length - done, test: !!test, mode };

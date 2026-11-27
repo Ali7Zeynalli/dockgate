@@ -3,7 +3,7 @@
 /**
  * The change due now, or null. Pure (unit tested).
  * samples: [{ t, cpu, cpuMin, cpuMax, mem, memMin, memMax }] one per check (cpu/mem are averages; mem null = no limit).
- * last: { at, dir: 'up'|'down' } of the last change. Out of the min–max range is put right at once.
+ * last: { at, dir: 'up'|'down' } of the last change. Out of the min-max range is put right at once.
  */
 function decide(rule, samples, replicas, now = Date.now(), last = {}, everyMs = 60000) {
   if (replicas < rule.min) return { to: rule.min, action: 'up', reason: `below the minimum of ${rule.min}` };

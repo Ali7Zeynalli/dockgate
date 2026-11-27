@@ -137,7 +137,7 @@ The page works like a database client:
 
 **Database overview** (double-click a database, or *Open*): every table, view and sequence with its estimated rows and size, **Data** / **Design** buttons, a filter, and - for the ticked ones - **ANALYZE**, **VACUUM ANALYZE**, **Empty** and **Drop** together. **New table**, **Export...** (the ticked tables) and **Import...** are at the top.
 
-**Data** - the table as a spreadsheet (see *Editing data* below); 50–500 rows a page; click a column name to sort; filters (`=`, `≠`, contains, starts with, `<`, `>`, in, is NULL...) and any `WHERE` condition; **Count rows** for the exact number; **Export** CSV or JSON lines (the whole table, streamed). NULL and an empty text are told apart; big numbers stay exact.
+**Data** - the table as a spreadsheet (see *Editing data* below); 50-500 rows a page; click a column name to sort; filters (`=`, `≠`, contains, starts with, `<`, `>`, in, is NULL...) and any `WHERE` condition; **Count rows** for the exact number; **Export** CSV or JSON lines (the whole table, streamed). NULL and an empty text are told apart; big numbers stay exact.
 
 ### Design - change the structure
 
@@ -239,7 +239,7 @@ Statements that change data still need **Allow changes** (or Test run), and DROP
 | **Names** | `<container>-<database or all>-<date-time>.dump` / `.sql.gz` - the same as Scripts' *Database backup* block, so scheduled backups show in the same list |
 | **Restore...** | Always into a **new database** first (nothing that exists changes); then **Swap it in place of ...** renames the current one to `<name>_before_<date>` and puts the restored one in its place (its sessions are closed for a moment). "Keep owners and grants" can be turned off when the backup's users do not exist here. A failed restore removes the new database |
 | **Whole-server backup** | Restored by hand into an empty PostgreSQL (a new container) - **How to restore** shows the command |
-| **Schedule...** | This machine: opens Tools > Schedules with **Back up a database** filled in. SSH servers: pick how often (every few hours, every day, days of the week, once a month) and the time from lists - hour 00–23 and minute 00–59, server time - or a custom cron line. Makes the script `pg-backup-<container>-<db>` in Server > Automation > Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
+| **Schedule...** | This machine: opens Tools > Schedules with **Back up a database** filled in. SSH servers: pick how often (every few hours, every day, days of the week, once a month) and the time from lists - hour 00-23 and minute 00-59, server time - or a custom cron line. Makes the script `pg-backup-<container>-<db>` in Server > Automation > Scripts (dump, delete files older than N days, disk check) with its Cron job, log, and alerts when it fails or does not run |
 | **Download / Delete** | The file itself |
 
 ## Schedules
@@ -251,7 +251,7 @@ Jobs DockGate runs by itself on a server.
 | Task | What it does |
 |---|---|
 | **Prune unused data** | Removes the things you tick: unused images, stopped containers, unused networks. Unused volumes are never pruned |
-| **Back up a volume** | Saves the volume as a `.tar.gz` in a folder on the server and keeps the newest *N* copies (1–365, default 7) |
+| **Back up a volume** | Saves the volume as a `.tar.gz` in a folder on the server and keeps the newest *N* copies (1-365, default 7) |
 | **Back up a database** | A PostgreSQL container's database (or all of them and the users, `pg_dumpall`) - the same backup as Databases > Backups, kept where those are (DockGate's data folder for this machine, `/var/backups/dockgate/postgres` on an SSH server), so it is restored from there. Keeps the newest *N* of that database. The container must be running when the task runs |
 | **Sync Git stacks** | Pulls the chosen Git stacks (or every DockGate-managed Git stack on the server) and redeploys, only when there is a new commit |
 
@@ -307,7 +307,7 @@ Each row says which clock its schedule is written in (DockGate's timezone or the
 | Data: *Change 3: ... - nothing was saved* | That change broke a rule (NOT NULL, unique, a foreign key) | Fix the marked row; none of the changes was written |
 | Changes: *Tracking needs a primary key* | Rows are told apart by their key | Add a primary key to the table |
 | Changes: no time for *Last written* | The server does not record commit times | Turn on change tracking for the table (or `track_commit_timestamp = on` in postgresql.conf and a restart) |
-| Import: *... - nothing was imported (in rows 501–1000)* | A row in that part broke a rule (a missing value, a duplicate key, a wrong type) | Fix the file, Test again |
+| Import: *... - nothing was imported (in rows 501-1000)* | A row in that part broke a rule (a missing value, a duplicate key, a wrong type) | Fix the file, Test again |
 | Change many: *No filter: this would change every row* | The Data tab has no filter | Filter the rows first, or tick *every row* |
 | Design: *Change 2 (price: type numeric(10,2)): invalid input syntax...* | A value in the table does not fit the new type | Fix those rows first (SQL), or keep the type - nothing was changed |
 | Design: *foreign key ... cannot be implemented ... incompatible types* | The column and the key it points to have different types | Change one type first (the dialog warns) |

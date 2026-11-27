@@ -59,7 +59,7 @@
       let text = '';
       try {
         const r = await API.post('/swarm/firewall/apply', { port: Number(port), proto, sources });
-        text = r.results.map(x => `${x.ok ? '✓' : x.skipped ? '–' : '✗'} ${x.hostname}: ${x.text}`).join('\n');
+        text = r.results.map(x => `${x.ok ? '✓' : x.skipped ? '-' : '✗'} ${x.hostname}: ${x.text}`).join('\n');
         showToast(`${port}/${proto}: ${sources.length ? 'opened' : 'closed'}`);
       } catch (e) { text = e.message; showToast(e.message, 'error'); }
       await load();

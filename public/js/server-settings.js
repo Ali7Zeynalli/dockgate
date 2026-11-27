@@ -69,7 +69,7 @@ async function renderServerSettings(serverId, container) {
         onOpen: (ov) => {
           const pane = ov.querySelector('[data-pane]');
           const draw = () => { pane.innerHTML = mode === 'key'
-            ? `<div class="ui-field"><label for="ss-key">New private key</label><textarea class="input" id="ss-key" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="font-family:var(--font-mono);font-size:11px;width:100%"></textarea></div><div class="ui-field"><label for="ss-pp">Passphrase <span class="ui-sub" style="font-weight:400">· only if encrypted</span></label><input class="input" id="ss-pp" type="password" autocomplete="new-password"></div>`
+            ? `<div class="ui-field"><label for="ss-key">New private key</label><textarea class="input" id="ss-key" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="font-family:var(--font-mono);font-size:11px;width:100%"></textarea></div><div class="ui-field"><label for="ss-pp">Passphrase <span class="ui-sub" style="font-weight:400">- only if encrypted</span></label><input class="input" id="ss-pp" type="password" autocomplete="new-password"></div>`
             : `<div class="ui-field"><label for="ss-pw">New password</label><input class="input" id="ss-pw" type="password" autocomplete="new-password"></div>`; };
           ov.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { mode = b.dataset.m; ov.querySelectorAll('[data-m]').forEach(x => x.setAttribute('aria-pressed', x === b)); draw(); });
           draw();

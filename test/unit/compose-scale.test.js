@@ -20,8 +20,8 @@ test('buildOverride writes replicas and aliases on the service networks, resets 
 
 test('names and numbers are checked before anything is written', () => {
   assert.throws(() => S.buildOverride({ 'a;rm -rf /': { replicas: 2 } }), /Service/);
-  assert.throws(() => S.buildOverride({ api: { replicas: 21 } }), /0–20/);
-  assert.throws(() => S.buildOverride({ api: { replicas: 1.5 } }), /0–20/);
+  assert.throws(() => S.buildOverride({ api: { replicas: 21 } }), /0-20/);
+  assert.throws(() => S.buildOverride({ api: { replicas: 1.5 } }), /0-20/);
   assert.throws(() => S.buildOverride({ api: { aliases: ['x\n  privileged: true'] } }), /Alias/);
   assert.throws(() => S.buildOverride({ api: { aliases: ['a'], networks: ['n: {}'] } }), /Network/);
 });

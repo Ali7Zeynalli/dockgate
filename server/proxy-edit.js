@@ -1,4 +1,4 @@
-// Web > Proxies & SSL - changing proxies safely (PX2–PX4):
+// Web > Proxies & SSL - changing proxies safely (PX2-PX4):
 //  , edit a config file: earlier version kept -> write -> the proxy's own check -> reload -> the sites still
 //     answer as before; any step fails -> the earlier files are put back (and reloaded)
 //  , put a container on a domain (nginx, Caddy, HAProxy, Apache files; Traefik / caddy-docker-proxy labels),
@@ -690,7 +690,7 @@ function setAcmeSettings({ email, directory, renewDays, tos, autoFix, dnsProvide
   if (tos != null) stmts.setSetting.run('proxy_acme_tos', tos ? '1' : '0');
   if (email != null) { const e = String(email).trim(); if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) throw err('Not an email address'); stmts.setSetting.run('proxy_acme_email', e); }
   if (directory != null) { const dd = String(directory).trim(); if (!ACME.DIRECTORIES[dd] && !/^https:\/\/\S+$/.test(dd) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(dd)) throw err('Directory: letsencrypt, letsencrypt-staging or an https:// URL (http:// only for a test CA on this machine)'); stmts.setSetting.run('proxy_acme_directory', dd); }
-  if (renewDays != null) { const n = Number(renewDays); if (!(n >= 7 && n <= 60)) throw err('Renew: 7–60 days before expiry'); stmts.setSetting.run('proxy_acme_renew_days', String(n)); }
+  if (renewDays != null) { const n = Number(renewDays); if (!(n >= 7 && n <= 60)) throw err('Renew: 7-60 days before expiry'); stmts.setSetting.run('proxy_acme_renew_days', String(n)); }
   return acmeSettings();
 }
 /** Where DockGate keeps a certificate of proxy p: next to the site config when that is on a mount, so it outlives the container. */

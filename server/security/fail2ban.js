@@ -76,14 +76,14 @@ const MODES = ['normal', 'aggressive', 'ddos', 'extra'];
 function normalizeSettings(input) {
   const s = input || {};
   const sshd = s.sshd || {}, rec = s.recidive || {};
-  const int = (v, lo, hi, label) => { const n = Number(v); if (!Number.isInteger(n) || n < lo || n > hi) throw httpError(400, `${label} must be ${lo}–${hi}`); return n; };
+  const int = (v, lo, hi, label) => { const n = Number(v); if (!Number.isInteger(n) || n < lo || n > hi) throw httpError(400, `${label} must be ${lo}-${hi}`); return n; };
   const out = {
     sshd: {
       maxretry: int(sshd.maxretry, 1, 50, 'sshd max retries'),
       findtime: assertDuration(sshd.findtime, 'sshd find time'),
       bantime: assertDuration(sshd.bantime, 'sshd ban time'),
       increment: !!sshd.increment,
-      factor: (() => { const f = Number(sshd.factor); if (!(f >= 0.5 && f <= 10)) throw httpError(400, 'Growth factor must be 0.5–10'); return f; })(),
+      factor: (() => { const f = Number(sshd.factor); if (!(f >= 0.5 && f <= 10)) throw httpError(400, 'Growth factor must be 0.5-10'); return f; })(),
       maxtime: assertDuration(sshd.maxtime, 'Max ban time'),
       mode: MODES.includes(sshd.mode) ? sshd.mode : (() => { throw httpError(400, 'Mode must be normal, aggressive, ddos or extra'); })(),
     },
@@ -94,7 +94,7 @@ function normalizeSettings(input) {
       bantime: assertDuration(rec.bantime, 'recidive ban time'),
       // Longer recidive bans for IPs that come back (off by default). Older clients send nothing -> defaults.
       increment: !!rec.increment,
-      factor: rec.factor == null ? DEFAULTS.recidive.factor : (() => { const f = Number(rec.factor); if (!(f >= 0.5 && f <= 10)) throw httpError(400, 'recidive growth factor must be 0.5–10'); return f; })(),
+      factor: rec.factor == null ? DEFAULTS.recidive.factor : (() => { const f = Number(rec.factor); if (!(f >= 0.5 && f <= 10)) throw httpError(400, 'recidive growth factor must be 0.5-10'); return f; })(),
       maxtime: assertDuration(rec.maxtime == null ? DEFAULTS.recidive.maxtime : rec.maxtime, 'recidive longest ban'),
     },
     ignoreip: [],

@@ -204,7 +204,7 @@ Router.register('container-detail', async (content, params) => {
       ${imageUpdateBanner()}
       <div class="detail-grid">
         <div class="detail-item"><div class="detail-label">Container ID</div><div class="detail-value mono">${info.Id?.substring(0, 24) || 'N/A'}</div></div>
-        <div class="detail-item"><div class="detail-label">Image</div><div class="detail-value mono">${escapeHtml(cfg.Image || '')}${iu && iu.current && iu.current.version ? ` <span class="ui-sub">· version ${escapeHtml(iu.current.version)}</span>` : ''}</div></div>
+        <div class="detail-item"><div class="detail-label">Image</div><div class="detail-value mono">${escapeHtml(cfg.Image || '')}${iu && iu.current && iu.current.version ? ` <span class="ui-sub">- version ${escapeHtml(iu.current.version)}</span>` : ''}</div></div>
         <div class="detail-item"><div class="detail-label">Command</div><div class="detail-value mono">${escapeHtml((cfg.Cmd || []).join(' '))}</div></div>
         <div class="detail-item"><div class="detail-label">Entrypoint</div><div class="detail-value mono">${escapeHtml((cfg.Entrypoint || []).join(' ') || 'N/A')}</div></div>
         <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${state.Status || 'N/A'}</div></div>

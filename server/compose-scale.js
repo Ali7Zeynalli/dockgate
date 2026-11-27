@@ -56,7 +56,7 @@ function checkLabels(obj) {
 }
 // a YAML double-quoted string; $ doubled so compose does not read it as a variable
 const yq = (v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '$$$$')}"`;
-function checkReplicas(n) { if (!Number.isInteger(n) || n < 0 || n > MAX_REPLICAS) throw bad(`Replicas: a whole number from 0–${MAX_REPLICAS}`); return n; }
+function checkReplicas(n) { if (!Number.isInteger(n) || n < 0 || n > MAX_REPLICAS) throw bad(`Replicas: a whole number from 0-${MAX_REPLICAS}`); return n; }
 
 /** Where the override of a project lives. Never inside the project folder. */
 function overridePath(serverId, project) {

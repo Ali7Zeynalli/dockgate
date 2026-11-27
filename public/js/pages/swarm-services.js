@@ -127,14 +127,14 @@
             ${field('update.delay', 'Delay between them', u.delay, { placeholder: dur })}
             ${field('update.monitor', 'Watch each new task for', u.monitor, { placeholder: dur, hint: 'A task that fails in this time counts as a failed update.' })}
             ${field('update.failureAction', 'When it fails', u.failureAction, { options: [['rollback', 'roll back to the previous version'], ['pause', 'pause the update'], ['continue', 'continue']] })}
-            ${field('update.maxFailureRatio', 'Failures allowed (0–1)', u.maxFailureRatio, { type: 'number' })}
+            ${field('update.maxFailureRatio', 'Failures allowed (0-1)', u.maxFailureRatio, { type: 'number' })}
           </div><div class="ui-ph-title" style="margin:12px 0 6px">Roll back</div><div class="svc-grid">
             ${field('rollback.order', 'Order', rb.order, { options: ['stop-first', 'start-first'] })}
             ${field('rollback.parallelism', 'Tasks at a time', rb.parallelism, { type: 'number' })}
             ${field('rollback.delay', 'Delay', rb.delay, { placeholder: dur })}
             ${field('rollback.monitor', 'Watch for', rb.monitor, { placeholder: dur })}
             ${field('rollback.failureAction', 'When it fails', rb.failureAction, { options: ['pause', 'continue'] })}
-            ${field('rollback.maxFailureRatio', 'Failures allowed (0–1)', rb.maxFailureRatio, { type: 'number' })}
+            ${field('rollback.maxFailureRatio', 'Failures allowed (0-1)', rb.maxFailureRatio, { type: 'number' })}
           </div>`,
         restart: `<div class="svc-grid">
             ${field('restart.condition', 'Restart when', rs.condition, { options: [['any', 'it stops for any reason'], ['on-failure', 'it fails (exit code not 0)'], ['none', 'never']] })}
@@ -350,7 +350,7 @@
           { label: 'Remove...', attrs: `data-a="remove" data-id="${s.id}"` },
         ];
         return { cells: [
-          `<a href="#" class="td-name" data-open-svc="${s.id}" title="Open the service: tasks, logs, terminal, files, settings"><b>${esc(s.name)}</b></a>${s.stack ? ` ${UI.chip(`stack ${esc(s.stack)}`)}` : ''}${auto[s.id] ? ` <span title="Autoscale ${auto[s.id].enabled ? 'on' : 'paused'}: ${auto[s.id].min}–${auto[s.id].max} replicas by CPU">${UI.pill(auto[s.id].enabled ? 'info' : 'off', `auto ${auto[s.id].min}–${auto[s.id].max}`)}</span>` : ''}${s.database ? ' <span class="ui-sub">database</span>' : ''}`,
+          `<a href="#" class="td-name" data-open-svc="${s.id}" title="Open the service: tasks, logs, terminal, files, settings"><b>${esc(s.name)}</b></a>${s.stack ? ` ${UI.chip(`stack ${esc(s.stack)}`)}` : ''}${auto[s.id] ? ` <span title="Autoscale ${auto[s.id].enabled ? 'on' : 'paused'}: ${auto[s.id].min}-${auto[s.id].max} replicas by CPU">${UI.pill(auto[s.id].enabled ? 'info' : 'off', `auto ${auto[s.id].min}-${auto[s.id].max}`)}</span>` : ''}${s.database ? ' <span class="ui-sub">database</span>' : ''}`,
           `<span class="td-mono text-sm">${esc(s.image)}</span>${s.newer ? (s.newer.status === 'update' ? `<div>${UI.pill('info', 'newer image')}${s.newer.version ? ` <span class="ui-sub">${esc(s.newer.version)}</span>` : ''}</div>` : s.newer.status === 'error' ? `<div class="ui-sub" title="${esc(s.newer.error || '')}">check failed</div>` : '') : ''}`,
           `<span class="text-sm">${esc(s.mode)}</span>`,
           `<b style="color:${s.running < s.desired ? 'var(--warning,#d97706)' : 'inherit'}">${s.running}/${s.desired}</b><div style="margin-top:3px">${s.tasks.slice(0, 24).map(t => `<span class="svc-sq ${esc(t.state)}" title="${esc(`${s.name}${t.slot ? '.' + t.slot : ''}, ${t.state}${t.node ? ', ' + t.node : ''}${t.error ? ', ' + t.error : ''}`)}"></span>`).join('')}</div>`,

@@ -20,8 +20,8 @@ async function renderHoneypotPanel(serverId, container) {
     ${UI.settings([
       { label: 'Status', desc: d.on ? `Port 22 -> honeypot, real SSH on ${esc(d.sshPorts.join(', ') || d.dockgatePort)}${d.startedAt ? `, running since ${esc(when(d.startedAt))}` : ''}` : 'Port 22 answers nothing (or the real SSH)', value: status },
       ...(d.on || d.jailFile ? [
-        { label: 'Banned', desc: `Each address that connects to port 22, banned for ${esc(d.bantimes[d.bantime] || d.bantime || '-')}, on every port${d.ipset ? ' (ipset)' : ''}. Unban in the Fail2ban tab.`, value: `<b>${d.bannedNow}</b> now <span class="ui-sub">· ${d.bannedTotal} since fail2ban started</span>`, action: UI.btn('Fail2ban', 'data-hp-f2b') },
-        { label: 'Never banned', desc: 'Loopback and private networks (10.x, 172.16–31.x, 192.168.x), fail2ban\'s own allowlist (DockGate\'s address) and these', value: d.allow.length ? `<span class="td-mono">${esc(d.allow.join(' '))}</span>` : '<span class="ui-sub">no others</span>' },
+        { label: 'Banned', desc: `Each address that connects to port 22, banned for ${esc(d.bantimes[d.bantime] || d.bantime || '-')}, on every port${d.ipset ? ' (ipset)' : ''}. Unban in the Fail2ban tab.`, value: `<b>${d.bannedNow}</b> now <span class="ui-sub">- ${d.bannedTotal} since fail2ban started</span>`, action: UI.btn('Fail2ban', 'data-hp-f2b') },
+        { label: 'Never banned', desc: 'Loopback and private networks (10.x, 172.16-31.x, 192.168.x), fail2ban\'s own allowlist (DockGate\'s address) and these', value: d.allow.length ? `<span class="td-mono">${esc(d.allow.join(' '))}</span>` : '<span class="ui-sub">no others</span>' },
       ] : []),
     ])}
 

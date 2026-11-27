@@ -620,7 +620,7 @@ async function sampleOnce(now = Date.now()) {
 }
 function startSampler() { if (!sampleTimer) { sampleTimer = setInterval(sampleOnce, 2 * 60 * 1000); if (sampleTimer.unref) sampleTimer.unref(); setTimeout(sampleOnce, 20000).unref?.(); } }
 
-/** Samples of one service for the last `hours` (1–48). */
+/** Samples of one service for the last `hours` (1-48). */
 async function history(id, hours = 6) {
   const st = await swarm.status();
   if (!st.clusterId) throw bad('Swarm is not active');
