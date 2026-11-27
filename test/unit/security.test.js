@@ -422,3 +422,27 @@ test('plans: dnf-automatic - validated choices, backup + restore, timer follows 
   assert.throws(() => plans.dnfAutomaticPlan({ enabled: true, upgradeType: 'all; rm', reboot: 'never' }), /upgradeType/);
   assert.throws(() => plans.dnfAutomaticPlan({ enabled: true, upgradeType: 'default', reboot: 'always' }), /reboot/);
 });
+
+test('isolation: kept ports live in the block itself; off and rollback take DockGate\'s live rules out; a probe guards the sites', () => {
+  const keep = [{ port: 443, proto: 'tcp' }, { port: 443, proto: 'udp' }];
+  const block = plans.dockerBlock(keep);
+  assert.match(block, /-A DOCKER-USER -j ufw-user-forward\n-A DOCKER-USER -p tcp -m tcp --dport 443 -m comment --comment dockgate-keep -j RETURN\n-A DOCKER-USER -p udp -m udp --dport 443 -m comment --comment dockgate-keep -j RETURN\n/);
+  assert.match(plans.dockerBlock6(keep), /ufw6-user-forward\n-A DOCKER-USER -p tcp -m tcp --dport 443/);
+  assert.equal(plans.DOCKER_BLOCK, plans.dockerBlock([]));
+  const on = plans.isolationPlan({ id: 'k1', enable: true, keepPublic: keep, test: { username: 'deploy' }, probe: { host: '203.0.113.5', ports: [443] } });
+  const added = on.steps.find(s => /Add the DOCKER-USER rules/.test(s.label)).cmd;
+  const written = [...added.matchAll(/echo ([A-Za-z0-9+/=]{40,}) \| base64 -d/g)].map(m => Buffer.from(m[1], 'base64').toString());
+  assert.ok(written.some(w => /--dport 443 -m comment --comment dockgate-keep -j RETURN/.test(w)));
+  const check = on.steps.find(s => /open in the live firewall/.test(s.label));
+  assert.ok(check.rollbackOnFail); assert.match(check.cmd, /--dport 443 \.\*dockgate-keep/);
+  const probe = on.steps.find(s => s.probe);
+  assert.ok(probe.rollbackOnFail); assert.deepEqual(probe.probe, { host: '203.0.113.5', ports: [443] });
+  assert.ok(on.steps.indexOf(probe) < on.steps.findIndex(s => s.test), 'the sites are checked before the change is kept');
+  const off = plans.isolationPlan({ id: 'k2', enable: false, keepPublic: [], test: { username: 'deploy' } });
+  assert.match(off.steps.find(s => /Reload UFW/.test(s.label)).cmd, /-S DOCKER-USER \| grep -E .*sed 's\/\^-A \/-D \/'/);
+  const armed = on.steps.find(s => /rollback/.test(s.label)).cmd;
+  const script = [...armed.matchAll(/echo ([A-Za-z0-9+/=]{40,}) \| base64 -d/g)].map(m => Buffer.from(m[1], 'base64').toString()).join('\n');
+  assert.match(script, /iptables -S DOCKER-USER \| grep -E/, 'the automatic rollback takes the live rules out too');
+  assert.match(plans.ourLiveRules(''), /dockgate-keep/);
+  assert.doesNotMatch(plans.ourLiveRules(''), /f2b/, 'fail2ban rules stay');
+});

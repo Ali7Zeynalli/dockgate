@@ -93,8 +93,10 @@ router.get('/:id/security/posture', send(async (req) => {
   checks.push(fail2banCheck(f2b));
   // the honeypot is optional: shown as such when off, never as something to fix
   const hpJail = f2b && f2b.jails ? f2b.jails.find(j => j.name === 'dockgate-honeypot') : null;
-  checks.push(hpJail ? { id: 'honeypot', label: 'Honeypot', level: 'ok', value: `On, port 22, ${hpJail.currentlyBanned} banned now`, action: 'honeypot' }
-    : { id: 'honeypot', label: 'Honeypot', level: 'info', value: 'Off - a fake SSH on port 22 that bans every address connecting to it (once SSH has moved off 22)', action: 'honeypot' });
+  const fleetJail = f2b && f2b.jails ? f2b.jails.find(j => j.name === 'dockgate-fleet') : null;
+  const fromOthers = fleetJail ? `, +${fleetJail.currentlyBanned} from your other servers` : '';
+  checks.push(hpJail ? { id: 'honeypot', label: 'Honeypot', level: 'ok', value: `On, port 22, ${hpJail.currentlyBanned} banned now${fromOthers}`, action: 'honeypot' }
+    : { id: 'honeypot', label: 'Honeypot', level: 'info', value: `Off - a fake SSH on port 22 that bans every address connecting to it (once SSH has moved off 22)${fromOthers}`, action: 'honeypot' });
   return { checks, rebootRequired: a.rebootRequired };
 }));
 

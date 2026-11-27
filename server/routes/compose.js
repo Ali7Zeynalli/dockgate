@@ -516,7 +516,14 @@ router.post('/:project/:action', (req, res, next) => {
   } catch (e) { /* Swarm module not ready: let Compose handle it */ }
   next();
 });
-router.post('/:project/up', (req, res) => startComposeActionJob(req, res, ['up', '-d'], 'up'));
+// ?orphans=1 also removes containers of services no longer in the file; ?recreate=<service> makes that one service's
+// containers again (compose up leaves a running container alone when only its network aliases or address drifted).
+router.post('/:project/up', (req, res) => {
+  const svc = req.query.recreate;
+  if (svc !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/.test(String(svc))) return res.status(400).json({ error: 'Invalid service name' });
+  const args = svc ? ['up', '-d', '--force-recreate', '--no-deps', String(svc)] : req.query.orphans === '1' ? ['up', '-d', '--remove-orphans'] : ['up', '-d'];
+  return startComposeActionJob(req, res, args, svc ? `recreate ${svc}` : 'up');
+});
 // Newer image for one service: pull it, then recreate only that service. Recorded in the deploy history.
 router.post('/:project/update-service', (req, res) => {
   const svc = String((req.body || {}).service || '');

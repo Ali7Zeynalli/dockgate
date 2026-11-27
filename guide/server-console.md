@@ -83,6 +83,26 @@ UFW (or firewalld on RHEL-type systems).
 
 Docker publishes ports past UFW by default. DockGate adds rules so a container's published port obeys the firewall too.
 
+## Security > Live firewall
+
+The rules as the kernel holds them right now (`iptables-save`, `ip6tables-save`, `ipset`), not only what UFW lists. It only reads, apart from the one fix it offers.
+
+| Part | What it does |
+|---|---|
+| **Needs attention** | Differences between the firewall files and the live firewall: isolation rules left behind after isolation was turned off, isolation in the file but not live, a port kept public whose rule is missing, a UFW route rule that is not live, Docker on its nftables backend, and connections to 80 or 443 dropped in the last hour |
+| **Will this connection pass?** | An address and a port of this server, walked through the rules the kernel uses. A port Docker forwards to a container goes through FORWARD (and DOCKER-USER), any other port through INPUT. Shows Passes or Blocked, the rule that decided, where that rule comes from, and every step on the way |
+| **Ports Docker forwards to containers** | Each published port, its container and address. **Check from the internet** runs the check above from a public address |
+| **Dropped in the last hour** | From the kernel log (`UFW BLOCK`, `UFW DOCKER BLOCK`), grouped by port with the addresses seen most. Logging is rate limited, so the counts are a sample. A drop to a container shows the container's port (after Docker's forwarding) |
+| **All rules** | Every chain and rule in order, each marked UFW, Docker, fail2ban (with the jail), DockGate (isolation or a port kept public) or unknown (added by hand?) |
+
+Before **Turn on Docker port isolation** applies anything, its dialog walks every forwarded port through the live rules with the planned isolation rules in place, from the internet and from Cloudflare. Each port shows **stays open**, **Cloudflare only** or **will close**, and the line under the list names the ports that would close (in red when 80 or 443 is among them). It changes as you tick ports. A port is kept by its container port, so host ports forwarded to the same container port share one row.
+
+After a firewall change, DockGate also checks that 80 and 443 still answer when they answered before, and warns when one stopped.
+
+**Remove them...** (on "rules left behind") takes DockGate's isolation rules out of DOCKER-USER. fail2ban's rules (honeypot, bans from other servers) and rules you added yourself stay. Then the page is read again.
+
+The check reads one snapshot and assumes a new TCP or UDP connection. A rule that uses a match DockGate cannot judge is shown in the steps and treated as not applying.
+
 ## Security > Fail2ban
 
 Bans addresses that fail to log in over SSH too often (and, with the [Honeypot](#security--honeypot), every address that connects to port 22).
@@ -126,6 +146,18 @@ A failed step removes everything again.
 **Settings...** changes the ban time and the allowed addresses. **Turn off...** removes the container, its image, the jail and the rotation; you choose whether its log stays. Addresses already banned stay banned until their time runs out. While the honeypot is on, **Access & SSH** does not move the real SSH back to port 22.
 
 **With Docker port isolation** (Firewall tab, UFW): the honeypot opens its own port behind the isolation when it is turned on, and closes it again when it is turned off. Turning isolation on keeps the honeypot's port public by itself (its row is ticked and cannot be unticked). After the firewall is reloaded or switched on, DockGate restarts the honeypot's fail2ban jail, because a UFW reload empties the chain where fail2ban keeps its bans for Docker ports; the bans come back with it.
+
+### On all servers
+
+What one honeypot catches can be banned on every server DockGate manages, before the same address tries them.
+
+- **Turn on...** (bottom of the Honeypot page). It is off until you turn it on.
+- Each server has two ticks. **Shares its bans**: its honeypot's bans are spread (on by default, used when its honeypot is on). **Receives bans**: adds a small fail2ban jail, `dockgate-fleet`, to that server (a job you can follow). It reads no log; it only bans what DockGate gives it, on every port, Docker's published ports included, with an ipset when there is one. It needs fail2ban.
+- DockGate syncs every 5 minutes, and at once with **Sync now**. A ban ends on every server when it ends on the server that caught it; the jail's own 30 days are only the ceiling for when DockGate is away. A server that does not answer is tried again on the next sync.
+- **Never spread**: DockGate's address, the addresses of every server DockGate manages, private networks and the addresses you list here. Put your office and home addresses there before you turn it on: an address that connects to a honeypot would otherwise be banned on every server.
+- **Unban everywhere** takes an address out of the honeypot that caught it and out of every receiving server; it is not spread again unless a honeypot catches it anew.
+- At most 20 000 addresses are spread at a time, newest first. The jail shows in the Fail2ban tab, and Status > Overview counts its bans next to the honeypot.
+- Unticking **Receives bans** removes the jail from that server and its bans with it. **Turn off...** stops spreading; the jails keep what they hold until each ban ends.
 
 ## Software > Services, Docker engine, Auto updates - and System > Time sync
 

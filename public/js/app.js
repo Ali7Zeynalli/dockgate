@@ -18,7 +18,7 @@ const navItems = {
   infra: { label: 'Servers', icon: Icons.system, tabs: [['servers', 'Servers'], ['sshkeys', 'SSH keys'], ['agent', 'Edge agent']], default: 'servers' },
   // SERVER - the server picked in the top bar (server-sections.js)
   'srv-status': { label: 'Status', icon: SRV_ICONS.status, tabs: [['srv-overview', 'Overview'], ['srv-monitoring', 'Monitoring'], ['srv-alerts', 'Alerts'], ['srv-logs', 'Logs'], ['srv-sysinfo', 'System info'], ['srv-connection', 'Connection']], default: 'srv-overview' },
-  'srv-security': { label: 'Security', icon: SRV_ICONS.security, tabs: [['srv-access', 'Access & SSH'], ['srv-users', 'Users & keys'], ['srv-firewall', 'Firewall'], ['srv-fail2ban', 'Fail2ban'], ['srv-honeypot', 'Honeypot']], default: 'srv-access' },
+  'srv-security': { label: 'Security', icon: SRV_ICONS.security, tabs: [['srv-access', 'Access & SSH'], ['srv-users', 'Users & keys'], ['srv-firewall', 'Firewall'], ['srv-fail2ban', 'Fail2ban'], ['srv-honeypot', 'Honeypot'], ['srv-fwlive', 'Live firewall']], default: 'srv-access' },
   'srv-system': { label: 'System', icon: SRV_ICONS.system, tabs: [['srv-names', 'Name & addresses'], ['srv-network', 'Network'], ['srv-time', 'Time sync'], ['srv-disks', 'Disks'], ['srv-kernel', 'Kernel & limits'], ['srv-configs', 'Config files']], default: 'srv-names' },
   'srv-software': { label: 'Software', icon: SRV_ICONS.software, tabs: [['srv-setup', 'Setup'], ['srv-services', 'Services'], ['srv-docker', 'Docker engine'], ['srv-updates', 'Auto updates']], default: 'srv-setup' },
   'srv-automation': { label: 'Automation', icon: SRV_ICONS.automation, tabs: [['srv-cron', 'Cron'], ['srv-timers', 'Timers'], ['srv-scripts', 'Scripts'], ['schedules', 'Schedules']], default: 'srv-cron' },

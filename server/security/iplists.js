@@ -1,4 +1,4 @@
-// IP lists for firewall port sources: official lists (Cloudflare, GitHub webhooks, UptimeRobot) that
+// IP lists for firewall port sources: official lists (Cloudflare, GitHub webhooks) that
 // DockGate fetches only when asked, and the user's own named lists. A port's sources are stored on the
 // server itself (one firewall rule per source); DockGate recognises a list on a port when every address
 // of the list is there, and marks it "outdated" when the port still holds the list's previous version.
@@ -76,12 +76,6 @@ const OFFICIAL = {
     parse: (bodies) => (JSON.parse(bodies[0]).hooks || []).join('\n'),
     defaults: ['192.30.252.0/22', '185.199.108.0/22', '140.82.112.0/20', '143.55.64.0/20', '2a0a:a440::/29', '2606:50c0::/32'],
   },
-  uptimerobot: {
-    name: 'UptimeRobot', source: 'uptimerobot.com/inc/files/ips/IPv4andIPv6.txt',
-    urls: ['https://uptimerobot.com/inc/files/ips/IPv4andIPv6.txt'],
-    parse: (bodies) => bodies.join('\n'),
-    defaults: [],
-  },
 };
 
 const stmts = {
@@ -92,6 +86,8 @@ const stmts = {
   del: db.prepare("DELETE FROM ip_lists WHERE id = ? AND kind = 'custom'"),
 };
 for (const [id, d] of Object.entries(OFFICIAL)) stmts.insert.run(id, d.name, 'official', JSON.stringify(d.defaults.map(normalizeSource)));
+// official lists DockGate no longer offers (UptimeRobot: DockGate checks sites itself, Uptime). Rules already on servers stay, shown as addresses.
+db.prepare("DELETE FROM ip_lists WHERE kind = 'official' AND id = 'uptimerobot'").run();
 
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
 function rowOut(r) {

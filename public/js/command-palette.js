@@ -55,7 +55,7 @@
     for (const c of ctrs || []) out.push({ group: 'Containers', name: c.name, hint: `${c.state}${/\(unhealthy\)/i.test(c.status || '') ? ', unhealthy' : ''}${c.composeProject ? ', ' + c.composeProject : ''}, ${c.image}`, run: () => Router.navigate('container-detail', { id: c.id }) });
     for (const i of imgs || []) { const tag = (i.repoTags || [])[0] || i.shortId; out.push({ group: 'Images', name: tag === '<none>:<none>' ? i.shortId : tag, hint: `${formatBytes(i.size)}${i.inUse ? '' : ', unused'}`, run: () => navigateThenSearch('resources', { tab: 'images' }, '#image-search', tag === '<none>:<none>' ? i.shortId : tag) }); }
     for (const v of vols || []) out.push({ group: 'Volumes', name: v.name, hint: v.inUse ? `used by ${(v.containerNames || []).join(', ')}` : 'unused', run: () => Router.navigate('resources', { tab: 'volumes' }) });
-    for (const n of nets || []) out.push({ group: 'Networks', name: n.name, hint: `${n.driver}${n.subnet ? ', ' + n.subnet : ''}`, run: () => Router.navigate('resources', { tab: 'networks' }) });
+    for (const n of nets || []) out.push({ group: 'Networks', name: n.name, hint: `${n.driver}${n.subnet ? ', ' + n.subnet : ''}`, run: () => Router.navigate('network-detail', { id: n.id }) });
     for (const p of stacks || []) out.push({ group: 'Stacks', name: p.name, hint: `${p.running}/${p.total} running`, run: () => Router.navigate('deploy', { tab: 'compose' }) });
     for (const s of (srv && srv.servers) || []) {
       const local = s.id === 'local' || s.type === 'local';

@@ -18,6 +18,24 @@ const { workerConnectOpts } = require('../ssh-connect');
 // The job comes on stdin (a plan can be larger than one command-line argument may be; nor is a password visible in ps)
 const cfg = JSON.parse(process.argv[2] || require('fs').readFileSync(0, 'utf8') || '{}');
 const emit = (o) => process.stdout.write(JSON.stringify(o) + '\n');
+/**
+ * A "probe" step: from DockGate (outside the server), each port must still accept a TCP connection. A port the
+ * firewall drops times out. { host, ports: [n], timeoutMs }
+ */
+function probePorts({ host, ports, timeoutMs = 6000 }) {
+  const net = require('net');
+  const one = (port) => new Promise((resolve) => {
+    const sock = net.connect({ host, port, timeout: timeoutMs });
+    const done = (ok, why) => { try { sock.destroy(); } catch (e) {} resolve({ port, ok, why }); };
+    sock.once('connect', () => done(true));
+    sock.once('timeout', () => done(false, 'no answer'));
+    sock.once('error', (e) => done(e.code === 'ECONNREFUSED' ? true : false, e.code || e.message));
+  });
+  return Promise.all((ports || []).map(one)).then((res) => {
+    const bad = res.filter(r => !r.ok);
+    return { code: bad.length ? 1 : 0, out: bad.length ? `From DockGate, ${bad.map(r => `${r.port}/tcp (${r.why})`).join(', ')} no longer answer${bad.length === 1 ? 's' : ''} on ${host} - the change is put back` : `${res.map(r => r.port).join(', ')} answer from DockGate` };
+  });
+}
 let prefix = 'sudo -n ';
 const sub = (cmd) => String(cmd).split('{{S}}').join(prefix);
 
@@ -94,7 +112,7 @@ async function testLogin(t) {
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
     emit({ type: 'step', i, state: 'running' });
-    const r = s.test ? await testLogin(s.test) : await run(conn, sub(s.cmd));
+    const r = s.test ? await testLogin(s.test) : s.probe ? await probePorts(s.probe) : await run(conn, sub(s.cmd));
     if (r.code === 0) { emit({ type: 'step', i, state: 'done', out: String(r.out).slice(-2000) }); continue; }
     emit({ type: 'step', i, state: 'failed', out: String(r.out).trim().slice(-2000) || `exit code ${r.code}` });
     if (s.rollbackOnFail && cfg.plan.rollback) {

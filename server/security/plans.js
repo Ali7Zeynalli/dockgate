@@ -241,7 +241,7 @@ const writeKeysPlan = (u, content) => ({ steps: [{ label: `Update ${u}'s authori
 // The DOCKER-USER rule set (the well-known ufw-docker approach): traffic between private networks
 // (container ↔ container, host ↔ container) passes; NEW connections from outside to a published
 // container port are dropped unless a `ufw route allow` rule (ufw-user-forward) lets them through.
-const DOCKER_BLOCK = `# BEGIN DOCKGATE-DOCKER
+const DOCKER_BLOCK_TPL = `# BEGIN DOCKGATE-DOCKER
 # Managed by DockGate - keeps published Docker ports behind UFW. Open a port with: ufw route allow proto tcp from any to any port <container-port>
 *filter
 :ufw-user-forward - [0:0]
@@ -268,7 +268,7 @@ COMMIT
 // IPv6: Docker with ip6tables (default on IPv6 networks since Docker 27) NATs published ports through the
 // ip6tables FORWARD chain too, so the same idea goes into after6.rules. Container networks there are ULA
 // (fc00::/7) or link-local; traffic between them passes, new outside -> container connections are dropped.
-const DOCKER_BLOCK6 = `# BEGIN DOCKGATE-DOCKER
+const DOCKER_BLOCK6_TPL = `# BEGIN DOCKGATE-DOCKER
 # Managed by DockGate - IPv6 twin of the after.rules block. Open a port with: ufw route allow proto tcp from any to any port <container-port>
 *filter
 :ufw6-user-forward - [0:0]
@@ -287,6 +287,18 @@ COMMIT
 # END DOCKGATE-DOCKER
 `;
 
+// The ports kept public are written into the block itself, right after the ufw-user-forward jump: they do not depend
+// on `ufw route` rules being in the live ufw-user-forward chain when the block is applied.
+const keepLines = (keep, chain = 'DOCKER-USER') => (keep || []).map(k => `-A ${chain} -p ${P.assertProto(k.proto)} -m ${k.proto} --dport ${P.assertPort(k.port)} -m comment --comment dockgate-keep -j RETURN`).join('\n');
+const withKeep = (tpl, fwd, keep) => keep && keep.length ? tpl.replace(`-A DOCKER-USER -j ${fwd}\n`, `-A DOCKER-USER -j ${fwd}\n${keepLines(keep)}\n`) : tpl;
+const dockerBlock = (keep) => withKeep(DOCKER_BLOCK_TPL, 'ufw-user-forward', keep);
+const dockerBlock6 = (keep) => withKeep(DOCKER_BLOCK6_TPL, 'ufw6-user-forward', keep);
+const DOCKER_BLOCK = dockerBlock([]), DOCKER_BLOCK6 = dockerBlock6([]);
+// Taking the block out of after.rules and reloading UFW does not take its rules out of the live DOCKER-USER chain
+// (UFW does not own that chain). This removes them there: only DockGate's rules, the fail2ban ones and anything you
+// added yourself stay. `sudo` is '{{S}}' in a step, '' in the root rollback script.
+const ourLiveRules = (sudo) => ['iptables:ufw', 'ip6tables:ufw6'].map(x => { const [bin, u] = x.split(':');
+  return `if command -v ${bin} >/dev/null 2>&1 && ${sudo}${bin} -n -L DOCKER-USER >/dev/null 2>&1; then ${sudo}${bin} -S DOCKER-USER | grep -E -- '-j ${u}-user-forward|-j ${u}-docker-logging-deny|dockgate-keep|^-A DOCKER-USER -s (10\\.0\\.0\\.0/8|172\\.16\\.0\\.0/12|192\\.168\\.0\\.0/16|fc00::/7|fe80::/10) -j RETURN$|--sport 53 --dport 1024:65535 -j RETURN$|^-A DOCKER-USER -j RETURN$' | sed 's/^-A /-D /' | while read -r r; do ${sudo}${bin} $r 2>/dev/null; done; fi`; }).join('; ') + '; true';
 const AFTER = '/etc/ufw/after.rules';
 const AFTER6 = '/etc/ufw/after6.rules';
 const stripBlock = (f) => `{{S}}sed -i '/# BEGIN DOCKGATE-DOCKER/,/# END DOCKGATE-DOCKER/d' ${f}`;
@@ -294,25 +306,37 @@ const STRIP_BLOCK = stripBlock(AFTER);
 
 // `ufw reload` / `ufw enable` re-apply after.rules, which redeclares (and so empties) the DOCKER-USER chain: fail2ban's
 // rule for the honeypot's bans on Docker ports is gone until its jail restarts. Restarting the jail puts it back, bans included.
-const HONEYPOT_REARM = "if {{S}}fail2ban-client status dockgate-honeypot >/dev/null 2>&1; then {{S}}fail2ban-client reload --restart dockgate-honeypot >/dev/null 2>&1; fi; true";
-/** Turn Docker port isolation on (keepPublic: [{ port: containerPort, proto }]) or off - IPv4 and IPv6. */
-function isolationPlan({ id, enable, keepPublic, test }) {
+const HONEYPOT_REARM = ["dockgate-honeypot", "dockgate-fleet"].map(j => `if {{S}}fail2ban-client status ${j} >/dev/null 2>&1; then {{S}}fail2ban-client reload --restart ${j} >/dev/null 2>&1; fi`).join("; ") + "; true"; // the honeypot jail and the bans shared from other servers
+/**
+ * Turn Docker port isolation on (keepPublic: [{ port: containerPort, proto }]) or off - IPv4 and IPv6.
+ * probe: { host, ports: [host port] } - ports that answered from DockGate before; after the change they must still
+ * answer, or everything is put back (a site behind the isolation must never go dark quietly).
+ */
+function isolationPlan({ id, enable, keepPublic, test, probe }) {
   const prev = `${AFTER}.dockgate-prev`, prev6 = `${AFTER6}.dockgate-prev`;
-  const restoreRoot = `[ -f ${prev} ] && mv -f ${prev} ${AFTER}\n[ -f ${prev6} ] && mv -f ${prev6} ${AFTER6}\nufw reload >/dev/null 2>&1`;
+  const rearmRoot = HONEYPOT_REARM.split('{{S}}').join('');
+  // restore the files, take DockGate's live rules out (UFW does not), reload (puts back what the restored files hold)
+  const restoreRoot = `[ -f ${prev} ] && mv -f ${prev} ${AFTER}\n[ -f ${prev6} ] && mv -f ${prev6} ${AFTER6}\n${ourLiveRules('')}\nufw reload >/dev/null 2>&1\n${rearmRoot}`;
   // after6.rules only exists (and only matters) when UFW manages IPv6 (IPV6=yes in /etc/default/ufw)
   const v6 = (cmd) => `if {{S}}test -f ${AFTER6}; then ${cmd}; fi`;
+  const keep = enable ? keepPublic : [];
   const steps = [
     { label: `Back up ${AFTER} and ${AFTER6}`, cmd: `command -v ufw >/dev/null 2>&1 && {{S}}ufw status | grep -q 'Status: active' || { echo "UFW is not active - turn the firewall on first"; exit 1; }; {{S}}cp -p ${AFTER} ${prev} && ${v6(`{{S}}cp -p ${AFTER6} ${prev6}`)}` },
     enable
-      ? { label: 'Add the DOCKER-USER rules, IPv4 + IPv6 (drop new outside -> container connections)', cmd: `${STRIP_BLOCK} && echo ${b64('\n' + DOCKER_BLOCK)} | base64 -d | {{S}}tee -a ${AFTER} >/dev/null && ${v6(`${stripBlock(AFTER6)} && echo ${b64('\n' + DOCKER_BLOCK6)} | base64 -d | {{S}}tee -a ${AFTER6} >/dev/null`)}` }
+      ? { label: `Add the DOCKER-USER rules, IPv4 + IPv6 (drop new outside -> container connections${keep.length ? `; keep public: ${keep.map(k => `${k.port}/${k.proto}`).join(', ')}` : ''})`, cmd: `${STRIP_BLOCK} && echo ${b64('\n' + dockerBlock(keep))} | base64 -d | {{S}}tee -a ${AFTER} >/dev/null && ${v6(`${stripBlock(AFTER6)} && echo ${b64('\n' + dockerBlock6(keep))} | base64 -d | {{S}}tee -a ${AFTER6} >/dev/null`)}` }
       : { label: 'Remove the DOCKER-USER rules (IPv4 + IPv6)', cmd: `${STRIP_BLOCK} && ${v6(stripBlock(AFTER6))}` },
     { label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, restoreRoot) },
   ];
-  if (enable && keepPublic.length) {
-    // `ufw route allow` adds the IPv4 and the IPv6 rule (when UFW manages IPv6)
-    steps.push({ label: `Keep public: ${keepPublic.map(k => `${k.port}/${k.proto}`).join(', ')}`, cmd: keepPublic.map(k => `{{S}}ufw route allow proto ${P.assertProto(k.proto)} from any to any port ${P.assertPort(k.port)} >/dev/null`).join(' && ') });
+  if (enable && keep.length) {
+    // also as `ufw route allow` rules, so the Firewall tab shows them as open container ports
+    steps.push({ label: `Show them in the Firewall tab (ufw route allow ${keep.map(k => `${k.port}/${k.proto}`).join(', ')})`, cmd: keep.map(k => `{{S}}ufw route allow proto ${P.assertProto(k.proto)} from any to any port ${P.assertPort(k.port)} >/dev/null`).join('; ') + '; true' });
   }
-  steps.push({ label: 'Reload UFW', cmd: `{{S}}ufw reload >/dev/null && { ${HONEYPOT_REARM}; }`, rollbackOnFail: true });
+  steps.push({ label: enable ? 'Reload UFW' : 'Reload UFW and take the DOCKER-USER rules out of the live firewall', cmd: `${enable ? '' : `${ourLiveRules('{{S}}')}; `}{{S}}ufw reload >/dev/null && { ${HONEYPOT_REARM}; }`, rollbackOnFail: true });
+  if (enable) {
+    const checks = keep.map(k => `{{S}}iptables -S DOCKER-USER | grep -q -- '-p ${k.proto} -m ${k.proto} --dport ${k.port} .*dockgate-keep' || { echo "${k.port}/${k.proto} is not open in the live firewall"; exit 1; }`);
+    steps.push({ label: 'Check: the ports kept public are open in the live firewall', cmd: [...checks, '{{S}}iptables -S DOCKER-USER | grep -q -- "-j ufw-user-forward" || { echo "the DOCKER-USER rules are not live"; exit 1; }', 'echo ok'].join('; '), rollbackOnFail: true });
+    if (probe && probe.ports && probe.ports.length) steps.push({ label: `Check from DockGate: ${probe.ports.map(p => `${p}/tcp`).join(', ')} still answer from outside`, probe, rollbackOnFail: true });
+  }
   steps.push({ label: 'Open a NEW SSH connection to test', test, rollbackOnFail: true });
   steps.push({ label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; {{S}}rm -f ${prev} ${prev6}; true` });
   return { steps, rollback: rollbackNow(id) };
@@ -370,7 +394,7 @@ const REBOOT = `{{S}}sh -c ${shq('nohup sh -c "sleep 2; systemctl reboot 2>/dev/
 
 module.exports = {
   readFilesScript, fail2banWritePlan,
-  DROPIN, DOCKER_BLOCK, DOCKER_BLOCK6, READ_ACCESS, READ_FIREWALL, READ_USERS, READ_POSTURE, readKeysScript, SSHD_RELOAD_ROOT,
+  DROPIN, DOCKER_BLOCK, DOCKER_BLOCK6, dockerBlock, dockerBlock6, ourLiveRules, READ_ACCESS, READ_FIREWALL, READ_USERS, READ_POSTURE, readKeysScript, SSHD_RELOAD_ROOT,
   accessPlan, deployUserPlan, createUserPlan, setPermsPlan, lockPlan, deleteUserPlan, addKeysPlan, writeKeysPlan,
   isolationPlan, exposeCmd, deleteRulesCmd, addRuleCmd, REBOOT, b64, shq,
 };

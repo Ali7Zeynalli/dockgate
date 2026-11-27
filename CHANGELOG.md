@@ -2,6 +2,63 @@
 
 ---
 
+### Added
+- **A page for each network** (Resources > Networks > a network's name). What made it (a compose project, Docker, or by hand), its settings, and every container on it with address, aliases, ports on the server and compose project. Stopped containers are listed too.
+  - **Compared with the compose files**: each compose project's file (`docker compose config`) against the live network. It finds containers that should be on the network and are not, containers connected by hand, missing aliases, a different fixed address, services no longer in the file, and network settings changed in the file.
+  - A fix next to each: **Compose up...**, **Make <service> again...** (only that service, because `compose up` leaves a running container alone when only its aliases drifted), **Compose up, remove old...** or **Disconnect...**. Each runs with its log on screen and reads the network again.
+- **Networks > Map**: each network with its running containers grouped by compose project (Swarm tasks by service). Containers on several networks are marked, so it is clear where traffic can cross between projects.
+- **Turning on Docker port isolation shows what it would do first.** Every forwarded port is walked through the live rules with the planned isolation rules in place, from the internet and from Cloudflare, and marked stays open, Cloudflare only or will close. The dialog says in red when 80 or 443 would close. It follows the ports you tick.
+- After a firewall change DockGate checks that 80 and 443 still answer if they answered before, and warns otherwise.
+
+### Fixed
+- The live firewall check read DockGate's own isolation rules wrong (they are written with the target first), so a port could look open when isolation would drop it.
+- The isolation dialog showed one host port per container port. Host ports forwarded to the same container port (443 of one container and 8443 of another, both to :443) are kept together, so the others are now listed on that row.
+- `POST /api/compose/:project/up` takes `?recreate=<service>` and `?orphans=1`.
+
+---
+
+### Added
+- **Live firewall** (Server Console > Security > Live firewall). The rules as the kernel holds them, not only what UFW lists.
+  - **Will this connection pass?**: an address and a port, walked through the rules the kernel uses (Docker's forwarding to a container through FORWARD, the server itself through INPUT). Shows the rule that decides and where it comes from: UFW, Docker, fail2ban (which jail), DockGate's isolation, or unknown.
+  - **Needs attention**: isolation rules left behind in the live firewall, isolation in the file but not live, a kept port or a UFW route rule that is not live, Docker on its nftables backend, and connections to 80 or 443 dropped in the last hour.
+  - **Remove them...** takes leftover isolation rules out of DOCKER-USER and keeps fail2ban's rules and your own.
+  - The ports Docker forwards, with **Check from the internet**, the connections dropped in the last hour (from the kernel log), and every rule in order.
+
+---
+
+## [2.90.1] - 2026-11-27
+
+### Fixed
+- **Docker port isolation could take sites offline.** On one server the ports ticked to stay public (80 and 443 of a Caddy container) were dropped once isolation was on, and Cloudflare could no longer reach the site.
+  - The ports kept public are now written into DockGate's isolation rules themselves, so they no longer depend on separate `ufw route` rules being live. Opening the honeypot's port behind isolation works the same way.
+  - Before the change is kept, DockGate checks that each kept port is open in the live firewall, and that the kept ports which answered from DockGate before still answer from outside. If not, everything is put back and the reason is shown.
+- **Turning isolation off, and its automatic rollback, left the rules in the live firewall.** Removing them from the UFW files and reloading did not take them out of Docker's DOCKER-USER chain. Now DockGate removes its own rules there too; fail2ban's rules and rules you added yourself stay.
+
+---
+
+## [2.90.0] - 2026-11-27
+
+### Added
+- **Honeypot bans on all servers** (Security > Honeypot > On all servers). What one server's honeypot catches is banned on every server that receives it, before the same address tries them. It is off until you turn it on.
+  - **Shares its bans** and **Receives bans** per server. Receiving adds a small fail2ban jail, `dockgate-fleet`, that reads no log and bans on every port (Docker's published ports too, with an ipset when there is one).
+  - DockGate syncs every 5 minutes, or at once with **Sync now**. A ban ends on every server when it ends where it was caught. A server that does not answer is tried again on the next sync.
+  - **Never spread**: DockGate's address, every managed server's addresses, private networks and the addresses you list.
+  - **Unban everywhere** for one address: out of the honeypot that caught it and out of every receiving server.
+  - A large list goes in a few SSH commands per server (about 5 000 addresses each), not one per 400.
+  - The page lists the servers (honeypot, sharing, receiving, bans here, last sync, problems) and the addresses spread now. Status > Overview counts the bans from other servers next to the honeypot.
+
+### Changed
+- A firewall reload, switching UFW on or changing Docker port isolation now also restarts the `dockgate-fleet` jail, so its bans on Docker ports come back too.
+
+---
+
+## [2.89.2] - 2026-11-27
+
+### Removed
+- **The UptimeRobot IP list** (Firewall > IP lists). DockGate checks your sites itself (Uptime), so a list for another monitoring service is not needed. Cloudflare and GitHub webhooks stay. A firewall rule that already used the list stays on the server and shows as separate addresses.
+
+---
+
 ## [2.89.1] - 2026-11-27
 
 ### Fixed

@@ -2,6 +2,8 @@
 Router.register('networks', async (content) => {
   let selectedIds = new Set();
   let refreshTimer = null;
+  const view = Store.view('networks');
+  let mode = view.get('mode', 'table'); // table | map
 
   // Capture navId to detect stale renders / Köhnə renderləri aşkar etmək üçün navId-ni saxla
   const pageNavId = Router._navId;
@@ -9,8 +11,8 @@ Router.register('networks', async (content) => {
   async function render() {
     try {
       const [networks, ctrs] = await Promise.all([API.get('/networks'), API.get('/containers').catch(() => [])]);
-      const usedBy = {};
-      for (const c of ctrs) for (const n of (c.networks || [])) (usedBy[n] = usedBy[n] || []).push(c.name);
+      const usedBy = {}, netsOf = {}, ctrOf = {};
+      for (const c of ctrs) { ctrOf[c.name] = c; netsOf[c.name] = (c.networks || []).filter(n => !['host', 'none'].includes(n)); for (const n of (c.networks || [])) (usedBy[n] = usedBy[n] || []).push(c.name); }
 
       // Abort if user navigated away / İstifadəçi başqa səhifəyə keçibsə dayandır
       if (!Router.isActiveNav(pageNavId)) return;
@@ -27,7 +29,9 @@ Router.register('networks', async (content) => {
       content.innerHTML = `
         ${UI.header('Networks', `${networks.length} network${networks.length === 1 ? '' : 's'} on this server. Docker's and Swarm's own networks, and networks with containers or Swarm services, cannot be removed.`,
           `<button class="btn btn-secondary btn-sm" id="net-refresh" title="Refresh">${Icons.refresh}</button>
+           <span class="ui-seg" style="display:inline-flex;gap:2px"><button class="btn btn-sm ${mode === 'table' ? 'btn-primary' : 'btn-secondary'}" data-net-mode="table">Table</button><button class="btn btn-sm ${mode === 'map' ? 'btn-primary' : 'btn-secondary'}" data-net-mode="map">Map</button></span>
            <button class="btn btn-primary btn-sm" id="net-new">${Icons.network} Create network</button>`)}
+        ${mode === 'map' ? mapHtml(networks, usedBy, netsOf, ctrOf) : ''}
 
         ${selectedIds.size > 0 ? `
         <div class="ui-bulk">
@@ -37,7 +41,7 @@ Router.register('networks', async (content) => {
           <button class="btn btn-xs btn-secondary" id="bulk-remove" style="color:var(--danger)">${Icons.trash} Remove...</button>
         </div>` : ''}
 
-        <div class="table-wrapper">
+        <div class="table-wrapper" style="${mode === 'map' ? 'display:none' : ''}">
           <table>
             <thead><tr>
               <th style="width:40px"><div class="checkbox ${removableNetworks.length > 0 && selectedIds.size === removableNetworks.length ? 'checked' : ''}" id="select-all"></div></th>
@@ -48,14 +52,15 @@ Router.register('networks', async (content) => {
                 const canRemove = n.removable;
                 return `<tr class="${selectedIds.has(n.id) ? 'selected' : ''}">
                   <td>${canRemove ? `<div class="checkbox ${selectedIds.has(n.id) ? 'checked' : ''}" data-select="${n.id}"></div>` : ''}</td>
-                  <td class="td-name">${escapeHtml(n.name)}${n.internal ? ' ' + UI.pill('info', 'internal') : ''}${['bridge', 'host', 'none'].includes(n.name) ? ' <span class="ui-sub">Docker default</span>' : n.builtIn ? ' <span class="ui-sub">made by Swarm</span>' : ''}</td>
+                  <td class="td-name"><a href="#" data-open-net="${n.id}">${escapeHtml(n.name)}</a>${n.internal ? ' ' + UI.pill('info', 'internal') : ''}${['bridge', 'host', 'none'].includes(n.name) ? ' <span class="ui-sub">Docker default</span>' : n.builtIn ? ' <span class="ui-sub">made by Swarm</span>' : ''}</td>
                   <td class="text-sm">${escapeHtml(n.driver)}, ${escapeHtml(n.scope)}</td>
                   <td class="td-mono">${n.subnet || '-'}</td>
                   <td class="td-mono">${n.gateway || '-'}</td>
                   <td>${(usedBy[n.name] || []).length ? usedBy[n.name].slice(0, 4).map(x => UI.chip(escapeHtml(x))).join('') + (usedBy[n.name].length > 4 ? ` <span class="text-xs text-muted">+${usedBy[n.name].length - 4}</span>` : '') : n.containers ? UI.chip(String(n.containers)) : ''}${n.services ? ` ${UI.chip(`${n.services} Swarm service${n.services === 1 ? '' : 's'}`)}` : ''}${!(usedBy[n.name] || []).length && !n.containers && !n.services ? '<span class="text-muted">-</span>' : ''}</td>
                   <td><div class="td-actions" style="justify-content:flex-end">
                     ${UI.menu([
-                      { label: `${Icons.eye} Inspect`, attrs: `data-inspect="${n.id}"` },
+                      { label: `${Icons.eye} Open`, attrs: `data-open-net="${n.id}"` },
+                      { label: `${Icons.network} Quick view`, attrs: `data-inspect="${n.id}"` },
                       { label: `${Icons.copy} Clone...`, attrs: `data-clone="${n.id}"` },
                       ...(canRemove ? ['-', { label: `${Icons.trash} Remove...`, attrs: `data-remove="${n.id}" data-name="${escapeHtml(n.name)}"`, danger: true }] : []),
                     ])}
@@ -68,6 +73,9 @@ Router.register('networks', async (content) => {
       `;
 
       document.getElementById('net-refresh')?.addEventListener('click', render);
+      content.querySelectorAll('[data-net-mode]').forEach(b => b.addEventListener('click', () => { mode = b.dataset.netMode; view.set('mode', mode); render(); }));
+      content.querySelectorAll('[data-open-svc]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); Router.navigate('swarm-service', { id: a.dataset.openSvc }); }));
+      content.querySelectorAll('[data-map-ctr]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); Router.navigate('container-detail', { id: a.dataset.mapCtr }); }));
       document.getElementById('net-new')?.addEventListener('click', () => openNetworkCreate());
 
       // Clone - prefill the create form from an existing network's config (N4)
@@ -88,6 +96,8 @@ Router.register('networks', async (content) => {
           } });
         });
       });
+
+      content.querySelectorAll('[data-open-net]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); Router.navigate('network-detail', { id: a.dataset.openNet }); }));
 
       // Inspect (+ live connect/disconnect)
       content.querySelectorAll('[data-inspect]').forEach(btn => {
@@ -123,6 +133,42 @@ Router.register('networks', async (content) => {
 
     } catch (err) { content.innerHTML = `${UI.errorState(err)}`; }
   }
+  // Map: each network with the containers on it, grouped by compose project. A container on more than one network
+  // is marked with the others: that is where traffic can cross between networks (and between projects).
+  function mapHtml(networks, usedBy, netsOf, ctrOf) {
+    const esc = (x) => escapeHtml(String(x == null ? '' : x));
+    const list = networks.filter(n => !['host', 'none', 'ingress', 'docker_gwbridge'].includes(n.name) && ((usedBy[n.name] || []).length || !n.builtIn))
+      .sort((a, b) => (usedBy[b.name] || []).length - (usedBy[a.name] || []).length);
+    if (!list.length) return '<div class="ui-sub" style="margin:8px 0">No networks with containers.</div>';
+    const MESH = ['ingress', 'docker_gwbridge'];
+    const chip = (label, href, state, others, extra = '') => `<a href="#" ${href} class="chip" title="${others.length ? `also on ${esc(others.join(', '))}` : ''}" style="text-decoration:none;${others.length ? 'border-color:var(--warning)' : ''}"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;background:${state === 'running' ? 'var(--success)' : 'var(--text-muted)'}"></span>${esc(label)}${extra}${others.length ? ` <span style="color:var(--warning);font-size:10.5px">+${others.map(esc).join(', +')}</span>` : ''}</a>`;
+    const card = (n) => {
+      const members = usedBy[n.name] || [];
+      const groups = {};
+      let stopped = 0;
+      for (const m of members) {
+        const c = ctrOf[m] || {};
+        if (c.state !== 'running') { stopped++; continue; }
+        const svc = c.labels && c.labels['com.docker.swarm.service.name'];
+        const g = svc ? `Swarm${c.labels['com.docker.stack.namespace'] ? `: ${c.labels['com.docker.stack.namespace']}` : ''}` : (c.composeProject || '');
+        const others = (netsOf[m] || []).filter(x => x !== n.name && !MESH.includes(x));
+        const list = groups[g] = groups[g] || [];
+        if (svc) { const ex = list.find(x => x.svc === svc); if (ex) { ex.count++; continue; } list.push({ svc, label: svc, count: 1, others, href: `data-open-svc="${esc(svc)}"`, state: 'running' }); }
+        else list.push({ label: m, others, href: `data-map-ctr="${esc(c.id || m)}"`, state: c.state });
+      }
+      const projects = Object.keys(groups).filter(g => g && !g.startsWith('Swarm'));
+      return `<div class="card" style="padding:10px 12px;cursor:pointer" data-open-net="${n.id}">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b>${esc(n.name)}</b><span class="ui-sub">${esc(n.driver)}${n.subnet ? `, ${esc(n.subnet)}` : ''}</span>${n.internal ? UI.pill('info', 'internal') : ''}${projects.length > 1 ? UI.pill('warn', `${projects.length} projects`) : ''}</div>
+        ${Object.entries(groups).sort((a, b) => (a[0] ? 0 : 1) - (b[0] ? 0 : 1)).map(([g, items]) => `<div style="margin-top:8px"><div class="ui-sub" style="font-size:11px">${g ? esc(g) : 'no compose project'}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">${items.map(x => chip(x.label, x.href, x.state, x.others, x.svc ? ` <span class="ui-sub" style="font-size:10.5px">${x.count} task${x.count === 1 ? '' : 's'}</span>` : '')).join('')}</div></div>`).join('')}
+        ${stopped ? `<div class="ui-sub" style="margin-top:6px;font-size:11px">${stopped} stopped container${stopped === 1 ? '' : 's'} keep a place here.</div>` : ''}
+        ${!members.length ? '<div class="ui-sub" style="margin-top:6px">No containers. It can be removed.</div>' : ''}
+      </div>`;
+    };
+    return `<div class="ui-sub" style="margin:2px 0 8px">Running containers, grouped by compose project (Swarm tasks by service). Those marked <span style="color:var(--warning)">+name</span> are on other networks too: traffic can cross there. Swarm\'s ingress is left out. Open a network to compare it with its compose files.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;margin-bottom:12px">${list.map(card).join('')}</div>`;
+  }
+
   // Suggest a free private subnet (+ gateway + IP range) avoiding the ones already in use.
   // `used` is the list of existing subnets; `extra` lets the Suggest button advance past the current value.
   function suggestSubnet(used, extra = []) {

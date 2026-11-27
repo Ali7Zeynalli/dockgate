@@ -185,22 +185,34 @@ ${LOG_FILE} {
 `;
 
 /** Shell that writes the jail with the right actions for this server (ipset or not, firewalld or not, Docker chain). */
-function jailCmd(bantime) {
-  const head = `# Managed by DockGate (Server Console > Security > Honeypot)\n# Any address that connects to the honeypot on port 22 is banned on every port.\n[${NAME}]\nenabled = true\nbackend = auto\nfilter = ${NAME}\nlogpath = ${LOG_FILE}\nlogtimezone = UTC\nmaxretry = 1\nfindtime = 1d\nbantime = ${bantime}\n`;
+/**
+ * Shell that writes a fail2ban jail file whose bans block every port: the host's (ipset when there is one, firewalld
+ * when it runs) and Docker's published ports (DOCKER-USER, when the chain exists). `head` is the jail's text without
+ * its action lines; `name` / `dockerName` name the ipsets (at most 25 characters with "f2b-").
+ */
+function banJailCmd({ file, head, name, dockerName }) {
   return [
     "if {{S}}sh -c 'command -v ipset' >/dev/null 2>&1; then A=iptables-ipset-proto6-allports; else A=iptables-allports; fi",
-    `if {{S}}firewall-cmd --state >/dev/null 2>&1; then H="firewallcmd-ipset[name=${NAME}, actiontype=<allports>]"; else H="$A[name=${NAME}]"; fi`,
-    `D=''; if {{S}}iptables -n -L DOCKER-USER >/dev/null 2>&1; then D="         $A[name=hp-docker, chain=DOCKER-USER]"; fi`,
-    `{ echo ${b64(head)} | base64 -d; printf 'action = %s\\n' "$H"; [ -n "$D" ] && printf '%s\\n' "$D"; true; } | {{S}}tee ${JAIL} >/dev/null && {{S}}chmod 0644 ${JAIL}`,
+    `if {{S}}firewall-cmd --state >/dev/null 2>&1; then H="firewallcmd-ipset[name=${name}, actiontype=<allports>]"; else H="$A[name=${name}]"; fi`,
+    `D=''; if {{S}}iptables -n -L DOCKER-USER >/dev/null 2>&1; then D="         $A[name=${dockerName}, chain=DOCKER-USER]"; fi`,
+    `{ echo ${b64(head)} | base64 -d; printf 'action = %s\\n' "$H"; [ -n "$D" ] && printf '%s\\n' "$D"; true; } | {{S}}tee ${file} >/dev/null && {{S}}chmod 0644 ${file}`,
     `echo "bans with: $H\${D:+ + Docker ports (DOCKER-USER)}"`,
   ].join('; ');
+}
+function jailCmd(bantime) {
+  const head = `# Managed by DockGate (Server Console > Security > Honeypot)\n# Any address that connects to the honeypot on port 22 is banned on every port.\n[${NAME}]\nenabled = true\nbackend = auto\nfilter = ${NAME}\nlogpath = ${LOG_FILE}\nlogtimezone = UTC\nmaxretry = 1\nfindtime = 1d\nbantime = ${bantime}\n`;
+  return banJailCmd({ file: JAIL, head, name: NAME, dockerName: 'hp-docker' });
 }
 
 // Docker port isolation (Firewall tab, UFW) closes every published container port that has no `ufw route allow`
 // rule. The honeypot opens its own port there (marked with a comment so only DockGate's rule is removed later).
 const ISOLATED = `{{S}}ufw status 2>/dev/null | grep -q 'Status: active' && {{S}}grep -q 'BEGIN DOCKGATE-DOCKER' /etc/ufw/after.rules 2>/dev/null`;
-const ROUTE_OPEN = `if ${ISOLATED}; then if {{S}}ufw status | grep -q '${NAME}'; then echo "port already open behind Docker port isolation"; else {{S}}ufw route allow proto tcp from any to any port 2222 comment '${NAME}' >/dev/null && echo "opened behind Docker port isolation"; fi; else echo "Docker port isolation is off - nothing to open"; fi`;
-const ROUTE_CLOSE = `if command -v ufw >/dev/null 2>&1 && {{S}}ufw status 2>/dev/null | grep -q '${NAME}'; then {{S}}ufw route delete allow proto tcp from any to any port 2222 >/dev/null 2>&1; fi`;
+// The honeypot's port goes into DockGate's isolation block (after.rules, right after the ufw-user-forward jump), so it
+// does not depend on `ufw route` rules being live; the `ufw route` rule is added too so the Firewall tab shows it.
+const KEEP_LINE = (fwd) => `-A DOCKER-USER -p tcp -m tcp --dport 2222 -m comment --comment dockgate-keep -j RETURN`;
+const REARM = () => require('./security/plans').HONEYPOT_REARM;
+const ROUTE_OPEN = `if ${ISOLATED}; then if {{S}}grep -q -- '--dport 2222 .*dockgate-keep' /etc/ufw/after.rules; then echo "port already open behind Docker port isolation"; else {{S}}sed -i '/^-A DOCKER-USER -j ufw-user-forward$/a ${KEEP_LINE()}' /etc/ufw/after.rules && { if {{S}}test -f /etc/ufw/after6.rules && {{S}}grep -q 'BEGIN DOCKGATE-DOCKER' /etc/ufw/after6.rules; then {{S}}sed -i '/^-A DOCKER-USER -j ufw6-user-forward$/a ${KEEP_LINE()}' /etc/ufw/after6.rules; fi; } && {{S}}ufw route allow proto tcp from any to any port 2222 comment '${NAME}' >/dev/null; {{S}}ufw reload >/dev/null && { ${REARM()}; } && {{S}}iptables -S DOCKER-USER | grep -q -- '--dport 2222 .*dockgate-keep' && echo "opened behind Docker port isolation" || { echo "could not open port 22 behind Docker port isolation"; exit 1; }; fi; else echo "Docker port isolation is off - nothing to open"; fi`;
+const ROUTE_CLOSE = `if {{S}}grep -q -- '--dport 2222 .*dockgate-keep' /etc/ufw/after.rules 2>/dev/null; then {{S}}sed -i '/--dport 2222 .*dockgate-keep/d' /etc/ufw/after.rules; {{S}}test -f /etc/ufw/after6.rules && {{S}}sed -i '/--dport 2222 .*dockgate-keep/d' /etc/ufw/after6.rules; {{S}}ufw reload >/dev/null 2>&1; ${REARM()}; fi; if command -v ufw >/dev/null 2>&1 && {{S}}ufw status 2>/dev/null | grep -q '${NAME}'; then {{S}}ufw route delete allow proto tcp from any to any port 2222 >/dev/null 2>&1; fi`;
 
 /** Shell that removes everything the honeypot added (bans already made stay until they expire). */
 function removeCmd({ keepLog = true } = {}) {
@@ -273,4 +285,4 @@ function removePlan({ keepLog = true } = {}) {
   return { steps: [{ label: `Stop and remove the honeypot${keepLog ? ' (its log is kept)' : ' and its log'}; remove its fail2ban jail`, cmd: removeCmd({ keepLog }) }] };
 }
 
-module.exports = { NAME, LOG_FILE, JAIL, FILTER, BANTIMES, READ, FILTER_TEXT, contextFiles, imageTag, contextTarGz, parseLog, stats, parseStatus, checkAllow, installPlan, removePlan, jailCmd, removeCmd };
+module.exports = { banJailCmd, NAME, LOG_FILE, JAIL, FILTER, BANTIMES, READ, FILTER_TEXT, contextFiles, imageTag, contextTarGz, parseLog, stats, parseStatus, checkAllow, installPlan, removePlan, jailCmd, removeCmd };

@@ -78,6 +78,7 @@ app.use('/api/system', require('./routes/system'));
 app.use('/api/cleanup', require('./routes/cleanup'));
 app.use('/api/servers', require('./routes/servers'));
 app.use('/api/firewall-lists', require('./routes/ip-lists')); // IP lists used as firewall port sources
+app.use('/api/fleet-bans', require('./routes/fleet-bans')); // honeypot bans shared with every server
 app.use('/api/servers', require('./routes/firewall')); // Firewall: inbound/outbound rules, defaults, Docker isolation
 app.use('/api/servers', require('./routes/security')); // Access & SSH, Users, Firewall, deploy user, reboot
 app.use('/api/servers', require('./routes/cron')); // Server Console > Cron
@@ -669,6 +670,7 @@ server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   if (process.env.NODE_ENV !== 'test') require('./proxy-edit').start(); // Proxies & SSL: renew DockGate's Let's Encrypt certificates
   if (process.env.NODE_ENV !== 'test') require('./cron-monitor').start(); // cron jobs failed / did not run
   if (process.env.NODE_ENV !== 'test') require('./schedules').start(); // scheduled prune / volume backup / Git sync
+  if (process.env.NODE_ENV !== 'test') require('./honeypot-fleet').start(); // honeypot bans shared with every server, every 5 min
   if (process.env.NODE_ENV !== 'test') { require('./swarm-monitor').start(); require('./swarm-stacks').startBridgeKeeper(); require('./agent/control').start(); require('./compose-heal').start(); require('./compose-autoscale').start(); require('./swarm-firewall').start(); require('./compose-keep').start(); }
   if (process.env.NODE_ENV !== 'test') require('./swarm-services').startSampler(); // Swarm > Services > Graphs (every 2 min, 48 h)
   if (process.env.NODE_ENV !== 'test') require('./swarm-autoscale').start(); // autoscale rules, every minute
