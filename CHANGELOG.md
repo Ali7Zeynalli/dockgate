@@ -2,6 +2,21 @@
 
 ---
 
+## [2.90.0] - 2026-11-27
+
+### Added
+- **Honeypot bans on all servers** (Security > Honeypot > On all servers). What one server's honeypot catches is banned on every server that receives it, before the same address tries them. It is off until you turn it on.
+  - **Shares its bans** and **Receives bans** per server. Receiving adds a small fail2ban jail, `dockgate-fleet`, that reads no log and bans on every port (Docker's published ports too, with an ipset when there is one).
+  - DockGate syncs every 5 minutes, or at once with **Sync now**. A ban ends on every server when it ends where it was caught. A server that does not answer is tried again on the next sync.
+  - **Never spread**: DockGate's address, every managed server's addresses, private networks and the addresses you list.
+  - **Unban everywhere** for one address: out of the honeypot that caught it and out of every receiving server.
+  - The page lists the servers (honeypot, sharing, receiving, bans here, last sync, problems) and the addresses spread now. Status > Overview counts the bans from other servers next to the honeypot.
+
+### Changed
+- A firewall reload, switching UFW on or changing Docker port isolation now also restarts the `dockgate-fleet` jail, so its bans on Docker ports come back too.
+
+---
+
 ## [2.89.2] - 2026-11-27
 
 ### Removed

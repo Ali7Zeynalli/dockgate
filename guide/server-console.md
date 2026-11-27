@@ -127,6 +127,18 @@ A failed step removes everything again.
 
 **With Docker port isolation** (Firewall tab, UFW): the honeypot opens its own port behind the isolation when it is turned on, and closes it again when it is turned off. Turning isolation on keeps the honeypot's port public by itself (its row is ticked and cannot be unticked). After the firewall is reloaded or switched on, DockGate restarts the honeypot's fail2ban jail, because a UFW reload empties the chain where fail2ban keeps its bans for Docker ports; the bans come back with it.
 
+### On all servers
+
+What one honeypot catches can be banned on every server DockGate manages, before the same address tries them.
+
+- **Turn on...** (bottom of the Honeypot page). It is off until you turn it on.
+- Each server has two ticks. **Shares its bans**: its honeypot's bans are spread (on by default, used when its honeypot is on). **Receives bans**: adds a small fail2ban jail, `dockgate-fleet`, to that server (a job you can follow). It reads no log; it only bans what DockGate gives it, on every port, Docker's published ports included, with an ipset when there is one. It needs fail2ban.
+- DockGate syncs every 5 minutes, and at once with **Sync now**. A ban ends on every server when it ends on the server that caught it; the jail's own 30 days are only the ceiling for when DockGate is away. A server that does not answer is tried again on the next sync.
+- **Never spread**: DockGate's address, the addresses of every server DockGate manages, private networks and the addresses you list here. Put your office and home addresses there before you turn it on: an address that connects to a honeypot would otherwise be banned on every server.
+- **Unban everywhere** takes an address out of the honeypot that caught it and out of every receiving server; it is not spread again unless a honeypot catches it anew.
+- At most 20 000 addresses are spread at a time, newest first. The jail shows in the Fail2ban tab, and Status > Overview counts its bans next to the honeypot.
+- Unticking **Receives bans** removes the jail from that server and its bans with it. **Turn off...** stops spreading; the jails keep what they hold until each ban ends.
+
 ## Software > Services, Docker engine, Auto updates - and System > Time sync
 
 System services DockGate manages on the server (Docker, SSH, the firewall, fail2ban, time sync...). Select one for its state, **Start at boot**, start / stop / restart, its settings and its log.

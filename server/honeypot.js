@@ -185,15 +185,23 @@ ${LOG_FILE} {
 `;
 
 /** Shell that writes the jail with the right actions for this server (ipset or not, firewalld or not, Docker chain). */
-function jailCmd(bantime) {
-  const head = `# Managed by DockGate (Server Console > Security > Honeypot)\n# Any address that connects to the honeypot on port 22 is banned on every port.\n[${NAME}]\nenabled = true\nbackend = auto\nfilter = ${NAME}\nlogpath = ${LOG_FILE}\nlogtimezone = UTC\nmaxretry = 1\nfindtime = 1d\nbantime = ${bantime}\n`;
+/**
+ * Shell that writes a fail2ban jail file whose bans block every port: the host's (ipset when there is one, firewalld
+ * when it runs) and Docker's published ports (DOCKER-USER, when the chain exists). `head` is the jail's text without
+ * its action lines; `name` / `dockerName` name the ipsets (at most 25 characters with "f2b-").
+ */
+function banJailCmd({ file, head, name, dockerName }) {
   return [
     "if {{S}}sh -c 'command -v ipset' >/dev/null 2>&1; then A=iptables-ipset-proto6-allports; else A=iptables-allports; fi",
-    `if {{S}}firewall-cmd --state >/dev/null 2>&1; then H="firewallcmd-ipset[name=${NAME}, actiontype=<allports>]"; else H="$A[name=${NAME}]"; fi`,
-    `D=''; if {{S}}iptables -n -L DOCKER-USER >/dev/null 2>&1; then D="         $A[name=hp-docker, chain=DOCKER-USER]"; fi`,
-    `{ echo ${b64(head)} | base64 -d; printf 'action = %s\\n' "$H"; [ -n "$D" ] && printf '%s\\n' "$D"; true; } | {{S}}tee ${JAIL} >/dev/null && {{S}}chmod 0644 ${JAIL}`,
+    `if {{S}}firewall-cmd --state >/dev/null 2>&1; then H="firewallcmd-ipset[name=${name}, actiontype=<allports>]"; else H="$A[name=${name}]"; fi`,
+    `D=''; if {{S}}iptables -n -L DOCKER-USER >/dev/null 2>&1; then D="         $A[name=${dockerName}, chain=DOCKER-USER]"; fi`,
+    `{ echo ${b64(head)} | base64 -d; printf 'action = %s\\n' "$H"; [ -n "$D" ] && printf '%s\\n' "$D"; true; } | {{S}}tee ${file} >/dev/null && {{S}}chmod 0644 ${file}`,
     `echo "bans with: $H\${D:+ + Docker ports (DOCKER-USER)}"`,
   ].join('; ');
+}
+function jailCmd(bantime) {
+  const head = `# Managed by DockGate (Server Console > Security > Honeypot)\n# Any address that connects to the honeypot on port 22 is banned on every port.\n[${NAME}]\nenabled = true\nbackend = auto\nfilter = ${NAME}\nlogpath = ${LOG_FILE}\nlogtimezone = UTC\nmaxretry = 1\nfindtime = 1d\nbantime = ${bantime}\n`;
+  return banJailCmd({ file: JAIL, head, name: NAME, dockerName: 'hp-docker' });
 }
 
 // Docker port isolation (Firewall tab, UFW) closes every published container port that has no `ufw route allow`
@@ -273,4 +281,4 @@ function removePlan({ keepLog = true } = {}) {
   return { steps: [{ label: `Stop and remove the honeypot${keepLog ? ' (its log is kept)' : ' and its log'}; remove its fail2ban jail`, cmd: removeCmd({ keepLog }) }] };
 }
 
-module.exports = { NAME, LOG_FILE, JAIL, FILTER, BANTIMES, READ, FILTER_TEXT, contextFiles, imageTag, contextTarGz, parseLog, stats, parseStatus, checkAllow, installPlan, removePlan, jailCmd, removeCmd };
+module.exports = { banJailCmd, NAME, LOG_FILE, JAIL, FILTER, BANTIMES, READ, FILTER_TEXT, contextFiles, imageTag, contextTarGz, parseLog, stats, parseStatus, checkAllow, installPlan, removePlan, jailCmd, removeCmd };

@@ -294,7 +294,7 @@ const STRIP_BLOCK = stripBlock(AFTER);
 
 // `ufw reload` / `ufw enable` re-apply after.rules, which redeclares (and so empties) the DOCKER-USER chain: fail2ban's
 // rule for the honeypot's bans on Docker ports is gone until its jail restarts. Restarting the jail puts it back, bans included.
-const HONEYPOT_REARM = "if {{S}}fail2ban-client status dockgate-honeypot >/dev/null 2>&1; then {{S}}fail2ban-client reload --restart dockgate-honeypot >/dev/null 2>&1; fi; true";
+const HONEYPOT_REARM = ["dockgate-honeypot", "dockgate-fleet"].map(j => `if {{S}}fail2ban-client status ${j} >/dev/null 2>&1; then {{S}}fail2ban-client reload --restart ${j} >/dev/null 2>&1; fi`).join("; ") + "; true"; // the honeypot jail and the bans shared from other servers
 /** Turn Docker port isolation on (keepPublic: [{ port: containerPort, proto }]) or off - IPv4 and IPv6. */
 function isolationPlan({ id, enable, keepPublic, test }) {
   const prev = `${AFTER}.dockgate-prev`, prev6 = `${AFTER6}.dockgate-prev`;
