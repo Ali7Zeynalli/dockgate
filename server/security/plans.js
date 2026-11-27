@@ -292,6 +292,9 @@ const AFTER6 = '/etc/ufw/after6.rules';
 const stripBlock = (f) => `{{S}}sed -i '/# BEGIN DOCKGATE-DOCKER/,/# END DOCKGATE-DOCKER/d' ${f}`;
 const STRIP_BLOCK = stripBlock(AFTER);
 
+// `ufw reload` / `ufw enable` re-apply after.rules, which redeclares (and so empties) the DOCKER-USER chain: fail2ban's
+// rule for the honeypot's bans on Docker ports is gone until its jail restarts. Restarting the jail puts it back, bans included.
+const HONEYPOT_REARM = "if {{S}}fail2ban-client status dockgate-honeypot >/dev/null 2>&1; then {{S}}fail2ban-client reload --restart dockgate-honeypot >/dev/null 2>&1; fi; true";
 /** Turn Docker port isolation on (keepPublic: [{ port: containerPort, proto }]) or off - IPv4 and IPv6. */
 function isolationPlan({ id, enable, keepPublic, test }) {
   const prev = `${AFTER}.dockgate-prev`, prev6 = `${AFTER6}.dockgate-prev`;
@@ -309,7 +312,7 @@ function isolationPlan({ id, enable, keepPublic, test }) {
     // `ufw route allow` adds the IPv4 and the IPv6 rule (when UFW manages IPv6)
     steps.push({ label: `Keep public: ${keepPublic.map(k => `${k.port}/${k.proto}`).join(', ')}`, cmd: keepPublic.map(k => `{{S}}ufw route allow proto ${P.assertProto(k.proto)} from any to any port ${P.assertPort(k.port)} >/dev/null`).join(' && ') });
   }
-  steps.push({ label: 'Reload UFW', cmd: '{{S}}ufw reload >/dev/null', rollbackOnFail: true });
+  steps.push({ label: 'Reload UFW', cmd: `{{S}}ufw reload >/dev/null && { ${HONEYPOT_REARM}; }`, rollbackOnFail: true });
   steps.push({ label: 'Open a NEW SSH connection to test', test, rollbackOnFail: true });
   steps.push({ label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; {{S}}rm -f ${prev} ${prev6}; true` });
   return { steps, rollback: rollbackNow(id) };
@@ -472,7 +475,8 @@ const READ_HEALTH = [
   'echo @@docker; {{S}}docker ps -q 2>/dev/null | wc -l',
 ].join('; ');
 module.exports.READ_HEALTH = READ_HEALTH;
-module.exports.UFW_RELOAD = '{{S}}ufw reload >/dev/null';
+module.exports.UFW_RELOAD = `{{S}}ufw reload >/dev/null && { ${HONEYPOT_REARM}; }`;
+module.exports.HONEYPOT_REARM = HONEYPOT_REARM;
 Object.assign(module.exports, { FWD_RELOAD, fwdAddCmd, fwdRemoveCmd, fwdRichRule });
 
 // ---------------------------------------------------------------- Services sub-pages (Docker, Time sync, Auto updates)
@@ -606,7 +610,7 @@ function ufwEnablePlan({ id, sshPorts, webPorts, test }) {
       { label: 'Make sure UFW is installed', cmd: 'command -v ufw >/dev/null 2>&1 || { if command -v apt-get >/dev/null 2>&1; then {{S}}env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y ufw >/dev/null; else echo "UFW is not available on this distribution - use firewalld (Setup > Firewall)"; exit 1; fi; }' },
       { label: `Allow ${allow.map(p => p + '/tcp').join(', ')} before switching on`, cmd: allow.map(p => `{{S}}ufw allow ${p}/tcp >/dev/null`).join(' && ') },
       { label: 'Arm automatic rollback (120 s)', cmd: armRollback(id, 'ufw --force disable >/dev/null 2>&1') },
-      { label: 'Switch the firewall on (deny incoming by default)', cmd: '{{S}}ufw default deny incoming >/dev/null && {{S}}ufw default allow outgoing >/dev/null && {{S}}ufw --force enable >/dev/null', rollbackOnFail: true },
+      { label: 'Switch the firewall on (deny incoming by default)', cmd: '{{S}}ufw default deny incoming >/dev/null && {{S}}ufw default allow outgoing >/dev/null && {{S}}ufw --force enable >/dev/null && { ' + HONEYPOT_REARM + '; }', rollbackOnFail: true },
       { label: 'Open a NEW SSH connection to test', test, rollbackOnFail: true },
       { label: 'Keep the change and cancel the rollback', cmd: `${commitRollback(id)}; true` },
     ],

@@ -2,6 +2,20 @@
 
 ---
 
+## [2.89.1] - 2026-11-27
+
+### Fixed
+- **Turning on Docker port isolation failed when a port was ticked.** The Firewall tab read the list of public container ports from the wrong place, so any ticked port ended in an error. It now uses the right list.
+- **Docker port isolation could switch the honeypot off.** Its port was listed like any container port, and leaving it unticked closed it.
+  - Now it always stays public. Its row is ticked and cannot be unticked.
+  - When the honeypot is turned on while isolation is already on, it opens its own port behind the isolation. It closes it again when it is turned off.
+- **Honeypot bans on Docker ports were lost after a firewall reload.** A UFW reload (or switching UFW on, or changing isolation) empties the chain where fail2ban keeps those bans. DockGate now restarts the honeypot's jail after each of these, and the bans come back with it.
+
+### Changed
+- Docs, changelog, messages and page texts use plain punctuation: hyphens instead of long dashes, commas instead of dots between items, ">" for menu paths and "->" for flows.
+
+---
+
 ## [2.89.0] - 2026-11-24
 
 ### Added

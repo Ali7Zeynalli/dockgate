@@ -125,6 +125,8 @@ A failed step removes everything again.
 
 **Settings...** changes the ban time and the allowed addresses. **Turn off...** removes the container, its image, the jail and the rotation; you choose whether its log stays. Addresses already banned stay banned until their time runs out. While the honeypot is on, **Access & SSH** does not move the real SSH back to port 22.
 
+**With Docker port isolation** (Firewall tab, UFW): the honeypot opens its own port behind the isolation when it is turned on, and closes it again when it is turned off. Turning isolation on keeps the honeypot's port public by itself (its row is ticked and cannot be unticked). After the firewall is reloaded or switched on, DockGate restarts the honeypot's fail2ban jail, because a UFW reload empties the chain where fail2ban keeps its bans for Docker ports; the bans come back with it.
+
 ## Software > Services, Docker engine, Auto updates - and System > Time sync
 
 System services DockGate manages on the server (Docker, SSH, the firewall, fail2ban, time sync...). Select one for its state, **Start at boot**, start / stop / restart, its settings and its log.
