@@ -73,8 +73,11 @@ async function firewallOf(row) {
   const idle = [], bypass = [], seen = new Set();
   for (const d of docker) {
     if (P.isLoopback(d.hostIp)) continue;
-    const k = `c${d.containerPort}/${d.proto}`; if (seen.has(k)) continue; seen.add(k);
-    if (backend === 'firewalld' || (managed && !dockerIsolation)) bypass.push({ port: d.hostPort, containerPort: d.containerPort, proto: d.proto, usedBy: d.container });
+    const k = `c${d.containerPort}/${d.proto}`;
+    // isolation keeps a port public by its container port, so every host port forwarded to it goes with the first
+    if (seen.has(k)) { const b = bypass.find(x => x.containerPort === d.containerPort && x.proto === d.proto); if (b && b.port !== d.hostPort && !b.also.some(a => a.port === d.hostPort)) b.also.push({ port: d.hostPort, usedBy: d.container }); continue; }
+    seen.add(k);
+    if (backend === 'firewalld' || (managed && !dockerIsolation)) bypass.push({ port: d.hostPort, containerPort: d.containerPort, proto: d.proto, usedBy: d.container, also: [] });
     else if (managed && !covered(d.containerPort, d.proto, true)) idle.push({ port: d.hostPort, containerPort: d.containerPort, proto: d.proto, usedBy: `${d.container} (container)`, container: true });
   }
   for (const l of listeners) {
@@ -102,9 +105,10 @@ const publicView = (fw) => { const { _groups, ...rest } = fw; return { ...rest, 
 // ---- health check around firewall changes
 async function healthOf(row) {
   try {
-    const sec = await readState(row, plans.READ_HEALTH);
+    // web ports that answer from DockGate: a firewall change that makes 80 or 443 stop answering is said at once
+    const [sec, web] = await Promise.all([readState(row, plans.READ_HEALTH), answeringPorts(row.host, [80, 443])]);
     const bans = String(sec.f2bbans || '').split('\n').map(Number).filter(n => Number.isFinite(n));
-    return { f2bActive: /^active/m.test(sec.f2b || ''), f2bBanned: bans.reduce((a, b) => a + b, 0), containers: Number((sec.docker || '').trim()) || 0 };
+    return { f2bActive: /^active/m.test(sec.f2b || ''), f2bBanned: bans.reduce((a, b) => a + b, 0), containers: Number((sec.docker || '').trim()) || 0, web };
   } catch (e) { return null; }
 }
 /** Human warnings when something changed that a firewall change should not have touched. */
@@ -114,6 +118,8 @@ function healthWarnings(before, after) {
   if (before.f2bActive && !after.f2bActive) w.push('fail2ban stopped running after this change - start it in the Fail2ban tab.');
   else if (after.f2bBanned < before.f2bBanned) w.push(`fail2ban now holds ${after.f2bBanned} ban(s), it had ${before.f2bBanned} - some bans may have been dropped. Check the Fail2ban tab.`);
   if (after.containers < before.containers) w.push(`${before.containers - after.containers} container(s) stopped running during this change.`);
+  const lost = (before.web || []).filter(p => !(after.web || []).includes(p));
+  if (lost.length) w.push(`Port ${lost.join(' and ')} answered before this change and does not now: your sites may be unreachable. Check Security > Live firewall ("Will this connection pass?").`);
   return w;
 }
 async function runFirewallOp(row, plan, title) {
@@ -235,22 +241,44 @@ function answeringPorts(host, ports) {
     s.once('connect', () => done(true)); s.once('timeout', () => done(false)); s.once('error', () => done(false));
   }))).then(r => r.filter(Boolean));
 }
+// The ports kept public behind isolation, as container ports (Docker's DNAT changes the port before DOCKER-USER sees
+// it). The SSH honeypot always stays reachable: closing its port would switch it off without anyone noticing.
+function keepListOf(fw, list, enable) {
+  const keepPublic = [];
+  for (const k of (Array.isArray(list) ? list : [])) {
+    const [port, proto] = String(k).split('/');
+    const p = (fw.bypass || []).find(x => x.port === Number(port) && x.proto === proto); // published container ports, before isolation
+    if (!p) throw P.httpError(400, `${k} is not a published container port`);
+    keepPublic.push({ port: p.containerPort, proto: p.proto });
+  }
+  const honeypot = enable ? (fw.bypass || []).filter(x => /(^|\/)dockgate-honeypot$/.test(String(x.usedBy || ''))) : [];
+  for (const h of honeypot) if (!keepPublic.some(k => k.port === h.containerPort && k.proto === h.proto)) keepPublic.push({ port: h.containerPort, proto: h.proto });
+  return { keepPublic, honeypot };
+}
+
+// What isolation (on with these ports kept, or off) would do to every forwarded port, from the internet and from
+// Cloudflare, walked through the live rules with DockGate's rules swapped for the planned ones. Nothing changes.
+router.post('/:id/firewall/docker-isolation/preview', send(async (req) => {
+  const row = loadServer(req);
+  const enable = req.body.enable !== false;
+  const fw = await firewallOf(row);
+  requireUfw(fw);
+  const { keepPublic } = keepListOf(fw, req.body.keepPublic, enable);
+  const state = await liveState(row, false);
+  if (!Object.keys(state.filter4.chains).length) return { unknown: 'The live rules could not be read (needs sudo).', ports: [] };
+  const after = FL.withIsolation(state, enable ? plans.dockerBlock(keepPublic) : '');
+  if (!after) return { unknown: 'The FORWARD chain is not in the live rules.', ports: [] };
+  const ports = FL.predictPorts(state, after);
+  return { ports, newlyBlocked: ports.filter(p => p.now.cloudflare === 'pass' && p.after.cloudflare === 'blocked').map(p => `${p.hostPort}/${p.proto}`) };
+}));
+
 router.post('/:id/firewall/docker-isolation', send(async (req) => {
   const row = loadServer(req);
   requireConfirm(req.body);
   const enable = req.body.enable !== false;
   const fw = await firewallOf(row);
   requireUfw(fw);
-  const keepPublic = [];
-  for (const k of (Array.isArray(req.body.keepPublic) ? req.body.keepPublic : [])) {
-    const [port, proto] = String(k).split('/');
-    const p = (fw.bypass || []).find(x => x.port === Number(port) && x.proto === proto); // published container ports, before isolation
-    if (!p) throw P.httpError(400, `${k} is not a published container port`);
-    keepPublic.push({ port: p.containerPort, proto: p.proto });
-  }
-  // the SSH honeypot must stay reachable: closing its port would switch it off without anyone noticing
-  const honeypot = enable ? (fw.bypass || []).filter(x => /(^|\/)dockgate-honeypot$/.test(String(x.usedBy || ''))) : [];
-  for (const h of honeypot) if (!keepPublic.some(k => k.port === h.containerPort && k.proto === h.proto)) keepPublic.push({ port: h.containerPort, proto: h.proto });
+  const { keepPublic, honeypot } = keepListOf(fw, req.body.keepPublic, enable);
   // ports kept public that answer from DockGate now must still answer after the change, or it is put back
   const keptHostPorts = enable ? [...new Set((fw.bypass || []).filter(b => b.proto === 'tcp' && keepPublic.some(k => k.port === b.containerPort && k.proto === 'tcp')).map(b => b.port))] : [];
   const answering = await answeringPorts(row.host, keptHostPorts);

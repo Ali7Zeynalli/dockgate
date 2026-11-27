@@ -3,6 +3,21 @@
 ---
 
 ### Added
+- **A page for each network** (Resources > Networks > a network's name). What made it (a compose project, Docker, or by hand), its settings, and every container on it with address, aliases, ports on the server and compose project. Stopped containers are listed too.
+  - **Compared with the compose files**: each compose project's file (`docker compose config`) against the live network. It finds containers that should be on the network and are not, containers connected by hand, missing aliases, a different fixed address, services no longer in the file, and network settings changed in the file.
+  - A fix next to each: **Compose up...**, **Make <service> again...** (only that service, because `compose up` leaves a running container alone when only its aliases drifted), **Compose up, remove old...** or **Disconnect...**. Each runs with its log on screen and reads the network again.
+- **Networks > Map**: each network with its running containers grouped by compose project (Swarm tasks by service). Containers on several networks are marked, so it is clear where traffic can cross between projects.
+- **Turning on Docker port isolation shows what it would do first.** Every forwarded port is walked through the live rules with the planned isolation rules in place, from the internet and from Cloudflare, and marked stays open, Cloudflare only or will close. The dialog says in red when 80 or 443 would close. It follows the ports you tick.
+- After a firewall change DockGate checks that 80 and 443 still answer if they answered before, and warns otherwise.
+
+### Fixed
+- The live firewall check read DockGate's own isolation rules wrong (they are written with the target first), so a port could look open when isolation would drop it.
+- The isolation dialog showed one host port per container port. Host ports forwarded to the same container port (443 of one container and 8443 of another, both to :443) are kept together, so the others are now listed on that row.
+- `POST /api/compose/:project/up` takes `?recreate=<service>` and `?orphans=1`.
+
+---
+
+### Added
 - **Live firewall** (Server Console > Security > Live firewall). The rules as the kernel holds them, not only what UFW lists.
   - **Will this connection pass?**: an address and a port, walked through the rules the kernel uses (Docker's forwarding to a container through FORWARD, the server itself through INPUT). Shows the rule that decides and where it comes from: UFW, Docker, fail2ban (which jail), DockGate's isolation, or unknown.
   - **Needs attention**: isolation rules left behind in the live firewall, isolation in the file but not live, a kept port or a UFW route rule that is not live, Docker on its nftables backend, and connections to 80 or 443 dropped in the last hour.

@@ -131,11 +131,41 @@ async function renderFirewallPanel(serverId, container) {
     } catch (e) { showToast(e.message, 'error', 8000); }
   };
   container.querySelector('[data-iso]')?.addEventListener('click', () => UI.dialog({
-    title: 'Turn on Docker port isolation', saveLabel: 'Turn on isolation', danger: true,
+    title: 'Turn on Docker port isolation', saveLabel: 'Turn on isolation', danger: true, wide: true,
     body: `<div class="text-sm" style="color:var(--text-secondary)">After this, container ports are closed to the internet unless a rule allows them. Inside the server nothing changes. Choose which of these currently public ports should <b>stay</b> public:</div>
-      <div style="display:grid;gap:6px">${f.bypass.map(p => `<label class="flex items-center gap-2" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer">${/(^|\/)dockgate-honeypot$/.test(String(p.usedBy || '')) ? `<input type="checkbox" value="${p.port}/${p.proto}" checked disabled data-honeypot>` : `<input type="checkbox" value="${p.port}/${p.proto}" ${[80, 443].includes(p.port) ? 'checked' : ''}>`}<span class="td-mono" style="font-weight:600;min-width:72px">${p.port}/${p.proto}</span><span class="text-sm" style="white-space:nowrap">${UI.esc(p.usedBy)}</span>${p.containerPort !== p.port ? `<span class="ui-sub" style="white-space:nowrap"> -> :${p.containerPort}</span>` : ''}${/(^|\/)dockgate-honeypot$/.test(String(p.usedBy || '')) ? '<span class="ui-sub">(the SSH honeypot, always stays public)</span>' : ''}</label>`).join('')}</div>
+      <div style="display:grid;gap:6px">${f.bypass.map(p => `<label class="flex items-center gap-2" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;flex-wrap:wrap;min-width:0">${/(^|\/)dockgate-honeypot$/.test(String(p.usedBy || '')) ? `<input type="checkbox" value="${p.port}/${p.proto}" checked disabled data-honeypot>` : `<input type="checkbox" value="${p.port}/${p.proto}" ${[80, 443].includes(p.port) ? 'checked' : ''}>`}<span class="td-mono" style="font-weight:600;min-width:72px">${p.port}/${p.proto}</span><span class="text-sm" style="min-width:0;overflow-wrap:anywhere">${UI.esc(p.usedBy)}</span>${p.containerPort !== p.port ? `<span class="ui-sub" style="white-space:nowrap"> -> :${p.containerPort}</span>` : ''}${(p.also || []).length ? `<span class="ui-sub">and ${p.also.map(a => `<span class="td-mono">${a.port}/${p.proto}</span> ${UI.esc(a.usedBy)}`).join(', ')} (the same container port)</span>` : ''}${/(^|\/)dockgate-honeypot$/.test(String(p.usedBy || '')) ? '<span class="ui-sub">(the SSH honeypot, always stays public)</span>' : ''}<span style="margin-left:auto" data-pred="${[p.port, ...(p.also || []).map(a => a.port)].map(x => `${x}/${p.proto}`).join(' ')}"></span></label>`).join('')}</div>
+      <div data-pred-sum class="ui-sub">Checking what this would do in the live firewall...</div>
       <div class="ui-sub">Web traffic (80/443) is ticked by default. The SSH honeypot (Security > Honeypot) always stays public. When UFW manages IPv6, the same rules are written for IPv6 too.</div>`,
     onSave: (ov) => { const keep = [...ov.querySelectorAll('input[type=checkbox]:checked:not([data-honeypot])')].map(x => x.value); setTimeout(() => runIsolation(true, keep), 0); },
+    // Before anything changes: each port walked through the live rules with the planned isolation rules in place
+    // (from the internet and from Cloudflare), so a port that would close shows here, not after the site is down.
+    onOpen: (ov) => {
+      let t = null, seq = 0;
+      const predict = async () => {
+        const my = ++seq;
+        const keep = [...ov.querySelectorAll('input[type=checkbox]:checked:not([data-honeypot])')].map(x => x.value);
+        const sum = ov.querySelector('[data-pred-sum]');
+        try {
+          const r = await API.post(`/servers/${serverId}/firewall/docker-isolation/preview`, { enable: true, keepPublic: keep });
+          if (my !== seq) return;
+          if (r.unknown) { sum.textContent = `${r.unknown} The ports are not checked in advance.`; return; }
+          for (const el of ov.querySelectorAll('[data-pred]')) {
+            const group = el.dataset.pred.split(' ').map(k => r.ports.find(x => `${x.hostPort}/${x.proto}` === k)).filter(Boolean);
+            if (!group.length) { el.innerHTML = ''; continue; }
+            const p = group.find(x => x.after.internet !== 'pass') || group[0]; // the worst of the host ports in the row
+            const open = p.after.internet === 'pass', cf = p.after.cloudflare === 'pass';
+            el.innerHTML = open ? UI.pill('ok', 'stays open') : cf ? UI.pill('warn', 'Cloudflare only') : UI.pill(p.now.internet === 'pass' ? 'bad' : 'off', p.now.internet === 'pass' ? 'will close' : 'closed');
+            el.title = !open && p.rule ? `Decided by ${p.rule.chain} rule ${p.rule.n}: ${p.rule.text}` : '';
+          }
+          const closing = r.ports.filter(p => p.now.internet === 'pass' && p.after.internet !== 'pass');
+          const listed = new Set([...ov.querySelectorAll('[data-pred]')].flatMap(el => el.dataset.pred.split(' ')));
+          const unlisted = closing.filter(p => !listed.has(`${p.hostPort}/${p.proto}`));
+          sum.innerHTML = closing.length ? `Checked in the live firewall: <b>${closing.map(p => `${p.hostPort}/${p.proto}${p.owner ? ` (${UI.esc(p.owner)})` : ''}`).join(', ')}</b> will no longer be reachable from the internet.${unlisted.length ? ` ${unlisted.map(p => `${p.hostPort}/${p.proto}`).join(', ')} ${unlisted.length === 1 ? 'is' : 'are'} not in the list because UFW already allows ${unlisted.length === 1 ? 'it' : 'them'} on the server: behind isolation ${unlisted.length === 1 ? 'it needs' : 'they need'} a route rule (Firewall > Add rule, Containers too) for the container port (${unlisted.map(p => p.to.split(':').pop()).join(', ')}).` : ''}${closing.some(p => [80, 443].includes(p.hostPort)) ? ' <b style="color:var(--danger)">That includes web traffic: visitors and Cloudflare could not reach the site.</b>' : ''}` : 'Checked in the live firewall: every port that is open now stays open.';
+        } catch (e) { if (my === seq) sum.textContent = `Could not check in advance: ${e.message}`; }
+      };
+      ov.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => { clearTimeout(t); t = setTimeout(predict, 250); }));
+      predict();
+    },
   }));
   container.querySelector('[data-iso-off]')?.addEventListener('click', (e) => {
     e.preventDefault();

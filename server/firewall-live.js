@@ -42,7 +42,7 @@ function words(line) { return (String(line).match(/"[^"]*"|\S+/g) || []).map(w =
 /** One rule: { chain, text, matches: {...}, target, targetArgs }. Unknown options are kept in `other`. */
 function parseRule(line) {
   const w = words(line);
-  const r = { chain: w[1], text: line.trim(), m: {}, other: [], target: null, args: [] };
+  const r = { chain: w[1], text: line.trim(), m: {}, other: [], target: null };
   for (let i = 2; i < w.length; i++) {
     let neg = false;
     if (w[i] === '!') { neg = true; i++; }
@@ -64,9 +64,11 @@ function parseRule(line) {
       case '--tcp-flags': r.m.tcpflags = { v: `${v} ${w[i + 2]}`, neg }; i += 2; break;
       case '--comment': set('comment', v); break;
       case '-m': case '--match': i++; break; // the module name itself; its options are read above
-      case '-j': case '--jump': r.target = v; r.args = w.slice(i + 2); i = w.length; break;
-      case '-g': case '--goto': r.target = v; r.goto = true; i = w.length; break;
-      case '--limit': case '--limit-burst': case '--log-prefix': case '--log-level': case '--reject-with': case '--to-destination': i++; break;
+      // matches may follow the target (DockGate's own rules are written `-j X -p tcp ...`), so parsing goes on
+      case '-j': case '--jump': r.target = v; i++; break;
+      case '-g': case '--goto': r.target = v; r.goto = true; i++; break;
+      case '--limit': case '--limit-burst': case '--log-prefix': case '--log-level': case '--reject-with': case '--to-destination': case '--to-source': case '--to-ports': case '--set-xmark': case '--nflog-group': case '--nflog-prefix': i++; break;
+      case '--log-tcp-sequence': case '--log-tcp-options': case '--log-ip-options': case '--log-uid': case '--random': case '--persistent': break;
       default: r.other.push(o);
     }
   }
@@ -96,7 +98,7 @@ function parseIpset(text) {
 }
 
 // ---------------------------------------------------------------- where a rule comes from
-const PRIVATE_SRC = /^-A DOCKER-USER -s (10\.0\.0\.0\/8|172\.16\.0\.0\/12|192\.168\.0\.0\/16|fc00::\/7|fe80::\/10) -j RETURN$/;
+const PRIVATE = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7', 'fe80::/10'];
 /** { kind: ufw | docker | fail2ban | dockgate | unknown, label } */
 function sourceOf(r) {
   const t = r.text, c = r.chain || '';
@@ -108,7 +110,12 @@ function sourceOf(r) {
   }
   if (c === 'DOCKER-USER') {
     if (/dockgate-keep/.test(t)) return { kind: 'dockgate', label: 'DockGate: port kept public' };
-    if (/-j ufw6?-user-forward$|-j ufw6?-docker-logging-deny$|--sport 53 --dport 1024:65535 -j RETURN$/.test(t) || PRIVATE_SRC.test(t) || t === '-A DOCKER-USER -j RETURN') return { kind: 'dockgate', label: 'DockGate: Docker port isolation' };
+    const only = (...keys) => Object.keys(r.m).every(k => keys.includes(k));
+    const ours = /^ufw6?-(user-forward|docker-logging-deny)$/.test(r.target || '')
+      || (r.target === 'RETURN' && (Object.keys(r.m).length === 0
+        || (only('src') && PRIVATE.includes(r.m.src.v) && !r.m.src.neg)
+        || (only('proto', 'sport', 'dport') && r.m.sport && r.m.sport.v === '53' && r.m.dport && r.m.dport.v === '1024:65535')));
+    if (ours) return { kind: 'dockgate', label: 'DockGate: Docker port isolation' };
     return { kind: 'unknown', label: 'not DockGate, Docker or UFW (added by hand?)' };
   }
   if (/^ufw6?-docker-logging-deny$/.test(c)) return { kind: 'dockgate', label: 'DockGate: Docker port isolation' };
@@ -224,6 +231,45 @@ function simulate(state, { src, port, proto = 'tcp' }) {
   return { verdict: policy === 'ACCEPT' ? 'pass' : 'blocked', path, rule: { chain, n: 0, text: `policy ${policy}`, source: { kind: 'system', label: `the ${chain} chain's default` } }, trace };
 }
 
+// ---------------------------------------------------------------- what a firewall change would do
+/**
+ * The live state with DockGate's isolation rules replaced by `blockText` (dockerBlock(keep) from security/plans), or
+ * taken out when blockText is empty. fail2ban's rules and rules added by hand stay where they are, before ours (as they
+ * do live: fail2ban inserts at the top). UFW's own chains (ufw-user-forward with route rules) stay as they are live.
+ */
+function withIsolation(state, blockText) {
+  const f = { chains: {} };
+  for (const [k, c] of Object.entries(state.filter4.chains)) f.chains[k] = { policy: c.policy, rules: c.rules.slice() };
+  const du = (f.chains['DOCKER-USER'] || { policy: null, rules: [] });
+  const keepRules = du.rules.filter(r => sourceOf(r).kind !== 'dockgate');
+  f.chains['DOCKER-USER'] = { policy: null, rules: keepRules };
+  f.chains['ufw-docker-logging-deny'] = { policy: null, rules: [] };
+  if (blockText) {
+    const planned = parseSave(blockText).chains;
+    f.chains['DOCKER-USER'].rules = [...keepRules, ...((planned['DOCKER-USER'] || {}).rules || [])];
+    f.chains['ufw-docker-logging-deny'].rules = (planned['ufw-docker-logging-deny'] || {}).rules || [];
+    if (!f.chains['ufw-user-forward']) f.chains['ufw-user-forward'] = { policy: null, rules: [] };
+  }
+  if (!f.chains.FORWARD) return null;
+  if (!f.chains.FORWARD.rules.some(r => r.target === 'DOCKER-USER')) f.chains.FORWARD.rules.unshift(parseRule('-A FORWARD -j DOCKER-USER'));
+  return { ...state, filter4: f };
+}
+
+/** Every port Docker forwards, from the internet and from Cloudflare: now and after the change. */
+function predictPorts(state, after) {
+  const from = [['internet', '8.8.8.8'], ['cloudflare', '172.68.234.207']];
+  return state.dnat.map(d => {
+    const row = { hostPort: d.hostPort, proto: d.proto, owner: state.portOwner[`${d.hostPort}/${d.proto}`] || null, to: `${d.ip}:${d.port}`, now: {}, after: {} };
+    for (const [k, ip] of from) {
+      const a = simulate(state, { src: ip, port: d.hostPort, proto: d.proto });
+      row.now[k] = a.verdict;
+      if (after) { const b = simulate(after, { src: ip, port: d.hostPort, proto: d.proto }); row.after[k] = b.verdict; row.rule = row.rule || (b.verdict === 'blocked' ? b.rule : null); }
+    }
+    row.changes = !!after && from.some(([k]) => row.now[k] !== row.after[k]);
+    return row;
+  });
+}
+
 // ---------------------------------------------------------------- reading it all
 function parseState(out) {
   const S = sections(out);
@@ -294,4 +340,4 @@ function view(st) {
   };
 }
 
-module.exports = { READ, sections, parseRule, parseSave, parseIpset, sourceOf, matches, simulate, dnatMap, parseState, parseDrops, problems, view };
+module.exports = { READ, sections, parseRule, parseSave, parseIpset, sourceOf, matches, simulate, dnatMap, parseState, parseDrops, problems, view, withIsolation, predictPorts };

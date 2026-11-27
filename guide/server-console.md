@@ -95,6 +95,10 @@ The rules as the kernel holds them right now (`iptables-save`, `ip6tables-save`,
 | **Dropped in the last hour** | From the kernel log (`UFW BLOCK`, `UFW DOCKER BLOCK`), grouped by port with the addresses seen most. Logging is rate limited, so the counts are a sample. A drop to a container shows the container's port (after Docker's forwarding) |
 | **All rules** | Every chain and rule in order, each marked UFW, Docker, fail2ban (with the jail), DockGate (isolation or a port kept public) or unknown (added by hand?) |
 
+Before **Turn on Docker port isolation** applies anything, its dialog walks every forwarded port through the live rules with the planned isolation rules in place, from the internet and from Cloudflare. Each port shows **stays open**, **Cloudflare only** or **will close**, and the line under the list names the ports that would close (in red when 80 or 443 is among them). It changes as you tick ports. A port is kept by its container port, so host ports forwarded to the same container port share one row.
+
+After a firewall change, DockGate also checks that 80 and 443 still answer when they answered before, and warns when one stopped.
+
 **Remove them...** (on "rules left behind") takes DockGate's isolation rules out of DOCKER-USER. fail2ban's rules (honeypot, bans from other servers) and rules you added yourself stay. Then the page is read again.
 
 The check reads one snapshot and assumes a new TCP or UDP connection. A rule that uses a match DockGate cannot judge is shown in the steps and treated as not applying.

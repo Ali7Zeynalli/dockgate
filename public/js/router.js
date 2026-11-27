@@ -17,6 +17,7 @@ const Router = {
     'container-detail': ['resources', 'containers'],
     'swarm-service': ['swarm', 'swarm-services'],
     'swarm-node': ['swarm', 'swarm-nodes'],
+    'network-detail': ['resources', 'networks'],
   },
   /** The sidebar entry for a page: { page, tab } (tab of a section, or null). */
   navTarget(path = this.currentPage, params = Store.get('currentParams') || {}) {
@@ -68,7 +69,7 @@ const Router = {
     const el = document.getElementById('header-title');
     if (!el) return;
     const item = typeof navItems !== 'undefined' ? navItems[path] : null;
-    const extra = { 'container-detail': ['Resources', 'Container'], 'swarm-service': ['Swarm', 'Service'], 'swarm-node': ['Swarm', 'Node'] };
+    const extra = { 'container-detail': ['Resources', 'Container'], 'swarm-service': ['Swarm', 'Service'], 'swarm-node': ['Swarm', 'Node'], 'network-detail': ['Resources', 'Network'] };
     const crumb = (parent, page) => `<span class="crumb-parent">${escapeHtml(parent)}</span><span class="crumb-sep">/</span><span class="crumb-page">${escapeHtml(page)}</span>`;
     if (item && item.tabs) {
       const t = item.tabs.find(([k]) => k === (params.tab || item.default));
@@ -78,7 +79,7 @@ const Router = {
     if (typeof syncSidebarTabs === 'function') setTimeout(syncSidebarTabs, 0); // redirects use replaceState (no hashchange)
     document.title = `${el.textContent.replace(/\s*\/\s*/g, ' / ')}, DockGate`;
   },
-  titles: { 'container-detail': 'Container', 'swarm-service': 'Service', 'swarm-node': 'Node', system: 'System' },
+  titles: { 'container-detail': 'Container', 'swarm-service': 'Service', 'swarm-node': 'Node', 'network-detail': 'Network', system: 'System' },
 
   async navigate(path, params = {}, opts = {}) {
     ({ path, params } = this.resolve(path, params));

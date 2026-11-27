@@ -116,3 +116,33 @@ test('differences: block in the file but not live, a route rule not live, web dr
   assert.ok(v.tables[0].chains.some(c => c.name === 'DOCKER-USER'));
   assert.equal(v.sets['f2b-dockgate-honeypot'], 1);
 });
+
+test('before turning isolation on: which forwarded ports it would close, and which stay open when kept', () => {
+  const plans = require('../../server/security/plans');
+  const st = FL.parseState(read({ isolation: false }));
+  const closed = FL.predictPorts(st, FL.withIsolation(st, plans.dockerBlock([])));
+  assert.deepEqual(closed.map(p => [p.hostPort, p.now.cloudflare, p.after.cloudflare, p.changes]), [[443, 'pass', 'blocked', true]]);
+  assert.equal(closed[0].rule.source.label, 'DockGate: Docker port isolation');
+  // kept: the container port (80, after Docker's forwarding) is what the keep rule matches
+  const kept = FL.predictPorts(st, FL.withIsolation(st, plans.dockerBlock([{ port: 80, proto: 'tcp' }])));
+  assert.equal(kept[0].after.cloudflare, 'pass'); assert.equal(kept[0].changes, false);
+  // the host port would not be enough: this is how a keep on 443 dropped the site
+  const wrong = FL.predictPorts(st, FL.withIsolation(st, plans.dockerBlock([{ port: 443, proto: 'tcp' }])));
+  assert.equal(wrong[0].after.cloudflare, 'blocked');
+  // turning it off where rules were left behind opens the port again; fail2ban's ban stays
+  const left = FL.parseState(read());
+  const off = FL.withIsolation(left, '');
+  assert.equal(FL.predictPorts(left, off)[0].after.internet, 'pass');
+  assert.equal(FL.simulate(off, { src: '192.0.2.66', port: 443 }).verdict, 'blocked');
+});
+
+test('rule order does not matter: DockGate writes `-j X -p tcp ...`, iptables-save prints `-p tcp ... -j X`', () => {
+  const a = FL.parseRule('-A DOCKER-USER -j ufw-docker-logging-deny -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -d 172.16.0.0/12');
+  assert.equal(a.target, 'ufw-docker-logging-deny'); assert.equal(a.m.dst.v, '172.16.0.0/12'); assert.equal(a.m.proto.v, 'tcp');
+  assert.equal(FL.sourceOf(FL.parseRule('-A DOCKER-USER -j RETURN -s 10.0.0.0/8')).kind, 'dockgate');
+  assert.equal(FL.sourceOf(FL.parseRule('-A DOCKER-USER -s 10.0.0.0/8 -j RETURN')).kind, 'dockgate');
+  assert.equal(FL.sourceOf(FL.parseRule('-A DOCKER-USER -s 203.0.113.0/24 -j RETURN')).kind, 'unknown');
+  assert.equal(FL.sourceOf(FL.parseRule('-A DOCKER-USER -j RETURN')).kind, 'dockgate');
+  const log = FL.parseRule('-A ufw-docker-logging-deny -m limit --limit 3/min --limit-burst 10 -j LOG --log-prefix "[UFW DOCKER BLOCK] "');
+  assert.equal(log.target, 'LOG'); assert.deepEqual(log.other, []);
+});
