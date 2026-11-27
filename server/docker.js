@@ -954,6 +954,25 @@ async function disconnectNetwork(id, container, force = false) {
   return { success: true };
 }
 
+/**
+ * Runs `sh -c cmd` in a short-lived helper container and returns its output. `network`: 'host' to see the server's
+ * own interfaces and routes, or a network name to join it. Works on a remote server too (through Docker).
+ */
+async function runHelperOnce(cmd, { network = 'none', timeoutMs = 20000 } = {}) {
+  await ensureHelperImage();
+  const helper = await docker.createContainer({
+    Image: VOL_HELPER_IMAGE, Cmd: ['sh', '-c', cmd], Tty: true,
+    Labels: { 'dockgate.helper': 'network' },
+    HostConfig: { NetworkMode: network, AutoRemove: false },
+  });
+  try {
+    await helper.start();
+    await Promise.race([helper.wait(), new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('The helper container did not finish in time'), { statusCode: 504 })), timeoutMs))]);
+    const buf = await helper.logs({ stdout: true, stderr: true });
+    return Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
+  } finally { try { await helper.remove({ force: true }); } catch (e) { /* gone */ } }
+}
+
 // ============ SYSTEM ============
 async function getSystemInfo() {
   return cached('systemInfo', () => docker.info(), 60000); // 60s cache
@@ -1246,7 +1265,7 @@ module.exports = {
   registryHostOf, checkRegistryAuth, lookupAuthConfig,
   listVolumes, inspectVolume, removeVolume, createVolume, backupVolumeToResponse, restoreVolumeFromRequest, cloneVolume,
   listVolumeFiles, downloadVolumeFile, ensureHelperImage, VOL_HELPER_IMAGE,
-  listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork,
+  listNetworks, inspectNetwork, removeNetwork, createNetwork, connectNetwork, disconnectNetwork, runHelperOnce,
   getSystemInfo, getDockerVersion, getDiskUsage,
   listComposeProjects, getComposeProject,
   getCleanupPreview, pruneContainers, pruneImages, pruneVolumes, pruneNetworks, pruneBuildCache, systemPrune,

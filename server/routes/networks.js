@@ -8,15 +8,102 @@ router.get('/', async (req, res) => {
   catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
+// The server's own interfaces and routes (for the parent of a macvlan network, and for subnets that would clash).
+const hostCache = new Map(); // serverId -> { at, host }
+async function hostNet() {
+  const id = dockerService.getActiveServerId() || 'local';
+  const c = hostCache.get(id);
+  if (c && Date.now() - c.at < 60000) return c.host;
+  const host = require('../network-map').parseHostNet(await dockerService.runHelperOnce(require('../network-map').HOST_CMD, { network: 'host' }));
+  hostCache.set(id, { at: Date.now(), host });
+  return host;
+}
+router.get('/host-info', async (req, res) => {
+  try { res.json(await hostNet()); }
+  catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+// What a subnet would clash with: other Docker networks, and the server's own networks and routes outside Docker.
+router.post('/check-subnet', async (req, res) => {
+  try {
+    const { subnets = [], except } = req.body || {};
+    const [host, nets] = await Promise.all([hostNet().catch(() => null), dockerService.listNetworks()]);
+    const list = nets.map(n => ({ name: n.name, subnets: ((n.ipam && n.ipam.Config) || []).map(x => x.Subnet).filter(Boolean) }));
+    const NMod = require('../network-map');
+    res.json({ hostRead: !!host, conflicts: (Array.isArray(subnets) ? subnets : [subnets]).filter(Boolean).flatMap(sn => NMod.subnetConflicts(String(sn).trim(), host, list, { except }).map(c => ({ ...c, for: sn }))) });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
 // A network's page: members with addresses, aliases, ports and compose project (server/network-map.js).
 const NM = require('../network-map');
 async function readNetwork(id) {
   const [net, ctrs] = await Promise.all([dockerService.inspectNetwork(id), dockerService.docker.listContainers({ all: true })]);
   // aliases and fixed addresses are only in a container's inspect; read the members (at most 60)
   const mine = ctrs.filter(c => Object.entries((c.NetworkSettings && c.NetworkSettings.Networks) || {}).some(([k, n]) => k === net.Name || (n && n.NetworkID === net.Id)));
-  await Promise.all(mine.slice(0, 60).map(async (c) => { try { c.inspect = await dockerService.docker.getContainer(c.Id).inspect(); } catch (e) { /* gone meanwhile */ } }));
+  for (let i = 0; i < mine.length; i += 10) { // 10 at a time, every member
+    await Promise.all(mine.slice(i, i + 10).map(async (c) => { try { c.inspect = await dockerService.docker.getContainer(c.Id).inspect(); } catch (e) { /* gone meanwhile */ } }));
+  }
   return { net, ctrs, desc: NM.describe(net, ctrs) };
 }
+
+// Change settings: Docker can not change a network in place, so it is made again (server/network-recreate.js).
+const NR = require('../network-recreate');
+router.get('/:id/recreate-check', async (req, res) => {
+  try {
+    const { net, desc } = await readNetwork(req.params.id);
+    const services = (await dockerService.listNetworks()).find(n => n.id === net.Id);
+    res.json({ refusal: NR.refusal(net, services ? services.services : 0), members: desc.members.map(m => ({ name: m.name, state: m.state, aliases: m.aliases, fixedIp: m.fixedIp, project: m.project })) });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+router.post('/:id/recreate', async (req, res) => {
+  try {
+    const ch = (req.body && req.body.changes) || {};
+    const allowed = ['subnet', 'gateway', 'ipRange', 'ipv6', 'subnet6', 'gateway6', 'internal', 'attachable', 'mtu', 'icc', 'masquerade', 'labels'];
+    const changes = Object.fromEntries(Object.entries(ch).filter(([k]) => allowed.includes(k)));
+    const reqIp = req.ip, server = dockerService.isLocalActive() ? undefined : dockerService.getActiveServerId();
+    const jobId = NR.start(dockerService.docker, req.params.id, changes, { onDone: ({ old, members }) => logAction({ sourceIp: reqIp, server, resourceId: req.params.id, resourceType: 'network', resourceName: old, action: 'recreate', details: { changes, members } }) });
+    res.json({ jobId });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+router.get('/jobs/:jobId', (req, res) => {
+  const j = NR.getJob(req.params.jobId);
+  if (!j) return res.status(404).json({ error: 'Job not found (it may have expired)' });
+  res.json(j);
+});
+
+// Can container A reach B (a name, alias or address) on a port? Answered from inside A's network.
+router.post('/:id/reach', async (req, res) => {
+  try {
+    const NMod = require('../network-map');
+    const { from, to, port } = req.body || {};
+    if (!from) return res.status(400).json({ error: 'From: a container' });
+    const cmd = NMod.reachCmd(String(to || '').trim(), port);
+    const c = await dockerService.docker.getContainer(String(from)).inspect();
+    if (!c.State || !c.State.Running) return res.status(400).json({ error: `${c.Name.replace(/^\//, '')} is not running: start it first` });
+    const r = NMod.parseReach(await dockerService.runHelperOnce(cmd, { network: `container:${c.Id}`, timeoutMs: 15000 }));
+    // which network each address is on, as A sees it
+    const nets = await dockerService.listNetworks();
+    const onNet = (ip) => (nets.find(n => ((n.ipam && n.ipam.Config) || []).some(x => x.Subnet && NMod.overlaps(x.Subnet, ip + (ip.includes(':') ? '/128' : '/32')))) || {}).name || null;
+    const mine = Object.keys((c.NetworkSettings && c.NetworkSettings.Networks) || {});
+    res.json({ from: c.Name.replace(/^\//, ''), to, port: port || null, ...r, addresses: r.resolved.map(ip => ({ ip, network: onNet(ip), shared: mine.includes(onNet(ip)) })), fromNetworks: mine });
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
+
+// What was done to this network (from the activity log): created, connected, disconnected, changed, removed.
+router.get('/:id/history', async (req, res) => {
+  try {
+    const { db } = require('../db');
+    let keys = [req.params.id];
+    try { const n = await dockerService.inspectNetwork(req.params.id); keys = [n.Id, n.Id.slice(0, 12), n.Name]; } catch (e) { /* removed */ }
+    const server = dockerService.getActiveServerId() || 'local';
+    const ph = keys.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT id, resource_id, resource_type, resource_name, action, details, created_at, server, source_ip FROM activity
+      WHERE (server = ? OR server IS NULL) AND (
+        (resource_type = 'network' AND (resource_id IN (${ph}) OR resource_name IN (${ph})))
+        OR (resource_type = 'container' AND action IN ('network-connect', 'network-disconnect') AND (${keys.map(() => 'details LIKE ?').join(' OR ')})))
+      ORDER BY created_at DESC LIMIT 200`).all(server, ...keys, ...keys, ...keys.map(k => `%"network":"${String(k).slice(0, 12)}"%`));
+    res.json(rows.filter(r => !(r.resource_type === 'container' && rows.some(x => x.resource_type === 'network' && x.created_at === r.created_at))));
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
+});
 
 router.get('/:id/details', async (req, res) => {
   try { res.json((await readNetwork(req.params.id)).desc); }
@@ -71,10 +158,19 @@ router.delete('/:id', async (req, res) => {
 // Attach / detach a container to/from a network (membership is live; the network itself is immutable).
 router.post('/:id/connect', async (req, res) => {
   try {
-    const { container } = req.body || {};
+    const { container, aliases, ipv4, ipv6 } = req.body || {};
     if (!container) return res.status(400).json({ error: 'container required' });
-    await dockerService.connectNetwork(req.params.id, container);
-    logAction({ req, resourceId: req.params.id, resourceType: 'network', resourceName: req.params.id.substring(0, 12), action: 'connect', details: { container } });
+    // optional: names the others reach it by on this network, and a fixed address
+    const net = require('net');
+    const al = (Array.isArray(aliases) ? aliases : String(aliases || '').split(/[\s,]+/)).map(a => String(a).trim()).filter(Boolean);
+    if (al.some(a => !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/.test(a))) return res.status(400).json({ error: 'Aliases: letters, digits, _ . - (up to 63 each)' });
+    if (ipv4 && net.isIP(String(ipv4)) !== 4) return res.status(400).json({ error: 'Fixed IPv4 address: like 172.30.0.10' });
+    if (ipv6 && net.isIP(String(ipv6)) !== 6) return res.status(400).json({ error: 'Fixed IPv6 address: like fd00::10' });
+    const ep = {};
+    if (al.length) ep.Aliases = al;
+    if (ipv4 || ipv6) ep.IPAMConfig = { ...(ipv4 ? { IPv4Address: String(ipv4) } : {}), ...(ipv6 ? { IPv6Address: String(ipv6) } : {}) };
+    await dockerService.connectNetwork(req.params.id, container, Object.keys(ep).length ? { EndpointConfig: ep } : {});
+    logAction({ req, resourceId: req.params.id, resourceType: 'network', resourceName: req.params.id.substring(0, 12), action: 'connect', details: { container, aliases: al, ipv4: ipv4 || undefined, ipv6: ipv6 || undefined } });
     // Dual-log from the container's perspective - the action is usually initiated from the container
     // detail page, so it must also be visible when auditing that container's history.
     logAction({ req, resourceId: container, resourceType: 'container', resourceName: String(container).substring(0, 12), action: 'network-connect', details: { network: req.params.id.substring(0, 12) } });

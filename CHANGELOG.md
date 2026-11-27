@@ -3,6 +3,31 @@
 ---
 
 ### Added
+- **Networks list**: search (name, subnet, gateway, a container on it), filter by driver, **Unused only**, sort by name, most used or driver, and **Remove unused (N)...**. The list redraws only when something changed, so an open menu or a half typed search is no longer lost every 15 seconds.
+- **Create network** is complete:
+  - **Parent interface** for macvlan and ipvlan, read from the server (before, such a network could not reach the LAN), and the ipvlan mode.
+  - **IPv6 subnet** and gateway.
+  - MTU, bridge name, traffic between containers, outgoing NAT, labels.
+- **Subnet check while you type**: overlapping another Docker network (Docker refuses it), or the server's own networks and routes such as a LAN or a VPN (Docker allows it, the server would lose that network; **Create it anyway** to go on). **Suggest** skips both.
+- **Clone** copies both subnets, options and labels.
+- **A network's page**:
+  - **Connect** with aliases and a fixed address.
+  - **Change settings...**: subnet, gateway, range, internal, attachable, IPv6, MTU, ICC, NAT. Docker can not change a network in place, so DockGate makes it again under the same name and connects every container back with its aliases and fixed addresses (when they fit). A subnet Docker would refuse is caught before anything is disconnected. If a step fails after the removal, the old network and its containers come back. Compose, Swarm and Docker's own networks are not changed here.
+  - **Can a container reach another?**: from inside a running container's network: is the name found, which address and network, does the port answer (open, refused, no answer).
+  - **History**: created, connected, disconnected, settings changed.
+- **Firewall notifications**, every 5 minutes for each server with UFW:
+  - **Web traffic blocked by the firewall**: connections to 80 or 443 dropped, with the count, by what and from where.
+  - **Docker port isolation rules left behind**.
+- **Containers > Topology > Group by network**.
+
+### Fixed
+- Disconnect asks before forcing it; before, every disconnect was forced.
+- A network's page read the aliases of at most 60 containers.
+- The Table / Map switch showed the selected label in a color that could not be read.
+
+---
+
+### Added
 - **A page for each network** (Resources > Networks > a network's name). What made it (a compose project, Docker, or by hand), its settings, and every container on it with address, aliases, ports on the server and compose project. Stopped containers are listed too.
   - **Compared with the compose files**: each compose project's file (`docker compose config`) against the live network. It finds containers that should be on the network and are not, containers connected by hand, missing aliases, a different fixed address, services no longer in the file, and network settings changed in the file.
   - A fix next to each: **Compose up...**, **Make <service> again...** (only that service, because `compose up` leaves a running container alone when only its aliases drifted), **Compose up, remove old...** or **Disconnect...**. Each runs with its log on screen and reads the network again.
