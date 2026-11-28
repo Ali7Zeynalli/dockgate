@@ -28,7 +28,7 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/00-demo.gif" alt="DockGate: dashboard, containers, Swarm, the database client, Proxies &amp; SSL (proxies, sites, certificates), Deploy projects, Server sections (Status, Security, Software, Automation) and monitoring" width="100%">
+  <img src="screenshots/00-demo.gif" alt="DockGate: dashboard, containers, topology, networks, Compose projects, Swarm, the database client, Uptime, Proxies &amp; SSL, the Server sections (overview, Docker port isolation, live firewall, honeypot, cron, scripts) and monitoring" width="100%">
 </p>
 
 ---
@@ -109,32 +109,50 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 
 ## Screenshots
 
-**Docker**
+**Overview**
 
 <table>
 <tr>
-<td width="50%"><img src="screenshots/02-dashboard.png" alt="Dashboard"><br><sub><b>Dashboard</b></sub></td>
+<td width="50%"><img src="screenshots/02-dashboard.png" alt="Dashboard"><br><sub><b>Dashboard</b> - every server, what needs attention</sub></td>
+<td width="50%"><img src="screenshots/24-monitoring.png" alt="Monitoring"><br><sub><b>Monitoring</b> - every server, live and 48 h</sub></td>
+</tr>
+</table>
+
+**Resources**
+
+<table>
+<tr>
 <td width="50%"><img src="screenshots/03-containers.png" alt="Containers"><br><sub><b>Containers</b> - stacks, filters, Swarm tasks</sub></td>
+<td width="50%"><img src="screenshots/41-container-page.png" alt="A container's page"><br><sub><b>A container's page</b> - logs, terminal, stats, files, updates</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="screenshots/23.png" alt="Topology"><br><sub><b>Topology</b> - live graph of the stacks</sub></td>
-<td width="50%"><img src="screenshots/11-terminal.png" alt="Container terminal"><br><sub><b>Container terminal</b></sub></td>
+<td width="50%"><img src="screenshots/topology.png" alt="Topology"><br><sub><b>Topology</b> - by stack or by network</sub></td>
+<td width="50%"><img src="screenshots/42-images.png" alt="Images"><br><sub><b>Images</b> - newer images, unused, pull</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="screenshots/10-logs.png" alt="Logs"><br><sub><b>Logs</b> - one viewer everywhere</sub></td>
-<td width="50%"><img src="screenshots/08-compose.png" alt="Projects"><br><sub><b>Projects (Compose)</b> - history, Move to Swarm</sub></td>
+<td width="50%"><img src="screenshots/06-volumes.png" alt="Volumes"><br><sub><b>Volumes</b> - backup, restore, files</sub></td>
+<td width="50%"><img src="screenshots/43-networks-map.png" alt="Networks > Map"><br><sub><b>Networks > Map</b> - every network with its containers</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="screenshots/34-databases.png" alt="Databases"><br><sub><b>Databases</b> - Explorer, tabs, right-click menus, data, design, SQL</sub></td>
+<td width="50%"><img src="screenshots/44-network-page.png" alt="A network's page"><br><sub><b>A network's page</b> - compared with the compose files, a fix next to each</sub></td>
+<td width="50%"><img src="screenshots/45-network-create.png" alt="New network"><br><sub><b>New network</b> - subnet checked against Docker, the LAN and VPNs</sub></td>
+</tr>
+</table>
+
+**Deploy**
+
+<table>
+<tr>
+<td width="50%"><img src="screenshots/08-compose.png" alt="Projects (Compose)"><br><sub><b>Projects (Compose)</b> - history, Move to Swarm</sub></td>
+<td width="50%"><img src="screenshots/37-project.png" alt="A project's page"><br><sub><b>A project's page</b> - Overview, Services, Files, Deploys, Automation, Settings</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/38-new-project.png" alt="New project"><br><sub><b>New project</b> - Git, a folder, already on the server, YAML, template</sub></td>
 <td width="50%"><img src="screenshots/35-tasks.png" alt="Tasks"><br><sub><b>Tasks</b> - Makefile, npm, scripts, deploy recipes</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="screenshots/37-project.png" alt="A project's page"><br><sub><b>A project's page</b> - Overview, Services, Files, Deploys, Automation (auto-deploy in one click), Settings</sub></td>
-<td width="50%"><img src="screenshots/38-new-project.png" alt="New project"><br><sub><b>New project</b> - Git, a folder, already on the server, YAML, template, or connect a stack to Git</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="screenshots/39-proxies.png" alt="Proxies & SSL"><br><sub><b>Proxies & SSL</b> - which domain goes to which container, in every proxy on the server</sub></td>
-<td width="50%"><img src="screenshots/40-certificates.png" alt="Certificates"><br><sub><b>Certificates</b> - who renews each one, Renew now, alerts before expiry</sub></td>
+<td width="50%"><img src="screenshots/09-templates.png" alt="App templates"><br><sub><b>App templates</b> - 500+ apps</sub></td>
+<td width="50%"></td>
 </tr>
 </table>
 
@@ -142,19 +160,23 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 
 <table>
 <tr>
-<td width="50%"><img src="screenshots/25-swarm-overview.png" alt="Swarm overview"><br><sub><b>Overview</b> - servers, tasks, events</sub></td>
-<td width="50%"><img src="screenshots/26-swarm-services.png" alt="Swarm services"><br><sub><b>Services</b> - replicas, CPU, memory, ports</sub></td>
+<td width="50%"><img src="screenshots/25-swarm-overview.png" alt="Overview"><br><sub><b>Overview</b> - servers, tasks, events</sub></td>
+<td width="50%"><img src="screenshots/26-swarm-services.png" alt="Services"><br><sub><b>Services</b> - replicas, CPU, memory, ports</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="screenshots/27-swarm-service.png" alt="Service page"><br><sub><b>Service page</b> - tasks, logs, terminal, files</sub></td>
-<td width="50%"><img src="screenshots/28-swarm-stacks.png" alt="Swarm stacks"><br><sub><b>Stacks</b> - from Compose, a file or a container</sub></td>
+<td width="50%"><img src="screenshots/28-swarm-stacks.png" alt="Stacks"><br><sub><b>Stacks</b> - from Compose, a file or a container</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="screenshots/31-swarm-migrate.png" alt="Migrate"><br><sub><b>Migrate</b> - Compose projects and containers</sub></td>
 <td width="50%"><img src="screenshots/29-swarm-nodes.png" alt="Nodes"><br><sub><b>Nodes</b> - role, state, CPU, memory</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="screenshots/32-swarm-secrets.png" alt="Secrets and configs"><br><sub><b>Secrets & configs</b></sub></td>
+<td width="50%"><img src="screenshots/46-swarm-scaling.png" alt="Auto Scaling"><br><sub><b>Auto Scaling</b> - capacity, rules, history</sub></td>
+<td width="50%"><img src="screenshots/47-swarm-firewall.png" alt="Firewall"><br><sub><b>Firewall</b> - published ports on every server</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/32-swarm-secrets.png" alt="Secrets & configs"><br><sub><b>Secrets & configs</b></sub></td>
 <td width="50%"><img src="screenshots/33-swarm-networks.png" alt="Overlay networks"><br><sub><b>Overlay networks</b></sub></td>
 </tr>
 <tr>
@@ -163,19 +185,65 @@ Never add `:z` / `:Z` to the `/var/run/docker.sock` mount.
 </tr>
 </table>
 
-**More**
+**Databases, Logs, Web**
 
 <table>
 <tr>
-<td width="50%"><img src="screenshots/24-monitoring.png" alt="Monitoring"><br><sub><b>Monitoring</b> - every server, live and 48 h</sub></td>
-<td width="50%"><img src="screenshots/09-templates.png" alt="App templates"><br><sub><b>App templates</b> - 500+ apps</sub></td>
+<td width="50%"><img src="screenshots/34-databases.png" alt="Databases"><br><sub><b>Databases</b> - Explorer, tabs, data edited like a spreadsheet</sub></td>
+<td width="50%"><img src="screenshots/10-logs.png" alt="Logs"><br><sub><b>Logs</b> - one viewer everywhere, levels, live</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="screenshots/06-volumes.png" alt="Volumes"><br><sub><b>Volumes</b> - backup, restore, files</sub></td>
-<td width="50%"><img src="screenshots/14-audit.png" alt="Audit log"><br><sub><b>Activity > Audit log</b></sub></td>
+<td width="50%"><img src="screenshots/48-uptime.png" alt="Uptime"><br><sub><b>Uptime</b> - sites, response time, certificates</sub></td>
+<td width="50%"><img src="screenshots/39-proxies.png" alt="Proxies & SSL"><br><sub><b>Proxies & SSL</b> - which domain goes to which container</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="screenshots/18-settings-notifications.png" alt="Notifications"><br><sub><b>Notifications</b> - channels and rules</sub></td>
+<td width="50%"><img src="screenshots/40-certificates.png" alt="Certificates"><br><sub><b>Certificates</b> - who renews each one, alerts before expiry</sub></td>
+<td width="50%"></td>
+</tr>
+</table>
+
+**Server (the one picked in the top bar)**
+
+<table>
+<tr>
+<td width="50%"><img src="screenshots/50-server-overview.png" alt="Status > Overview"><br><sub><b>Status > Overview</b> - state and security recommendations</sub></td>
+<td width="50%"><img src="screenshots/59-server-monitoring.png" alt="Status > Monitoring"><br><sub><b>Status > Monitoring</b> - host metrics, live and 48 h</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/58-server-access.png" alt="Security > Access & SSH"><br><sub><b>Security > Access & SSH</b> - every change tested with a new login</sub></td>
+<td width="50%"><img src="screenshots/60-server-firewall.png" alt="Security > Firewall"><br><sub><b>Security > Firewall</b> - UFW rules, IP lists, Docker port isolation</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/51-server-isolation.png" alt="Docker port isolation"><br><sub><b>Docker port isolation</b> - every port checked before it is turned on</sub></td>
+<td width="50%"><img src="screenshots/52-server-live-firewall.png" alt="Security > Live firewall"><br><sub><b>Security > Live firewall</b> - will this connection pass?</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/54-server-fail2ban.png" alt="Security > Fail2ban"><br><sub><b>Security > Fail2ban</b> - bans, unban, settings</sub></td>
+<td width="50%"><img src="screenshots/53-server-honeypot.png" alt="Security > Honeypot"><br><sub><b>Security > Honeypot</b> - user names and passwords tried</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/57-server-services.png" alt="Software > Services"><br><sub><b>Software > Services</b> - start, stop, Docker engine settings</sub></td>
+<td width="50%"><img src="screenshots/55-server-cron.png" alt="Automation > Cron"><br><sub><b>Automation > Cron</b> - crontabs, cron.d, timers, alerts</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/56-server-scripts.png" alt="Automation > Scripts"><br><sub><b>Automation > Scripts</b> - 18 templates, blocks or your own shell</sub></td>
+<td width="50%"></td>
+</tr>
+</table>
+
+**Servers, Tools, System**
+
+<table>
+<tr>
+<td width="50%"><img src="screenshots/61-servers.png" alt="Servers"><br><sub><b>Servers</b> - every host over SSH</sub></td>
+<td width="50%"><img src="screenshots/62-agent.png" alt="Edge agent"><br><sub><b>Edge agent</b> - alerts and healing while DockGate is away</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/63-files.png" alt="Files"><br><sub><b>Files</b> - SFTP with a safe editor</sub></td>
+<td width="50%"><img src="screenshots/11-terminal.png" alt="Terminal"><br><sub><b>Terminal</b> - container and host</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/18-settings-notifications.png" alt="Notifications"><br><sub><b>Notifications</b> - channels and 36 rules</sub></td>
 <td width="50%"><img src="screenshots/01-login.png" alt="Login"><br><sub><b>Login</b></sub></td>
 </tr>
 </table>

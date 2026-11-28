@@ -16,6 +16,8 @@ Docker networks connect containers to each other. Containers on the same network
 
 The list reads Docker again every 15 seconds and only redraws when something changed, so an open menu or a half typed search stays.
 
+![Networks > Map](images/networks-map.png)
+
 Click a network's name (or **Open** in its menu) for its own page.
 
 Labels next to the name:
@@ -57,6 +59,8 @@ As you type a subnet, it is checked:
 | **Remove...** | Only for networks nothing uses |
 
 ## A network's page
+
+![A network's page](images/network-page.png)
 
 | Part | What it shows |
 |---|---|

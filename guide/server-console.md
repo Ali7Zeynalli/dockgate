@@ -22,9 +22,13 @@ The console manages the **server itself**, not Docker: what is installed, who ca
 
 ## Status > Overview
 
+![Status > Overview](images/server-overview.png)
+
 The state of the server and what to do next: OS, uptime, CPU, memory and disk, Docker, firewall, fail2ban, the honeypot, SSH settings, pending updates and whether a reboot is needed. Items that need attention link to the tab that fixes them; the honeypot shows as **Optional** while it is off - it is never something to fix.
 
 ## Status > Monitoring and Alerts
+
+![Status > Monitoring](images/server-monitoring.png)
 
 CPU, memory, disk, network and load: live and the last 48 hours; top processes; disks and mounts. **Alerts** sets this server's own limits (CPU, memory, disk, server down). Empty limits use the shared ones from **Settings > Notifications**.
 
@@ -51,6 +55,8 @@ What is installed on the server. Each component is detected first, installed onl
 
 ## Security > Access & SSH
 
+![Security > Access & SSH](images/server-access.png)
+
 How people log in. Every change tests a new SSH login and rolls back if it fails.
 
 | Setting | Meaning |
@@ -72,6 +78,10 @@ Who can log in: human accounts (UID ≥ 1000) and root, with their last login. *
 
 ## Security > Firewall
 
+![Security > Firewall](images/server-firewall.png)
+
+![Turn on Docker port isolation: every port checked first](images/server-isolation.png)
+
 UFW (or firewalld on RHEL-type systems).
 
 | Part | What it does |
@@ -84,6 +94,8 @@ UFW (or firewalld on RHEL-type systems).
 Docker publishes ports past UFW by default. DockGate adds rules so a container's published port obeys the firewall too.
 
 ## Security > Live firewall
+
+![Security > Live firewall](images/server-live-firewall.png)
 
 The rules as the kernel holds them right now (`iptables-save`, `ip6tables-save`, `ipset`), not only what UFW lists. It only reads, apart from the one fix it offers.
 
@@ -112,6 +124,8 @@ The check reads one snapshot and assumes a new TCP or UDP connection. A rule tha
 
 ## Security > Fail2ban
 
+![Security > Fail2ban](images/server-fail2ban.png)
+
 Bans addresses that fail to log in over SSH too often (and, with the [Honeypot](#security--honeypot), every address that connects to port 22).
 
 - The banned addresses, per jail; **Unban & allow** lets one back in.
@@ -119,6 +133,8 @@ Bans addresses that fail to log in over SSH too often (and, with the [Honeypot](
 - **Configuration**: ban time, find time, max retries, addresses never banned, and more. Change cards, then **Review & apply all**, or **Save this card** one at a time. Changes are tested before they apply; current bans are kept.
 
 ## Security > Honeypot
+
+![Security > Honeypot](images/server-honeypot.png)
 
 A fake SSH server on port 22, for a server whose real SSH listens on another port. Nobody with a reason to be there connects to port 22, so **every address that connects to it is banned on every port of the server** - the host's ports and the ports Docker publishes - before it finds the real SSH. It records the user names and passwords tried. Every login is refused; there is no shell.
 
@@ -168,9 +184,13 @@ What one honeypot catches can be banned on every server DockGate manages, before
 
 ## Software > Services, Docker engine, Auto updates - and System > Time sync
 
+![Software > Services](images/server-services.png)
+
 System services DockGate manages on the server (Docker, SSH, the firewall, fail2ban, time sync...). Select one for its state, **Start at boot**, start / stop / restart, its settings and its log.
 
 ## Automation > Cron and Timers
+
+![Automation > Cron](images/server-cron.png)
 
 The server's scheduled jobs in one table: the SSH user's crontab, root's crontab, `/etc/cron.d/*`, `/etc/crontab`, the scripts in `/etc/cron.hourly | daily | weekly | monthly`, and **systemd timers** (many distributions run apt, logrotate, fstrim and certbot with timers instead of cron).
 
@@ -197,6 +217,8 @@ The wrapper of root's jobs is a root-owned copy (`/usr/local/lib/dockgate/dg-cro
 **Timers:** each systemd timer has an on / off switch (`systemctl enable --now` / `disable --now`, asked first; it lasts over a reboot), **Run now** (starts the service the timer runs, once, and shows its last log lines; up to 2 minutes) and **Log** (`journalctl -u <service>`). Turned-off timers are listed too. The timer files themselves are not changed. On a machine where systemd does not run (a container, WSL) timers are listed but can not be started or stopped.
 
 ## Automation > Scripts
+
+![Automation > Scripts](images/server-scripts.png)
 
 Build a shell script from **blocks** - DockGate writes the script, safely quoted - then save it to the server, run it once, or schedule it.
 
@@ -249,6 +271,10 @@ Run, Schedule..., the log and the alerts work the same for every kind.
 Only *Custom command* carries your own shell; every other value is checked and quoted, so a name, path, URL or message can not run a command.
 
 ## System - Name & addresses, Network, Disks, Kernel & limits, Config files
+
+![System > Network](images/server-network.png)
+
+![System > Disks and swap](images/server-disks.png)
 
 The server's own settings, each through a form. Every change shows what changes in the file, is checked by the tool that owns it, and is restored when a check fails. DockGate writes its own files where the system has a `.d` folder, so the distribution's files stay as they are.
 
