@@ -53,6 +53,8 @@ What Docker did on the server: containers created, started, stopped, killed and 
 
 ## Uptime
 
+![Uptime](images/uptime.png)
+
 Are your sites answering? A container can be *running* while the site behind it is down. Uptime checks the address itself, from DockGate, every 30 seconds to 1 hour.
 
 | Type | What it checks |

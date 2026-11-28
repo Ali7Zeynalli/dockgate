@@ -25,6 +25,8 @@ Click a stack's **name** (or **⋯ > Open the stack**) to open its page. The row
 
 ![Automation](images/compose-project-automation.png)
 
+![Deploys](images/compose-project-deploys.png)
+
 The top bar of the page: **Up**, **Restart**, **Rebuild...**, **Sync** (Git stacks), **Down** and **↻**. **← Stacks** goes back to the list.
 
 | Tab | What is there |
@@ -37,6 +39,8 @@ The top bar of the page: **Up**, **Restart**, **Rebuild...**, **Sync** (Git stac
 | **Settings** | Edit YAML, Update from folder (uploaded stacks), Git (Connect to Git... or Force pull...), Scaling & health, Move to Swarm, Terminal, Delete the stack |
 
 ## New project
+
+![New project](images/compose-new-project.png)
 
 **New project** asks where the project comes from; each choice says when to pick it:
 
